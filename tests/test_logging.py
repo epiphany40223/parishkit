@@ -1,0 +1,155 @@
+import logging
+
+from parishkit.logging import (
+    DEFAULT_BACKUP_COUNT,
+    DEFAULT_MAX_BYTES,
+    CompressingRotatingFileHandler,
+    describe_handlers,
+    parse_log_level,
+    setup_logging,
+)
+
+
+def test_setup_logging_console_defaults():
+    logger = setup_logging(logger_name="test.console.default")
+
+    handlers = describe_handlers(logger)
+
+    assert handlers == [{"type": "StreamHandler", "level": logging.WARNING}]
+
+
+def test_setup_logging_debug_file_handler(tmp_path):
+    log_file = tmp_path / "parishkit.log"
+    logger = setup_logging(
+        debug=True,
+        log_file=log_file,
+        logger_name="test.file.debug",
+        rotate=True,
+        max_bytes=1000,
+    )
+
+    logger.debug("hello")
+
+    assert log_file.exists()
+    assert any(
+        isinstance(handler, CompressingRotatingFileHandler)
+        for handler in logger.handlers
+    )
+
+
+def test_default_file_rotation_keeps_large_compressed_history(tmp_path):
+    """Default file logging rotates at 50 MB and keeps 50 compressed backups."""
+    logger = setup_logging(
+        log_file=tmp_path / "parishkit.log",
+        logger_name="test.file.rotation.defaults",
+    )
+
+    file_handler = next(
+        handler
+        for handler in logger.handlers
+        if isinstance(handler, CompressingRotatingFileHandler)
+    )
+
+    assert file_handler.maxBytes == DEFAULT_MAX_BYTES == 50_000_000
+    assert file_handler.backupCount == DEFAULT_BACKUP_COUNT == 50
+
+
+def test_compressed_rotation_retains_multiple_backups(tmp_path):
+    log_file = tmp_path / "parishkit.log"
+    logger = setup_logging(
+        logger_name="test.rotation.retention",
+        log_file=log_file,
+        rotate=True,
+        max_bytes=80,
+        backup_count=3,
+    )
+
+    for index in range(30):
+        logger.warning("message %s %s", index, "x" * 40)
+
+    for handler in logger.handlers:
+        handler.close()
+
+    assert (tmp_path / "parishkit.log.1.gz").exists()
+    assert (tmp_path / "parishkit.log.2.gz").exists()
+
+
+def test_parse_log_level_rejects_unknown():
+    try:
+        parse_log_level("NOPE")
+    except ValueError as exc:
+        assert "unknown log level" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_setup_logging_adds_mocked_slack_handler(monkeypatch, tmp_path):
+    token_file = tmp_path / "slack-token.txt"
+    token_file.write_text("xoxb-test-token\n", encoding="utf-8")
+
+    sent = []
+
+    class FakeSlackHandler(logging.Handler):
+        def __init__(self, *, token, channel):
+            super().__init__()
+            self.token = token
+            self.channel = channel
+
+        def emit(self, record):
+            sent.append((self.channel, self.format(record)))
+
+    monkeypatch.setattr("parishkit.logging.SlackLogHandler", FakeSlackHandler)
+    logger = setup_logging(
+        logger_name="test.slack",
+        slack_token_file=token_file,
+        slack_channel="#alerts",
+        slack_level="ERROR",
+    )
+
+    logger.error("problem")
+
+    assert sent
+    assert sent[0][0] == "#alerts"
+
+
+def test_setup_logging_rejects_partial_slack_config(tmp_path):
+    token_file = tmp_path / "slack-token.txt"
+    token_file.write_text("xoxb-test-token\n", encoding="utf-8")
+
+    try:
+        setup_logging(
+            logger_name="test.partial.slack",
+            slack_token_file=token_file,
+        )
+    except ValueError as exc:
+        assert "both token file and channel" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_setup_logging_failure_keeps_existing_handlers(monkeypatch, tmp_path):
+    token_file = tmp_path / "slack-token.txt"
+    token_file.write_text("xoxb-test-token\n", encoding="utf-8")
+
+    logger = setup_logging(logger_name="test.atomic.setup")
+    original_handlers = list(logger.handlers)
+
+    class BrokenSlackHandler(logging.Handler):
+        def __init__(self, *, token, channel):
+            raise RuntimeError("broken slack")
+
+    monkeypatch.setattr("parishkit.logging.SlackLogHandler", BrokenSlackHandler)
+
+    try:
+        setup_logging(
+            logger_name="test.atomic.setup",
+            log_file=tmp_path / "new.log",
+            slack_token_file=token_file,
+            slack_channel="#alerts",
+        )
+    except RuntimeError as exc:
+        assert "broken slack" in str(exc)
+    else:
+        raise AssertionError("expected RuntimeError")
+
+    assert logger.handlers == original_handlers

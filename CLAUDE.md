@@ -15,6 +15,10 @@
   defaults only; every runtime path must be overridable by CLI option or YAML
   config.
 - Use shared CLI, logging, configuration, retry, and authentication helpers.
+- Shared `parishkit.cli`, `parishkit.config`, `parishkit.logging`, and
+  `parishkit.retry` helpers are the default place for common option parsing,
+  YAML loading, startup validation, logging, Slack notification, and retry
+  behavior.
 - New wrapper scripts must start with `#!/usr/bin/env python3` and have their
   executable bit set.
 - Do not add ad hoc `sys.path` changes to import package code.
