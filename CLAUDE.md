@@ -14,6 +14,15 @@
   executable bit set.
 - Do not add ad hoc `sys.path` changes to import package code.
 - Use `ruff` and `pytest` for local validation.
+- Match CI locally with:
+  - `python -m ruff check .`
+  - `python -m ruff format --check .`
+  - `python -m pytest`
+- Normal CI must not require real ParishSoft, Google, Constant Contact, Slack,
+  or email-provider credentials.
+- Credential-dependent validation belongs in documented, human-run smoke-test
+  tools that read credentials at runtime, redact sensitive output, and stay out
+  of normal CI.
 - Preserve existing tool behavior unless an intentional behavior change is
   requested or documented.
 - Commits require a Developer Certificate of Origin `Signed-off-by:` trailer.

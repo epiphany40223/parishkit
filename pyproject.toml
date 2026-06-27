@@ -13,6 +13,15 @@ dependencies = [
   "requests>=2.32.0",
 ]
 
+[project.scripts]
+parishkit-run = "parishkit.cli:run_main"
+parishkit-print-member = "parishkit.cli:print_member_main"
+parishkit-print-ministries = "parishkit.cli:print_ministries_main"
+parishkit-calendar-reservations = "parishkit.cli:calendar_reservations_main"
+parishkit-create-ministry-rosters = "parishkit.cli:create_ministry_rosters_main"
+parishkit-sync-google-group = "parishkit.cli:sync_google_group_main"
+parishkit-sync-ps-to-cc = "parishkit.cli:sync_ps_to_cc_main"
+
 [project.optional-dependencies]
 google = [
   "google-api-python-client>=2.139.0",
@@ -30,3 +39,19 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/parishkit"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
