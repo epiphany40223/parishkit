@@ -1,0 +1,25 @@
+"""Google Drive helpers."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from parishkit.google.auth import build_service, execute_google_request
+
+
+def build_drive_service(credentials: Any, *, build_fn: Any | None = None) -> Any:
+    return build_service("drive", "v3", credentials=credentials, build_fn=build_fn)
+
+
+def get_file_metadata(
+    service: Any,
+    file_id: str,
+    *,
+    fields: str = "id,name,mimeType,modifiedTime",
+) -> dict[str, Any]:
+    request = service.files().get(
+        fileId=file_id,
+        fields=fields,
+        supportsAllDrives=True,
+    )
+    return execute_google_request(request)
