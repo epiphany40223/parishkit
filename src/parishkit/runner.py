@@ -281,27 +281,36 @@ class LockFile:
         self.release()
 
     def acquire(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
         flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
         metadata = self._metadata()
-        with self._stale_recovery_guard():
-            try:
-                fd = os.open(self.path, flags, 0o644)
-            except FileExistsError:
-                self._handle_existing_lock()
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with self._stale_recovery_guard():
                 try:
                     fd = os.open(self.path, flags, 0o644)
-                except FileExistsError as exc:
-                    raise LockUnavailable(
-                        f"runner lock changed while recovering stale lock: {self.path}"
-                    ) from exc
-            self._write_metadata(fd, metadata)
+                except FileExistsError:
+                    self._handle_existing_lock()
+                    try:
+                        fd = os.open(self.path, flags, 0o644)
+                    except FileExistsError as exc:
+                        raise LockUnavailable(
+                            "runner lock changed while recovering stale lock: "
+                            f"{self.path}"
+                        ) from exc
+                self._write_metadata(fd, metadata)
+        except OSError as exc:
+            raise LockUnavailable(f"runner lock failed: {self.path}: {exc}") from exc
 
     def _write_metadata(self, fd: int, metadata: dict[str, Any]) -> None:
-        with os.fdopen(fd, "w", encoding="utf-8") as lock_file:
-            json.dump(metadata, lock_file, indent=2)
-            lock_file.flush()
-            os.fsync(lock_file.fileno())
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as lock_file:
+                json.dump(metadata, lock_file, indent=2)
+                lock_file.flush()
+                os.fsync(lock_file.fileno())
+        except OSError:
+            with suppress(FileNotFoundError):
+                self.path.unlink()
+            raise
         self._acquired = True
         _ACTIVE_LOCKS.append(self)
 
@@ -319,7 +328,14 @@ class LockFile:
         if self._acquired:
             metadata = read_lock_metadata(self.path)
             if metadata.get("token") == self._token:
-                self.path.unlink()
+                try:
+                    self.path.unlink()
+                except FileNotFoundError:
+                    pass
+                except OSError as exc:
+                    logging.getLogger("parishkit.runner").warning(
+                        "failed to remove runner lock %s: %s", self.path, exc
+                    )
             self._acquired = False
             if self in _ACTIVE_LOCKS:
                 _ACTIVE_LOCKS.remove(self)

@@ -67,6 +67,16 @@ def test_active_lock_exits(tmp_path):
         LockFile(LockConfig(path=lock_path), command=["test"]).acquire()
 
 
+def test_lock_filesystem_error_raises_lock_unavailable(tmp_path):
+    parent_file = tmp_path / "not-a-directory"
+    parent_file.write_text("file", encoding="utf-8")
+
+    with pytest.raises(LockUnavailable, match="runner lock failed"):
+        LockFile(
+            LockConfig(path=parent_file / "runner.lock"), command=["test"]
+        ).acquire()
+
+
 def test_stale_lock_remove_and_continue(tmp_path):
     lock_path = tmp_path / "runner.lock"
     lock_path.write_text(
@@ -217,6 +227,23 @@ def test_lock_release_does_not_remove_replaced_lock(tmp_path):
     metadata = json.loads(lock_path.read_text(encoding="utf-8"))
     assert metadata["command"] == ["replacement"]
     replacement_lock.release()
+
+
+def test_lock_release_logs_unlink_failure(monkeypatch, tmp_path, caplog):
+    lock_path = tmp_path / "runner.lock"
+    lock = LockFile(LockConfig(path=lock_path), command=["test"])
+    lock.acquire()
+
+    def fail_unlink(_path):
+        raise OSError("read-only")
+
+    monkeypatch.setattr(Path, "unlink", fail_unlink)
+
+    with caplog.at_level(logging.WARNING, logger="parishkit.runner"):
+        lock.release()
+
+    assert "failed to remove runner lock" in caplog.text
+    assert not lock._acquired  # noqa: SLF001 - focused cleanup-state regression
 
 
 def test_is_lock_stale_with_bad_metadata():
