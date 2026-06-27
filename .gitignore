@@ -29,7 +29,7 @@ htmlcov/
 logs/
 cache/
 reports/
-run/
+/run/
 *.pid
 *.lock
 *.lock.json

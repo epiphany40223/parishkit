@@ -276,7 +276,9 @@ def _placeholder_main(tool_name: str, argv: Sequence[str] | None = None) -> int:
 
 
 def run_main(argv: Sequence[str] | None = None) -> int:
-    return _placeholder_main("parishkit-run", argv)
+    from parishkit.runner import main
+
+    return main(list(argv) if argv is not None else None)
 
 
 def print_member_main(argv: Sequence[str] | None = None) -> int:
