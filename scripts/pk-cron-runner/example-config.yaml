@@ -1,0 +1,52 @@
+# Lock settings keep overlapping cron runs from stepping on each other.
+lock:
+  # path is the lock file used by this runner instance.
+  path: /opt/parishkit/run/runner.lock
+  # stale_after is a duration like 30s, 14m, 12h, or 7d. A lock older than this
+  # is considered stale.
+  stale_after: 16m
+  # stale_action controls what happens to stale locks. remove-and-continue is
+  # useful for unattended cron jobs after choosing a conservative stale_after.
+  stale_action: remove-and-continue
+
+# File logging for the runner itself.
+logging:
+  # log_file receives runner logs as JSON Lines. Parent directories are created
+  # as needed.
+  log_file: /opt/parishkit/logs/runner.log
+
+# Slack notification settings. token_file must contain a Slack bot token and
+# must not be committed. channel is where records at or above level are posted.
+slack:
+  token_file: /opt/parishkit/credentials/slack-token.txt
+  channel: "#bot-errors"
+  level: ERROR
+  # notify_success=true posts successful job summaries too; false keeps Slack
+  # focused on failures.
+  notify_success: false
+  # context is included in Slack messages so humans can identify the source.
+  context: Parish automation runner
+
+# Overall runner policy.
+runner:
+  # stop_on_first_failure=true stops later jobs after one job fails.
+  stop_on_first_failure: true
+  # runner.context overrides slack.context for runner-generated messages.
+  context: Parish automation runner
+
+# Jobs are executed in order when enabled.
+jobs:
+  # name is a human-readable identifier used in logs and Slack messages.
+  - name: pk-sync-ps-to-ggroup
+    # enabled=false keeps the job in config but skips it.
+    enabled: true
+    # cwd is the working directory used for the command.
+    cwd: /opt/parishkit
+    # timeout is a duration like 30s, 14m, 12h, or 7d.
+    timeout: 15m
+    # command is argv-style: one list item per shell word, with no shell
+    # expansion. Use absolute config paths for cron stability.
+    command:
+      - pk-sync-ps-to-ggroup
+      - --config
+      - /opt/parishkit/config/pk-sync-ps-to-ggroup.yaml

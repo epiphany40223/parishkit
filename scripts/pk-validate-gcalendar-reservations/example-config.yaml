@@ -1,0 +1,52 @@
+# Settings shared by most ParishKit commands.
+common:
+  # dry_run=true computes accept/decline decisions but does not patch Calendar
+  # attendee responses. Set false only after reviewing the target calendars.
+  dry_run: true
+  # IANA timezone used for user-visible times unless calendars.timezone
+  # overrides it.
+  timezone: America/Kentucky/Louisville
+
+# Slack logging settings. token_file must contain a Slack bot token and must
+# not be committed. channel is where records at or above level are posted.
+slack:
+  token_file: /opt/parishkit/credentials/slack-token.txt
+  channel: "#bot-errors"
+  level: ERROR
+
+# Google Calendar credentials. service_account_file identifies the service
+# account credential. delegated_subject is the real Workspace user that the
+# service account impersonates via domain-wide delegation; it must not be the
+# service-account email. Prefer a dedicated least-privileged automation user
+# over a Super Admin. That delegated user needs access to the resource
+# calendars and permission to respond to invitations for them, and the service
+# account's OAuth client ID must be authorized for the Calendar scope in
+# Workspace Admin:
+# - https://www.googleapis.com/auth/calendar
+google:
+  service_account_file: /opt/parishkit/credentials/google-service-account.json
+  delegated_subject: user_with_rw_perms_to_the_calendars@example.org
+
+# Calendar reservation validation settings.
+calendars:
+  # timezone controls event time interpretation for all-day or offset-less
+  # values and log messages for this tool.
+  timezone: America/New_York
+  # acceptable_domains are creator email domains whose reservations may be
+  # accepted. Other creator domains are declined.
+  acceptable_domains:
+    - example.org
+  # calendars lists each Google Calendar resource to validate.
+  calendars:
+    # name is a human-readable label used only in logs.
+    - name: Parish Calendar
+      # calendar_id is the Google Calendar ID/email. It must be a string; quote
+      # IDs that contain punctuation if in doubt.
+      calendar_id: parish-calendar@example.org
+      # check_conflicts=false skips overlap detection for this calendar.
+      check_conflicts: false
+    - name: Room Calendar
+      calendar_id: room@example.org
+      # check_conflicts=true declines pending reservations that overlap already
+      # accepted events on this calendar.
+      check_conflicts: true

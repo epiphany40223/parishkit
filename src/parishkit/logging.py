@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import gzip
+import json
 import logging
 import shutil
+from collections.abc import Mapping, Sequence, Set
+from dataclasses import asdict, is_dataclass
+from datetime import date, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
@@ -13,6 +17,57 @@ DEFAULT_LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 DEFAULT_SLACK_LEVEL = logging.CRITICAL
 DEFAULT_MAX_BYTES = 50_000_000
 DEFAULT_BACKUP_COUNT = 50
+STRUCTURED_EXTRA_FIELD = "extra"
+
+
+def log_extra(value: Any) -> dict[str, Any]:
+    """Return a logging ``extra`` dict carrying structured JSONL context."""
+    return {STRUCTURED_EXTRA_FIELD: value}
+
+
+def _jsonable(value: Any) -> Any:
+    """Convert common Python objects into values accepted by ``json.dumps``."""
+    if value is None or isinstance(value, str | int | float | bool):
+        return value
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, datetime | date):
+        return value.isoformat()
+    if is_dataclass(value) and not isinstance(value, type):
+        return _jsonable(asdict(value))
+    if isinstance(value, Mapping):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, Set):
+        return [_jsonable(item) for item in sorted(value, key=repr)]
+    if isinstance(value, Sequence):
+        return [_jsonable(item) for item in value]
+    if hasattr(value, "__dict__"):
+        return _jsonable(vars(value))
+    return repr(value)
+
+
+class JsonLogFormatter(logging.Formatter):
+    """Format file log records as one JSON object per line."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        """Return a JSON representation of ``record`` suitable for JSONL logs."""
+        payload: dict[str, Any] = {
+            "timestamp": self.formatTime(record),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        if record.stack_info:
+            payload["stack"] = self.formatStack(record.stack_info)
+        if hasattr(record, STRUCTURED_EXTRA_FIELD):
+            payload[STRUCTURED_EXTRA_FIELD] = _jsonable(
+                getattr(record, STRUCTURED_EXTRA_FIELD)
+            )
+        return json.dumps(payload)
 
 
 class CompressingRotatingFileHandler(RotatingFileHandler):
@@ -87,13 +142,14 @@ def setup_logging(
     console_level = (
         logging.DEBUG if debug else logging.INFO if verbose else logging.WARNING
     )
-    formatter = logging.Formatter(DEFAULT_LOG_FORMAT)
+    text_formatter = logging.Formatter(DEFAULT_LOG_FORMAT)
+    file_formatter = JsonLogFormatter()
     new_handlers: list[logging.Handler] = []
 
     try:
         console_handler = logging.StreamHandler()
         console_handler.setLevel(console_level)
-        console_handler.setFormatter(formatter)
+        console_handler.setFormatter(text_formatter)
         new_handlers.append(console_handler)
 
         chosen_log_file: Path | None = Path(log_file).expanduser() if log_file else None
@@ -112,7 +168,7 @@ def setup_logging(
             else:
                 file_handler = logging.FileHandler(chosen_log_file, encoding="utf-8")
             file_handler.setLevel(logging.DEBUG if debug else logging.INFO)
-            file_handler.setFormatter(formatter)
+            file_handler.setFormatter(file_formatter)
             new_handlers.append(file_handler)
 
         if slack_token_file and slack_channel:
@@ -121,7 +177,7 @@ def setup_logging(
             slack_handler.setLevel(
                 parse_log_level(slack_level, default=DEFAULT_SLACK_LEVEL)
             )
-            slack_handler.setFormatter(formatter)
+            slack_handler.setFormatter(text_formatter)
             new_handlers.append(slack_handler)
     except Exception:
         for handler in new_handlers:

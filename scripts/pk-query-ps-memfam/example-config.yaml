@@ -1,0 +1,30 @@
+# Settings shared by most ParishKit commands.
+common:
+  # dry_run is accepted for consistency. This read-only command does not write
+  # external systems.
+  dry_run: true
+  # IANA timezone used by shared runtime helpers when timestamps are displayed.
+  timezone: America/Kentucky/Louisville
+
+# Slack logging settings. token_file must contain a Slack bot token and must
+# not be committed. channel is where records at or above level are posted.
+slack:
+  token_file: /opt/parishkit/credentials/slack-token.txt
+  channel: "#bot-errors"
+  level: ERROR
+
+# ParishSoft API settings. api_key_file must contain the read-only ParishSoft
+# API key. cache_dir stores local response caches. cache_limit is a duration
+# like 30s, 14m, 12h, or 7d. expected_organization protects against using the
+# wrong ParishSoft tenant.
+parishsoft:
+  api_key_file: /opt/parishkit/credentials/parishsoft-api-key.txt
+  cache_dir: /opt/parishkit/cache/parishsoft
+  cache_limit: 14m
+  expected_organization: Example Parish
+
+# Member/family query settings.
+print_member:
+  # load_contributions=false avoids loading contribution history. It may also
+  # be true or a YYYY-MM-DD start date, depending on the requested report.
+  load_contributions: false

@@ -5,18 +5,20 @@ from pathlib import Path
 
 import pytest
 
-from parishkit.calendar_reservations import (
+from parishkit.config import ConfigError
+from parishkit.pk_validate_gcalendar_reservations import (
     ReservationCalendar,
     calendar_reservation_config,
     reservation_decisions,
 )
-from parishkit.calendar_reservations import (
+from parishkit.pk_validate_gcalendar_reservations import (
     main as calendar_reservations_main,
 )
-from parishkit.config import ConfigError
 
 
 class Request:
+    """Fake Google API request whose execute() returns a canned response."""
+
     def __init__(self, response):
         self.response = response
 
@@ -25,21 +27,32 @@ class Request:
 
 
 class Events:
+    """Fake Calendar events resource recording list/patch calls.
+
+    ``pages`` is consumed one entry per list() call to simulate pagination, and
+    every list and patch invocation is recorded for later assertions.
+    """
+
     def __init__(self, pages):
+        """Initialize the instance."""
         self.pages = list(pages)
         self.list_calls = []
         self.patch_calls = []
 
     def list(self, **kwargs):
+        """Record the list args and return the next pre-canned page."""
         self.list_calls.append(kwargs)
         return Request(self.pages.pop(0))
 
     def patch(self, **kwargs):
+        """Record the patch args and return an empty response."""
         self.patch_calls.append(kwargs)
         return Request({})
 
 
 class Service:
+    """Fake Calendar service exposing the recording Events resource."""
+
     def __init__(self, pages):
         self._events = Events(pages)
 
@@ -48,6 +61,7 @@ class Service:
 
 
 def write_config(tmp_path: Path, *, dry_run: bool = False) -> Path:
+    """Write a calendars config YAML and return its path."""
     config = tmp_path / "config.yaml"
     config.write_text(
         f"""
@@ -55,7 +69,7 @@ common:
   dry_run: {str(dry_run).lower()}
 google:
   user_token_file: {tmp_path / "google-user-token.json"}
-calendar_reservations:
+calendars:
   timezone: America/New_York
   acceptable_domains:
     - example.org
@@ -79,6 +93,7 @@ def event(
     end="2026-02-01T11:00:00-05:00",
     summary=None,
 ):
+    """Build a Calendar event dict with sensible defaults for each field."""
     return {
         "id": event_id,
         "summary": summary or event_id,
@@ -93,9 +108,10 @@ def event(
 
 
 def test_calendar_reservations_config_validation(tmp_path):
+    """Config parsing lowercases acceptable_domains and builds calendar entries."""
     config = calendar_reservation_config(
         {
-            "calendar_reservations": {
+            "calendars": {
                 "timezone": "America/New_York",
                 "acceptable_domains": ["Example.ORG"],
                 "calendars": [
@@ -117,23 +133,71 @@ def test_calendar_reservations_config_validation(tmp_path):
             check_conflicts=False,
         ),
     )
+    assert str(config.timezone) == "America/New_York"
+
+
+def test_calendar_reservations_inherits_common_timezone_default():
+    """calendars.timezone falls back to the caller's common default."""
+    config = calendar_reservation_config(
+        {
+            "calendars": {
+                "acceptable_domains": ["example.org"],
+                "calendars": [{"name": "Room", "calendar_id": "room@example.org"}],
+            }
+        },
+        default_timezone="America/Kentucky/Louisville",
+    )
+
+    assert str(config.timezone) == "America/Kentucky/Louisville"
 
 
 def test_calendar_reservations_config_rejects_missing_domains():
+    """Config without acceptable_domains raises ConfigError."""
     with pytest.raises(ConfigError, match="acceptable_domains"):
         calendar_reservation_config(
             {
-                "calendar_reservations": {
+                "calendars": {
                     "calendars": [{"name": "Room", "calendar_id": "room@example.org"}],
                 }
             }
         )
 
 
+def test_calendar_reservations_config_describes_bad_calendar_id():
+    """A malformed calendar_id error names the entry and bad value type."""
+    with pytest.raises(ConfigError) as exc_info:
+        calendar_reservation_config(
+            {
+                "calendars": {
+                    "acceptable_domains": ["example.org"],
+                    "calendars": [
+                        {
+                            "name": "Room",
+                            "calendar_id": 12345,
+                        }
+                    ],
+                }
+            }
+        )
+
+    message = str(exc_info.value)
+    assert "calendars.calendars[0] ('Room').calendar_id" in message
+    assert "non-empty string" in message
+    assert "int 12345" in message
+    assert "indented under the same '- name:' item" in message
+
+
 def test_reservation_decisions_reject_domains_and_conflicts(tmp_path):
+    """reservation_decisions declines out-of-domain creators and time conflicts,
+    accepts otherwise, and skips events already accepted.
+
+    The first event is pre-accepted to act as the existing booking the others
+    are checked against. The setup stays local to this test so fixtures remain
+    easy to understand and change.
+    """
     config = calendar_reservation_config(
         {
-            "calendar_reservations": {
+            "calendars": {
                 "acceptable_domains": ["example.org"],
                 "calendars": [{"name": "Room", "calendar_id": "room@example.org"}],
             }
@@ -171,9 +235,11 @@ def test_reservation_decisions_reject_domains_and_conflicts(tmp_path):
 
 
 def test_reservation_decisions_accepts_non_conflict_calendar_without_checking():
+    """When check_conflicts is off, only pending events are decided and no
+    conflict lookup against accepted events is performed."""
     config = calendar_reservation_config(
         {
-            "calendar_reservations": {
+            "calendars": {
                 "acceptable_domains": ["example.org"],
                 "calendars": [
                     {
@@ -198,6 +264,12 @@ def test_reservation_decisions_accepts_non_conflict_calendar_without_checking():
 
 
 def test_calendar_reservations_main_lists_and_patches_events(tmp_path):
+    """main paginates through events, then patches each calendar's responses.
+
+    Two list pages exercise nextPageToken handling. The expected patch order is
+    declined-before-accepted, matching how main groups decisions. The setup
+    stays local to this test so fixtures remain easy to understand and change.
+    """
     service = Service(
         [
             {
@@ -227,6 +299,7 @@ def test_calendar_reservations_main_lists_and_patches_events(tmp_path):
 
     assert len(service._events.list_calls) == 2
     assert service._events.list_calls[0]["calendarId"] == "room@example.org"
+    # timeMin is a one-month lookback window from the injected "now".
     assert service._events.list_calls[0]["timeMin"].startswith("2025-12-01")
     assert service._events.patch_calls == [
         {
@@ -259,6 +332,7 @@ def test_calendar_reservations_main_lists_and_patches_events(tmp_path):
 
 
 def test_calendar_reservations_dry_run_does_not_patch(tmp_path):
+    """In dry-run mode main computes decisions but issues no patch calls."""
     service = Service([{"items": [event("one")]}])
 
     assert (
@@ -270,3 +344,32 @@ def test_calendar_reservations_dry_run_does_not_patch(tmp_path):
     )
 
     assert service._events.patch_calls == []
+
+
+def test_calendar_reservations_main_logs_config_validation_error(tmp_path, capsys):
+    """Tool-specific config validation failures are logged at ERROR."""
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        """
+calendars:
+  acceptable_domains:
+    - example.org
+  calendars:
+    - name: Room
+      calendar_id: 12345
+""",
+        encoding="utf-8",
+    )
+
+    assert (
+        calendar_reservations_main(
+            ["--config", str(config)],
+            service_factory=lambda _config: Service([]),
+        )
+        == 2
+    )
+
+    error = capsys.readouterr().err
+    assert "ERROR parishkit.pk_validate_gcalendar_reservations" in error
+    assert "Configuration validation failed" in error
+    assert "calendars.calendars[0] ('Room').calendar_id" in error

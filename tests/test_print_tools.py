@@ -7,10 +7,10 @@ from types import SimpleNamespace
 import pytest
 
 from parishkit.parishsoft import ParishSoftAPIError, ParishSoftData
-from parishkit.print_member import OMITTED_MEMBERSHIP, find_members_by_name
-from parishkit.print_member import main as print_member_main
-from parishkit.print_ministries import main as print_ministries_main
-from parishkit.print_ministries import sorted_ministry_names
+from parishkit.pk_print_ps_ministries import main as print_ministries_main
+from parishkit.pk_print_ps_ministries import sorted_ministry_names
+from parishkit.pk_query_ps_memfam import OMITTED_MEMBERSHIP, find_members_by_name
+from parishkit.pk_query_ps_memfam import main as print_member_main
 
 
 class FakeClient:
@@ -162,7 +162,7 @@ def test_print_member_selects_member_and_load_contributions(
     """
     calls = []
     monkeypatch.setattr(
-        "parishkit.print_member.parishsoft_client_from_config",
+        "parishkit.pk_query_ps_memfam.parishsoft_client_from_config",
         lambda _common, _config: SimpleNamespace(),
     )
 
@@ -206,7 +206,7 @@ def test_print_member_selects_member_and_load_contributions(
 def test_print_member_full_includes_membership_lists(tmp_path, monkeypatch, capsys):
     """--full prints membership rows that are omitted by default."""
     monkeypatch.setattr(
-        "parishkit.print_member.parishsoft_client_from_config",
+        "parishkit.pk_query_ps_memfam.parishsoft_client_from_config",
         lambda _common, _config: SimpleNamespace(),
     )
 
@@ -233,7 +233,7 @@ def test_print_member_full_includes_membership_lists(tmp_path, monkeypatch, caps
 def test_print_member_name_selector_runs_through_main(tmp_path, monkeypatch, capsys):
     """A --name search resolves to the matching member and prints it."""
     monkeypatch.setattr(
-        "parishkit.print_member.parishsoft_client_from_config",
+        "parishkit.pk_query_ps_memfam.parishsoft_client_from_config",
         lambda _common, _config: SimpleNamespace(),
     )
 
@@ -253,7 +253,7 @@ def test_print_member_verbose_shows_parishsoft_loader_logs(
 ):
     """--verbose displays INFO logs emitted by shared ParishSoft helpers."""
     monkeypatch.setattr(
-        "parishkit.print_member.parishsoft_client_from_config",
+        "parishkit.pk_query_ps_memfam.parishsoft_client_from_config",
         lambda _common, _config: SimpleNamespace(),
     )
 
@@ -282,7 +282,7 @@ def test_print_member_verbose_shows_parishsoft_loader_logs(
 def test_print_member_selects_family(tmp_path, monkeypatch, capsys):
     """A --family-duid run prints the selected family."""
     monkeypatch.setattr(
-        "parishkit.print_member.parishsoft_client_from_config",
+        "parishkit.pk_query_ps_memfam.parishsoft_client_from_config",
         lambda _common, _config: SimpleNamespace(),
     )
 
@@ -306,7 +306,7 @@ def test_print_member_reports_missing_member_without_traceback(
     """An unknown member DUID exits with code 2 and a plain error message
     rather than an uncaught traceback."""
     monkeypatch.setattr(
-        "parishkit.print_member.parishsoft_client_from_config",
+        "parishkit.pk_query_ps_memfam.parishsoft_client_from_config",
         lambda _common, _config: SimpleNamespace(),
     )
 
@@ -355,7 +355,7 @@ def test_print_member_load_contribution_overrides_and_yaml_dates(tmp_path, monke
     """
     calls = []
     monkeypatch.setattr(
-        "parishkit.print_member.parishsoft_client_from_config",
+        "parishkit.pk_query_ps_memfam.parishsoft_client_from_config",
         lambda _common, _config: SimpleNamespace(),
     )
 
@@ -410,7 +410,7 @@ def test_print_member_lookup_loader_uses_full_parishsoft_loader(monkeypatch):
     """The default query loader delegates to the full ParishSoft aggregation
     helper so selected records include workgroups, ministries, contact info,
     and other cross-linked fields."""
-    from parishkit.print_member import load_lookup_data
+    from parishkit.pk_query_ps_memfam import load_lookup_data
 
     calls = []
     expected = data()
@@ -420,7 +420,9 @@ def test_print_member_lookup_loader_uses_full_parishsoft_loader(monkeypatch):
         calls.append((client, kwargs))
         return expected
 
-    monkeypatch.setattr("parishkit.print_member.load_families_and_members", full_loader)
+    monkeypatch.setattr(
+        "parishkit.pk_query_ps_memfam.load_families_and_members", full_loader
+    )
     client = SimpleNamespace()
 
     result = load_lookup_data(
@@ -447,7 +449,7 @@ def test_print_member_allows_contributions_for_name_search(
 ):
     """A --name run can request contributions because the full loader is used."""
     monkeypatch.setattr(
-        "parishkit.print_member.parishsoft_client_from_config",
+        "parishkit.pk_query_ps_memfam.parishsoft_client_from_config",
         lambda _common, _config: SimpleNamespace(),
     )
 
@@ -471,7 +473,7 @@ def test_print_member_allows_contributions_for_name_search(
 def test_print_member_rejects_bad_contribution_date(tmp_path, monkeypatch, capsys):
     """A slash-delimited contribution date is rejected with a YYYY-MM-DD hint."""
     monkeypatch.setattr(
-        "parishkit.print_member.parishsoft_client_from_config",
+        "parishkit.pk_query_ps_memfam.parishsoft_client_from_config",
         lambda _common, _config: SimpleNamespace(),
     )
 
@@ -496,7 +498,7 @@ def test_print_member_rejects_bad_contribution_date(tmp_path, monkeypatch, capsy
 def test_print_member_rejects_compact_iso_date(tmp_path, monkeypatch, capsys):
     """A compact (no-dash) ISO date is rejected with a YYYY-MM-DD hint."""
     monkeypatch.setattr(
-        "parishkit.print_member.parishsoft_client_from_config",
+        "parishkit.pk_query_ps_memfam.parishsoft_client_from_config",
         lambda _common, _config: SimpleNamespace(),
     )
 
@@ -522,7 +524,7 @@ def test_print_member_reports_parishsoft_api_errors(tmp_path, monkeypatch, capsy
     """A ParishSoftAPIError from the loader becomes a user-facing message and
     exit code 2."""
     monkeypatch.setattr(
-        "parishkit.print_member.parishsoft_client_from_config",
+        "parishkit.pk_query_ps_memfam.parishsoft_client_from_config",
         lambda _common, _config: SimpleNamespace(),
     )
 
@@ -557,7 +559,7 @@ def test_print_ministries_outputs_sorted_unique_names(tmp_path, monkeypatch, cap
     ministry names sorted and de-duplicated."""
     client = FakeClient()
     monkeypatch.setattr(
-        "parishkit.print_ministries.parishsoft_client_from_config",
+        "parishkit.pk_print_ps_ministries.parishsoft_client_from_config",
         lambda _common, _config: client,
     )
 
@@ -583,7 +585,7 @@ def test_print_ministries_verbose_shows_parishsoft_loader_logs(
     """--verbose displays INFO logs emitted while loading ministries."""
     client = FakeClient()
     monkeypatch.setattr(
-        "parishkit.print_ministries.parishsoft_client_from_config",
+        "parishkit.pk_print_ps_ministries.parishsoft_client_from_config",
         lambda _common, _config: client,
     )
 
@@ -648,7 +650,7 @@ print_ministries:
     )
     client = FakeClient()
     monkeypatch.setattr(
-        "parishkit.print_ministries.parishsoft_client_from_config",
+        "parishkit.pk_print_ps_ministries.parishsoft_client_from_config",
         lambda _common, _config: client,
     )
 

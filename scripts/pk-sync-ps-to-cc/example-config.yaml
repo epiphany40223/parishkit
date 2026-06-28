@@ -1,0 +1,61 @@
+# Settings shared by most ParishKit commands.
+common:
+  # dry_run=true computes actions but does not write Constant Contact or send
+  # notification emails. Set false only after reviewing desired changes.
+  dry_run: true
+  # IANA timezone used by shared runtime helpers when timestamps are displayed.
+  timezone: America/Kentucky/Louisville
+
+# Slack logging settings. token_file must contain a Slack bot token and must
+# not be committed. channel is where records at or above level are posted.
+slack:
+  token_file: /opt/parishkit/credentials/slack-token.txt
+  channel: "#bot-errors"
+  level: ERROR
+
+# ParishSoft API settings. api_key_file must contain the read-only ParishSoft
+# API key. cache_dir stores local response caches. cache_limit is a duration
+# like 30s, 14m, 12h, or 7d. expected_organization protects against using the
+# wrong ParishSoft tenant.
+parishsoft:
+  api_key_file: /opt/parishkit/credentials/parishsoft-api-key.txt
+  cache_dir: /opt/parishkit/cache/parishsoft
+  cache_limit: 14m
+  expected_organization: Example Parish
+
+# Constant Contact credentials. client_id_file contains the app/client JSON.
+# access_token_file contains the OAuth token JSON produced by the manual device
+# OAuth smoke tool. Both files are secrets and must not be committed.
+constant_contact:
+  client_id_file: /opt/parishkit/credentials/constant-contact-client.json
+  access_token_file: /opt/parishkit/credentials/constant-contact-token.json
+
+# Email provider for optional sync notification summaries.
+email:
+  # google-workspace uses a service account with domain-wide delegation for
+  # mail sending.
+  provider: google-workspace
+  # service_account_file is the Google service account JSON key. Its OAuth
+  # client ID must be authorized for the mail scope used by the provider.
+  service_account_file: /opt/parishkit/credentials/google-service-account.json
+  # delegated_user must be a real Workspace mailbox allowed to send the
+  # notification messages. It is not the service-account email.
+  delegated_user: no-reply@example.org
+
+# Constant Contact list synchronization settings.
+sync:
+  notifications:
+    # sender is the From address used for notification summary emails.
+    sender: no-reply@example.org
+  # lists maps ParishSoft workgroups to Constant Contact lists.
+  lists:
+    - source_workgroup: Example Newsletter Workgroup
+      # target_list is the visible Constant Contact list name.
+      target_list: Example Newsletter
+      # notifications receives an email summary for this mapping when changes
+      # are applied. Dry-run mode suppresses actual email sends.
+      notifications:
+        - admin@example.org
+  # update_names=true also updates Constant Contact first/last names when the
+  # email address already exists but the names differ from ParishSoft.
+  update_names: false

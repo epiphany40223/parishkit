@@ -22,13 +22,13 @@ RUNTIME_DIR_MODES = {
     "run": 0o750,
 }
 CONSOLE_COMMANDS = (
-    "parishkit-run",
-    "parishkit-print-member",
-    "parishkit-print-ministries",
-    "parishkit-calendar-reservations",
-    "parishkit-create-ministry-rosters",
-    "parishkit-sync-google-group",
-    "parishkit-sync-ps-to-cc",
+    "pk-cron-runner",
+    "pk-query-ps-memfam",
+    "pk-print-ps-ministries",
+    "pk-validate-gcalendar-reservations",
+    "pk-create-ps-ministry-rosters",
+    "pk-sync-ps-to-ggroup",
+    "pk-sync-ps-to-cc",
 )
 
 

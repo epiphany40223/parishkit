@@ -1,0 +1,131 @@
+# Settings shared by most ParishKit commands.
+common:
+  # dry_run=true computes actions but does not write Google Groups or send
+  # notification emails. Set false only after reviewing desired changes.
+  dry_run: true
+  # IANA timezone used by shared runtime helpers when timestamps are displayed.
+  timezone: America/Kentucky/Louisville
+
+# Slack logging settings. token_file must contain a Slack bot token and must
+# not be committed. channel is where records at or above level are posted.
+slack:
+  token_file: /opt/parishkit/credentials/slack-token.txt
+  channel: "#bot-errors"
+  level: ERROR
+
+# ParishSoft API settings. api_key_file must contain the read-only ParishSoft
+# API key. cache_dir stores local response caches. cache_limit is a duration
+# like 30s, 14m, 12h, or 7d. expected_organization protects against using the
+# wrong ParishSoft tenant.
+parishsoft:
+  api_key_file: /opt/parishkit/credentials/parishsoft-api-key.txt
+  cache_dir: /opt/parishkit/cache/parishsoft
+  cache_limit: 14m
+  expected_organization: Example Parish
+
+# Google Admin SDK credentials. service_account_file identifies the service
+# account credential. delegated_subject is the real Workspace user that the
+# service account impersonates via domain-wide delegation; it must not be the
+# service-account email. Prefer a dedicated least-privileged automation user
+# over a Super Admin. That delegated user needs authority to manage group
+# membership, such as an appropriate Groups Admin/delegated-admin role, and the
+# service account's OAuth client ID must be authorized for these scopes in
+# Workspace Admin:
+# - https://www.googleapis.com/auth/admin.directory.group.member
+# - https://www.googleapis.com/auth/apps.groups.settings
+google:
+  service_account_file: /opt/parishkit/credentials/google-service-account.json
+  delegated_subject: user_with_rw_perms_to_the_google_groups@example.org
+
+# Email provider for optional sync notification summaries.
+email:
+  # google-workspace uses a service account with domain-wide delegation for
+  # mail sending.
+  provider: google-workspace
+  # service_account_file is the Google service account JSON key. Its OAuth
+  # client ID must be authorized for the mail scope used by the provider.
+  service_account_file: /opt/parishkit/credentials/google-service-account.json
+  # delegated_user must be a real Workspace mailbox allowed to send the
+  # notification messages. It is not the service-account email.
+  delegated_user: no-reply@example.org
+
+# Google Group synchronization settings.
+sync:
+  # google_mail_domains are domains treated as Google-hosted mailboxes when
+  # normalizing equivalent addresses.
+  google_mail_domains:
+    - gmail.com
+    - example.org
+  notifications:
+    # sender is the From address used for notification summary emails.
+    sender: no-reply@example.org
+  # groups maps ParishSoft/static sources to Google Groups.
+  groups:
+    # group is the Google Group email/key to synchronize.
+    - group: group@example.org
+      # notify receives an email summary for this group when changes are
+      # applied. Dry-run mode suppresses actual email sends.
+      notify:
+        - admin@example.org
+      # ministries are exact ParishSoft ministry names to include.
+      ministries:
+        - Example Ministry
+      # workgroups are exact ParishSoft member workgroup names to include.
+      workgroups:
+        - Example Workgroup
+      # static_members are always desired in the group even if not found in
+      # ParishSoft data.
+      static_members:
+        - email: staff@example.org
+          # leader=true writes this static member as a Google Group OWNER.
+          leader: true
+      # selectors add members by supported rules rather than exact source names.
+      selectors:
+        # Every selector has a type and may have a purpose. purpose is only a
+        # human-readable note for maintainers; it does not affect matching.
+        #
+        # ministry_prefix is optional. When set, the ParishSoft ministry name
+        # must start with this exact string.
+        #
+        # ministry_pattern is optional. When set, the ParishSoft ministry name
+        # must also match this Python regular expression. Use single quotes in
+        # YAML when the regex contains backslashes, such as '\d'.
+        #
+        # A ministry must satisfy both ministry_prefix and ministry_pattern when
+        # both are configured.
+
+        # all_ministry_chairs selects chair/staff-style leaders from any matching
+        # ministry. Those people are synced as group members. They are promoted
+        # to Google Group OWNER only when their email domain is listed in
+        # staff_owner_domains.
+        - type: all_ministry_chairs
+          purpose: Chairs for numbered ministries
+          ministry_pattern: '^\d\d\d.*'
+          # staff_owner_domains is used only by all_ministry_chairs. Matching
+          # chairs whose primary email domain appears here become group OWNERs;
+          # other matching chairs remain regular MEMBERS.
+          staff_owner_domains:
+            - example.org
+
+        # ministry_chair selects chair/staff-style ministry roles whose ministry
+        # name starts with ministry_prefix and also matches ministry_pattern
+        # when that optional regex is configured. Matching people are synced as
+        # group OWNERs.
+        - type: ministry_chair
+          purpose: One ministry chair
+          ministry_prefix: Example
+          ministry_pattern: '^Example.*'
+
+        # ministry_role selects members whose role text is in member_roles or
+        # leader_roles in any matching ministry. member_roles become regular
+        # Google Group MEMBERs. leader_roles become Google Group OWNERs. A
+        # matching ParishSoft chair/staff-style ministry leader is also
+        # promoted to OWNER.
+        - type: ministry_role
+          purpose: Team members and leaders
+          ministry_prefix: Example Team
+          ministry_pattern: '^Example Team.*'
+          member_roles:
+            - Team Member
+          leader_roles:
+            - Team Leader

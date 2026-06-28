@@ -7,31 +7,41 @@ import pytest
 
 from parishkit.config import ConfigError
 from parishkit.parishsoft import ParishSoftData
-from parishkit.sync_google_group import (
+from parishkit.pk_sync_ps_to_ggroup import (
     DesiredMember,
     compute_actions,
     desired_members,
     normalize_email,
     sync_config_from_yaml,
 )
-from parishkit.sync_google_group import (
+from parishkit.pk_sync_ps_to_ggroup import (
     main as sync_google_group_main,
 )
 
 
 class Request:
+    """Fake Google API request whose execute() returns a canned response."""
+
     def __init__(self, response=None):
         self.response = response or {}
 
     def execute(self):
+        """Return the stored response, mimicking the real request execution."""
         return self.response
 
 
 class Members:
+    """Fake Directory API members resource recording every call it receives.
+
+    Write methods (insert/update/delete) just log their kwargs so tests can
+    assert the group mutations the sync would perform.
+    """
+
     def __init__(self):
         self.calls = []
 
     def list(self, **kwargs):
+        """Record the list call and return the current group roster fixture."""
         self.calls.append(("list", kwargs))
         return Request(
             {
@@ -43,53 +53,76 @@ class Members:
         )
 
     def insert(self, **kwargs):
+        """Record an add-member call and return an empty request."""
         self.calls.append(("insert", kwargs))
         return Request()
 
     def update(self, **kwargs):
+        """Record a member-update call and return an empty request."""
         self.calls.append(("update", kwargs))
         return Request()
 
     def delete(self, **kwargs):
+        """Record a remove-member call and return an empty request."""
         self.calls.append(("delete", kwargs))
         return Request()
 
 
 class Groups:
+    """Fake Groups Settings resource returning fixed posting permissions."""
+
     def __init__(self):
         self.calls = []
 
     def get(self, **kwargs):
+        """Record the get call and return canned group settings."""
         self.calls.append(("get", kwargs))
         return Request({"whoCanPostMessage": "ALL_MEMBERS_CAN_POST"})
 
 
 class AdminService:
+    """Fake Admin SDK Directory service exposing the members resource."""
+
     def __init__(self):
         self._members = Members()
 
     def members(self):
+        """Return the fake members resource."""
         return self._members
 
 
 class SettingsService:
+    """Fake Groups Settings service exposing the groups resource."""
+
     def __init__(self):
         self._groups = Groups()
 
     def groups(self):
+        """Return the fake groups resource."""
         return self._groups
 
 
 class EmailProvider:
+    """Fake email provider that captures sent messages instead of sending."""
+
     def __init__(self):
         self.sent = []
 
     def send(self, message, *, dry_run=False):
+        """Record the message and dry-run flag, then echo the message back."""
         self.sent.append((message, dry_run))
         return message
 
 
 def write_config(tmp_path: Path, *, dry_run: bool = False) -> Path:
+    """Write a complete groups YAML config under tmp_path.
+
+    Defines one group sourced from a ministry, a workgroup, and a static
+    member, with notifications enabled; dry_run lets tests skip writes.
+
+    The setup stays local to this test so fixtures remain easy to understand
+    and change.
+    """
     api_key = tmp_path / "parishsoft-api-key.txt"
     api_key.write_text("key", encoding="utf-8")
     config = tmp_path / "config.yaml"
@@ -107,7 +140,7 @@ email:
   provider: google_workspace
   service_account_file: {tmp_path / "google-service-account.json"}
   delegated_user: no-reply@example.org
-sync_google_group:
+sync:
   google_mail_domains:
     - gmail.com
     - example.org
@@ -131,6 +164,15 @@ sync_google_group:
 
 
 def parishsoft_data() -> ParishSoftData:
+    """Build a ParishSoftData fixture with one ministry and one workgroup member.
+
+    Ann chairs the "Readers" ministry (becomes a group leader) and Bob belongs
+    to the "Movers" workgroup with a plus-tagged Gmail address to exercise
+    email normalization. Other collections are empty.
+
+    The setup stays local to this test so fixtures remain easy to understand
+    and change.
+    """
     members = {
         1: {
             "memberDUID": 1,
@@ -172,9 +214,14 @@ def parishsoft_data() -> ParishSoftData:
 
 
 def test_sync_config_validation():
+    """Verify a valid YAML block parses into the expected group config.
+
+    The first group's selector type and the top-level notification sender
+    must survive parsing into the typed config object.
+    """
     config = sync_config_from_yaml(
         {
-            "sync_google_group": {
+            "sync": {
                 "google_mail_domains": ["example.org"],
                 "notifications": {"sender": "no-reply@example.org"},
                 "groups": [
@@ -185,6 +232,7 @@ def test_sync_config_validation():
                             {
                                 "type": "ministry_role",
                                 "ministry_prefix": "500",
+                                "ministry_pattern": r"^\d\d\d.*",
                                 "member_roles": ["Team Member"],
                                 "leader_roles": ["Leader"],
                             }
@@ -196,20 +244,51 @@ def test_sync_config_validation():
     )
 
     assert config.groups[0].selectors[0].type == "ministry_role"
+    assert config.groups[0].selectors[0].ministry_pattern == r"^\d\d\d.*"
     assert config.sender == "no-reply@example.org"
 
 
 def test_sync_config_rejects_group_without_source():
+    """Verify parsing fails for a group with no member source defined.
+
+    A group lacking ministries, workgroups, selectors, or static members has
+    nothing to sync and must be rejected.
+    """
     with pytest.raises(ConfigError, match="source"):
+        sync_config_from_yaml({"sync": {"groups": [{"group": "group@example.org"}]}})
+
+
+def test_sync_config_rejects_invalid_ministry_pattern():
+    """Selector ministry_pattern must be a valid regular expression."""
+    with pytest.raises(ConfigError, match="ministry_pattern"):
         sync_config_from_yaml(
-            {"sync_google_group": {"groups": [{"group": "group@example.org"}]}}
+            {
+                "sync": {
+                    "groups": [
+                        {
+                            "group": "group@example.org",
+                            "selectors": [
+                                {
+                                    "type": "all_ministry_chairs",
+                                    "ministry_pattern": "[",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            }
         )
 
 
 def test_desired_members_from_ministries_workgroups_and_static():
+    """Verify desired_members merges ministry, workgroup, and static sources.
+
+    The ministry chair becomes a leader, the workgroup member a non-leader,
+    and the static entry keeps its configured leader flag.
+    """
     config = sync_config_from_yaml(
         {
-            "sync_google_group": {
+            "sync": {
                 "groups": [
                     {
                         "group": "group@example.org",
@@ -233,7 +312,54 @@ def test_desired_members_from_ministries_workgroups_and_static():
     ]
 
 
+def test_all_ministry_chairs_selector_can_filter_ministry_names_by_pattern():
+    """ministry_pattern limits broad all_ministry_chairs selection by ministry name."""
+    data = parishsoft_data()
+    data.members[3] = {
+        "memberDUID": 3,
+        "firstName": "Nina",
+        "lastName": "Numbered",
+        "py friendly name FL": "Nina Numbered",
+        "emailAddress": "numbered@example.org",
+        "py emailAddresses": ["numbered@example.org"],
+        "py ministries": {
+            "100-Readers": {"name": "100-Readers", "role": "Chairperson"}
+        },
+        "py workgroups": {},
+    }
+    config = sync_config_from_yaml(
+        {
+            "sync": {
+                "groups": [
+                    {
+                        "group": "chairs@example.org",
+                        "selectors": [
+                            {
+                                "type": "all_ministry_chairs",
+                                "ministry_pattern": r"^\d\d\d.*",
+                                "staff_owner_domains": ["example.org"],
+                            }
+                        ],
+                    }
+                ]
+            }
+        }
+    )
+
+    desired = desired_members(data, config.groups[0])
+
+    assert [(item.email, item.leader) for item in desired] == [
+        ("numbered@example.org", True)
+    ]
+
+
 def test_compute_actions_add_delete_and_change_role():
+    """Verify compute_actions diffs desired vs current group membership.
+
+    A leader already present but ranked MEMBER yields change_role to OWNER; a
+    current member absent from the desired set yields delete. Bob matches an
+    existing member only after Gmail normalization, so he needs no action.
+    """
     actions = compute_actions(
         [
             DesiredMember("leader@example.org", True, ["Ann Leader"]),
@@ -262,16 +388,28 @@ def test_compute_actions_add_delete_and_change_role():
 def test_sync_google_group_main_writes_group_changes_and_notifications(
     tmp_path, monkeypatch
 ):
+    """Verify a live run applies group changes and emails notifications.
+
+    End to end, main must insert the new ministry/workgroup and static members,
+    promote the leader to OWNER, delete the stale member, and send the change
+    report to the configured notification address.
+
+    The setup stays local to this test so fixtures remain easy to understand
+    and change.
+    """
     admin = AdminService()
     settings = SettingsService()
     email = EmailProvider()
     loader_calls = []
+    # Replace the real ParishSoft client builder with a no-op stand-in; the
+    # injected loader below supplies the data, so the client is never used.
     monkeypatch.setattr(
-        "parishkit.sync_google_group.parishsoft_client_from_config",
+        "parishkit.pk_sync_ps_to_ggroup.parishsoft_client_from_config",
         lambda _common, _config: SimpleNamespace(),
     )
 
     def loader(_client, **kwargs):
+        """Stub data loader: record load options and return the fixture."""
         loader_calls.append(kwargs)
         return parishsoft_data()
 
@@ -317,13 +455,20 @@ def test_sync_google_group_main_writes_group_changes_and_notifications(
 
 
 def test_sync_google_group_dry_run_skips_writes_and_email(tmp_path, monkeypatch):
+    """Verify a dry run reads the roster only, with no writes or email.
+
+    The members resource should see just the list call and never insert,
+    update, or delete; no notification mail should be sent.
+    """
     admin = AdminService()
     settings = SettingsService()
     config = write_config(tmp_path, dry_run=True)
     text = config.read_text(encoding="utf-8")
+    # Disable the email section so this run cannot send mail even if it tried;
+    # renaming the key makes it invisible to the config loader.
     config.write_text(text.replace("email:\n", "unused_email:\n"), encoding="utf-8")
     monkeypatch.setattr(
-        "parishkit.sync_google_group.parishsoft_client_from_config",
+        "parishkit.pk_sync_ps_to_ggroup.parishsoft_client_from_config",
         lambda _common, _config: SimpleNamespace(),
     )
 

@@ -52,7 +52,7 @@ def test_install_dry_run_uses_parishkit_root(tmp_path):
     assert f"Installing ParishKit into {tmp_path}" in result.stdout
     assert f"mkdir -p -m 0750 {tmp_path / 'config'}" in result.stdout
     assert f"mkdir -p -m 0700 {tmp_path / 'credentials'}" in result.stdout
-    assert f"ln -sfn {tmp_path / 'venv/bin/parishkit-run'}" in result.stdout
+    assert f"ln -sfn {tmp_path / 'venv/bin/pk-cron-runner'}" in result.stdout
     assert f"Set PARISHKIT_ROOT={tmp_path}" in result.stdout
 
 

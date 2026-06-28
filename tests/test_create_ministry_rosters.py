@@ -3,51 +3,101 @@ from __future__ import annotations
 import datetime as dt
 from pathlib import Path
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from parishkit.config import ConfigError
-from parishkit.create_ministry_rosters import (
+from parishkit.google.auth import GoogleAPIError
+from parishkit.parishsoft import ParishSoftData
+from parishkit.pk_create_ps_ministry_rosters import (
+    HEADER_BACKGROUND_COLOR,
+    HEADER_TEXT_COLOR,
+    ROSTER_COLUMN_WIDTHS,
+    ROSTER_FROZEN_ROWS,
+    ROSTER_TITLE_MERGE_COLUMNS,
     RosterMember,
     ministry_roster_members,
     roster_config_from_yaml,
+    roster_format_requests,
     roster_role_matches,
     roster_values,
+    sheet_name_from_a1_range,
     workgroup_roster_members,
 )
-from parishkit.create_ministry_rosters import (
+from parishkit.pk_create_ps_ministry_rosters import (
     main as create_ministry_rosters_main,
 )
-from parishkit.parishsoft import ParishSoftData
 
 
 class Request:
+    """Fake Sheets API request whose execute() returns a canned response."""
+
+    def __init__(self, response=None, exc: Exception | None = None):
+        """Store either the canned response or exception to raise."""
+        self.response = {} if response is None else response
+        self.exc = exc
+
     def execute(self):
-        return {}
+        """Return the canned response unless configured to raise an error."""
+        if self.exc is not None:
+            raise self.exc
+        return self.response
 
 
 class Values:
+    """Fake spreadsheet values resource recording each clear/update call."""
+
     def __init__(self):
+        """Initialize the call recorder and optional clear failure."""
         self.calls = []
+        self.clear_error: Exception | None = None
 
     def clear(self, **kwargs):
+        """Record a clear call as ("clear", kwargs)."""
         self.calls.append(("clear", kwargs))
-        return Request()
+        return Request(exc=self.clear_error)
 
     def update(self, **kwargs):
+        """Record an update call as ("update", kwargs)."""
         self.calls.append(("update", kwargs))
         return Request()
 
 
 class Spreadsheets:
+    """Fake spreadsheets resource exposing values plus metadata/format calls."""
+
     def __init__(self):
         self._values = Values()
+        self.get_calls = []
+        self.batch_update_calls = []
 
     def values(self):
+        """Return the fake values resource."""
         return self._values
+
+    def get(self, **kwargs):
+        """Record a metadata get call and return tab titles and sheet IDs."""
+        self.get_calls.append(kwargs)
+        return Request(
+            {
+                "sheets": [
+                    {"properties": {"title": "Readers", "sheetId": 101}},
+                    {"properties": {"title": "Leads", "sheetId": 102}},
+                    {"properties": {"title": "Movers", "sheetId": 103}},
+                ]
+            }
+        )
+
+    def batchUpdate(self, **kwargs):
+        """Record a formatting batchUpdate call."""
+        self.batch_update_calls.append(kwargs)
+        return Request()
 
 
 class SheetsService:
+    """Fake Sheets service exposing the recording spreadsheets resource."""
+
     def __init__(self):
         self._spreadsheets = Spreadsheets()
 
@@ -56,6 +106,12 @@ class SheetsService:
 
 
 def write_config(tmp_path: Path, *, dry_run: bool = False) -> Path:
+    """Write a rosters config (plus API key file) and return it.
+
+    The config covers a ministry with a role sheet and a separate workgroup so
+    one run exercises every roster-writing path. The setup stays local to this
+    test so fixtures remain easy to understand and change.
+    """
     api_key = tmp_path / "parishsoft-api-key.txt"
     api_key.write_text("key", encoding="utf-8")
     config = tmp_path / "config.yaml"
@@ -69,7 +125,7 @@ parishsoft:
   cache_limit: 1d
 google:
   user_token_file: {tmp_path / "google-user-token.json"}
-create_ministry_rosters:
+rosters:
   spreadsheet_id: default-sheet
   ministries:
     - ministry: Readers
@@ -95,6 +151,14 @@ create_ministry_rosters:
 
 
 def parishsoft_data() -> ParishSoftData:
+    """Build a small ParishSoftData fixture with several roster members.
+
+    Member 1 is a Readers Lead and Movers member with published contact info;
+    member 2 is a Readers Member and a Movers leader (via the " Ldr" workgroup
+    suffix) with unpublished contact info; member 3 has a blank ministry role;
+    and member 4 has email but no phone. The setup stays local to this test so
+    fixtures remain easy to understand and change.
+    """
     family = {
         "familyDUID": 10,
         "primaryAddress1": "1 Main St",
@@ -130,6 +194,31 @@ def parishsoft_data() -> ParishSoftData:
             "py ministries": {"Readers": {"role": "Member"}},
             "py workgroups": {"Movers Ldr": {"name": "Movers Ldr"}},
         },
+        3: {
+            "memberDUID": 3,
+            "familyDUID": 10,
+            "firstName": "Chris",
+            "lastName": "Role",
+            "py friendly name LF": "Role, Chris",
+            "py family": family,
+            "family_PublishPhone": False,
+            "family_PublishEMail": False,
+            "py ministries": {"Readers": {"role": ""}},
+            "py workgroups": {},
+        },
+        4: {
+            "memberDUID": 4,
+            "familyDUID": 10,
+            "firstName": "Erin",
+            "lastName": "Email",
+            "py friendly name LF": "Email, Erin",
+            "py family": family,
+            "family_PublishPhone": True,
+            "family_PublishEMail": True,
+            "py emailAddresses": ["erin@example.org"],
+            "py ministries": {"Readers": {"role": "Member"}},
+            "py workgroups": {},
+        },
     }
     return ParishSoftData(
         organization_id=7,
@@ -150,9 +239,11 @@ def parishsoft_data() -> ParishSoftData:
 
 
 def test_roster_config_validation_and_role_sheets():
+    """Config parsing keeps the ministry name, multiple source ministries, and
+    nested role-sheet targets (including the legacy "role sheets" key)."""
     config = roster_config_from_yaml(
         {
-            "create_ministry_rosters": {
+            "rosters": {
                 "spreadsheet_id": "default-sheet",
                 "ministries": [
                     {
@@ -178,11 +269,14 @@ def test_roster_config_validation_and_role_sheets():
 
 
 def test_roster_config_rejects_missing_targets():
+    """Config with neither ministries nor workgroups raises ConfigError."""
     with pytest.raises(ConfigError, match="ministries or workgroups"):
-        roster_config_from_yaml({"create_ministry_rosters": {"ministries": []}})
+        roster_config_from_yaml({"rosters": {"ministries": []}})
 
 
 def test_roster_generation_for_ministries_and_workgroups():
+    """Roster members are sorted by name, roles resolve from ministry data and
+    the workgroup leader suffix, and role matching is case/list aware."""
     data = parishsoft_data()
 
     ministry_members = ministry_roster_members(data, ["Readers"])
@@ -194,6 +288,8 @@ def test_roster_generation_for_ministries_and_workgroups():
 
     assert [(item.member["memberDUID"], item.role) for item in ministry_members] == [
         (2, "Member"),
+        (4, "Member"),
+        (3, ""),
         (1, "Lead"),
     ]
     assert [(item.member["memberDUID"], item.role) for item in workgroup_members] == [
@@ -203,53 +299,185 @@ def test_roster_generation_for_ministries_and_workgroups():
     assert roster_role_matches("Lead, Member", {"Lead"})
 
 
-def test_roster_values_include_contacts_and_birthday():
-    member = parishsoft_data().members[1]
+def test_roster_values_separate_phone_and_email_rows():
+    """roster_values separates email from phone when both contact types exist."""
+    data = parishsoft_data()
+    update_time = dt.datetime(
+        2026,
+        1,
+        2,
+        3,
+        4,
+        tzinfo=ZoneInfo("America/Kentucky/Louisville"),
+    )
 
     values = roster_values(
         "Readers",
-        [RosterMember(member=member, role="Lead")],
+        [
+            RosterMember(member=data.members[1], role="Lead"),
+            RosterMember(member=data.members[4], role="Member"),
+        ],
         include_birthday=True,
-        now=dt.datetime(2026, 1, 2, 3, 4),
+        now=update_time,
     )
 
     assert values[:4] == [
         ["Ministry: Readers"],
-        ["Last updated: 2026-01-02 03:04:00"],
+        ["Last updated: 2026-01-02 03:04:00 EST"],
         [],
         ["Member name", "Address", "Phone / email", "Birthday", "Role"],
     ]
     assert values[4] == [
+        "Email, Erin",
+        "1 Main St\nLouisville, KY 40202",
+        "erin@example.org",
+        "",
+        "Member",
+    ]
+    assert values[5] == [
         "Smith, Ann",
         "1 Main St\nLouisville, KY 40202",
-        "502-555-1000 cell\nann@example.org",
+        "502-555-1000 cell",
         "May 4",
         "Lead",
     ]
+    assert values[6] == ["", "", "ann@example.org", "", ""]
 
 
-def test_create_ministry_rosters_main_writes_sheet_values(tmp_path, monkeypatch):
+def test_roster_format_requests_freeze_headers_and_size_columns():
+    """Formatting requests freeze rows, style headers, top-align cells, and
+    set the expected column widths."""
+    requests = roster_format_requests(
+        99,
+        spreadsheet_title="Readers as of 2026-01-02 03:04:00 EST",
+        column_count=5,
+        row_count=8,
+    )
+
+    assert requests[0] == {
+        "updateSheetProperties": {
+            "properties": {
+                "sheetId": 99,
+                "gridProperties": {"frozenRowCount": ROSTER_FROZEN_ROWS},
+            },
+            "fields": "gridProperties.frozenRowCount",
+        }
+    }
+    assert requests[1]["repeatCell"]["cell"]["userEnteredFormat"] == {
+        "verticalAlignment": "TOP",
+        "wrapStrategy": "WRAP",
+    }
+    assert requests[2]["repeatCell"]["cell"]["userEnteredFormat"] == {
+        "backgroundColor": HEADER_BACKGROUND_COLOR,
+        "horizontalAlignment": "LEFT",
+        "textFormat": {
+            "foregroundColor": HEADER_TEXT_COLOR,
+            "bold": True,
+        },
+        "verticalAlignment": "MIDDLE",
+        "wrapStrategy": "WRAP",
+    }
+    assert requests[3]["repeatCell"]["range"]["startRowIndex"] == 2
+    assert requests[3]["repeatCell"]["cell"]["userEnteredFormat"] == {
+        "backgroundColor": HEADER_BACKGROUND_COLOR
+    }
+    assert requests[4]["repeatCell"]["range"]["startRowIndex"] == 3
+    assert (
+        requests[4]["repeatCell"]["cell"]["userEnteredFormat"]["horizontalAlignment"]
+        == "CENTER"
+    )
+    assert requests[5:9] == [
+        {
+            "unmergeCells": {
+                "range": {
+                    "sheetId": 99,
+                    "startRowIndex": row_index,
+                    "endRowIndex": row_index + 1,
+                    "startColumnIndex": 0,
+                    "endColumnIndex": ROSTER_TITLE_MERGE_COLUMNS,
+                }
+            }
+        }
+        if operation == "unmergeCells"
+        else {
+            "mergeCells": {
+                "range": {
+                    "sheetId": 99,
+                    "startRowIndex": row_index,
+                    "endRowIndex": row_index + 1,
+                    "startColumnIndex": 0,
+                    "endColumnIndex": ROSTER_TITLE_MERGE_COLUMNS,
+                },
+                "mergeType": "MERGE_ALL",
+            }
+        }
+        for row_index in range(2)
+        for operation in ("unmergeCells", "mergeCells")
+    ]
+    widths = [
+        request["updateDimensionProperties"]["properties"]["pixelSize"]
+        for request in requests[9:-1]
+    ]
+    assert widths == list(ROSTER_COLUMN_WIDTHS)
+    assert requests[-1] == {
+        "updateSpreadsheetProperties": {
+            "properties": {"title": "Readers as of 2026-01-02 03:04:00 EST"},
+            "fields": "title",
+        }
+    }
+
+
+def test_sheet_name_from_a1_range_handles_quoted_and_default_ranges():
+    """A1 sheet-name parsing supports regular, quoted, escaped, and bare ranges."""
+    assert sheet_name_from_a1_range("Roster!A1") == "Roster"
+    assert sheet_name_from_a1_range("'Sunday Roster'!A1:E20") == "Sunday Roster"
+    assert sheet_name_from_a1_range("'Pastor''s Roster'!A1") == "Pastor's Roster"
+    assert sheet_name_from_a1_range("A1:E20") == "Sheet1"
+
+
+def test_create_ministry_rosters_main_writes_sheet_values(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    """main clears then updates each target sheet, routing role-sheet and
+    workgroup rows to their own spreadsheet ids.
+
+    The ParishSoft client is stubbed out so no real data is loaded, and the
+    loader is replaced with a recorder to confirm the expected load options.
+    The setup stays local to this test so fixtures remain easy to understand
+    and change.
+    """
     service = SheetsService()
     loader_calls = []
+    # Avoid building a real ParishSoft client; the loader returns canned data.
     monkeypatch.setattr(
-        "parishkit.create_ministry_rosters.parishsoft_client_from_config",
+        "parishkit.pk_create_ps_ministry_rosters.parishsoft_client_from_config",
         lambda _common, _config: SimpleNamespace(),
     )
 
     def loader(_client, **kwargs):
+        """Record loader kwargs and return the canned ParishSoft fixture."""
         loader_calls.append(kwargs)
         return parishsoft_data()
 
     assert (
         create_ministry_rosters_main(
-            ["--config", str(write_config(tmp_path))],
+            ["--config", str(write_config(tmp_path)), "--debug"],
             loader=loader,
             sheets_factory=lambda _config: service,
         )
         == 0
     )
 
+    error = capsys.readouterr().err
+    assert "Ministry roster operation completed successfully" in error
+    assert "Ministry roster targets: Readers" in error
+    assert "Workgroup roster targets: Movers" in error
+    assert "RosterTarget(" not in error
     assert loader_calls == [{"active_only": True, "parishioners_only": False}]
+    # Each target is a clear followed by an update; ministry first, then its
+    # role sheet, then the workgroup, on their respective spreadsheet ids.
     calls = service._spreadsheets._values.calls
     assert calls[0] == (
         "clear",
@@ -263,15 +491,47 @@ def test_create_ministry_rosters_main_writes_sheet_values(tmp_path, monkeypatch)
     assert calls[1][1]["spreadsheetId"] == "default-sheet"
     assert calls[1][1]["range"] == "Readers!A1"
     assert calls[1][1]["body"]["values"][4][-1] == "Member"
+    assert calls[1][1]["body"]["values"][6][-1] == ""
     assert calls[2][1]["spreadsheetId"] == "lead-sheet"
     assert calls[3][1]["body"]["values"][4][0] == "Smith, Ann"
     assert calls[4][1]["spreadsheetId"] == "movers-sheet"
+    assert service._spreadsheets.get_calls == [
+        {"spreadsheetId": "default-sheet", "fields": "sheets.properties"},
+        {"spreadsheetId": "lead-sheet", "fields": "sheets.properties"},
+        {"spreadsheetId": "movers-sheet", "fields": "sheets.properties"},
+    ]
+    assert [
+        call["body"]["requests"][0]["updateSheetProperties"]["properties"]["sheetId"]
+        for call in service._spreadsheets.batch_update_calls
+    ] == [101, 102, 103]
+    assert all(
+        call["body"]["requests"][0]["updateSheetProperties"]["properties"][
+            "gridProperties"
+        ]["frozenRowCount"]
+        == 4
+        for call in service._spreadsheets.batch_update_calls
+    )
+    assert [
+        call["body"]["requests"][-1]["updateSpreadsheetProperties"]["properties"][
+            "title"
+        ].startswith(prefix)
+        for call, prefix in zip(
+            service._spreadsheets.batch_update_calls,
+            [
+                "Readers as of ",
+                "Reader Leads as of ",
+                "Movers as of ",
+            ],
+            strict=True,
+        )
+    ] == [True, True, True]
 
 
 def test_create_ministry_rosters_dry_run_skips_sheet_writes(tmp_path, monkeypatch):
+    """In dry-run mode main loads data but performs no clear/update sheet writes."""
     service = SheetsService()
     monkeypatch.setattr(
-        "parishkit.create_ministry_rosters.parishsoft_client_from_config",
+        "parishkit.pk_create_ps_ministry_rosters.parishsoft_client_from_config",
         lambda _common, _config: SimpleNamespace(),
     )
 
@@ -285,3 +545,64 @@ def test_create_ministry_rosters_dry_run_skips_sheet_writes(tmp_path, monkeypatc
     )
 
     assert service._spreadsheets._values.calls == []
+    assert service._spreadsheets.get_calls == []
+    assert service._spreadsheets.batch_update_calls == []
+
+
+def test_create_ministry_rosters_reports_invalid_yaml(tmp_path, capsys):
+    """Invalid YAML exits cleanly with a repair-oriented error message."""
+    config = tmp_path / "config.yaml"
+    config.write_text("common:\n  dry_run: true\n  bad: [\n", encoding="utf-8")
+
+    assert create_ministry_rosters_main(["--config", str(config)]) == 2
+
+    error = capsys.readouterr().err
+    assert "ERROR: could not parse YAML config file" in error
+    assert "Check indentation" in error
+
+
+def test_create_ministry_rosters_logs_config_validation_error(tmp_path, capsys):
+    """Roster config validation failures are logged as ERROR before exit."""
+    config = tmp_path / "config.yaml"
+    config.write_text("rosters:\n  ministries: []\n", encoding="utf-8")
+
+    assert create_ministry_rosters_main(["--config", str(config)]) == 2
+
+    error = capsys.readouterr().err
+    assert "ERROR parishkit.pk_create_ps_ministry_rosters" in error
+    assert "Configuration validation failed" in error
+    assert "rosters must configure ministries or workgroups" in error
+
+
+def test_create_ministry_rosters_explains_unparseable_sheet_range(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    """A Sheets range parse failure points operators at the configured ranges."""
+    service = SheetsService()
+    service._spreadsheets._values.clear_error = GoogleAPIError(
+        400,
+        'HTTP 400 returned "Unable to parse range: Sheet1!A:Z"',
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_create_ps_ministry_rosters.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        create_ministry_rosters_main(
+            ["--config", str(write_config(tmp_path))],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            sheets_factory=lambda _config: service,
+        )
+        == 2
+    )
+
+    error = capsys.readouterr().err
+    assert "ERROR parishkit.pk_create_ps_ministry_rosters" in error
+    assert "Google Sheets rejected a configured roster range" in error
+    assert "spreadsheet default-sheet" in error
+    assert "range='Readers!A1'" in error
+    assert "clear_range='Readers!A:Z'" in error
+    assert "worksheet/tab 'Readers'" in error

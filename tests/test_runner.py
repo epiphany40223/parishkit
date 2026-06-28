@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from parishkit import runner
-from parishkit.runner import (
+from parishkit import pk_cron_runner as runner
+from parishkit.pk_cron_runner import (
     EXIT_JOB_FAILED,
     EXIT_SUCCESS,
     EXIT_TIMEOUT,
@@ -239,7 +239,7 @@ def test_lock_release_logs_unlink_failure(monkeypatch, tmp_path, caplog):
 
     monkeypatch.setattr(Path, "unlink", fail_unlink)
 
-    with caplog.at_level(logging.WARNING, logger="parishkit.runner"):
+    with caplog.at_level(logging.WARNING, logger="parishkit.pk_cron_runner"):
         lock.release()
 
     assert "failed to remove runner lock" in caplog.text
@@ -471,7 +471,7 @@ jobs:
 """,
         encoding="utf-8",
     )
-    monkeypatch.setattr("parishkit.runner.DEFAULT_RUNNER_CONFIG", config_file)
+    monkeypatch.setattr("parishkit.pk_cron_runner.DEFAULT_RUNNER_CONFIG", config_file)
 
     exit_code = main(
         [
@@ -513,7 +513,7 @@ jobs:
 """,
         encoding="utf-8",
     )
-    monkeypatch.setattr("parishkit.runner.DEFAULT_RUNNER_CONFIG", config_file)
+    monkeypatch.setattr("parishkit.pk_cron_runner.DEFAULT_RUNNER_CONFIG", config_file)
 
     assert main(["--command"]) == 2
     assert not marker.exists()
@@ -621,14 +621,16 @@ jobs:
 """,
         encoding="utf-8",
     )
-    monkeypatch.setattr("parishkit.runner.DEFAULT_RUNNER_CONFIG", config_file)
+    monkeypatch.setattr("parishkit.pk_cron_runner.DEFAULT_RUNNER_CONFIG", config_file)
 
     assert main([]) == EXIT_SUCCESS
     assert log_file.exists()
 
 
 def test_main_returns_config_error_without_config_or_command(monkeypatch):
-    monkeypatch.setattr("parishkit.runner.DEFAULT_RUNNER_CONFIG", Path("/missing.yaml"))
+    monkeypatch.setattr(
+        "parishkit.pk_cron_runner.DEFAULT_RUNNER_CONFIG", Path("/missing.yaml")
+    )
 
     assert main([]) == 2
 

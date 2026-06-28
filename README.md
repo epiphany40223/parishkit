@@ -127,9 +127,19 @@ Examples:
 - Generated reports: `/opt/parishkit/reports/`
 - Lock files and process state: `/opt/parishkit/run/`
 
+Log files written through `logging.log_file`, `logging.log_dir`, `--log-file`,
+or `--log-dir` are JSON Lines: one JSON object per log record. Console output,
+stderr error messages, and Slack notifications remain human-readable text.
+When a log record has structured context, the JSONL record includes an
+optional `extra` field containing that context as valid JSON while the
+`message` field remains human-readable text.
+
 All runtime paths must be overridable through CLI options or YAML config.
 Explicit paths in YAML are used as written; `PARISHKIT_ROOT` only changes
 ParishKit's built-in defaults.
+
+Use `common.timezone` in YAML config for user-visible local timestamps. It
+defaults to `America/Kentucky/Louisville`.
 
 ## Linux and macOS Install
 

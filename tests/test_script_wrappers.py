@@ -5,29 +5,33 @@ import os
 from pathlib import Path
 
 WRAPPERS = {
-    "run": ("parishkit-run.py", "parishkit.cli", "run_main"),
-    "print-member": ("print-member.py", "parishkit.cli", "print_member_main"),
-    "print-ministries": (
-        "print-ministries.py",
+    "pk-cron-runner": ("pk-cron-runner.py", "parishkit.cli", "run_main"),
+    "pk-query-ps-memfam": (
+        "pk-query-ps-memfam.py",
+        "parishkit.cli",
+        "print_member_main",
+    ),
+    "pk-print-ps-ministries": (
+        "pk-print-ps-ministries.py",
         "parishkit.cli",
         "print_ministries_main",
     ),
-    "calendar-reservations": (
-        "calendar-reservations.py",
+    "pk-validate-gcalendar-reservations": (
+        "pk-validate-gcalendar-reservations.py",
         "parishkit.cli",
         "calendar_reservations_main",
     ),
-    "create-ministry-rosters": (
-        "create-ministry-rosters.py",
+    "pk-create-ps-ministry-rosters": (
+        "pk-create-ps-ministry-rosters.py",
         "parishkit.cli",
         "create_ministry_rosters_main",
     ),
-    "sync-google-group": (
-        "sync-google-group.py",
+    "pk-sync-ps-to-ggroup": (
+        "pk-sync-ps-to-ggroup.py",
         "parishkit.cli",
         "sync_google_group_main",
     ),
-    "sync-ps-to-cc": ("sync-ps-to-cc.py", "parishkit.cli", "sync_ps_to_cc_main"),
+    "pk-sync-ps-to-cc": ("pk-sync-ps-to-cc.py", "parishkit.cli", "sync_ps_to_cc_main"),
 }
 
 

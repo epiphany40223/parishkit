@@ -84,14 +84,5 @@ read-only probes for family, member, contact, workgroup, ministry, and offering
 endpoints. Add `--send --deep` to the Constant Contact smoke test to read
 lists, contacts, and custom fields without mutating data.
 
-The Constant Contact smoke test refreshes expired tokens when the token file
-contains a refresh token and the client file contains `endpoints.token` plus the
-app client ID. If refresh fails or no token file exists, complete Constant
-Contact's manual OAuth flow with:
-
-```sh
-scripts/smoke-tests/constant-contact-device-oauth.py \
-  --client-id-file /opt/parishkit/credentials/constant-contact-client.json \
-  --access-token-file /opt/parishkit/credentials/constant-contact-token.json \
-  --send
-```
+The Constant Contact token bootstrap and refresh process is documented in
+`scripts/pk-sync-ps-to-cc/README.md`.

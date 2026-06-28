@@ -10,6 +10,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from importlib.metadata import version
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from parishkit.config import ConfigData, ConfigError, load_yaml_config
 from parishkit.logging import parse_log_level
@@ -32,6 +33,7 @@ DEFAULT_PS_API_KEY_FILE = DEFAULT_CREDENTIALS_DIR / "parishsoft-api-key.txt"
 DEFAULT_PS_CACHE_DIR = DEFAULT_CACHE_DIR / "parishsoft"
 DEFAULT_PS_CACHE_LIMIT = "14m"
 DEFAULT_SLACK_LOG_LEVEL = "CRITICAL"
+DEFAULT_TIMEZONE = "America/Kentucky/Louisville"
 _CACHE_LIMIT_PATTERN = re.compile(r"^[1-9][0-9]*[smhd]$")
 
 
@@ -46,6 +48,7 @@ class CommonOptions:
     slack_token_file: Path | None
     slack_channel: str | None
     slack_log_level: str
+    timezone: str
     ps_api_key_file: Path | None
     ps_cache_dir: Path | None
     ps_cache_limit: str
@@ -109,6 +112,15 @@ def _validate_cache_limit(value: str) -> str:
         raise ConfigError(
             "parishsoft.cache_limit must be a duration like 30s, 14m, 12h, or 7d"
         )
+    return value
+
+
+def validate_timezone(value: str, *, name: str = "common.timezone") -> str:
+    """Validate an IANA timezone name and return it unchanged."""
+    try:
+        ZoneInfo(value)
+    except ZoneInfoNotFoundError as exc:
+        raise ConfigError(f"{name} is not a known IANA timezone: {value}") from exc
     return value
 
 
@@ -185,6 +197,9 @@ def resolve_common_options(args: argparse.Namespace) -> CommonOptions:
     config_debug = _config_bool(common, "debug", "common")
     config_verbose = _config_bool(common, "verbose", "common")
     config_dry_run = _config_bool(common, "dry_run", "common")
+    config_timezone = _config_str(common, "timezone", "common")
+    if config_timezone is not None:
+        validate_timezone(config_timezone)
     config_log_file = _config_path(
         logging_config,
         "log_file",
@@ -254,6 +269,7 @@ def resolve_common_options(args: argparse.Namespace) -> CommonOptions:
         or config_slack_token_file,
         slack_channel=getattr(args, "slack_channel", None) or config_slack_channel,
         slack_log_level=slack_log_level,
+        timezone=config_timezone or DEFAULT_TIMEZONE,
         ps_api_key_file=_cli_path(getattr(args, "ps_api_key_file", None))
         or config_ps_api_key_file
         or DEFAULT_PS_API_KEY_FILE,
@@ -295,42 +311,42 @@ def run_user_facing(action: Callable[[], int]) -> int:
 
 
 def run_main(argv: Sequence[str] | None = None) -> int:
-    from parishkit.runner import main
+    from parishkit.pk_cron_runner import main
 
     return main(list(argv) if argv is not None else None)
 
 
 def print_member_main(argv: Sequence[str] | None = None) -> int:
-    from parishkit.print_member import main
+    from parishkit.pk_query_ps_memfam import main
 
     return main(list(argv) if argv is not None else None)
 
 
 def print_ministries_main(argv: Sequence[str] | None = None) -> int:
-    from parishkit.print_ministries import main
+    from parishkit.pk_print_ps_ministries import main
 
     return main(list(argv) if argv is not None else None)
 
 
 def calendar_reservations_main(argv: Sequence[str] | None = None) -> int:
-    from parishkit.calendar_reservations import main
+    from parishkit.pk_validate_gcalendar_reservations import main
 
     return main(list(argv) if argv is not None else None)
 
 
 def create_ministry_rosters_main(argv: Sequence[str] | None = None) -> int:
-    from parishkit.create_ministry_rosters import main
+    from parishkit.pk_create_ps_ministry_rosters import main
 
     return main(list(argv) if argv is not None else None)
 
 
 def sync_google_group_main(argv: Sequence[str] | None = None) -> int:
-    from parishkit.sync_google_group import main
+    from parishkit.pk_sync_ps_to_ggroup import main
 
     return main(list(argv) if argv is not None else None)
 
 
 def sync_ps_to_cc_main(argv: Sequence[str] | None = None) -> int:
-    from parishkit.sync_ps_to_cc import main
+    from parishkit.pk_sync_ps_to_cc import main
 
     return main(list(argv) if argv is not None else None)

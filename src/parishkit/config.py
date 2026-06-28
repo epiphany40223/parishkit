@@ -36,7 +36,11 @@ def load_yaml_config(path: str | Path | None, *, required: bool = False) -> Conf
     try:
         raw_data = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
-        raise ConfigError(f"invalid YAML in {config_path}: {exc}") from exc
+        location = _yaml_error_location(exc)
+        raise ConfigError(
+            f"could not parse YAML config file {config_path}{location}: {exc}. "
+            "Check indentation, ':' after keys, and '-' before list items."
+        ) from exc
     except OSError as exc:
         raise ConfigError(
             f"could not read configuration file {config_path}: {exc}"
@@ -45,8 +49,19 @@ def load_yaml_config(path: str | Path | None, *, required: bool = False) -> Conf
     if raw_data is None:
         return {}
     if not isinstance(raw_data, dict):
-        raise ConfigError(f"configuration file {config_path} must contain a mapping")
+        raise ConfigError(
+            f"YAML config file {config_path} must contain a top-level mapping "
+            "of key/value sections, not a list or scalar value."
+        )
     return raw_data
+
+
+def _yaml_error_location(exc: yaml.YAMLError) -> str:
+    """Return a human-readable line/column suffix for a YAML parser error."""
+    mark = getattr(exc, "problem_mark", None)
+    if mark is None:
+        return ""
+    return f" at line {mark.line + 1}, column {mark.column + 1}"
 
 
 def require_mapping(value: Any, name: str) -> Mapping[str, Any]:

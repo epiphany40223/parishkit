@@ -1,0 +1,74 @@
+# Settings shared by most ParishKit commands.
+common:
+  # dry_run=true prevents external writes. Set false only after reviewing
+  # spreadsheet IDs and running a credential smoke test.
+  dry_run: true
+  # IANA timezone for user-visible timestamps, including roster update times.
+  timezone: America/Kentucky/Louisville
+
+# Slack logging settings. token_file must contain a Slack bot token and must
+# not be committed. channel is where records at or above level are posted.
+slack:
+  token_file: /opt/parishkit/credentials/slack-token.txt
+  channel: "#bot-errors"
+  level: ERROR
+
+# ParishSoft API settings. api_key_file must contain the read-only ParishSoft
+# API key. cache_dir stores local response caches. cache_limit is a duration
+# like 30s, 14m, 12h, or 7d. expected_organization protects against using the
+# wrong ParishSoft tenant.
+parishsoft:
+  api_key_file: /opt/parishkit/credentials/parishsoft-api-key.txt
+  cache_dir: /opt/parishkit/cache/parishsoft
+  cache_limit: 14m
+  expected_organization: Example Parish
+
+# Google Sheets credentials. service_account_file identifies the service
+# account credential. delegated_subject is the real Workspace user that the
+# service account impersonates via domain-wide delegation; it must not be the
+# service-account email. Prefer a dedicated least-privileged automation user
+# over a Super Admin. That delegated user needs Editor access to each
+# configured spreadsheet, or edit-capable access to the shared drive containing
+# it, and the service account's OAuth client ID must be authorized for the
+# Sheets scope in Workspace Admin.
+google:
+  service_account_file: /opt/parishkit/credentials/google-service-account.json
+  delegated_subject: user_with_rw_perms_to_the_google_drive_files@example.org
+
+# Roster output settings. Defaults here apply to each ministry/workgroup unless
+# an entry overrides them.
+rosters:
+  # spreadsheet_id is optional when every entry has its own spreadsheet_id.
+  spreadsheet_id: example-spreadsheet-id
+  # range is the first cell where roster data is written. The sheet/tab name
+  # before "!" must exist in the target spreadsheet.
+  range: Roster!A1
+  # clear_range is erased before writing so stale rows from previous runs are
+  # removed. It must reference an existing sheet/tab.
+  clear_range: Roster!A:Z
+  # Workgroup leaders are modeled in ParishSoft as a companion workgroup whose
+  # name is the base workgroup plus this suffix.
+  workgroup_leader_suffix: " Ldr"
+  # ministries selects ParishSoft ministry names and writes one roster per
+  # entry. source names must match ParishSoft exactly.
+  ministries:
+    - ministry: Example Ministry
+      # Target spreadsheet for this ministry roster.
+      spreadsheet_id: example-ministry-spreadsheet-id
+      # include_birthday=true adds birthday month/day to roster output.
+      include_birthday: false
+      # role_sheets are optional filtered roster sheets for selected roles.
+      role_sheets:
+        - name: Example Ministry Leaders
+          # Roles are matched exactly against the member's ParishSoft role text.
+          roles:
+            - Chairperson
+            - Leader
+          # Each role sheet can write to its own spreadsheet.
+          spreadsheet_id: example-role-spreadsheet-id
+  # workgroups selects ParishSoft member workgroups. Leaders are detected using
+  # workgroup_leader_suffix.
+  workgroups:
+    - workgroup: Example Workgroup
+      spreadsheet_id: example-workgroup-spreadsheet-id
+      include_birthday: false

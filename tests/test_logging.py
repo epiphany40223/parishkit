@@ -1,10 +1,14 @@
+import json
 import logging
+from dataclasses import dataclass
 
 from parishkit.logging import (
     DEFAULT_BACKUP_COUNT,
     DEFAULT_MAX_BYTES,
     CompressingRotatingFileHandler,
+    JsonLogFormatter,
     describe_handlers,
+    log_extra,
     parse_log_level,
     setup_logging,
 )
@@ -31,6 +35,11 @@ def test_setup_logging_debug_file_handler(tmp_path):
     logger.debug("hello")
 
     assert log_file.exists()
+    payload = json.loads(log_file.read_text(encoding="utf-8"))
+    assert payload["level"] == "DEBUG"
+    assert payload["logger"] == "test.file.debug"
+    assert payload["message"] == "hello"
+    assert payload["timestamp"]
     assert any(
         isinstance(handler, CompressingRotatingFileHandler)
         for handler in logger.handlers
@@ -52,6 +61,54 @@ def test_default_file_rotation_keeps_large_compressed_history(tmp_path):
 
     assert file_handler.maxBytes == DEFAULT_MAX_BYTES == 50_000_000
     assert file_handler.backupCount == DEFAULT_BACKUP_COUNT == 50
+
+
+def test_file_and_console_handlers_use_different_formatters(tmp_path):
+    """File handlers emit JSONL while console output keeps the text formatter."""
+    logger = setup_logging(
+        verbose=True,
+        log_file=tmp_path / "parishkit.log",
+        logger_name="test.file.formatters",
+        rotate=False,
+    )
+
+    handlers = {handler.__class__.__name__: handler for handler in logger.handlers}
+
+    assert isinstance(handlers["FileHandler"].formatter, JsonLogFormatter)
+    assert not isinstance(handlers["StreamHandler"].formatter, JsonLogFormatter)
+
+
+def test_json_log_formatter_includes_structured_object(tmp_path):
+    """Structured context is JSON in files without changing message text."""
+
+    @dataclass(frozen=True)
+    class Item:
+        """Tiny dataclass used to prove structured objects are converted."""
+
+        name: str
+        count: int
+
+    log_file = tmp_path / "parishkit.log"
+    logger = setup_logging(
+        verbose=True,
+        log_file=log_file,
+        logger_name="test.file.object",
+        rotate=False,
+    )
+
+    logger.info(
+        "Processed %s item(s): %s",
+        1,
+        "sample",
+        extra=log_extra([Item("sample", 3)]),
+    )
+
+    raw_log = log_file.read_text(encoding="utf-8")
+    assert raw_log.count("\n") == 1
+    assert raw_log.index('"message"') < raw_log.index('"extra"')
+    payload = json.loads(raw_log)
+    assert payload["message"] == "Processed 1 item(s): sample"
+    assert payload["extra"] == [{"count": 3, "name": "sample"}]
 
 
 def test_compressed_rotation_retains_multiple_backups(tmp_path):
@@ -110,6 +167,8 @@ def test_setup_logging_adds_mocked_slack_handler(monkeypatch, tmp_path):
 
     assert sent
     assert sent[0][0] == "#alerts"
+    assert "ERROR test.slack: problem" in sent[0][1]
+    assert not sent[0][1].startswith("{")
 
 
 def test_setup_logging_rejects_partial_slack_config(tmp_path):

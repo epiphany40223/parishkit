@@ -21,6 +21,7 @@ def test_common_options_defaults():
     assert not options.verbose
     assert not options.debug
     assert options.slack_log_level == "CRITICAL"
+    assert options.timezone == cli.DEFAULT_TIMEZONE
     assert options.ps_api_key_file == cli.DEFAULT_PS_API_KEY_FILE
     assert options.ps_cache_dir == cli.DEFAULT_PS_CACHE_DIR
     assert options.ps_cache_limit == "14m"
@@ -33,7 +34,7 @@ import os
 from pathlib import Path
 
 from parishkit import cli
-import parishkit.runner as runner
+import parishkit.pk_cron_runner as runner
 
 root = Path(os.environ["PARISHKIT_ROOT"])
 parser = argparse.ArgumentParser()
@@ -70,6 +71,7 @@ def test_common_options_cli_overrides_config(tmp_path):
         """
 common:
   dry_run: false
+  timezone: America/New_York
 logging:
   log_file: config.log
 slack:
@@ -105,6 +107,7 @@ parishsoft:
     assert str(options.log_file) == "cli.log"
     assert options.slack_channel == "#from-cli"
     assert options.slack_token_file == tmp_path / "config-slack-token.txt"
+    assert options.timezone == "America/New_York"
     assert options.ps_api_key_file == tmp_path / "config-ps-key.txt"
     assert options.ps_cache_dir == tmp_path / "config-cache"
     assert options.ps_cache_limit == "1h"
@@ -197,6 +200,24 @@ parishsoft:
     args = parser.parse_args(["--config", str(config_file)])
 
     with pytest.raises(ConfigError, match="parishsoft.cache_limit"):
+        cli.resolve_common_options(args)
+
+
+def test_invalid_common_timezone_fails_at_startup(tmp_path):
+    """An unknown common.timezone in config is rejected at startup."""
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        """
+common:
+  timezone: Not/AZone
+""",
+        encoding="utf-8",
+    )
+    parser = argparse.ArgumentParser()
+    cli.add_common_arguments(parser)
+    args = parser.parse_args(["--config", str(config_file)])
+
+    with pytest.raises(ConfigError, match="common.timezone"):
         cli.resolve_common_options(args)
 
 

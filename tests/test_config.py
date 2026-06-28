@@ -11,8 +11,22 @@ def test_load_yaml_config_requires_mapping(tmp_path):
     config_file = tmp_path / "config.yaml"
     config_file.write_text("- item\n", encoding="utf-8")
 
-    with pytest.raises(ConfigError, match="must contain a mapping"):
+    with pytest.raises(ConfigError, match="must contain a top-level mapping"):
         load_yaml_config(config_file)
+
+
+def test_load_yaml_config_parse_error_includes_repair_hint(tmp_path):
+    """Invalid YAML reports file location and common syntax repair hints."""
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text("common:\n  dry_run: true\n  bad: [\n", encoding="utf-8")
+
+    with pytest.raises(ConfigError) as exc_info:
+        load_yaml_config(config_file)
+
+    message = str(exc_info.value)
+    assert f"could not parse YAML config file {config_file}" in message
+    assert "line" in message
+    assert "Check indentation" in message
 
 
 def test_require_keys_reports_missing():

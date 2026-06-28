@@ -33,6 +33,37 @@ def clear_values(service: Any, spreadsheet_id: str, range_name: str) -> None:
     execute_google_request(request)
 
 
+def get_spreadsheet(
+    service: Any,
+    spreadsheet_id: str,
+    *,
+    fields: str = "sheets.properties",
+) -> dict[str, Any]:
+    """Fetch spreadsheet metadata for IDs, sheet titles, and grid properties.
+
+    ``fields`` defaults to sheet properties only, which is enough to map a
+    sheet/tab title from A1 notation to the numeric ``sheetId`` required by
+    formatting requests. Returns the parsed spreadsheet metadata mapping.
+    """
+    request = service.spreadsheets().get(spreadsheetId=spreadsheet_id, fields=fields)
+    return execute_google_request(request)
+
+
+def batch_update_spreadsheet(
+    service: Any,
+    spreadsheet_id: str,
+    requests: list[dict[str, Any]],
+) -> None:
+    """Apply a list of Sheets API batchUpdate requests to a spreadsheet."""
+    if not requests:
+        return
+    request = service.spreadsheets().batchUpdate(
+        spreadsheetId=spreadsheet_id,
+        body={"requests": requests},
+    )
+    execute_google_request(request)
+
+
 def update_values(
     service: Any,
     spreadsheet_id: str,
