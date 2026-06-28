@@ -11,7 +11,7 @@ from parishkit.google.auth import (
     execute_google_request,
     run_user_oauth_flow,
 )
-from parishkit.google.calendar import list_events
+from parishkit.google.calendar import list_events, patch_attendee_response
 from parishkit.google.drive import get_file_metadata
 from parishkit.google.groups import list_group_members
 from parishkit.retry import RetryPolicy, TransientRetryError
@@ -188,6 +188,47 @@ def test_list_calendar_events_pages():
             return self._events
 
     assert list_events(Service(), "calendar") == [{"id": "one"}, {"id": "two"}]
+
+
+def test_patch_attendee_response_uses_calendar_patch():
+    class Request:
+        def execute(self):
+            return {}
+
+    class Events:
+        def __init__(self):
+            self.patch_calls = []
+
+        def patch(self, **kwargs):
+            self.patch_calls.append(kwargs)
+            return Request()
+
+    class Service:
+        def __init__(self):
+            self._events = Events()
+
+        def events(self):
+            return self._events
+
+    service = Service()
+
+    patch_attendee_response(service, "room@example.org", "event-1", "accepted")
+
+    assert service._events.patch_calls == [
+        {
+            "calendarId": "room@example.org",
+            "sendUpdates": "all",
+            "eventId": "event-1",
+            "body": {
+                "attendees": [
+                    {
+                        "email": "room@example.org",
+                        "responseStatus": "accepted",
+                    }
+                ]
+            },
+        }
+    ]
 
 
 def test_google_optional_import_error_is_config_error(monkeypatch):

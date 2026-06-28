@@ -17,6 +17,7 @@ def list_events(
     *,
     time_min: str | None = None,
     time_max: str | None = None,
+    max_results: int = 2500,
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     page_token: str | None = None
@@ -28,9 +29,32 @@ def list_events(
             singleEvents=True,
             orderBy="startTime",
             pageToken=page_token,
+            maxResults=max_results,
         )
         response = execute_google_request(request)
         items.extend(response.get("items", []))
         page_token = response.get("nextPageToken")
         if not page_token:
             return items
+
+
+def patch_attendee_response(
+    service: Any,
+    calendar_id: str,
+    event_id: str,
+    response_status: str,
+) -> None:
+    request = service.events().patch(
+        calendarId=calendar_id,
+        sendUpdates="all",
+        eventId=event_id,
+        body={
+            "attendees": [
+                {
+                    "email": calendar_id,
+                    "responseStatus": response_status,
+                }
+            ]
+        },
+    )
+    execute_google_request(request)

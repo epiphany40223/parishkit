@@ -6,8 +6,13 @@ google:
   delegated_subject: admin@example.org
 
 calendar_reservations:
+  timezone: America/New_York
   acceptable_domains:
     - example.org
   calendars:
     - name: Parish Calendar
       calendar_id: parish-calendar@example.org
+      check_conflicts: false
+    - name: Room Calendar
+      calendar_id: room@example.org
+      check_conflicts: true

@@ -307,7 +307,9 @@ def print_ministries_main(argv: Sequence[str] | None = None) -> int:
 
 
 def calendar_reservations_main(argv: Sequence[str] | None = None) -> int:
-    return _placeholder_main("parishkit-calendar-reservations", argv)
+    from parishkit.calendar_reservations import main
+
+    return main(list(argv) if argv is not None else None)
 
 
 def create_ministry_rosters_main(argv: Sequence[str] | None = None) -> int:
