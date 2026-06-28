@@ -74,12 +74,19 @@ class CompressingRotatingFileHandler(RotatingFileHandler):
     """Rotating file handler that gzips rotated log files."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Build a rotating handler that names and compresses rollovers.
+
+        Accepts the same arguments as ``RotatingFileHandler`` and installs a
+        namer/rotator pair so each rotated file gains a ``.gz`` suffix and is
+        written through gzip rather than copied verbatim.
+        """
         super().__init__(*args, **kwargs)
         self.namer = lambda name: f"{name}.gz"
         self.rotator = self._gzip_rotator
 
     @staticmethod
     def _gzip_rotator(source: str, dest: str) -> None:
+        """Compress a rotated log file with gzip."""
         with Path(source).open("rb") as source_file, gzip.open(dest, "wb") as target:
             shutil.copyfileobj(source_file, target)
         Path(source).unlink()
@@ -89,6 +96,12 @@ class SlackLogHandler(logging.Handler):
     """Send log records to Slack using a bot token."""
 
     def __init__(self, *, token: str, channel: str) -> None:
+        """Create a handler that posts records to ``channel`` via ``token``.
+
+        ``slack_sdk`` is imported lazily so installations that never enable
+        Slack notifications do not need the optional dependency; a missing
+        import is surfaced as a clear ``RuntimeError``.
+        """
         super().__init__()
         self.channel = channel
         try:
@@ -98,6 +111,12 @@ class SlackLogHandler(logging.Handler):
         self.client = WebClient(token=token)
 
     def emit(self, record: logging.LogRecord) -> None:
+        """Post a formatted record to Slack, swallowing delivery failures.
+
+        Any error while contacting Slack is routed through ``handleError`` so a
+        notification problem never propagates back into the code that logged
+        the original message.
+        """
         try:
             self.client.chat_postMessage(channel=self.channel, text=self.format(record))
         except Exception:  # pragma: no cover - logging must not mask original errors
@@ -105,10 +124,21 @@ class SlackLogHandler(logging.Handler):
 
 
 def _read_secret_file(path: Path) -> str:
+    """Read a secret (such as a token) from ``path``, trimming whitespace.
+
+    Trailing newlines are common in files written by editors or shells, so the
+    contents are stripped to avoid sending stray whitespace as part of a token.
+    """
     return path.expanduser().read_text(encoding="utf-8").strip()
 
 
 def parse_log_level(level: str | int | None, *, default: int = logging.INFO) -> int:
+    """Normalize a logging level into its integer constant.
+
+    Accepts a level name (case-insensitive, e.g. ``"info"``), an already-numeric
+    level, or ``None`` to fall back to ``default``. Raises ``ValueError`` for an
+    unrecognized name.
+    """
     if level is None:
         return default
     if isinstance(level, int):
@@ -133,9 +163,33 @@ def setup_logging(
     slack_channel: str | None = None,
     slack_level: str | int = DEFAULT_SLACK_LEVEL,
 ) -> logging.Logger:
-    """Configure console, optional file, and optional Slack logging."""
+    """Configure console, optional file, and optional Slack logging.
+
+    Builds a console handler plus, when requested, a rotating (optionally
+    gzip-compressing) file handler and a Slack handler, then atomically swaps
+    them onto the named logger. Verbosity is layered: ``debug`` outranks
+    ``verbose``, which outranks the default warning-only console output.
+
+    Args:
+        verbose: Lower the console threshold to ``INFO``.
+        debug: Lower both console and file thresholds to ``DEBUG``.
+        log_file: Explicit log file path; takes precedence over ``log_dir``.
+        log_dir: Directory in which to create ``parishkit.log`` when no
+            explicit ``log_file`` is given.
+        logger_name: Name of the logger to configure (root when ``None``).
+        rotate: Use size-based rotation with gzip compression of old files.
+        max_bytes/backup_count: Rotation thresholds passed to the handler.
+        slack_token_file/slack_channel: Both required together to enable Slack
+            notifications; supplying only one is a configuration error.
+        slack_level: Minimum level that is forwarded to Slack.
+
+    Returns the configured logger. Raises ``ValueError`` if exactly one of the
+    Slack options is provided.
+    """
 
     logger = logging.getLogger(logger_name)
+    # Slack delivery needs both a token and a destination; reject a half
+    # configuration early rather than silently dropping notifications.
     if bool(slack_token_file) != bool(slack_channel):
         raise ValueError("Slack logging requires both token file and channel")
 
@@ -180,13 +234,19 @@ def setup_logging(
             slack_handler.setFormatter(text_formatter)
             new_handlers.append(slack_handler)
     except Exception:
+        # If any handler fails to construct, close the ones already built so we
+        # do not leak open file descriptors before re-raising.
         for handler in new_handlers:
             handler.close()
         raise
 
+    # Swap handlers only after all new ones are ready, so a failure above leaves
+    # the previously configured logger untouched.
     for handler in list(logger.handlers):
         logger.removeHandler(handler)
         handler.close()
+    # Keep the logger itself permissive; per-handler levels do the real
+    # filtering, and propagation is disabled to avoid duplicate root output.
     logger.setLevel(logging.DEBUG)
     logger.propagate = False
     for handler in new_handlers:
@@ -196,6 +256,7 @@ def setup_logging(
 
 
 def describe_handlers(logger: logging.Logger) -> list[dict[str, Any]]:
+    """Describe configured logging handlers for diagnostics."""
     return [
         {"type": handler.__class__.__name__, "level": handler.level}
         for handler in logger.handlers

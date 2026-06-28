@@ -27,35 +27,50 @@ from parishkit.retry import RetryPolicy
 
 
 class Response:
+    """Minimal stand-in for a requests Response used by the fake Session."""
+
     def __init__(self, payload, *, status_code=200, url="https://api.example/v3/items"):
+        """Capture the JSON payload, status, and URL the client will inspect."""
         self.payload = payload
         self.status_code = status_code
         self.text = json.dumps(payload)
         self.url = url
 
     def json(self):
+        """Return the decoded payload, mimicking Response.json()."""
         return self.payload
 
 
 class Session:
+    """Fake HTTP session that replays queued responses and records calls.
+
+    Each request method pops the next prepared Response in order, so tests can
+    script a sequence of replies and later assert on the recorded ``calls``.
+    """
+
     def __init__(self, responses):
+        """Queue the responses to be returned in order by later requests."""
         self.responses = list(responses)
         self.calls = []
 
     def get(self, url, **kwargs):
+        """Record the GET and return the next queued response."""
         self.calls.append(("get", url, kwargs))
         return self.responses.pop(0)
 
     def post(self, url, **kwargs):
+        """Record the POST and return the next queued response."""
         self.calls.append(("post", url, kwargs))
         return self.responses.pop(0)
 
     def put(self, url, **kwargs):
+        """Record the PUT and return the next queued response."""
         self.calls.append(("put", url, kwargs))
         return self.responses.pop(0)
 
 
 def config():
+    """Build a minimal valid ConstantContactConfig for client tests."""
     return ConstantContactConfig(
         client_id={"endpoints": {"api": "https://api.example"}},
         access_token={"access_token": "token"},
@@ -63,6 +78,7 @@ def config():
 
 
 def test_access_token_serialization(tmp_path):
+    """A saved token round-trips, stays 0o600, and validates within its window."""
     token = {"access_token": "token"}
     set_valid_from_to(
         dt.datetime(2026, 1, 1, tzinfo=dt.UTC), {"expires_in": 60} | token
@@ -78,13 +94,16 @@ def test_access_token_serialization(tmp_path):
     loaded = load_access_token(path)
 
     assert loaded == token
+    # Tokens are secrets, so the file must be owner-read/write only.
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert token_is_valid(token, now=dt.datetime(2026, 1, 1, 0, 0, 30, tzinfo=dt.UTC))
 
 
 def test_api_pagination():
+    """get_all follows ``_links.next`` and concatenates items across pages."""
     session = Session(
         [
+            # First page advertises a next link; second page has none, ending paging.
             Response(
                 {"items": [{"id": 1}], "_links": {"next": {"href": "/v3/items?page=2"}}}
             ),
@@ -95,10 +114,12 @@ def test_api_pagination():
 
     assert client.get_all("items", "items") == [{"id": 1}, {"id": 2}]
     assert len(session.calls) == 2
+    # The client applies its default request timeout.
     assert session.calls[0][2]["timeout"] == 30.0
 
 
 def test_api_error_raises_typed_exception():
+    """A non-retryable 4xx response surfaces as a CCAPIError."""
     client = ConstantContactClient(
         config(), session=Session([Response({}, status_code=400)])
     )
@@ -108,6 +129,8 @@ def test_api_error_raises_typed_exception():
 
 
 def test_exhausted_transient_response_raises_typed_exception():
+    """A transient 429 raises CCAPIError once retry attempts are exhausted."""
+    # Allow only a single attempt so the transient status is not retried away.
     retry_config = ConstantContactConfig(
         client_id={"endpoints": {"api": "https://api.example"}},
         access_token={"access_token": "token"},
@@ -123,6 +146,7 @@ def test_exhausted_transient_response_raises_typed_exception():
 
 
 def test_config_validation_rejects_missing_keys():
+    """Config construction rejects missing keys and wrong-typed fields."""
     with pytest.raises(ConfigError, match="endpoints.api"):
         ConstantContactConfig(client_id={}, access_token={"access_token": "token"})
     with pytest.raises(ConfigError, match="access_token"):
@@ -141,6 +165,7 @@ def test_config_validation_rejects_missing_keys():
 
 
 def test_load_access_token_rejects_bad_shape(tmp_path):
+    """Loading a token file missing required fields raises ConfigError."""
     path = tmp_path / "token.json"
     path.write_text('{"access_token": "token"}', encoding="utf-8")
 
@@ -149,8 +174,14 @@ def test_load_access_token_rejects_bad_shape(tmp_path):
 
 
 def test_refresh_access_token_rejects_non_json_response(tmp_path):
+    """Refreshing against a non-JSON token endpoint reply raises ConfigError.
+
+    The setup stays local to this test so fixtures remain easy to understand
+    and change.
+    """
     start = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
     token_path = tmp_path / "token.json"
+    # Seed an already-expired token so get_access_token attempts a refresh.
     save_access_token(
         token_path,
         {
@@ -162,7 +193,10 @@ def test_refresh_access_token_rejects_non_json_response(tmp_path):
     )
 
     class BadJSONResponse(Response):
+        """Response whose body cannot be decoded as JSON."""
+
         def json(self):
+            """Simulate a body that is not valid JSON."""
             raise ValueError("not json")
 
     with pytest.raises(ConfigError, match="invalid JSON"):
@@ -181,6 +215,7 @@ def test_refresh_access_token_rejects_non_json_response(tmp_path):
 
 
 def test_contact_body_helpers_strip_periods():
+    """Body helpers strip periods from names while preserving email casing."""
     contact = {
         "contact_id": "id",
         "first_name": "T.J.",
@@ -193,6 +228,11 @@ def test_contact_body_helpers_strip_periods():
 
 
 def test_contact_linking_helpers():
+    """Linking resolves list/custom-field names and cross-links contacts to members.
+
+    link_cc_data attaches human-readable list and custom-field names, while
+    link_contacts_to_ps_members joins a contact to its ParishSoft member by email.
+    """
     members = {
         1: {
             "firstName": "Ann",
@@ -217,8 +257,14 @@ def test_contact_linking_helpers():
 
 
 def test_get_access_token_refreshes_expired_token(tmp_path):
+    """An expired token is refreshed via the token endpoint and persisted.
+
+    The setup stays local to this test so fixtures remain easy to understand
+    and change.
+    """
     start = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
     token_path = tmp_path / "token.json"
+    # Stored token expired an hour ago, forcing a refresh round-trip.
     save_access_token(
         token_path,
         {
@@ -254,11 +300,13 @@ def test_get_access_token_refreshes_expired_token(tmp_path):
     )
 
     assert refreshed["access_token"] == "new"
+    # The refreshed token is written back to disk, not just returned.
     assert load_access_token(token_path)["access_token"] == "new"
     assert session.calls[0][2]["timeout"] == 30.0
 
 
 def test_get_access_token_refresh_failure_requires_manual_reauth(tmp_path):
+    """A failed refresh raises ConfigError signaling manual reauth is needed."""
     start = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
     token_path = tmp_path / "token.json"
     save_access_token(
@@ -287,6 +335,7 @@ def test_get_access_token_refresh_failure_requires_manual_reauth(tmp_path):
 
 
 def test_get_access_token_rejects_malformed_refresh_success(tmp_path):
+    """A 200 refresh reply missing required fields is treated as malformed."""
     start = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
     token_path = tmp_path / "token.json"
     save_access_token(
@@ -315,9 +364,15 @@ def test_get_access_token_rejects_malformed_refresh_success(tmp_path):
 
 
 def test_device_oauth_flow_saves_normalized_token():
+    """The device flow stores a token with computed valid-from/valid-to bounds.
+
+    The setup stays local to this test so fixtures remain easy to understand
+    and change.
+    """
     start = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
     session = Session(
         [
+            # First the device authorization request, then the token grant.
             Response(
                 {
                     "verification_uri_complete": "https://auth.example/device",
@@ -333,6 +388,7 @@ def test_device_oauth_flow_saves_normalized_token():
             ),
         ]
     )
+    # Capture user-facing prompts/messages so the flow needs no real console.
     prompts = []
     prints = []
 
@@ -354,14 +410,21 @@ def test_device_oauth_flow_saves_normalized_token():
     assert token["valid from"] == start
     assert token["valid to"] == start + dt.timedelta(seconds=3600)
     assert prompts
+    # The verification URL must be shown to the user to complete authorization.
     assert any("https://auth.example/device" in message for message in prints)
     assert session.calls[0][2]["data"]["response_type"] == "code"
 
 
 def test_device_oauth_flow_polls_pending_authorization():
+    """The device flow polls past authorization_pending, honoring the interval.
+
+    The setup stays local to this test so fixtures remain easy to understand
+    and change.
+    """
     start = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
     session = Session(
         [
+            # Authorization request, then a pending poll, then the granted token.
             Response(
                 {
                     "verification_uri_complete": "https://auth.example/device",
@@ -380,6 +443,7 @@ def test_device_oauth_flow_polls_pending_authorization():
             ),
         ]
     )
+    # Record sleep durations to confirm the polling interval is respected.
     sleeps = []
 
     token = run_device_oauth_flow(
@@ -399,5 +463,6 @@ def test_device_oauth_flow_polls_pending_authorization():
     )
 
     assert token["access_token"] == "token"
+    # One sleep of the advertised interval between the pending poll and success.
     assert sleeps == [1]
     assert len(session.calls) == 3

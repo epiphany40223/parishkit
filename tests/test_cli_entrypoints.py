@@ -15,6 +15,7 @@ EXPECTED_ENTRYPOINTS = {
 
 
 def test_console_entrypoints_are_registered():
+    """pyproject.toml declares exactly the expected console script entry points."""
     with (Path(__file__).parents[1] / "pyproject.toml").open("rb") as stream:
         pyproject = tomllib.load(stream)
 
@@ -22,6 +23,7 @@ def test_console_entrypoints_are_registered():
 
 
 def test_placeholder_entrypoints_report_versions(capsys):
+    """Each entry point prints "<tool> <version>" for --version and exits 0."""
     for entrypoint in EXPECTED_ENTRYPOINTS.values():
         module_name, function_name = entrypoint.split(":", maxsplit=1)
         cli_function = getattr(import_module(module_name), function_name)

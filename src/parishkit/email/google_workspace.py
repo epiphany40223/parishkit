@@ -17,11 +17,23 @@ GMAIL_SMTP_SCOPE = "https://mail.google.com/"
 
 
 def xoauth2_string(user: str, access_token: str) -> str:
+    """Build the base64 SASL XOAUTH2 string for SMTP AUTH.
+
+    Encodes the user and bearer token in the ``user=...^Aauth=Bearer ...^A^A``
+    layout Gmail's XOAUTH2 mechanism expects (``\\x01`` is the control-A
+    separator), then base64-encodes it as required by the AUTH command.
+    """
     payload = f"user={user}\x01auth=Bearer {access_token}\x01\x01"
     return base64.b64encode(payload.encode("utf-8")).decode("ascii")
 
 
 def _google_auth_request() -> Any:
+    """Create the transport Request object used to refresh OAuth tokens.
+
+    Imported lazily so the optional Google dependencies are only required when a
+    token actually needs refreshing; a missing install raises
+    :class:`ConfigError`.
+    """
     try:
         from google.auth.transport.requests import Request
     except ImportError as exc:
@@ -33,6 +45,13 @@ def _google_auth_request() -> Any:
 
 @dataclass(frozen=True)
 class GoogleWorkspaceSMTPProvider(EmailProvider):
+    """Send mail via Gmail SMTP using OAuth2 (XOAUTH2) authentication.
+
+    Authenticates with a service account that has domain-wide delegation to act
+    as ``user`` (the delegated mailbox), avoiding stored passwords.
+    ``smtp_factory`` is injectable so tests can substitute a fake SMTP class.
+    """
+
     smtp_host: str
     smtp_port: int
     user: str
@@ -41,6 +60,13 @@ class GoogleWorkspaceSMTPProvider(EmailProvider):
 
     @classmethod
     def from_config(cls, config: Mapping[str, Any]) -> GoogleWorkspaceSMTPProvider:
+        """Build the provider from YAML configuration.
+
+        Requires ``service_account_file`` and a delegated user (``delegated_user``
+        or ``user``); SMTP host/port default to Gmail's SSL endpoint. Loads
+        service-account credentials scoped for Gmail and impersonating that
+        user. Raises :class:`ConfigError` on missing or mistyped settings.
+        """
         key_file = config.get("service_account_file")
         user = config.get("delegated_user") or config.get("user")
         if not isinstance(key_file, str) or not isinstance(user, str):
@@ -67,10 +93,19 @@ class GoogleWorkspaceSMTPProvider(EmailProvider):
         )
 
     def send(self, message: Email, *, dry_run: bool = False) -> EmailMessage:
+        """Send ``message`` via Gmail SMTP, or return it unsent in dry-run mode.
+
+        Refreshes the OAuth token if it is not currently valid, authenticates
+        with XOAUTH2, and delivers to the combined to/cc/bcc envelope. Returns
+        the constructed :class:`EmailMessage`. Raises :class:`ConfigError` if
+        the token refresh fails or the SMTP server rejects authentication.
+        """
         email_message = build_message(message)
         if dry_run:
             return email_message
         credentials = self.credentials
+        # Refresh only when needed: a freshly loaded service-account credential
+        # has no access token yet, and a cached one may have expired.
         if not getattr(credentials, "valid", False):
             try:
                 credentials.refresh(_google_auth_request())
@@ -79,8 +114,12 @@ class GoogleWorkspaceSMTPProvider(EmailProvider):
                     f"Google Workspace token refresh failed: {exc}"
                 ) from exc
         auth = xoauth2_string(self.user, credentials.token)
+        # bcc recipients go on the SMTP envelope only, never in a header, so
+        # they stay hidden from other recipients.
         recipients = list(message.to) + list(message.cc) + list(message.bcc)
         with self.smtp_factory(self.smtp_host, self.smtp_port) as smtp:
+            # Issue the AUTH command manually because smtplib has no built-in
+            # XOAUTH2 helper; 235 is the SMTP "authentication succeeded" code.
             code, response = smtp.docmd("AUTH", "XOAUTH2 " + auth)
             if code != 235:
                 raise ConfigError(f"SMTP XOAUTH2 failed: {code} {response!r}")

@@ -10,12 +10,18 @@ from parishkit.parishsoft import ParishSoftClient, ParishSoftConfig, parse_cache
 
 
 def count_items(payload) -> int:
+    """Count items returned by a ParishSoft endpoint."""
     if isinstance(payload, dict) and isinstance(payload.get("data"), list):
         return len(payload["data"])
     return len(payload)
 
 
 def main() -> int:
+    """Run.
+
+    The top-level command keeps user-facing error handling here and
+    delegates behavior to smaller helpers.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--api-key-file", required=True, type=Path)
     parser.add_argument("--expected-organization")

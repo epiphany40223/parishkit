@@ -42,6 +42,12 @@ DEFAULT_LOCK_FILE = DEFAULT_RUN_DIR / "runner.lock"
 
 @dataclass(frozen=True)
 class LockConfig:
+    """Settings controlling the single-instance runner lock.
+
+    ``stale_after`` bounds how long a lock may persist before it is considered
+    abandoned; ``stale_action`` chooses what to do when a stale lock is found.
+    """
+
     path: Path = DEFAULT_LOCK_FILE
     stale_after: timedelta | None = None
     stale_action: str = "exit-and-alert"
@@ -49,6 +55,13 @@ class LockConfig:
 
 @dataclass(frozen=True)
 class JobConfig:
+    """A single command the runner can execute.
+
+    ``command`` is an argv list (never a shell string). ``timeout`` is in
+    seconds; ``None`` means wait indefinitely. Disabled jobs are skipped unless
+    explicitly requested.
+    """
+
     name: str
     command: list[str]
     enabled: bool = True
@@ -59,6 +72,13 @@ class JobConfig:
 
 @dataclass(frozen=True)
 class RunnerConfig:
+    """Fully resolved runner configuration for a single invocation.
+
+    Aggregates the lock settings and the ordered list of jobs along with
+    failure and Slack-notification policy. ``context`` is an optional label
+    prepended to summary messages so multiple deployments are distinguishable.
+    """
+
     lock: LockConfig = field(default_factory=LockConfig)
     jobs: list[JobConfig] = field(default_factory=list)
     stop_on_first_failure: bool = True
@@ -69,6 +89,13 @@ class RunnerConfig:
 
 @dataclass(frozen=True)
 class JobResult:
+    """Captured outcome of running one job.
+
+    ``timed_out`` distinguishes a job killed for exceeding its timeout from one
+    that merely returned a non-zero exit code, since the two are reported and
+    exit-coded differently.
+    """
+
     name: str
     returncode: int
     stdout: str
@@ -77,6 +104,7 @@ class JobResult:
 
     @property
     def ok(self) -> bool:
+        """Return True only if the job exited 0 and did not time out."""
         return self.returncode == 0 and not self.timed_out
 
 
@@ -87,14 +115,26 @@ class RunnerError(RuntimeError):
 
 
 class LockUnavailable(RunnerError):
+    """Raised when the runner lock is held or cannot be acquired safely."""
+
     exit_code = EXIT_LOCKED
 
 
 class RunnerConfigError(RunnerError):
+    """Raised for invalid runner configuration or job selection."""
+
     exit_code = EXIT_CONFIG_ERROR
 
 
 def parse_duration(value: str | int | float | None) -> float | None:
+    """Parse a duration into seconds.
+
+    Accepts ``None``/empty (returns ``None``), a non-negative number (treated
+    as seconds), or a string with a unit suffix: ``s``, ``m``, ``h``, or ``d``
+    (e.g. ``"30m"``). Booleans and other types are rejected. String values must
+    be a positive integer followed by a valid unit. Raises ``ConfigError`` on
+    any malformed input.
+    """
     if value in (None, ""):
         return None
     if isinstance(value, bool):
@@ -114,6 +154,7 @@ def parse_duration(value: str | int | float | None) -> float | None:
 
 
 def _path(value: Any, key: str) -> Path | None:
+    """Read a path config value."""
     if value in (None, ""):
         return None
     if not isinstance(value, str):
@@ -122,6 +163,7 @@ def _path(value: Any, key: str) -> Path | None:
 
 
 def _string_list(value: Any, key: str) -> list[str]:
+    """Read a string list config value."""
     if (
         not isinstance(value, list)
         or not value
@@ -132,6 +174,7 @@ def _string_list(value: Any, key: str) -> list[str]:
 
 
 def _bool_value(value: Any, key: str, *, default: bool) -> bool:
+    """Read a boolean config value."""
     if value is None:
         return default
     if not isinstance(value, bool):
@@ -140,6 +183,7 @@ def _bool_value(value: Any, key: str, *, default: bool) -> bool:
 
 
 def _optional_string(value: Any, key: str) -> str | None:
+    """Read an optional string config value."""
     if value in (None, ""):
         return None
     if not isinstance(value, str):
@@ -148,6 +192,7 @@ def _optional_string(value: Any, key: str) -> str | None:
 
 
 def _choice(value: Any, key: str, choices: set[str], *, default: str) -> str:
+    """Validate a scalar config value against allowed choices."""
     if value is None:
         return default
     if not isinstance(value, str):
@@ -158,6 +203,7 @@ def _choice(value: Any, key: str, choices: set[str], *, default: str) -> str:
 
 
 def load_runner_config(path: Path) -> RunnerConfig:
+    """Load runner YAML configuration from disk."""
     data = load_yaml_config(path, required=True)
     return parse_runner_config(data, base_dir=path.parent)
 
@@ -167,6 +213,11 @@ def parse_runner_config(
     *,
     base_dir: Path | None = None,
 ) -> RunnerConfig:
+    """Parse runner config.
+
+    Each scalar is normalized at the boundary so the rest of the runner can
+    work with typed configuration values.
+    """
     lock_data = data.get("lock", {})
     if not isinstance(lock_data, dict):
         raise ConfigError("lock must be a mapping")
@@ -178,6 +229,8 @@ def parse_runner_config(
         raise ConfigError("slack must be a mapping")
 
     lock_path = _path(lock_data.get("path"), "lock.path") or DEFAULT_LOCK_FILE
+    # Relative paths are resolved against the config file's directory so a
+    # config remains portable regardless of the process working directory.
     if base_dir and not lock_path.is_absolute():
         lock_path = base_dir / lock_path
     stale_after = parse_duration(lock_data.get("stale_after"))
@@ -208,11 +261,14 @@ def parse_runner_config(
             "runner.stop_on_first_failure",
             default=True,
         ),
+        # Prefer the slack section but fall back to the runner section so older
+        # configs that placed notify_success under runner: still work.
         notify_success=_bool_value(
             slack_data.get("notify_success", runner_data.get("notify_success")),
             "slack.notify_success",
             default=False,
         ),
+        # runner.context wins over slack.context when both are present.
         context=runner_context or slack_context,
         include_output_in_slack=_bool_value(
             slack_data.get("include_output"),
@@ -223,6 +279,7 @@ def parse_runner_config(
 
 
 def _parse_job(raw: Any, *, base_dir: Path | None) -> JobConfig:
+    """Parse one configured runner job."""
     if not isinstance(raw, dict):
         raise ConfigError("each job must be a mapping")
     name = raw.get("name")
@@ -248,6 +305,7 @@ def _parse_job(raw: Any, *, base_dir: Path | None) -> JobConfig:
 
 
 def _validate_unique_job_names(jobs: list[JobConfig]) -> None:
+    """Validate unique job names."""
     seen: set[str] = set()
     duplicates: set[str] = set()
     for job in jobs:
@@ -259,6 +317,15 @@ def _validate_unique_job_names(jobs: list[JobConfig]) -> None:
 
 
 class LockFile:
+    """Exclusive single-instance lock backed by an on-disk lock file.
+
+    Used as a context manager around a runner invocation to guarantee that
+    only one runner runs at a time. Each instance generates a unique token
+    written into the lock metadata; release only removes the file when that
+    token still matches, so a process never deletes a lock owned by a
+    different, newer runner.
+    """
+
     def __init__(
         self,
         config: LockConfig,
@@ -266,6 +333,7 @@ class LockFile:
         command: list[str],
         timeout: float | None = None,
     ) -> None:
+        """Prepare a lock for ``config.path`` with a fresh ownership token."""
         self.config = config
         self.command = command
         self.timeout = timeout
@@ -274,13 +342,24 @@ class LockFile:
         self._token = uuid.uuid4().hex
 
     def __enter__(self) -> LockFile:
+        """Acquire the lock on entry and return self."""
         self.acquire()
         return self
 
     def __exit__(self, _exc_type: object, _exc: object, _tb: object) -> None:
+        """Release the lock on exit, whether or not the body raised."""
         self.release()
 
     def acquire(self) -> None:
+        """Acquire the cron runner lock or raise ``LockUnavailable``.
+
+        Creation uses ``O_CREAT | O_EXCL`` so the lock file is created
+        atomically: if it already exists, ``_handle_existing_lock`` decides
+        whether the lock is stale and may be removed. The whole sequence runs
+        under ``_stale_recovery_guard`` so concurrent runners do not race while
+        clearing a stale lock. A second ``FileExistsError`` after recovery means
+        another process won the race, which is reported rather than overwritten.
+        """
         flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
         metadata = self._metadata()
         try:
@@ -289,6 +368,7 @@ class LockFile:
                 try:
                     fd = os.open(self.path, flags, 0o644)
                 except FileExistsError:
+                    # Lock present: drop it only if stale, then retry once.
                     self._handle_existing_lock()
                     try:
                         fd = os.open(self.path, flags, 0o644)
@@ -302,6 +382,13 @@ class LockFile:
             raise LockUnavailable(f"runner lock failed: {self.path}: {exc}") from exc
 
     def _write_metadata(self, fd: int, metadata: dict[str, Any]) -> None:
+        """Write lock metadata to the open descriptor and register the lock.
+
+        Takes ownership of ``fd``. The contents are flushed and fsynced so the
+        token survives a crash. On write failure the partial lock file is
+        removed before re-raising. On success the lock is appended to
+        ``_ACTIVE_LOCKS`` so signal handlers can release it during shutdown.
+        """
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as lock_file:
                 json.dump(metadata, lock_file, indent=2)
@@ -316,6 +403,13 @@ class LockFile:
 
     @contextmanager
     def _stale_recovery_guard(self) -> Iterator[None]:
+        """Serialize stale-lock recovery between runner processes.
+
+        Holds an exclusive ``flock`` on a sibling ``.recovery`` file for the
+        duration of the acquire attempt. The advisory flock (separate from the
+        O_EXCL lock file itself) prevents two runners from simultaneously
+        deciding the same stale lock can be removed and both proceeding.
+        """
         guard_path = self.path.with_name(f"{self.path.name}.recovery")
         with guard_path.open("a+", encoding="utf-8") as guard_file:
             fcntl.flock(guard_file.fileno(), fcntl.LOCK_EX)
@@ -325,6 +419,12 @@ class LockFile:
                 fcntl.flock(guard_file.fileno(), fcntl.LOCK_UN)
 
     def release(self) -> None:
+        """Release this runner's lock file if we still own it.
+
+        Safe to call more than once. The on-disk token is re-read and compared
+        to ours before unlinking so we never delete a lock that a different
+        runner has since taken over (e.g. after stale recovery elsewhere).
+        """
         if self._acquired:
             metadata = read_lock_metadata(self.path)
             if metadata.get("token") == self._token:
@@ -341,6 +441,7 @@ class LockFile:
                 _ACTIVE_LOCKS.remove(self)
 
     def _metadata(self) -> dict[str, Any]:
+        """Build lock metadata for the current process."""
         return {
             "host": socket.gethostname(),
             "pid": os.getpid(),
@@ -351,6 +452,14 @@ class LockFile:
         }
 
     def _handle_existing_lock(self) -> None:
+        """Decide what to do about a pre-existing lock file.
+
+        Reads the existing metadata and raises ``LockUnavailable`` if the lock
+        is unreadable or still active. If it is stale, the configured
+        ``stale_action`` governs the outcome: ``remove-and-continue`` deletes it
+        (after re-reading to confirm it has not changed) so acquisition can
+        retry; ``fail-closed`` and the default both refuse to proceed.
+        """
         metadata = read_lock_metadata(self.path)
         if not metadata:
             raise LockUnavailable(f"runner lock metadata is unavailable: {self.path}")
@@ -372,6 +481,11 @@ class LockFile:
 
 
 def read_lock_metadata(path: Path) -> dict[str, Any]:
+    """Read lock metadata, returning an empty dict if missing or malformed.
+
+    A missing file or corrupt JSON yields ``{}`` so callers can treat an
+    unreadable lock uniformly rather than crashing.
+    """
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -379,6 +493,12 @@ def read_lock_metadata(path: Path) -> dict[str, Any]:
 
 
 def is_lock_stale(metadata: dict[str, Any], stale_after: timedelta | None) -> bool:
+    """Report whether a lock has aged past ``stale_after``.
+
+    Returns ``False`` when staleness checking is disabled (``stale_after`` is
+    ``None``). A missing or unparseable ``start_time`` is treated as stale.
+    Naive timestamps are assumed to be UTC for the age comparison.
+    """
     if stale_after is None:
         return False
     raw_start = metadata.get("start_time")
@@ -394,6 +514,16 @@ def is_lock_stale(metadata: dict[str, Any], stale_after: timedelta | None) -> bo
 
 
 def run_job(job: JobConfig) -> JobResult:
+    """Run one job to completion and capture its result.
+
+    The job's ``env`` is layered on top of the current environment, output is
+    captured as text, and the child runs in its own session/process group
+    (``start_new_session=True``) so a timeout can signal the whole group rather
+    than orphaning grandchildren. The steps are kept explicit so operational
+    behavior stays easy to audit and test. Returns a ``JobResult`` for every
+    outcome: a failed spawn yields ``EXIT_JOB_FAILED`` and a timeout yields
+    ``EXIT_TIMEOUT`` with ``timed_out=True``; no exception escapes.
+    """
     env = os.environ.copy()
     env.update(job.env)
     try:
@@ -407,17 +537,20 @@ def run_job(job: JobConfig) -> JobResult:
             start_new_session=True,
         )
     except OSError as exc:
+        # Command could not be launched at all (e.g. missing executable).
         return JobResult(
             name=job.name,
             returncode=EXIT_JOB_FAILED,
             stdout="",
             stderr=str(exc),
         )
+    # Track the live process so signal handlers can tear it down on shutdown.
     _ACTIVE_PROCESSES.append(process)
     try:
         stdout, stderr = process.communicate(timeout=job.timeout)
     except subprocess.TimeoutExpired as exc:
         _terminate_process(process)
+        # Drain any buffered output produced before the kill.
         stdout, stderr = process.communicate()
         return JobResult(
             name=job.name,
@@ -444,6 +577,7 @@ def run_jobs(
     include_disabled: bool = False,
     logger: logging.Logger | None = None,
 ) -> tuple[int, list[JobResult]]:
+    """Run selected cron jobs and collect their results."""
     logger = logger or logging.getLogger("parishkit.pk_cron_runner")
     jobs = select_jobs(config.jobs, selected_jobs, include_disabled=include_disabled)
     if not jobs:
@@ -461,6 +595,7 @@ def run_jobs(
 
 
 def _results_exit_code(results: list[JobResult]) -> int:
+    """Return the process exit code for runner results."""
     if any(result.timed_out for result in results):
         return EXIT_TIMEOUT
     if any(not result.ok for result in results):
@@ -474,11 +609,22 @@ def select_jobs(
     *,
     include_disabled: bool = False,
 ) -> list[JobConfig]:
+    """Select which jobs to run.
+
+    With no ``selected_jobs`` every job is returned in config order; disabled
+    jobs are dropped unless ``include_disabled`` is set. When names are given,
+    unknown names raise ``RunnerConfigError`` and the result follows the
+    requested order (not config order). Requested-but-disabled jobs are still
+    filtered out unless ``include_disabled`` is set.
+    """
     if selected_jobs:
         by_name = {job.name: job for job in jobs}
         missing = sorted(set(selected_jobs) - set(by_name))
         if missing:
             raise RunnerConfigError(f"unknown job(s): {', '.join(missing)}")
+        # The inner `for job in [by_name[name]]` binds each requested name to
+        # its JobConfig so the trailing filter can drop disabled ones while
+        # preserving the user-requested ordering.
         return [
             job
             for name in selected_jobs
@@ -489,6 +635,7 @@ def select_jobs(
 
 
 def _single_command_config(args: argparse.Namespace) -> RunnerConfig:
+    """Build runner config for direct command mode."""
     if not args.command:
         raise ConfigError("--command requires at least one command argument")
     lock_path = args.lock_file or DEFAULT_LOCK_FILE
@@ -515,6 +662,7 @@ def _single_command_config(args: argparse.Namespace) -> RunnerConfig:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the command-line argument parser."""
     parser = argparse.ArgumentParser(prog="pk-cron-runner")
     parser.add_argument(
         "--version",
@@ -541,6 +689,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the cron runner CLI and return a process exit code.
+
+    Parses arguments, sets up logging, resolves the effective configuration
+    (YAML or single ``--command`` mode) with CLI overrides applied, then
+    executes the selected jobs while holding the single-instance lock and
+    custom signal handlers. All user-facing error handling lives here: known
+    runner and config failures are logged and mapped to their dedicated exit
+    codes rather than raising, so cron sees a meaningful status.
+    """
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.version:
@@ -567,6 +724,8 @@ def main(argv: list[str] | None = None) -> int:
             raise ConfigError(f"logging setup failed: {exc}") from exc
         runner_config = _load_or_build_config(args, effective_config)
         runner_config = _apply_cli_overrides(runner_config, args)
+        # Rebuild the frozen config with stop_on_first_failure cleared; all
+        # other fields are carried over unchanged.
         if args.continue_on_failure:
             runner_config = RunnerConfig(
                 lock=runner_config.lock,
@@ -618,6 +777,7 @@ def _load_or_build_config(
     args: argparse.Namespace,
     config_path: Path | None,
 ) -> RunnerConfig:
+    """Load YAML config or build command-mode config."""
     if config_path:
         return load_runner_config(config_path)
     if args.command is not None:
@@ -632,6 +792,12 @@ def _apply_cli_overrides(
     config: RunnerConfig,
     args: argparse.Namespace,
 ) -> RunnerConfig:
+    """Override lock settings and per-job timeout from CLI flags.
+
+    Each lock-related flag falls back to the existing config value when not
+    given. A ``--timeout`` flag, if present, replaces the timeout on *every*
+    job; otherwise the configured per-job timeouts are left untouched.
+    """
     lock_path = args.lock_file or config.lock.path
     stale_after = (
         timedelta(seconds=parse_duration(args.stale_after))
@@ -640,6 +806,7 @@ def _apply_cli_overrides(
     )
     stale_action = args.stale_action or config.lock.stale_action
     timeout = parse_duration(args.timeout) if args.timeout else None
+    # A CLI timeout is a blanket override applied uniformly to all jobs.
     jobs = (
         [replace(job, timeout=timeout) for job in config.jobs]
         if timeout is not None
@@ -660,6 +827,7 @@ def _apply_cli_overrides(
 
 
 def _effective_config_path(args: argparse.Namespace) -> Path | None:
+    """Return the config path that should be reported."""
     if args.config:
         return Path(args.config).expanduser().resolve()
     if args.command is not None:
@@ -675,6 +843,7 @@ def _log_summary(
     exit_code: int,
     results: list[JobResult],
 ) -> None:
+    """Log and optionally notify a runner summary."""
     context = f"{config.context}: " if config.context else ""
     if exit_code == EXIT_SUCCESS:
         message = f"{context}runner completed successfully ({len(results)} job(s))"
@@ -691,6 +860,7 @@ def _failure_summary(
     results: list[JobResult],
     config: RunnerConfig,
 ) -> str:
+    """Build the cron runner failure summary message."""
     failed = [result for result in results if not result.ok]
     lines = [f"runner failed ({len(results)} job(s), exit {exit_code})"]
     for result in failed:
@@ -704,6 +874,7 @@ def _failure_summary(
 
 
 def _bounded_output(result: JobResult, limit: int = 1500) -> str:
+    """Return output trimmed to the configured display limit."""
     parts = []
     if result.stderr:
         parts.append(f"stderr:\n{result.stderr.strip()}")
@@ -720,6 +891,14 @@ _ACTIVE_PROCESSES: list[subprocess.Popen[str]] = []
 
 
 def _terminate_process(process: subprocess.Popen[str]) -> None:
+    """Stop a child process and its descendants, escalating if needed.
+
+    Sends ``SIGTERM`` to the child's process group (so grandchildren spawned by
+    the job are also signalled), waits up to five seconds, then escalates to
+    ``SIGKILL`` if it is still alive. ``killpg`` is preferred but falls back to
+    signalling just the child if the group call fails. Already-exited processes
+    and lost PIDs are handled quietly so this is safe to call unconditionally.
+    """
     if process.poll() is not None:
         return
     try:
@@ -742,11 +921,19 @@ def _terminate_process(process: subprocess.Popen[str]) -> None:
 
 @contextmanager
 def _signal_handlers() -> Iterator[None]:
+    """Install SIGTERM/SIGINT handlers that clean up before exiting.
+
+    While active, a delivered signal terminates every tracked child process and
+    releases every held lock, then raises ``SystemExit(128 + signum)`` (the
+    shell convention for signal-caused exits). The previous handlers are
+    restored on exit so the override is scoped to the runner invocation.
+    """
     previous_handlers = {
         signum: signal.getsignal(signum) for signum in (signal.SIGTERM, signal.SIGINT)
     }
 
     def handle_signal(signum: int, _frame: object) -> None:
+        """Handle a shutdown signal for a child process."""
         for process in list(_ACTIVE_PROCESSES):
             _terminate_process(process)
         for lock in list(_ACTIVE_LOCKS):

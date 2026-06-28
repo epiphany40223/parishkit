@@ -31,6 +31,12 @@ from parishkit.pk_cron_runner import (
 
 
 def _acquire_stale_lock_for_test(lock_path: str, queue: multiprocessing.Queue) -> None:
+    """Child-process target: try to take over a stale lock and report outcome.
+
+    Runs in a separate spawned process so two of them race over the same stale
+    lock. Reports ``"acquired"`` on success (then briefly holds the lock) or
+    ``"locked"`` if another process won the takeover.
+    """
     try:
         lock_config = LockConfig(
             path=Path(lock_path),
@@ -45,6 +51,8 @@ def _acquire_stale_lock_for_test(lock_path: str, queue: multiprocessing.Queue) -
 
 
 def test_lock_acquisition_writes_metadata_and_cleans_up(tmp_path):
+    """Acquiring a lock writes its metadata file; exiting the context removes
+    it."""
     lock_path = tmp_path / "runner.lock"
 
     with LockFile(LockConfig(path=lock_path), command=["test"]):
@@ -57,6 +65,8 @@ def test_lock_acquisition_writes_metadata_and_cleans_up(tmp_path):
 
 
 def test_active_lock_exits(tmp_path):
+    """A fresh (non-stale) existing lock blocks acquisition with
+    LockUnavailable."""
     lock_path = tmp_path / "runner.lock"
     lock_path.write_text(
         json.dumps({"start_time": datetime.now(UTC).isoformat()}),
@@ -68,6 +78,9 @@ def test_active_lock_exits(tmp_path):
 
 
 def test_lock_filesystem_error_raises_lock_unavailable(tmp_path):
+    """A filesystem error while creating the lock is wrapped as
+    LockUnavailable."""
+    # Use a regular file as the lock's parent directory so the create fails.
     parent_file = tmp_path / "not-a-directory"
     parent_file.write_text("file", encoding="utf-8")
 
@@ -78,6 +91,8 @@ def test_lock_filesystem_error_raises_lock_unavailable(tmp_path):
 
 
 def test_stale_lock_remove_and_continue(tmp_path):
+    """A stale lock with remove-and-continue is taken over, then removed on
+    release."""
     lock_path = tmp_path / "runner.lock"
     lock_path.write_text(
         json.dumps(
@@ -101,6 +116,8 @@ def test_stale_lock_remove_and_continue(tmp_path):
 
 
 def test_stale_lock_remove_and_continue_detects_replaced_lock(monkeypatch, tmp_path):
+    """Takeover aborts if the lock's metadata changes between the staleness
+    check and the removal, signalling another runner replaced it."""
     lock_path = tmp_path / "runner.lock"
     stale_metadata = {
         "token": "stale",
@@ -111,6 +128,8 @@ def test_stale_lock_remove_and_continue_detects_replaced_lock(monkeypatch, tmp_p
         "start_time": datetime.now(UTC).isoformat(),
     }
     lock_path.write_text(json.dumps(stale_metadata), encoding="utf-8")
+    # First read sees the stale lock; the re-read sees a different token,
+    # simulating a concurrent replacement of the lock during takeover.
     reads = iter([stale_metadata, replacement_metadata])
     monkeypatch.setattr(runner, "read_lock_metadata", lambda _path: next(reads))
 
@@ -132,12 +151,16 @@ def test_stale_lock_remove_and_continue_detects_replaced_lock(monkeypatch, tmp_p
 def test_stale_lock_remove_and_continue_rejects_unreadable_reread(
     monkeypatch, tmp_path
 ):
+    """Takeover aborts if the lock becomes unreadable (empty metadata) on the
+    re-read, rather than risking removal of a lock it can no longer verify."""
     lock_path = tmp_path / "runner.lock"
     stale_metadata = {
         "token": "stale",
         "start_time": (datetime.now(UTC) - timedelta(hours=2)).isoformat(),
     }
     lock_path.write_text(json.dumps(stale_metadata), encoding="utf-8")
+    # Re-read returns empty metadata, modelling a lock that vanished or was
+    # rewritten and can no longer be confirmed as the same stale lock.
     reads = iter([stale_metadata, {}])
     monkeypatch.setattr(runner, "read_lock_metadata", lambda _path: next(reads))
 
@@ -157,6 +180,8 @@ def test_stale_lock_remove_and_continue_rejects_unreadable_reread(
 
 
 def test_stale_lock_remove_and_continue_rejects_empty_metadata(tmp_path):
+    """A lock file with empty/unparseable metadata is not treated as stale and
+    removed; acquisition fails and the file is left in place."""
     lock_path = tmp_path / "runner.lock"
     lock_path.write_text("", encoding="utf-8")
     lock = LockFile(
@@ -175,6 +200,8 @@ def test_stale_lock_remove_and_continue_rejects_empty_metadata(tmp_path):
 
 
 def test_stale_lock_recovery_serializes_concurrent_runners(tmp_path):
+    """When two real processes race to take over the same stale lock, exactly
+    one acquires it and the other is blocked, with both exiting cleanly."""
     lock_path = tmp_path / "runner.lock"
     lock_path.write_text(
         json.dumps(
@@ -185,6 +212,7 @@ def test_stale_lock_recovery_serializes_concurrent_runners(tmp_path):
         ),
         encoding="utf-8",
     )
+    # Use "spawn" for a clean, fork-state-free child on every platform.
     context = multiprocessing.get_context("spawn")
     queue = context.Queue()
     processes = [
@@ -206,6 +234,8 @@ def test_stale_lock_recovery_serializes_concurrent_runners(tmp_path):
 
 
 def test_lock_release_does_not_remove_replaced_lock(tmp_path):
+    """Releasing a stale lock that has already been replaced must not delete the
+    replacement: the on-disk lock still belongs to the new owner."""
     lock_path = tmp_path / "runner.lock"
     stale_lock = LockFile(
         LockConfig(path=lock_path),
@@ -230,6 +260,8 @@ def test_lock_release_does_not_remove_replaced_lock(tmp_path):
 
 
 def test_lock_release_logs_unlink_failure(monkeypatch, tmp_path, caplog):
+    """If removing the lock file fails on release, the error is logged as a
+    warning and the lock is still marked released."""
     lock_path = tmp_path / "runner.lock"
     lock = LockFile(LockConfig(path=lock_path), command=["test"])
     lock.acquire()
@@ -247,10 +279,12 @@ def test_lock_release_logs_unlink_failure(monkeypatch, tmp_path, caplog):
 
 
 def test_is_lock_stale_with_bad_metadata():
+    """Metadata with no usable start time is treated as stale."""
     assert is_lock_stale({}, timedelta(minutes=1))
 
 
 def test_run_job_success():
+    """A job that exits zero is reported ok with its captured stdout."""
     job = JobConfig(
         name="ok",
         command=[sys.executable, "-c", "print('ok')"],
@@ -263,6 +297,8 @@ def test_run_job_success():
 
 
 def test_run_job_timeout():
+    """A job that exceeds its timeout is flagged timed_out with the timeout
+    exit code."""
     job = JobConfig(
         name="slow",
         command=[sys.executable, "-c", "import time; time.sleep(2)"],
@@ -276,6 +312,8 @@ def test_run_job_timeout():
 
 
 def test_run_job_reports_startup_failure(tmp_path):
+    """A job that cannot even start (missing cwd) is reported as a failure with
+    the job-failed exit code and the OS error in stderr."""
     job = JobConfig(
         name="bad-cwd",
         command=[sys.executable, "-c", "print('never')"],
@@ -290,6 +328,8 @@ def test_run_job_reports_startup_failure(tmp_path):
 
 
 def test_run_jobs_continue_and_summarize():
+    """With stop_on_first_failure off, a failing job does not halt the run; all
+    jobs run and the overall exit code reflects the failure."""
     config = RunnerConfig(
         jobs=[
             JobConfig("bad", [sys.executable, "-c", "raise SystemExit(7)"]),
@@ -340,6 +380,8 @@ def test_run_jobs_captures_output_without_logging_it(caplog):
 
 
 def test_run_jobs_preserves_timeout_exit_code_when_continuing():
+    """When continuing past failures, an earlier timeout's exit code wins over a
+    later ordinary failure in the aggregate result."""
     config = RunnerConfig(
         jobs=[
             JobConfig(
@@ -359,6 +401,8 @@ def test_run_jobs_preserves_timeout_exit_code_when_continuing():
 
 
 def test_select_jobs_skips_disabled_explicitly_by_default():
+    """A disabled job is skipped by default but included when
+    include_disabled is set, even when named explicitly."""
     jobs = [JobConfig("disabled", ["true"], enabled=False)]
 
     assert select_jobs(jobs, ["disabled"], include_disabled=False) == []
@@ -366,11 +410,14 @@ def test_select_jobs_skips_disabled_explicitly_by_default():
 
 
 def test_select_jobs_unknown_fails():
+    """Selecting a job name that does not exist raises a config error."""
     with pytest.raises(RunnerConfigError, match="unknown job"):
         select_jobs([], ["missing"])
 
 
 def test_parse_runner_config_resolves_jobs(tmp_path):
+    """Parsing resolves relative paths against base_dir, parses durations into
+    seconds, and carries through runner-level settings."""
     config = parse_runner_config(
         {
             "lock": {
@@ -399,6 +446,8 @@ def test_parse_runner_config_resolves_jobs(tmp_path):
 
 
 def test_parse_runner_config_rejects_string_booleans():
+    """A string in place of a real boolean for ``enabled`` is rejected rather
+    than silently coerced."""
     with pytest.raises(Exception, match="enabled"):
         parse_runner_config(
             {"jobs": [{"name": "bad", "command": ["echo", "ok"], "enabled": "false"}]}
@@ -414,21 +463,28 @@ def test_parse_runner_config_rejects_string_booleans():
     ],
 )
 def test_parse_runner_config_rejects_malformed_scalar_values(config, message):
+    """Fields expecting a scalar reject non-scalar values, naming the offending
+    field in the error message."""
     with pytest.raises(Exception, match=message):
         parse_runner_config(config)
 
 
 def test_parse_duration_rejects_bool():
+    """A boolean is not accepted as a duration (bool is a subclass of int)."""
     with pytest.raises(Exception, match="duration"):
         parse_duration(True)
 
 
 def test_parse_runner_config_rejects_shell_string_command():
+    """A command must be an argument list, not a shell string, so it is
+    rejected."""
     with pytest.raises(Exception, match="command"):
         parse_runner_config({"jobs": [{"name": "bad", "command": "echo ok"}]})
 
 
 def test_parse_runner_config_rejects_duplicate_job_names():
+    """Two jobs sharing a name are rejected, since names must be unique
+    selectors."""
     with pytest.raises(Exception, match="duplicate job name"):
         parse_runner_config(
             {
@@ -441,6 +497,7 @@ def test_parse_runner_config_rejects_duplicate_job_names():
 
 
 def test_main_runs_single_cli_command_without_config(tmp_path):
+    """--command runs an ad hoc command with no config file and succeeds."""
     exit_code = main(
         [
             "--lock-file",
@@ -456,6 +513,12 @@ def test_main_runs_single_cli_command_without_config(tmp_path):
 
 
 def test_main_command_mode_ignores_default_config(monkeypatch, tmp_path):
+    """In --command mode the default config is ignored: the ad hoc command runs
+    (writing the marker) instead of the configured job that would exit 99.
+
+    The setup stays local to this test so fixtures remain easy to understand
+    and change.
+    """
     config_file = tmp_path / "runner.yaml"
     marker = tmp_path / "marker.txt"
     config_file.write_text(
@@ -489,6 +552,8 @@ jobs:
 
 
 def test_main_rejects_command_with_explicit_config(tmp_path):
+    """Combining --command with an explicit --config is a usage error
+    (exit 2)."""
     config_file = tmp_path / "runner.yaml"
     config_file.write_text("jobs: []\n", encoding="utf-8")
 
@@ -498,6 +563,8 @@ def test_main_rejects_command_with_explicit_config(tmp_path):
 def test_main_rejects_empty_command_even_when_default_config_exists(
     monkeypatch, tmp_path
 ):
+    """An empty --command is a usage error even when a default config exists;
+    the default job must not run as a fallback."""
     config_file = tmp_path / "runner.yaml"
     marker = tmp_path / "marker.txt"
     config_file.write_text(
@@ -520,6 +587,8 @@ jobs:
 
 
 def test_main_returns_config_error_for_logging_setup_failure(tmp_path):
+    """A logging setup failure (Slack channel with no usable config) returns the
+    config-error exit code instead of running the command."""
     assert (
         main(
             [
@@ -538,6 +607,12 @@ def test_main_returns_config_error_for_logging_setup_failure(tmp_path):
 
 
 def test_main_applies_lock_and_timeout_overrides_to_configured_run(tmp_path):
+    """CLI lock/stale/timeout flags override the YAML config: the override lock
+    is used (configured one untouched) and the short timeout fires.
+
+    The setup stays local to this test so fixtures remain easy to understand
+    and change.
+    """
     config_file = tmp_path / "runner.yaml"
     configured_lock = tmp_path / "configured.lock"
     override_lock = tmp_path / "override.lock"
@@ -576,6 +651,8 @@ jobs:
 
 
 def test_main_runs_selected_yaml_job(tmp_path):
+    """Naming a job on the command line runs only that job; the unselected job
+    (which would exit 99) is skipped."""
     config_file = tmp_path / "runner.yaml"
     marker = tmp_path / "marker.txt"
     config_file.write_text(
@@ -604,6 +681,8 @@ jobs:
 
 
 def test_main_uses_default_config_for_logging(monkeypatch, tmp_path):
+    """With no args, the default config is loaded and its logging settings take
+    effect, creating the configured log file."""
     config_file = tmp_path / "runner.yaml"
     log_file = tmp_path / "runner.log"
     config_file.write_text(
@@ -628,6 +707,8 @@ jobs:
 
 
 def test_main_returns_config_error_without_config_or_command(monkeypatch):
+    """With neither a command nor any readable default config, main returns the
+    config-error exit code."""
     monkeypatch.setattr(
         "parishkit.pk_cron_runner.DEFAULT_RUNNER_CONFIG", Path("/missing.yaml")
     )
@@ -636,9 +717,13 @@ def test_main_returns_config_error_without_config_or_command(monkeypatch):
 
 
 def test_success_summary_can_notify_via_logger_critical():
+    """With notify_success enabled, a successful run is logged at critical level
+    so the notification path (e.g. Slack) is triggered."""
     messages = []
 
     class FakeLogger:
+        """Logger stub that records (level, formatted-message) tuples."""
+
         def info(self, message, *args):
             messages.append(("info", message % args if args else message))
 
@@ -658,9 +743,13 @@ def test_success_summary_can_notify_via_logger_critical():
 
 
 def test_failure_summary_reports_critical():
+    """A failed run logs a critical summary listing each failed job and its exit
+    code."""
     messages = []
 
     class FakeLogger:
+        """Logger stub that records (level, formatted-message) tuples."""
+
         def info(self, message, *args):
             messages.append(("info", message % args if args else message))
 
@@ -680,6 +769,8 @@ def test_failure_summary_reports_critical():
 
 
 def test_failure_summary_includes_failed_job_output_when_configured():
+    """When include_output_in_slack is set, the failure summary embeds each
+    failed job's stdout and stderr alongside its exit code."""
     message = _failure_summary(
         EXIT_JOB_FAILED,
         [

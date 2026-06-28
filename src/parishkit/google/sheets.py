@@ -8,6 +8,7 @@ from parishkit.google.auth import build_service, execute_google_request
 
 
 def build_sheets_service(credentials: Any, *, build_fn: Any | None = None) -> Any:
+    """Build a Sheets API v4 service client from the given credentials."""
     return build_service("sheets", "v4", credentials=credentials, build_fn=build_fn)
 
 
@@ -16,6 +17,12 @@ def get_values(
     spreadsheet_id: str,
     range_name: str,
 ) -> list[list[Any]]:
+    """Read a range as a list of rows, each a list of cell values.
+
+    ``range_name`` is an A1 notation range (optionally sheet-qualified).
+    Trailing empty rows/cells are omitted by the API, and a range with no data
+    yields an empty list.
+    """
     request = (
         service.spreadsheets()
         .values()
@@ -25,6 +32,7 @@ def get_values(
 
 
 def clear_values(service: Any, spreadsheet_id: str, range_name: str) -> None:
+    """Clear the cell values in an A1-notation range, keeping formatting."""
     request = (
         service.spreadsheets()
         .values()
@@ -72,6 +80,12 @@ def update_values(
     *,
     value_input_option: str = "RAW",
 ) -> None:
+    """Write ``values`` (rows of cells) into an A1-notation range.
+
+    ``value_input_option`` controls how the API interprets input: ``RAW``
+    (default) stores values verbatim, while ``USER_ENTERED`` parses them as if
+    typed by a user (applying formulas, dates, and number formats).
+    """
     request = (
         service.spreadsheets()
         .values()

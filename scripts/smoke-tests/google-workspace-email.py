@@ -11,6 +11,11 @@ from parishkit.email.google_workspace import GoogleWorkspaceSMTPProvider
 
 
 def main() -> int:
+    """Run.
+
+    The top-level command keeps user-facing error handling here and
+    delegates behavior to smaller helpers.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--service-account-file", required=True, type=Path)
     parser.add_argument("--delegated-user", required=True)

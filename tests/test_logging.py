@@ -15,6 +15,7 @@ from parishkit.logging import (
 
 
 def test_setup_logging_console_defaults():
+    """With no options, logging is one console StreamHandler at WARNING level."""
     logger = setup_logging(logger_name="test.console.default")
 
     handlers = describe_handlers(logger)
@@ -23,6 +24,7 @@ def test_setup_logging_console_defaults():
 
 
 def test_setup_logging_debug_file_handler(tmp_path):
+    """Debug mode with rotation attaches a compressing file handler that writes."""
     log_file = tmp_path / "parishkit.log"
     logger = setup_logging(
         debug=True,
@@ -112,6 +114,7 @@ def test_json_log_formatter_includes_structured_object(tmp_path):
 
 
 def test_compressed_rotation_retains_multiple_backups(tmp_path):
+    """Enough log volume rolls over into several gzipped backup files."""
     log_file = tmp_path / "parishkit.log"
     logger = setup_logging(
         logger_name="test.rotation.retention",
@@ -121,9 +124,11 @@ def test_compressed_rotation_retains_multiple_backups(tmp_path):
         backup_count=3,
     )
 
+    # Each message comfortably exceeds max_bytes, forcing repeated rotations.
     for index in range(30):
         logger.warning("message %s %s", index, "x" * 40)
 
+    # Close handlers so the final rotated segment is flushed and compressed.
     for handler in logger.handlers:
         handler.close()
 
@@ -132,6 +137,7 @@ def test_compressed_rotation_retains_multiple_backups(tmp_path):
 
 
 def test_parse_log_level_rejects_unknown():
+    """An unrecognized level name raises ValueError mentioning the bad level."""
     try:
         parse_log_level("NOPE")
     except ValueError as exc:
@@ -141,18 +147,27 @@ def test_parse_log_level_rejects_unknown():
 
 
 def test_setup_logging_adds_mocked_slack_handler(monkeypatch, tmp_path):
+    """A complete Slack config attaches a handler that emits to the channel.
+
+    The real Slack handler is replaced with a fake so the test records emitted
+    messages instead of contacting Slack.
+    """
     token_file = tmp_path / "slack-token.txt"
     token_file.write_text("xoxb-test-token\n", encoding="utf-8")
 
     sent = []
 
     class FakeSlackHandler(logging.Handler):
+        """Stand-in Slack handler that records (channel, message) tuples."""
+
         def __init__(self, *, token, channel):
+            """Store the token and channel without opening any connection."""
             super().__init__()
             self.token = token
             self.channel = channel
 
         def emit(self, record):
+            """Record the formatted record and its target channel."""
             sent.append((self.channel, self.format(record)))
 
     monkeypatch.setattr("parishkit.logging.SlackLogHandler", FakeSlackHandler)
@@ -172,6 +187,7 @@ def test_setup_logging_adds_mocked_slack_handler(monkeypatch, tmp_path):
 
 
 def test_setup_logging_rejects_partial_slack_config(tmp_path):
+    """A Slack token without a channel is rejected with a ValueError."""
     token_file = tmp_path / "slack-token.txt"
     token_file.write_text("xoxb-test-token\n", encoding="utf-8")
 
@@ -187,6 +203,11 @@ def test_setup_logging_rejects_partial_slack_config(tmp_path):
 
 
 def test_setup_logging_failure_keeps_existing_handlers(monkeypatch, tmp_path):
+    """If reconfiguration fails partway, the logger keeps its prior handlers.
+
+    setup_logging applies its handler set atomically, so a handler that raises
+    during construction must not leave the logger half-reconfigured.
+    """
     token_file = tmp_path / "slack-token.txt"
     token_file.write_text("xoxb-test-token\n", encoding="utf-8")
 
@@ -194,6 +215,8 @@ def test_setup_logging_failure_keeps_existing_handlers(monkeypatch, tmp_path):
     original_handlers = list(logger.handlers)
 
     class BrokenSlackHandler(logging.Handler):
+        """Slack handler stub that fails on construction to trigger rollback."""
+
         def __init__(self, *, token, channel):
             raise RuntimeError("broken slack")
 

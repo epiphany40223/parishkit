@@ -19,6 +19,11 @@ from parishkit.constant_contact import (
 
 
 def main() -> int:
+    """Run.
+
+    The top-level command keeps user-facing error handling here and
+    delegates behavior to smaller helpers.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--client-id-file", required=True, type=Path)
     parser.add_argument("--access-token-file", required=True, type=Path)

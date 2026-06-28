@@ -9,7 +9,14 @@ from pathlib import Path
 
 
 def atomic_write_text(path: str | Path, text: str, *, mode: int = 0o600) -> None:
-    """Atomically write text to a file with restrictive permissions."""
+    """Atomically write text to a file with restrictive permissions.
+
+    Writes to a temporary file in the same directory, fsyncs it, then renames
+    it over the target so readers never observe a partially written file. The
+    temp file is created with ``mode`` (default owner-only ``0o600``) so the
+    secret is never briefly world-readable. On any failure the descriptor is
+    closed and the temp file removed before the error propagates.
+    """
 
     target = Path(path).expanduser()
     target.parent.mkdir(parents=True, exist_ok=True)

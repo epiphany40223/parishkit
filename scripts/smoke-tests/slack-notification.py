@@ -11,6 +11,11 @@ from parishkit.logging import setup_logging
 
 
 def main() -> int:
+    """Run.
+
+    The top-level command keeps user-facing error handling here and
+    delegates behavior to smaller helpers.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--slack-token-file", required=True, type=Path)
     parser.add_argument("--slack-channel", required=True)

@@ -18,8 +18,8 @@ class ConfigError(ValueError):
 def load_yaml_config(path: str | Path | None, *, required: bool = False) -> ConfigData:
     """Load a YAML config file as a dictionary.
 
-    Empty files are treated as empty dictionaries. Invalid YAML and non-mapping
-    top-level values fail fast with a user-facing ``ConfigError``.
+    Empty files are treated as empty dictionaries. Invalid YAML and non-
+    mapping top-level values fail fast with a user-facing ``ConfigError``.
     """
 
     if path is None:
@@ -65,12 +65,20 @@ def _yaml_error_location(exc: yaml.YAMLError) -> str:
 
 
 def require_mapping(value: Any, name: str) -> Mapping[str, Any]:
+    """Return ``value`` if it is a mapping, else raise ``ConfigError``.
+
+    ``name`` is used only to build a clear, user-facing error message.
+    """
     if not isinstance(value, Mapping):
         raise ConfigError(f"{name} must be a mapping")
     return value
 
 
 def require_keys(config: Mapping[str, Any], required_keys: set[str]) -> None:
+    """Raise ``ConfigError`` if any required key is absent from ``config``.
+
+    Missing keys are reported together, sorted for stable output.
+    """
     missing = sorted(required_keys.difference(config))
     if missing:
         joined = ", ".join(missing)

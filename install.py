@@ -33,6 +33,11 @@ CONSOLE_COMMANDS = (
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse args.
+
+    The steps are kept explicit so operational behavior remains easy to
+    audit and test.
+    """
     parser = argparse.ArgumentParser(
         description="Install ParishKit into a runtime tree."
     )
@@ -72,6 +77,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def resolve_install_root(installdir: Path | None) -> Path:
+    """Choose the install root from CLI, environment, or fallback defaults."""
     if installdir is not None:
         return installdir.expanduser().resolve()
     parishkit_root = os.environ.get("PARISHKIT_ROOT")
@@ -81,6 +87,7 @@ def resolve_install_root(installdir: Path | None) -> Path:
 
 
 def package_spec(source_root: Path, extras: str) -> str:
+    """Return the pip-installable package spec for this checkout."""
     if not extras:
         return str(source_root)
     return f"{source_root}[{extras}]"
@@ -91,6 +98,7 @@ def command_path(root: Path, *parts: str) -> Path:
 
 
 def ensure_directory(path: Path, mode: int, *, dry_run: bool) -> None:
+    """Create a directory with the expected runtime permissions."""
     if dry_run:
         print(f"mkdir -p -m {mode:04o} {path}")
         return
@@ -99,11 +107,13 @@ def ensure_directory(path: Path, mode: int, *, dry_run: bool) -> None:
 
 
 def create_runtime_tree(root: Path, *, dry_run: bool) -> None:
+    """Create the ParishKit runtime directory layout."""
     for relative_path, mode in RUNTIME_DIR_MODES.items():
         ensure_directory(command_path(root, relative_path), mode, dry_run=dry_run)
 
 
 def run_command(command: list[str], *, dry_run: bool) -> None:
+    """Run or display an installer command."""
     printable = " ".join(str(part) for part in command)
     if dry_run:
         print(printable)
@@ -119,6 +129,7 @@ def install_package(
     *,
     dry_run: bool,
 ) -> None:
+    """Install ParishKit into the requested Python environment."""
     venv = command_path(root, "venv")
     run_command([str(python), "-m", "venv", str(venv)], dry_run=dry_run)
     pip = command_path(venv, "bin", "pip")
@@ -133,6 +144,7 @@ def install_package(
 
 
 def link_console_commands(root: Path, *, dry_run: bool) -> None:
+    """Create stable command links in the install bin directory."""
     bin_dir = command_path(root, "bin")
     venv_bin_dir = command_path(root, "venv", "bin")
     for command in CONSOLE_COMMANDS:
@@ -147,6 +159,7 @@ def link_console_commands(root: Path, *, dry_run: bool) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the installer command-line interface."""
     args = parse_args(argv)
     source_root = Path(__file__).resolve().parent
     install_root = resolve_install_root(args.installdir)

@@ -4,10 +4,12 @@ from parishkit.config import ConfigError, load_yaml_config, require_keys, valida
 
 
 def test_load_yaml_config_empty_when_optional_missing(tmp_path):
+    """A missing optional config file loads as an empty dict instead of raising."""
     assert load_yaml_config(tmp_path / "missing.yaml") == {}
 
 
 def test_load_yaml_config_requires_mapping(tmp_path):
+    """A YAML file whose top level is not a mapping raises ConfigError."""
     config_file = tmp_path / "config.yaml"
     config_file.write_text("- item\n", encoding="utf-8")
 
@@ -30,11 +32,13 @@ def test_load_yaml_config_parse_error_includes_repair_hint(tmp_path):
 
 
 def test_require_keys_reports_missing():
+    """Missing required keys are all named in the raised ConfigError message."""
     with pytest.raises(ConfigError, match="alpha, beta"):
         require_keys({}, {"alpha", "beta"})
 
 
 def test_validate_with_normalizes_value_errors():
+    """A ValueError from a validator is re-raised as a ConfigError, message intact."""
     with pytest.raises(ConfigError, match="bad value"):
         validate_with(
             {},

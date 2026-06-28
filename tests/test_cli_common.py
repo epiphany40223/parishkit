@@ -10,6 +10,7 @@ from parishkit.config import ConfigError
 
 
 def test_common_options_defaults():
+    """With no CLI args or config, resolve_common_options yields documented defaults."""
     parser = argparse.ArgumentParser()
     cli.add_common_arguments(parser)
     args = parser.parse_args([])
@@ -28,6 +29,12 @@ def test_common_options_defaults():
 
 
 def test_parishkit_root_changes_default_runtime_root(tmp_path):
+    """PARISHKIT_ROOT reroots every default runtime path under that directory.
+
+    The defaults are computed at import time, so this runs in a fresh subprocess
+    with PARISHKIT_ROOT set in the environment rather than monkeypatching the
+    already-imported modules.
+    """
     code = """
 import argparse
 import os
@@ -55,6 +62,7 @@ assert root / "run/runner.lock" == runner.DEFAULT_LOCK_FILE
 
 
 def test_common_options_debug_implies_verbose():
+    """Passing --debug also turns on verbose output."""
     parser = argparse.ArgumentParser()
     cli.add_common_arguments(parser)
     args = parser.parse_args(["--debug"])
@@ -66,6 +74,12 @@ def test_common_options_debug_implies_verbose():
 
 
 def test_common_options_cli_overrides_config(tmp_path):
+    """CLI flags take precedence over config values, while unset options keep
+    their config values; relative config paths resolve against the config dir.
+
+    The setup stays local to this test so fixtures remain easy to understand
+    and change.
+    """
     config_file = tmp_path / "config.yaml"
     config_file.write_text(
         """
@@ -114,6 +128,7 @@ parishsoft:
 
 
 def test_common_boolean_options_can_disable_config_values(tmp_path):
+    """--no-* flags override booleans enabled in config back to false."""
     config_file = tmp_path / "config.yaml"
     config_file.write_text(
         """
@@ -144,6 +159,7 @@ common:
 
 
 def test_explicit_missing_config_file_fails(tmp_path):
+    """An explicitly named --config file that does not exist raises ConfigError."""
     parser = argparse.ArgumentParser()
     cli.add_common_arguments(parser)
     args = parser.parse_args(["--config", str(tmp_path / "missing.yaml")])
@@ -153,6 +169,7 @@ def test_explicit_missing_config_file_fails(tmp_path):
 
 
 def test_config_bool_values_are_type_checked(tmp_path):
+    """A non-boolean value for a boolean config key raises ConfigError."""
     config_file = tmp_path / "config.yaml"
     config_file.write_text(
         """
@@ -170,6 +187,7 @@ common:
 
 
 def test_invalid_slack_log_level_fails_at_startup(tmp_path):
+    """An unknown Slack log level in config is rejected during option resolution."""
     config_file = tmp_path / "config.yaml"
     config_file.write_text(
         """
@@ -187,6 +205,7 @@ slack:
 
 
 def test_invalid_cache_limit_fails_at_startup(tmp_path):
+    """An unparseable parishsoft cache_limit in config is rejected at startup."""
     config_file = tmp_path / "config.yaml"
     config_file.write_text(
         """
@@ -222,6 +241,8 @@ common:
 
 
 def test_invalid_config_is_validated_before_cli_override(tmp_path):
+    """Config is validated before CLI overrides apply, so a bad boolean still fails
+    even when the same option is also given on the command line."""
     config_file = tmp_path / "config.yaml"
     config_file.write_text(
         """
@@ -239,6 +260,8 @@ common:
 
 
 def test_invalid_config_slack_level_is_validated_before_cli_override(tmp_path):
+    """A bad Slack level in config fails validation even when a valid level is
+    also passed on the command line."""
     config_file = tmp_path / "config.yaml"
     config_file.write_text(
         """
@@ -258,6 +281,7 @@ slack:
 
 
 def test_cli_paths_are_expanded(monkeypatch, tmp_path):
+    """A leading ~ in a CLI path option expands to the user's home directory."""
     monkeypatch.setenv("HOME", str(tmp_path))
     parser = argparse.ArgumentParser()
     cli.add_common_arguments(parser)
@@ -269,6 +293,8 @@ def test_cli_paths_are_expanded(monkeypatch, tmp_path):
 
 
 def test_config_relative_paths_are_absolute(tmp_path, monkeypatch):
+    """Relative paths in a config file resolve against the config file's directory,
+    not the current working directory."""
     config_dir = tmp_path / "configs"
     config_dir.mkdir()
     config_file = config_dir / "config.yaml"

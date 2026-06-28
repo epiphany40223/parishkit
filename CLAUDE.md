@@ -38,6 +38,15 @@ ParishKit contains reusable Python automation for Catholic parishes.
   behavior unless the intentional change is documented.
 - Preserve existing tool behavior unless an intentional behavior change is
   requested or documented.
+- Prefer shorter, simpler code when it remains clear, especially when that
+  makes behavior easier to unit test. This code does not require ultra-high
+  performance, but avoid gratuitously careless inefficiency.
+- Comment code for long-term maintainability. In general, functions that are
+  three or more lines long should at least have a short docstring explaining
+  their purpose. Longer or more complicated functions should have more thorough
+  explanations. Use inline comments when code is long, complicated, or has
+  subtle or non-obvious rationale, so future maintainers understand why the
+  code is shaped the way it is.
 - `main` is production. This repository does not use release branches.
 - Do work on a topic branch named `pr/<short-topic>` and land it through a
   GitHub pull request. Do not commit directly to `main`.

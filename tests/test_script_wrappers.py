@@ -36,6 +36,8 @@ WRAPPERS = {
 
 
 def test_planned_script_wrappers_have_docs_configs_and_delegate():
+    """Each wrapper ships a README and example config, is an executable python3
+    script, imports its CLI function, and delegates via SystemExit in a main guard."""
     scripts_dir = Path(__file__).parents[1] / "scripts"
     for directory, (script_name, module, cli_function) in WRAPPERS.items():
         script_dir = scripts_dir / directory
@@ -52,6 +54,7 @@ def test_planned_script_wrappers_have_docs_configs_and_delegate():
 
 
 def _imports_function(tree: ast.Module, module: str, function: str) -> bool:
+    """Check whether a wrapper imports the expected function."""
     return any(
         isinstance(node, ast.ImportFrom)
         and node.module == module
@@ -61,6 +64,7 @@ def _imports_function(tree: ast.Module, module: str, function: str) -> bool:
 
 
 def _raises_system_exit_from_function(tree: ast.Module, function: str) -> bool:
+    """Check whether a wrapper delegates through SystemExit."""
     for node in tree.body:
         if not isinstance(node, ast.If) or not _is_main_guard(node.test):
             continue
@@ -71,6 +75,7 @@ def _raises_system_exit_from_function(tree: ast.Module, function: str) -> bool:
 
 
 def _is_main_guard(test: ast.expr) -> bool:
+    """Check whether an AST node is an if-main guard."""
     return (
         isinstance(test, ast.Compare)
         and isinstance(test.left, ast.Name)
@@ -84,6 +89,7 @@ def _is_main_guard(test: ast.expr) -> bool:
 
 
 def _is_system_exit_raise(statement: ast.stmt, function: str) -> bool:
+    """Check whether an AST node raises SystemExit."""
     if not isinstance(statement, ast.Raise):
         return False
     call = statement.exc

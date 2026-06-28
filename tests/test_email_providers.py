@@ -8,6 +8,7 @@ from parishkit.email.google_workspace import GoogleWorkspaceSMTPProvider, xoauth
 
 
 def test_build_message_with_text_html_and_attachment(tmp_path):
+    """build_message produces a multipart message carrying text, HTML, and a file."""
     attachment = tmp_path / "report.txt"
     attachment.write_text("report", encoding="utf-8")
 
@@ -28,6 +29,7 @@ def test_build_message_with_text_html_and_attachment(tmp_path):
 
 
 def test_provider_selection_ms365_dry_run():
+    """provider_from_config picks MS365; its dry-run send returns the built message."""
     provider = provider_from_config({"provider": "ms365", "tenant_id": "tenant"})
     built = provider.send(
         Email(
@@ -43,11 +45,13 @@ def test_provider_selection_ms365_dry_run():
 
 
 def test_provider_selection_rejects_unknown():
+    """provider_from_config raises ConfigError for an unrecognized provider name."""
     with pytest.raises(ConfigError):
         provider_from_config({"provider": "unknown"})
 
 
 def test_xoauth2_string_contains_user_and_token():
+    """xoauth2_string returns a non-empty auth string for the given user and token."""
     auth = xoauth2_string("user@example.org", "token")
 
     assert isinstance(auth, str)
@@ -55,13 +59,22 @@ def test_xoauth2_string_contains_user_and_token():
 
 
 def test_google_workspace_send_uses_smtp_mock():
+    """Send connects, authenticates via XOAUTH2, and delivers to all recipients.
+
+    The fakes record each interaction in ``sent`` so the test can assert on the
+    ordered sequence of connect, auth, and send calls. The setup stays local to
+    this test so fixtures remain easy to understand and change.
+    """
     sent = []
 
+    # Already-valid credentials so send never needs to refresh.
     class Credentials:
         token = "token"
         valid = True
 
     class SMTP:
+        """Fake SMTP client recording every interaction into ``sent``."""
+
         def __init__(self, host, port):
             sent.append(("connect", host, port))
 
@@ -72,6 +85,7 @@ def test_google_workspace_send_uses_smtp_mock():
             return None
 
         def docmd(self, command, payload):
+            """Record the auth command and return SMTP 235 (auth succeeded)."""
             sent.append((command, payload))
             return 235, b"ok"
 
@@ -98,6 +112,7 @@ def test_google_workspace_send_uses_smtp_mock():
     )
 
     assert sent[0] == ("connect", "smtp.example.org", 465)
+    # to, cc, and bcc must all be passed to the SMTP envelope recipients.
     assert sent[-1] == (
         "send",
         "Subject",
@@ -107,19 +122,29 @@ def test_google_workspace_send_uses_smtp_mock():
 
 
 def test_google_workspace_send_refreshes_invalid_credentials(monkeypatch):
+    """Send refreshes expired credentials before authenticating and sending.
+
+    The fake credentials start invalid with no token, so send must call
+    ``refresh`` to obtain one before the message goes out. The setup stays local
+    to this test so fixtures remain easy to understand and change.
+    """
     refresh_requests = []
     sent = []
 
+    # Credentials begin invalid to force a refresh on send.
     class Credentials:
         token = None
         valid = False
 
         def refresh(self, request):
+            """Mark the credentials valid and record the refresh request."""
             refresh_requests.append(request)
             self.token = "token"
             self.valid = True
 
     class SMTP:
+        """Fake SMTP client that accepts auth and records sends in ``sent``."""
+
         def __init__(self, *_args):
             pass
 
@@ -161,6 +186,8 @@ def test_google_workspace_send_refreshes_invalid_credentials(monkeypatch):
 
 
 def test_google_workspace_config_requires_key_and_user(monkeypatch, tmp_path):
+    """from_config needs a service account file and delegated user, and rejects a
+    non-integer smtp_port."""
     monkeypatch.setattr(
         "parishkit.email.google_workspace.load_service_account_credentials",
         lambda *_args, **_kwargs: object(),

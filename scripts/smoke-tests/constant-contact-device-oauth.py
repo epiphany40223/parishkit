@@ -18,6 +18,7 @@ from parishkit.constant_contact import (
 
 
 def main() -> int:
+    """Run the Constant Contact device OAuth smoke test."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--client-id-file", required=True, type=Path)
     parser.add_argument("--access-token-file", required=True, type=Path)
