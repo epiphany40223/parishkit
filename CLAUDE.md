@@ -44,6 +44,9 @@ ParishKit contains reusable Python automation for Catholic parishes.
 - Working in git worktrees is fine, especially when coordinating with multiple
   agents or teams. When working in a worktree, avoid repo-global commands such
   as `git stash` or `git worktree prune`.
+- This repository uses semantic versioning. Releases are annotated git tags in
+  the form `vVERSION`, such as `v1.2.3`. Do not push a release tag to GitHub
+  unless a human explicitly authorizes that push.
 - Sign off every commit. Each commit needs a `Signed-off-by:` line per the
   Contributor's Declaration; use `git commit -s`. Commits without it are not
   accepted. This applies to AI-assisted work too: the human submitter certifies
