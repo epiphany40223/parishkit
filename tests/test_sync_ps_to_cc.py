@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import datetime as dt
 from pathlib import Path
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from parishkit.config import ConfigError
 from parishkit.parishsoft import ParishSoftData
 from parishkit.pk_sync_ps_to_cc import (
+    DEFAULT_UNSUBSCRIBED_REPORT_STATE,
     cc_sync_config_from_yaml,
     compute_all_actions,
     detect_name_mismatches,
@@ -60,7 +63,13 @@ class EmailProvider:
         return message
 
 
-def write_config(tmp_path: Path, *, dry_run: bool = False) -> Path:
+def write_config(
+    tmp_path: Path,
+    *,
+    dry_run: bool = False,
+    unsubscribed_report: bool = False,
+    unsubscribed_report_day: str | None = None,
+) -> Path:
     """Write a complete contacts YAML config under tmp_path.
 
     Produces one workgroup-to-list mapping with notifications enabled; the
@@ -91,6 +100,12 @@ sync:
   update_names: true
   notifications:
     sender: no-reply@example.org
+  unsubscribed_report:
+    enabled: {str(unsubscribed_report).lower()}
+    day_of_week: {unsubscribed_report_day or "null"}
+    time: "02:00"
+    window_minutes: 60
+    state_file: {tmp_path / "unsubscribed-report-state.json"}
   lists:
     - source_workgroup: Newsletter WG
       target_list: Newsletter
@@ -238,6 +253,39 @@ def test_cc_sync_config_validation():
 
     assert config.update_names
     assert config.mappings[0].source_workgroup == "Newsletter WG"
+    assert not config.unsubscribed_report.enabled
+    assert config.unsubscribed_report.state_file == DEFAULT_UNSUBSCRIBED_REPORT_STATE
+
+
+def test_cc_sync_config_accepts_unsubscribed_report_schedule(tmp_path):
+    """Verify YAML can schedule the standalone unsubscribed report."""
+    config = cc_sync_config_from_yaml(
+        {
+            "sync": {
+                "notifications": {"sender": "no-reply@example.org"},
+                "unsubscribed_report": {
+                    "enabled": True,
+                    "day_of_week": "sunday",
+                    "time": "03:15",
+                    "window_minutes": 30,
+                    "state_file": str(tmp_path / "state.json"),
+                },
+                "lists": [
+                    {
+                        "source_workgroup": "Newsletter WG",
+                        "target_list": "Newsletter",
+                    }
+                ],
+            }
+        }
+    )
+
+    assert config.unsubscribed_report.enabled
+    assert config.unsubscribed_report.day_of_week == 6
+    assert config.unsubscribed_report.time.hour == 3
+    assert config.unsubscribed_report.time.minute == 15
+    assert config.unsubscribed_report.window_minutes == 30
+    assert config.unsubscribed_report.state_file == tmp_path / "state.json"
 
 
 def test_cc_sync_config_rejects_missing_lists():
@@ -322,7 +370,7 @@ def test_sync_ps_to_cc_main_writes_constant_contact_and_email(tmp_path, monkeypa
     """Verify a live run posts/puts to Constant Contact and emails admins.
 
     With dry_run off, main must create and update contacts (post + put) and
-    send the unsubscribed-report email to the configured notification address.
+    send the regular sync summary to the configured notification address.
     """
     cc = CCClient()
     email = EmailProvider()
@@ -354,6 +402,106 @@ def test_sync_ps_to_cc_main_writes_constant_contact_and_email(tmp_path, monkeypa
     assert any(call[0] == "put" for call in cc.calls)
     assert email.sent
     assert email.sent[0][0].to == ("admin@example.org",)
+
+
+def test_sync_ps_to_cc_sends_due_unsubscribed_report_once(tmp_path, monkeypatch):
+    """Verify the standalone unsubscribed report is daily and state-backed."""
+    cc = CCClient()
+    email = EmailProvider()
+    config = write_config(
+        tmp_path,
+        unsubscribed_report=True,
+        unsubscribed_report_day="sunday",
+    )
+    now = dt.datetime(
+        2026,
+        6,
+        28,
+        2,
+        5,
+        tzinfo=ZoneInfo("America/Kentucky/Louisville"),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_cc.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_ps_to_cc_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            cc_factory=lambda _config: cc,
+            email_provider=email,
+            now=now,
+        )
+        == 0
+    )
+    assert (
+        sync_ps_to_cc_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            cc_factory=lambda _config: cc,
+            email_provider=email,
+            now=now,
+        )
+        == 0
+    )
+
+    report_messages = [
+        message
+        for message, _dry_run in email.sent
+        if message.subject.startswith("Constant Contact unsubscribed contacts report")
+    ]
+    assert len(report_messages) == 1
+    assert report_messages[0].to == ("admin@example.org",)
+    assert "Bob Jones" in (report_messages[0].text or "")
+    assert "bob@example.org" in (report_messages[0].html or "")
+    assert "2026-06-28" in (tmp_path / "unsubscribed-report-state.json").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_sync_ps_to_cc_unsubscribed_report_waits_for_configured_weekday(
+    tmp_path,
+    monkeypatch,
+):
+    """Verify the standalone report does not send on the wrong weekday."""
+    cc = CCClient()
+    email = EmailProvider()
+    config = write_config(
+        tmp_path,
+        unsubscribed_report=True,
+        unsubscribed_report_day="monday",
+    )
+    sunday = dt.datetime(
+        2026,
+        6,
+        28,
+        2,
+        5,
+        tzinfo=ZoneInfo("America/Kentucky/Louisville"),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_cc.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_ps_to_cc_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            cc_factory=lambda _config: cc,
+            email_provider=email,
+            now=sunday,
+        )
+        == 0
+    )
+
+    assert not any(
+        message.subject.startswith("Constant Contact unsubscribed contacts report")
+        for message, _dry_run in email.sent
+    )
+    assert not (tmp_path / "unsubscribed-report-state.json").exists()
 
 
 def test_sync_ps_to_cc_dry_run_skips_writes_and_email(tmp_path, monkeypatch):

@@ -47,6 +47,22 @@ sync:
   notifications:
     # sender is the From address used for notification summary emails.
     sender: no-reply@example.org
+  # unsubscribed_report sends a standalone report for ParishSoft members who
+  # are still in a synced workgroup but have manually unsubscribed in Constant
+  # Contact. The sync can run every 15 minutes; the state file prevents sending
+  # the report more than once per local day inside the configured time window.
+  unsubscribed_report:
+    enabled: false
+    # Optional local weekday. Use monday, tuesday, wednesday, thursday, friday,
+    # saturday, or sunday. Set to null or omit to allow the report every day.
+    day_of_week: monday
+    # Local time in common.timezone.
+    time: "02:00"
+    # The report is due when the script starts between time and
+    # time+window_minutes.
+    window_minutes: 60
+    # Records the last local date for which the report was sent.
+    state_file: /opt/parishkit/run/pk-sync-ps-to-cc-unsubscribed-report.json
   # lists maps ParishSoft workgroups to Constant Contact lists.
   lists:
     - source_workgroup: Example Newsletter Workgroup
