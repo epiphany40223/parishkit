@@ -267,7 +267,11 @@ def _run(
         cc_client = (
             cc_factory(config)
             if cc_factory
-            else constant_contact_client(config, base_dir=config_base_dir)
+            else constant_contact_client(
+                config,
+                base_dir=config_base_dir,
+                allow_token_refresh=not common.dry_run,
+            )
         )
         log.info("Loading Constant Contact lists and contacts")
         cc_lists, cc_contacts = load_cc_data(cc_client)
@@ -375,6 +379,7 @@ def _run(
             contacts_by_email,
             ps_members_by_email,
             generated_at=now or dt.datetime.now(ZoneInfo(common.timezone)),
+            dry_run=common.dry_run,
         )
         send_unsubscribed_report(
             provider,
@@ -486,6 +491,7 @@ def constant_contact_client(
     config: ConfigData,
     *,
     base_dir: Path | None = None,
+    allow_token_refresh: bool = True,
 ) -> ConstantContactClient:
     """Construct a Constant Contact client from configured credential files.
 
@@ -515,6 +521,7 @@ def constant_contact_client(
             base_dir=base_dir,
         ),
         client_id,
+        allow_refresh=allow_token_refresh,
     )
     return ConstantContactClient(
         ConstantContactConfig(client_id=client_id, access_token=access_token)
@@ -860,6 +867,8 @@ def execute_actions(
                     extra=log_extra(post_body),
                 )
             client.post("contacts/sign_up_form", sign_up_form_body(post_body))
+            if log:
+                log.info("Applied Constant Contact POST action(s) for %s", email)
         if put_body:
             if log:
                 log.debug(
@@ -870,6 +879,8 @@ def execute_actions(
             client.put(
                 f"contacts/{put_body['contact_id']}", update_contact_body(put_body)
             )
+            if log:
+                log.info("Applied Constant Contact PUT action(s) for %s", email)
 
 
 def post_body_for_actions(
@@ -947,6 +958,7 @@ def send_notifications(
     ps_members_by_email: Mapping[str, list[dict[str, Any]]],
     *,
     generated_at: dt.datetime | None = None,
+    dry_run: bool = False,
 ) -> None:
     """Email a per-mapping summary of actions and filtered unsubscribes.
 
@@ -980,7 +992,7 @@ def send_notifications(
                 generated_at=notification_time,
                 suppressed_unsubscribed_count=suppressed_count,
             ),
-            dry_run=False,
+            dry_run=dry_run,
         )
 
 

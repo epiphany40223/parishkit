@@ -579,6 +579,7 @@ def get_access_token(
     session: requests.Session | None = None,
     now: dt.datetime | None = None,
     timeout: float = 30.0,
+    allow_refresh: bool = True,
 ) -> dict[str, Any]:
     """Return a valid Constant Contact access token, refreshing if needed.
 
@@ -599,6 +600,12 @@ def get_access_token(
         access_token = load_access_token(path)
         if token_is_valid(access_token, now=now):
             return access_token
+        if not allow_refresh:
+            raise ConfigError(
+                "Constant Contact access token is expired; dry-run mode will not "
+                "refresh or rewrite credential files. Run without --dry-run once "
+                "to refresh the token, then retry the dry run."
+            )
         refreshed = refresh_access_token(
             client_id,
             access_token,

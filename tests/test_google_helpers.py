@@ -454,6 +454,38 @@ def test_patch_attendee_response_uses_calendar_patch():
     ]
 
 
+def test_patch_attendee_response_does_not_retry_notification_write():
+    """Calendar attendee patches are one-shot because they send notifications."""
+    attempts = {"count": 0}
+
+    class Request:
+        """Fake Calendar request that always fails transiently."""
+
+        def execute(self):
+            """Raise a transient error and record the attempt count."""
+            attempts["count"] += 1
+            raise TransientRetryError("temporary")
+
+    class Events:
+        """Fake events resource returning the failing patch request."""
+
+        def patch(self, **_kwargs):
+            """Return a request that fails if executed."""
+            return Request()
+
+    class Service:
+        """Fake Calendar API service exposing the events resource."""
+
+        def events(self):
+            """Return the fake events resource."""
+            return Events()
+
+    with pytest.raises(RetryError):
+        patch_attendee_response(Service(), "room@example.org", "event-1", "accepted")
+
+    assert attempts["count"] == 1
+
+
 def test_google_optional_import_error_is_config_error(monkeypatch):
     """A missing optional Google dependency surfaces as a ConfigError."""
 

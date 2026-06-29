@@ -421,14 +421,21 @@ def reservation_decisions(
                 )
             else:
                 pending_events.append((event, attendee_email))
-        elif resource_status != "declined":
+        elif resource_status != "declined" and not event_is_transparent(event):
             existing_events.append(event)
 
     if not calendar.check_conflicts:
-        decisions.extend(
-            EventDecision(event=event, response="accepted", attendee_email=email)
-            for event, email in pending_events
-        )
+        for event, email in pending_events:
+            if event_interval_or_none(event, config.timezone, log=log) is None:
+                decisions.append(malformed_time_decision(event, email))
+            else:
+                decisions.append(
+                    EventDecision(
+                        event=event,
+                        response="accepted",
+                        attendee_email=email,
+                    )
+                )
         return decisions
 
     # Seed the conflict baseline with events already on the calendar, then
@@ -446,6 +453,7 @@ def reservation_decisions(
     ):
         interval = event_interval_or_none(event, config.timezone, log=log)
         if interval is None:
+            decisions.append(malformed_time_decision(event, attendee_email))
             continue
         conflict = next(
             (
@@ -463,7 +471,8 @@ def reservation_decisions(
                     attendee_email=attendee_email,
                 )
             )
-            accepted_intervals.append((event, interval))
+            if not event_is_transparent(event):
+                accepted_intervals.append((event, interval))
         else:
             decisions.append(
                 EventDecision(
@@ -477,6 +486,24 @@ def reservation_decisions(
                 )
             )
     return decisions
+
+
+def event_is_transparent(event: Mapping[str, Any]) -> bool:
+    """Return whether Google marks an event as free/non-blocking time."""
+    return event.get("transparency") == "transparent"
+
+
+def malformed_time_decision(
+    event: dict[str, Any],
+    attendee_email: str,
+) -> EventDecision:
+    """Decline a pending reservation whose start/end cannot be interpreted."""
+    return EventDecision(
+        event=event,
+        response="declined",
+        reason="event start/end time is malformed",
+        attendee_email=attendee_email,
+    )
 
 
 def respond_to_decisions(

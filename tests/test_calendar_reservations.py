@@ -299,8 +299,8 @@ def test_reservation_decisions_use_event_timezone_for_offsetless_datetimes():
     ]
 
 
-def test_reservation_decisions_logs_and_skips_malformed_event_times(caplog):
-    """Bad Google event timing skips that event instead of aborting the run."""
+def test_reservation_decisions_declines_malformed_pending_event_times(caplog):
+    """Bad pending event timing is declined instead of left needsAction."""
     config = calendar_reservation_config(
         {
             "calendars": {
@@ -333,10 +333,36 @@ def test_reservation_decisions_logs_and_skips_malformed_event_times(caplog):
         )
 
     assert [(item.event["id"], item.response) for item in decisions] == [
-        ("open", "accepted")
+        ("bad-pending", "declined"),
+        ("open", "accepted"),
     ]
+    assert decisions[0].reason == "event start/end time is malformed"
     assert "bad-existing" in caplog.text
     assert "bad-pending" in caplog.text
+
+
+def test_reservation_decisions_ignores_transparent_conflict_events():
+    """Transparent/free Calendar events do not block room reservations."""
+    config = calendar_reservation_config(
+        {
+            "calendars": {
+                "acceptable_domains": ["example.org"],
+                "calendars": [{"name": "Room", "calendar_id": "room@example.org"}],
+            }
+        }
+    )
+    transparent = event("free", status="accepted")
+    transparent["transparency"] = "transparent"
+
+    decisions = reservation_decisions(
+        [transparent, event("pending")],
+        config.calendars[0],
+        config,
+    )
+
+    assert [(item.event["id"], item.response) for item in decisions] == [
+        ("pending", "accepted")
+    ]
 
 
 def test_calendar_reservations_matches_attendee_email_case_insensitively(tmp_path):

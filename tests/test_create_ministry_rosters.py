@@ -526,8 +526,10 @@ def test_create_ministry_rosters_main_writes_sheet_values(
     assert calls[0][0] == "update"
     assert calls[0][1]["spreadsheetId"] == "default-sheet"
     assert calls[0][1]["range"] == "Readers!A1"
-    assert calls[0][1]["body"]["values"][4][-1] == "Member"
-    assert calls[0][1]["body"]["values"][6][-1] == ""
+    assert all(len(row) == 26 for row in calls[0][1]["body"]["values"])
+    assert calls[0][1]["body"]["values"][0][1:] == [""] * 25
+    assert calls[0][1]["body"]["values"][4][4] == "Member"
+    assert calls[0][1]["body"]["values"][6][4] == ""
     assert calls[1] == (
         "clear",
         {
@@ -593,8 +595,15 @@ def test_stale_row_clear_range_starts_below_written_roster():
         "Readers!A12:Z"
     )
     assert stale_row_clear_range("'Sunday Readers'!A1:Z500", 7) == (
-        "'Sunday Readers'!A8:Z"
+        "'Sunday Readers'!A8:Z500"
     )
+    assert stale_row_clear_range("Readers!A1:Z7", 7) is None
+
+
+def test_stale_row_clear_range_rejects_unsafe_clear_range():
+    """Unsupported clear ranges fail before the sheet update is attempted."""
+    with pytest.raises(ConfigError, match="clear_range"):
+        stale_row_clear_range("Readers!A1", 7)
 
 
 def test_create_ministry_rosters_update_failure_does_not_clear_existing_sheet(
@@ -725,7 +734,7 @@ def test_create_ministry_rosters_validation_uses_custom_leader_suffix(
     movers_update = service._spreadsheets._values.calls[4]
     assert movers_update[0] == "update"
     assert movers_update[1]["body"]["values"][4][0] == "Adams, Bob"
-    assert movers_update[1]["body"]["values"][4][-1] == "Leader"
+    assert movers_update[1]["body"]["values"][4][3] == "Leader"
 
 
 def test_create_ministry_rosters_reports_invalid_yaml(tmp_path, capsys):

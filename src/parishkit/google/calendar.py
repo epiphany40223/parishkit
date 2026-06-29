@@ -5,6 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from parishkit.google.auth import build_service, execute_google_request
+from parishkit.retry import RetryPolicy
+
+_NOTIFICATION_WRITE_POLICY = RetryPolicy(attempts=1)
 
 
 def build_calendar_service(credentials: Any, *, build_fn: Any | None = None) -> Any:
@@ -82,4 +85,4 @@ def patch_attendee_response(
             ],
         },
     )
-    execute_google_request(request)
+    execute_google_request(request, policy=_NOTIFICATION_WRITE_POLICY)

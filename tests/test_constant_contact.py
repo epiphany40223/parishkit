@@ -289,6 +289,38 @@ def test_refresh_access_token_rejects_non_json_response(tmp_path):
         )
 
 
+def test_get_access_token_dry_run_rejects_expired_token_without_refresh(tmp_path):
+    """Strict dry-run mode does not refresh or rewrite expired token files."""
+    start = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
+    token_path = tmp_path / "token.json"
+    save_access_token(
+        token_path,
+        {
+            "access_token": "old",
+            "refresh_token": "refresh",
+            "valid from": start - dt.timedelta(hours=2),
+            "valid to": start - dt.timedelta(hours=1),
+        },
+    )
+    before = token_path.read_text(encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="dry-run mode will not refresh"):
+        get_access_token(
+            token_path,
+            {
+                "client id": "client",
+                "endpoints": {
+                    "api": "https://api.example",
+                    "token": "https://auth.example/token",
+                },
+            },
+            now=start,
+            allow_refresh=False,
+        )
+
+    assert token_path.read_text(encoding="utf-8") == before
+
+
 def test_refresh_access_token_retries_transient_request_failure(tmp_path):
     """Refreshing retries transient request failures before succeeding."""
     start = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)

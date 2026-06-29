@@ -448,9 +448,9 @@ def test_constant_contact_client_resolves_relative_credential_paths(
         calls.append(("client_id", path))
         return {"endpoints": {"api": "https://api.example"}}
 
-    def fake_get_access_token(path, client_id):
+    def fake_get_access_token(path, client_id, **kwargs):
         """Capture the resolved token path."""
-        calls.append(("access_token", path, client_id))
+        calls.append(("access_token", path, client_id, kwargs))
         return {"access_token": "token"}
 
     monkeypatch.setattr(
@@ -475,6 +475,7 @@ def test_constant_contact_client_resolves_relative_credential_paths(
     assert calls[0] == ("client_id", tmp_path / "credentials" / "cc-client.json")
     assert calls[1][0] == "access_token"
     assert calls[1][1] == tmp_path / "credentials" / "cc-token.json"
+    assert calls[1][3]["allow_refresh"] is True
 
 
 def test_desired_state_and_unsubscribed_filtering():
@@ -1227,6 +1228,33 @@ def test_sync_ps_to_cc_dry_run_skips_writes_and_email(tmp_path, monkeypatch):
     )
 
     assert [call[0] for call in cc.calls] == ["get_all", "get_all"]
+
+
+def test_sync_ps_to_cc_dry_run_marks_injected_email_provider_dry_run(
+    tmp_path,
+    monkeypatch,
+):
+    """Injected email providers still receive dry_run=True in dry-run mode."""
+    cc = CCClient()
+    email = EmailProvider()
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_cc.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_ps_to_cc_main(
+            ["--config", str(write_config(tmp_path, dry_run=True))],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            cc_factory=lambda _config: cc,
+            email_provider=email,
+        )
+        == 0
+    )
+
+    assert [call[0] for call in cc.calls] == ["get_all", "get_all"]
+    assert email.sent
+    assert all(dry_run for _message, dry_run in email.sent)
 
 
 def test_sync_ps_to_cc_reports_missing_parishsoft_workgroup(

@@ -1,5 +1,6 @@
 import json
 import logging
+import stat
 from dataclasses import dataclass
 
 from parishkit.config import ConfigError
@@ -38,6 +39,7 @@ def test_setup_logging_debug_file_handler(tmp_path):
     logger.debug("hello")
 
     assert log_file.exists()
+    assert stat.S_IMODE(log_file.stat().st_mode) == 0o600
     payload = json.loads(log_file.read_text(encoding="utf-8"))
     assert payload["level"] == "DEBUG"
     assert payload["logger"] == "test.file.debug"
@@ -136,6 +138,38 @@ def test_parishkit_tool_logging_captures_package_and_sibling_records(tmp_path):
         "shared record",
         "package record",
     ]
+    assert logger.handlers == []
+
+
+def test_parishkit_logging_reconfiguration_clears_stale_child_handlers(tmp_path):
+    """Reconfiguring a ParishKit tool moves sibling logs to the active file."""
+    first_file = tmp_path / "first.log"
+    second_file = tmp_path / "second.log"
+    first_logger = setup_logging(
+        verbose=True,
+        log_file=first_file,
+        logger_name="parishkit.first",
+        rotate=False,
+    )
+    first_logger.warning("first before")
+
+    setup_logging(
+        verbose=True,
+        log_file=second_file,
+        logger_name="parishkit.second",
+        rotate=False,
+    )
+    first_logger.warning("first after")
+
+    first_payloads = [
+        json.loads(line) for line in first_file.read_text(encoding="utf-8").splitlines()
+    ]
+    second_payloads = [
+        json.loads(line)
+        for line in second_file.read_text(encoding="utf-8").splitlines()
+    ]
+    assert [payload["message"] for payload in first_payloads] == ["first before"]
+    assert [payload["message"] for payload in second_payloads] == ["first after"]
 
 
 def test_compressed_rotation_retains_multiple_backups(tmp_path):

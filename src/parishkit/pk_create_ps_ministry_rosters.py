@@ -46,8 +46,8 @@ DEFAULT_RANGE = "Roster!A1"
 DEFAULT_CLEAR_RANGE = "Roster!A:Z"
 _CLEAR_RANGE_RE = re.compile(
     r"^(?P<sheet>(?:'[^']*(?:''[^']*)*'|[^!]*)!)?"
-    r"(?P<start_col>\$?[A-Za-z]+)(?:\$?\d*)?"
-    r":(?P<end_col>\$?[A-Za-z]+)(?:\$?\d*)?$"
+    r"\$?(?P<start_col>[A-Za-z]+)\$?(?P<start_row>\d*)"
+    r":\$?(?P<end_col>[A-Za-z]+)\$?(?P<end_row>\d*)$"
 )
 _A1_START_RE = re.compile(r"^\$?[A-Za-z]+\$?(?P<row>\d+)$")
 DEFAULT_LEADER_SUFFIX = " Ldr"
@@ -535,28 +535,46 @@ def write_values(
     remain visible. When ``dry_run`` is set, nothing is written; the intended
     write is only logged.
     """
+    stale_clear_range = stale_row_clear_range(
+        clear_range,
+        len(values),
+        range_name=range_name,
+    )
+    padded_values = rectangular_values(values, clear_range_width(clear_range))
     if dry_run:
         log.info(
             "dry-run: would write %s row(s) to spreadsheet %s range %s",
-            len(values),
+            len(padded_values),
             spreadsheet_id,
             range_name,
         )
         return
     try:
-        update_values(sheets_service, spreadsheet_id, range_name, values)
+        update_values(sheets_service, spreadsheet_id, range_name, padded_values)
+        log.info(
+            "Updated roster values in spreadsheet %s range %s",
+            spreadsheet_id,
+            range_name,
+        )
         format_roster_sheet(
             sheets_service,
             spreadsheet_id,
             range_name,
-            column_count=max(len(row) for row in values),
-            row_count=len(values),
+            column_count=max(len(row) for row in padded_values),
+            row_count=len(padded_values),
         )
-        clear_values(
-            sheets_service,
+        log.info(
+            "Formatted roster sheet in spreadsheet %s range %s",
             spreadsheet_id,
-            stale_row_clear_range(clear_range, len(values), range_name=range_name),
+            range_name,
         )
+        if stale_clear_range is not None:
+            clear_values(sheets_service, spreadsheet_id, stale_clear_range)
+            log.info(
+                "Cleared stale roster values in spreadsheet %s range %s",
+                spreadsheet_id,
+                stale_clear_range,
+            )
     except GoogleAPIError as exc:
         config_error = sheet_range_config_error(
             exc,
@@ -600,7 +618,7 @@ def stale_row_clear_range(
     row_count: int,
     *,
     range_name: str = DEFAULT_RANGE,
-) -> str:
+) -> str | None:
     """Return the A1 range that clears rows below ``row_count``.
 
     Roster configs usually clear whole columns such as ``Roster!A:Z``. After a
@@ -611,11 +629,58 @@ def stale_row_clear_range(
     """
     match = _CLEAR_RANGE_RE.fullmatch(clear_range)
     if match is None:
-        return clear_range
+        raise ConfigError(
+            f"rosters.clear_range must be a column range like Roster!A:Z "
+            f"or bounded range like Roster!A1:Z500: {clear_range!r}"
+        )
     sheet = match.group("sheet") or ""
     start_col = match.group("start_col")
+    start_row = int(match.group("start_row") or "1")
     end_col = match.group("end_col")
-    return f"{sheet}{start_col}{a1_start_row(range_name) + row_count}:{end_col}"
+    end_row_text = match.group("end_row")
+    end_row = int(end_row_text) if end_row_text else None
+    clear_start = max(start_row, a1_start_row(range_name) + row_count)
+    if end_row is not None and clear_start > end_row:
+        return None
+    end_ref = f"{end_col}{end_row}" if end_row is not None else end_col
+    return f"{sheet}{start_col}{clear_start}:{end_ref}"
+
+
+def clear_range_width(clear_range: str) -> int:
+    """Return how many columns a configured clear range covers."""
+    match = _CLEAR_RANGE_RE.fullmatch(clear_range)
+    if match is None:
+        raise ConfigError(
+            f"rosters.clear_range must be a column range like Roster!A:Z "
+            f"or bounded range like Roster!A1:Z500: {clear_range!r}"
+        )
+    width = (
+        a1_column_number(match.group("end_col"))
+        - a1_column_number(match.group("start_col"))
+        + 1
+    )
+    if width < 1:
+        raise ConfigError(f"rosters.clear_range ends before it starts: {clear_range!r}")
+    return width
+
+
+def rectangular_values(values: Sequence[Sequence[Any]], width: int) -> list[list[Any]]:
+    """Pad rows to ``width`` so Sheets update clears stale cells in each row."""
+    max_width = max((len(row) for row in values), default=0)
+    if max_width > width:
+        raise ConfigError(
+            "rosters.clear_range must be at least as wide as the generated roster "
+            f"({width} configured column(s), {max_width} needed)"
+        )
+    return [list(row) + [""] * (width - len(row)) for row in values]
+
+
+def a1_column_number(column: str) -> int:
+    """Return the 1-based number for an A1 column label."""
+    value = 0
+    for char in column.upper():
+        value = value * 26 + ord(char) - ord("A") + 1
+    return value
 
 
 def a1_start_row(range_name: str) -> int:

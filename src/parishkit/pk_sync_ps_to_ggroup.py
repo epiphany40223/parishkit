@@ -526,7 +526,7 @@ def sync_group(
         if should_notify
         else None
     )
-    apply_actions(admin_service, group.group, actions)
+    apply_actions(admin_service, group.group, actions, log=log)
     log.info("Applied %s Google Group action(s) for %s", len(actions), group.group)
     send_notification(
         email_provider,
@@ -799,13 +799,25 @@ def compute_actions(
     return actions
 
 
-def apply_actions(service: Any, group_key: str, actions: Sequence[SyncAction]) -> None:
+def apply_actions(
+    service: Any,
+    group_key: str,
+    actions: Sequence[SyncAction],
+    *,
+    log: logging.Logger | None = None,
+) -> None:
     """Apply computed Google group changes."""
     for action in actions:
         if action.action == "add":
             insert_group_member(
                 service, group_key, action.email, action.role or "MEMBER"
             )
+            if log:
+                log.info(
+                    "Applied Google Group add for %s in %s",
+                    action.email,
+                    group_key,
+                )
         elif action.action == "change_role":
             update_group_member_role(
                 service,
@@ -813,10 +825,23 @@ def apply_actions(service: Any, group_key: str, actions: Sequence[SyncAction]) -
                 action.group_member_id or action.email,
                 action.role or "MEMBER",
             )
+            if log:
+                log.info(
+                    "Applied Google Group role change for %s in %s to %s",
+                    action.email,
+                    group_key,
+                    action.role or "MEMBER",
+                )
         elif action.action == "delete":
             delete_group_member(
                 service, group_key, action.group_member_id or action.email
             )
+            if log:
+                log.info(
+                    "Applied Google Group delete for %s in %s",
+                    action.email,
+                    group_key,
+                )
         else:
             raise ConfigError(f"unknown sync action: {action.action}")
 
