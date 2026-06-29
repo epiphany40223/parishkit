@@ -78,6 +78,14 @@ class EventDecision:
     attendee_email: str | None = None
 
 
+@dataclass(frozen=True)
+class CalendarDecisionPlan:
+    """All decisions for one calendar, computed before writes are applied."""
+
+    calendar: ReservationCalendar
+    decisions: tuple[EventDecision, ...]
+
+
 ServiceFactory = Callable[[ConfigData], Any]
 
 
@@ -337,6 +345,7 @@ def process_calendars(
         days=config.lookahead_days
     )
     log.info("Checking reservations from %s through %s", time_min, time_max)
+    plans: list[CalendarDecisionPlan] = []
     for calendar in config.calendars:
         log.info(
             "Downloading events from %s (ID: %s)", calendar.name, calendar.calendar_id
@@ -370,10 +379,12 @@ def process_calendars(
             _decisions_summary(decisions),
             extra=log_extra(decisions),
         )
+        plans.append(CalendarDecisionPlan(calendar, tuple(decisions)))
+    for plan in plans:
         respond_to_decisions(
             service,
-            calendar,
-            decisions,
+            plan.calendar,
+            plan.decisions,
             dry_run=dry_run,
             log=log,
         )

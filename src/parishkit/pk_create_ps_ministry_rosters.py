@@ -292,11 +292,13 @@ def roster_config_from_yaml(config: ConfigData) -> RosterConfig:
     )
     if not ministries and not workgroups:
         raise ConfigError("rosters must configure ministries or workgroups")
-    return RosterConfig(
+    roster_config = RosterConfig(
         ministries=ministries,
         workgroups=workgroups,
         workgroup_leader_suffix=leader_suffix,
     )
+    validate_unique_roster_targets(roster_config)
+    return roster_config
 
 
 def load_sheets_credentials(
@@ -465,6 +467,31 @@ def configured_sheet_ranges(config: RosterConfig) -> list[tuple[str, str, str]]:
         for target in config.workgroups
     )
     return ranges
+
+
+def validate_unique_roster_targets(config: RosterConfig) -> None:
+    """Reject multiple roster outputs targeting the same spreadsheet range."""
+    seen: dict[tuple[str, str], str] = {}
+    named_ranges = []
+    for target in config.ministries:
+        named_ranges.append((target.name, target.spreadsheet_id, target.range_name))
+        named_ranges.extend(
+            (role.name, role.spreadsheet_id, role.range_name)
+            for role in target.role_sheets
+        )
+    named_ranges.extend(
+        (target.name, target.spreadsheet_id, target.range_name)
+        for target in config.workgroups
+    )
+    for name, spreadsheet_id, range_name in named_ranges:
+        key = (spreadsheet_id, range_name)
+        if key in seen:
+            raise ConfigError(
+                "rosters outputs must not share the same spreadsheet and range: "
+                f"{seen[key]!r} and {name!r} both target "
+                f"{spreadsheet_id}:{range_name}"
+            )
+        seen[key] = name
 
 
 def validate_configured_parishsoft_sources(

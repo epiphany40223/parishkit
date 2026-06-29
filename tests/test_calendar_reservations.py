@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from parishkit.config import ConfigError
+from parishkit.google.auth import GoogleAPIError
 from parishkit.pk_validate_gcalendar_reservations import (
     ReservationCalendar,
     calendar_reservation_config,
@@ -25,6 +26,8 @@ class Request:
         self.response = response
 
     def execute(self):
+        if isinstance(self.response, Exception):
+            raise self.response
         return self.response
 
 
@@ -459,6 +462,43 @@ def test_calendar_reservations_main_lists_and_patches_events(tmp_path):
             },
         },
     ]
+
+
+def test_calendar_reservations_main_preflights_all_calendars_before_patching(
+    tmp_path,
+):
+    """A later calendar listing failure prevents earlier calendar patches."""
+    config = write_config(tmp_path)
+    config.write_text(
+        config.read_text(encoding="utf-8")
+        + """
+    - name: Hall
+      calendar_id: hall@example.org
+      check_conflicts: true
+""",
+        encoding="utf-8",
+    )
+    service = Service(
+        [
+            {"items": [event("one")]},
+            GoogleAPIError(404, "missing calendar"),
+        ]
+    )
+
+    assert (
+        calendar_reservations_main(
+            ["--config", str(config)],
+            service_factory=lambda _config: service,
+            now=lambda: dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
+        )
+        == 2
+    )
+
+    assert [call["calendarId"] for call in service._events.list_calls] == [
+        "room@example.org",
+        "hall@example.org",
+    ]
+    assert service._events.patch_calls == []
 
 
 def test_calendar_reservations_patches_event_without_summary(tmp_path):

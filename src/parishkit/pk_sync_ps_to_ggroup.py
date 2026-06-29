@@ -144,6 +144,16 @@ class SyncAction:
     desired: DesiredMember | None = None
 
 
+@dataclass(frozen=True)
+class GroupSyncPlan:
+    """A fully validated Google Group sync plan ready to apply."""
+
+    group: GroupSync
+    actions: tuple[SyncAction, ...]
+    email_provider: EmailProvider | None = None
+    posting_permission: str | None = None
+
+
 Loader = Callable[..., ParishSoftData]
 ServiceFactory = Callable[[ConfigData], tuple[Any, Any]]
 
@@ -305,6 +315,7 @@ def _run(
                 include_settings=needs_settings_service,
             )
         )
+        plans = []
         for group in sync_config.groups:
             log.info("Synchronizing Google Group %s", group.group)
             log.debug(
@@ -321,16 +332,26 @@ def _run(
                 ),
                 extra=log_extra(group),
             )
-            sync_group(
+            plans.append(
+                plan_group(
+                    admin_service,
+                    settings_service,
+                    provider,
+                    data,
+                    sync_config,
+                    group,
+                    dry_run=common.dry_run,
+                    log=log,
+                    email_provider_factory=provider_for_notifications,
+                )
+            )
+        for plan in plans:
+            apply_group_plan(
                 admin_service,
-                settings_service,
-                provider,
-                data,
                 sync_config,
-                group,
+                plan,
                 dry_run=common.dry_run,
                 log=log,
-                email_provider_factory=provider_for_notifications,
             )
         log.info(
             "Google Group sync operation completed successfully for %s group(s)",
@@ -474,6 +495,40 @@ def sync_group(
     actions without performing any side effects. The returned action list is
     the same whether or not it was applied.
     """
+    plan = plan_group(
+        admin_service,
+        settings_service,
+        email_provider,
+        data,
+        config,
+        group,
+        dry_run=dry_run,
+        log=log,
+        email_provider_factory=email_provider_factory,
+    )
+    apply_group_plan(
+        admin_service,
+        config,
+        plan,
+        dry_run=dry_run,
+        log=log,
+    )
+    return list(plan.actions)
+
+
+def plan_group(
+    admin_service: Any,
+    settings_service: Any | None,
+    email_provider: EmailProvider | None,
+    data: ParishSoftData,
+    config: SyncConfig,
+    group: GroupSync,
+    *,
+    dry_run: bool,
+    log: logging.Logger,
+    email_provider_factory: Callable[[], EmailProvider] | None = None,
+) -> GroupSyncPlan:
+    """Compute and validate one group plan without mutating Google Groups."""
     desired = desired_members(
         data,
         group,
@@ -519,7 +574,7 @@ def sync_group(
             len(actions),
             group.group,
         )
-        return actions
+        return GroupSyncPlan(group, tuple(actions))
     if (
         email_provider is None
         and email_provider_factory is not None
@@ -536,16 +591,33 @@ def sync_group(
         if should_notify
         else None
     )
-    apply_actions(admin_service, group.group, actions, log=log)
-    log.info("Applied %s Google Group action(s) for %s", len(actions), group.group)
-    send_notification(
-        email_provider,
-        config,
-        group,
-        posting_permission,
-        actions,
+    return GroupSyncPlan(group, tuple(actions), email_provider, posting_permission)
+
+
+def apply_group_plan(
+    admin_service: Any,
+    config: SyncConfig,
+    plan: GroupSyncPlan,
+    *,
+    dry_run: bool,
+    log: logging.Logger,
+) -> None:
+    """Apply a planned Google Group sync after all groups have been validated."""
+    if dry_run:
+        return
+    apply_actions(admin_service, plan.group.group, plan.actions, log=log)
+    log.info(
+        "Applied %s Google Group action(s) for %s",
+        len(plan.actions),
+        plan.group.group,
     )
-    return actions
+    send_notification(
+        plan.email_provider,
+        config,
+        plan.group,
+        plan.posting_permission,
+        plan.actions,
+    )
 
 
 def group_notification_will_send(

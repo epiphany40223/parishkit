@@ -51,10 +51,14 @@ class Members:
     def __init__(self):
         self.calls = []
         self.list_error: Exception | None = None
+        self.list_errors_by_group: dict[str, Exception] = {}
 
     def list(self, **kwargs):
         """Record the list call and return the current group roster fixture."""
         self.calls.append(("list", kwargs))
+        group_key = str(kwargs.get("groupKey", ""))
+        if group_key in self.list_errors_by_group:
+            return Request(exc=self.list_errors_by_group[group_key])
         if self.list_error is not None:
             return Request(exc=self.list_error)
         return Request(
@@ -940,6 +944,45 @@ def test_sync_google_group_reports_missing_google_group(
     assert "Configured Google Group was not found" in error
     assert "sync.groups[].group" in error
     assert [call[0] for call in admin._members.calls] == ["list"]
+
+
+def test_sync_google_group_preflights_all_groups_before_writes(
+    tmp_path,
+    monkeypatch,
+):
+    """A later group failure prevents earlier group mutations."""
+    config = write_config(tmp_path)
+    config.write_text(
+        config.read_text(encoding="utf-8")
+        + """
+    - group: missing@example.org
+      static_members:
+        - email: somebody@example.org
+""",
+        encoding="utf-8",
+    )
+    admin = AdminService()
+    admin._members.list_errors_by_group["missing@example.org"] = GoogleAPIError(
+        404,
+        "group not found",
+    )
+    settings = SettingsService()
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_google_group_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            service_factory=lambda _config: (admin, settings),
+            email_provider=EmailProvider(),
+        )
+        == 2
+    )
+
+    assert [call[0] for call in admin._members.calls] == ["list", "list"]
 
 
 def test_sync_google_group_reports_missing_parishsoft_source(
