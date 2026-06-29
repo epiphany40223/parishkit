@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import logging
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from importlib.metadata import version
@@ -43,6 +44,11 @@ from parishkit.parishsoft_runtime import parishsoft_client_from_config
 SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
 DEFAULT_RANGE = "Roster!A1"
 DEFAULT_CLEAR_RANGE = "Roster!A:Z"
+_CLEAR_RANGE_RE = re.compile(
+    r"^(?P<sheet>(?:'[^']*(?:''[^']*)*'|[^!]*)!)?"
+    r"(?P<start_col>\$?[A-Za-z]+)(?:\$?\d*)?"
+    r":(?P<end_col>\$?[A-Za-z]+)(?:\$?\d*)?$"
+)
 DEFAULT_LEADER_SUFFIX = " Ldr"
 HEADER_BACKGROUND_COLOR = {"red": 0.0, "green": 0.0, "blue": 1.0}
 HEADER_TEXT_COLOR = {"red": 1.0, "green": 1.0, "blue": 0.0}
@@ -526,11 +532,13 @@ def write_values(
     dry_run: bool,
     log: logging.Logger,
 ) -> None:
-    """Clear ``clear_range`` then write ``values`` to a Google Sheet range.
+    """Write ``values`` to Sheets and then clear stale rows below them.
 
-    The range is cleared first so stale rows from a previous, longer roster do
-    not linger below the freshly written data. When ``dry_run`` is set, nothing
-    is written; the intended write is only logged.
+    Updating first avoids blanking a previously published roster if the write
+    fails. Once the new roster and formatting succeed, only rows below the new
+    row count are cleared so stale rows from an older, longer roster do not
+    remain visible. When ``dry_run`` is set, nothing is written; the intended
+    write is only logged.
     """
     if dry_run:
         log.info(
@@ -541,7 +549,6 @@ def write_values(
         )
         return
     try:
-        clear_values(sheets_service, spreadsheet_id, clear_range)
         update_values(sheets_service, spreadsheet_id, range_name, values)
         format_roster_sheet(
             sheets_service,
@@ -550,6 +557,11 @@ def write_values(
             spreadsheet_title=spreadsheet_title,
             column_count=max(len(row) for row in values),
             row_count=len(values),
+        )
+        clear_values(
+            sheets_service,
+            spreadsheet_id,
+            stale_row_clear_range(clear_range, len(values)),
         )
     except GoogleAPIError as exc:
         config_error = sheet_range_config_error(
@@ -587,6 +599,22 @@ def sheet_range_config_error(
             "sheet-qualified A1 range."
         )
     return None
+
+
+def stale_row_clear_range(clear_range: str, row_count: int) -> str:
+    """Return the A1 range that clears rows below ``row_count``.
+
+    Roster configs usually clear whole columns such as ``Roster!A:Z``. After a
+    successful update, only rows below the newly written roster should be
+    cleared; clearing the original range would delete the new roster.
+    """
+    match = _CLEAR_RANGE_RE.fullmatch(clear_range)
+    if match is None:
+        return clear_range
+    sheet = match.group("sheet") or ""
+    start_col = match.group("start_col")
+    end_col = match.group("end_col")
+    return f"{sheet}{start_col}{row_count + 1}:{end_col}"
 
 
 def format_roster_sheet(

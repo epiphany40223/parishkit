@@ -21,6 +21,7 @@ from parishkit.pk_sync_ps_to_cc import (
     detect_name_mismatches,
     ensure_unsubscribed_report_state_writable,
     filter_unsubscribed,
+    name_update_candidate_emails,
     parishsoft_members_by_email,
     resolve_desired_state,
     send_notifications,
@@ -525,6 +526,47 @@ def test_action_computation_and_name_updates():
         ("unsubscribe", "old@example.org", "list-1"),
         ("update_name", "ann@example.org", None),
     ]
+
+
+def test_name_updates_are_scoped_to_configured_lists_and_desired_emails():
+    """Unrelated Constant Contact lists are outside update_names scope."""
+    config = cc_sync_config_from_yaml(
+        {
+            "sync": {
+                "lists": [
+                    {
+                        "source_workgroup": "Newsletter WG",
+                        "target_list": "Newsletter",
+                    }
+                ],
+            }
+        }
+    )
+    desired = [{"ann@example.org"}]
+    contacts = {item["email_address"]["address"]: item for item in cc_contacts()}
+    contacts["ann@example.org"]["PS MEMBERS"] = [parishsoft_data().members[1]]
+    contacts["other@example.org"] = {
+        "email_address": {"address": "other@example.org"},
+        "first_name": "Wrong",
+        "last_name": "Name",
+        "PS MEMBERS": [
+            {
+                "memberDUID": 99,
+                "firstName": "Other",
+                "lastName": "Member",
+                "py friendly name FL": "Other Member",
+            }
+        ],
+    }
+
+    candidates = name_update_candidate_emails(config, desired, cc_lists())
+    actions = detect_name_mismatches(
+        contacts,
+        update_names=True,
+        candidate_emails=candidates,
+    )
+
+    assert [action.email for action in actions] == ["ann@example.org"]
 
 
 def test_sync_ps_to_cc_main_writes_constant_contact_and_email(tmp_path, monkeypatch):

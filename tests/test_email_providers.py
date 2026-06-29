@@ -28,20 +28,10 @@ def test_build_message_with_text_html_and_attachment(tmp_path):
     assert message.is_multipart()
 
 
-def test_provider_selection_ms365_dry_run():
-    """provider_from_config picks MS365; its dry-run send returns the built message."""
-    provider = provider_from_config({"provider": "ms365", "tenant_id": "tenant"})
-    built = provider.send(
-        Email(
-            subject="Subject",
-            sender="from@example.org",
-            to=["to@example.org"],
-            text="Plain",
-        ),
-        dry_run=True,
-    )
-
-    assert built["Subject"] == "Subject"
+def test_provider_selection_rejects_ms365_until_implemented():
+    """provider_from_config rejects MS365 before any external writes happen."""
+    with pytest.raises(ConfigError, match="ms365 is not implemented"):
+        provider_from_config({"provider": "ms365", "tenant_id": "tenant"})
 
 
 def test_provider_selection_rejects_unknown():

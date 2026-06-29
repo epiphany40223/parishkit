@@ -12,6 +12,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import uuid
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
@@ -40,6 +41,7 @@ DEFAULT_RUNNER_CONFIG = default_config_dir() / "runner.yaml"
 _IMPORTED_DEFAULT_RUNNER_CONFIG = DEFAULT_RUNNER_CONFIG
 DEFAULT_LOCK_FILE = default_run_dir() / "runner.lock"
 SENSITIVE_WORDS = ("TOKEN", "SECRET", "PASSWORD", "PASS", "KEY", "CREDENTIAL", "AUTH")
+MAX_CAPTURED_OUTPUT_BYTES = 200_000
 
 
 @dataclass(frozen=True)
@@ -584,57 +586,74 @@ def run_job(job: JobConfig) -> JobResult:
     """Run one job to completion and capture its result.
 
     The job's ``env`` is layered on top of the current environment, output is
-    captured as text, and the child runs in its own session/process group
-    (``start_new_session=True``) so a timeout can signal the whole group rather
-    than orphaning grandchildren. The steps are kept explicit so operational
-    behavior stays easy to audit and test. Returns a ``JobResult`` for every
-    outcome: a failed spawn yields ``EXIT_JOB_FAILED`` and a timeout yields
-    ``EXIT_TIMEOUT`` with ``timed_out=True``; no exception escapes.
+    spooled to temporary files and read back with a size limit, and the child
+    runs in its own session/process group (``start_new_session=True``) so a
+    timeout can signal the whole group rather than orphaning grandchildren. The
+    steps are kept explicit so operational behavior stays easy to audit and
+    test. Returns a ``JobResult`` for every outcome: a failed spawn yields
+    ``EXIT_JOB_FAILED`` and a timeout yields ``EXIT_TIMEOUT`` with
+    ``timed_out=True``; no exception escapes.
     """
     env = os.environ.copy()
     env.update(job.env)
-    try:
-        process = subprocess.Popen(
-            job.command,
-            cwd=job.cwd,
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            start_new_session=True,
-        )
-    except OSError as exc:
-        # Command could not be launched at all (e.g. missing executable).
+    with (
+        tempfile.TemporaryFile() as stdout_file,
+        tempfile.TemporaryFile() as stderr_file,
+    ):
+        try:
+            process = subprocess.Popen(
+                job.command,
+                cwd=job.cwd,
+                env=env,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                start_new_session=True,
+            )
+        except OSError as exc:
+            # Command could not be launched at all (e.g. missing executable).
+            return JobResult(
+                name=job.name,
+                returncode=EXIT_JOB_FAILED,
+                stdout="",
+                stderr=str(exc),
+            )
+        # Track the live process so signal handlers can tear it down on shutdown.
+        _ACTIVE_PROCESSES.append(process)
+        try:
+            process.wait(timeout=job.timeout)
+        except subprocess.TimeoutExpired:
+            _terminate_process(process)
+            process.wait()
+            return JobResult(
+                name=job.name,
+                returncode=EXIT_TIMEOUT,
+                stdout=_read_captured_output(stdout_file),
+                stderr=_read_captured_output(stderr_file),
+                timed_out=True,
+            )
+        finally:
+            if process in _ACTIVE_PROCESSES:
+                _ACTIVE_PROCESSES.remove(process)
         return JobResult(
             name=job.name,
-            returncode=EXIT_JOB_FAILED,
-            stdout="",
-            stderr=str(exc),
+            returncode=process.returncode,
+            stdout=_read_captured_output(stdout_file),
+            stderr=_read_captured_output(stderr_file),
         )
-    # Track the live process so signal handlers can tear it down on shutdown.
-    _ACTIVE_PROCESSES.append(process)
-    try:
-        stdout, stderr = process.communicate(timeout=job.timeout)
-    except subprocess.TimeoutExpired as exc:
-        _terminate_process(process)
-        # Drain any buffered output produced before the kill.
-        stdout, stderr = process.communicate()
-        return JobResult(
-            name=job.name,
-            returncode=EXIT_TIMEOUT,
-            stdout=stdout or exc.stdout or "",
-            stderr=stderr or exc.stderr or "",
-            timed_out=True,
-        )
-    finally:
-        if process in _ACTIVE_PROCESSES:
-            _ACTIVE_PROCESSES.remove(process)
-    return JobResult(
-        name=job.name,
-        returncode=process.returncode,
-        stdout=stdout,
-        stderr=stderr,
-    )
+
+
+def _read_captured_output(output_file: Any) -> str:
+    """Read a bounded tail of child output from a temporary file."""
+    output_file.flush()
+    output_file.seek(0, os.SEEK_END)
+    size = output_file.tell()
+    start = max(0, size - MAX_CAPTURED_OUTPUT_BYTES)
+    output_file.seek(start)
+    data = output_file.read()
+    text = data.decode("utf-8", errors="replace")
+    if start:
+        return "... output truncated ...\n" + text
+    return text
 
 
 def run_jobs(

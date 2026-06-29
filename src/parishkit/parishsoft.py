@@ -433,7 +433,15 @@ class ParishSoftClient:
                 LOGGER.debug("ParishSoft cache stale for %s", endpoint)
                 return None
         LOGGER.debug("ParishSoft cache hit for %s", endpoint)
-        return json.loads(cache_path.read_text(encoding="utf-8"))
+        try:
+            return json.loads(cache_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            LOGGER.warning(
+                "Ignoring invalid ParishSoft cache file %s for %s",
+                cache_path,
+                endpoint,
+            )
+            return None
 
     def _save_cache(
         self, endpoint: str, params: dict[str, Any] | None, data: Any

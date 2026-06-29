@@ -24,6 +24,7 @@ from parishkit.pk_create_ps_ministry_rosters import (
     roster_role_matches,
     roster_values,
     sheet_name_from_a1_range,
+    stale_row_clear_range,
     workgroup_roster_members,
 )
 from parishkit.pk_create_ps_ministry_rosters import (
@@ -53,6 +54,7 @@ class Values:
         """Initialize the call recorder and optional clear failure."""
         self.calls = []
         self.clear_error: Exception | None = None
+        self.update_error: Exception | None = None
 
     def clear(self, **kwargs):
         """Record a clear call as ("clear", kwargs)."""
@@ -62,7 +64,7 @@ class Values:
     def update(self, **kwargs):
         """Record an update call as ("update", kwargs)."""
         self.calls.append(("update", kwargs))
-        return Request()
+        return Request(exc=self.update_error)
 
 
 class Spreadsheets:
@@ -487,7 +489,7 @@ def test_create_ministry_rosters_main_writes_sheet_values(
     monkeypatch,
     capsys,
 ):
-    """main clears then updates each target sheet, routing role-sheet and
+    """main updates then clears stale rows, routing role-sheet and
     workgroup rows to their own spreadsheet ids.
 
     The ParishSoft client is stubbed out so no real data is loaded, and the
@@ -523,24 +525,27 @@ def test_create_ministry_rosters_main_writes_sheet_values(
     assert "Workgroup roster targets: Movers" in error
     assert "RosterTarget(" not in error
     assert loader_calls == [{"active_only": True, "parishioners_only": False}]
-    # Each target is a clear followed by an update; ministry first, then its
-    # role sheet, then the workgroup, on their respective spreadsheet ids.
+    # Each target is an update followed by a stale-row clear; ministry first,
+    # then its role sheet, then the workgroup, on their respective spreadsheet
+    # ids.
     calls = service._spreadsheets._values.calls
-    assert calls[0] == (
+    assert calls[0][0] == "update"
+    assert calls[0][1]["spreadsheetId"] == "default-sheet"
+    assert calls[0][1]["range"] == "Readers!A1"
+    assert calls[0][1]["body"]["values"][4][-1] == "Member"
+    assert calls[0][1]["body"]["values"][6][-1] == ""
+    assert calls[1] == (
         "clear",
         {
             "spreadsheetId": "default-sheet",
-            "range": "Readers!A:Z",
+            "range": "Readers!A10:Z",
             "body": {},
         },
     )
-    assert calls[1][0] == "update"
-    assert calls[1][1]["spreadsheetId"] == "default-sheet"
-    assert calls[1][1]["range"] == "Readers!A1"
-    assert calls[1][1]["body"]["values"][4][-1] == "Member"
-    assert calls[1][1]["body"]["values"][6][-1] == ""
+    assert calls[2][0] == "update"
     assert calls[2][1]["spreadsheetId"] == "lead-sheet"
-    assert calls[3][1]["body"]["values"][4][0] == "Smith, Ann"
+    assert calls[2][1]["body"]["values"][4][0] == "Smith, Ann"
+    assert calls[4][0] == "update"
     assert calls[4][1]["spreadsheetId"] == "movers-sheet"
     assert service._spreadsheets.get_calls == [
         {"spreadsheetId": "default-sheet", "fields": "sheets.properties"},
@@ -594,6 +599,43 @@ def test_create_ministry_rosters_dry_run_skips_sheet_writes(tmp_path, monkeypatc
     assert service._spreadsheets._values.calls == []
     assert service._spreadsheets.get_calls == []
     assert service._spreadsheets.batch_update_calls == []
+
+
+def test_stale_row_clear_range_starts_below_written_roster():
+    """Stale-row cleanup preserves the rows that were just written."""
+    assert stale_row_clear_range("Readers!A:Z", 7) == "Readers!A8:Z"
+    assert stale_row_clear_range("'Sunday Readers'!A1:Z500", 7) == (
+        "'Sunday Readers'!A8:Z"
+    )
+
+
+def test_create_ministry_rosters_update_failure_does_not_clear_existing_sheet(
+    tmp_path,
+    monkeypatch,
+):
+    """A failed values update must leave the old roster intact."""
+    service = SheetsService()
+    service._spreadsheets._values.update_error = GoogleAPIError(
+        500,
+        "temporary Sheets failure",
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_create_ps_ministry_rosters.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        create_ministry_rosters_main(
+            ["--config", str(write_config(tmp_path))],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            sheets_factory=lambda _config: service,
+        )
+        == 2
+    )
+
+    calls = service._spreadsheets._values.calls
+    assert calls[0][0] == "update"
+    assert all(call[0] != "clear" for call in calls)
 
 
 def test_create_ministry_rosters_dry_run_does_not_require_google_config(
@@ -692,7 +734,7 @@ def test_create_ministry_rosters_validation_uses_custom_leader_suffix(
         == 0
     )
 
-    movers_update = service._spreadsheets._values.calls[5]
+    movers_update = service._spreadsheets._values.calls[4]
     assert movers_update[0] == "update"
     assert movers_update[1]["body"]["values"][4][0] == "Adams, Bob"
     assert movers_update[1]["body"]["values"][4][-1] == "Leader"

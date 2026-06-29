@@ -201,6 +201,16 @@ def test_cache_round_trip(tmp_path):
     assert stat.S_IMODE(cache_file.stat().st_mode) == 0o600
 
 
+def test_invalid_cache_file_is_treated_as_miss(tmp_path):
+    """A corrupt cache file does not crash a later ParishSoft read."""
+    ps = client(tmp_path, [Response([{"id": 2}])])
+    cache_path = ps._cache_path("lookup", None)
+    cache_path.write_text("{not json", encoding="utf-8")
+
+    assert ps.get("lookup") == [{"id": 2}]
+    assert len(ps.session.calls) == 1
+
+
 def test_validate_organization_bypasses_stale_cache(tmp_path):
     """Organization validation always calls ParishSoft, never stale cache data."""
     ps = client(

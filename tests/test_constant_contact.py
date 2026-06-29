@@ -5,6 +5,7 @@ import json
 import stat
 
 import pytest
+import requests
 
 from parishkit.config import ConfigError
 from parishkit.constant_contact import (
@@ -250,6 +251,93 @@ def test_refresh_access_token_rejects_non_json_response(tmp_path):
                 },
             },
             session=Session([BadJSONResponse("not json", status_code=500)]),
+            now=start,
+        )
+
+
+def test_refresh_access_token_retries_transient_request_failure(tmp_path):
+    """Refreshing retries transient request failures before succeeding."""
+    start = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
+    token_path = tmp_path / "token.json"
+    save_access_token(
+        token_path,
+        {
+            "access_token": "old",
+            "refresh_token": "refresh",
+            "valid from": start - dt.timedelta(hours=2),
+            "valid to": start - dt.timedelta(hours=1),
+        },
+    )
+
+    class FlakySession(Session):
+        """Fake session that fails once with a timeout, then returns a response."""
+
+        def post(self, url, **kwargs):
+            """Record the POST and fail the first refresh attempt."""
+            self.calls.append(("post", url, kwargs))
+            if len(self.calls) == 1:
+                raise requests.exceptions.Timeout("temporary timeout")
+            return self.responses.pop(0)
+
+    refreshed = get_access_token(
+        token_path,
+        {
+            "client id": "client",
+            "endpoints": {
+                "api": "https://api.example",
+                "token": "https://auth.example/token",
+            },
+        },
+        session=FlakySession(
+            [
+                Response(
+                    {
+                        "access_token": "new",
+                        "refresh_token": "refresh2",
+                        "expires_in": 3600,
+                    }
+                )
+            ]
+        ),
+        now=start,
+    )
+
+    assert refreshed["access_token"] == "new"
+
+
+def test_refresh_access_token_wraps_exhausted_request_failures(tmp_path):
+    """Repeated transient request failures surface as a clean ConfigError."""
+    start = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
+    token_path = tmp_path / "token.json"
+    save_access_token(
+        token_path,
+        {
+            "access_token": "old",
+            "refresh_token": "refresh",
+            "valid from": start - dt.timedelta(hours=2),
+            "valid to": start - dt.timedelta(hours=1),
+        },
+    )
+
+    class BrokenSession(Session):
+        """Fake session that always raises a retryable timeout."""
+
+        def post(self, url, **kwargs):
+            """Record the POST and raise a timeout."""
+            self.calls.append(("post", url, kwargs))
+            raise requests.exceptions.Timeout("network down")
+
+    with pytest.raises(ConfigError, match="failed after retries"):
+        get_access_token(
+            token_path,
+            {
+                "client id": "client",
+                "endpoints": {
+                    "api": "https://api.example",
+                    "token": "https://auth.example/token",
+                },
+            },
+            session=BrokenSession([]),
             now=start,
         )
 

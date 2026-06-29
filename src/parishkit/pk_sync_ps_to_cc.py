@@ -10,7 +10,7 @@ import html
 import json
 import logging
 from collections import defaultdict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from importlib.metadata import version
 from pathlib import Path
@@ -326,6 +326,11 @@ def _run(
             detect_name_mismatches(
                 contacts_by_email,
                 update_names=sync_config.update_names,
+                candidate_emails=name_update_candidate_emails(
+                    sync_config,
+                    desired_emails,
+                    cc_lists,
+                ),
             )
         )
         validate_unsubscribed_report_config(
@@ -618,6 +623,25 @@ def compute_all_actions(
     return actions
 
 
+def name_update_candidate_emails(
+    config: CCSyncConfig,
+    desired_emails: Sequence[set[str]],
+    cc_lists: Sequence[Mapping[str, Any]],
+) -> set[str]:
+    """Return emails eligible for configured-list name updates.
+
+    ``update_names`` should only touch contacts related to this sync: desired
+    ParishSoft addresses and contacts already on configured Constant Contact
+    target lists. Constant Contact accounts can contain many unrelated lists,
+    and this command should not rename contacts outside its configured scope.
+    """
+    cc_list_by_name = {item["name"]: item for item in cc_lists}
+    candidates = set().union(*desired_emails) if desired_emails else set()
+    for mapping in config.mappings:
+        candidates.update(cc_list_by_name[mapping.target_list].get("CONTACTS", {}))
+    return candidates
+
+
 def compute_create_actions(
     desired_emails: Sequence[set[str]],
     contacts_by_email: Mapping[str, Mapping[str, Any]],
@@ -689,13 +713,15 @@ def detect_name_mismatches(
     contacts_by_email: Mapping[str, Mapping[str, Any]],
     *,
     update_names: bool,
+    candidate_emails: Collection[str] | None = None,
 ) -> list[CCAction]:
     """Find contacts whose Constant Contact name differs from ParishSoft.
 
     Returns an empty list unless ``update_names`` is set. For each contact
-    linked to ParishSoft members, the canonical salutation name is compared
-    against the stored Constant Contact name, and an ``update_name`` action is
-    produced for any difference.
+    linked to ParishSoft members and included in ``candidate_emails`` when a
+    scope is provided, the canonical salutation name is compared against the
+    stored Constant Contact name, and an ``update_name`` action is produced for
+    any difference.
     """
     if not update_names:
         return []
@@ -703,6 +729,8 @@ def detect_name_mismatches(
 
     actions = []
     for email, contact in contacts_by_email.items():
+        if candidate_emails is not None and email not in candidate_emails:
+            continue
         members = contact.get("PS MEMBERS")
         if not members:
             continue

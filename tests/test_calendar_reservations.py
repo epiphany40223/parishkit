@@ -264,6 +264,28 @@ def test_reservation_decisions_accepts_non_conflict_calendar_without_checking():
     ]
 
 
+def test_calendar_reservations_matches_attendee_email_case_insensitively(tmp_path):
+    """Calendar attendee matching does not depend on exact email casing."""
+    mixed_case_event = event("one")
+    mixed_case_event["attendees"][0]["email"] = "Room@Example.Org"
+    service = Service([{"items": [mixed_case_event]}])
+
+    assert (
+        calendar_reservations_main(
+            ["--config", str(write_config(tmp_path))],
+            service_factory=lambda _config: service,
+            now=lambda: dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
+        )
+        == 0
+    )
+
+    attendee = service._events.patch_calls[0]["body"]["attendees"][0]
+    assert attendee == {
+        "email": "Room@Example.Org",
+        "responseStatus": "accepted",
+    }
+
+
 def test_calendar_reservations_main_lists_and_patches_events(tmp_path):
     """main paginates through events, then patches each calendar's responses.
 

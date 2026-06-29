@@ -75,6 +75,7 @@ class EventDecision:
     event: dict[str, Any]
     response: str
     reason: str | None = None
+    attendee_email: str | None = None
 
 
 ServiceFactory = Callable[[ConfigData], Any]
@@ -394,12 +395,16 @@ def reservation_decisions(
     Returning decisions separately from API writes lets dry-run mode and tests
     inspect exactly what would happen.
     """
-    pending_events: list[dict[str, Any]] = []
+    pending_events: list[tuple[dict[str, Any], str]] = []
     existing_events: list[dict[str, Any]] = []
     decisions: list[EventDecision] = []
     for event in events:
-        resource_status = attendee_status(event, calendar.calendar_id)
+        resource_attendee = calendar_attendee(event, calendar.calendar_id)
+        resource_status = (
+            resource_attendee.get("responseStatus") if resource_attendee else None
+        )
         if resource_status == "needsAction":
+            attendee_email = str(resource_attendee.get("email", calendar.calendar_id))
             creator_email = str(event.get("creator", {}).get("email", ""))
             if creator_domain(creator_email) not in config.acceptable_domains:
                 decisions.append(
@@ -409,16 +414,18 @@ def reservation_decisions(
                         reason=(
                             f"creator {creator_email} is not in an acceptable domain"
                         ),
+                        attendee_email=attendee_email,
                     )
                 )
             else:
-                pending_events.append(event)
+                pending_events.append((event, attendee_email))
         elif resource_status != "declined":
             existing_events.append(event)
 
     if not calendar.check_conflicts:
         decisions.extend(
-            EventDecision(event=event, response="accepted") for event in pending_events
+            EventDecision(event=event, response="accepted", attendee_email=email)
+            for event, email in pending_events
         )
         return decisions
 
@@ -430,7 +437,9 @@ def reservation_decisions(
     ]
     # Process pending events oldest-first by creation time so that, among
     # mutually conflicting requests, the earliest booking wins deterministically.
-    for event in sorted(pending_events, key=lambda item: str(item.get("created", ""))):
+    for event, attendee_email in sorted(
+        pending_events, key=lambda item: str(item[0].get("created", ""))
+    ):
         interval = event_interval(event, config.timezone)
         conflict = next(
             (
@@ -441,7 +450,13 @@ def reservation_decisions(
             None,
         )
         if conflict is None:
-            decisions.append(EventDecision(event=event, response="accepted"))
+            decisions.append(
+                EventDecision(
+                    event=event,
+                    response="accepted",
+                    attendee_email=attendee_email,
+                )
+            )
             accepted_intervals.append((event, interval))
         else:
             decisions.append(
@@ -452,6 +467,7 @@ def reservation_decisions(
                         "conflicts with existing event "
                         f"'{conflict.get('summary', '')}' (ID: {conflict.get('id')})"
                     ),
+                    attendee_email=attendee_email,
                 )
             )
     return decisions
@@ -503,15 +519,28 @@ def respond_to_decisions(
             calendar.calendar_id,
             event_id,
             decision.response,
+            attendee_email=decision.attendee_email,
         )
+
+
+def calendar_attendee(
+    event: Mapping[str, Any], calendar_id: str
+) -> Mapping[str, Any] | None:
+    """Return this calendar account's attendee entry, matched case-insensitively."""
+    wanted = calendar_id.casefold()
+    for attendee in event.get("attendees", []):
+        if not isinstance(attendee, Mapping):
+            continue
+        email = attendee.get("email")
+        if isinstance(email, str) and email.casefold() == wanted:
+            return attendee
+    return None
 
 
 def attendee_status(event: Mapping[str, Any], calendar_id: str) -> str | None:
     """Return this account’s attendee status for an event."""
-    for attendee in event.get("attendees", []):
-        if attendee.get("email") == calendar_id:
-            return attendee.get("responseStatus")
-    return None
+    attendee = calendar_attendee(event, calendar_id)
+    return attendee.get("responseStatus") if attendee else None
 
 
 def creator_domain(email: str) -> str:

@@ -298,6 +298,21 @@ def test_run_job_success():
     assert result.stdout.strip() == "ok"
 
 
+def test_run_job_bounds_captured_output(monkeypatch):
+    """Large child output is truncated before it is returned in JobResult."""
+    monkeypatch.setattr("parishkit.pk_cron_runner.MAX_CAPTURED_OUTPUT_BYTES", 12)
+    job = JobConfig(
+        name="chatty",
+        command=[sys.executable, "-c", "print('0123456789abcdef')"],
+    )
+
+    result = run_job(job)
+
+    assert result.ok
+    assert result.stdout.startswith("... output truncated ...")
+    assert result.stdout.endswith("56789abcdef\n")
+
+
 def test_redacted_runner_config_hides_likely_secret_values():
     """Debug serialization redacts env values and CLI secret arguments."""
     config = RunnerConfig(
