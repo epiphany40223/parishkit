@@ -274,6 +274,7 @@ def test_contact_linking_helpers():
     assert contact["first_name"] == "Ann"
     assert contact["LIST MEMBERSHIPS"] == ["Newsletter"]
     assert contact["CUSTOM FIELDS"]["Parish ID"]["value"] == "1"
+    assert lists[0]["CONTACTS"]["ann@example.org"] is contact
     assert members[1]["CONTACT"] is contact
 
 
@@ -324,6 +325,7 @@ def test_get_access_token_refreshes_expired_token(tmp_path):
     # The refreshed token is written back to disk, not just returned.
     assert load_access_token(token_path)["access_token"] == "new"
     assert session.calls[0][2]["timeout"] == 30.0
+    assert (tmp_path / ".token.json.lock").exists()
 
 
 def test_get_access_token_refresh_failure_requires_manual_reauth(tmp_path):

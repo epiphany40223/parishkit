@@ -334,6 +334,24 @@ def test_calendar_reservations_main_lists_and_patches_events(tmp_path):
     ]
 
 
+def test_calendar_reservations_patches_event_without_summary(tmp_path):
+    """A pending event missing a summary is still patched by event ID."""
+    untitled = event("one")
+    del untitled["summary"]
+    service = Service([{"items": [untitled]}])
+
+    assert (
+        calendar_reservations_main(
+            ["--config", str(write_config(tmp_path))],
+            service_factory=lambda _config: service,
+            now=lambda: dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
+        )
+        == 0
+    )
+
+    assert service._events.patch_calls[0]["eventId"] == "one"
+
+
 def test_calendar_reservations_dry_run_does_not_patch(tmp_path):
     """In dry-run mode main computes decisions but issues no patch calls."""
     service = Service([{"items": [event("one")]}])

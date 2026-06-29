@@ -159,7 +159,7 @@ def _run(
     """
     common = resolve_common_options(args)
     log = setup_logging(
-        verbose=common.verbose,
+        verbose=common.verbose or common.dry_run,
         debug=common.debug,
         log_file=common.log_file,
         log_dir=common.log_dir,
@@ -460,18 +460,19 @@ def respond_to_decisions(
 ) -> None:
     """Log and apply each computed decision to the calendar.
 
-    Events without a title are skipped with a warning rather than acted on, to
-    avoid responding to malformed or placeholder entries. In ``dry_run`` mode
-    the intended response is logged but never written via the API.
+    Events without an ID are skipped because the API cannot patch them. Missing
+    titles use an ``untitled`` label so malformed unauthorized reservations are
+    still accepted or declined instead of remaining pending forever. In
+    ``dry_run`` mode the intended response is logged but never written.
     """
     for decision in decisions:
         event = decision.event
         event_id = str(event.get("id", ""))
-        summary = event.get("summary")
-        if not summary:
+        summary = str(event.get("summary") or "untitled")
+        if not event_id:
             log.warning(
-                "Event %s does not have a title; refusing to respond",
-                event_id,
+                "Event %s does not have an ID; refusing to respond",
+                summary,
             )
             continue
         because = f" because {decision.reason}" if decision.reason else ""

@@ -304,7 +304,7 @@ def test_group_write_helpers_use_directory_api():
             {
                 "groupKey": "group@example.org",
                 "memberKey": "a@example.org",
-                "body": {"email": "a@example.org", "role": "OWNER"},
+                "body": {"role": "OWNER"},
             },
         ),
         ("delete", {"groupKey": "group@example.org", "memberKey": "member-id"}),

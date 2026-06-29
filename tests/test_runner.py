@@ -333,6 +333,45 @@ def test_redacted_runner_config_hides_likely_secret_values():
     ]
 
 
+def test_lock_metadata_redacts_likely_secret_command_values(tmp_path):
+    """Lock files do not expose likely secret command arguments."""
+    lock_path = tmp_path / "runner.lock"
+
+    with LockFile(
+        LockConfig(path=lock_path),
+        command=["tool", "--token", "secret", "--plain", "visible"],
+    ):
+        metadata = json.loads(lock_path.read_text(encoding="utf-8"))
+
+    assert metadata["command"] == [
+        "tool",
+        "--token",
+        "[redacted]",
+        "--plain",
+        "visible",
+    ]
+
+
+def test_run_jobs_logs_redacted_command_arguments(caplog):
+    """Job start logs redact likely secret command arguments."""
+    config = RunnerConfig(
+        jobs=[
+            JobConfig(
+                "redaction",
+                [sys.executable, "-c", "raise SystemExit(0)", "--token", "secret"],
+            )
+        ]
+    )
+    logger = logging.getLogger("test.runner.redaction")
+
+    with caplog.at_level(logging.INFO, logger=logger.name):
+        exit_code, _results = run_jobs(config, logger=logger)
+
+    assert exit_code == EXIT_SUCCESS
+    assert "--token '[redacted]'" in caplog.text
+    assert "secret" not in caplog.text
+
+
 def test_run_job_timeout():
     """A job that exceeds its timeout is flagged timed_out with the timeout
     exit code."""

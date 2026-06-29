@@ -434,7 +434,7 @@ def test_compute_actions_add_delete_and_change_role():
     assert [
         (item.action, item.email, item.role, item.group_member_id) for item in actions
     ] == [
-        ("change_role", "leader@example.org", "OWNER", None),
+        ("change_role", "leader@example.org", "OWNER", "lead-id"),
         ("delete", "old@example.org", None, "old-id"),
     ]
     assert (
@@ -500,8 +500,8 @@ def test_sync_google_group_main_writes_group_changes_and_notifications(
         "update",
         {
             "groupKey": "group@example.org",
-            "memberKey": "leader@example.org",
-            "body": {"email": "leader@example.org", "role": "OWNER"},
+            "memberKey": "lead-id",
+            "body": {"role": "OWNER"},
         },
     ) in admin._members.calls
     assert (
@@ -530,6 +530,19 @@ def test_sync_google_group_main_writes_group_changes_and_notifications(
     assert "keyword" not in (email.sent[0][0].html or "")
     assert "[Static member]" in (email.sent[0][0].html or "")
     assert "Added to group" in (email.sent[0][0].html or "")
+
+
+def test_compute_actions_updates_role_by_matched_google_member_id():
+    """Alias-matched role changes use the current Google member identifier."""
+    actions = compute_actions(
+        [DesiredMember("bob.mover+tag@gmail.com", True, ["Bob Mover"])],
+        [{"email": "bobmover@gmail.com", "role": "MEMBER", "id": "bob-id"}],
+        frozenset({"gmail.com"}),
+    )
+
+    assert [
+        (item.action, item.email, item.role, item.group_member_id) for item in actions
+    ] == [("change_role", "bob.mover+tag@gmail.com", "OWNER", "bob-id")]
 
 
 def test_sync_google_group_email_treats_domain_posting_as_discussion(

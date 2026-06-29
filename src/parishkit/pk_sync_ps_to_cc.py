@@ -870,6 +870,8 @@ def send_notifications(
             suppressed_count = len(unsubscribed[index])
         if not list_actions and not reported_unsubscribed:
             continue
+        if not mapping.notifications:
+            continue
         provider.send(
             build_notification_email(
                 mapping,
@@ -1307,10 +1309,11 @@ def ensure_unsubscribed_report_state_writable(
     lock_probe = _unsubscribed_report_lock_path(state_path)
     try:
         atomic_write_text(probe, "{}")
-        atomic_write_text(lock_probe, "{}")
+        lock_probe.parent.mkdir(parents=True, exist_ok=True)
+        with lock_probe.open("a+", encoding="utf-8"):
+            pass
     finally:
         probe.unlink(missing_ok=True)
-        lock_probe.unlink(missing_ok=True)
 
 
 def unsubscribed_report_decision(

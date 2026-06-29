@@ -2,6 +2,7 @@ import json
 import logging
 from dataclasses import dataclass
 
+from parishkit.config import ConfigError
 from parishkit.logging import (
     DEFAULT_BACKUP_COUNT,
     DEFAULT_MAX_BYTES,
@@ -187,7 +188,7 @@ def test_setup_logging_adds_mocked_slack_handler(monkeypatch, tmp_path):
 
 
 def test_setup_logging_rejects_partial_slack_config(tmp_path):
-    """A Slack token without a channel is rejected with a ValueError."""
+    """A Slack token without a channel is rejected with a ConfigError."""
     token_file = tmp_path / "slack-token.txt"
     token_file.write_text("xoxb-test-token\n", encoding="utf-8")
 
@@ -196,10 +197,10 @@ def test_setup_logging_rejects_partial_slack_config(tmp_path):
             logger_name="test.partial.slack",
             slack_token_file=token_file,
         )
-    except ValueError as exc:
+    except ConfigError as exc:
         assert "both token file and channel" in str(exc)
     else:
-        raise AssertionError("expected ValueError")
+        raise AssertionError("expected ConfigError")
 
 
 def test_setup_logging_failure_keeps_existing_handlers(monkeypatch, tmp_path):

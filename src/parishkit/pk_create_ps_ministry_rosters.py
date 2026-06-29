@@ -158,7 +158,7 @@ def _run(
     """
     common = resolve_common_options(args)
     log = setup_logging(
-        verbose=common.verbose,
+        verbose=common.verbose or common.dry_run,
         debug=common.debug,
         log_file=common.log_file,
         log_dir=common.log_dir,
@@ -1079,6 +1079,7 @@ def _target(
     clear_range = _optional_string(item.get("clear_range"), f"{name}.clear_range") or (
         default_clear_range or DEFAULT_CLEAR_RANGE
     )
+    _validate_same_sheet_range(range_name, clear_range, name)
     include_birthday = _bool(
         item.get("include_birthday", item.get("birthday", False)),
         f"{name}.include_birthday",
@@ -1126,6 +1127,7 @@ def _role_target(
         _optional_string(item.get("clear_range"), f"{name}.clear_range")
         or default_clear_range
     )
+    _validate_same_sheet_range(range_name, clear_range, name)
     return RoleRosterTarget(
         name=role_name,
         roles=roles,
@@ -1133,6 +1135,21 @@ def _role_target(
         range_name=range_name,
         clear_range=clear_range,
     )
+
+
+def _validate_same_sheet_range(
+    range_name: str,
+    clear_range: str,
+    name: str,
+) -> None:
+    """Ensure a roster clear range cannot target a different sheet tab."""
+    write_sheet = sheet_name_from_a1_range(range_name)
+    clear_sheet = sheet_name_from_a1_range(clear_range)
+    if write_sheet != clear_sheet:
+        raise ConfigError(
+            f"{name}.clear_range must target the same sheet as {name}.range "
+            f"({clear_sheet!r} != {write_sheet!r})"
+        )
 
 
 def _source_names(

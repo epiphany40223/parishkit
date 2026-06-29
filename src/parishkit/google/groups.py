@@ -88,18 +88,18 @@ def insert_group_member(
 def update_group_member_role(
     service: Any,
     group_key: str,
-    email: str,
+    member_key: str,
     role: str,
 ) -> None:
     """Change an existing member's role within the group.
 
-    ``email`` identifies the member to update; ``role`` is the new Directory API
-    role (e.g. ``MEMBER``, ``MANAGER``, ``OWNER``).
+    ``member_key`` identifies the member to update; ``role`` is the new
+    Directory API role (e.g. ``MEMBER``, ``MANAGER``, ``OWNER``).
     """
     request = service.members().update(
         groupKey=group_key,
-        memberKey=email,
-        body={"email": email, "role": role},
+        memberKey=member_key,
+        body={"role": role},
     )
     execute_google_request(request)
 

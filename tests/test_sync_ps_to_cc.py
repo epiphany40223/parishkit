@@ -11,13 +11,19 @@ from parishkit.config import ConfigError
 from parishkit.parishsoft import ParishSoftData
 from parishkit.pk_sync_ps_to_cc import (
     DEFAULT_UNSUBSCRIBED_REPORT_STATE,
+    CCAction,
+    CCSyncConfig,
+    CCSyncMapping,
+    CCUnsubscribedReportConfig,
     cc_sync_config_from_yaml,
     compute_all_actions,
     constant_contact_client,
     detect_name_mismatches,
+    ensure_unsubscribed_report_state_writable,
     filter_unsubscribed,
     parishsoft_members_by_email,
     resolve_desired_state,
+    send_notifications,
     validate_non_empty_desired_state,
 )
 from parishkit.pk_sync_ps_to_cc import (
@@ -764,6 +770,45 @@ def test_sync_ps_to_cc_scheduled_report_notice_explains_filtered_count(
         in sync_messages[0].text
     )
     assert "Unsubscribed contacts filtered: 0" not in sync_messages[0].text
+
+
+def test_sync_ps_to_cc_regular_notification_skips_empty_recipients():
+    """Mappings without notification recipients do not attempt to send email."""
+    provider = EmailProvider()
+    config = CCSyncConfig(
+        mappings=(
+            CCSyncMapping(
+                source_workgroup="Newsletter WG",
+                target_list="Newsletter",
+                notifications=(),
+            ),
+        ),
+        sender="no-reply@example.org",
+    )
+
+    send_notifications(
+        provider,
+        config,
+        [CCAction("subscribe", "ann@example.org", 0, "subscribe")],
+        [[]],
+        {},
+        {},
+    )
+
+    assert provider.sent == []
+
+
+def test_sync_ps_to_cc_unsubscribed_report_preflight_preserves_lock_file(tmp_path):
+    """The state preflight probes the lock path without replacing it."""
+    state = tmp_path / "state.json"
+    lock = tmp_path / ".state.json.lock"
+    lock.write_text("held by another process", encoding="utf-8")
+
+    ensure_unsubscribed_report_state_writable(
+        CCUnsubscribedReportConfig(enabled=True, state_file=state)
+    )
+
+    assert lock.read_text(encoding="utf-8") == "held by another process"
 
 
 def test_sync_ps_to_cc_due_unsubscribed_report_requires_sender(

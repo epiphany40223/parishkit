@@ -16,8 +16,10 @@ Upstream references:
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import datetime as dt
+import fcntl
 import json
 import random
 import time
@@ -544,18 +546,34 @@ def get_access_token(
             "Constant Contact access token file is missing; run the documented "
             "manual authorization flow and save the token before automation"
         )
-    access_token = load_access_token(path)
-    if token_is_valid(access_token, now=now):
-        return access_token
-    refreshed = refresh_access_token(
-        client_id,
-        access_token,
-        session=session,
-        now=now,
-        timeout=timeout,
-    )
-    save_access_token(path, refreshed)
-    return refreshed
+    with _access_token_lock(path):
+        # Re-read after acquiring the lock: another overlapping process may
+        # have refreshed and saved the token while we were waiting.
+        access_token = load_access_token(path)
+        if token_is_valid(access_token, now=now):
+            return access_token
+        refreshed = refresh_access_token(
+            client_id,
+            access_token,
+            session=session,
+            now=now,
+            timeout=timeout,
+        )
+        save_access_token(path, refreshed)
+        return refreshed
+
+
+@contextlib.contextmanager
+def _access_token_lock(path: Path):
+    """Serialize refresh/write access to a Constant Contact token file."""
+    lock_path = path.with_name(f".{path.name}.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+", encoding="utf-8") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def _parse_datetime(value: str) -> dt.datetime:
@@ -674,7 +692,8 @@ def link_cc_data(
             if list_id in list_lookup:
                 cc_list = list_lookup[list_id]
                 contact["LIST MEMBERSHIPS"].append(cc_list["name"])
-                cc_list["CONTACTS"][contact["email_address"]["address"]] = contact
+                email = str(contact["email_address"]["address"]).lower()
+                cc_list["CONTACTS"][email] = contact
 
 
 def link_contacts_to_ps_members(

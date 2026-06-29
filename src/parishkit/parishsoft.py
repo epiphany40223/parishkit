@@ -13,6 +13,7 @@ the old Epiphany ``ParishSoftv2.py`` helper:
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 import logging
 import time
@@ -141,6 +142,7 @@ class ParishSoftClient:
         self.session = session or requests.Session()
         self.session.headers.update({"x-api-key": config.api_key})
         self.retry_policy = retry_policy or RetryPolicy(attempts=3, initial_delay=0.2)
+        self._organization_id: int | None = None
         self.config.cache_dir.mkdir(parents=True, exist_ok=True)
         self.config.cache_dir.chmod(0o700)
 
@@ -153,7 +155,7 @@ class ParishSoftClient:
         accidentally operating on the wrong ParishSoft tenant.
         """
         LOGGER.info("Validating ParishSoft organization")
-        organizations = self.post("organizations/search", {})
+        organizations = self.post_uncached("organizations/search", {})
         if len(organizations) != 1:
             raise ConfigError(
                 f"expected one ParishSoft organization, got {len(organizations)}"
@@ -173,7 +175,8 @@ class ParishSoftClient:
             name,
             organization["organizationID"],
         )
-        return int(organization["organizationID"])
+        self._organization_id = int(organization["organizationID"])
+        return self._organization_id
 
     def get(self, endpoint: str, params: dict[str, Any] | None = None) -> Any:
         """Send a GET request, returning cached data when a fresh copy exists.
@@ -385,17 +388,33 @@ class ParishSoftClient:
         return f"{self.config.api_base_url.rstrip('/')}/{endpoint.lstrip('/')}"
 
     def _cache_path(self, endpoint: str, params: dict[str, Any] | None) -> Path:
-        """Return the cache file path for a request, derived from endpoint + params.
+        """Return the cache file path for a request, derived from tenant + request.
 
-        Params are sorted and URL-encoded into the filename so identical
-        requests map to one file regardless of dict ordering, and slashes are
-        flattened to dashes to keep everything in a single flat directory.
+        The prefix includes a non-secret fingerprint of the API key/base URL
+        plus the validated organization ID when known, so one deployment cannot
+        reuse another tenant's cached ParishSoft data. Params are sorted and
+        URL-encoded into the filename so identical requests map to one file.
         """
         suffix = ""
         if params:
             suffix = "-" + urlencode(sorted(params.items()), doseq=True)
-        name = f"cache-v2-{endpoint}{suffix}.json".replace("/", "-")
+        name = f"cache-v2-{self._cache_scope()}-{endpoint}{suffix}.json".replace(
+            "/", "-"
+        )
         return self.config.cache_dir / name
+
+    def _cache_scope(self) -> str:
+        """Return a stable, non-secret cache namespace for this client."""
+        fingerprint_source = f"{self.config.api_base_url}\0{self.config.api_key}"
+        fingerprint = hashlib.sha256(fingerprint_source.encode("utf-8")).hexdigest()[
+            :16
+        ]
+        organization = (
+            f"org-{self._organization_id}"
+            if self._organization_id is not None
+            else "org-unvalidated"
+        )
+        return f"{fingerprint}-{organization}"
 
     def _load_cache(self, endpoint: str, params: dict[str, Any] | None) -> Any | None:
         """Return cached response data, or None if absent or stale.

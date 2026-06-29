@@ -509,7 +509,7 @@ class LockFile:
         return {
             "host": socket.gethostname(),
             "pid": os.getpid(),
-            "command": self.command,
+            "command": _redacted_command(self.command),
             "start_time": datetime.now(UTC).isoformat(),
             "timeout": self.timeout,
             "token": self._token,
@@ -648,7 +648,11 @@ def run_jobs(
         raise RunnerConfigError("no jobs selected")
     results: list[JobResult] = []
     for job in jobs:
-        logger.info("running job %s: %s", job.name, shlex.join(job.command))
+        logger.info(
+            "running job %s: %s",
+            job.name,
+            shlex.join(_redacted_command(job.command)),
+        )
         result = run_job(job)
         results.append(result)
         if not result.ok:

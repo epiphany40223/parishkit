@@ -125,7 +125,8 @@ class SyncAction:
 
     ``action`` is ``add``, ``change_role``, or ``delete``. ``role`` is the
     target role for adds and role changes; ``group_member_id`` identifies the
-    member to remove for deletes; ``desired`` carries names for notifications.
+    existing member to update or remove; ``desired`` carries names for
+    notifications.
     """
 
     action: str
@@ -671,6 +672,9 @@ def compute_actions(
                     action="change_role",
                     email=desired_member.email,
                     role=desired_role,
+                    group_member_id=str(
+                        group_member.get("id") or group_member["email"]
+                    ),
                     desired=desired_member,
                 )
             )
@@ -697,7 +701,10 @@ def apply_actions(service: Any, group_key: str, actions: Sequence[SyncAction]) -
             )
         elif action.action == "change_role":
             update_group_member_role(
-                service, group_key, action.email, action.role or "MEMBER"
+                service,
+                group_key,
+                action.group_member_id or action.email,
+                action.role or "MEMBER",
             )
         elif action.action == "delete":
             delete_group_member(

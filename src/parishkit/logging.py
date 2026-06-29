@@ -13,6 +13,8 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
+from parishkit.config import ConfigError
+
 DEFAULT_LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 DEFAULT_SLACK_LEVEL = logging.CRITICAL
 DEFAULT_MAX_BYTES = 50_000_000
@@ -100,14 +102,14 @@ class SlackLogHandler(logging.Handler):
 
         ``slack_sdk`` is imported lazily so installations that never enable
         Slack notifications do not need the optional dependency; a missing
-        import is surfaced as a clear ``RuntimeError``.
+        import is surfaced as a clear ``ConfigError``.
         """
         super().__init__()
         self.channel = channel
         try:
             from slack_sdk import WebClient
         except ImportError as exc:  # pragma: no cover - exercised by config users
-            raise RuntimeError("slack_sdk is required for Slack logging") from exc
+            raise ConfigError("slack_sdk is required for Slack logging") from exc
         self.client = WebClient(token=token)
 
     def emit(self, record: logging.LogRecord) -> None:
@@ -183,7 +185,7 @@ def setup_logging(
             notifications; supplying only one is a configuration error.
         slack_level: Minimum level that is forwarded to Slack.
 
-    Returns the configured logger. Raises ``ValueError`` if exactly one of the
+    Returns the configured logger. Raises ``ConfigError`` if exactly one of the
     Slack options is provided.
     """
 
@@ -191,7 +193,7 @@ def setup_logging(
     # Slack delivery needs both a token and a destination; reject a half
     # configuration early rather than silently dropping notifications.
     if bool(slack_token_file) != bool(slack_channel):
-        raise ValueError("Slack logging requires both token file and channel")
+        raise ConfigError("Slack logging requires both token file and channel")
 
     console_level = (
         logging.DEBUG if debug else logging.INFO if verbose else logging.WARNING

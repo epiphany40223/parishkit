@@ -302,6 +302,25 @@ def test_roster_config_rejects_missing_targets():
         roster_config_from_yaml({"rosters": {"ministries": []}})
 
 
+def test_roster_config_rejects_clear_range_on_different_sheet():
+    """A clear_range must target the same worksheet tab as the write range."""
+    with pytest.raises(ConfigError, match="same sheet"):
+        roster_config_from_yaml(
+            {
+                "rosters": {
+                    "spreadsheet_id": "default-sheet",
+                    "ministries": [
+                        {
+                            "ministry": "Readers",
+                            "range": "Readers!A1",
+                            "clear_range": "Wrong!A:Z",
+                        }
+                    ],
+                }
+            }
+        )
+
+
 def test_roster_generation_for_ministries_and_workgroups():
     """Roster members are sorted by name, roles resolve from ministry data and
     the workgroup leader suffix, and role matching is case/list aware."""

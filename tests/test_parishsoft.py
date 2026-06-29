@@ -196,9 +196,64 @@ def test_cache_round_trip(tmp_path):
     # Second call returns the same data without a new request being recorded.
     assert ps.get("lookup") == [{"id": 1}]
     assert len(ps.session.calls) == 1
-    cache_file = next(tmp_path.glob("cache-v2-lookup*.json"))
+    cache_file = next(tmp_path.glob("cache-v2-*-lookup*.json"))
     assert stat.S_IMODE(tmp_path.stat().st_mode) == 0o700
     assert stat.S_IMODE(cache_file.stat().st_mode) == 0o600
+
+
+def test_validate_organization_bypasses_stale_cache(tmp_path):
+    """Organization validation always calls ParishSoft, never stale cache data."""
+    ps = client(
+        tmp_path,
+        [
+            Response(
+                [{"organizationID": 8, "organizationReportName": "Fresh"}],
+            )
+        ],
+    )
+    object.__setattr__(
+        ps,
+        "config",
+        ParishSoftConfig(
+            api_key="key",
+            cache_dir=tmp_path,
+            expected_organization="Fresh",
+            cache_limit=None,
+            api_base_url="https://example/api",
+        ),
+    )
+    stale_cache = (
+        tmp_path
+        / "cache-v2-deadbeef-org-unvalidated-organizations-search-post-999.json"
+    )
+    stale_cache.write_text(
+        json.dumps(
+            {
+                "created": dt.datetime.now(dt.UTC).isoformat(),
+                "data": [{"organizationID": 7, "organizationReportName": "Stale"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert ps.validate_organization() == 8
+    assert len(ps.session.calls) == 1
+
+
+def test_cache_file_scope_includes_validated_organization(tmp_path):
+    """After validation, cache files include the resolved organization ID."""
+    ps = client(
+        tmp_path,
+        [
+            Response([{"organizationID": 7, "organizationReportName": "Parish"}]),
+            Response([{"id": 1}]),
+        ],
+    )
+
+    assert ps.validate_organization() == 7
+    assert ps.get("lookup") == [{"id": 1}]
+
+    assert next(tmp_path.glob("cache-v2-*-org-7-lookup*.json"))
 
 
 def test_post_uncached_bypasses_cache(tmp_path):
