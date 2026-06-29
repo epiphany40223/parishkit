@@ -175,17 +175,31 @@ class ConstantContactClient:
         headers, _ = self.headers()
         headers["Content-Type"] = "application/json"
         action = getattr(self.session, method)
+        # PUT updates are safe to retry under our normal policy. POST creates
+        # are intentionally one-shot because a transient response can hide a
+        # successful create, and retrying could duplicate the contact.
+        policy = (
+            self.config.retry_policy
+            if method == "put"
+            else RetryPolicy(attempts=1, initial_delay=0)
+        )
         response = self._request(
             lambda: action(
                 self._url(api_endpoint),
                 headers=headers,
                 data=json.dumps(body),
                 timeout=self.config.timeout,
-            )
+            ),
+            policy=policy,
         )
         return self._json_response(response, api_endpoint)
 
-    def _request(self, func: Any) -> requests.Response:
+    def _request(
+        self,
+        func: Any,
+        *,
+        policy: RetryPolicy | None = None,
+    ) -> requests.Response:
         """Execute an HTTP call under the retry policy, normalizing errors.
 
         ``func`` is a no-argument callable that performs the actual request.
@@ -211,7 +225,7 @@ class ConstantContactClient:
             return response
 
         try:
-            return retry_call(call, policy=self.config.retry_policy)
+            return retry_call(call, policy=policy or self.config.retry_policy)
         except RetryError as exc:
             # When retries are exhausted on a transient HTTP error, re-raise it
             # as a normal CCAPIError so callers see a single error type.
@@ -346,7 +360,7 @@ def load_access_token(path: str | Path) -> dict[str, Any]:
         raise ConfigError(
             f"Constant Contact token file {token_path} is missing {exc.args[0]!r}"
         ) from exc
-    except ValueError as exc:
+    except (TypeError, ValueError) as exc:
         raise ConfigError(
             f"Constant Contact token file {token_path} has invalid timestamp: {exc}"
         ) from exc
@@ -504,8 +518,14 @@ def run_device_oauth_flow(
     start = now or dt.datetime.now(dt.UTC)
     # The server tells us how often to poll (interval) and how long the device
     # code stays valid (expires_in); honor both to avoid hammering the API.
-    interval = int(auth_payload.get("interval", 5))
-    deadline = time.monotonic() + int(auth_payload.get("expires_in", 600))
+    try:
+        interval = int(auth_payload.get("interval", 5))
+        deadline = time.monotonic() + int(auth_payload.get("expires_in", 600))
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(
+            "Constant Contact device authorization response has invalid "
+            f"poll timing: {exc}"
+        ) from exc
     while True:
         token_response = http.post(
             token_url,

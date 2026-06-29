@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import re
 import sys
@@ -424,6 +425,7 @@ def run_user_facing(action: Callable[[], int]) -> int:
         CCAPIError,
         RetryError,
     ) as exc:
+        logging.getLogger("parishkit").error("%s", exc)
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 

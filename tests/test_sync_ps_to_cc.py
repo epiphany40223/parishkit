@@ -531,6 +531,35 @@ def test_cc_sync_refuses_empty_desired_state_with_current_contacts():
         validate_non_empty_desired_state(config, [set()], cc_lists())
 
 
+def test_sync_ps_to_cc_all_desired_unsubscribed_does_not_trip_empty_guard(
+    tmp_path,
+    monkeypatch,
+):
+    """A non-empty source that filters to opt-outs still completes the sync."""
+    data = parishsoft_data()
+    data.member_workgroup_memberships[10]["membership"] = [{"py member duid": 2}]
+    cc = CCClient()
+    email = EmailProvider()
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_cc.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_ps_to_cc_main(
+            ["--config", str(write_config(tmp_path))],
+            loader=lambda _client, **_kwargs: data,
+            cc_factory=lambda _config: cc,
+            email_provider=email,
+        )
+        == 0
+    )
+
+    assert any(
+        call[0] == "put" and call[1] == "contacts/contact-old" for call in cc.calls
+    )
+
+
 def test_action_computation_and_name_updates():
     """Verify the full set of sync actions, including name mismatches.
 

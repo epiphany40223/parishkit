@@ -140,6 +140,22 @@ def test_api_error_raises_typed_exception():
         client.post("items", {})
 
 
+def test_post_does_not_retry_transient_create_response():
+    """POST creates are one-shot so a hidden success is not duplicated."""
+    session = Session(
+        [
+            Response({}, status_code=503),
+            Response({"id": "created"}),
+        ]
+    )
+    client = ConstantContactClient(config(), session=session)
+
+    with pytest.raises(CCAPIError, match="503"):
+        client.post("items", {"email": "person@example.org"})
+
+    assert len(session.calls) == 1
+
+
 def test_exhausted_transient_response_raises_typed_exception():
     """A transient 429 raises CCAPIError once retry attempts are exhausted."""
     # Allow only a single attempt so the transient status is not retried away.
@@ -193,6 +209,24 @@ def test_load_access_token_rejects_bad_shape(tmp_path):
     path.write_text('{"access_token": "token"}', encoding="utf-8")
 
     with pytest.raises(ConfigError, match="missing"):
+        load_access_token(path)
+
+
+def test_load_access_token_rejects_wrong_typed_timestamps(tmp_path):
+    """Wrong-typed token timestamps raise ConfigError rather than TypeError."""
+    path = tmp_path / "token.json"
+    path.write_text(
+        json.dumps(
+            {
+                "access_token": "token",
+                "valid from": 123,
+                "valid to": "2026-01-01T00:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="invalid timestamp"):
         load_access_token(path)
 
 
@@ -639,3 +673,34 @@ def test_device_oauth_flow_polls_pending_authorization():
     # One sleep of the advertised interval between the pending poll and success.
     assert sleeps == [1]
     assert len(session.calls) == 3
+
+
+def test_device_oauth_flow_rejects_invalid_poll_timing():
+    """Wrong-typed interval/expires fields fail with a config error."""
+    session = Session(
+        [
+            Response(
+                {
+                    "verification_uri_complete": "https://auth.example/device",
+                    "device_code": "device",
+                    "interval": "soon",
+                    "expires_in": 60,
+                }
+            ),
+        ]
+    )
+
+    with pytest.raises(ConfigError, match="poll timing"):
+        run_device_oauth_flow(
+            {
+                "client id": "client",
+                "endpoints": {
+                    "api": "https://api.example",
+                    "auth": "https://auth.example/device",
+                    "token": "https://auth.example/token",
+                },
+            },
+            session=session,
+            input_fn=lambda _prompt: None,
+            print_fn=lambda _message: None,
+        )

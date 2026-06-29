@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from pathlib import Path
 
 import pytest
@@ -296,6 +297,46 @@ def test_reservation_decisions_use_event_timezone_for_offsetless_datetimes():
     assert [(item.event["id"], item.response) for item in decisions] == [
         ("pending", "declined")
     ]
+
+
+def test_reservation_decisions_logs_and_skips_malformed_event_times(caplog):
+    """Bad Google event timing skips that event instead of aborting the run."""
+    config = calendar_reservation_config(
+        {
+            "calendars": {
+                "acceptable_domains": ["example.org"],
+                "calendars": [{"name": "Room", "calendar_id": "room@example.org"}],
+            }
+        }
+    )
+    malformed_existing = event("bad-existing", status="accepted")
+    del malformed_existing["start"]
+    malformed_pending = event(
+        "bad-pending",
+        start="2026-02-01T10:00:00",
+        end="2026-02-01T11:00:00",
+    )
+    malformed_pending["start"]["timeZone"] = "Missing/Timezone"
+    open_event = event(
+        "open",
+        start="2026-02-01T12:00:00-05:00",
+        end="2026-02-01T13:00:00-05:00",
+    )
+    log = logging.getLogger("test.calendar.malformed")
+
+    with caplog.at_level(logging.WARNING, logger=log.name):
+        decisions = reservation_decisions(
+            [malformed_existing, malformed_pending, open_event],
+            config.calendars[0],
+            config,
+            log=log,
+        )
+
+    assert [(item.event["id"], item.response) for item in decisions] == [
+        ("open", "accepted")
+    ]
+    assert "bad-existing" in caplog.text
+    assert "bad-pending" in caplog.text
 
 
 def test_calendar_reservations_matches_attendee_email_case_insensitively(tmp_path):

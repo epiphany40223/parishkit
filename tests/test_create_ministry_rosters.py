@@ -398,7 +398,6 @@ def test_roster_format_requests_freeze_headers_and_size_columns():
     set the expected column widths."""
     requests = roster_format_requests(
         99,
-        spreadsheet_title="Readers as of 2026-01-02 03:04:00 EST",
         column_count=5,
         row_count=8,
     )
@@ -465,15 +464,10 @@ def test_roster_format_requests_freeze_headers_and_size_columns():
     ]
     widths = [
         request["updateDimensionProperties"]["properties"]["pixelSize"]
-        for request in requests[9:-1]
+        for request in requests[9:]
     ]
     assert widths == list(ROSTER_COLUMN_WIDTHS)
-    assert requests[-1] == {
-        "updateSpreadsheetProperties": {
-            "properties": {"title": "Readers as of 2026-01-02 03:04:00 EST"},
-            "fields": "title",
-        }
-    }
+    assert not any("updateSpreadsheetProperties" in request for request in requests)
 
 
 def test_sheet_name_from_a1_range_handles_quoted_and_default_ranges():
@@ -563,20 +557,11 @@ def test_create_ministry_rosters_main_writes_sheet_values(
         == 4
         for call in service._spreadsheets.batch_update_calls
     )
-    assert [
-        call["body"]["requests"][-1]["updateSpreadsheetProperties"]["properties"][
-            "title"
-        ].startswith(prefix)
-        for call, prefix in zip(
-            service._spreadsheets.batch_update_calls,
-            [
-                "Readers as of ",
-                "Reader Leads as of ",
-                "Movers as of ",
-            ],
-            strict=True,
-        )
-    ] == [True, True, True]
+    assert all(
+        "updateSpreadsheetProperties" not in request
+        for call in service._spreadsheets.batch_update_calls
+        for request in call["body"]["requests"]
+    )
 
 
 def test_create_ministry_rosters_dry_run_skips_sheet_writes(tmp_path, monkeypatch):

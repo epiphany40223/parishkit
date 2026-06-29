@@ -677,6 +677,10 @@ def test_compute_actions_add_delete_and_change_role():
         normalize_email("bob.mover+tag@gmail.com", frozenset({"gmail.com"}))
         == "bobmover@gmail.com"
     )
+    assert (
+        normalize_email("First.Last+tag@example.org", frozenset({"example.org"}))
+        == "first.last@example.org"
+    )
 
 
 def test_sync_google_group_main_writes_group_changes_and_notifications(

@@ -1170,17 +1170,19 @@ def is_ministry_leader(
 def normalize_email(email: str, google_mail_domains: frozenset[str]) -> str:
     """Normalize an email address for equality comparison.
 
-    Always lowercases. For domains in ``google_mail_domains`` (Gmail-style),
-    also strips any ``+tag`` suffix and removes dots from the local part, since
-    Google treats those as the same mailbox. Addresses without ``@`` or on
-    other domains are only lowercased.
+    Always lowercases. For configured Google-hosted domains, strips any
+    ``+tag`` suffix because Google Workspace aliases commonly treat plus-tags
+    as equivalent. Dot removal is limited to consumer Gmail domains, because
+    Workspace domains can have distinct dotted local parts.
     """
     if "@" not in email:
         return email.lower()
     local, domain = email.lower().split("@", 1)
     if domain not in google_mail_domains:
         return f"{local}@{domain}"
-    local = local.split("+", 1)[0].replace(".", "")
+    local = local.split("+", 1)[0]
+    if domain in {"gmail.com", "googlemail.com"}:
+        local = local.replace(".", "")
     return f"{local}@{domain}"
 
 

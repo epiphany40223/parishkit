@@ -51,11 +51,13 @@ email:
 
 # Google Group synchronization settings.
 sync:
-  # google_mail_domains are domains treated as Google-hosted mailboxes when
-  # normalizing equivalent addresses.
+  # google_mail_domains are domains treated as Google-hosted mailboxes for
+  # equality checks. For these domains, plus-tags such as user+tag@example.org
+  # compare as user@example.org. Dots are ignored only for gmail.com and
+  # googlemail.com; dots are preserved for Workspace domains because
+  # first.last@example.org and firstlast@example.org can be different accounts.
   google_mail_domains:
     - gmail.com
-    - example.org
   # leader_roles are ParishSoft ministry role labels that make a matched
   # ministry member an OWNER in the Google Group for exact ministry sources and
   # chair-style selectors. Add parish-specific labels such as Coordinator here.

@@ -114,6 +114,30 @@ def test_json_log_formatter_includes_structured_object(tmp_path):
     assert payload["extra"] == [{"count": 3, "name": "sample"}]
 
 
+def test_parishkit_tool_logging_captures_package_and_sibling_records(tmp_path):
+    """Tool logging also captures shared ParishKit helper records."""
+    log_file = tmp_path / "parishkit.log"
+    logger = setup_logging(
+        verbose=True,
+        log_file=log_file,
+        logger_name="parishkit.tool",
+        rotate=False,
+    )
+
+    logger.info("tool record")
+    logging.getLogger("parishkit.shared").warning("shared record")
+    logging.getLogger("parishkit").error("package record")
+
+    payloads = [
+        json.loads(line) for line in log_file.read_text(encoding="utf-8").splitlines()
+    ]
+    assert [payload["message"] for payload in payloads] == [
+        "tool record",
+        "shared record",
+        "package record",
+    ]
+
+
 def test_compressed_rotation_retains_multiple_backups(tmp_path):
     """Enough log volume rolls over into several gzipped backup files."""
     log_file = tmp_path / "parishkit.log"

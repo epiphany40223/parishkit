@@ -400,10 +400,6 @@ def write_configured_rosters(
                     include_birthday=target.include_birthday,
                     now=update_time,
                 ),
-                spreadsheet_title=roster_spreadsheet_title(
-                    role_target.name,
-                    update_time,
-                ),
                 dry_run=dry_run,
                 log=log,
             )
@@ -516,7 +512,6 @@ def write_roster_target(
             include_birthday=target.include_birthday,
             now=update_time,
         ),
-        spreadsheet_title=roster_spreadsheet_title(target.name, update_time),
         dry_run=dry_run,
         log=log,
     )
@@ -529,7 +524,6 @@ def write_values(
     clear_range: str,
     values: list[list[Any]],
     *,
-    spreadsheet_title: str,
     dry_run: bool,
     log: logging.Logger,
 ) -> None:
@@ -555,7 +549,6 @@ def write_values(
             sheets_service,
             spreadsheet_id,
             range_name,
-            spreadsheet_title=spreadsheet_title,
             column_count=max(len(row) for row in values),
             row_count=len(values),
         )
@@ -637,7 +630,6 @@ def format_roster_sheet(
     spreadsheet_id: str,
     range_name: str,
     *,
-    spreadsheet_title: str,
     column_count: int,
     row_count: int,
 ) -> None:
@@ -656,7 +648,6 @@ def format_roster_sheet(
         spreadsheet_id,
         roster_format_requests(
             sheet_id,
-            spreadsheet_title=spreadsheet_title,
             column_count=column_count,
             row_count=row_count,
         ),
@@ -666,7 +657,6 @@ def format_roster_sheet(
 def roster_format_requests(
     sheet_id: int,
     *,
-    spreadsheet_title: str | None = None,
     column_count: int,
     row_count: int,
 ) -> list[dict[str, Any]]:
@@ -736,19 +726,7 @@ def roster_format_requests(
                 }
             }
         )
-    if spreadsheet_title is not None:
-        requests.append(spreadsheet_title_request(spreadsheet_title))
     return requests
-
-
-def spreadsheet_title_request(spreadsheet_title: str) -> dict[str, Any]:
-    """Return a request that renames the spreadsheet document."""
-    return {
-        "updateSpreadsheetProperties": {
-            "properties": {"title": spreadsheet_title},
-            "fields": "title",
-        }
-    }
 
 
 def title_merge_requests(
@@ -983,11 +961,6 @@ def roster_values(
 def current_roster_time(timezone_name: str) -> dt.datetime:
     """Return the current update time in the configured roster timezone."""
     return dt.datetime.now(ZoneInfo(timezone_name)).replace(microsecond=0)
-
-
-def roster_spreadsheet_title(title: str, update_time: dt.datetime) -> str:
-    """Return the spreadsheet document title for one roster update."""
-    return f"{title} as of {format_update_timestamp(update_time)}"
 
 
 def format_update_timestamp(update_time: dt.datetime) -> str:

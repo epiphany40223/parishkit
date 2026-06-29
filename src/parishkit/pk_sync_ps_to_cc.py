@@ -292,12 +292,12 @@ def _run(
                 _text_list(sorted(emails)),
                 extra=log_extra(sorted(emails)),
             )
+        validate_non_empty_desired_state(sync_config, desired_emails, cc_lists)
         unsubscribed = filter_unsubscribed(
             cc_contacts,
             desired_emails,
             ps_members_by_email,
         )
-        validate_non_empty_desired_state(sync_config, desired_emails, cc_lists)
         filtered_count = sum(len(items) for items in unsubscribed)
         if filtered_count:
             log.info("Filtered %s unsubscribed desired address(es)", filtered_count)
@@ -374,6 +374,7 @@ def _run(
             unsubscribed,
             contacts_by_email,
             ps_members_by_email,
+            generated_at=now or dt.datetime.now(ZoneInfo(common.timezone)),
         )
         send_unsubscribed_report(
             provider,
@@ -382,6 +383,7 @@ def _run(
             report_decision,
             dry_run=common.dry_run,
             log=log,
+            generated_at=now or dt.datetime.now(ZoneInfo(common.timezone)),
         )
         log.info("Computed %s Constant Contact action(s)", len(actions))
         log.info(
@@ -943,6 +945,8 @@ def send_notifications(
     unsubscribed: Sequence[Sequence[tuple[str, str, str]]],
     contacts_by_email: Mapping[str, Mapping[str, Any]],
     ps_members_by_email: Mapping[str, list[dict[str, Any]]],
+    *,
+    generated_at: dt.datetime | None = None,
 ) -> None:
     """Email a per-mapping summary of actions and filtered unsubscribes.
 
@@ -952,6 +956,7 @@ def send_notifications(
     """
     if provider is None or not config.sender:
         return
+    notification_time = generated_at or dt.datetime.now()
     for index, mapping in enumerate(config.mappings):
         list_actions = [action for action in actions if action.sync_index == index]
         suppressed_count = None
@@ -972,7 +977,7 @@ def send_notifications(
                 contacts_by_email,
                 ps_members_by_email,
                 sender=config.sender,
-                generated_at=dt.datetime.now(),
+                generated_at=notification_time,
                 suppressed_unsubscribed_count=suppressed_count,
             ),
             dry_run=False,
@@ -1254,6 +1259,7 @@ def send_unsubscribed_report(
     *,
     dry_run: bool,
     log: logging.Logger,
+    generated_at: dt.datetime | None = None,
 ) -> int:
     """Send the standalone unsubscribed report when the schedule is due.
 
@@ -1288,7 +1294,7 @@ def send_unsubscribed_report(
     )
 
     sent = 0
-    generated_at = dt.datetime.now(dt.UTC)
+    report_time = generated_at or dt.datetime.now(dt.UTC)
     with unsubscribed_report_state_lock(config.unsubscribed_report) as state:
         for index, mapping in enumerate(config.mappings):
             if not unsubscribed[index]:
@@ -1305,7 +1311,7 @@ def send_unsubscribed_report(
                     mapping,
                     unsubscribed[index],
                     sender=config.sender or "",
-                    generated_at=generated_at,
+                    generated_at=report_time,
                 ),
                 dry_run=False,
             )
@@ -1314,7 +1320,7 @@ def send_unsubscribed_report(
                 state,
                 decision.run_date,
                 mapping,
-                now=generated_at,
+                now=report_time,
             )
             sent += 1
         if all(
@@ -1326,7 +1332,7 @@ def send_unsubscribed_report(
                 config.unsubscribed_report,
                 state,
                 decision.run_date,
-                now=generated_at,
+                now=report_time,
             )
     return sent
 

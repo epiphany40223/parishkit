@@ -28,6 +28,23 @@ def test_build_message_with_text_html_and_attachment(tmp_path):
     assert message.is_multipart()
 
 
+def test_build_message_rejects_invalid_attachment_mime_type(tmp_path):
+    """Invalid attachment MIME values raise ConfigError instead of ValueError."""
+    attachment = tmp_path / "report.txt"
+    attachment.write_text("report", encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="MIME type"):
+        build_message(
+            Email(
+                subject="Subject",
+                sender="from@example.org",
+                to=["to@example.org"],
+                text="Plain",
+                attachments=[Attachment(path=attachment, mime_type="text")],
+            )
+        )
+
+
 def test_provider_selection_rejects_ms365_until_implemented():
     """provider_from_config rejects MS365 before any external writes happen."""
     with pytest.raises(ConfigError, match="ms365 is not implemented"):

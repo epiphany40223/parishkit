@@ -358,7 +358,7 @@ def process_calendars(
             _events_summary(events),
             extra=log_extra(events),
         )
-        decisions = reservation_decisions(events, calendar, config)
+        decisions = reservation_decisions(events, calendar, config, log=log)
         log.info(
             "Computed %s decision(s) for %s",
             len(decisions),
@@ -383,6 +383,8 @@ def reservation_decisions(
     events: Sequence[dict[str, Any]],
     calendar: ReservationCalendar,
     config: ReservationConfig,
+    *,
+    log: logging.Logger | None = None,
 ) -> list[EventDecision]:
     """Decide a response for each pending event on one calendar.
 
@@ -432,15 +434,19 @@ def reservation_decisions(
     # Seed the conflict baseline with events already on the calendar, then
     # grow it as pending events are accepted so later pending events also
     # avoid colliding with earlier accepted ones.
-    accepted_intervals = [
-        (event, event_interval(event, config.timezone)) for event in existing_events
-    ]
+    accepted_intervals = []
+    for event in existing_events:
+        interval = event_interval_or_none(event, config.timezone, log=log)
+        if interval is not None:
+            accepted_intervals.append((event, interval))
     # Process pending events oldest-first by creation time so that, among
     # mutually conflicting requests, the earliest booking wins deterministically.
     for event, attendee_email in sorted(
         pending_events, key=lambda item: str(item[0].get("created", ""))
     ):
-        interval = event_interval(event, config.timezone)
+        interval = event_interval_or_none(event, config.timezone, log=log)
+        if interval is None:
+            continue
         conflict = next(
             (
                 existing
@@ -565,6 +571,29 @@ def event_interval(
         event_time(event["start"], timezone) + one_second,
         event_time(event["end"], timezone) - one_second,
     )
+
+
+def event_interval_or_none(
+    event: Mapping[str, Any],
+    timezone: dt.tzinfo,
+    *,
+    log: logging.Logger | None = None,
+) -> tuple[dt.datetime, dt.datetime] | None:
+    """Return an event interval, logging and skipping malformed event data."""
+    try:
+        return event_interval(event, timezone)
+    except (KeyError, TypeError, ValueError, ZoneInfoNotFoundError) as exc:
+        summary = str(event.get("summary") or "untitled")
+        event_id = str(event.get("id") or "unknown")
+        if log is not None:
+            log.warning(
+                "Skipping event '%s' (ID: %s) because its start/end time is "
+                "malformed: %s",
+                summary,
+                event_id,
+                exc,
+            )
+        return None
 
 
 def event_time(value: Mapping[str, str], timezone: dt.tzinfo) -> dt.datetime:

@@ -190,6 +190,11 @@ def setup_logging(
     """
 
     logger = logging.getLogger(logger_name)
+    package_logger = (
+        logging.getLogger("parishkit")
+        if logger_name is not None and logger_name.startswith("parishkit.")
+        else None
+    )
     # Slack delivery needs both a token and a destination; reject a half
     # configuration early rather than silently dropping notifications.
     if bool(slack_token_file) != bool(slack_channel):
@@ -244,15 +249,25 @@ def setup_logging(
 
     # Swap handlers only after all new ones are ready, so a failure above leaves
     # the previously configured logger untouched.
-    for handler in list(logger.handlers):
-        logger.removeHandler(handler)
+    configured_loggers = [logger]
+    if package_logger is not None:
+        configured_loggers.append(package_logger)
+    old_handlers = set()
+    for target_logger in configured_loggers:
+        for handler in list(target_logger.handlers):
+            target_logger.removeHandler(handler)
+            old_handlers.add(handler)
+    for handler in old_handlers:
         handler.close()
     # Keep the logger itself permissive; per-handler levels do the real
     # filtering, and propagation is disabled to avoid duplicate root output.
-    logger.setLevel(logging.DEBUG)
-    logger.propagate = False
+    for target_logger in configured_loggers:
+        target_logger.setLevel(logging.DEBUG)
+        target_logger.propagate = False
     for handler in new_handlers:
         logger.addHandler(handler)
+        if package_logger is not None:
+            package_logger.addHandler(handler)
 
     return logger
 
