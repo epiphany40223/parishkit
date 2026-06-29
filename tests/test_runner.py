@@ -573,6 +573,14 @@ def test_parse_runner_config_rejects_shell_string_command():
         parse_runner_config({"jobs": [{"name": "bad", "command": "echo ok"}]})
 
 
+def test_parse_runner_config_rejects_unknown_job_keys():
+    """Misspelled job keys fail instead of silently changing scheduling."""
+    with pytest.raises(Exception, match="job has unsupported key"):
+        parse_runner_config(
+            {"jobs": [{"name": "bad", "command": ["true"], "timeot": "1m"}]}
+        )
+
+
 def test_parse_runner_config_rejects_duplicate_job_names():
     """Two jobs sharing a name are rejected, since names must be unique
     selectors."""

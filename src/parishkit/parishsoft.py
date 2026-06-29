@@ -586,7 +586,16 @@ def normalize_dates(elements: list[dict[str, Any]], fields: list[str]) -> None:
         for field in fields:
             if field not in element or element[field] in (None, ""):
                 continue
-            element[field] = _parse_optional_date(element[field])
+            try:
+                element[field] = _parse_optional_date(element[field])
+            except ConfigError as exc:
+                identifier = element.get("memberDUID") or element.get(
+                    "familyDUID",
+                    element.get("id", "unknown"),
+                )
+                raise ConfigError(
+                    f"invalid ParishSoft date in {field} for record {identifier}: {exc}"
+                ) from exc
 
 
 def link_families_and_members(
@@ -1540,7 +1549,10 @@ def _parse_optional_date(value: Any) -> dt.date | None:
     if isinstance(value, dt.date):
         return value
     if isinstance(value, str):
-        return dt.datetime.fromisoformat(value).date()
+        try:
+            return dt.datetime.fromisoformat(value).date()
+        except ValueError as exc:
+            raise ConfigError(f"invalid date value: {value!r}") from exc
     raise ConfigError(f"invalid date value: {value!r}")
 
 

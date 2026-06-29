@@ -9,7 +9,7 @@ from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
 
-from parishkit.config import ConfigError
+from parishkit.config import ConfigError, reject_unknown_keys
 
 
 @dataclass(frozen=True)
@@ -124,10 +124,27 @@ def provider_from_config(
     """
     provider = config.get("provider")
     if provider in {"google-workspace", "google_workspace"}:
+        reject_unknown_keys(
+            config,
+            {
+                "provider",
+                "service_account_file",
+                "delegated_user",
+                "user",
+                "smtp_host",
+                "smtp_port",
+            },
+            "email",
+        )
         from parishkit.email.google_workspace import GoogleWorkspaceSMTPProvider
 
         return GoogleWorkspaceSMTPProvider.from_config(config, base_dir=base_dir)
     if provider == "ms365":
+        reject_unknown_keys(
+            config,
+            {"provider", "tenant_id", "client_id", "client_secret_file", "sender"},
+            "email",
+        )
         raise ConfigError(
             "email.provider ms365 is not implemented yet; use google-workspace"
         )

@@ -357,6 +357,24 @@ def test_cc_sync_config_rejects_duplicate_target_lists():
         )
 
 
+def test_cc_sync_config_rejects_unknown_mapping_key():
+    """Misspelled list mapping keys fail instead of using default guardrails."""
+    with pytest.raises(ConfigError, match="unsupported key"):
+        cc_sync_config_from_yaml(
+            {
+                "sync": {
+                    "lists": [
+                        {
+                            "source_workgroup": "Newsletter WG",
+                            "target_list": "Newsletter",
+                            "max_removal_fractions": 0.1,
+                        }
+                    ]
+                }
+            }
+        )
+
+
 def test_cc_sync_config_requires_sender_for_notifications():
     """Notification recipients require a sender before any sync writes happen."""
     with pytest.raises(ConfigError, match="sync.notifications.sender is required"):

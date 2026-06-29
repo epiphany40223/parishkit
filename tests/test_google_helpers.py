@@ -9,6 +9,8 @@ from parishkit.google.auth import (
     GoogleAPIError,
     build_service,
     execute_google_request,
+    load_service_account_credentials,
+    load_user_credentials,
     run_user_oauth_flow,
 )
 from parishkit.google.calendar import list_events, patch_attendee_response
@@ -54,6 +56,56 @@ def test_build_service_uses_injected_builder():
             "cache_discovery": False,
         }
     ]
+
+
+def test_service_account_credential_load_errors_are_config_errors(monkeypatch):
+    """Malformed Google service-account files are reported as config errors."""
+
+    class ServiceAccountCredentials:
+        """Fake service-account credential loader that rejects the file."""
+
+        @staticmethod
+        def from_service_account_file(*_args, **_kwargs):
+            """Raise like google-auth would for an invalid credential file."""
+            raise ValueError("invalid service account")
+
+    class ServiceAccountModule:
+        """Fake google.oauth2.service_account module."""
+
+        Credentials = ServiceAccountCredentials
+
+    monkeypatch.setattr(
+        "parishkit.google.auth._import_google_auth",
+        lambda: (ServiceAccountModule, object()),
+    )
+
+    with pytest.raises(ConfigError, match="service-account credential file.*invalid"):
+        load_service_account_credentials("bad.json", scopes=["scope"])
+
+
+def test_user_credential_load_errors_are_config_errors(monkeypatch):
+    """Malformed Google user token files are reported as config errors."""
+
+    class UserCredentials:
+        """Fake authorized-user credential loader that rejects the file."""
+
+        @staticmethod
+        def from_authorized_user_file(*_args, **_kwargs):
+            """Raise like google-auth would for an invalid token file."""
+            raise ValueError("invalid user token")
+
+    class UserCredentialsModule:
+        """Fake google.oauth2.credentials module."""
+
+        Credentials = UserCredentials
+
+    monkeypatch.setattr(
+        "parishkit.google.auth._import_google_auth",
+        lambda: (object(), UserCredentialsModule),
+    )
+
+    with pytest.raises(ConfigError, match="user credential file.*invalid"):
+        load_user_credentials("bad-token.json", scopes=["scope"])
 
 
 def test_execute_google_request_retries_transient_errors():

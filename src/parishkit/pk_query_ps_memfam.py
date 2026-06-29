@@ -15,7 +15,12 @@ from parishkit.cli import (
     resolve_common_options,
     run_user_facing,
 )
-from parishkit.config import ConfigData, ConfigError, load_yaml_config
+from parishkit.config import (
+    ConfigData,
+    ConfigError,
+    load_yaml_config,
+    reject_unknown_keys,
+)
 from parishkit.logging import setup_logging
 from parishkit.parishsoft import (
     ParishSoftClient,
@@ -292,6 +297,7 @@ def _load_contributions_value(
     section = config.get("print_member", {})
     if not isinstance(section, dict):
         raise ConfigError("print_member configuration must be a mapping")
+    reject_unknown_keys(section, {"load_contributions"}, "print_member")
     value = section.get("load_contributions", False)
     return _normalize_load_contributions(value)
 

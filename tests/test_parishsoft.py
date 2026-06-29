@@ -22,6 +22,7 @@ from parishkit.parishsoft import (
     link_families_and_members,
     load_contribution_details,
     load_families_and_members,
+    normalize_dates,
     member_is_active,
     ministry_membership_is_current,
     normalize_family_email,
@@ -920,6 +921,14 @@ def test_email_normalization_drops_blank_fragments_and_deduplicates():
     assert family["py eMailAddresses"] == ["a@example.org"]
     assert member["emailAddress"] == "ann@example.org"
     assert member["py emailAddresses"] == ["ann@example.org"]
+
+
+def test_normalize_dates_reports_field_and_record_for_bad_api_value():
+    """Unexpected ParishSoft date strings fail with actionable context."""
+    records = [{"memberDUID": 42, "birthdate": "not-a-date"}]
+
+    with pytest.raises(ConfigError, match="birthdate.*42.*not-a-date"):
+        normalize_dates(records, ["birthdate"])
 
 
 def test_string_registered_organization_id_is_parishioner():

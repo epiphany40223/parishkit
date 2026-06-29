@@ -74,6 +74,7 @@ class Spreadsheets:
         self._values = Values()
         self.get_calls = []
         self.batch_update_calls = []
+        self.batch_update_error: Exception | None = None
         self.sheets = [
             {"properties": {"title": "Readers", "sheetId": 101}},
             {"properties": {"title": "Leads", "sheetId": 102}},
@@ -92,7 +93,7 @@ class Spreadsheets:
     def batchUpdate(self, **kwargs):
         """Record a formatting batchUpdate call."""
         self.batch_update_calls.append(kwargs)
-        return Request()
+        return Request(exc=self.batch_update_error)
 
 
 class SheetsService:
@@ -299,6 +300,24 @@ def test_roster_config_rejects_missing_targets():
     """Config with neither ministries nor workgroups raises ConfigError."""
     with pytest.raises(ConfigError, match="ministries or workgroups"):
         roster_config_from_yaml({"rosters": {"ministries": []}})
+
+
+def test_roster_config_rejects_unknown_target_key():
+    """Misspelled roster target keys fail instead of being ignored."""
+    with pytest.raises(ConfigError, match="unsupported key"):
+        roster_config_from_yaml(
+            {
+                "rosters": {
+                    "spreadsheet_id": "sheet-id",
+                    "ministries": [
+                        {
+                            "ministry": "Readers",
+                            "clear_rng": "Readers!A:Z",
+                        }
+                    ],
+                }
+            }
+        )
 
 
 def test_roster_config_rejects_clear_range_on_different_sheet():
@@ -668,6 +687,35 @@ def test_create_ministry_rosters_plans_generated_width_before_writes(
 
     assert service._spreadsheets._values.calls == []
     assert service._spreadsheets.batch_update_calls == []
+
+
+def test_create_ministry_rosters_clears_stale_rows_before_formatting(
+    tmp_path,
+    monkeypatch,
+):
+    """A formatting failure after value update does not leave stale rows visible."""
+    service = SheetsService()
+    service._spreadsheets.batch_update_error = GoogleAPIError(400, "format failed")
+    monkeypatch.setattr(
+        "parishkit.pk_create_ps_ministry_rosters.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        create_ministry_rosters_main(
+            ["--config", str(write_config(tmp_path))],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            sheets_factory=lambda _config: service,
+        )
+        == 2
+    )
+
+    assert [call[0] for call in service._spreadsheets._values.calls] == [
+        "update",
+        "clear",
+    ]
+    assert service._spreadsheets._values.calls[1][1]["range"] == "Readers!A10:Z"
+    assert service._spreadsheets.batch_update_calls
 
 
 def test_stale_row_clear_range_starts_below_written_roster():

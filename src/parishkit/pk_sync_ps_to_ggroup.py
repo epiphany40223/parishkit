@@ -18,7 +18,13 @@ from parishkit.cli import (
     resolve_common_options,
     run_user_facing,
 )
-from parishkit.config import ConfigData, ConfigError, load_yaml_config, resolve_path
+from parishkit.config import (
+    ConfigData,
+    ConfigError,
+    load_yaml_config,
+    reject_unknown_keys,
+    resolve_path,
+)
 from parishkit.email.base import Email, EmailProvider, provider_from_config
 from parishkit.google.auth import (
     GoogleAPIError,
@@ -298,23 +304,30 @@ def _run(
                 )
             return provider
 
-        needs_settings_service = (
-            not common.dry_run
-            and bool(sync_config.sender)
-            and any(group.notify for group in sync_config.groups)
-        )
-        admin_service, settings_service = (
-            service_factory(config)
-            if service_factory is not None
-            else build_google_services(
+        if service_factory is not None:
+            admin_service, settings_service = service_factory(config)
+        else:
+            admin_service = build_admin_directory_service(
                 load_google_credentials(
                     config,
                     base_dir=config_base_dir,
-                    include_settings_scope=needs_settings_service,
-                ),
-                include_settings=needs_settings_service,
+                    include_settings_scope=False,
+                )
             )
-        )
+            settings_service = None
+
+        def settings_service_for_notifications() -> Any:
+            """Build the Groups Settings service only once it is needed."""
+            nonlocal settings_service
+            if settings_service is None:
+                credentials = load_google_credentials(
+                    config,
+                    base_dir=config_base_dir,
+                    include_settings_scope=True,
+                )
+                settings_service = build_groups_settings_service(credentials)
+            return settings_service
+
         plans = []
         for group in sync_config.groups:
             log.info("Synchronizing Google Group %s", group.group)
@@ -343,6 +356,11 @@ def _run(
                     dry_run=common.dry_run,
                     log=log,
                     email_provider_factory=provider_for_notifications,
+                    settings_service_factory=(
+                        None
+                        if service_factory is not None
+                        else settings_service_for_notifications
+                    ),
                 )
             )
         for plan in plans:
@@ -353,6 +371,9 @@ def _run(
                 dry_run=common.dry_run,
                 log=log,
             )
+        if not common.dry_run:
+            for plan in plans:
+                send_group_plan_notification(sync_config, plan)
         log.info(
             "Google Group sync operation completed successfully for %s group(s)",
             len(sync_config.groups),
@@ -372,6 +393,11 @@ def sync_config_from_yaml(config: ConfigData) -> SyncConfig:
     ``ConfigError`` on malformed or missing required values.
     """
     section = _mapping(config.get("sync", {}), "sync")
+    reject_unknown_keys(
+        section,
+        {"groups", "notifications", "google_mail_domains", "leader_roles"},
+        "sync",
+    )
     groups = tuple(
         _group_sync(item, f"sync.groups[{index}]")
         for index, item in enumerate(_list(section.get("groups"), "sync.groups"))
@@ -380,6 +406,7 @@ def sync_config_from_yaml(config: ConfigData) -> SyncConfig:
         raise ConfigError("sync.groups must not be empty")
     _validate_unique_groups(groups)
     notifications = _mapping(section.get("notifications", {}), "sync.notifications")
+    reject_unknown_keys(notifications, {"sender"}, "sync.notifications")
     sender = _optional_string(notifications.get("sender"), "sync.notifications.sender")
     if any(group.notify for group in groups) and not sender:
         raise ConfigError(
@@ -426,6 +453,11 @@ def load_google_credentials(
 ) -> Any:
     """Load credentials for Google group synchronization."""
     google = _mapping(config.get("google", {}), "google")
+    reject_unknown_keys(
+        google,
+        {"service_account_file", "user_token_file", "delegated_subject"},
+        "google",
+    )
     service_account_file = google.get("service_account_file")
     user_token_file = google.get("user_token_file")
     delegated_subject = google.get("delegated_subject")
@@ -486,6 +518,7 @@ def sync_group(
     dry_run: bool,
     log: logging.Logger,
     email_provider_factory: Callable[[], EmailProvider] | None = None,
+    settings_service_factory: Callable[[], Any] | None = None,
 ) -> list[SyncAction]:
     """Plan one configured Google group and return its actions.
 
@@ -504,6 +537,7 @@ def sync_group(
         dry_run=dry_run,
         log=log,
         email_provider_factory=email_provider_factory,
+        settings_service_factory=settings_service_factory,
     )
     return list(plan.actions)
 
@@ -519,6 +553,7 @@ def plan_group(
     dry_run: bool,
     log: logging.Logger,
     email_provider_factory: Callable[[], EmailProvider] | None = None,
+    settings_service_factory: Callable[[], Any] | None = None,
 ) -> GroupSyncPlan:
     """Compute and validate one group plan without mutating Google Groups."""
     desired = desired_members(
@@ -575,9 +610,11 @@ def plan_group(
         email_provider = email_provider_factory()
     should_notify = group_notification_will_send(email_provider, config, group, actions)
     if should_notify and settings_service is None:
-        raise ConfigError(
-            "Google Groups Settings service is required for notifications"
-        )
+        if settings_service_factory is None:
+            raise ConfigError(
+                "Google Groups Settings service is required for notifications"
+            )
+        settings_service = settings_service_factory()
     posting_permission = (
         get_group_posting_permissions(settings_service, group.group)
         if should_notify
@@ -603,6 +640,10 @@ def apply_group_plan(
         len(plan.actions),
         plan.group.group,
     )
+
+
+def send_group_plan_notification(config: SyncConfig, plan: GroupSyncPlan) -> None:
+    """Send the notification email for an already-applied Google Group plan."""
     send_notification(
         plan.email_provider,
         config,
@@ -1370,6 +1411,22 @@ def _group_sync(value: Any, name: str) -> GroupSync:
     selectors). Raises ``ConfigError`` on malformed entries.
     """
     item = _mapping(value, name)
+    reject_unknown_keys(
+        item,
+        {
+            "group",
+            "ggroup",
+            "notify",
+            "ministries",
+            "workgroups",
+            "static_members",
+            "selectors",
+            "allow_empty",
+            "max_removals",
+            "max_removal_fraction",
+        },
+        name,
+    )
     # "ggroup" is the legacy key name; "group" is preferred going forward.
     group = _required_string(item.get("group", item.get("ggroup")), f"{name}.group")
     notify = tuple(_string_list(item.get("notify", []), f"{name}.notify"))
@@ -1411,6 +1468,7 @@ def _group_sync(value: Any, name: str) -> GroupSync:
 def _static_member(value: Any, name: str) -> StaticMember:
     """Parse a static Google group member configuration."""
     item = _mapping(value, name)
+    reject_unknown_keys(item, {"email", "leader", "owner"}, name)
     return StaticMember(
         email=_required_string(item.get("email"), f"{name}.email").lower(),
         # Accept "owner" as an alias for "leader" for config friendliness.
@@ -1421,6 +1479,19 @@ def _static_member(value: Any, name: str) -> StaticMember:
 def _selector(value: Any, name: str) -> Selector:
     """Parse a selector configuration."""
     item = _mapping(value, name)
+    reject_unknown_keys(
+        item,
+        {
+            "type",
+            "ministry_prefix",
+            "ministry_pattern",
+            "member_roles",
+            "leader_roles",
+            "staff_owner_domains",
+            "purpose",
+        },
+        name,
+    )
     selector_type = _required_string(item.get("type"), f"{name}.type")
     return Selector(
         type=selector_type,

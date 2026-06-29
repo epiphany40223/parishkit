@@ -13,7 +13,12 @@ from importlib.metadata import version
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from parishkit.config import ConfigData, ConfigError, load_yaml_config
+from parishkit.config import (
+    ConfigData,
+    ConfigError,
+    load_yaml_config,
+    reject_unknown_keys,
+)
 from parishkit.constant_contact import CCAPIError
 from parishkit.google.auth import GoogleAPIError
 from parishkit.logging import parse_log_level
@@ -275,6 +280,25 @@ def resolve_common_options(args: argparse.Namespace) -> CommonOptions:
     logging_config = _get_section(config, "logging")
     slack_config = _get_section(config, "slack")
     ps_config = _get_section(config, "parishsoft")
+    reject_unknown_keys(common, {"debug", "verbose", "dry_run", "timezone"}, "common")
+    reject_unknown_keys(logging_config, {"log_file", "log_dir"}, "logging")
+    reject_unknown_keys(
+        slack_config,
+        {
+            "token_file",
+            "channel",
+            "level",
+            "notify_success",
+            "context",
+            "include_output",
+        },
+        "slack",
+    )
+    reject_unknown_keys(
+        ps_config,
+        {"api_key_file", "cache_dir", "cache_limit", "expected_organization"},
+        "parishsoft",
+    )
 
     config_debug = _config_bool(common, "debug", "common")
     config_verbose = _config_bool(common, "verbose", "common")

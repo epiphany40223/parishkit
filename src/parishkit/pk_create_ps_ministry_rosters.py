@@ -19,7 +19,13 @@ from parishkit.cli import (
     resolve_common_options,
     run_user_facing,
 )
-from parishkit.config import ConfigData, ConfigError, load_yaml_config, resolve_path
+from parishkit.config import (
+    ConfigData,
+    ConfigError,
+    load_yaml_config,
+    reject_unknown_keys,
+    resolve_path,
+)
 from parishkit.google.auth import (
     GoogleAPIError,
     load_service_account_credentials,
@@ -259,6 +265,18 @@ def roster_config_from_yaml(config: ConfigData) -> RosterConfig:
         config.get("rosters", {}),
         "rosters",
     )
+    reject_unknown_keys(
+        section,
+        {
+            "spreadsheet_id",
+            "range",
+            "clear_range",
+            "workgroup_leader_suffix",
+            "ministries",
+            "workgroups",
+        },
+        "rosters",
+    )
     default_spreadsheet_id = section.get("spreadsheet_id")
     if default_spreadsheet_id is not None and not isinstance(
         default_spreadsheet_id, str
@@ -320,6 +338,11 @@ def load_sheets_credentials(
 ) -> Any:
     """Load credentials for Google Sheets access."""
     google = _mapping(config.get("google", {}), "google")
+    reject_unknown_keys(
+        google,
+        {"service_account_file", "user_token_file", "delegated_subject"},
+        "google",
+    )
     service_account_file = google.get("service_account_file")
     user_token_file = google.get("user_token_file")
     delegated_subject = google.get("delegated_subject")
@@ -675,6 +698,13 @@ def write_values(
             plan.spreadsheet_id,
             plan.range_name,
         )
+        if plan.stale_clear_range is not None:
+            clear_values(sheets_service, plan.spreadsheet_id, plan.stale_clear_range)
+            log.info(
+                "Cleared stale roster values in spreadsheet %s range %s",
+                plan.spreadsheet_id,
+                plan.stale_clear_range,
+            )
         format_roster_sheet(
             sheets_service,
             plan.spreadsheet_id,
@@ -687,13 +717,6 @@ def write_values(
             plan.spreadsheet_id,
             plan.range_name,
         )
-        if plan.stale_clear_range is not None:
-            clear_values(sheets_service, plan.spreadsheet_id, plan.stale_clear_range)
-            log.info(
-                "Cleared stale roster values in spreadsheet %s range %s",
-                plan.spreadsheet_id,
-                plan.stale_clear_range,
-            )
     except GoogleAPIError as exc:
         config_error = sheet_range_config_error(
             exc,
@@ -1270,6 +1293,20 @@ def _target(
     remains easy to audit and test.
     """
     item = _mapping(value, name)
+    allowed_keys = {
+        "name",
+        source_key,
+        "spreadsheet_id",
+        "range",
+        "clear_range",
+        "include_birthday",
+        "birthday",
+        "role_sheets",
+        "role sheets",
+    }
+    if plural_source_key:
+        allowed_keys.add(plural_source_key)
+    reject_unknown_keys(item, allowed_keys, name)
     source_names = _source_names(item, name, source_key, plural_source_key)
     target_name = _optional_string(item.get("name"), f"{name}.name") or ", ".join(
         source_names
@@ -1321,6 +1358,11 @@ def _role_target(
 ) -> RoleRosterTarget:
     """Parse one role-specific roster target."""
     item = _mapping(value, name)
+    reject_unknown_keys(
+        item,
+        {"name", "roles", "spreadsheet_id", "range", "clear_range"},
+        name,
+    )
     role_name = _required_string(item.get("name"), f"{name}.name")
     roles = tuple(_string_list(item.get("roles"), f"{name}.roles"))
     spreadsheet_id = _target_spreadsheet_id(item, name, default_spreadsheet_id)

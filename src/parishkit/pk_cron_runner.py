@@ -29,7 +29,12 @@ from parishkit.cli import (
     default_run_dir,
     resolve_common_options,
 )
-from parishkit.config import ConfigData, ConfigError, load_yaml_config
+from parishkit.config import (
+    ConfigData,
+    ConfigError,
+    load_yaml_config,
+    reject_unknown_keys,
+)
 from parishkit.logging import log_extra, setup_logging
 
 EXIT_SUCCESS = 0
@@ -295,12 +300,30 @@ def parse_runner_config(
     lock_data = data.get("lock", {})
     if not isinstance(lock_data, dict):
         raise ConfigError("lock must be a mapping")
+    reject_unknown_keys(lock_data, {"path", "stale_after", "stale_action"}, "lock")
     runner_data = data.get("runner", {})
     if not isinstance(runner_data, dict):
         raise ConfigError("runner must be a mapping")
+    reject_unknown_keys(
+        runner_data,
+        {"stop_on_first_failure", "notify_success", "context"},
+        "runner",
+    )
     slack_data = data.get("slack", {})
     if not isinstance(slack_data, dict):
         raise ConfigError("slack must be a mapping")
+    reject_unknown_keys(
+        slack_data,
+        {
+            "token_file",
+            "channel",
+            "level",
+            "notify_success",
+            "context",
+            "include_output",
+        },
+        "slack",
+    )
 
     lock_path = _path(lock_data.get("path"), "lock.path") or (
         default_run_dir() / "runner.lock"
@@ -358,6 +381,9 @@ def _parse_job(raw: Any, *, base_dir: Path | None) -> JobConfig:
     """Parse one configured runner job."""
     if not isinstance(raw, dict):
         raise ConfigError("each job must be a mapping")
+    reject_unknown_keys(
+        raw, {"name", "command", "enabled", "cwd", "env", "timeout"}, "job"
+    )
     name = raw.get("name")
     if not isinstance(name, str) or not name:
         raise ConfigError("job.name must be a non-empty string")

@@ -101,11 +101,17 @@ def load_service_account_credentials(
     ``key_file`` is expanded. Returns a google-auth credentials object.
     """
 
+    key_path = Path(key_file).expanduser()
     service_account, _ = _import_google_auth()
-    credentials = service_account.Credentials.from_service_account_file(
-        str(Path(key_file).expanduser()),
-        scopes=list(scopes),
-    )
+    try:
+        credentials = service_account.Credentials.from_service_account_file(
+            str(key_path),
+            scopes=list(scopes),
+        )
+    except Exception as exc:
+        raise ConfigError(
+            f"could not load Google service-account credential file {key_path}: {exc}"
+        ) from exc
     # with_subject() turns plain service-account creds into domain-wide
     # delegation creds that act on behalf of the named user.
     if subject:
@@ -126,11 +132,17 @@ def load_user_credentials(
     libraries can refresh as needed.
     """
 
+    token_path = Path(token_file).expanduser()
     _, user_credentials = _import_google_auth()
-    return user_credentials.Credentials.from_authorized_user_file(
-        str(Path(token_file).expanduser()),
-        scopes=list(scopes),
-    )
+    try:
+        return user_credentials.Credentials.from_authorized_user_file(
+            str(token_path),
+            scopes=list(scopes),
+        )
+    except Exception as exc:
+        raise ConfigError(
+            f"could not load Google user credential file {token_path}: {exc}"
+        ) from exc
 
 
 def run_user_oauth_flow(

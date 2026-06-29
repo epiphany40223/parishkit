@@ -24,7 +24,13 @@ from parishkit.cli import (
     resolve_common_options,
     run_user_facing,
 )
-from parishkit.config import ConfigData, ConfigError, load_yaml_config, resolve_path
+from parishkit.config import (
+    ConfigData,
+    ConfigError,
+    load_yaml_config,
+    reject_unknown_keys,
+    resolve_path,
+)
 from parishkit.constant_contact import (
     ConstantContactClient,
     ConstantContactConfig,
@@ -419,6 +425,11 @@ def cc_sync_config_from_yaml(
     ``ConfigError`` if required values are missing or malformed.
     """
     section = _mapping(config.get("sync", {}), "sync")
+    reject_unknown_keys(
+        section,
+        {"lists", "notifications", "unsubscribed_report", "update_names"},
+        "sync",
+    )
     mappings = tuple(
         _mapping_config(item, f"sync.lists[{index}]")
         for index, item in enumerate(_list(section.get("lists"), "sync.lists"))
@@ -427,6 +438,7 @@ def cc_sync_config_from_yaml(
         raise ConfigError("sync.lists must not be empty")
     _validate_unique_target_lists(mappings)
     notifications = _mapping(section.get("notifications", {}), "sync.notifications")
+    reject_unknown_keys(notifications, {"sender"}, "sync.notifications")
     sender = _optional_string(notifications.get("sender"), "sync.notifications.sender")
     if any(mapping.notifications for mapping in mappings) and not sender:
         raise ConfigError(
@@ -505,6 +517,11 @@ def constant_contact_client(
     missing.
     """
     section = _mapping(config.get("constant_contact", {}), "constant_contact")
+    reject_unknown_keys(
+        section,
+        {"client_id_file", "access_token_file"},
+        "constant_contact",
+    )
     client_id_file = _required_string(
         section.get("client_id_file"), "constant_contact.client_id_file"
     )
@@ -1636,6 +1653,20 @@ def _mapping_config(value: Any, name: str) -> CCSyncMapping:
     files keep working. Raises ``ConfigError`` on missing required fields.
     """
     item = _mapping(value, name)
+    reject_unknown_keys(
+        item,
+        {
+            "source_workgroup",
+            "source ps member wg",
+            "target_list",
+            "target cc list",
+            "notifications",
+            "allow_empty",
+            "max_removals",
+            "max_removal_fraction",
+        },
+        name,
+    )
     return CCSyncMapping(
         source_workgroup=_required_string(
             item.get("source_workgroup", item.get("source ps member wg")),
@@ -1668,6 +1699,11 @@ def _unsubscribed_report_config(
 ) -> CCUnsubscribedReportConfig:
     """Parse the optional standalone unsubscribed-report schedule."""
     item = _mapping(value, name)
+    reject_unknown_keys(
+        item,
+        {"enabled", "day_of_week", "time", "window_minutes", "state_file"},
+        name,
+    )
     enabled = _bool(item.get("enabled", False), f"{name}.enabled")
     return CCUnsubscribedReportConfig(
         enabled=enabled,

@@ -18,7 +18,13 @@ from parishkit.cli import (
     resolve_common_options,
     run_user_facing,
 )
-from parishkit.config import ConfigData, ConfigError, load_yaml_config, resolve_path
+from parishkit.config import (
+    ConfigData,
+    ConfigError,
+    load_yaml_config,
+    reject_unknown_keys,
+    resolve_path,
+)
 from parishkit.google.auth import (
     load_service_account_credentials,
     load_user_credentials,
@@ -245,6 +251,17 @@ def calendar_reservation_config(
     missing, malformed, or names an unknown timezone.
     """
     section = _mapping(config.get("calendars", {}), "calendars")
+    reject_unknown_keys(
+        section,
+        {
+            "acceptable_domains",
+            "calendars",
+            "timezone",
+            "lookback_days",
+            "lookahead_days",
+        },
+        "calendars",
+    )
     domains = _string_list(
         section.get("acceptable_domains"),
         "calendars.acceptable_domains",
@@ -286,6 +303,11 @@ def load_calendar_credentials(
     ConfigError if both are set, neither is set, or a field has the wrong type.
     """
     google = _mapping(config.get("google", {}), "google")
+    reject_unknown_keys(
+        google,
+        {"service_account_file", "user_token_file", "delegated_subject"},
+        "google",
+    )
     service_account_file = google.get("service_account_file")
     user_token_file = google.get("user_token_file")
     delegated_subject = google.get("delegated_subject")
@@ -706,6 +728,11 @@ def _calendars(value: Any) -> list[ReservationCalendar]:
     for index, raw_calendar in enumerate(value):
         name = f"calendars.calendars[{index}]"
         item = _mapping(raw_calendar, name)
+        reject_unknown_keys(
+            item,
+            {"name", "calendar_id", "id", "check_conflicts"},
+            name,
+        )
         calendar_name = item.get("name")
         calendar_id = item.get("calendar_id", item.get("id"))
         check_conflicts = item.get("check_conflicts", True)

@@ -127,17 +127,27 @@ class GoogleWorkspaceSMTPProvider(EmailProvider):
         # bcc recipients go on the SMTP envelope only, never in a header, so
         # they stay hidden from other recipients.
         recipients = list(message.to) + list(message.cc) + list(message.bcc)
-        with self.smtp_factory(self.smtp_host, self.smtp_port) as smtp:
-            # Gmail requires the client greeting before AUTH. smtplib normally
-            # sends EHLO lazily for high-level login helpers, but XOAUTH2 uses a
-            # manual AUTH command here, so the greeting must be explicit.
-            smtp.ehlo()
-            # Issue the AUTH command manually because smtplib has no built-in
-            # XOAUTH2 helper; 235 is the SMTP "authentication succeeded" code.
-            code, response = smtp.docmd("AUTH", "XOAUTH2 " + auth)
-            if code != 235:
-                raise ConfigError(f"SMTP XOAUTH2 failed: {code} {response!r}")
-            smtp.send_message(
-                email_message, from_addr=message.sender, to_addrs=recipients
-            )
+        try:
+            with self.smtp_factory(self.smtp_host, self.smtp_port) as smtp:
+                # Gmail requires the client greeting before AUTH. smtplib normally
+                # sends EHLO lazily for high-level login helpers, but XOAUTH2 uses a
+                # manual AUTH command here, so the greeting must be explicit.
+                smtp.ehlo()
+                # Issue the AUTH command manually because smtplib has no built-in
+                # XOAUTH2 helper; 235 is the SMTP "authentication succeeded" code.
+                code, response = smtp.docmd("AUTH", "XOAUTH2 " + auth)
+                if code != 235:
+                    raise ConfigError(f"SMTP XOAUTH2 failed: {code} {response!r}")
+                refused = smtp.send_message(
+                    email_message,
+                    from_addr=message.sender,
+                    to_addrs=recipients,
+                )
+        except ConfigError:
+            raise
+        except (OSError, smtplib.SMTPException) as exc:
+            raise ConfigError(f"SMTP delivery failed: {exc}") from exc
+        if refused:
+            failed = ", ".join(sorted(str(recipient) for recipient in refused))
+            raise ConfigError(f"SMTP delivery refused recipient(s): {failed}")
         return email_message

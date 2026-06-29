@@ -291,6 +291,24 @@ def test_sync_config_rejects_duplicate_group_targets():
         )
 
 
+def test_sync_config_rejects_unknown_group_key():
+    """Misspelled group guardrail keys fail instead of using defaults."""
+    with pytest.raises(ConfigError, match="unsupported key"):
+        sync_config_from_yaml(
+            {
+                "sync": {
+                    "groups": [
+                        {
+                            "group": "group@example.org",
+                            "static_members": [{"email": "ann@example.org"}],
+                            "max_removal_fractions": 0.1,
+                        }
+                    ]
+                }
+            }
+        )
+
+
 def test_sync_config_requires_sender_for_notifications():
     """Group notification recipients require a configured sender."""
     with pytest.raises(ConfigError, match="sync.notifications.sender is required"):
@@ -933,6 +951,116 @@ def test_sync_google_group_live_noop_does_not_build_email_provider(
     )
 
     assert [call[0] for call in admin._members.calls] == ["list"]
+
+
+def test_sync_google_group_live_noop_does_not_build_settings_scope(
+    tmp_path,
+    monkeypatch,
+):
+    """A no-op live run with notify configured does not need settings scope."""
+    config = write_config(tmp_path)
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            """      ministries:
+        - Readers
+      workgroups:
+        - Movers
+      static_members:
+        - email: static@example.org
+          leader: false
+""",
+            """      static_members:
+        - email: leader@example.org
+          leader: false
+        - email: old@example.org
+          leader: false
+""",
+        ),
+        encoding="utf-8",
+    )
+    admin = AdminService()
+    scope_calls = []
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.load_google_credentials",
+        lambda _config, *, base_dir=None, include_settings_scope=True: (
+            scope_calls.append(include_settings_scope) or object()
+        ),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.build_admin_directory_service",
+        lambda _credentials: admin,
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.build_groups_settings_service",
+        lambda _credentials: (_ for _ in ()).throw(AssertionError("settings built")),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.provider_from_config",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ConfigError("email loaded")),
+    )
+
+    assert (
+        sync_google_group_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+        )
+        == 0
+    )
+
+    assert scope_calls == [False]
+    assert [call[0] for call in admin._members.calls] == ["list"]
+
+
+def test_sync_google_group_notification_failure_does_not_skip_later_writes(
+    tmp_path,
+    monkeypatch,
+):
+    """Notification failures are reported after every group plan is applied."""
+    config = write_config(tmp_path)
+    config.write_text(
+        config.read_text(encoding="utf-8")
+        + """
+    - group: second@example.org
+      static_members:
+        - email: second@example.org
+          leader: false
+""",
+        encoding="utf-8",
+    )
+    admin = AdminService()
+    settings = SettingsService()
+
+    class FailingEmailProvider:
+        """Email provider that fails when the first notification is sent."""
+
+        def send(self, *_args, **_kwargs):
+            """Raise a user-facing delivery error."""
+            raise ConfigError("smtp failed")
+
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_google_group_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            service_factory=lambda _config: (admin, settings),
+            email_provider=FailingEmailProvider(),
+        )
+        == 2
+    )
+
+    assert any(
+        call[0] in {"insert", "delete", "update"}
+        and call[1]["groupKey"] == "second@example.org"
+        for call in admin._members.calls
+    )
 
 
 def test_sync_google_group_reports_missing_google_group(

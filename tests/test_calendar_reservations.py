@@ -168,6 +168,25 @@ def test_calendar_reservations_config_rejects_missing_domains():
         )
 
 
+def test_calendar_reservations_config_rejects_unknown_calendar_key():
+    """Misspelled calendar keys fail instead of changing validation defaults."""
+    with pytest.raises(ConfigError, match="unsupported key"):
+        calendar_reservation_config(
+            {
+                "calendars": {
+                    "acceptable_domains": ["example.org"],
+                    "calendars": [
+                        {
+                            "name": "Room",
+                            "calendar_id": "room@example.org",
+                            "check_conflict": False,
+                        }
+                    ],
+                }
+            }
+        )
+
+
 def test_calendar_reservations_config_describes_bad_calendar_id():
     """A malformed calendar_id error names the entry and bad value type."""
     with pytest.raises(ConfigError) as exc_info:

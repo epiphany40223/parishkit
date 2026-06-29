@@ -184,6 +184,24 @@ common:
         cli.resolve_common_options(args)
 
 
+def test_common_config_rejects_unknown_keys(tmp_path):
+    """Misspelled common config keys fail instead of falling back to defaults."""
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        """
+common:
+  dryrn: true
+""",
+        encoding="utf-8",
+    )
+    parser = argparse.ArgumentParser()
+    cli.add_common_arguments(parser)
+    args = parser.parse_args(["--config", str(config_file)])
+
+    with pytest.raises(ConfigError, match="common has unsupported key"):
+        cli.resolve_common_options(args)
+
+
 def test_invalid_slack_log_level_fails_at_startup(tmp_path):
     """An unknown Slack log level in config is rejected during option resolution."""
     config_file = tmp_path / "config.yaml"
