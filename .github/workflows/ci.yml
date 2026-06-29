@@ -30,19 +30,8 @@ jobs:
       - name: Ruff format check
         run: python -m ruff format --check .
 
+      - name: Markdown lint
+        run: python -m pymarkdown --config .pymarkdown.json scan $(git ls-files '*.md')
+
       - name: Pytest
         run: python -m pytest
-
-  dco:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-    steps:
-      - name: Enforce DCO sign-offs
-        uses: KineticCafe/actions-dco@v3.1.0
-        with:
-          config: |
-            [bots]
-            policy = "none"

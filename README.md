@@ -774,6 +774,7 @@ python -m pip install -r requirements.txt
 ```sh
 python -m ruff check .
 python -m ruff format --check .
+python -m pymarkdown --config .pymarkdown.json scan $(git ls-files '*.md')
 python -m pytest
 ```
 

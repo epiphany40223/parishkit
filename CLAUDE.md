@@ -6,6 +6,10 @@ ParishKit contains reusable Python automation for Catholic parishes.
 - Target Python 3.12 or newer.
 - Store shared code under `src/parishkit`.
 - Store executable wrappers under `scripts/<tool-name>/`.
+- Store project documentation under `docs/`, and design and behavior
+  specifications under `docs/specs/` (each spec file named `spec.md`). Keep
+  them cross-linked and avoid duplicating prose across specs; link to another
+  spec rather than copying text so the copies cannot drift.
 - Keep command behavior in `src/parishkit` modules exposed through console
   entry points; wrapper scripts should only delegate to package code.
 - Do not commit credentials, secrets, local logs, caches, generated reports, or
@@ -27,6 +31,7 @@ ParishKit contains reusable Python automation for Catholic parishes.
 - Match CI locally with:
   - `python -m ruff check .`
   - `python -m ruff format --check .`
+  - `python -m pymarkdown --config .pymarkdown.json scan $(git ls-files '*.md')`
   - `python -m pytest`
 - Normal CI must not require real ParishSoft, Google, Constant Contact, Slack,
   or email-provider credentials.
