@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from parishkit.config import ConfigError
+from parishkit.google.auth import GoogleAPIError
 from parishkit.parishsoft import ParishSoftData
 from parishkit.pk_sync_ps_to_ggroup import (
     DesiredMember,
@@ -22,11 +23,15 @@ from parishkit.pk_sync_ps_to_ggroup import (
 class Request:
     """Fake Google API request whose execute() returns a canned response."""
 
-    def __init__(self, response=None):
+    def __init__(self, response=None, exc: Exception | None = None):
+        """Store either the canned response or exception to raise."""
         self.response = response or {}
+        self.exc = exc
 
     def execute(self):
         """Return the stored response, mimicking the real request execution."""
+        if self.exc is not None:
+            raise self.exc
         return self.response
 
 
@@ -39,10 +44,13 @@ class Members:
 
     def __init__(self):
         self.calls = []
+        self.list_error: Exception | None = None
 
     def list(self, **kwargs):
         """Record the list call and return the current group roster fixture."""
         self.calls.append(("list", kwargs))
+        if self.list_error is not None:
+            return Request(exc=self.list_error)
         return Request(
             {
                 "members": [
@@ -482,3 +490,124 @@ def test_sync_google_group_dry_run_skips_writes_and_email(tmp_path, monkeypatch)
     )
 
     assert [call[0] for call in admin._members.calls] == ["list"]
+
+
+def test_sync_google_group_reports_missing_google_group(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    """A missing configured Google Group logs a helpful config error."""
+    admin = AdminService()
+    admin._members.list_error = GoogleAPIError(404, "group not found")
+    settings = SettingsService()
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_google_group_main(
+            ["--config", str(write_config(tmp_path))],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            service_factory=lambda _config: (admin, settings),
+            email_provider=EmailProvider(),
+        )
+        == 2
+    )
+
+    error = capsys.readouterr().err
+    assert "ERROR parishkit.pk_sync_ps_to_ggroup" in error
+    assert "Configured Google Group was not found" in error
+    assert "sync.groups[].group" in error
+    assert [call[0] for call in admin._members.calls] == ["list"]
+
+
+def test_sync_google_group_reports_missing_parishsoft_source(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    """Unknown ParishSoft ministry/workgroup source names abort before writes."""
+    admin = AdminService()
+    settings = SettingsService()
+    config = write_config(tmp_path)
+    text = config.read_text(encoding="utf-8")
+    config.write_text(
+        text.replace("- Readers", "- Missing Ministry").replace(
+            "- Movers", "- Missing Workgroup"
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_google_group_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            service_factory=lambda _config: (admin, settings),
+        )
+        == 2
+    )
+
+    error = capsys.readouterr().err
+    assert "ERROR parishkit.pk_sync_ps_to_ggroup" in error
+    assert "Configured ParishSoft ministry was not found" in error
+    assert "sync.groups[].ministries" in error
+    assert admin._members.calls == []
+
+
+def test_sync_google_group_reports_selector_with_no_matching_ministries(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    """Selector name filters that match nothing abort before group writes."""
+    admin = AdminService()
+    settings = SettingsService()
+    config = tmp_path / "config.yaml"
+    api_key = tmp_path / "parishsoft-api-key.txt"
+    api_key.write_text("key", encoding="utf-8")
+    config.write_text(
+        f"""
+common:
+  dry_run: false
+parishsoft:
+  api_key_file: {api_key}
+  cache_dir: {tmp_path / "cache"}
+  cache_limit: 1d
+google:
+  user_token_file: {tmp_path / "google-user-token.json"}
+sync:
+  notifications:
+    sender: no-reply@example.org
+  groups:
+    - group: group@example.org
+      selectors:
+        - type: all_ministry_chairs
+          ministry_pattern: "^Missing.*"
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_google_group_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            service_factory=lambda _config: (admin, settings),
+        )
+        == 2
+    )
+
+    error = capsys.readouterr().err
+    assert "ERROR parishkit.pk_sync_ps_to_ggroup" in error
+    assert "Configured ParishSoft selector matched no ministries" in error
+    assert "sync.groups[].selectors[].ministry_pattern" in error
+    assert admin._members.calls == []

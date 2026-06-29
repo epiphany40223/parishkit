@@ -204,15 +204,6 @@ def _run(
     """
     common = resolve_common_options(args)
     config = load_yaml_config(common.config)
-    sync_config = cc_sync_config_from_yaml(config)
-    # CLI flags can only turn the toggles on, never off: a command-line opt-in
-    # is OR'd with whatever the YAML already requested.
-    sync_config = CCSyncConfig(
-        mappings=sync_config.mappings,
-        update_names=sync_config.update_names or bool(args.update_names),
-        sender=sync_config.sender,
-        unsubscribed_report=sync_config.unsubscribed_report,
-    )
     log = setup_logging(
         verbose=common.verbose or common.dry_run,
         debug=common.debug,
@@ -223,120 +214,136 @@ def _run(
         slack_channel=common.slack_channel,
         slack_level=common.slack_log_level,
     )
-    log.info(
-        "Configured %s Constant Contact list sync(s); update_names=%s",
-        len(sync_config.mappings),
-        sync_config.update_names,
-    )
-    log.debug(
-        "Constant Contact sync mappings: %s",
-        _text_list([_mapping_summary(mapping) for mapping in sync_config.mappings]),
-        extra=log_extra(sync_config.mappings),
-    )
-    ps_client = parishsoft_client_from_config(common, config)
-    log.info("Loading active ParishSoft families and members")
-    data = loader(ps_client, active_only=True, parishioners_only=False)
-    log.info(
-        "Loaded %s member(s), %s family/families, %s ministry membership(s), "
-        "and %s workgroup membership(s)",
-        len(data.members),
-        len(data.families),
-        len(data.ministry_type_memberships),
-        len(data.member_workgroup_memberships),
-    )
-    log.debug("Dry-run mode is %s", "enabled" if common.dry_run else "disabled")
-    cc_client = cc_factory(config) if cc_factory else constant_contact_client(config)
-    log.info("Loading Constant Contact lists and contacts")
-    cc_lists, cc_contacts = load_cc_data(cc_client)
-    log.info(
-        "Loaded %s Constant Contact list(s) and %s contact(s)",
-        len(cc_lists),
-        len(cc_contacts),
-    )
-    ps_members_by_email = parishsoft_members_by_email(data.members)
-    link_contacts_to_ps_members(cc_contacts, data.members)
-    desired_emails = resolve_desired_state(sync_config, data, cc_lists)
-    for mapping, emails in zip(sync_config.mappings, desired_emails, strict=True):
+    try:
+        sync_config = cc_sync_config_from_yaml(config)
+        # CLI flags can only turn the toggles on, never off: a command-line opt-in
+        # is OR'd with whatever the YAML already requested.
+        sync_config = CCSyncConfig(
+            mappings=sync_config.mappings,
+            update_names=sync_config.update_names or bool(args.update_names),
+            sender=sync_config.sender,
+            unsubscribed_report=sync_config.unsubscribed_report,
+        )
         log.info(
-            "Resolved %s desired email(s) from %s to %s",
-            len(emails),
-            mapping.source_workgroup,
-            mapping.target_list,
+            "Configured %s Constant Contact list sync(s); update_names=%s",
+            len(sync_config.mappings),
+            sync_config.update_names,
         )
         log.debug(
-            "Desired emails for %s: %s",
-            mapping.target_list,
-            _text_list(sorted(emails)),
-            extra=log_extra(sorted(emails)),
+            "Constant Contact sync mappings: %s",
+            _text_list([_mapping_summary(mapping) for mapping in sync_config.mappings]),
+            extra=log_extra(sync_config.mappings),
         )
-    unsubscribed = filter_unsubscribed(
-        cc_contacts,
-        desired_emails,
-        ps_members_by_email,
-    )
-    filtered_count = sum(len(items) for items in unsubscribed)
-    if filtered_count:
-        log.info("Filtered %s unsubscribed desired address(es)", filtered_count)
-        log.debug(
-            "Filtered unsubscribed addresses: %s",
-            _unsubscribed_summary(unsubscribed),
-            extra=log_extra(unsubscribed),
+        ps_client = parishsoft_client_from_config(common, config)
+        log.info("Loading active ParishSoft families and members")
+        data = loader(ps_client, active_only=True, parishioners_only=False)
+        log.info(
+            "Loaded %s member(s), %s family/families, %s ministry membership(s), "
+            "and %s workgroup membership(s)",
+            len(data.members),
+            len(data.families),
+            len(data.ministry_type_memberships),
+            len(data.member_workgroup_memberships),
         )
-    report_decision = unsubscribed_report_decision(
-        sync_config.unsubscribed_report,
-        now=now or dt.datetime.now(ZoneInfo(common.timezone)),
-    )
-    if sync_config.unsubscribed_report.enabled:
-        log.info("Unsubscribed report schedule: %s", report_decision.reason)
-    contacts_by_email = {
-        contact["email_address"]["address"].lower(): contact for contact in cc_contacts
-    }
-    actions = compute_all_actions(
-        sync_config,
-        desired_emails,
-        cc_lists,
-        contacts_by_email,
-    )
-    actions.extend(
-        detect_name_mismatches(
-            contacts_by_email,
-            update_names=sync_config.update_names,
+        log.debug("Dry-run mode is %s", "enabled" if common.dry_run else "disabled")
+        cc_client = (
+            cc_factory(config) if cc_factory else constant_contact_client(config)
         )
-    )
-    execute_actions(
-        cc_client,
-        actions,
-        contacts_by_email,
-        ps_members_by_email,
-        dry_run=common.dry_run,
-        log=log,
-    )
-    provider = email_provider
-    # Only build a real email provider when one was not injected and the run
-    # will actually send: skip it for dry runs or when no mapping requests
-    # notification/report mail, so we never touch email config we do not need.
-    if (
-        provider is None
-        and not common.dry_run
-        and any(mapping.notifications for mapping in sync_config.mappings)
-    ):
-        provider = provider_from_config(_mapping(config.get("email", {}), "email"))
-    send_notifications(provider, sync_config, actions, unsubscribed)
-    sent_reports = send_unsubscribed_report(
-        provider,
-        sync_config,
-        unsubscribed,
-        report_decision,
-        dry_run=common.dry_run,
-        log=log,
-    )
-    if sent_reports and not common.dry_run:
-        mark_unsubscribed_report_sent(
+        log.info("Loading Constant Contact lists and contacts")
+        cc_lists, cc_contacts = load_cc_data(cc_client)
+        log.info(
+            "Loaded %s Constant Contact list(s) and %s contact(s)",
+            len(cc_lists),
+            len(cc_contacts),
+        )
+        ps_members_by_email = parishsoft_members_by_email(data.members)
+        link_contacts_to_ps_members(cc_contacts, data.members)
+        desired_emails = resolve_desired_state(sync_config, data, cc_lists)
+        for mapping, emails in zip(sync_config.mappings, desired_emails, strict=True):
+            log.info(
+                "Resolved %s desired email(s) from %s to %s",
+                len(emails),
+                mapping.source_workgroup,
+                mapping.target_list,
+            )
+            log.debug(
+                "Desired emails for %s: %s",
+                mapping.target_list,
+                _text_list(sorted(emails)),
+                extra=log_extra(sorted(emails)),
+            )
+        unsubscribed = filter_unsubscribed(
+            cc_contacts,
+            desired_emails,
+            ps_members_by_email,
+        )
+        filtered_count = sum(len(items) for items in unsubscribed)
+        if filtered_count:
+            log.info("Filtered %s unsubscribed desired address(es)", filtered_count)
+            log.debug(
+                "Filtered unsubscribed addresses: %s",
+                _unsubscribed_summary(unsubscribed),
+                extra=log_extra(unsubscribed),
+            )
+        report_decision = unsubscribed_report_decision(
             sync_config.unsubscribed_report,
-            report_decision.run_date,
             now=now or dt.datetime.now(ZoneInfo(common.timezone)),
         )
-    log.info("Computed %s Constant Contact action(s)", len(actions))
+        if sync_config.unsubscribed_report.enabled:
+            log.info("Unsubscribed report schedule: %s", report_decision.reason)
+        contacts_by_email = {
+            contact["email_address"]["address"].lower(): contact
+            for contact in cc_contacts
+        }
+        actions = compute_all_actions(
+            sync_config,
+            desired_emails,
+            cc_lists,
+            contacts_by_email,
+        )
+        actions.extend(
+            detect_name_mismatches(
+                contacts_by_email,
+                update_names=sync_config.update_names,
+            )
+        )
+        execute_actions(
+            cc_client,
+            actions,
+            contacts_by_email,
+            ps_members_by_email,
+            dry_run=common.dry_run,
+            log=log,
+        )
+        provider = email_provider
+        # Only build a real email provider when one was not injected and the run
+        # will actually send: skip it for dry runs or when no mapping requests
+        # notification/report mail, so we never touch email config we do not need.
+        if (
+            provider is None
+            and not common.dry_run
+            and any(mapping.notifications for mapping in sync_config.mappings)
+        ):
+            provider = provider_from_config(_mapping(config.get("email", {}), "email"))
+        send_notifications(provider, sync_config, actions, unsubscribed)
+        sent_reports = send_unsubscribed_report(
+            provider,
+            sync_config,
+            unsubscribed,
+            report_decision,
+            dry_run=common.dry_run,
+            log=log,
+        )
+        if sent_reports and not common.dry_run:
+            mark_unsubscribed_report_sent(
+                sync_config.unsubscribed_report,
+                report_decision.run_date,
+                now=now or dt.datetime.now(ZoneInfo(common.timezone)),
+            )
+        log.info("Computed %s Constant Contact action(s)", len(actions))
+    except ConfigError as exc:
+        log.error("Configuration validation failed: %s", exc)
+        raise
     return 0
 
 
@@ -425,11 +432,22 @@ def resolve_desired_state(
         workgroup = workgroup_by_name.get(mapping.source_workgroup)
         if workgroup is None:
             raise ConfigError(
-                f"ParishSoft workgroup not found: {mapping.source_workgroup}"
+                f"Configured ParishSoft member workgroup was not found for "
+                f"Constant Contact list {mapping.target_list!r}: "
+                f"{mapping.source_workgroup!r}. Check sync.lists[].source_workgroup "
+                "in the YAML and make sure it exactly matches a ParishSoft "
+                "member workgroup. Available member workgroups: "
+                f"{_text_list(sorted(workgroup_by_name))}."
             )
         cc_list = list_by_name.get(mapping.target_list)
         if cc_list is None:
-            raise ConfigError(f"Constant Contact list not found: {mapping.target_list}")
+            raise ConfigError(
+                f"Configured Constant Contact list was not found: "
+                f"{mapping.target_list!r}. Check sync.lists[].target_list in "
+                "the YAML and make sure it exactly matches an active Constant "
+                "Contact list. Available Constant Contact lists: "
+                f"{_text_list(sorted(list_by_name))}."
+            )
         emails = set()
         for item in workgroup.get("membership", []):
             member_id = item.get("py member duid")

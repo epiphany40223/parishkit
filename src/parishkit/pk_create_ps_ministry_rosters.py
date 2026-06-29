@@ -196,6 +196,7 @@ def _run(
             len(data.ministry_type_memberships),
             len(data.member_workgroup_memberships),
         )
+        validate_configured_parishsoft_sources(data, roster_config)
         log.debug("Dry-run mode is %s", "enabled" if common.dry_run else "disabled")
         sheets_service = (
             sheets_factory(config)
@@ -395,6 +396,72 @@ def write_configured_rosters(
             dry_run=dry_run,
             log=log,
         )
+
+
+def validate_configured_parishsoft_sources(
+    data: ParishSoftData,
+    config: RosterConfig,
+) -> None:
+    """Verify configured roster ministry/workgroup names exist in ParishSoft."""
+    ministry_names = available_ministry_names(data)
+    workgroup_names = available_member_workgroup_source_names(
+        data,
+        leader_suffix=config.workgroup_leader_suffix,
+    )
+    for target in config.ministries:
+        for ministry in target.source_names:
+            if ministry not in ministry_names:
+                raise ConfigError(
+                    f"Configured ParishSoft ministry was not found for roster "
+                    f"{target.name!r}: {ministry!r}. Check "
+                    "rosters.ministries[].ministry or "
+                    "rosters.ministries[].ministries in the YAML and make sure "
+                    "each name exactly matches a ParishSoft ministry. Available "
+                    f"ministries: {_text_list(sorted(ministry_names))}."
+                )
+    for target in config.workgroups:
+        for workgroup in target.source_names:
+            if workgroup not in workgroup_names:
+                raise ConfigError(
+                    f"Configured ParishSoft member workgroup was not found for "
+                    f"roster {target.name!r}: {workgroup!r}. Check "
+                    "rosters.workgroups[].workgroup in the YAML and make sure "
+                    "it exactly matches a ParishSoft member workgroup. "
+                    "Available member workgroups: "
+                    f"{_text_list(sorted(workgroup_names))}."
+                )
+
+
+def available_ministry_names(data: ParishSoftData) -> set[str]:
+    """Return ministry names present in loaded ParishSoft data."""
+    names = {
+        str(item["name"])
+        for item in data.ministry_type_memberships.values()
+        if item.get("name")
+    }
+    for member in data.members.values():
+        names.update(str(name) for name in member.get("py ministries", {}))
+    return names
+
+
+def available_member_workgroup_source_names(
+    data: ParishSoftData,
+    *,
+    leader_suffix: str,
+) -> set[str]:
+    """Return member workgroup names usable as configured source names."""
+    names = {
+        str(item["name"])
+        for item in data.member_workgroup_memberships.values()
+        if item.get("name")
+    }
+    for member in data.members.values():
+        names.update(str(name) for name in member.get("py workgroups", {}))
+    for name in tuple(names):
+        for suffix in (leader_suffix, " Ldr", " Leader"):
+            if suffix and name.endswith(suffix):
+                names.add(name[: -len(suffix)])
+    return names
 
 
 def write_roster_target(

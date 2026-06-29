@@ -30,15 +30,23 @@ class CCClient:
     captured in self.calls so tests can assert on what would be sent.
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        *,
+        lists: list[dict] | None = None,
+        contacts: list[dict] | None = None,
+    ):
+        """Initialize call recording and optional list/contact fixtures."""
         self.calls = []
+        self.lists = lists
+        self.contacts = contacts
 
     def get_all(self, endpoint, field, **kwargs):
         """Record the read and return the matching list or contact fixture."""
         self.calls.append(("get_all", endpoint, field, kwargs))
         if endpoint == "contact_lists":
-            return cc_lists()
-        return cc_contacts()
+            return cc_lists() if self.lists is None else self.lists
+        return cc_contacts() if self.contacts is None else self.contacts
 
     def post(self, endpoint, body):
         """Record a create call and return an empty response."""
@@ -530,4 +538,66 @@ def test_sync_ps_to_cc_dry_run_skips_writes_and_email(tmp_path, monkeypatch):
         == 0
     )
 
+    assert [call[0] for call in cc.calls] == ["get_all", "get_all"]
+
+
+def test_sync_ps_to_cc_reports_missing_parishsoft_workgroup(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    """Unknown configured ParishSoft workgroup logs a helpful config error."""
+    cc = CCClient()
+    config = write_config(tmp_path)
+    text = config.read_text(encoding="utf-8")
+    config.write_text(
+        text.replace("Newsletter WG", "Missing Newsletter WG"),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_cc.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_ps_to_cc_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            cc_factory=lambda _config: cc,
+        )
+        == 2
+    )
+
+    error = capsys.readouterr().err
+    assert "ERROR parishkit.pk_sync_ps_to_cc" in error
+    assert "Configured ParishSoft member workgroup was not found" in error
+    assert "sync.lists[].source_workgroup" in error
+    assert [call[0] for call in cc.calls] == ["get_all", "get_all"]
+
+
+def test_sync_ps_to_cc_reports_missing_constant_contact_list(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    """Unknown configured Constant Contact list logs a helpful config error."""
+    cc = CCClient(lists=[])
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_cc.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_ps_to_cc_main(
+            ["--config", str(write_config(tmp_path))],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            cc_factory=lambda _config: cc,
+        )
+        == 2
+    )
+
+    error = capsys.readouterr().err
+    assert "ERROR parishkit.pk_sync_ps_to_cc" in error
+    assert "Configured Constant Contact list was not found" in error
+    assert "sync.lists[].target_list" in error
     assert [call[0] for call in cc.calls] == ["get_all", "get_all"]

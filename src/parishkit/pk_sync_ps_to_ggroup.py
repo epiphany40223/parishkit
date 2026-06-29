@@ -19,6 +19,7 @@ from parishkit.cli import (
 from parishkit.config import ConfigData, ConfigError, load_yaml_config
 from parishkit.email.base import Email, EmailProvider, provider_from_config
 from parishkit.google.auth import (
+    GoogleAPIError,
     load_service_account_credentials,
     load_user_credentials,
 )
@@ -231,7 +232,6 @@ def _run(
     """
     common = resolve_common_options(args)
     config = load_yaml_config(common.config)
-    sync_config = sync_config_from_yaml(config)
     log = setup_logging(
         verbose=common.verbose or common.dry_run,
         debug=common.debug,
@@ -242,63 +242,71 @@ def _run(
         slack_channel=common.slack_channel,
         slack_level=common.slack_log_level,
     )
-    log.info("Configured %s Google Group sync(s)", len(sync_config.groups))
-    log.debug(
-        "Google Group sync configuration: %s",
-        _text_list([group.group for group in sync_config.groups]),
-        extra=log_extra(sync_config.groups),
-    )
-    client = parishsoft_client_from_config(common, config)
-    log.info("Loading active ParishSoft families and members")
-    data = loader(client, active_only=True, parishioners_only=False)
-    log.info(
-        "Loaded %s member(s), %s family/families, %s ministry membership(s), "
-        "and %s workgroup membership(s)",
-        len(data.members),
-        len(data.families),
-        len(data.ministry_type_memberships),
-        len(data.member_workgroup_memberships),
-    )
-    log.debug("Dry-run mode is %s", "enabled" if common.dry_run else "disabled")
-    admin_service, settings_service = (
-        service_factory(config)
-        if service_factory is not None
-        else build_google_services(load_google_credentials(config))
-    )
-    # Only build an email provider when one was not injected, we are actually
-    # applying changes, and at least one group wants notifications. This avoids
-    # requiring email credentials for dry runs or notification-free configs.
-    provider = email_provider
-    if (
-        provider is None
-        and not common.dry_run
-        and any(group.notify for group in sync_config.groups)
-    ):
-        provider = provider_from_config(_mapping(config.get("email", {}), "email"))
-    for group in sync_config.groups:
-        log.info("Synchronizing Google Group %s", group.group)
+    try:
+        sync_config = sync_config_from_yaml(config)
+        log.info("Configured %s Google Group sync(s)", len(sync_config.groups))
         log.debug(
-            "Sources for %s: ministries=%s workgroups=%s static_members=%s "
-            "selectors=%s",
-            group.group,
-            _text_list(group.ministries),
-            _text_list(group.workgroups),
-            _text_list(
-                [_static_member_summary(member) for member in group.static_members]
-            ),
-            _text_list([_selector_summary(selector) for selector in group.selectors]),
-            extra=log_extra(group),
+            "Google Group sync configuration: %s",
+            _text_list([group.group for group in sync_config.groups]),
+            extra=log_extra(sync_config.groups),
         )
-        sync_group(
-            admin_service,
-            settings_service,
-            provider,
-            data,
-            sync_config,
-            group,
-            dry_run=common.dry_run,
-            log=log,
+        client = parishsoft_client_from_config(common, config)
+        log.info("Loading active ParishSoft families and members")
+        data = loader(client, active_only=True, parishioners_only=False)
+        log.info(
+            "Loaded %s member(s), %s family/families, %s ministry membership(s), "
+            "and %s workgroup membership(s)",
+            len(data.members),
+            len(data.families),
+            len(data.ministry_type_memberships),
+            len(data.member_workgroup_memberships),
         )
+        validate_configured_parishsoft_sources(data, sync_config)
+        log.debug("Dry-run mode is %s", "enabled" if common.dry_run else "disabled")
+        admin_service, settings_service = (
+            service_factory(config)
+            if service_factory is not None
+            else build_google_services(load_google_credentials(config))
+        )
+        # Only build an email provider when one was not injected, we are actually
+        # applying changes, and at least one group wants notifications. This avoids
+        # requiring email credentials for dry runs or notification-free configs.
+        provider = email_provider
+        if (
+            provider is None
+            and not common.dry_run
+            and any(group.notify for group in sync_config.groups)
+        ):
+            provider = provider_from_config(_mapping(config.get("email", {}), "email"))
+        for group in sync_config.groups:
+            log.info("Synchronizing Google Group %s", group.group)
+            log.debug(
+                "Sources for %s: ministries=%s workgroups=%s static_members=%s "
+                "selectors=%s",
+                group.group,
+                _text_list(group.ministries),
+                _text_list(group.workgroups),
+                _text_list(
+                    [_static_member_summary(member) for member in group.static_members]
+                ),
+                _text_list(
+                    [_selector_summary(selector) for selector in group.selectors]
+                ),
+                extra=log_extra(group),
+            )
+            sync_group(
+                admin_service,
+                settings_service,
+                provider,
+                data,
+                sync_config,
+                group,
+                dry_run=common.dry_run,
+                log=log,
+            )
+    except ConfigError as exc:
+        log.error("Configuration validation failed: %s", exc)
+        raise
     return 0
 
 
@@ -392,7 +400,9 @@ def sync_group(
         _text_list([_desired_member_summary(member) for member in desired]),
         extra=log_extra(desired),
     )
-    current = normalized_group_members(list_group_members(admin_service, group.group))
+    current = normalized_group_members(
+        list_group_members_or_config_error(admin_service, group.group)
+    )
     log.info("Loaded %s current member(s) for %s", len(current), group.group)
     log.debug(
         "Current members for %s: %s",
@@ -424,6 +434,103 @@ def sync_group(
         actions,
     )
     return actions
+
+
+def list_group_members_or_config_error(
+    admin_service: Any,
+    group_key: str,
+) -> list[dict[str, Any]]:
+    """List group members, mapping a missing group to a config error."""
+    try:
+        return list_group_members(admin_service, group_key)
+    except GoogleAPIError as exc:
+        if exc.status_code != 404:
+            raise
+        raise ConfigError(
+            f"Configured Google Group was not found: {group_key!r}. Check "
+            "sync.groups[].group in the YAML, confirm the group exists in "
+            "Google Workspace, and make sure the delegated Google account can "
+            "read groups through the Admin SDK Directory API."
+        ) from exc
+
+
+def validate_configured_parishsoft_sources(
+    data: ParishSoftData,
+    config: SyncConfig,
+) -> None:
+    """Verify configured ParishSoft ministry/workgroup names exist in data."""
+    ministry_names = available_ministry_names(data)
+    workgroup_names = available_member_workgroup_source_names(data)
+    for group in config.groups:
+        for ministry in group.ministries:
+            if ministry not in ministry_names:
+                raise ConfigError(
+                    f"Configured ParishSoft ministry was not found for Google "
+                    f"Group {group.group!r}: {ministry!r}. Check "
+                    "sync.groups[].ministries in the YAML and make sure each "
+                    "name exactly matches a ParishSoft ministry. Available "
+                    f"ministries: {_text_list(sorted(ministry_names))}."
+                )
+        for workgroup in group.workgroups:
+            if workgroup not in workgroup_names:
+                raise ConfigError(
+                    f"Configured ParishSoft member workgroup was not found for "
+                    f"Google Group {group.group!r}: {workgroup!r}. Check "
+                    "sync.groups[].workgroups in the YAML and make sure each "
+                    "name exactly matches a ParishSoft member workgroup. "
+                    "Available member workgroups: "
+                    f"{_text_list(sorted(workgroup_names))}."
+                )
+        for selector in group.selectors:
+            if selector_matches_any_ministry_name(selector, ministry_names):
+                continue
+            raise ConfigError(
+                f"Configured ParishSoft selector matched no ministries for Google "
+                f"Group {group.group!r}: {_selector_summary(selector)!r}. Check "
+                "sync.groups[].selectors[].ministry_prefix and "
+                "sync.groups[].selectors[].ministry_pattern in the YAML. "
+                f"Available ministries: {_text_list(sorted(ministry_names))}."
+            )
+
+
+def available_ministry_names(data: ParishSoftData) -> set[str]:
+    """Return ministry names present in loaded ParishSoft data."""
+    names = {
+        str(item["name"])
+        for item in data.ministry_type_memberships.values()
+        if item.get("name")
+    }
+    for member in data.members.values():
+        names.update(str(name) for name in member.get("py ministries", {}))
+    return names
+
+
+def available_member_workgroup_source_names(data: ParishSoftData) -> set[str]:
+    """Return member workgroup names usable as configured source names."""
+    names = {
+        str(item["name"])
+        for item in data.member_workgroup_memberships.values()
+        if item.get("name")
+    }
+    for member in data.members.values():
+        names.update(str(name) for name in member.get("py workgroups", {}))
+    for name in tuple(names):
+        for suffix in (" Ldr", " Leader"):
+            if name.endswith(suffix):
+                names.add(name[: -len(suffix)])
+    return names
+
+
+def selector_matches_any_ministry_name(
+    selector: Selector,
+    ministry_names: set[str],
+) -> bool:
+    """Return whether a selector's name filters match any loaded ministry."""
+    if selector.type not in {"all_ministry_chairs", "ministry_chair", "ministry_role"}:
+        raise ConfigError(f"unknown sync selector type: {selector.type}")
+    return any(
+        ministry_name_matches_selector(name, selector) for name in ministry_names
+    )
 
 
 def desired_members(data: ParishSoftData, group: GroupSync) -> list[DesiredMember]:
@@ -728,6 +835,11 @@ def ministry_matches_selector(
 ) -> bool:
     """Return whether a ministry name satisfies a selector's name filters."""
     ministry_name = str(ministry.get("name", ""))
+    return ministry_name_matches_selector(ministry_name, selector)
+
+
+def ministry_name_matches_selector(ministry_name: str, selector: Selector) -> bool:
+    """Return whether a ministry name satisfies a selector's name filters."""
     if not ministry_name.startswith(selector.ministry_prefix or ""):
         return False
     return not (

@@ -549,6 +549,80 @@ def test_create_ministry_rosters_dry_run_skips_sheet_writes(tmp_path, monkeypatc
     assert service._spreadsheets.batch_update_calls == []
 
 
+def test_create_ministry_rosters_reports_missing_parishsoft_source(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    """Unknown roster ministry/workgroup source names abort before sheet writes."""
+    service = SheetsService()
+    config = write_config(tmp_path)
+    text = config.read_text(encoding="utf-8")
+    config.write_text(
+        text.replace("Readers", "Missing Readers").replace(
+            "Movers",
+            "Missing Movers",
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_create_ps_ministry_rosters.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        create_ministry_rosters_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            sheets_factory=lambda _config: service,
+        )
+        == 2
+    )
+
+    error = capsys.readouterr().err
+    assert "ERROR parishkit.pk_create_ps_ministry_rosters" in error
+    assert "Configured ParishSoft ministry was not found" in error
+    assert "rosters.ministries[].ministry" in error
+    assert service._spreadsheets._values.calls == []
+
+
+def test_create_ministry_rosters_validation_uses_custom_leader_suffix(
+    tmp_path,
+    monkeypatch,
+):
+    """A leader-only workgroup source can use the configured suffix."""
+    service = SheetsService()
+    config = write_config(tmp_path)
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "rosters:\n",
+            'rosters:\n  workgroup_leader_suffix: " Captain"\n',
+        ),
+        encoding="utf-8",
+    )
+    data = parishsoft_data()
+    data.members[1]["py workgroups"] = {}
+    data.members[2]["py workgroups"] = {"Movers Captain": {"name": "Movers Captain"}}
+    monkeypatch.setattr(
+        "parishkit.pk_create_ps_ministry_rosters.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        create_ministry_rosters_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: data,
+            sheets_factory=lambda _config: service,
+        )
+        == 0
+    )
+
+    movers_update = service._spreadsheets._values.calls[5]
+    assert movers_update[0] == "update"
+    assert movers_update[1]["body"]["values"][4][0] == "Adams, Bob"
+    assert movers_update[1]["body"]["values"][4][-1] == "Leader"
+
+
 def test_create_ministry_rosters_reports_invalid_yaml(tmp_path, capsys):
     """Invalid YAML exits cleanly with a repair-oriented error message."""
     config = tmp_path / "config.yaml"
