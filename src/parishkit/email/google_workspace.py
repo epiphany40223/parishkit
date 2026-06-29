@@ -118,6 +118,10 @@ class GoogleWorkspaceSMTPProvider(EmailProvider):
         # they stay hidden from other recipients.
         recipients = list(message.to) + list(message.cc) + list(message.bcc)
         with self.smtp_factory(self.smtp_host, self.smtp_port) as smtp:
+            # Gmail requires the client greeting before AUTH. smtplib normally
+            # sends EHLO lazily for high-level login helpers, but XOAUTH2 uses a
+            # manual AUTH command here, so the greeting must be explicit.
+            smtp.ehlo()
             # Issue the AUTH command manually because smtplib has no built-in
             # XOAUTH2 helper; 235 is the SMTP "authentication succeeded" code.
             code, response = smtp.docmd("AUTH", "XOAUTH2 " + auth)
