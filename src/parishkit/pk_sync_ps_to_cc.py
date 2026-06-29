@@ -86,6 +86,8 @@ class CCSyncMapping:
     target_list: str
     notifications: tuple[str, ...] = ()
     allow_empty: bool = False
+    max_removals: int = 25
+    max_removal_fraction: float = 0.5
 
 
 @dataclass(frozen=True)
@@ -337,6 +339,7 @@ def _run(
                 ),
             )
         )
+        validate_large_removal_guard(sync_config, actions, cc_lists)
         validate_unsubscribed_report_config(
             sync_config,
             unsubscribed,
@@ -344,14 +347,15 @@ def _run(
             dry_run=common.dry_run,
         )
         provider = email_provider
-        # Only build a real email provider when one was not injected and the run
-        # will actually send: skip it for dry runs or when no mapping requests
-        # notification/report mail, so we never touch email config we do not need.
-        if (
-            provider is None
-            and not common.dry_run
-            and any(mapping.notifications for mapping in sync_config.mappings)
-        ):
+        needs_email = sync_notifications_will_send(
+            sync_config, actions, unsubscribed
+        ) or unsubscribed_report_will_send(
+            sync_config,
+            unsubscribed,
+            report_decision,
+            dry_run=common.dry_run,
+        )
+        if provider is None and not common.dry_run and needs_email:
             provider = provider_from_config(
                 _mapping(config.get("email", {}), "email"),
                 base_dir=config_base_dir,
@@ -533,12 +537,13 @@ def load_cc_data(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Load Constant Contact list and contact state."""
     lists = client.get_all("contact_lists", "lists")
-    contacts = client.get_all(
+    loaded_contacts = client.get_all(
         "contacts",
         "contacts",
         include="list_memberships",
         status="all",
     )
+    contacts = [contact for contact in loaded_contacts if "deleted_at" not in contact]
     link_cc_data(contacts, [], lists)
     return lists, contacts
 
@@ -637,6 +642,49 @@ def validate_non_empty_desired_state(
             "the YAML and the source workgroup membership in ParishSoft. To "
             "intentionally empty this list, set sync.lists[].allow_empty to true."
         )
+
+
+def validate_large_removal_guard(
+    config: CCSyncConfig,
+    actions: Sequence[CCAction],
+    cc_lists: Sequence[Mapping[str, Any]],
+) -> None:
+    """Reject unexpectedly large unsubscribe batches before any CC writes."""
+    list_by_name = {item["name"]: item for item in cc_lists}
+    for index, mapping in enumerate(config.mappings):
+        removals = [
+            action
+            for action in actions
+            if action.sync_index == index and action.type == "unsubscribe"
+        ]
+        current_count = len(list_by_name[mapping.target_list].get("CONTACTS", {}))
+        if not removal_guard_tripped(
+            len(removals),
+            current_count,
+            max_removals=mapping.max_removals,
+            max_removal_fraction=mapping.max_removal_fraction,
+        ):
+            continue
+        raise ConfigError(
+            f"Constant Contact list {mapping.target_list!r} would remove "
+            f"{len(removals)} of {current_count} current contact(s). Check "
+            "sync.lists[].source_workgroup and ParishSoft data. To allow this "
+            "run, raise sync.lists[].max_removals or "
+            "sync.lists[].max_removal_fraction."
+        )
+
+
+def removal_guard_tripped(
+    removal_count: int,
+    current_count: int,
+    *,
+    max_removals: int,
+    max_removal_fraction: float,
+) -> bool:
+    """Return whether a removal batch exceeds both count and fraction guards."""
+    if current_count <= 0 or removal_count <= max_removals:
+        return False
+    return (removal_count / current_count) > max_removal_fraction
 
 
 def compute_all_actions(
@@ -994,6 +1042,42 @@ def send_notifications(
             ),
             dry_run=dry_run,
         )
+
+
+def sync_notifications_will_send(
+    config: CCSyncConfig,
+    actions: Sequence[CCAction],
+    unsubscribed: Sequence[Sequence[tuple[str, str, str]]],
+) -> bool:
+    """Return whether normal sync notification email has content to send."""
+    if not config.sender:
+        return False
+    for index, mapping in enumerate(config.mappings):
+        if not mapping.notifications:
+            continue
+        list_actions = [action for action in actions if action.sync_index == index]
+        reported_unsubscribed = (
+            [] if config.unsubscribed_report.enabled else unsubscribed[index]
+        )
+        if list_actions or reported_unsubscribed:
+            return True
+    return False
+
+
+def unsubscribed_report_will_send(
+    config: CCSyncConfig,
+    unsubscribed: Sequence[Sequence[tuple[str, str, str]]],
+    decision: ReportScheduleDecision,
+    *,
+    dry_run: bool,
+) -> bool:
+    """Return whether the standalone unsubscribed report needs email."""
+    return (
+        config.unsubscribed_report.enabled
+        and decision.due
+        and not dry_run
+        and any(unsubscribed)
+    )
 
 
 def build_notification_email(
@@ -1565,6 +1649,14 @@ def _mapping_config(value: Any, name: str) -> CCSyncMapping:
             _string_list(item.get("notifications", []), f"{name}.notifications")
         ),
         allow_empty=_bool(item.get("allow_empty", False), f"{name}.allow_empty"),
+        max_removals=_positive_int(
+            item.get("max_removals", 25),
+            f"{name}.max_removals",
+        ),
+        max_removal_fraction=_fraction(
+            item.get("max_removal_fraction", 0.5),
+            f"{name}.max_removal_fraction",
+        ),
     )
 
 
@@ -1747,6 +1839,16 @@ def _positive_int(value: Any, name: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         raise ConfigError(f"{name} must be a positive integer")
     return value
+
+
+def _fraction(value: Any, name: str) -> float:
+    """Read a numeric fraction in the inclusive range 0.0 through 1.0."""
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        raise ConfigError(f"{name} must be a number between 0 and 1")
+    fraction = float(value)
+    if not 0 <= fraction <= 1:
+        raise ConfigError(f"{name} must be a number between 0 and 1")
+    return fraction
 
 
 def _bool(value: Any, name: str) -> bool:

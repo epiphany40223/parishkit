@@ -19,6 +19,7 @@ from parishkit.pk_sync_ps_to_ggroup import (
     normalize_email,
     sync_config_from_yaml,
     sync_group,
+    validate_large_removal_guard,
 )
 from parishkit.pk_sync_ps_to_ggroup import (
     main as sync_google_group_main,
@@ -683,6 +684,22 @@ def test_compute_actions_add_delete_and_change_role():
     )
 
 
+def test_google_group_refuses_large_delete_batch_by_default():
+    """A mostly destructive non-empty group sync requires guardrail changes."""
+    group = GroupSync(
+        group="big@example.org",
+        notify=(),
+    )
+    actions = [
+        SimpleNamespace(action="delete", email=f"old{index}@example.org")
+        for index in range(40)
+    ]
+    current = [{"email": f"old{index}@example.org"} for index in range(40)]
+
+    with pytest.raises(ConfigError, match="would remove 40 of 40"):
+        validate_large_removal_guard(group, actions, current)
+
+
 def test_sync_google_group_main_writes_group_changes_and_notifications(
     tmp_path, monkeypatch
 ):
@@ -832,6 +849,54 @@ def test_sync_google_group_dry_run_skips_writes_and_email(tmp_path, monkeypatch)
     monkeypatch.setattr(
         "parishkit.pk_sync_ps_to_ggroup.parishsoft_client_from_config",
         lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_google_group_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            service_factory=lambda _config: (admin, settings),
+        )
+        == 0
+    )
+
+    assert [call[0] for call in admin._members.calls] == ["list"]
+
+
+def test_sync_google_group_live_noop_does_not_build_email_provider(
+    tmp_path,
+    monkeypatch,
+):
+    """Notification credentials are not required when a live run has no email."""
+    config = write_config(tmp_path)
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            """      ministries:
+        - Readers
+      workgroups:
+        - Movers
+      static_members:
+        - email: static@example.org
+          leader: false
+""",
+            """      static_members:
+        - email: leader@example.org
+          leader: false
+        - email: old@example.org
+          leader: false
+""",
+        ),
+        encoding="utf-8",
+    )
+    admin = AdminService()
+    settings = SettingsService()
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.provider_from_config",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ConfigError("email loaded")),
     )
 
     assert (

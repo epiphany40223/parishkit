@@ -74,6 +74,11 @@ class Spreadsheets:
         self._values = Values()
         self.get_calls = []
         self.batch_update_calls = []
+        self.sheets = [
+            {"properties": {"title": "Readers", "sheetId": 101}},
+            {"properties": {"title": "Leads", "sheetId": 102}},
+            {"properties": {"title": "Movers", "sheetId": 103}},
+        ]
 
     def values(self):
         """Return the fake values resource."""
@@ -82,15 +87,7 @@ class Spreadsheets:
     def get(self, **kwargs):
         """Record a metadata get call and return tab titles and sheet IDs."""
         self.get_calls.append(kwargs)
-        return Request(
-            {
-                "sheets": [
-                    {"properties": {"title": "Readers", "sheetId": 101}},
-                    {"properties": {"title": "Leads", "sheetId": 102}},
-                    {"properties": {"title": "Movers", "sheetId": 103}},
-                ]
-            }
-        )
+        return Request({"sheets": self.sheets})
 
     def batchUpdate(self, **kwargs):
         """Record a formatting batchUpdate call."""
@@ -543,7 +540,12 @@ def test_create_ministry_rosters_main_writes_sheet_values(
     assert calls[2][1]["body"]["values"][4][0] == "Smith, Ann"
     assert calls[4][0] == "update"
     assert calls[4][1]["spreadsheetId"] == "movers-sheet"
-    assert service._spreadsheets.get_calls == [
+    assert service._spreadsheets.get_calls[:3] == [
+        {"spreadsheetId": "default-sheet", "fields": "sheets.properties"},
+        {"spreadsheetId": "lead-sheet", "fields": "sheets.properties"},
+        {"spreadsheetId": "movers-sheet", "fields": "sheets.properties"},
+    ]
+    assert service._spreadsheets.get_calls[3:] == [
         {"spreadsheetId": "default-sheet", "fields": "sheets.properties"},
         {"spreadsheetId": "lead-sheet", "fields": "sheets.properties"},
         {"spreadsheetId": "movers-sheet", "fields": "sheets.properties"},
@@ -585,6 +587,34 @@ def test_create_ministry_rosters_dry_run_skips_sheet_writes(tmp_path, monkeypatc
 
     assert service._spreadsheets._values.calls == []
     assert service._spreadsheets.get_calls == []
+    assert service._spreadsheets.batch_update_calls == []
+
+
+def test_create_ministry_rosters_preflights_missing_sheet_before_writes(
+    tmp_path,
+    monkeypatch,
+):
+    """A missing target tab fails before any roster sheet is updated."""
+    service = SheetsService()
+    service._spreadsheets.sheets = [
+        {"properties": {"title": "Readers", "sheetId": 101}},
+        {"properties": {"title": "Leads", "sheetId": 102}},
+    ]
+    monkeypatch.setattr(
+        "parishkit.pk_create_ps_ministry_rosters.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        create_ministry_rosters_main(
+            ["--config", str(write_config(tmp_path))],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            sheets_factory=lambda _config: service,
+        )
+        == 2
+    )
+
+    assert service._spreadsheets._values.calls == []
     assert service._spreadsheets.batch_update_calls == []
 
 

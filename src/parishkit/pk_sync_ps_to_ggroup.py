@@ -96,6 +96,8 @@ class GroupSync:
     static_members: tuple[StaticMember, ...] = ()
     selectors: tuple[Selector, ...] = ()
     allow_empty: bool = False
+    max_removals: int = 25
+    max_removal_fraction: float = 0.5
 
 
 @dataclass(frozen=True)
@@ -274,22 +276,21 @@ def _run(
         )
         validate_configured_parishsoft_sources(data, sync_config)
         log.debug("Dry-run mode is %s", "enabled" if common.dry_run else "disabled")
-        # Only build an email provider when one was not injected, we are actually
-        # applying changes, and at least one group wants notifications. This avoids
-        # requiring email credentials for dry runs or notification-free configs.
         provider = email_provider
-        if (
-            provider is None
-            and not common.dry_run
-            and any(group.notify for group in sync_config.groups)
-        ):
-            provider = provider_from_config(
-                _mapping(config.get("email", {}), "email"),
-                base_dir=config_base_dir,
-            )
+
+        def provider_for_notifications() -> EmailProvider:
+            """Build the email provider lazily once a notification is needed."""
+            nonlocal provider
+            if provider is None:
+                provider = provider_from_config(
+                    _mapping(config.get("email", {}), "email"),
+                    base_dir=config_base_dir,
+                )
+            return provider
+
         needs_settings_service = (
             not common.dry_run
-            and bool(provider)
+            and bool(sync_config.sender)
             and any(group.notify for group in sync_config.groups)
         )
         admin_service, settings_service = (
@@ -329,6 +330,7 @@ def _run(
                 group,
                 dry_run=common.dry_run,
                 log=log,
+                email_provider_factory=provider_for_notifications,
             )
         log.info(
             "Google Group sync operation completed successfully for %s group(s)",
@@ -462,6 +464,7 @@ def sync_group(
     *,
     dry_run: bool,
     log: logging.Logger,
+    email_provider_factory: Callable[[], EmailProvider] | None = None,
 ) -> list[SyncAction]:
     """Synchronize one configured Google group and return its actions.
 
@@ -503,6 +506,7 @@ def sync_group(
             "group, set sync.groups[].allow_empty to true."
         )
     actions = compute_actions(desired, current, config.google_mail_domains)
+    validate_large_removal_guard(group, actions, current)
     log.info(
         "Actions for %s: %s",
         group.group,
@@ -516,6 +520,12 @@ def sync_group(
             group.group,
         )
         return actions
+    if (
+        email_provider is None
+        and email_provider_factory is not None
+        and group_notification_will_send(True, config, group, actions)
+    ):
+        email_provider = email_provider_factory()
     should_notify = group_notification_will_send(email_provider, config, group, actions)
     if should_notify and settings_service is None:
         raise ConfigError(
@@ -539,13 +549,49 @@ def sync_group(
 
 
 def group_notification_will_send(
-    provider: EmailProvider | None,
+    provider: EmailProvider | bool | None,
     config: SyncConfig,
     group: GroupSync,
     actions: Sequence[SyncAction],
 ) -> bool:
     """Return whether a Google Group sync notification will actually be sent."""
     return bool(provider and config.sender and group.notify and actions)
+
+
+def validate_large_removal_guard(
+    group: GroupSync,
+    actions: Sequence[SyncAction],
+    current_members: Sequence[Mapping[str, Any]],
+) -> None:
+    """Reject unexpectedly large delete batches before Google Group writes."""
+    removals = [action for action in actions if action.action == "delete"]
+    current_count = len(current_members)
+    if not removal_guard_tripped(
+        len(removals),
+        current_count,
+        max_removals=group.max_removals,
+        max_removal_fraction=group.max_removal_fraction,
+    ):
+        return
+    raise ConfigError(
+        f"Google Group {group.group!r} would remove {len(removals)} of "
+        f"{current_count} current member(s). Check sync.groups[].sources and "
+        "ParishSoft data. To allow this run, raise sync.groups[].max_removals "
+        "or sync.groups[].max_removal_fraction."
+    )
+
+
+def removal_guard_tripped(
+    removal_count: int,
+    current_count: int,
+    *,
+    max_removals: int,
+    max_removal_fraction: float,
+) -> bool:
+    """Return whether a removal batch exceeds both count and fraction guards."""
+    if current_count <= 0 or removal_count <= max_removals:
+        return False
+    return (removal_count / current_count) > max_removal_fraction
 
 
 def list_group_members_or_config_error(
@@ -1278,6 +1324,14 @@ def _group_sync(value: Any, name: str) -> GroupSync:
         static_members=static_members,
         selectors=selectors,
         allow_empty=_bool(item.get("allow_empty", False), f"{name}.allow_empty"),
+        max_removals=_positive_int(
+            item.get("max_removals", 25),
+            f"{name}.max_removals",
+        ),
+        max_removal_fraction=_fraction(
+            item.get("max_removal_fraction", 0.5),
+            f"{name}.max_removal_fraction",
+        ),
     )
 
 
@@ -1371,3 +1425,20 @@ def _bool(value: Any, name: str) -> bool:
     if not isinstance(value, bool):
         raise ConfigError(f"{name} must be a boolean")
     return value
+
+
+def _positive_int(value: Any, name: str) -> int:
+    """Read a positive integer config value."""
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise ConfigError(f"{name} must be a positive integer")
+    return value
+
+
+def _fraction(value: Any, name: str) -> float:
+    """Read a numeric fraction in the inclusive range 0.0 through 1.0."""
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        raise ConfigError(f"{name} must be a number between 0 and 1")
+    fraction = float(value)
+    if not 0 <= fraction <= 1:
+        raise ConfigError(f"{name} must be a number between 0 and 1")
+    return fraction

@@ -77,6 +77,11 @@ sync:
       # contact if the ParishSoft workgroup unexpectedly resolves to zero
       # desired addresses. Set true only when intentionally emptying this list.
       allow_empty: false
+      # max_removals and max_removal_fraction are a second guardrail for
+      # non-empty but unexpectedly destructive runs. The sync aborts when both
+      # thresholds are exceeded; raise them only for an intentional large prune.
+      max_removals: 25
+      max_removal_fraction: 0.5
       # notifications receives an email summary for this mapping when changes
       # are applied. Dry-run mode suppresses actual email sends.
       notifications:

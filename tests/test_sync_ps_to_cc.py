@@ -21,10 +21,12 @@ from parishkit.pk_sync_ps_to_cc import (
     detect_name_mismatches,
     ensure_unsubscribed_report_state_writable,
     filter_unsubscribed,
+    load_cc_data,
     name_update_candidate_emails,
     parishsoft_members_by_email,
     resolve_desired_state,
     send_notifications,
+    validate_large_removal_guard,
     validate_non_empty_desired_state,
 )
 from parishkit.pk_sync_ps_to_cc import (
@@ -478,6 +480,23 @@ def test_constant_contact_client_resolves_relative_credential_paths(
     assert calls[1][3]["allow_refresh"] is True
 
 
+def test_load_cc_data_filters_soft_deleted_contacts():
+    """Soft-deleted Constant Contact records are not reconciled as live contacts."""
+    deleted = {
+        "contact_id": "deleted-ann",
+        "deleted_at": "2026-01-01T00:00:00Z",
+        "email_address": {
+            "address": "ann@example.org",
+            "permission_to_send": "implicit",
+        },
+        "list_memberships": ["list-1"],
+    }
+    lists, contacts = load_cc_data(CCClient(contacts=[deleted, *cc_contacts()]))
+
+    assert set(lists[0]["CONTACTS"]) == {"bob@example.org", "old@example.org"}
+    assert all(contact["contact_id"] != "deleted-ann" for contact in contacts)
+
+
 def test_desired_state_and_unsubscribed_filtering():
     """Verify desired-state resolution then unsubscribed filtering.
 
@@ -530,6 +549,28 @@ def test_cc_sync_refuses_empty_desired_state_with_current_contacts():
 
     with pytest.raises(ConfigError, match="allow_empty"):
         validate_non_empty_desired_state(config, [set()], cc_lists())
+
+
+def test_cc_sync_refuses_large_unsubscribe_batch_by_default():
+    """A mostly destructive non-empty sync requires explicit guardrail changes."""
+    config = CCSyncConfig(
+        mappings=(
+            CCSyncMapping(source_workgroup="Newsletter WG", target_list="Newsletter"),
+        )
+    )
+    lists = [
+        {
+            "name": "Newsletter",
+            "CONTACTS": {f"old{index}@example.org": {} for index in range(40)},
+        }
+    ]
+    actions = [
+        CCAction("unsubscribe", email, 0, f"Unsubscribe {email}")
+        for email in lists[0]["CONTACTS"]
+    ]
+
+    with pytest.raises(ConfigError, match="would remove 40 of 40"):
+        validate_large_removal_guard(config, actions, lists)
 
 
 def test_sync_ps_to_cc_all_desired_unsubscribed_does_not_trip_empty_guard(
@@ -1255,6 +1296,33 @@ def test_sync_ps_to_cc_dry_run_marks_injected_email_provider_dry_run(
     assert [call[0] for call in cc.calls] == ["get_all", "get_all"]
     assert email.sent
     assert all(dry_run for _message, dry_run in email.sent)
+
+
+def test_sync_ps_to_cc_live_noop_does_not_build_email_provider(tmp_path, monkeypatch):
+    """Notification credentials are not required when a live run has no email."""
+    data = parishsoft_data()
+    data.member_workgroup_memberships[10]["membership"] = [{"py member duid": 1}]
+    cc = CCClient(
+        lists=cc_lists_without_sync_actions(),
+        contacts=cc_contacts_without_sync_actions(),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_cc.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_cc.provider_from_config",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ConfigError("email loaded")),
+    )
+
+    assert (
+        sync_ps_to_cc_main(
+            ["--config", str(write_config(tmp_path))],
+            loader=lambda _client, **_kwargs: data,
+            cc_factory=lambda _config: cc,
+        )
+        == 0
+    )
 
 
 def test_sync_ps_to_cc_reports_missing_parishsoft_workgroup(

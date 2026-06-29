@@ -7,6 +7,7 @@ import fcntl
 import json
 import logging
 import os
+import re
 import shlex
 import signal
 import socket
@@ -42,6 +43,12 @@ _IMPORTED_DEFAULT_RUNNER_CONFIG = DEFAULT_RUNNER_CONFIG
 DEFAULT_LOCK_FILE = default_run_dir() / "runner.lock"
 SENSITIVE_WORDS = ("TOKEN", "SECRET", "PASSWORD", "PASS", "KEY", "CREDENTIAL", "AUTH")
 MAX_CAPTURED_OUTPUT_BYTES = 200_000
+EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
+SECRET_ASSIGNMENT_RE = re.compile(
+    r"(?i)\b([A-Z0-9_.-]*(?:TOKEN|SECRET|PASSWORD|PASS|KEY|CREDENTIAL|AUTH)"
+    r"[A-Z0-9_.-]*)\s*[:=]\s*([^\s,;]+)"
+)
+LONG_TOKEN_RE = re.compile(r"\b[A-Za-z0-9_./~+=-]{32,}\b")
 
 
 @dataclass(frozen=True)
@@ -979,9 +986,17 @@ def _bounded_output(result: JobResult, limit: int = 1500) -> str:
     if result.stdout:
         parts.append(f"stdout:\n{result.stdout.strip()}")
     output = "\n".join(parts)
+    output = _redacted_output(output)
     if len(output) > limit:
         return output[:limit] + "\n... output truncated ..."
     return output
+
+
+def _redacted_output(output: str) -> str:
+    """Redact likely PII and secrets from job output before Slack delivery."""
+    redacted = SECRET_ASSIGNMENT_RE.sub(r"\1=[redacted]", output)
+    redacted = EMAIL_RE.sub("[redacted-email]", redacted)
+    return LONG_TOKEN_RE.sub("[redacted-token]", redacted)
 
 
 _ACTIVE_LOCKS: list[LockFile] = []

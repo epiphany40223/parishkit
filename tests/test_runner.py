@@ -878,3 +878,27 @@ def test_failure_summary_includes_failed_job_output_when_configured():
     assert "- bad: exit 7" in message
     assert "useful stderr" in message
     assert "useful stdout" in message
+
+
+def test_failure_summary_redacts_failed_job_output_for_slack():
+    """Slack failure output redacts obvious secrets and email addresses."""
+    message = _failure_summary(
+        EXIT_JOB_FAILED,
+        [
+            runner.JobResult(
+                name="bad",
+                returncode=7,
+                stdout=(
+                    "contact admin@example.org token=abcdefghijklmnopqrstuvwxyz123456"
+                ),
+                stderr="API_KEY: secret-value",
+            )
+        ],
+        RunnerConfig(include_output_in_slack=True),
+    )
+
+    assert "[redacted-email]" in message
+    assert "token=[redacted]" in message
+    assert "API_KEY=[redacted]" in message
+    assert "admin@example.org" not in message
+    assert "secret-value" not in message

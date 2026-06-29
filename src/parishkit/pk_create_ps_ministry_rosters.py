@@ -359,6 +359,8 @@ def write_configured_rosters(
     to audit and test.
     """
     update_time = current_roster_time(timezone_name)
+    if not dry_run:
+        preflight_roster_targets(sheets_service, config)
     for target in config.ministries:
         log.debug(
             "Preparing ministry roster %s from %s",
@@ -423,6 +425,46 @@ def write_configured_rosters(
             dry_run=dry_run,
             log=log,
         )
+
+
+def preflight_roster_targets(sheets_service: Any, config: RosterConfig) -> None:
+    """Validate all configured Sheets targets before the first roster write."""
+    sheets_by_spreadsheet: dict[str, set[str]] = {}
+    for spreadsheet_id, range_name, clear_range in configured_sheet_ranges(config):
+        clear_range_width(clear_range)
+        stale_row_clear_range(clear_range, 0, range_name=range_name)
+        sheet_name = sheet_name_from_a1_range(range_name)
+        if spreadsheet_id not in sheets_by_spreadsheet:
+            spreadsheet = get_spreadsheet(
+                sheets_service,
+                spreadsheet_id,
+                fields="sheets.properties",
+            )
+            sheets_by_spreadsheet[spreadsheet_id] = {
+                sheet["properties"]["title"] for sheet in spreadsheet.get("sheets", [])
+            }
+        if sheet_name not in sheets_by_spreadsheet[spreadsheet_id]:
+            raise ConfigError(
+                "Configured roster range references missing Google Sheet tab "
+                f"{sheet_name!r} in spreadsheet {spreadsheet_id}. Check "
+                "rosters.*.range and rosters.*.clear_range before running again."
+            )
+
+
+def configured_sheet_ranges(config: RosterConfig) -> list[tuple[str, str, str]]:
+    """Return every spreadsheet/range/clear_range tuple in write order."""
+    ranges = []
+    for target in config.ministries:
+        ranges.append((target.spreadsheet_id, target.range_name, target.clear_range))
+        ranges.extend(
+            (role.spreadsheet_id, role.range_name, role.clear_range)
+            for role in target.role_sheets
+        )
+    ranges.extend(
+        (target.spreadsheet_id, target.range_name, target.clear_range)
+        for target in config.workgroups
+    )
+    return ranges
 
 
 def validate_configured_parishsoft_sources(
