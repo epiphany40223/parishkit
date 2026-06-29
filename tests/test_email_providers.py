@@ -84,6 +84,11 @@ def test_google_workspace_send_uses_smtp_mock():
         def __exit__(self, *_args):
             return None
 
+        def ehlo(self):
+            """Record the required SMTP greeting before authentication."""
+            sent.append(("ehlo",))
+            return 250, b"ok"
+
         def docmd(self, command, payload):
             """Record the auth command and return SMTP 235 (auth succeeded)."""
             sent.append((command, payload))
@@ -112,6 +117,8 @@ def test_google_workspace_send_uses_smtp_mock():
     )
 
     assert sent[0] == ("connect", "smtp.example.org", 465)
+    assert sent[1] == ("ehlo",)
+    assert sent[2][0] == "AUTH"
     # to, cc, and bcc must all be passed to the SMTP envelope recipients.
     assert sent[-1] == (
         "send",
@@ -153,6 +160,10 @@ def test_google_workspace_send_refreshes_invalid_credentials(monkeypatch):
 
         def __exit__(self, *_args):
             return None
+
+        def ehlo(self):
+            """Accept the required SMTP greeting before authentication."""
+            return 250, b"ok"
 
         def docmd(self, *_args):
             return 235, b"ok"
