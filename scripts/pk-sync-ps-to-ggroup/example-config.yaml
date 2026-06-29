@@ -56,6 +56,12 @@ sync:
   google_mail_domains:
     - gmail.com
     - example.org
+  # leader_roles are ParishSoft ministry role labels that make a matched
+  # ministry member an OWNER in the Google Group for exact ministry sources and
+  # chair-style selectors. Add parish-specific labels such as Coordinator here.
+  leader_roles:
+    - Chairperson
+    - Staff
   notifications:
     # sender is the From address used for notification summary emails.
     sender: no-reply@example.org

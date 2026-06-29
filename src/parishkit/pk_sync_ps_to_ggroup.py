@@ -109,6 +109,7 @@ class SyncConfig:
     groups: tuple[GroupSync, ...]
     sender: str | None
     google_mail_domains: frozenset[str]
+    leader_roles: frozenset[str] = frozenset(LEADER_ROLES)
 
 
 @dataclass
@@ -273,13 +274,6 @@ def _run(
         )
         validate_configured_parishsoft_sources(data, sync_config)
         log.debug("Dry-run mode is %s", "enabled" if common.dry_run else "disabled")
-        admin_service, settings_service = (
-            service_factory(config)
-            if service_factory is not None
-            else build_google_services(
-                load_google_credentials(config, base_dir=config_base_dir)
-            )
-        )
         # Only build an email provider when one was not injected, we are actually
         # applying changes, and at least one group wants notifications. This avoids
         # requiring email credentials for dry runs or notification-free configs.
@@ -293,6 +287,23 @@ def _run(
                 _mapping(config.get("email", {}), "email"),
                 base_dir=config_base_dir,
             )
+        needs_settings_service = (
+            not common.dry_run
+            and bool(provider)
+            and any(group.notify for group in sync_config.groups)
+        )
+        admin_service, settings_service = (
+            service_factory(config)
+            if service_factory is not None
+            else build_google_services(
+                load_google_credentials(
+                    config,
+                    base_dir=config_base_dir,
+                    include_settings_scope=needs_settings_service,
+                ),
+                include_settings=needs_settings_service,
+            )
+        )
         for group in sync_config.groups:
             log.info("Synchronizing Google Group %s", group.group)
             log.debug(
@@ -356,10 +367,15 @@ def sync_config_from_yaml(config: ConfigData) -> SyncConfig:
         section.get("google_mail_domains", ["gmail.com"]),
         "sync.google_mail_domains",
     )
+    leader_roles = _string_list(
+        section.get("leader_roles", sorted(LEADER_ROLES)),
+        "sync.leader_roles",
+    )
     return SyncConfig(
         groups=groups,
         sender=sender,
         google_mail_domains=frozenset(domain.casefold() for domain in domains),
+        leader_roles=frozenset(leader_roles),
     )
 
 
@@ -383,13 +399,16 @@ def load_google_credentials(
     config: ConfigData,
     *,
     base_dir: Path | None = None,
+    include_settings_scope: bool = True,
 ) -> Any:
     """Load credentials for Google group synchronization."""
     google = _mapping(config.get("google", {}), "google")
     service_account_file = google.get("service_account_file")
     user_token_file = google.get("user_token_file")
     delegated_subject = google.get("delegated_subject")
-    scopes = [ADMIN_SCOPE, GROUP_SETTINGS_SCOPE]
+    scopes = [ADMIN_SCOPE]
+    if include_settings_scope:
+        scopes.append(GROUP_SETTINGS_SCOPE)
     if service_account_file and user_token_file:
         raise ConfigError(
             "google configuration must not set both service_account_file "
@@ -421,17 +440,21 @@ def load_google_credentials(
     )
 
 
-def build_google_services(credentials: Any) -> tuple[Any, Any]:
+def build_google_services(
+    credentials: Any,
+    *,
+    include_settings: bool = True,
+) -> tuple[Any, Any | None]:
     """Build Google API services used by sync."""
     return (
         build_admin_directory_service(credentials),
-        build_groups_settings_service(credentials),
+        build_groups_settings_service(credentials) if include_settings else None,
     )
 
 
 def sync_group(
     admin_service: Any,
-    settings_service: Any,
+    settings_service: Any | None,
     email_provider: EmailProvider | None,
     data: ParishSoftData,
     config: SyncConfig,
@@ -448,7 +471,12 @@ def sync_group(
     actions without performing any side effects. The returned action list is
     the same whether or not it was applied.
     """
-    desired = desired_members(data, group, config.google_mail_domains)
+    desired = desired_members(
+        data,
+        group,
+        config.google_mail_domains,
+        leader_roles=config.leader_roles,
+    )
     log.info("Computed %s desired member(s) for %s", len(desired), group.group)
     log.debug(
         "Desired members for %s: %s",
@@ -488,7 +516,16 @@ def sync_group(
             group.group,
         )
         return actions
-    posting_permission = get_group_posting_permissions(settings_service, group.group)
+    should_notify = group_notification_will_send(email_provider, config, group, actions)
+    if should_notify and settings_service is None:
+        raise ConfigError(
+            "Google Groups Settings service is required for notifications"
+        )
+    posting_permission = (
+        get_group_posting_permissions(settings_service, group.group)
+        if should_notify
+        else None
+    )
     apply_actions(admin_service, group.group, actions)
     log.info("Applied %s Google Group action(s) for %s", len(actions), group.group)
     send_notification(
@@ -499,6 +536,16 @@ def sync_group(
         actions,
     )
     return actions
+
+
+def group_notification_will_send(
+    provider: EmailProvider | None,
+    config: SyncConfig,
+    group: GroupSync,
+    actions: Sequence[SyncAction],
+) -> bool:
+    """Return whether a Google Group sync notification will actually be sent."""
+    return bool(provider and config.sender and group.notify and actions)
 
 
 def list_group_members_or_config_error(
@@ -602,6 +649,8 @@ def desired_members(
     data: ParishSoftData,
     group: GroupSync,
     google_mail_domains: frozenset[str] = frozenset(),
+    *,
+    leader_roles: frozenset[str] = frozenset(LEADER_ROLES),
 ) -> list[DesiredMember]:
     """Build the desired Google group member set from data plus static members.
 
@@ -612,7 +661,11 @@ def desired_members(
     """
     found: dict[str, DesiredMember] = {}
     for member in data.members.values():
-        is_member, is_leader = member_matches_group(member, group)
+        is_member, is_leader = member_matches_group(
+            member,
+            group,
+            leader_roles=leader_roles,
+        )
         if not is_member and not is_leader:
             continue
         emails = member_email_addresses(member)
@@ -640,6 +693,8 @@ def desired_members(
 def member_matches_group(
     member: Mapping[str, Any],
     group: GroupSync,
+    *,
+    leader_roles: frozenset[str] = frozenset(LEADER_ROLES),
 ) -> tuple[bool, bool]:
     """Return ``(is_member, is_leader)`` for a member against all group sources.
 
@@ -649,12 +704,20 @@ def member_matches_group(
     """
     is_member = False
     is_leader = False
-    ministry_member, ministry_leader = member_in_ministries(member, group.ministries)
+    ministry_member, ministry_leader = member_in_ministries(
+        member,
+        group.ministries,
+        leader_roles=leader_roles,
+    )
     workgroup_member, workgroup_leader = member_in_workgroups(member, group.workgroups)
     is_member = ministry_member or workgroup_member
     is_leader = ministry_leader or workgroup_leader
     for selector in group.selectors:
-        selector_member, selector_leader = selector_matches_member(member, selector)
+        selector_member, selector_leader = selector_matches_member(
+            member,
+            selector,
+            configured_leader_roles=leader_roles,
+        )
         is_member = is_member or selector_member
         is_leader = is_leader or selector_leader
     # A leader is always a member, even if only a leader-only source matched.
@@ -979,6 +1042,8 @@ def add_desired_member(
 def member_in_ministries(
     member: Mapping[str, Any],
     ministries: Sequence[str],
+    *,
+    leader_roles: frozenset[str] = frozenset(LEADER_ROLES),
 ) -> tuple[bool, bool]:
     """Return whether a member belongs to selected ministries."""
     found = False
@@ -987,7 +1052,7 @@ def member_in_ministries(
     for ministry in member.get("py ministries", {}).values():
         if ministry.get("name") in configured:
             found = True
-            leader = leader or is_ministry_leader(ministry)
+            leader = leader or is_ministry_leader(ministry, leader_roles)
     return found, leader
 
 
@@ -1016,6 +1081,8 @@ def member_in_workgroups(
 def selector_matches_member(
     member: Mapping[str, Any],
     selector: Selector,
+    *,
+    configured_leader_roles: frozenset[str] = frozenset(LEADER_ROLES),
 ) -> tuple[bool, bool]:
     """Return ``(is_member, is_leader)`` for a member against one selector.
 
@@ -1032,10 +1099,10 @@ def selector_matches_member(
     """
     if selector.type == "all_ministry_chairs":
         for ministry in member.get("py ministries", {}).values():
-            if is_ministry_leader(ministry) and ministry_matches_selector(
+            if is_ministry_leader(
                 ministry,
-                selector,
-            ):
+                configured_leader_roles,
+            ) and ministry_matches_selector(ministry, selector):
                 emails = member_email_addresses(member)
                 email = emails[0] if emails else ""
                 domain = email.rsplit("@", 1)[-1] if "@" in email else ""
@@ -1043,25 +1110,27 @@ def selector_matches_member(
         return False, False
     if selector.type == "ministry_chair":
         for ministry in member.get("py ministries", {}).values():
-            if is_ministry_leader(ministry) and ministry_matches_selector(
+            if is_ministry_leader(
                 ministry,
-                selector,
-            ):
+                configured_leader_roles,
+            ) and ministry_matches_selector(ministry, selector):
                 return True, True
         return False, False
     if selector.type == "ministry_role":
         is_member = False
         is_leader = False
         member_roles = set(selector.member_roles)
-        leader_roles = set(selector.leader_roles)
+        selector_leader_roles = set(selector.leader_roles)
         for ministry in member.get("py ministries", {}).values():
             if not ministry_matches_selector(ministry, selector):
                 continue
             role = ministry.get("role")
-            if role in member_roles or role in leader_roles:
+            if role in member_roles or role in selector_leader_roles:
                 is_member = True
                 is_leader = (
-                    is_leader or role in leader_roles or is_ministry_leader(ministry)
+                    is_leader
+                    or role in selector_leader_roles
+                    or is_ministry_leader(ministry, configured_leader_roles)
                 )
         return is_member, is_leader
     raise ConfigError(f"unknown sync selector type: {selector.type}")
@@ -1090,9 +1159,12 @@ def ministry_name_matches_selector(ministry_name: str, selector: Selector) -> bo
     )
 
 
-def is_ministry_leader(ministry: Mapping[str, Any]) -> bool:
+def is_ministry_leader(
+    ministry: Mapping[str, Any],
+    leader_roles: frozenset[str] = frozenset(LEADER_ROLES),
+) -> bool:
     """Return True if the ministry role is one of the configured leader roles."""
-    return ministry.get("role") in LEADER_ROLES
+    return ministry.get("role") in leader_roles
 
 
 def normalize_email(email: str, google_mail_domains: frozenset[str]) -> str:

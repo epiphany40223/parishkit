@@ -5,6 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from parishkit.google.auth import build_service, execute_google_request
+from parishkit.retry import RetryPolicy
+
+_WRITE_POLICY = RetryPolicy(attempts=1)
 
 
 def build_admin_directory_service(
@@ -82,7 +85,7 @@ def insert_group_member(
         groupKey=group_key,
         body={"email": email, "role": role},
     )
-    execute_google_request(request)
+    execute_google_request(request, policy=_WRITE_POLICY)
 
 
 def update_group_member_role(
@@ -101,7 +104,7 @@ def update_group_member_role(
         memberKey=member_key,
         body={"role": role},
     )
-    execute_google_request(request)
+    execute_google_request(request, policy=_WRITE_POLICY)
 
 
 def delete_group_member(service: Any, group_key: str, member_key: str) -> None:
@@ -110,4 +113,4 @@ def delete_group_member(service: Any, group_key: str, member_key: str) -> None:
     ``member_key`` is the member's email address or unique ID.
     """
     request = service.members().delete(groupKey=group_key, memberKey=member_key)
-    execute_google_request(request)
+    execute_google_request(request, policy=_WRITE_POLICY)

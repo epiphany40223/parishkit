@@ -26,7 +26,7 @@ from parishkit.google.sheets import (
     get_spreadsheet,
     update_values,
 )
-from parishkit.retry import RetryPolicy, TransientRetryError
+from parishkit.retry import RetryError, RetryPolicy, TransientRetryError
 
 
 def test_build_service_uses_injected_builder():
@@ -319,6 +319,38 @@ def test_group_write_helpers_use_directory_api():
         )
     ]
     assert permission == "ALL_MEMBERS_CAN_POST"
+
+
+def test_group_write_helpers_do_not_retry_transient_write_failures():
+    """Non-idempotent group writes are attempted only once."""
+    attempts = {"count": 0}
+
+    class Request:
+        """Fake write request that always fails transiently."""
+
+        def execute(self):
+            """Count the attempt and raise a retryable error."""
+            attempts["count"] += 1
+            raise TransientRetryError("applied but response failed")
+
+    class Members:
+        """Fake members resource returning the failing request."""
+
+        def insert(self, **kwargs):
+            """Return a request for the insert operation."""
+            return Request()
+
+    class Service:
+        """Fake Directory API service exposing members."""
+
+        def members(self):
+            """Return the fake members resource."""
+            return Members()
+
+    with pytest.raises(RetryError):
+        insert_group_member(Service(), "group@example.org", "a@example.org", "MEMBER")
+
+    assert attempts["count"] == 1
 
 
 def test_list_calendar_events_pages():

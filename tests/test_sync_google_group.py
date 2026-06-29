@@ -363,6 +363,36 @@ def test_google_group_credentials_resolve_relative_paths(tmp_path, monkeypatch):
     assert calls[0][0] == tmp_path / "credentials" / "google-service-account.json"
 
 
+def test_google_group_credentials_can_skip_settings_scope(tmp_path, monkeypatch):
+    """Notification-free syncs do not require the Groups Settings scope."""
+    calls = []
+
+    def fake_load(path, *, scopes, subject):
+        """Capture scopes for assertion instead of loading credentials."""
+        calls.append((path, scopes, subject))
+        return object()
+
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.load_service_account_credentials",
+        fake_load,
+    )
+
+    load_google_credentials(
+        {
+            "google": {
+                "service_account_file": "credentials/google-service-account.json",
+                "delegated_subject": "itadmin@example.org",
+            }
+        },
+        base_dir=tmp_path,
+        include_settings_scope=False,
+    )
+
+    assert calls[0][1] == [
+        "https://www.googleapis.com/auth/admin.directory.group.member"
+    ]
+
+
 def test_desired_members_from_ministries_workgroups_and_static():
     """Verify desired_members merges ministry, workgroup, and static sources.
 
@@ -392,6 +422,35 @@ def test_desired_members_from_ministries_workgroups_and_static():
         ("leader@example.org", True),
         ("bob.mover+tag@gmail.com", False),
         ("static@example.org", True),
+    ]
+
+
+def test_configured_leader_roles_control_ministry_owner_mapping():
+    """Parishes can choose which ParishSoft ministry roles become owners."""
+    data = parishsoft_data()
+    data.members[1]["py ministries"]["Readers"]["role"] = "Coordinator"
+    config = sync_config_from_yaml(
+        {
+            "sync": {
+                "leader_roles": ["Coordinator"],
+                "groups": [
+                    {
+                        "group": "group@example.org",
+                        "ministries": ["Readers"],
+                    }
+                ],
+            }
+        }
+    )
+
+    desired = desired_members(
+        data,
+        config.groups[0],
+        leader_roles=config.leader_roles,
+    )
+
+    assert [(item.email, item.leader) for item in desired] == [
+        ("leader@example.org", True)
     ]
 
 
@@ -884,6 +943,40 @@ def test_sync_google_group_checks_posting_permissions_before_writes(
             },
         )
     ]
+
+
+def test_sync_google_group_without_notifications_skips_settings_api(
+    tmp_path,
+    monkeypatch,
+):
+    """Membership-only syncs do not require Groups Settings API permission."""
+    admin = AdminService()
+    settings = SettingsService()
+    settings._groups.get_error = GoogleAPIError(403, "settings denied")
+    config = write_config(tmp_path)
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "      notify:\n        - admin@example.org\n",
+            "",
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_google_group_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            service_factory=lambda _config: (admin, settings),
+        )
+        == 0
+    )
+
+    assert any(call[0] == "insert" for call in admin._members.calls)
+    assert settings._groups.calls == []
 
 
 def test_sync_google_group_reports_selector_with_no_matching_ministries(

@@ -49,6 +49,7 @@ _CLEAR_RANGE_RE = re.compile(
     r"(?P<start_col>\$?[A-Za-z]+)(?:\$?\d*)?"
     r":(?P<end_col>\$?[A-Za-z]+)(?:\$?\d*)?$"
 )
+_A1_START_RE = re.compile(r"^\$?[A-Za-z]+\$?(?P<row>\d+)$")
 DEFAULT_LEADER_SUFFIX = " Ldr"
 HEADER_BACKGROUND_COLOR = {"red": 0.0, "green": 0.0, "blue": 1.0}
 HEADER_TEXT_COLOR = {"red": 1.0, "green": 1.0, "blue": 0.0}
@@ -561,7 +562,7 @@ def write_values(
         clear_values(
             sheets_service,
             spreadsheet_id,
-            stale_row_clear_range(clear_range, len(values)),
+            stale_row_clear_range(clear_range, len(values), range_name=range_name),
         )
     except GoogleAPIError as exc:
         config_error = sheet_range_config_error(
@@ -601,12 +602,19 @@ def sheet_range_config_error(
     return None
 
 
-def stale_row_clear_range(clear_range: str, row_count: int) -> str:
+def stale_row_clear_range(
+    clear_range: str,
+    row_count: int,
+    *,
+    range_name: str = DEFAULT_RANGE,
+) -> str:
     """Return the A1 range that clears rows below ``row_count``.
 
     Roster configs usually clear whole columns such as ``Roster!A:Z``. After a
     successful update, only rows below the newly written roster should be
-    cleared; clearing the original range would delete the new roster.
+    cleared; clearing the original range would delete the new roster. The
+    write range may start below row 1, so the clear start must account for the
+    write range's starting row.
     """
     match = _CLEAR_RANGE_RE.fullmatch(clear_range)
     if match is None:
@@ -614,7 +622,14 @@ def stale_row_clear_range(clear_range: str, row_count: int) -> str:
     sheet = match.group("sheet") or ""
     start_col = match.group("start_col")
     end_col = match.group("end_col")
-    return f"{sheet}{start_col}{row_count + 1}:{end_col}"
+    return f"{sheet}{start_col}{a1_start_row(range_name) + row_count}:{end_col}"
+
+
+def a1_start_row(range_name: str) -> int:
+    """Return the 1-based starting row for an A1 range."""
+    cell = range_name.split("!", 1)[-1].split(":", 1)[0]
+    match = _A1_START_RE.fullmatch(cell)
+    return int(match.group("row")) if match else 1
 
 
 def format_roster_sheet(

@@ -326,7 +326,7 @@ def _run(
             detect_name_mismatches(
                 contacts_by_email,
                 update_names=sync_config.update_names,
-                candidate_emails=name_update_candidate_emails(
+                candidate_sync_indices=name_update_candidate_sync_indices(
                     sync_config,
                     desired_emails,
                     cc_lists,
@@ -645,12 +645,12 @@ def compute_all_actions(
     return actions
 
 
-def name_update_candidate_emails(
+def name_update_candidate_sync_indices(
     config: CCSyncConfig,
     desired_emails: Sequence[set[str]],
     cc_lists: Sequence[Mapping[str, Any]],
-) -> set[str]:
-    """Return emails eligible for configured-list name updates.
+) -> dict[str, tuple[int, ...]]:
+    """Return emails eligible for name updates and their notification mappings.
 
     ``update_names`` should only touch contacts related to this sync: desired
     ParishSoft addresses and contacts already on configured Constant Contact
@@ -658,10 +658,22 @@ def name_update_candidate_emails(
     and this command should not rename contacts outside its configured scope.
     """
     cc_list_by_name = {item["name"]: item for item in cc_lists}
-    candidates = set().union(*desired_emails) if desired_emails else set()
-    for mapping in config.mappings:
-        candidates.update(cc_list_by_name[mapping.target_list].get("CONTACTS", {}))
-    return candidates
+    candidates: dict[str, list[int]] = {}
+    for index, mapping in enumerate(config.mappings):
+        scoped = set(desired_emails[index])
+        scoped.update(cc_list_by_name[mapping.target_list].get("CONTACTS", {}))
+        for email in scoped:
+            candidates.setdefault(email, []).append(index)
+    return {email: tuple(indices) for email, indices in candidates.items()}
+
+
+def name_update_candidate_emails(
+    config: CCSyncConfig,
+    desired_emails: Sequence[set[str]],
+    cc_lists: Sequence[Mapping[str, Any]],
+) -> set[str]:
+    """Return emails eligible for configured-list name updates."""
+    return set(name_update_candidate_sync_indices(config, desired_emails, cc_lists))
 
 
 def compute_create_actions(
@@ -736,14 +748,14 @@ def detect_name_mismatches(
     *,
     update_names: bool,
     candidate_emails: Collection[str] | None = None,
+    candidate_sync_indices: Mapping[str, Sequence[int]] | None = None,
 ) -> list[CCAction]:
     """Find contacts whose Constant Contact name differs from ParishSoft.
 
     Returns an empty list unless ``update_names`` is set. For each contact
-    linked to ParishSoft members and included in ``candidate_emails`` when a
-    scope is provided, the canonical salutation name is compared against the
-    stored Constant Contact name, and an ``update_name`` action is produced for
-    any difference.
+    linked to ParishSoft members and included in the supplied scope, the
+    canonical salutation name is compared against the stored Constant Contact
+    name, and ``update_name`` actions are produced for any difference.
     """
     if not update_names:
         return []
@@ -751,8 +763,17 @@ def detect_name_mismatches(
 
     actions = []
     for email, contact in contacts_by_email.items():
-        if candidate_emails is not None and email not in candidate_emails:
+        sync_indices: Sequence[int | None]
+        if candidate_sync_indices is not None:
+            if email not in candidate_sync_indices:
+                continue
+            sync_indices = candidate_sync_indices[email]
+        elif candidate_emails is not None and email not in candidate_emails:
             continue
+        else:
+            sync_indices = (None,)
+        if candidate_emails is not None and candidate_sync_indices is None:
+            sync_indices = (None,)
         members = contact.get("PS MEMBERS")
         if not members:
             continue
@@ -764,16 +785,17 @@ def detect_name_mismatches(
             "last_name", ""
         ):
             continue
-        actions.append(
-            CCAction(
-                type="update_name",
-                email=email,
-                sync_index=None,
-                detail=f"Update name for {email}",
-                new_first=first,
-                new_last=last,
+        for sync_index in sync_indices:
+            actions.append(
+                CCAction(
+                    type="update_name",
+                    email=email,
+                    sync_index=sync_index,
+                    detail=f"Update name for {email}",
+                    new_first=first,
+                    new_last=last,
+                )
             )
-        )
     return actions
 
 

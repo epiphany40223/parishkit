@@ -604,6 +604,9 @@ def test_create_ministry_rosters_dry_run_skips_sheet_writes(tmp_path, monkeypatc
 def test_stale_row_clear_range_starts_below_written_roster():
     """Stale-row cleanup preserves the rows that were just written."""
     assert stale_row_clear_range("Readers!A:Z", 7) == "Readers!A8:Z"
+    assert stale_row_clear_range("Readers!A:Z", 7, range_name="Readers!A5") == (
+        "Readers!A12:Z"
+    )
     assert stale_row_clear_range("'Sunday Readers'!A1:Z500", 7) == (
         "'Sunday Readers'!A8:Z"
     )

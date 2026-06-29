@@ -650,6 +650,7 @@ def test_sync_ps_to_cc_main_writes_constant_contact_and_email(tmp_path, monkeypa
     assert "Constant Contact Sync Update: Newsletter" in (email.sent[0][0].html or "")
     assert "ParishSoft Member Workgroup:" in (email.sent[0][0].html or "")
     assert "Actions Performed" in (email.sent[0][0].html or "")
+    assert "update name" in (email.sent[0][0].html or "")
     assert "Filtered Unsubscribed Contacts" in (email.sent[0][0].html or "")
     assert "<th" in (email.sent[0][0].html or "")
     assert "Constant Contact sync operation completed successfully" in (
