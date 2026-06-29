@@ -353,6 +353,59 @@ def test_desired_members_from_ministries_workgroups_and_static():
     ]
 
 
+def test_desired_members_skips_blank_primary_email_fragment():
+    """Blank ParishSoft email fragments do not become desired group members."""
+    data = parishsoft_data()
+    data.members[2]["emailAddress"] = " ; bob@example.org"
+    data.members[2]["py emailAddresses"] = ["", "bob@example.org"]
+    config = sync_config_from_yaml(
+        {"sync": {"groups": [{"group": "group@example.org", "workgroups": ["Movers"]}]}}
+    )
+
+    desired = desired_members(data, config.groups[0])
+
+    assert [(item.email, item.leader) for item in desired] == [
+        ("bob@example.org", False)
+    ]
+
+
+def test_desired_members_merges_google_aliases_by_configured_domain():
+    """Equivalent Gmail-style desired addresses collapse to one group member."""
+    data = parishsoft_data()
+    data.members[3] = {
+        "memberDUID": 3,
+        "firstName": "Robert",
+        "lastName": "Mover",
+        "py friendly name FL": "Robert Mover",
+        "emailAddress": "bobmover@gmail.com",
+        "py emailAddresses": ["bobmover@gmail.com"],
+        "py ministries": {},
+        "py workgroups": {"Movers": {"name": "Movers"}},
+    }
+    config = sync_config_from_yaml(
+        {
+            "sync": {
+                "google_mail_domains": ["gmail.com"],
+                "groups": [{"group": "group@example.org", "workgroups": ["Movers"]}],
+            }
+        }
+    )
+
+    desired = desired_members(
+        data,
+        config.groups[0],
+        config.google_mail_domains,
+    )
+
+    assert [(item.email, item.leader, item.names) for item in desired] == [
+        (
+            "bob.mover+tag@gmail.com",
+            False,
+            ["Bob Mover", "Robert Mover"],
+        )
+    ]
+
+
 def test_sync_group_refuses_empty_desired_state_with_current_members():
     """A zero-member source cannot remove all group members without opt-in."""
     group = GroupSync(group="group@example.org", notify=(), workgroups=("Empty",))
@@ -409,6 +462,45 @@ def test_all_ministry_chairs_selector_can_filter_ministry_names_by_pattern():
     assert [(item.email, item.leader) for item in desired] == [
         ("numbered@example.org", True)
     ]
+
+
+def test_all_ministry_chairs_staff_owner_uses_primary_email_domain():
+    """Owner promotion checks the address that will be added to the group."""
+    data = parishsoft_data()
+    data.members[3] = {
+        "memberDUID": 3,
+        "firstName": "Pat",
+        "lastName": "Chair",
+        "py friendly name FL": "Pat Chair",
+        "emailAddress": "pat@gmail.com; staff@example.org",
+        "py emailAddresses": ["pat@gmail.com", "staff@example.org"],
+        "py ministries": {
+            "100-Readers": {"name": "100-Readers", "role": "Chairperson"}
+        },
+        "py workgroups": {},
+    }
+    config = sync_config_from_yaml(
+        {
+            "sync": {
+                "groups": [
+                    {
+                        "group": "chairs@example.org",
+                        "selectors": [
+                            {
+                                "type": "all_ministry_chairs",
+                                "ministry_pattern": r"^\d\d\d.*",
+                                "staff_owner_domains": ["example.org"],
+                            }
+                        ],
+                    }
+                ]
+            }
+        }
+    )
+
+    desired = desired_members(data, config.groups[0])
+
+    assert ("pat@gmail.com", False) in [(item.email, item.leader) for item in desired]
 
 
 def test_compute_actions_add_delete_and_change_role():

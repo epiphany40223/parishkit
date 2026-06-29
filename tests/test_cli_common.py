@@ -1,7 +1,4 @@
 import argparse
-import os
-import subprocess
-import sys
 
 import pytest
 
@@ -19,6 +16,7 @@ def test_common_options_defaults():
 
     assert options.config is None
     assert not options.dry_run
+    assert not options.dry_run_explicit
     assert not options.verbose
     assert not options.debug
     assert options.slack_log_level == "CRITICAL"
@@ -28,37 +26,24 @@ def test_common_options_defaults():
     assert options.ps_cache_limit == "14m"
 
 
-def test_parishkit_root_changes_default_runtime_root(tmp_path):
+def test_parishkit_root_reroots_defaults_after_import(monkeypatch, tmp_path):
     """PARISHKIT_ROOT reroots every default runtime path under that directory.
 
-    The defaults are computed at import time, so this runs in a fresh subprocess
-    with PARISHKIT_ROOT set in the environment rather than monkeypatching the
-    already-imported modules.
+    The resolver checks the environment at option-resolution time so embedded
+    callers and tests can set PARISHKIT_ROOT after importing ParishKit.
     """
-    code = """
-import argparse
-import os
-from pathlib import Path
+    import parishkit.pk_cron_runner as runner
 
-from parishkit import cli
-import parishkit.pk_cron_runner as runner
+    monkeypatch.setenv("PARISHKIT_ROOT", str(tmp_path))
+    parser = argparse.ArgumentParser()
+    cli.add_common_arguments(parser)
+    args = parser.parse_args([])
+    options = cli.resolve_common_options(args)
 
-root = Path(os.environ["PARISHKIT_ROOT"])
-parser = argparse.ArgumentParser()
-cli.add_common_arguments(parser)
-args = parser.parse_args([])
-options = cli.resolve_common_options(args)
-
-assert root == cli.OPT_ROOT
-assert root / "credentials/parishsoft-api-key.txt" == options.ps_api_key_file
-assert root / "cache/parishsoft" == options.ps_cache_dir
-assert root / "config/runner.yaml" == runner.DEFAULT_RUNNER_CONFIG
-assert root / "run/runner.lock" == runner.DEFAULT_LOCK_FILE
-"""
-
-    env = os.environ.copy()
-    env["PARISHKIT_ROOT"] = str(tmp_path)
-    subprocess.run([sys.executable, "-c", code], check=True, env=env)
+    assert tmp_path / "credentials/parishsoft-api-key.txt" == options.ps_api_key_file
+    assert tmp_path / "cache/parishsoft" == options.ps_cache_dir
+    assert tmp_path / "run/runner.lock" == runner.LockConfig().path
+    assert tmp_path / "run/runner.lock" == runner.parse_runner_config({}).lock.path
 
 
 def test_common_options_debug_implies_verbose():
@@ -118,6 +103,7 @@ parishsoft:
     options = cli.resolve_common_options(args)
 
     assert options.dry_run
+    assert options.dry_run_explicit
     assert str(options.log_file) == "cli.log"
     assert options.slack_channel == "#from-cli"
     assert options.slack_token_file == tmp_path / "config-slack-token.txt"
@@ -154,8 +140,20 @@ common:
     options = cli.resolve_common_options(args)
 
     assert not options.dry_run
+    assert options.dry_run_explicit
     assert not options.debug
     assert not options.verbose
+
+
+def test_mutating_tools_require_explicit_write_mode():
+    """Mutating commands fail closed unless dry-run/live intent is explicit."""
+    parser = argparse.ArgumentParser()
+    cli.add_common_arguments(parser)
+    args = parser.parse_args([])
+    options = cli.resolve_common_options(args)
+
+    with pytest.raises(ConfigError, match="can modify external systems"):
+        cli.require_explicit_write_mode(options, "tool")
 
 
 def test_explicit_missing_config_file_fails(tmp_path):

@@ -372,6 +372,8 @@ def test_calendar_reservations_main_logs_config_validation_error(tmp_path, capsy
     config = tmp_path / "config.yaml"
     config.write_text(
         """
+common:
+  dry_run: true
 calendars:
   acceptable_domains:
     - example.org

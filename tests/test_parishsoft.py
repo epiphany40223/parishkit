@@ -898,6 +898,20 @@ def test_family_member_helpers():
     assert get_member_public_phones(member) == [{"number": "555", "type": "cell"}]
 
 
+def test_email_normalization_drops_blank_fragments_and_deduplicates():
+    """Blank semicolon fragments are not exposed as usable email addresses."""
+    family = {"eMailAddress": " ; A@EXAMPLE.ORG ; a@example.org ; "}
+    member = {"emailAddress": " ; ANN@EXAMPLE.ORG ; ann@example.org ; "}
+
+    normalize_family_email(family)
+    normalize_member_email(member)
+
+    assert family["eMailAddress"] == "a@example.org"
+    assert family["py eMailAddresses"] == ["a@example.org"]
+    assert member["emailAddress"] == "ann@example.org"
+    assert member["py emailAddresses"] == ["ann@example.org"]
+
+
 def test_string_registered_organization_id_is_parishioner():
     """A string registeredOrganizationID still matches the numeric parish org ID.
 

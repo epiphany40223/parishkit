@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from parishkit.cli import (
     parser_with_common_options,
+    require_explicit_write_mode,
     resolve_common_options,
     run_user_facing,
 )
@@ -169,6 +170,7 @@ def _run(
         slack_level=common.slack_log_level,
     )
     try:
+        require_explicit_write_mode(common, "pk-validate-gcalendar-reservations")
         config = load_yaml_config(common.config)
         reservation_config = calendar_reservation_config(
             config,
