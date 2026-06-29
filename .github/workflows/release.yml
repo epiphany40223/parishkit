@@ -42,6 +42,9 @@ jobs:
       - name: Ruff format check
         run: python -m ruff format --check .
 
+      - name: Markdown lint
+        run: python -m pymarkdown --config .pymarkdown.json scan $(git ls-files '*.md')
+
       - name: Pytest
         run: python -m pytest
 

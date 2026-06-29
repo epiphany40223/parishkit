@@ -166,7 +166,7 @@ calendar, read through `parishkit.google.calendar.list_events`
 ([Google layer](../intro/spec.md#google-integration-layer)). For each calendar
 the tool calls:
 
-```
+```python
 list_events(service, calendar_id,
             time_min=<UTC isoformat>, time_max=<UTC isoformat>)
 ```

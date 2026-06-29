@@ -194,7 +194,7 @@ deliberately. Worked example (from the tests, with the example filters applied
 to ministries `001-Readers`, `002-Ushers`, `Historical Ministry`,
 `Example Special Ministry`): output is
 
-```
+```text
 001-Readers
 002-Ushers
 Example Special Ministry

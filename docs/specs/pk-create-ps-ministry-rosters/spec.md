@@ -106,6 +106,7 @@ Allowed keys (others rejected by `reject_unknown_keys`):
 | `delegated_subject` | string | optional | Real Workspace user the service account impersonates (domain-wide delegation). Must be a string if present. Applies only to the service-account path. |
 
 Validation rules:
+
 - Setting **both** `service_account_file` and `user_token_file` → `ConfigError`.
 - Setting **neither** → `ConfigError`
   ("`google.service_account_file or google.user_token_file is required`").
@@ -304,7 +305,7 @@ For a title and a member list (re-sorted by `member_sort_key`):
 
 - Row 0: `["Ministry: {title}"]` — note the literal `"Ministry: "` prefix is used
   for **every** roster, including role sheets and workgroup rosters (a known
-  cosmetic quirk: a workgroup roster reads "Ministry: <workgroup>").
+  cosmetic quirk: a workgroup roster reads "Ministry: &lt;workgroup&gt;").
 - Row 1: `["Last updated: {timestamp}"]` where `timestamp` =
   `format_update_timestamp(now)` → `"%Y-%m-%d %H:%M:%S %Z"` (the `%Z`
   abbreviation is appended only when known, e.g. `EST`).

@@ -383,9 +383,9 @@ client before any data is used.
   the desired-member count, current-member count, and the computed action list
   (`_actions_summary`). `INFO` shows summaries; `DEBUG` adds full desired/current
   member dumps with structured `log_extra` payloads. Dry-run logs
-  "dry-run: would apply N action(s) for <group>". On success, logs "Google Group
-  sync operation completed successfully for N group(s)". The JSONL file is the
-  structured output; there is no separate report file.
+  "dry-run: would apply N action(s) for &lt;group&gt;". On success, logs
+  "Google Group sync operation completed successfully for N group(s)". The JSONL
+  file is the structured output; there is no separate report file.
 - **Email summary** (per group, live mode only). Built by
   `build_notification_email` and sent by `send_notification` /
   `send_group_plan_notification` with `dry_run=False`, only after all groups are
@@ -524,7 +524,8 @@ Locked-down behavior asserted:
    scope assembly, DWD subject) and `build_google_services`.
 4. Source resolution: `validate_configured_parishsoft_sources`,
    `available_ministry_names`, `available_member_workgroup_source_names`
-   (with ` Ldr`/` Leader` base-name expansion), `selector_matches_any_ministry_name`.
+   (with `Ldr`/`Leader` base-name expansion),
+   `selector_matches_any_ministry_name`.
 5. Desired set: `desired_members`, `member_matches_group`, `member_in_ministries`,
    `member_in_workgroups`, `selector_matches_member`, `ministry_matches_selector`,
    `ministry_name_matches_selector`, `is_ministry_leader`, `add_desired_member`,

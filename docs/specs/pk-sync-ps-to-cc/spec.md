@@ -129,6 +129,7 @@ compatibility):
 | `max_removal_fraction` | number in `[0,1]` | `0.5` | Fractional removal guard. |
 
 Mapping-level validation:
+
 - `_required_string` for the two required fields (missing/blank → `ConfigError`).
 - Duplicate `target_list` (compared with `casefold()`) → `ConfigError
   "sync.lists[].target_list values must be unique; …"` — one CC list may not be
@@ -166,14 +167,16 @@ The tool loads ParishSoft via the injected `loader` (default
 and how it is cross-linked.
 
 Desired membership derivation (`resolve_desired_state`):
+
 - The relevant source is **member workgroups** (`data.member_workgroup_memberships`,
   indexed by workgroup `name`). Family workgroups are not used.
 - For each mapping, the matching workgroup's `membership` list is walked. Each
   membership row's `"py member duid"` is resolved to a member in `data.members`.
 - For each resolved member, **only the primary (first) email address** is used:
-  `member_email_addresses(member)[0]` (lowercased, de-duplicated; prefers the
-  pre-split `"py emailAddresses"` list, else splits the raw semicolon-delimited
-  `emailAddress`). Members with no email contribute nothing.
+  the first item returned by `member_email_addresses(...)` (lowercased,
+  de-duplicated; prefers the pre-split `"py emailAddresses"` list, else splits
+  the raw semicolon-delimited `emailAddress`). Members with no email contribute
+  nothing.
 - Result: one lowercased `set[str]` of desired emails per mapping, in mapping
   order.
 
@@ -301,6 +304,7 @@ read ensures unsubscribed contacts are present to be detected.
 `permission_to_send == "unsubscribed"`, its lowercased address is **discarded
 from every desired set** that contains it. Because the address leaves the
 desired sets:
+
 - it produces **no `subscribe` action** (never re-added to a list), and
 - it produces **no `create` action** (the create source is the union of the
   *filtered* desired sets) — so an opted-out person without a contact is never
@@ -379,6 +383,7 @@ bodies per contact. See
 scheduled report is disabled) filtered unsubscribes, sent to that mapping's
 `notifications` recipients from `sender`. Skipped entirely when there is no
 provider, no `sender`, or the mapping has no recipients. Content:
+
 - Subject `Constant Contact sync update: <target_list>`.
 - Plain-text + HTML alternatives. Header: generated timestamp
   (`%Y-%m-%d %H:%M:%S`), source workgroup, target list.
@@ -418,6 +423,7 @@ report is sent at most once per local day inside its window.
 
 JSON written atomically (`atomic_write_text`, owner-only) and guarded by an
 adjacent `<name>.lock` (`fcntl.LOCK_EX`):
+
 - `sent_reports`: `{ run_date: [ per-mapping key, … ] }`, where the key is
   `json.dumps([source_workgroup, target_list], separators=(",", ":"))` (compact
   JSON, no spaces). Lets a partially-failed run retry only the mappings not yet
@@ -493,6 +499,7 @@ run resends only the unsent mappings.
 ## 12. Testing notes
 
 `tests/test_sync_ps_to_cc.py` (no real credentials, no network) locks down:
+
 - **Config parsing/validation** — round-trip into `CCSyncConfig`; duplicate
   target-list rejection; unknown mapping key rejection; `sender` required for
   recipients; report-schedule parsing (weekday → index, time, window, state

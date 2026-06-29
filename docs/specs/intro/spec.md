@@ -68,7 +68,7 @@ with ParishSoft. The non-negotiable design intents are:
 ParishKit is a single installable Python package (`parishkit`) that exposes
 several console commands. Every command follows the same skeleton:
 
-```
+```text
 parse argv (shared + tool-specific flags)
   → load + validate YAML config
   → resolve CommonOptions (CLI > config > built-in default)
@@ -488,12 +488,17 @@ from **smoke tests** (human-run, credential-dependent, never in CI).
   API access, Constant Contact list access + the device-OAuth bootstrap, Google
   Workspace email, and Slack notification.
 - **Lint/format**: `ruff` with rule sets `E,F,I,UP,B,SIM`, line length 88,
-  double quotes, LF endings, target py312.
+  double quotes, LF endings, target py312. Markdown is linted with
+  `pymarkdown`; MD013 line length is disabled because this repo intentionally
+  uses GitHub tables and one-line paragraphs in issue/PR-oriented prose.
 - **CI** (`.github/workflows/ci.yml`) on push-to-main and PRs runs, on Python
-  3.12: `ruff check`, `ruff format --check`, `pytest`. PRs also enforce **DCO
-  sign-off**.
+  3.12: `ruff check`, `ruff format --check`, `pymarkdown --config
+  .pymarkdown.json scan`, `pytest`. PRs also enforce **DCO sign-off** through
+  the repository DCO app.
 - **Local validation must match CI** exactly:
-  `python -m ruff check .` · `python -m ruff format --check .` · `python -m pytest`.
+  `python -m ruff check .` · `python -m ruff format --check .` ·
+  `python -m pymarkdown --config .pymarkdown.json scan $(git ls-files '*.md')` ·
+  `python -m pytest`.
 - **Coverage intent**: every behavior with a branch — config validation,
   precedence resolution, error/retry mapping, reconciliation diffs, guardrail
   limits, salutation/email edge cases — has a focused test. Prefer code shaped
