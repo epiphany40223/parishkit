@@ -288,10 +288,11 @@ def test_calendar_reservations_main_lists_and_patches_events(tmp_path):
             },
         ]
     )
+    log_file = tmp_path / "calendar-reservations.log"
 
     assert (
         calendar_reservations_main(
-            ["--config", str(write_config(tmp_path))],
+            ["--config", str(write_config(tmp_path)), "--log-file", str(log_file)],
             service_factory=lambda _config: service,
             now=lambda: dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
         )
@@ -299,6 +300,9 @@ def test_calendar_reservations_main_lists_and_patches_events(tmp_path):
     )
 
     assert len(service._events.list_calls) == 2
+    assert "Google Calendar reservation validation completed successfully" in (
+        log_file.read_text(encoding="utf-8")
+    )
     assert service._events.list_calls[0]["calendarId"] == "room@example.org"
     # timeMin is a one-month lookback window from the injected "now".
     assert service._events.list_calls[0]["timeMin"].startswith("2025-12-01")

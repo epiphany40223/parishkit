@@ -536,6 +536,7 @@ def test_sync_ps_to_cc_main_writes_constant_contact_and_email(tmp_path, monkeypa
     cc = CCClient()
     email = EmailProvider()
     loader_calls = []
+    log_file = tmp_path / "sync-cc.log"
     # Replace the real ParishSoft client builder with a no-op stand-in; the
     # injected loader below supplies the data, so the client is never used.
     monkeypatch.setattr(
@@ -550,7 +551,7 @@ def test_sync_ps_to_cc_main_writes_constant_contact_and_email(tmp_path, monkeypa
 
     assert (
         sync_ps_to_cc_main(
-            ["--config", str(write_config(tmp_path))],
+            ["--config", str(write_config(tmp_path)), "--log-file", str(log_file)],
             loader=loader,
             cc_factory=lambda _config: cc,
             email_provider=email,
@@ -569,6 +570,9 @@ def test_sync_ps_to_cc_main_writes_constant_contact_and_email(tmp_path, monkeypa
     assert "Actions Performed" in (email.sent[0][0].html or "")
     assert "Filtered Unsubscribed Contacts" in (email.sent[0][0].html or "")
     assert "<th" in (email.sent[0][0].html or "")
+    assert "Constant Contact sync operation completed successfully" in (
+        log_file.read_text(encoding="utf-8")
+    )
 
 
 def test_sync_ps_to_cc_sends_due_unsubscribed_report_once(tmp_path, monkeypatch):

@@ -319,6 +319,10 @@ def _run(
                 dry_run=common.dry_run,
                 log=log,
             )
+        log.info(
+            "Google Group sync operation completed successfully for %s group(s)",
+            len(sync_config.groups),
+        )
     except ConfigError as exc:
         log.error("Configuration validation failed: %s", exc)
         raise

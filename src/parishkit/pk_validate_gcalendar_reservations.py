@@ -213,6 +213,11 @@ def _run(
         log=log,
         now=now,
     )
+    log.info(
+        "Google Calendar reservation validation completed successfully for "
+        "%s calendar(s)",
+        len(reservation_config.calendars),
+    )
     return 0
 
 

@@ -551,6 +551,7 @@ def test_sync_google_group_main_writes_group_changes_and_notifications(
     settings = SettingsService()
     email = EmailProvider()
     loader_calls = []
+    log_file = tmp_path / "sync-google-group.log"
     # Replace the real ParishSoft client builder with a no-op stand-in; the
     # injected loader below supplies the data, so the client is never used.
     monkeypatch.setattr(
@@ -565,7 +566,7 @@ def test_sync_google_group_main_writes_group_changes_and_notifications(
 
     assert (
         sync_google_group_main(
-            ["--config", str(write_config(tmp_path))],
+            ["--config", str(write_config(tmp_path)), "--log-file", str(log_file)],
             loader=loader,
             service_factory=lambda _config: (admin, settings),
             email_provider=email,
@@ -574,6 +575,9 @@ def test_sync_google_group_main_writes_group_changes_and_notifications(
     )
 
     assert loader_calls == [{"active_only": True, "parishioners_only": False}]
+    assert "Google Group sync operation completed successfully" in (
+        log_file.read_text(encoding="utf-8")
+    )
     assert (
         "insert",
         {

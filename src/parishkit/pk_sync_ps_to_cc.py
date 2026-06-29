@@ -379,6 +379,11 @@ def _run(
             log=log,
         )
         log.info("Computed %s Constant Contact action(s)", len(actions))
+        log.info(
+            "Constant Contact sync operation completed successfully "
+            "for %s list mapping(s)",
+            len(sync_config.mappings),
+        )
     except ConfigError as exc:
         log.error("Configuration validation failed: %s", exc)
         raise
