@@ -237,6 +237,32 @@ def cc_contacts():
     ]
 
 
+def cc_contacts_without_sync_actions():
+    """Return contacts where only Bob's unsubscribed status needs reporting."""
+    return [
+        {
+            "contact_id": "contact-ann",
+            "email_address": {
+                "address": "ann@example.org",
+                "permission_to_send": "implicit",
+            },
+            "first_name": "Ann",
+            "last_name": "Smith",
+            "list_memberships": ["list-1"],
+        },
+        {
+            "contact_id": "contact-bob",
+            "email_address": {
+                "address": "bob@example.org",
+                "permission_to_send": "unsubscribed",
+            },
+            "first_name": "Bob",
+            "last_name": "Jones",
+            "list_memberships": [],
+        },
+    ]
+
+
 def test_cc_sync_config_validation():
     """Verify a valid YAML block parses into the expected sync config.
 
@@ -410,6 +436,12 @@ def test_sync_ps_to_cc_main_writes_constant_contact_and_email(tmp_path, monkeypa
     assert any(call[0] == "put" for call in cc.calls)
     assert email.sent
     assert email.sent[0][0].to == ("admin@example.org",)
+    assert email.sent[0][0].subject == "Constant Contact sync update: Newsletter"
+    assert "Constant Contact Sync Update: Newsletter" in (email.sent[0][0].html or "")
+    assert "ParishSoft Member Workgroup:" in (email.sent[0][0].html or "")
+    assert "Actions Performed" in (email.sent[0][0].html or "")
+    assert "Filtered Unsubscribed Contacts" in (email.sent[0][0].html or "")
+    assert "<th" in (email.sent[0][0].html or "")
 
 
 def test_sync_ps_to_cc_sends_due_unsubscribed_report_once(tmp_path, monkeypatch):
@@ -467,6 +499,107 @@ def test_sync_ps_to_cc_sends_due_unsubscribed_report_once(tmp_path, monkeypatch)
     assert "2026-06-28" in (tmp_path / "unsubscribed-report-state.json").read_text(
         encoding="utf-8"
     )
+
+
+def test_sync_ps_to_cc_scheduled_report_suppresses_regular_unsubscribed_notice(
+    tmp_path,
+    monkeypatch,
+):
+    """Scheduled reports prevent repeated regular emails for only unsubscribed data."""
+    cc = CCClient(contacts=cc_contacts_without_sync_actions())
+    email = EmailProvider()
+    config = write_config(
+        tmp_path,
+        unsubscribed_report=True,
+        unsubscribed_report_day="sunday",
+    )
+    now = dt.datetime(
+        2026,
+        6,
+        28,
+        2,
+        5,
+        tzinfo=ZoneInfo("America/Kentucky/Louisville"),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_cc.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_ps_to_cc_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            cc_factory=lambda _config: cc,
+            email_provider=email,
+            now=now,
+        )
+        == 0
+    )
+    assert (
+        sync_ps_to_cc_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            cc_factory=lambda _config: cc,
+            email_provider=email,
+            now=now,
+        )
+        == 0
+    )
+
+    assert [message.subject for message, _dry_run in email.sent] == [
+        "Constant Contact unsubscribed contacts report: Newsletter"
+    ]
+
+
+def test_sync_ps_to_cc_due_unsubscribed_report_requires_sender(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    """A due report with recipients but no sender is a config error."""
+    cc = CCClient(contacts=cc_contacts_without_sync_actions())
+    email = EmailProvider()
+    config = write_config(
+        tmp_path,
+        unsubscribed_report=True,
+        unsubscribed_report_day="sunday",
+    )
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "  notifications:\n    sender: no-reply@example.org\n",
+            "  notifications: {}\n",
+        ),
+        encoding="utf-8",
+    )
+    now = dt.datetime(
+        2026,
+        6,
+        28,
+        2,
+        5,
+        tzinfo=ZoneInfo("America/Kentucky/Louisville"),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_cc.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_ps_to_cc_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            cc_factory=lambda _config: cc,
+            email_provider=email,
+            now=now,
+        )
+        == 2
+    )
+
+    error = capsys.readouterr().err
+    assert "ERROR parishkit.pk_sync_ps_to_cc" in error
+    assert "sync.notifications.sender is required" in error
+    assert email.sent == []
 
 
 def test_sync_ps_to_cc_unsubscribed_report_waits_for_configured_weekday(

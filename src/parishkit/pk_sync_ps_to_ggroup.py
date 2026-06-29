@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import logging
 import re
 from collections.abc import Callable, Mapping, Sequence
@@ -676,6 +677,82 @@ def apply_actions(service: Any, group_key: str, actions: Sequence[SyncAction]) -
             raise ConfigError(f"unknown sync action: {action.action}")
 
 
+def build_notification_email(
+    config: SyncConfig,
+    group: GroupSync,
+    posting_permission: str | None,
+    actions: Sequence[SyncAction],
+) -> Email:
+    """Build the styled Google Group sync notification email.
+
+    The HTML mirrors the old Epiphany script's operator-friendly report: a
+    short explanation, a striped table of changes, and a rationale list showing
+    which ParishSoft sources produced the desired addresses. A plain-text body
+    is included for non-HTML readers.
+    """
+    if not config.sender:
+        raise ConfigError("sync.notifications.sender is required")
+    subject = (
+        f"Update to Google Group {group.group} for {_group_subject_sources(group)}"
+    )
+    group_type = _group_type_label(posting_permission)
+    text_lines = [
+        f"The following changes were made to the {group_type} Google Group "
+        f"{group.group}:",
+        "",
+    ]
+    for index, action in enumerate(actions, start=1):
+        text_lines.append(
+            f"{index}. {_action_display_names(action)} | {action.email} | "
+            f"{_group_action_message(action, posting_permission, html_output=False)}"
+        )
+    text_lines.extend(["", "These email addresses were obtained from PS:"])
+    text_lines.extend(f"- {item}" for item in _source_rationale_text(group))
+
+    rows = []
+    for index, action in enumerate(actions, start=1):
+        row = index - 1
+        rows.append(
+            "<tr>"
+            f'<td style="{_email_cell_style(row)}">{index}.</td>'
+            f'<td style="{_email_cell_style(row)}">'
+            f"{html.escape(_action_display_names(action))}</td>"
+            f'<td style="{_email_cell_style(row)}">{html.escape(action.email)}</td>'
+            f'<td style="{_email_cell_style(row)}">'
+            f"{_group_action_message(action, posting_permission, html_output=True)}"
+            "</td>"
+            "</tr>"
+        )
+
+    rationale = "\n".join(
+        f"<li>{html.escape(item)}</li>" for item in _source_rationale_text(group)
+    )
+    report_html = (
+        '<html><body style="font-family: Arial, sans-serif; font-size: 14px;">'
+        f"<p>The following changes were made to the {html.escape(group_type)} "
+        f"Google Group {html.escape(group.group)}:</p>"
+        f'<p><table style="{_EMAIL_TABLE_STYLE}">'
+        "<tr>"
+        f'<th style="{_EMAIL_HEADER_STYLE}">&nbsp;</th>'
+        f'<th style="{_EMAIL_HEADER_STYLE}">Name</th>'
+        f'<th style="{_EMAIL_HEADER_STYLE}">Email address</th>'
+        f'<th style="{_EMAIL_HEADER_STYLE}">Action</th>'
+        "</tr>"
+        f"{''.join(rows)}"
+        "</table></p>"
+        "<p>These email addresses were obtained from PS:</p>"
+        f"<p><ol>{rationale}</ol></p>"
+        "</body></html>"
+    )
+    return Email(
+        subject=subject,
+        sender=config.sender,
+        to=group.notify,
+        text="\n".join(text_lines),
+        html=report_html,
+    )
+
+
 def send_notification(
     provider: EmailProvider | None,
     config: SyncConfig,
@@ -693,26 +770,100 @@ def send_notification(
     """
     if not provider or not group.notify or not actions:
         return
-    if not config.sender:
-        raise ConfigError("sync.notifications.sender is required")
-    subject = f"Update to Google Group for {group.group}"
-    permission_text = posting_permission or "unknown posting policy"
-    lines = [
-        f"Changes were made to {group.group} ({permission_text}):",
-        "",
-    ]
-    for action in actions:
-        names = ", ".join(action.desired.names) if action.desired else ""
-        lines.append(f"- {action.action}: {action.email} {action.role or ''} {names}")
     provider.send(
-        Email(
-            subject=subject,
-            sender=config.sender,
-            to=group.notify,
-            text="\n".join(lines),
-        ),
+        build_notification_email(config, group, posting_permission, actions),
         dry_run=False,
     )
+
+
+_EMAIL_TABLE_STYLE = "border-collapse: collapse; margin-bottom: 20px; width: auto;"
+_EMAIL_HEADER_STYLE = (
+    "border: 1px solid #dddddd; padding: 8px; text-align: left; "
+    "background-color: #4472C4; color: white; white-space: nowrap;"
+)
+
+
+def _email_cell_style(row: int) -> str:
+    """Return striped table-cell styling for notification emails."""
+    background = "#f2f2f2" if row % 2 == 0 else "#ffffff"
+    return (
+        "border: 1px solid #dddddd; padding: 8px; text-align: left; "
+        f"background-color: {background};"
+    )
+
+
+def _group_subject_sources(group: GroupSync) -> str:
+    """Return the source list used in the Google Group notification subject."""
+    sources = list(group.ministries)
+    sources.extend(group.workgroups)
+    sources.extend(selector.purpose or selector.type for selector in group.selectors)
+    return _text_list(sources if sources else [group.group])
+
+
+def _source_rationale_text(group: GroupSync) -> list[str]:
+    """Return text explaining where a group's desired addresses came from."""
+    rationale = [f'Members in the "{name}" ministry' for name in group.ministries]
+    rationale.extend(
+        f'Members in the "{name}" Member WorkGroup' for name in group.workgroups
+    )
+    rationale.extend(
+        f'Members that satisfied the "{selector.purpose or selector.type}" function'
+        for selector in group.selectors
+    )
+    if group.static_members:
+        rationale.append("Hard-coded members")
+    return rationale
+
+
+def _group_type_label(posting_permission: str | None) -> str:
+    """Return the old notification's Broadcast/Discussion group label."""
+    if posting_permission in {
+        "ANYONE_CAN_POST",
+        "ALL_IN_DOMAIN_CAN_POST",
+        "ALL_MEMBERS_CAN_POST",
+    }:
+        return "Discussion"
+    return "Broadcast"
+
+
+def _action_display_names(action: SyncAction) -> str:
+    """Return the ParishSoft display names associated with a sync action."""
+    if action.desired and action.desired.names:
+        return ", ".join(action.desired.names)
+    if action.desired:
+        return "[Static member]"
+    return "[No ParishSoft member]"
+
+
+def _group_action_message(
+    action: SyncAction,
+    posting_permission: str | None,
+    *,
+    html_output: bool,
+) -> str:
+    """Return the old human-readable Google Group action text."""
+    broadcast = _group_type_label(posting_permission) == "Broadcast"
+    cannot = (
+        "can <strong><em>not</em></strong> post to this group"
+        if html_output
+        else "cannot post to this group"
+    )
+    role = action.role or "MEMBER"
+    if action.action == "add":
+        if not broadcast:
+            return "Added to group"
+        if role == "OWNER":
+            return "Added to group (can post to this group)"
+        return f"Added to group ({cannot})"
+    if action.action == "change_role":
+        if role == "OWNER":
+            suffix = " (can post to this group)" if broadcast else ""
+            return f"Change to: owner{suffix}"
+        suffix = f" ({cannot})" if broadcast else ""
+        return f"Change to: member{suffix}"
+    if action.action == "delete":
+        return "Removed from the group"
+    return action.action
 
 
 def add_desired_member(

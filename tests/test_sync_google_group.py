@@ -79,13 +79,14 @@ class Members:
 class Groups:
     """Fake Groups Settings resource returning fixed posting permissions."""
 
-    def __init__(self):
+    def __init__(self, permission: str = "ALL_MEMBERS_CAN_POST"):
         self.calls = []
+        self.permission = permission
 
     def get(self, **kwargs):
         """Record the get call and return canned group settings."""
         self.calls.append(("get", kwargs))
-        return Request({"whoCanPostMessage": "ALL_MEMBERS_CAN_POST"})
+        return Request({"whoCanPostMessage": self.permission})
 
 
 class AdminService:
@@ -102,8 +103,8 @@ class AdminService:
 class SettingsService:
     """Fake Groups Settings service exposing the groups resource."""
 
-    def __init__(self):
-        self._groups = Groups()
+    def __init__(self, permission: str = "ALL_MEMBERS_CAN_POST"):
+        self._groups = Groups(permission=permission)
 
     def groups(self):
         """Return the fake groups resource."""
@@ -460,6 +461,53 @@ def test_sync_google_group_main_writes_group_changes_and_notifications(
     ) in admin._members.calls
     assert email.sent
     assert email.sent[0][0].to == ("admin@example.org",)
+    assert (
+        email.sent[0][0].subject
+        == "Update to Google Group group@example.org for Readers, Movers"
+    )
+    assert "The following changes were made to the Discussion Google Group" in (
+        email.sent[0][0].html or ""
+    )
+    assert "<th" in (email.sent[0][0].html or "")
+    assert "These email addresses were obtained from PS" in (
+        email.sent[0][0].html or ""
+    )
+    assert "Members in the &quot;Readers&quot; ministry" in (
+        email.sent[0][0].html or ""
+    )
+    assert "Members in the &quot;Movers&quot; Member WorkGroup" in (
+        email.sent[0][0].html or ""
+    )
+    assert "keyword" not in (email.sent[0][0].html or "")
+    assert "[Static member]" in (email.sent[0][0].html or "")
+    assert "Added to group" in (email.sent[0][0].html or "")
+
+
+def test_sync_google_group_email_treats_domain_posting_as_discussion(
+    tmp_path,
+    monkeypatch,
+):
+    """ALL_IN_DOMAIN_CAN_POST should use the old Discussion wording."""
+    admin = AdminService()
+    settings = SettingsService(permission="ALL_IN_DOMAIN_CAN_POST")
+    email = EmailProvider()
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_google_group_main(
+            ["--config", str(write_config(tmp_path))],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            service_factory=lambda _config: (admin, settings),
+            email_provider=email,
+        )
+        == 0
+    )
+
+    assert "Discussion Google Group" in (email.sent[0][0].html or "")
+    assert "cannot post to this group" not in (email.sent[0][0].text or "")
 
 
 def test_sync_google_group_dry_run_skips_writes_and_email(tmp_path, monkeypatch):

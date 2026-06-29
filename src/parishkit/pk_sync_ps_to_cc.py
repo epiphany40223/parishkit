@@ -325,7 +325,14 @@ def _run(
             and any(mapping.notifications for mapping in sync_config.mappings)
         ):
             provider = provider_from_config(_mapping(config.get("email", {}), "email"))
-        send_notifications(provider, sync_config, actions, unsubscribed)
+        send_notifications(
+            provider,
+            sync_config,
+            actions,
+            unsubscribed,
+            contacts_by_email,
+            ps_members_by_email,
+        )
         sent_reports = send_unsubscribed_report(
             provider,
             sync_config,
@@ -757,6 +764,8 @@ def send_notifications(
     config: CCSyncConfig,
     actions: Sequence[CCAction],
     unsubscribed: Sequence[Sequence[tuple[str, str, str]]],
+    contacts_by_email: Mapping[str, Mapping[str, Any]],
+    ps_members_by_email: Mapping[str, list[dict[str, Any]]],
 ) -> None:
     """Email a per-mapping summary of actions and filtered unsubscribes.
 
@@ -768,25 +777,190 @@ def send_notifications(
         return
     for index, mapping in enumerate(config.mappings):
         list_actions = [action for action in actions if action.sync_index == index]
-        if not list_actions and not unsubscribed[index]:
+        reported_unsubscribed = (
+            [] if config.unsubscribed_report.enabled else unsubscribed[index]
+        )
+        if not list_actions and not reported_unsubscribed:
             continue
-        lines = [
-            f"Constant Contact sync update: {mapping.target_list}",
-            f"ParishSoft workgroup: {mapping.source_workgroup}",
-            "",
-        ]
-        lines.extend(action.detail for action in list_actions)
-        for email, names, duids in unsubscribed[index]:
-            lines.append(f"Unsubscribed contact filtered: {email} {names} {duids}")
         provider.send(
-            Email(
-                subject=f"Constant Contact sync update: {mapping.target_list}",
+            build_notification_email(
+                mapping,
+                list_actions,
+                reported_unsubscribed,
+                contacts_by_email,
+                ps_members_by_email,
                 sender=config.sender,
-                to=mapping.notifications,
-                text="\n".join(lines),
+                generated_at=dt.datetime.now(),
             ),
             dry_run=False,
         )
+
+
+def build_notification_email(
+    mapping: CCSyncMapping,
+    actions: Sequence[CCAction],
+    unsubscribed: Sequence[tuple[str, str, str]],
+    contacts_by_email: Mapping[str, Mapping[str, Any]],
+    ps_members_by_email: Mapping[str, list[dict[str, Any]]],
+    *,
+    sender: str,
+    generated_at: dt.datetime,
+) -> Email:
+    """Build the styled Constant Contact sync update notification.
+
+    This mirrors the old Epiphany report's operator-focused structure: a
+    generated timestamp, source/target context, summary counts, and striped
+    tables of actions and filtered unsubscribed contacts.
+    """
+    subject = f"Constant Contact sync update: {mapping.target_list}"
+    created = [action for action in actions if action.type == "create"]
+    subscribed = [action for action in actions if action.type == "subscribe"]
+    unsubscribed_actions = [
+        action for action in actions if action.type == "unsubscribe"
+    ]
+    text_lines = [
+        subject,
+        f"Generated: {generated_at:%Y-%m-%d %H:%M:%S}",
+        f"ParishSoft Member Workgroup: {mapping.source_workgroup}",
+        f"Constant Contact List: {mapping.target_list}",
+        "",
+        "Summary:",
+        f"- Contacts created: {len(created)}",
+        f"- Contacts subscribed: {len(subscribed)}",
+        f"- Contacts unsubscribed: {len(unsubscribed_actions)}",
+        f"- Unsubscribed contacts filtered: {len(unsubscribed)}",
+        "",
+    ]
+    text_lines.extend(action.detail for action in actions)
+    for email, names, duids in unsubscribed:
+        text_lines.append(f"Unsubscribed contact filtered: {names} ({duids}) {email}")
+
+    html_parts = [
+        '<html><body style="font-family: Arial, sans-serif; font-size: 14px;">',
+        '<h2 style="color: #333333;">Constant Contact Sync Update: '
+        f"{html.escape(mapping.target_list)}</h2>",
+        f'<p style="color: #666666;">Generated: '
+        f"{html.escape(generated_at.strftime('%Y-%m-%d %H:%M:%S'))}</p>",
+        "<p><strong>ParishSoft Member Workgroup:</strong> "
+        f"{html.escape(mapping.source_workgroup)}<br>"
+        "<strong>Constant Contact List:</strong> "
+        f"{html.escape(mapping.target_list)}</p>",
+        "<h3>Summary</h3><ul>",
+        f"<li>Contacts created: {len(created)}</li>",
+        f"<li>Contacts subscribed: {len(subscribed)}</li>",
+        f"<li>Contacts unsubscribed: {len(unsubscribed_actions)}</li>",
+        f"<li>Unsubscribed contacts filtered: {len(unsubscribed)}</li>",
+        "</ul>",
+    ]
+    if actions:
+        html_parts.extend(
+            [
+                "<h3>Actions Performed</h3>",
+                f'<table style="{_EMAIL_TABLE_STYLE}"><tr>',
+                f'<th style="{_EMAIL_HEADER_STYLE}">Action</th>',
+                f'<th style="{_EMAIL_HEADER_STYLE}">Contact Name(s)</th>',
+                f'<th style="{_EMAIL_HEADER_STYLE}">ParishSoft Member DUID(s)</th>',
+                f'<th style="{_EMAIL_HEADER_STYLE}">Email</th></tr>',
+            ]
+        )
+        for row, action in enumerate(sorted(actions, key=_cc_action_sort_key)):
+            names, duids = _cc_contact_names_and_duids(
+                action.email,
+                contacts_by_email,
+                ps_members_by_email,
+            )
+            html_parts.append(
+                "<tr>"
+                f'<td style="{_email_cell_style(row)}">'
+                f"{html.escape(_cc_action_label(action))}</td>"
+                f'<td style="{_email_cell_style(row)}">{html.escape(names)}</td>'
+                f'<td style="{_email_cell_style(row)}">{html.escape(duids)}</td>'
+                f'<td style="{_email_cell_style(row)}">{html.escape(action.email)}</td>'
+                "</tr>"
+            )
+        html_parts.append("</table>")
+    if unsubscribed:
+        html_parts.extend(
+            [
+                '<h3 style="color: #cc0000;">Filtered Unsubscribed Contacts</h3>',
+                f'<table style="{_EMAIL_TABLE_STYLE}"><tr>',
+                f'<th style="{_EMAIL_HEADER_STYLE}">Contact Name(s)</th>',
+                f'<th style="{_EMAIL_HEADER_STYLE}">ParishSoft Member DUID(s)</th>',
+                f'<th style="{_EMAIL_HEADER_STYLE}">Email</th></tr>',
+            ]
+        )
+        for row, (email, names, duids) in enumerate(
+            sorted(unsubscribed, key=_unsubscribed_sort_key)
+        ):
+            html_parts.append(
+                "<tr>"
+                f'<td style="{_email_cell_style(row)}">{html.escape(names)}</td>'
+                f'<td style="{_email_cell_style(row)}">{html.escape(duids)}</td>'
+                f'<td style="{_email_cell_style(row)}">{html.escape(email)}</td>'
+                "</tr>"
+            )
+        html_parts.append("</table>")
+    html_parts.extend(
+        [
+            '<hr style="border: 1px solid #dddddd; margin-top: 30px;">',
+            '<p style="color: #999999; font-size: 12px;">'
+            "This is an automated message from the ParishSoft to Constant "
+            "Contact synchronization script.</p>",
+            "</body></html>",
+        ]
+    )
+    return Email(
+        subject=subject,
+        sender=sender,
+        to=mapping.notifications,
+        text="\n".join(text_lines),
+        html="".join(html_parts),
+    )
+
+
+_EMAIL_TABLE_STYLE = "border-collapse: collapse; margin-bottom: 20px; width: auto;"
+_EMAIL_HEADER_STYLE = (
+    "border: 1px solid #dddddd; padding: 8px; text-align: center; "
+    "background-color: #4472C4; color: white; white-space: nowrap;"
+)
+
+
+def _email_cell_style(row: int) -> str:
+    """Return striped table-cell styling for notification emails."""
+    background = "#f2f2f2" if row % 2 == 0 else "#ffffff"
+    return (
+        "border: 1px solid #dddddd; padding: 8px; "
+        f"background-color: {background}; white-space: nowrap;"
+    )
+
+
+def _cc_action_sort_key(action: CCAction) -> tuple[int, str, str]:
+    """Sort Constant Contact actions by type and address for stable emails."""
+    order = {"create": 0, "subscribe": 1, "unsubscribe": 2, "update_name": 3}
+    return (order.get(action.type, 99), action.email, action.detail)
+
+
+def _cc_action_label(action: CCAction) -> str:
+    """Return a display label for one Constant Contact action."""
+    return action.type.replace("_", " ")
+
+
+def _cc_contact_names_and_duids(
+    email: str,
+    contacts_by_email: Mapping[str, Mapping[str, Any]],
+    ps_members_by_email: Mapping[str, list[dict[str, Any]]],
+) -> tuple[str, str]:
+    """Return display names and ParishSoft member DUIDs for an email address."""
+    contact = contacts_by_email.get(email, {})
+    members = contact.get("PS MEMBERS") or ps_members_by_email.get(email, [])
+    if members:
+        names = ", ".join(
+            str(member.get("py friendly name FL", "")) for member in members
+        )
+        duids = ", ".join(str(member.get("memberDUID", "")) for member in members)
+        return names, duids
+    name = f"{contact.get('first_name', '')} {contact.get('last_name', '')}".strip()
+    return name, ""
 
 
 def build_unsubscribed_report_email(
@@ -905,10 +1079,22 @@ def send_unsubscribed_report(
             for email, names, duids in unsubscribed[index]:
                 log.info("  %s (DUID: %s): %s", names, duids, email)
         return 0
-    if provider is None or not config.sender:
-        log.warning(
-            "Unsubscribed report is due, but email provider or sender is not configured"
+    has_recipients = any(
+        mapping.notifications and unsubscribed[index]
+        for index, mapping in enumerate(config.mappings)
+    )
+    if has_recipients and not config.sender:
+        raise ConfigError(
+            "sync.notifications.sender is required when "
+            "sync.unsubscribed_report.enabled sends email"
         )
+    if has_recipients and provider is None:
+        raise ConfigError(
+            "email configuration is required when "
+            "sync.unsubscribed_report.enabled sends email"
+        )
+    if provider is None or not config.sender:
+        log.warning("Unsubscribed report is due, but no report email can be sent")
         return 0
 
     sent = 0
