@@ -51,8 +51,13 @@ sync:
   # are still in a synced workgroup but have manually unsubscribed in Constant
   # Contact. The sync can run every 15 minutes; the state file prevents sending
   # the report more than once per local day inside the configured time window.
+  # Keep this enabled for normal operations: it moves detailed filtered-
+  # unsubscribed-contact tables into the scheduled report. If disabled, those
+  # tables are included in regular sync update emails, and a run with no
+  # Constant Contact changes can still send an email only about filtered
+  # unsubscribed contacts.
   unsubscribed_report:
-    enabled: false
+    enabled: true
     # Optional local weekday. Use monday, tuesday, wednesday, thursday, friday,
     # saturday, or sunday. Set to null or omit to allow the report every day.
     day_of_week: monday
