@@ -334,6 +334,46 @@ def test_cc_sync_config_validation():
     assert config.unsubscribed_report.state_file == DEFAULT_UNSUBSCRIBED_REPORT_STATE
 
 
+def test_cc_sync_config_rejects_duplicate_target_lists():
+    """One Constant Contact list must not be reconciled by multiple mappings."""
+    with pytest.raises(ConfigError, match="target_list values must be unique"):
+        cc_sync_config_from_yaml(
+            {
+                "sync": {
+                    "lists": [
+                        {
+                            "source_workgroup": "Newsletter WG",
+                            "target_list": "Newsletter",
+                        },
+                        {
+                            "source_workgroup": "Second WG",
+                            "target_list": "newsletter",
+                        },
+                    ]
+                }
+            }
+        )
+
+
+def test_cc_sync_config_requires_sender_for_notifications():
+    """Notification recipients require a sender before any sync writes happen."""
+    with pytest.raises(ConfigError, match="sync.notifications.sender is required"):
+        cc_sync_config_from_yaml(
+            {
+                "sync": {
+                    "notifications": {},
+                    "lists": [
+                        {
+                            "source_workgroup": "Newsletter WG",
+                            "target_list": "Newsletter",
+                            "notifications": ["admin@example.org"],
+                        }
+                    ],
+                }
+            }
+        )
+
+
 def test_cc_sync_config_accepts_unsubscribed_report_schedule(tmp_path):
     """Verify YAML can schedule the standalone unsubscribed report."""
     config = cc_sync_config_from_yaml(
@@ -905,7 +945,7 @@ def test_sync_ps_to_cc_due_unsubscribed_report_requires_sender(
     assert "ERROR parishkit.pk_sync_ps_to_cc" in error
     assert "sync.notifications.sender is required" in error
     assert email.sent == []
-    assert [call[0] for call in cc.calls] == ["get_all", "get_all"]
+    assert cc.calls == []
 
 
 def test_sync_ps_to_cc_due_unsubscribed_report_requires_recipients(

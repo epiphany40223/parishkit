@@ -393,17 +393,28 @@ def refresh_access_token(
         raise ConfigError("Constant Contact refresh_token is required")
     http = session or requests.Session()
     start = now or dt.datetime.now(dt.UTC)
+
+    def post_refresh() -> requests.Response:
+        """Post the refresh request, classifying retryable HTTP statuses."""
+        refresh_response = http.post(
+            token_url,
+            data={
+                "client_id": cc_client_id,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+            },
+            timeout=timeout,
+        )
+        if refresh_response.status_code == 429 or refresh_response.status_code >= 500:
+            raise TransientRetryError(
+                "Constant Contact token refresh returned HTTP "
+                f"{refresh_response.status_code}"
+            )
+        return refresh_response
+
     try:
         response = retry_call(
-            lambda: http.post(
-                token_url,
-                data={
-                    "client_id": cc_client_id,
-                    "refresh_token": refresh_token,
-                    "grant_type": "refresh_token",
-                },
-                timeout=timeout,
-            ),
+            post_refresh,
             policy=RetryPolicy(attempts=3, initial_delay=0.2),
         )
     except RetryError as exc:

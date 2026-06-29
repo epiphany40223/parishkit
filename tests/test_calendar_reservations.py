@@ -264,6 +264,40 @@ def test_reservation_decisions_accepts_non_conflict_calendar_without_checking():
     ]
 
 
+def test_reservation_decisions_use_event_timezone_for_offsetless_datetimes():
+    """Offset-less Google dateTime values honor their per-event timeZone."""
+    config = calendar_reservation_config(
+        {
+            "calendars": {
+                "timezone": "America/New_York",
+                "acceptable_domains": ["example.org"],
+                "calendars": [{"name": "Room", "calendar_id": "room@example.org"}],
+            }
+        }
+    )
+    existing = event(
+        "existing",
+        status="accepted",
+        start="2026-02-01T10:00:00",
+        end="2026-02-01T11:00:00",
+    )
+    pending = event(
+        "pending",
+        start="2026-02-01T13:30:00",
+        end="2026-02-01T14:30:00",
+    )
+    existing["start"]["timeZone"] = "America/Los_Angeles"
+    existing["end"]["timeZone"] = "America/Los_Angeles"
+    pending["start"]["timeZone"] = "America/New_York"
+    pending["end"]["timeZone"] = "America/New_York"
+
+    decisions = reservation_decisions([existing, pending], config.calendars[0], config)
+
+    assert [(item.event["id"], item.response) for item in decisions] == [
+        ("pending", "declined")
+    ]
+
+
 def test_calendar_reservations_matches_attendee_email_case_insensitively(tmp_path):
     """Calendar attendee matching does not depend on exact email casing."""
     mixed_case_event = event("one")

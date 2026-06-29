@@ -100,9 +100,9 @@ def _run(args: argparse.Namespace, loader: Loader) -> int:
 
     Wires up the shared CLI options, YAML config, logging, and ParishSoft
     client, then loads the selected member/family data and prints the rendered
-    summary. Rejects ``--load-contributions`` combined with ``--name`` because
-    contribution loading needs a concrete member or family DUID. Always returns
-    0 on success; loader/config failures surface as exceptions.
+    summary. ``--load-contributions`` is passed through to the data loader for
+    all selector types so the loader can decide what additional data is needed.
+    Always returns 0 on success; loader/config failures surface as exceptions.
     """
     common = resolve_common_options(args)
     config = load_yaml_config(common.config)

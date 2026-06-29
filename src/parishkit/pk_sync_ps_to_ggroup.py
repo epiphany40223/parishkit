@@ -344,8 +344,14 @@ def sync_config_from_yaml(config: ConfigData) -> SyncConfig:
     )
     if not groups:
         raise ConfigError("sync.groups must not be empty")
+    _validate_unique_groups(groups)
     notifications = _mapping(section.get("notifications", {}), "sync.notifications")
     sender = _optional_string(notifications.get("sender"), "sync.notifications.sender")
+    if any(group.notify for group in groups) and not sender:
+        raise ConfigError(
+            "sync.notifications.sender is required when any sync.groups[].notify "
+            "recipient is configured"
+        )
     domains = _string_list(
         section.get("google_mail_domains", ["gmail.com"]),
         "sync.google_mail_domains",
@@ -355,6 +361,22 @@ def sync_config_from_yaml(config: ConfigData) -> SyncConfig:
         sender=sender,
         google_mail_domains=frozenset(domain.casefold() for domain in domains),
     )
+
+
+def _validate_unique_groups(groups: Sequence[GroupSync]) -> None:
+    """Reject duplicate Google Group targets before destructive reconciliation."""
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for group in groups:
+        normalized = group.group.casefold()
+        if normalized in seen:
+            duplicates.append(group.group)
+        seen.add(normalized)
+    if duplicates:
+        raise ConfigError(
+            "sync.groups[].group values must be unique; duplicate group target(s): "
+            f"{_text_list(duplicates)}"
+        )
 
 
 def load_google_credentials(
@@ -466,13 +488,14 @@ def sync_group(
             group.group,
         )
         return actions
+    posting_permission = get_group_posting_permissions(settings_service, group.group)
     apply_actions(admin_service, group.group, actions)
     log.info("Applied %s Google Group action(s) for %s", len(actions), group.group)
     send_notification(
         email_provider,
         config,
         group,
-        get_group_posting_permissions(settings_service, group.group),
+        posting_permission,
         actions,
     )
     return actions
@@ -1037,7 +1060,9 @@ def selector_matches_member(
             role = ministry.get("role")
             if role in member_roles or role in leader_roles:
                 is_member = True
-                is_leader = role in leader_roles or is_ministry_leader(ministry)
+                is_leader = (
+                    is_leader or role in leader_roles or is_ministry_leader(ministry)
+                )
         return is_member, is_leader
     raise ConfigError(f"unknown sync selector type: {selector.type}")
 

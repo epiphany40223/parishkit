@@ -570,13 +570,19 @@ def event_interval(
 def event_time(value: Mapping[str, str], timezone: dt.tzinfo) -> dt.datetime:
     """Parse a Google Calendar event start/end field into a datetime.
 
-    Timed events use a ``dateTime`` value; an absent offset falls back to the
-    configured ``timezone``. All-day events use a ``date`` value and are
-    anchored to midnight in ``timezone``.
+    Timed events use a ``dateTime`` value; an absent offset falls back first to
+    the event field's own ``timeZone`` value and then to the configured
+    ``timezone``. All-day events use a ``date`` value and are anchored to
+    midnight in ``timezone``.
     """
     if "dateTime" in value:
         parsed = dt.datetime.fromisoformat(value["dateTime"])
-        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone)
+        if parsed.tzinfo is not None:
+            return parsed
+        event_timezone = value.get("timeZone")
+        if event_timezone:
+            return parsed.replace(tzinfo=ZoneInfo(event_timezone))
+        return parsed.replace(tzinfo=timezone)
     parsed_date = dt.date.fromisoformat(value["date"])
     return dt.datetime.combine(parsed_date, dt.time(), tzinfo=timezone)
 

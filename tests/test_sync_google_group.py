@@ -87,10 +87,13 @@ class Groups:
     def __init__(self, permission: str = "ALL_MEMBERS_CAN_POST"):
         self.calls = []
         self.permission = permission
+        self.get_error: Exception | None = None
 
     def get(self, **kwargs):
         """Record the get call and return canned group settings."""
         self.calls.append(("get", kwargs))
+        if self.get_error is not None:
+            return Request(exc=self.get_error)
         return Request({"whoCanPostMessage": self.permission})
 
 
@@ -260,6 +263,45 @@ def test_sync_config_validation():
     assert config.groups[0].selectors[0].type == "ministry_role"
     assert config.groups[0].selectors[0].ministry_pattern == r"^\d\d\d.*"
     assert config.sender == "no-reply@example.org"
+
+
+def test_sync_config_rejects_duplicate_group_targets():
+    """One Google Group must not be reconciled by multiple config entries."""
+    with pytest.raises(ConfigError, match="group values must be unique"):
+        sync_config_from_yaml(
+            {
+                "sync": {
+                    "groups": [
+                        {
+                            "group": "group@example.org",
+                            "static_members": [{"email": "ann@example.org"}],
+                        },
+                        {
+                            "group": "GROUP@example.org",
+                            "static_members": [{"email": "bob@example.org"}],
+                        },
+                    ]
+                }
+            }
+        )
+
+
+def test_sync_config_requires_sender_for_notifications():
+    """Group notification recipients require a configured sender."""
+    with pytest.raises(ConfigError, match="sync.notifications.sender is required"):
+        sync_config_from_yaml(
+            {
+                "sync": {
+                    "groups": [
+                        {
+                            "group": "group@example.org",
+                            "notify": ["admin@example.org"],
+                            "static_members": [{"email": "ann@example.org"}],
+                        }
+                    ]
+                }
+            }
+        )
 
 
 def test_sync_config_rejects_group_without_source():
@@ -501,6 +543,49 @@ def test_all_ministry_chairs_staff_owner_uses_primary_email_domain():
     desired = desired_members(data, config.groups[0])
 
     assert ("pat@gmail.com", False) in [(item.email, item.leader) for item in desired]
+
+
+def test_ministry_role_selector_preserves_leader_match_across_ministries():
+    """A later non-leader role must not demote an earlier leader role."""
+    data = parishsoft_data()
+    data.members[3] = {
+        "memberDUID": 3,
+        "firstName": "Riley",
+        "lastName": "Roles",
+        "py friendly name FL": "Riley Roles",
+        "emailAddress": "riley@example.org",
+        "py emailAddresses": ["riley@example.org"],
+        "py ministries": {
+            "500-Alpha": {"name": "500-Alpha", "role": "Leader"},
+            "500-Beta": {"name": "500-Beta", "role": "Team Member"},
+        },
+        "py workgroups": {},
+    }
+    config = sync_config_from_yaml(
+        {
+            "sync": {
+                "groups": [
+                    {
+                        "group": "roles@example.org",
+                        "selectors": [
+                            {
+                                "type": "ministry_role",
+                                "ministry_prefix": "500",
+                                "member_roles": ["Team Member"],
+                                "leader_roles": ["Leader"],
+                            }
+                        ],
+                    }
+                ]
+            }
+        }
+    )
+
+    desired = desired_members(data, config.groups[0])
+
+    assert ("riley@example.org", True) in [
+        (item.email, item.leader) for item in desired
+    ]
 
 
 def test_compute_actions_add_delete_and_change_role():
@@ -764,6 +849,41 @@ def test_sync_google_group_reports_missing_parishsoft_source(
     assert "Configured ParishSoft ministry was not found" in error
     assert "sync.groups[].ministries" in error
     assert admin._members.calls == []
+
+
+def test_sync_google_group_checks_posting_permissions_before_writes(
+    tmp_path,
+    monkeypatch,
+):
+    """Notification context failures must happen before group membership writes."""
+    admin = AdminService()
+    settings = SettingsService()
+    settings._groups.get_error = GoogleAPIError(403, "settings denied")
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_google_group_main(
+            ["--config", str(write_config(tmp_path))],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            service_factory=lambda _config: (admin, settings),
+            email_provider=EmailProvider(),
+        )
+        == 2
+    )
+
+    assert [call[0] for call in admin._members.calls] == ["list"]
+    assert settings._groups.calls == [
+        (
+            "get",
+            {
+                "groupUniqueId": "group@example.org",
+                "fields": "whoCanPostMessage",
+            },
+        )
+    ]
 
 
 def test_sync_google_group_reports_selector_with_no_matching_ministries(

@@ -414,8 +414,14 @@ def cc_sync_config_from_yaml(
     )
     if not mappings:
         raise ConfigError("sync.lists must not be empty")
+    _validate_unique_target_lists(mappings)
     notifications = _mapping(section.get("notifications", {}), "sync.notifications")
     sender = _optional_string(notifications.get("sender"), "sync.notifications.sender")
+    if any(mapping.notifications for mapping in mappings) and not sender:
+        raise ConfigError(
+            "sync.notifications.sender is required when any "
+            "sync.lists[].notifications recipient is configured"
+        )
     report = _unsubscribed_report_config(
         section.get("unsubscribed_report", {}),
         "sync.unsubscribed_report",
@@ -427,6 +433,22 @@ def cc_sync_config_from_yaml(
         sender=sender,
         unsubscribed_report=report,
     )
+
+
+def _validate_unique_target_lists(mappings: Sequence[CCSyncMapping]) -> None:
+    """Reject duplicate Constant Contact list targets before reconciliation."""
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for mapping in mappings:
+        normalized = mapping.target_list.casefold()
+        if normalized in seen:
+            duplicates.append(mapping.target_list)
+        seen.add(normalized)
+    if duplicates:
+        raise ConfigError(
+            "sync.lists[].target_list values must be unique; duplicate target "
+            f"list(s): {_text_list(duplicates)}"
+        )
 
 
 def validate_configured_parishsoft_workgroups(

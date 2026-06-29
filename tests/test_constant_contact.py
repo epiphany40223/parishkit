@@ -250,7 +250,7 @@ def test_refresh_access_token_rejects_non_json_response(tmp_path):
                     "token": "https://auth.example/token",
                 },
             },
-            session=Session([BadJSONResponse("not json", status_code=500)]),
+            session=Session([BadJSONResponse("not json", status_code=400)]),
             now=start,
         )
 
@@ -303,6 +303,49 @@ def test_refresh_access_token_retries_transient_request_failure(tmp_path):
     )
 
     assert refreshed["access_token"] == "new"
+
+
+def test_refresh_access_token_retries_transient_http_response(tmp_path):
+    """Refreshing retries token endpoint 429/5xx responses before succeeding."""
+    start = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
+    token_path = tmp_path / "token.json"
+    save_access_token(
+        token_path,
+        {
+            "access_token": "old",
+            "refresh_token": "refresh",
+            "valid from": start - dt.timedelta(hours=2),
+            "valid to": start - dt.timedelta(hours=1),
+        },
+    )
+    session = Session(
+        [
+            Response({"error": "temporarily unavailable"}, status_code=503),
+            Response(
+                {
+                    "access_token": "new",
+                    "refresh_token": "refresh2",
+                    "expires_in": 3600,
+                }
+            ),
+        ]
+    )
+
+    refreshed = get_access_token(
+        token_path,
+        {
+            "client id": "client",
+            "endpoints": {
+                "api": "https://api.example",
+                "token": "https://auth.example/token",
+            },
+        },
+        session=session,
+        now=start,
+    )
+
+    assert refreshed["access_token"] == "new"
+    assert len(session.calls) == 2
 
 
 def test_refresh_access_token_wraps_exhausted_request_failures(tmp_path):
