@@ -21,9 +21,12 @@ from parishkit.pk_sync_ps_to_cc import (
     detect_name_mismatches,
     ensure_unsubscribed_report_state_writable,
     filter_unsubscribed,
+    load_cc_data,
+    name_update_candidate_emails,
     parishsoft_members_by_email,
     resolve_desired_state,
     send_notifications,
+    validate_large_removal_guard,
     validate_non_empty_desired_state,
 )
 from parishkit.pk_sync_ps_to_cc import (
@@ -333,6 +336,64 @@ def test_cc_sync_config_validation():
     assert config.unsubscribed_report.state_file == DEFAULT_UNSUBSCRIBED_REPORT_STATE
 
 
+def test_cc_sync_config_rejects_duplicate_target_lists():
+    """One Constant Contact list must not be reconciled by multiple mappings."""
+    with pytest.raises(ConfigError, match="target_list values must be unique"):
+        cc_sync_config_from_yaml(
+            {
+                "sync": {
+                    "lists": [
+                        {
+                            "source_workgroup": "Newsletter WG",
+                            "target_list": "Newsletter",
+                        },
+                        {
+                            "source_workgroup": "Second WG",
+                            "target_list": "newsletter",
+                        },
+                    ]
+                }
+            }
+        )
+
+
+def test_cc_sync_config_rejects_unknown_mapping_key():
+    """Misspelled list mapping keys fail instead of using default guardrails."""
+    with pytest.raises(ConfigError, match="unsupported key"):
+        cc_sync_config_from_yaml(
+            {
+                "sync": {
+                    "lists": [
+                        {
+                            "source_workgroup": "Newsletter WG",
+                            "target_list": "Newsletter",
+                            "max_removal_fractions": 0.1,
+                        }
+                    ]
+                }
+            }
+        )
+
+
+def test_cc_sync_config_requires_sender_for_notifications():
+    """Notification recipients require a sender before any sync writes happen."""
+    with pytest.raises(ConfigError, match="sync.notifications.sender is required"):
+        cc_sync_config_from_yaml(
+            {
+                "sync": {
+                    "notifications": {},
+                    "lists": [
+                        {
+                            "source_workgroup": "Newsletter WG",
+                            "target_list": "Newsletter",
+                            "notifications": ["admin@example.org"],
+                        }
+                    ],
+                }
+            }
+        )
+
+
 def test_cc_sync_config_accepts_unsubscribed_report_schedule(tmp_path):
     """Verify YAML can schedule the standalone unsubscribed report."""
     config = cc_sync_config_from_yaml(
@@ -407,9 +468,9 @@ def test_constant_contact_client_resolves_relative_credential_paths(
         calls.append(("client_id", path))
         return {"endpoints": {"api": "https://api.example"}}
 
-    def fake_get_access_token(path, client_id):
+    def fake_get_access_token(path, client_id, **kwargs):
         """Capture the resolved token path."""
-        calls.append(("access_token", path, client_id))
+        calls.append(("access_token", path, client_id, kwargs))
         return {"access_token": "token"}
 
     monkeypatch.setattr(
@@ -434,6 +495,24 @@ def test_constant_contact_client_resolves_relative_credential_paths(
     assert calls[0] == ("client_id", tmp_path / "credentials" / "cc-client.json")
     assert calls[1][0] == "access_token"
     assert calls[1][1] == tmp_path / "credentials" / "cc-token.json"
+    assert calls[1][3]["allow_refresh"] is True
+
+
+def test_load_cc_data_filters_soft_deleted_contacts():
+    """Soft-deleted Constant Contact records are not reconciled as live contacts."""
+    deleted = {
+        "contact_id": "deleted-ann",
+        "deleted_at": "2026-01-01T00:00:00Z",
+        "email_address": {
+            "address": "ann@example.org",
+            "permission_to_send": "implicit",
+        },
+        "list_memberships": ["list-1"],
+    }
+    lists, contacts = load_cc_data(CCClient(contacts=[deleted, *cc_contacts()]))
+
+    assert set(lists[0]["CONTACTS"]) == {"bob@example.org", "old@example.org"}
+    assert all(contact["contact_id"] != "deleted-ann" for contact in contacts)
 
 
 def test_desired_state_and_unsubscribed_filtering():
@@ -490,6 +569,57 @@ def test_cc_sync_refuses_empty_desired_state_with_current_contacts():
         validate_non_empty_desired_state(config, [set()], cc_lists())
 
 
+def test_cc_sync_refuses_large_unsubscribe_batch_by_default():
+    """A mostly destructive non-empty sync requires explicit guardrail changes."""
+    config = CCSyncConfig(
+        mappings=(
+            CCSyncMapping(source_workgroup="Newsletter WG", target_list="Newsletter"),
+        )
+    )
+    lists = [
+        {
+            "name": "Newsletter",
+            "CONTACTS": {f"old{index}@example.org": {} for index in range(40)},
+        }
+    ]
+    actions = [
+        CCAction("unsubscribe", email, 0, f"Unsubscribe {email}")
+        for email in lists[0]["CONTACTS"]
+    ]
+
+    with pytest.raises(ConfigError, match="would remove 40 of 40"):
+        validate_large_removal_guard(config, actions, lists)
+
+
+def test_sync_ps_to_cc_all_desired_unsubscribed_does_not_trip_empty_guard(
+    tmp_path,
+    monkeypatch,
+):
+    """A non-empty source that filters to opt-outs still completes the sync."""
+    data = parishsoft_data()
+    data.member_workgroup_memberships[10]["membership"] = [{"py member duid": 2}]
+    cc = CCClient()
+    email = EmailProvider()
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_cc.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_ps_to_cc_main(
+            ["--config", str(write_config(tmp_path))],
+            loader=lambda _client, **_kwargs: data,
+            cc_factory=lambda _config: cc,
+            email_provider=email,
+        )
+        == 0
+    )
+
+    assert any(
+        call[0] == "put" and call[1] == "contacts/contact-old" for call in cc.calls
+    )
+
+
 def test_action_computation_and_name_updates():
     """Verify the full set of sync actions, including name mismatches.
 
@@ -527,6 +657,47 @@ def test_action_computation_and_name_updates():
     ]
 
 
+def test_name_updates_are_scoped_to_configured_lists_and_desired_emails():
+    """Unrelated Constant Contact lists are outside update_names scope."""
+    config = cc_sync_config_from_yaml(
+        {
+            "sync": {
+                "lists": [
+                    {
+                        "source_workgroup": "Newsletter WG",
+                        "target_list": "Newsletter",
+                    }
+                ],
+            }
+        }
+    )
+    desired = [{"ann@example.org"}]
+    contacts = {item["email_address"]["address"]: item for item in cc_contacts()}
+    contacts["ann@example.org"]["PS MEMBERS"] = [parishsoft_data().members[1]]
+    contacts["other@example.org"] = {
+        "email_address": {"address": "other@example.org"},
+        "first_name": "Wrong",
+        "last_name": "Name",
+        "PS MEMBERS": [
+            {
+                "memberDUID": 99,
+                "firstName": "Other",
+                "lastName": "Member",
+                "py friendly name FL": "Other Member",
+            }
+        ],
+    }
+
+    candidates = name_update_candidate_emails(config, desired, cc_lists())
+    actions = detect_name_mismatches(
+        contacts,
+        update_names=True,
+        candidate_emails=candidates,
+    )
+
+    assert [action.email for action in actions] == ["ann@example.org"]
+
+
 def test_sync_ps_to_cc_main_writes_constant_contact_and_email(tmp_path, monkeypatch):
     """Verify a live run posts/puts to Constant Contact and emails admins.
 
@@ -536,6 +707,7 @@ def test_sync_ps_to_cc_main_writes_constant_contact_and_email(tmp_path, monkeypa
     cc = CCClient()
     email = EmailProvider()
     loader_calls = []
+    log_file = tmp_path / "sync-cc.log"
     # Replace the real ParishSoft client builder with a no-op stand-in; the
     # injected loader below supplies the data, so the client is never used.
     monkeypatch.setattr(
@@ -550,7 +722,7 @@ def test_sync_ps_to_cc_main_writes_constant_contact_and_email(tmp_path, monkeypa
 
     assert (
         sync_ps_to_cc_main(
-            ["--config", str(write_config(tmp_path))],
+            ["--config", str(write_config(tmp_path)), "--log-file", str(log_file)],
             loader=loader,
             cc_factory=lambda _config: cc,
             email_provider=email,
@@ -567,8 +739,12 @@ def test_sync_ps_to_cc_main_writes_constant_contact_and_email(tmp_path, monkeypa
     assert "Constant Contact Sync Update: Newsletter" in (email.sent[0][0].html or "")
     assert "ParishSoft Member Workgroup:" in (email.sent[0][0].html or "")
     assert "Actions Performed" in (email.sent[0][0].html or "")
+    assert "update name" in (email.sent[0][0].html or "")
     assert "Filtered Unsubscribed Contacts" in (email.sent[0][0].html or "")
     assert "<th" in (email.sent[0][0].html or "")
+    assert "Constant Contact sync operation completed successfully" in (
+        log_file.read_text(encoding="utf-8")
+    )
 
 
 def test_sync_ps_to_cc_sends_due_unsubscribed_report_once(tmp_path, monkeypatch):
@@ -859,7 +1035,7 @@ def test_sync_ps_to_cc_due_unsubscribed_report_requires_sender(
     assert "ERROR parishkit.pk_sync_ps_to_cc" in error
     assert "sync.notifications.sender is required" in error
     assert email.sent == []
-    assert [call[0] for call in cc.calls] == ["get_all", "get_all"]
+    assert cc.calls == []
 
 
 def test_sync_ps_to_cc_due_unsubscribed_report_requires_recipients(
@@ -1111,6 +1287,60 @@ def test_sync_ps_to_cc_dry_run_skips_writes_and_email(tmp_path, monkeypatch):
     )
 
     assert [call[0] for call in cc.calls] == ["get_all", "get_all"]
+
+
+def test_sync_ps_to_cc_dry_run_marks_injected_email_provider_dry_run(
+    tmp_path,
+    monkeypatch,
+):
+    """Injected email providers still receive dry_run=True in dry-run mode."""
+    cc = CCClient()
+    email = EmailProvider()
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_cc.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_ps_to_cc_main(
+            ["--config", str(write_config(tmp_path, dry_run=True))],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            cc_factory=lambda _config: cc,
+            email_provider=email,
+        )
+        == 0
+    )
+
+    assert [call[0] for call in cc.calls] == ["get_all", "get_all"]
+    assert email.sent
+    assert all(dry_run for _message, dry_run in email.sent)
+
+
+def test_sync_ps_to_cc_live_noop_does_not_build_email_provider(tmp_path, monkeypatch):
+    """Notification credentials are not required when a live run has no email."""
+    data = parishsoft_data()
+    data.member_workgroup_memberships[10]["membership"] = [{"py member duid": 1}]
+    cc = CCClient(
+        lists=cc_lists_without_sync_actions(),
+        contacts=cc_contacts_without_sync_actions(),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_cc.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_cc.provider_from_config",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ConfigError("email loaded")),
+    )
+
+    assert (
+        sync_ps_to_cc_main(
+            ["--config", str(write_config(tmp_path))],
+            loader=lambda _client, **_kwargs: data,
+            cc_factory=lambda _config: cc,
+        )
+        == 0
+    )
 
 
 def test_sync_ps_to_cc_reports_missing_parishsoft_workgroup(

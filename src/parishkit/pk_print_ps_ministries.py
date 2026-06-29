@@ -12,7 +12,12 @@ from parishkit.cli import (
     resolve_common_options,
     run_user_facing,
 )
-from parishkit.config import ConfigData, ConfigError, load_yaml_config
+from parishkit.config import (
+    ConfigData,
+    ConfigError,
+    load_yaml_config,
+    reject_unknown_keys,
+)
 from parishkit.logging import setup_logging
 from parishkit.parishsoft import load_ministry_types
 from parishkit.parishsoft_runtime import parishsoft_client_from_config
@@ -79,6 +84,11 @@ def ministry_filters(config: ConfigData) -> dict[str, list[str]]:
     section = config.get("print_ministries", {})
     if not isinstance(section, dict):
         raise ConfigError("print_ministries configuration must be a mapping")
+    reject_unknown_keys(
+        section,
+        {"include_patterns", "include_names", "exclude_patterns"},
+        "print_ministries",
+    )
     return {
         "include_patterns": _string_list(
             section.get("include_patterns", DEFAULT_INCLUDE_PATTERNS),

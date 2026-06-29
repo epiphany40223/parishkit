@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 import stat
 
 import pytest
+import requests
 
 from parishkit.config import ConfigError
 from parishkit.constant_contact import (
@@ -139,6 +141,36 @@ def test_api_error_raises_typed_exception():
         client.post("items", {})
 
 
+def test_api_error_logs_warning(caplog):
+    """A failed Constant Contact REST call emits a warning."""
+    client = ConstantContactClient(
+        config(), session=Session([Response({}, status_code=400)])
+    )
+    caplog.set_level(logging.WARNING, logger="parishkit.constant_contact")
+
+    with pytest.raises(CCAPIError):
+        client.post("items", {})
+
+    assert "Constant Contact API request failed" in caplog.text
+    assert "HTTP 400" in caplog.text
+
+
+def test_post_does_not_retry_transient_create_response():
+    """POST creates are one-shot so a hidden success is not duplicated."""
+    session = Session(
+        [
+            Response({}, status_code=503),
+            Response({"id": "created"}),
+        ]
+    )
+    client = ConstantContactClient(config(), session=session)
+
+    with pytest.raises(CCAPIError, match="503"):
+        client.post("items", {"email": "person@example.org"})
+
+    assert len(session.calls) == 1
+
+
 def test_exhausted_transient_response_raises_typed_exception():
     """A transient 429 raises CCAPIError once retry attempts are exhausted."""
     # Allow only a single attempt so the transient status is not retried away.
@@ -192,6 +224,24 @@ def test_load_access_token_rejects_bad_shape(tmp_path):
     path.write_text('{"access_token": "token"}', encoding="utf-8")
 
     with pytest.raises(ConfigError, match="missing"):
+        load_access_token(path)
+
+
+def test_load_access_token_rejects_wrong_typed_timestamps(tmp_path):
+    """Wrong-typed token timestamps raise ConfigError rather than TypeError."""
+    path = tmp_path / "token.json"
+    path.write_text(
+        json.dumps(
+            {
+                "access_token": "token",
+                "valid from": 123,
+                "valid to": "2026-01-01T00:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="invalid timestamp"):
         load_access_token(path)
 
 
@@ -249,9 +299,174 @@ def test_refresh_access_token_rejects_non_json_response(tmp_path):
                     "token": "https://auth.example/token",
                 },
             },
-            session=Session([BadJSONResponse("not json", status_code=500)]),
+            session=Session([BadJSONResponse("not json", status_code=400)]),
             now=start,
         )
+
+
+def test_get_access_token_dry_run_rejects_expired_token_without_refresh(tmp_path):
+    """Strict dry-run mode does not refresh or rewrite expired token files."""
+    start = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
+    token_path = tmp_path / "token.json"
+    save_access_token(
+        token_path,
+        {
+            "access_token": "old",
+            "refresh_token": "refresh",
+            "valid from": start - dt.timedelta(hours=2),
+            "valid to": start - dt.timedelta(hours=1),
+        },
+    )
+    before = token_path.read_text(encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="dry-run mode will not refresh"):
+        get_access_token(
+            token_path,
+            {
+                "client id": "client",
+                "endpoints": {
+                    "api": "https://api.example",
+                    "token": "https://auth.example/token",
+                },
+            },
+            now=start,
+            allow_refresh=False,
+        )
+
+    assert token_path.read_text(encoding="utf-8") == before
+
+
+def test_refresh_access_token_retries_transient_request_failure(tmp_path):
+    """Refreshing retries transient request failures before succeeding."""
+    start = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
+    token_path = tmp_path / "token.json"
+    save_access_token(
+        token_path,
+        {
+            "access_token": "old",
+            "refresh_token": "refresh",
+            "valid from": start - dt.timedelta(hours=2),
+            "valid to": start - dt.timedelta(hours=1),
+        },
+    )
+
+    class FlakySession(Session):
+        """Fake session that fails once with a timeout, then returns a response."""
+
+        def post(self, url, **kwargs):
+            """Record the POST and fail the first refresh attempt."""
+            self.calls.append(("post", url, kwargs))
+            if len(self.calls) == 1:
+                raise requests.exceptions.Timeout("temporary timeout")
+            return self.responses.pop(0)
+
+    refreshed = get_access_token(
+        token_path,
+        {
+            "client id": "client",
+            "endpoints": {
+                "api": "https://api.example",
+                "token": "https://auth.example/token",
+            },
+        },
+        session=FlakySession(
+            [
+                Response(
+                    {
+                        "access_token": "new",
+                        "refresh_token": "refresh2",
+                        "expires_in": 3600,
+                    }
+                )
+            ]
+        ),
+        now=start,
+    )
+
+    assert refreshed["access_token"] == "new"
+
+
+def test_refresh_access_token_retries_transient_http_response(tmp_path):
+    """Refreshing retries token endpoint 429/5xx responses before succeeding."""
+    start = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
+    token_path = tmp_path / "token.json"
+    save_access_token(
+        token_path,
+        {
+            "access_token": "old",
+            "refresh_token": "refresh",
+            "valid from": start - dt.timedelta(hours=2),
+            "valid to": start - dt.timedelta(hours=1),
+        },
+    )
+    session = Session(
+        [
+            Response({"error": "temporarily unavailable"}, status_code=503),
+            Response(
+                {
+                    "access_token": "new",
+                    "refresh_token": "refresh2",
+                    "expires_in": 3600,
+                }
+            ),
+        ]
+    )
+
+    refreshed = get_access_token(
+        token_path,
+        {
+            "client id": "client",
+            "endpoints": {
+                "api": "https://api.example",
+                "token": "https://auth.example/token",
+            },
+        },
+        session=session,
+        now=start,
+    )
+
+    assert refreshed["access_token"] == "new"
+    assert len(session.calls) == 2
+
+
+def test_refresh_access_token_wraps_exhausted_request_failures(tmp_path, caplog):
+    """Repeated transient request failures surface as a clean ConfigError."""
+    start = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
+    token_path = tmp_path / "token.json"
+    save_access_token(
+        token_path,
+        {
+            "access_token": "old",
+            "refresh_token": "refresh",
+            "valid from": start - dt.timedelta(hours=2),
+            "valid to": start - dt.timedelta(hours=1),
+        },
+    )
+
+    class BrokenSession(Session):
+        """Fake session that always raises a retryable timeout."""
+
+        def post(self, url, **kwargs):
+            """Record the POST and raise a timeout."""
+            self.calls.append(("post", url, kwargs))
+            raise requests.exceptions.Timeout("network down")
+
+    caplog.set_level(logging.WARNING, logger="parishkit.constant_contact")
+
+    with pytest.raises(ConfigError, match="failed after retries"):
+        get_access_token(
+            token_path,
+            {
+                "client id": "client",
+                "endpoints": {
+                    "api": "https://api.example",
+                    "token": "https://auth.example/token",
+                },
+            },
+            session=BrokenSession([]),
+            now=start,
+        )
+    assert "Constant Contact token refresh request failed" in caplog.text
 
 
 def test_contact_body_helpers_strip_periods():
@@ -508,3 +723,34 @@ def test_device_oauth_flow_polls_pending_authorization():
     # One sleep of the advertised interval between the pending poll and success.
     assert sleeps == [1]
     assert len(session.calls) == 3
+
+
+def test_device_oauth_flow_rejects_invalid_poll_timing():
+    """Wrong-typed interval/expires fields fail with a config error."""
+    session = Session(
+        [
+            Response(
+                {
+                    "verification_uri_complete": "https://auth.example/device",
+                    "device_code": "device",
+                    "interval": "soon",
+                    "expires_in": 60,
+                }
+            ),
+        ]
+    )
+
+    with pytest.raises(ConfigError, match="poll timing"):
+        run_device_oauth_flow(
+            {
+                "client id": "client",
+                "endpoints": {
+                    "api": "https://api.example",
+                    "auth": "https://auth.example/device",
+                    "token": "https://auth.example/token",
+                },
+            },
+            session=session,
+            input_fn=lambda _prompt: None,
+            print_fn=lambda _message: None,
+        )

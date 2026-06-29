@@ -15,7 +15,12 @@ from parishkit.cli import (
     resolve_common_options,
     run_user_facing,
 )
-from parishkit.config import ConfigData, ConfigError, load_yaml_config
+from parishkit.config import (
+    ConfigData,
+    ConfigError,
+    load_yaml_config,
+    reject_unknown_keys,
+)
 from parishkit.logging import setup_logging
 from parishkit.parishsoft import (
     ParishSoftClient,
@@ -100,9 +105,9 @@ def _run(args: argparse.Namespace, loader: Loader) -> int:
 
     Wires up the shared CLI options, YAML config, logging, and ParishSoft
     client, then loads the selected member/family data and prints the rendered
-    summary. Rejects ``--load-contributions`` combined with ``--name`` because
-    contribution loading needs a concrete member or family DUID. Always returns
-    0 on success; loader/config failures surface as exceptions.
+    summary. ``--load-contributions`` is passed through to the data loader for
+    all selector types so the loader can decide what additional data is needed.
+    Always returns 0 on success; loader/config failures surface as exceptions.
     """
     common = resolve_common_options(args)
     config = load_yaml_config(common.config)
@@ -292,6 +297,7 @@ def _load_contributions_value(
     section = config.get("print_member", {})
     if not isinstance(section, dict):
         raise ConfigError("print_member configuration must be a mapping")
+    reject_unknown_keys(section, {"load_contributions"}, "print_member")
     value = section.get("load_contributions", False)
     return _normalize_load_contributions(value)
 

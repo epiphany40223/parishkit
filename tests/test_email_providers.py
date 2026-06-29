@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import smtplib
+
 import pytest
 
 from parishkit.config import ConfigError
@@ -28,20 +30,27 @@ def test_build_message_with_text_html_and_attachment(tmp_path):
     assert message.is_multipart()
 
 
-def test_provider_selection_ms365_dry_run():
-    """provider_from_config picks MS365; its dry-run send returns the built message."""
-    provider = provider_from_config({"provider": "ms365", "tenant_id": "tenant"})
-    built = provider.send(
-        Email(
-            subject="Subject",
-            sender="from@example.org",
-            to=["to@example.org"],
-            text="Plain",
-        ),
-        dry_run=True,
-    )
+def test_build_message_rejects_invalid_attachment_mime_type(tmp_path):
+    """Invalid attachment MIME values raise ConfigError instead of ValueError."""
+    attachment = tmp_path / "report.txt"
+    attachment.write_text("report", encoding="utf-8")
 
-    assert built["Subject"] == "Subject"
+    with pytest.raises(ConfigError, match="MIME type"):
+        build_message(
+            Email(
+                subject="Subject",
+                sender="from@example.org",
+                to=["to@example.org"],
+                text="Plain",
+                attachments=[Attachment(path=attachment, mime_type="text")],
+            )
+        )
+
+
+def test_provider_selection_rejects_ms365_until_implemented():
+    """provider_from_config rejects MS365 before any external writes happen."""
+    with pytest.raises(ConfigError, match="ms365 is not implemented"):
+        provider_from_config({"provider": "ms365", "tenant_id": "tenant"})
 
 
 def test_provider_selection_rejects_unknown():
@@ -223,6 +232,110 @@ def test_google_workspace_send_refreshes_invalid_credentials(monkeypatch):
 
     assert refresh_requests
     assert sent == ["sent"]
+
+
+def test_google_workspace_send_maps_smtp_failures_to_config_error():
+    """SMTP transport exceptions are normalized into user-facing errors."""
+
+    class Credentials:
+        """Already-valid fake OAuth credentials."""
+
+        token = "token"
+        valid = True
+
+    class SMTP:
+        """Fake SMTP client that fails during message delivery."""
+
+        def __init__(self, *_args):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def ehlo(self):
+            """Accept the greeting."""
+            return 250, b"ok"
+
+        def docmd(self, *_args):
+            """Accept XOAUTH2 authentication."""
+            return 235, b"ok"
+
+        def send_message(self, *_args, **_kwargs):
+            """Simulate a transport failure."""
+            raise smtplib.SMTPException("network down")
+
+    provider = GoogleWorkspaceSMTPProvider(
+        smtp_host="smtp.example.org",
+        smtp_port=465,
+        user="user@example.org",
+        credentials=Credentials(),
+        smtp_factory=SMTP,
+    )
+
+    with pytest.raises(ConfigError, match="SMTP delivery failed"):
+        provider.send(
+            Email(
+                subject="Subject",
+                sender="from@example.org",
+                to=["to@example.org"],
+                text="Plain",
+            )
+        )
+
+
+def test_google_workspace_send_rejects_refused_recipients():
+    """Partial SMTP recipient refusal is treated as delivery failure."""
+
+    class Credentials:
+        """Already-valid fake OAuth credentials."""
+
+        token = "token"
+        valid = True
+
+    class SMTP:
+        """Fake SMTP client that refuses one recipient."""
+
+        def __init__(self, *_args):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def ehlo(self):
+            """Accept the greeting."""
+            return 250, b"ok"
+
+        def docmd(self, *_args):
+            """Accept XOAUTH2 authentication."""
+            return 235, b"ok"
+
+        def send_message(self, *_args, **_kwargs):
+            """Return smtplib's refused-recipient mapping."""
+            return {"bad@example.org": (550, b"no such user")}
+
+    provider = GoogleWorkspaceSMTPProvider(
+        smtp_host="smtp.example.org",
+        smtp_port=465,
+        user="user@example.org",
+        credentials=Credentials(),
+        smtp_factory=SMTP,
+    )
+
+    with pytest.raises(ConfigError, match="bad@example.org"):
+        provider.send(
+            Email(
+                subject="Subject",
+                sender="from@example.org",
+                to=["bad@example.org"],
+                text="Plain",
+            )
+        )
 
 
 def test_google_workspace_config_requires_key_and_user(monkeypatch, tmp_path):

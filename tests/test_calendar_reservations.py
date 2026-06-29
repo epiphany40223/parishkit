@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from pathlib import Path
 
 import pytest
 
 from parishkit.config import ConfigError
+from parishkit.google.auth import GoogleAPIError
 from parishkit.pk_validate_gcalendar_reservations import (
     ReservationCalendar,
     calendar_reservation_config,
@@ -24,6 +26,8 @@ class Request:
         self.response = response
 
     def execute(self):
+        if isinstance(self.response, Exception):
+            raise self.response
         return self.response
 
 
@@ -164,6 +168,25 @@ def test_calendar_reservations_config_rejects_missing_domains():
         )
 
 
+def test_calendar_reservations_config_rejects_unknown_calendar_key():
+    """Misspelled calendar keys fail instead of changing validation defaults."""
+    with pytest.raises(ConfigError, match="unsupported key"):
+        calendar_reservation_config(
+            {
+                "calendars": {
+                    "acceptable_domains": ["example.org"],
+                    "calendars": [
+                        {
+                            "name": "Room",
+                            "calendar_id": "room@example.org",
+                            "check_conflict": False,
+                        }
+                    ],
+                }
+            }
+        )
+
+
 def test_calendar_reservations_config_describes_bad_calendar_id():
     """A malformed calendar_id error names the entry and bad value type."""
     with pytest.raises(ConfigError) as exc_info:
@@ -264,6 +287,128 @@ def test_reservation_decisions_accepts_non_conflict_calendar_without_checking():
     ]
 
 
+def test_reservation_decisions_use_event_timezone_for_offsetless_datetimes():
+    """Offset-less Google dateTime values honor their per-event timeZone."""
+    config = calendar_reservation_config(
+        {
+            "calendars": {
+                "timezone": "America/New_York",
+                "acceptable_domains": ["example.org"],
+                "calendars": [{"name": "Room", "calendar_id": "room@example.org"}],
+            }
+        }
+    )
+    existing = event(
+        "existing",
+        status="accepted",
+        start="2026-02-01T10:00:00",
+        end="2026-02-01T11:00:00",
+    )
+    pending = event(
+        "pending",
+        start="2026-02-01T13:30:00",
+        end="2026-02-01T14:30:00",
+    )
+    existing["start"]["timeZone"] = "America/Los_Angeles"
+    existing["end"]["timeZone"] = "America/Los_Angeles"
+    pending["start"]["timeZone"] = "America/New_York"
+    pending["end"]["timeZone"] = "America/New_York"
+
+    decisions = reservation_decisions([existing, pending], config.calendars[0], config)
+
+    assert [(item.event["id"], item.response) for item in decisions] == [
+        ("pending", "declined")
+    ]
+
+
+def test_reservation_decisions_declines_malformed_pending_event_times(caplog):
+    """Bad pending event timing is declined instead of left needsAction."""
+    config = calendar_reservation_config(
+        {
+            "calendars": {
+                "acceptable_domains": ["example.org"],
+                "calendars": [{"name": "Room", "calendar_id": "room@example.org"}],
+            }
+        }
+    )
+    malformed_existing = event("bad-existing", status="accepted")
+    del malformed_existing["start"]
+    malformed_pending = event(
+        "bad-pending",
+        start="2026-02-01T10:00:00",
+        end="2026-02-01T11:00:00",
+    )
+    malformed_pending["start"]["timeZone"] = "Missing/Timezone"
+    open_event = event(
+        "open",
+        start="2026-02-01T12:00:00-05:00",
+        end="2026-02-01T13:00:00-05:00",
+    )
+    log = logging.getLogger("test.calendar.malformed")
+
+    with caplog.at_level(logging.WARNING, logger=log.name):
+        decisions = reservation_decisions(
+            [malformed_existing, malformed_pending, open_event],
+            config.calendars[0],
+            config,
+            log=log,
+        )
+
+    assert [(item.event["id"], item.response) for item in decisions] == [
+        ("bad-pending", "declined"),
+        ("open", "accepted"),
+    ]
+    assert decisions[0].reason == "event start/end time is malformed"
+    assert "bad-existing" in caplog.text
+    assert "bad-pending" in caplog.text
+
+
+def test_reservation_decisions_ignores_transparent_conflict_events():
+    """Transparent/free Calendar events do not block room reservations."""
+    config = calendar_reservation_config(
+        {
+            "calendars": {
+                "acceptable_domains": ["example.org"],
+                "calendars": [{"name": "Room", "calendar_id": "room@example.org"}],
+            }
+        }
+    )
+    transparent = event("free", status="accepted")
+    transparent["transparency"] = "transparent"
+
+    decisions = reservation_decisions(
+        [transparent, event("pending")],
+        config.calendars[0],
+        config,
+    )
+
+    assert [(item.event["id"], item.response) for item in decisions] == [
+        ("pending", "accepted")
+    ]
+
+
+def test_calendar_reservations_matches_attendee_email_case_insensitively(tmp_path):
+    """Calendar attendee matching does not depend on exact email casing."""
+    mixed_case_event = event("one")
+    mixed_case_event["attendees"][0]["email"] = "Room@Example.Org"
+    service = Service([{"items": [mixed_case_event]}])
+
+    assert (
+        calendar_reservations_main(
+            ["--config", str(write_config(tmp_path))],
+            service_factory=lambda _config: service,
+            now=lambda: dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
+        )
+        == 0
+    )
+
+    attendee = service._events.patch_calls[0]["body"]["attendees"][0]
+    assert attendee == {
+        "email": "Room@Example.Org",
+        "responseStatus": "accepted",
+    }
+
+
 def test_calendar_reservations_main_lists_and_patches_events(tmp_path):
     """main paginates through events, then patches each calendar's responses.
 
@@ -288,10 +433,11 @@ def test_calendar_reservations_main_lists_and_patches_events(tmp_path):
             },
         ]
     )
+    log_file = tmp_path / "calendar-reservations.log"
 
     assert (
         calendar_reservations_main(
-            ["--config", str(write_config(tmp_path))],
+            ["--config", str(write_config(tmp_path)), "--log-file", str(log_file)],
             service_factory=lambda _config: service,
             now=lambda: dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
         )
@@ -299,6 +445,9 @@ def test_calendar_reservations_main_lists_and_patches_events(tmp_path):
     )
 
     assert len(service._events.list_calls) == 2
+    assert "Google Calendar reservation validation completed successfully" in (
+        log_file.read_text(encoding="utf-8")
+    )
     assert service._events.list_calls[0]["calendarId"] == "room@example.org"
     # timeMin is a one-month lookback window from the injected "now".
     assert service._events.list_calls[0]["timeMin"].startswith("2025-12-01")
@@ -332,6 +481,43 @@ def test_calendar_reservations_main_lists_and_patches_events(tmp_path):
             },
         },
     ]
+
+
+def test_calendar_reservations_main_preflights_all_calendars_before_patching(
+    tmp_path,
+):
+    """A later calendar listing failure prevents earlier calendar patches."""
+    config = write_config(tmp_path)
+    config.write_text(
+        config.read_text(encoding="utf-8")
+        + """
+    - name: Hall
+      calendar_id: hall@example.org
+      check_conflicts: true
+""",
+        encoding="utf-8",
+    )
+    service = Service(
+        [
+            {"items": [event("one")]},
+            GoogleAPIError(404, "missing calendar"),
+        ]
+    )
+
+    assert (
+        calendar_reservations_main(
+            ["--config", str(config)],
+            service_factory=lambda _config: service,
+            now=lambda: dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
+        )
+        == 2
+    )
+
+    assert [call["calendarId"] for call in service._events.list_calls] == [
+        "room@example.org",
+        "hall@example.org",
+    ]
+    assert service._events.patch_calls == []
 
 
 def test_calendar_reservations_patches_event_without_summary(tmp_path):

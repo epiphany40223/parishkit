@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from parishkit.cli import CommonOptions
-from parishkit.config import ConfigData, ConfigError
+from parishkit.config import ConfigData, ConfigError, reject_unknown_keys
 from parishkit.parishsoft import ParishSoftClient, ParishSoftConfig, parse_cache_limit
 
 
@@ -25,6 +25,11 @@ def parishsoft_client_from_config(
     parishsoft_config = config.get("parishsoft", {})
     if not isinstance(parishsoft_config, dict):
         raise ConfigError("parishsoft configuration must be a mapping")
+    reject_unknown_keys(
+        parishsoft_config,
+        {"api_key_file", "cache_dir", "cache_limit", "expected_organization"},
+        "parishsoft",
+    )
     expected_organization = parishsoft_config.get("expected_organization")
     if expected_organization is not None and not isinstance(expected_organization, str):
         raise ConfigError("parishsoft.expected_organization must be a string")

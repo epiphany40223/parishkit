@@ -18,7 +18,13 @@ from parishkit.cli import (
     resolve_common_options,
     run_user_facing,
 )
-from parishkit.config import ConfigData, ConfigError, load_yaml_config, resolve_path
+from parishkit.config import (
+    ConfigData,
+    ConfigError,
+    load_yaml_config,
+    reject_unknown_keys,
+    resolve_path,
+)
 from parishkit.google.auth import (
     load_service_account_credentials,
     load_user_credentials,
@@ -75,6 +81,15 @@ class EventDecision:
     event: dict[str, Any]
     response: str
     reason: str | None = None
+    attendee_email: str | None = None
+
+
+@dataclass(frozen=True)
+class CalendarDecisionPlan:
+    """All decisions for one calendar, computed before writes are applied."""
+
+    calendar: ReservationCalendar
+    decisions: tuple[EventDecision, ...]
 
 
 ServiceFactory = Callable[[ConfigData], Any]
@@ -213,6 +228,11 @@ def _run(
         log=log,
         now=now,
     )
+    log.info(
+        "Google Calendar reservation validation completed successfully for "
+        "%s calendar(s)",
+        len(reservation_config.calendars),
+    )
     return 0
 
 
@@ -231,6 +251,17 @@ def calendar_reservation_config(
     missing, malformed, or names an unknown timezone.
     """
     section = _mapping(config.get("calendars", {}), "calendars")
+    reject_unknown_keys(
+        section,
+        {
+            "acceptable_domains",
+            "calendars",
+            "timezone",
+            "lookback_days",
+            "lookahead_days",
+        },
+        "calendars",
+    )
     domains = _string_list(
         section.get("acceptable_domains"),
         "calendars.acceptable_domains",
@@ -272,6 +303,11 @@ def load_calendar_credentials(
     ConfigError if both are set, neither is set, or a field has the wrong type.
     """
     google = _mapping(config.get("google", {}), "google")
+    reject_unknown_keys(
+        google,
+        {"service_account_file", "user_token_file", "delegated_subject"},
+        "google",
+    )
     service_account_file = google.get("service_account_file")
     user_token_file = google.get("user_token_file")
     delegated_subject = google.get("delegated_subject")
@@ -331,6 +367,7 @@ def process_calendars(
         days=config.lookahead_days
     )
     log.info("Checking reservations from %s through %s", time_min, time_max)
+    plans: list[CalendarDecisionPlan] = []
     for calendar in config.calendars:
         log.info(
             "Downloading events from %s (ID: %s)", calendar.name, calendar.calendar_id
@@ -352,7 +389,7 @@ def process_calendars(
             _events_summary(events),
             extra=log_extra(events),
         )
-        decisions = reservation_decisions(events, calendar, config)
+        decisions = reservation_decisions(events, calendar, config, log=log)
         log.info(
             "Computed %s decision(s) for %s",
             len(decisions),
@@ -364,10 +401,12 @@ def process_calendars(
             _decisions_summary(decisions),
             extra=log_extra(decisions),
         )
+        plans.append(CalendarDecisionPlan(calendar, tuple(decisions)))
+    for plan in plans:
         respond_to_decisions(
             service,
-            calendar,
-            decisions,
+            plan.calendar,
+            plan.decisions,
             dry_run=dry_run,
             log=log,
         )
@@ -377,6 +416,8 @@ def reservation_decisions(
     events: Sequence[dict[str, Any]],
     calendar: ReservationCalendar,
     config: ReservationConfig,
+    *,
+    log: logging.Logger | None = None,
 ) -> list[EventDecision]:
     """Decide a response for each pending event on one calendar.
 
@@ -389,12 +430,16 @@ def reservation_decisions(
     Returning decisions separately from API writes lets dry-run mode and tests
     inspect exactly what would happen.
     """
-    pending_events: list[dict[str, Any]] = []
+    pending_events: list[tuple[dict[str, Any], str]] = []
     existing_events: list[dict[str, Any]] = []
     decisions: list[EventDecision] = []
     for event in events:
-        resource_status = attendee_status(event, calendar.calendar_id)
+        resource_attendee = calendar_attendee(event, calendar.calendar_id)
+        resource_status = (
+            resource_attendee.get("responseStatus") if resource_attendee else None
+        )
         if resource_status == "needsAction":
+            attendee_email = str(resource_attendee.get("email", calendar.calendar_id))
             creator_email = str(event.get("creator", {}).get("email", ""))
             if creator_domain(creator_email) not in config.acceptable_domains:
                 decisions.append(
@@ -404,29 +449,45 @@ def reservation_decisions(
                         reason=(
                             f"creator {creator_email} is not in an acceptable domain"
                         ),
+                        attendee_email=attendee_email,
                     )
                 )
             else:
-                pending_events.append(event)
-        elif resource_status != "declined":
+                pending_events.append((event, attendee_email))
+        elif resource_status != "declined" and not event_is_transparent(event):
             existing_events.append(event)
 
     if not calendar.check_conflicts:
-        decisions.extend(
-            EventDecision(event=event, response="accepted") for event in pending_events
-        )
+        for event, email in pending_events:
+            if event_interval_or_none(event, config.timezone, log=log) is None:
+                decisions.append(malformed_time_decision(event, email))
+            else:
+                decisions.append(
+                    EventDecision(
+                        event=event,
+                        response="accepted",
+                        attendee_email=email,
+                    )
+                )
         return decisions
 
     # Seed the conflict baseline with events already on the calendar, then
     # grow it as pending events are accepted so later pending events also
     # avoid colliding with earlier accepted ones.
-    accepted_intervals = [
-        (event, event_interval(event, config.timezone)) for event in existing_events
-    ]
+    accepted_intervals = []
+    for event in existing_events:
+        interval = event_interval_or_none(event, config.timezone, log=log)
+        if interval is not None:
+            accepted_intervals.append((event, interval))
     # Process pending events oldest-first by creation time so that, among
     # mutually conflicting requests, the earliest booking wins deterministically.
-    for event in sorted(pending_events, key=lambda item: str(item.get("created", ""))):
-        interval = event_interval(event, config.timezone)
+    for event, attendee_email in sorted(
+        pending_events, key=lambda item: str(item[0].get("created", ""))
+    ):
+        interval = event_interval_or_none(event, config.timezone, log=log)
+        if interval is None:
+            decisions.append(malformed_time_decision(event, attendee_email))
+            continue
         conflict = next(
             (
                 existing
@@ -436,8 +497,15 @@ def reservation_decisions(
             None,
         )
         if conflict is None:
-            decisions.append(EventDecision(event=event, response="accepted"))
-            accepted_intervals.append((event, interval))
+            decisions.append(
+                EventDecision(
+                    event=event,
+                    response="accepted",
+                    attendee_email=attendee_email,
+                )
+            )
+            if not event_is_transparent(event):
+                accepted_intervals.append((event, interval))
         else:
             decisions.append(
                 EventDecision(
@@ -447,9 +515,28 @@ def reservation_decisions(
                         "conflicts with existing event "
                         f"'{conflict.get('summary', '')}' (ID: {conflict.get('id')})"
                     ),
+                    attendee_email=attendee_email,
                 )
             )
     return decisions
+
+
+def event_is_transparent(event: Mapping[str, Any]) -> bool:
+    """Return whether Google marks an event as free/non-blocking time."""
+    return event.get("transparency") == "transparent"
+
+
+def malformed_time_decision(
+    event: dict[str, Any],
+    attendee_email: str,
+) -> EventDecision:
+    """Decline a pending reservation whose start/end cannot be interpreted."""
+    return EventDecision(
+        event=event,
+        response="declined",
+        reason="event start/end time is malformed",
+        attendee_email=attendee_email,
+    )
 
 
 def respond_to_decisions(
@@ -498,15 +585,28 @@ def respond_to_decisions(
             calendar.calendar_id,
             event_id,
             decision.response,
+            attendee_email=decision.attendee_email,
         )
+
+
+def calendar_attendee(
+    event: Mapping[str, Any], calendar_id: str
+) -> Mapping[str, Any] | None:
+    """Return this calendar account's attendee entry, matched case-insensitively."""
+    wanted = calendar_id.casefold()
+    for attendee in event.get("attendees", []):
+        if not isinstance(attendee, Mapping):
+            continue
+        email = attendee.get("email")
+        if isinstance(email, str) and email.casefold() == wanted:
+            return attendee
+    return None
 
 
 def attendee_status(event: Mapping[str, Any], calendar_id: str) -> str | None:
     """Return this account’s attendee status for an event."""
-    for attendee in event.get("attendees", []):
-        if attendee.get("email") == calendar_id:
-            return attendee.get("responseStatus")
-    return None
+    attendee = calendar_attendee(event, calendar_id)
+    return attendee.get("responseStatus") if attendee else None
 
 
 def creator_domain(email: str) -> str:
@@ -533,16 +633,45 @@ def event_interval(
     )
 
 
+def event_interval_or_none(
+    event: Mapping[str, Any],
+    timezone: dt.tzinfo,
+    *,
+    log: logging.Logger | None = None,
+) -> tuple[dt.datetime, dt.datetime] | None:
+    """Return an event interval, logging and skipping malformed event data."""
+    try:
+        return event_interval(event, timezone)
+    except (KeyError, TypeError, ValueError, ZoneInfoNotFoundError) as exc:
+        summary = str(event.get("summary") or "untitled")
+        event_id = str(event.get("id") or "unknown")
+        if log is not None:
+            log.warning(
+                "Skipping event '%s' (ID: %s) because its start/end time is "
+                "malformed: %s",
+                summary,
+                event_id,
+                exc,
+            )
+        return None
+
+
 def event_time(value: Mapping[str, str], timezone: dt.tzinfo) -> dt.datetime:
     """Parse a Google Calendar event start/end field into a datetime.
 
-    Timed events use a ``dateTime`` value; an absent offset falls back to the
-    configured ``timezone``. All-day events use a ``date`` value and are
-    anchored to midnight in ``timezone``.
+    Timed events use a ``dateTime`` value; an absent offset falls back first to
+    the event field's own ``timeZone`` value and then to the configured
+    ``timezone``. All-day events use a ``date`` value and are anchored to
+    midnight in ``timezone``.
     """
     if "dateTime" in value:
         parsed = dt.datetime.fromisoformat(value["dateTime"])
-        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone)
+        if parsed.tzinfo is not None:
+            return parsed
+        event_timezone = value.get("timeZone")
+        if event_timezone:
+            return parsed.replace(tzinfo=ZoneInfo(event_timezone))
+        return parsed.replace(tzinfo=timezone)
     parsed_date = dt.date.fromisoformat(value["date"])
     return dt.datetime.combine(parsed_date, dt.time(), tzinfo=timezone)
 
@@ -599,6 +728,11 @@ def _calendars(value: Any) -> list[ReservationCalendar]:
     for index, raw_calendar in enumerate(value):
         name = f"calendars.calendars[{index}]"
         item = _mapping(raw_calendar, name)
+        reject_unknown_keys(
+            item,
+            {"name", "calendar_id", "id", "check_conflicts"},
+            name,
+        )
         calendar_name = item.get("name")
         calendar_id = item.get("calendar_id", item.get("id"))
         check_conflicts = item.get("check_conflicts", True)

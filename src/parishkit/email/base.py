@@ -9,7 +9,7 @@ from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
 
-from parishkit.config import ConfigError
+from parishkit.config import ConfigError, reject_unknown_keys
 
 
 @dataclass(frozen=True)
@@ -91,7 +91,16 @@ def build_message(message: Email) -> EmailMessage:
     for attachment in message.attachments:
         # MIME types are "maintype/subtype"; split once so add_attachment gets
         # the two parts it expects.
-        maintype, subtype = attachment.mime_type.split("/", 1)
+        try:
+            maintype, subtype = attachment.mime_type.split("/", 1)
+        except ValueError as exc:
+            raise ConfigError(
+                f"attachment MIME type must be type/subtype: {attachment.mime_type}"
+            ) from exc
+        if not maintype or not subtype:
+            raise ConfigError(
+                f"attachment MIME type must be type/subtype: {attachment.mime_type}"
+            )
         email_message.add_attachment(
             attachment.path.read_bytes(),
             maintype=maintype,
@@ -108,18 +117,35 @@ def provider_from_config(
 ) -> EmailProvider:
     """Instantiate the email provider named by the config's ``provider`` key.
 
-    Recognizes ``google-workspace`` (or the underscore spelling) and ``ms365``;
-    provider modules are imported lazily so their optional dependencies are only
-    required when that provider is actually selected. Raises :class:`ConfigError`
-    for an unknown or missing provider.
+    Recognizes ``google-workspace`` (or the underscore spelling). Provider
+    modules are imported lazily so optional dependencies are only required when
+    that provider is actually selected. Raises :class:`ConfigError` for an
+    unknown, missing, or not-yet-implemented provider.
     """
     provider = config.get("provider")
     if provider in {"google-workspace", "google_workspace"}:
+        reject_unknown_keys(
+            config,
+            {
+                "provider",
+                "service_account_file",
+                "delegated_user",
+                "user",
+                "smtp_host",
+                "smtp_port",
+            },
+            "email",
+        )
         from parishkit.email.google_workspace import GoogleWorkspaceSMTPProvider
 
         return GoogleWorkspaceSMTPProvider.from_config(config, base_dir=base_dir)
     if provider == "ms365":
-        from parishkit.email.ms365 import MS365Provider
-
-        return MS365Provider.from_config(config)
-    raise ConfigError("email.provider must be google-workspace or ms365")
+        reject_unknown_keys(
+            config,
+            {"provider", "tenant_id", "client_id", "client_secret_file", "sender"},
+            "email",
+        )
+        raise ConfigError(
+            "email.provider ms365 is not implemented yet; use google-workspace"
+        )
+    raise ConfigError("email.provider must be google-workspace")

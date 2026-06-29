@@ -298,6 +298,21 @@ def test_run_job_success():
     assert result.stdout.strip() == "ok"
 
 
+def test_run_job_bounds_captured_output(monkeypatch):
+    """Large child output is truncated before it is returned in JobResult."""
+    monkeypatch.setattr("parishkit.pk_cron_runner.MAX_CAPTURED_OUTPUT_BYTES", 12)
+    job = JobConfig(
+        name="chatty",
+        command=[sys.executable, "-c", "print('0123456789abcdef')"],
+    )
+
+    result = run_job(job)
+
+    assert result.ok
+    assert result.stdout.startswith("... output truncated ...")
+    assert result.stdout.endswith("56789abcdef\n")
+
+
 def test_redacted_runner_config_hides_likely_secret_values():
     """Debug serialization redacts env values and CLI secret arguments."""
     config = RunnerConfig(
@@ -556,6 +571,14 @@ def test_parse_runner_config_rejects_shell_string_command():
     rejected."""
     with pytest.raises(Exception, match="command"):
         parse_runner_config({"jobs": [{"name": "bad", "command": "echo ok"}]})
+
+
+def test_parse_runner_config_rejects_unknown_job_keys():
+    """Misspelled job keys fail instead of silently changing scheduling."""
+    with pytest.raises(Exception, match="job has unsupported key"):
+        parse_runner_config(
+            {"jobs": [{"name": "bad", "command": ["true"], "timeot": "1m"}]}
+        )
 
 
 def test_parse_runner_config_rejects_duplicate_job_names():
@@ -863,3 +886,27 @@ def test_failure_summary_includes_failed_job_output_when_configured():
     assert "- bad: exit 7" in message
     assert "useful stderr" in message
     assert "useful stdout" in message
+
+
+def test_failure_summary_redacts_failed_job_output_for_slack():
+    """Slack failure output redacts obvious secrets and email addresses."""
+    message = _failure_summary(
+        EXIT_JOB_FAILED,
+        [
+            runner.JobResult(
+                name="bad",
+                returncode=7,
+                stdout=(
+                    "contact admin@example.org token=abcdefghijklmnopqrstuvwxyz123456"
+                ),
+                stderr="API_KEY: secret-value",
+            )
+        ],
+        RunnerConfig(include_output_in_slack=True),
+    )
+
+    assert "[redacted-email]" in message
+    assert "token=[redacted]" in message
+    assert "API_KEY=[redacted]" in message
+    assert "admin@example.org" not in message
+    assert "secret-value" not in message

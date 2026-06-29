@@ -5,6 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from parishkit.google.auth import build_service, execute_google_request
+from parishkit.retry import RetryPolicy
+
+_NOTIFICATION_WRITE_POLICY = RetryPolicy(attempts=1)
 
 
 def build_calendar_service(credentials: Any, *, build_fn: Any | None = None) -> Any:
@@ -53,14 +56,18 @@ def patch_attendee_response(
     calendar_id: str,
     event_id: str,
     response_status: str,
+    *,
+    attendee_email: str | None = None,
 ) -> None:
     """Set this account's RSVP (attendee response) on a calendar event.
 
-    Patches only the attendee entry whose email matches ``calendar_id`` (the
-    account itself), leaving other attendees untouched. ``response_status`` is a
-    Calendar value such as ``accepted``, ``declined``, or ``tentative``;
-    ``sendUpdates="all"`` notifies the other participants of the change.
+    Patches only this resource attendee entry, leaving other attendees
+    untouched. ``attendee_email`` preserves the exact attendee address returned
+    by Google when it differs in case from the configured calendar ID.
+    ``response_status`` is a Calendar value such as ``accepted``, ``declined``,
+    or ``tentative``; ``sendUpdates="all"`` notifies the other participants.
     """
+    response_email = attendee_email or calendar_id
     request = service.events().patch(
         calendarId=calendar_id,
         sendUpdates="all",
@@ -72,10 +79,10 @@ def patch_attendee_response(
             "attendeesOmitted": True,
             "attendees": [
                 {
-                    "email": calendar_id,
+                    "email": response_email,
                     "responseStatus": response_status,
                 }
             ],
         },
     )
-    execute_google_request(request)
+    execute_google_request(request, policy=_NOTIFICATION_WRITE_POLICY)

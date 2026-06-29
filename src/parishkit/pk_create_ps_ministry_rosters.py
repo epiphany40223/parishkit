@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import logging
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from importlib.metadata import version
@@ -18,7 +19,13 @@ from parishkit.cli import (
     resolve_common_options,
     run_user_facing,
 )
-from parishkit.config import ConfigData, ConfigError, load_yaml_config, resolve_path
+from parishkit.config import (
+    ConfigData,
+    ConfigError,
+    load_yaml_config,
+    reject_unknown_keys,
+    resolve_path,
+)
 from parishkit.google.auth import (
     GoogleAPIError,
     load_service_account_credentials,
@@ -43,6 +50,12 @@ from parishkit.parishsoft_runtime import parishsoft_client_from_config
 SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
 DEFAULT_RANGE = "Roster!A1"
 DEFAULT_CLEAR_RANGE = "Roster!A:Z"
+_CLEAR_RANGE_RE = re.compile(
+    r"^(?P<sheet>(?:'[^']*(?:''[^']*)*'|[^!]*)!)?"
+    r"\$?(?P<start_col>[A-Za-z]+)\$?(?P<start_row>\d*)"
+    r":\$?(?P<end_col>[A-Za-z]+)\$?(?P<end_row>\d*)$"
+)
+_A1_START_RE = re.compile(r"^\$?[A-Za-z]+\$?(?P<row>\d+)$")
 DEFAULT_LEADER_SUFFIX = " Ldr"
 HEADER_BACKGROUND_COLOR = {"red": 0.0, "green": 0.0, "blue": 1.0}
 HEADER_TEXT_COLOR = {"red": 1.0, "green": 1.0, "blue": 0.0}
@@ -108,6 +121,18 @@ class RosterMember:
 
     member: dict[str, Any]
     role: str
+
+
+@dataclass(frozen=True)
+class RosterWritePlan:
+    """A validated Sheets write that is safe to apply after all plans exist."""
+
+    spreadsheet_id: str
+    range_name: str
+    clear_range: str
+    padded_values: list[list[Any]]
+    stale_clear_range: str | None
+    sheet_id: int | None
 
 
 Loader = Callable[..., ParishSoftData]
@@ -240,6 +265,18 @@ def roster_config_from_yaml(config: ConfigData) -> RosterConfig:
         config.get("rosters", {}),
         "rosters",
     )
+    reject_unknown_keys(
+        section,
+        {
+            "spreadsheet_id",
+            "range",
+            "clear_range",
+            "workgroup_leader_suffix",
+            "ministries",
+            "workgroups",
+        },
+        "rosters",
+    )
     default_spreadsheet_id = section.get("spreadsheet_id")
     if default_spreadsheet_id is not None and not isinstance(
         default_spreadsheet_id, str
@@ -285,11 +322,13 @@ def roster_config_from_yaml(config: ConfigData) -> RosterConfig:
     )
     if not ministries and not workgroups:
         raise ConfigError("rosters must configure ministries or workgroups")
-    return RosterConfig(
+    roster_config = RosterConfig(
         ministries=ministries,
         workgroups=workgroups,
         workgroup_leader_suffix=leader_suffix,
     )
+    validate_unique_roster_targets(roster_config)
+    return roster_config
 
 
 def load_sheets_credentials(
@@ -299,6 +338,11 @@ def load_sheets_credentials(
 ) -> Any:
     """Load credentials for Google Sheets access."""
     google = _mapping(config.get("google", {}), "google")
+    reject_unknown_keys(
+        google,
+        {"service_account_file", "user_token_file", "delegated_subject"},
+        "google",
+    )
     service_account_file = google.get("service_account_file")
     user_token_file = google.get("user_token_file")
     delegated_subject = google.get("delegated_subject")
@@ -352,6 +396,10 @@ def write_configured_rosters(
     to audit and test.
     """
     update_time = current_roster_time(timezone_name)
+    sheet_ids = preflight_roster_targets(sheets_service, config) if not dry_run else {}
+    plans: list[RosterWritePlan] = []
+    if not dry_run:
+        log.debug("Preflighted %s roster sheet target(s)", len(sheet_ids))
     for target in config.ministries:
         log.debug(
             "Preparing ministry roster %s from %s",
@@ -360,13 +408,13 @@ def write_configured_rosters(
             extra=log_extra(target),
         )
         members = ministry_roster_members(data, target.source_names)
-        write_roster_target(
-            sheets_service,
-            target,
-            members,
-            update_time=update_time,
-            dry_run=dry_run,
-            log=log,
+        plans.append(
+            roster_target_plan(
+                target,
+                members,
+                update_time=update_time,
+                sheet_ids=sheet_ids,
+            )
         )
         for role_target in target.role_sheets:
             allowed_roles = set(role_target.roles)
@@ -382,23 +430,19 @@ def write_configured_rosters(
                 for member in members
                 if roster_role_matches(member.role, allowed_roles)
             ]
-            write_values(
-                sheets_service,
-                role_target.spreadsheet_id,
-                role_target.range_name,
-                role_target.clear_range,
-                roster_values(
-                    role_target.name,
-                    role_members,
-                    include_birthday=target.include_birthday,
-                    now=update_time,
-                ),
-                spreadsheet_title=roster_spreadsheet_title(
-                    role_target.name,
-                    update_time,
-                ),
-                dry_run=dry_run,
-                log=log,
+            plans.append(
+                write_plan(
+                    role_target.spreadsheet_id,
+                    role_target.range_name,
+                    role_target.clear_range,
+                    roster_values(
+                        role_target.name,
+                        role_members,
+                        include_birthday=target.include_birthday,
+                        now=update_time,
+                    ),
+                    sheet_ids=sheet_ids,
+                )
             )
     for target in config.workgroups:
         log.debug(
@@ -412,14 +456,90 @@ def write_configured_rosters(
             target.source_names[0],
             leader_suffix=config.workgroup_leader_suffix,
         )
-        write_roster_target(
-            sheets_service,
-            target,
-            members,
-            update_time=update_time,
-            dry_run=dry_run,
-            log=log,
+        plans.append(
+            roster_target_plan(
+                target,
+                members,
+                update_time=update_time,
+                sheet_ids=sheet_ids,
+            )
         )
+    for plan in plans:
+        write_values(sheets_service, plan, dry_run=dry_run, log=log)
+
+
+def preflight_roster_targets(
+    sheets_service: Any,
+    config: RosterConfig,
+) -> dict[tuple[str, str], int]:
+    """Validate all configured Sheets targets before the first roster write."""
+    sheets_by_spreadsheet: dict[str, dict[str, int]] = {}
+    for spreadsheet_id, range_name, clear_range in configured_sheet_ranges(config):
+        clear_range_width(clear_range)
+        stale_row_clear_range(clear_range, 0, range_name=range_name)
+        sheet_name = sheet_name_from_a1_range(range_name)
+        if spreadsheet_id not in sheets_by_spreadsheet:
+            spreadsheet = get_spreadsheet(
+                sheets_service,
+                spreadsheet_id,
+                fields="sheets.properties",
+            )
+            sheets_by_spreadsheet[spreadsheet_id] = {
+                sheet["properties"]["title"]: sheet["properties"]["sheetId"]
+                for sheet in spreadsheet.get("sheets", [])
+            }
+        if sheet_name not in sheets_by_spreadsheet[spreadsheet_id]:
+            raise ConfigError(
+                "Configured roster range references missing Google Sheet tab "
+                f"{sheet_name!r} in spreadsheet {spreadsheet_id}. Check "
+                "rosters.*.range and rosters.*.clear_range before running again."
+            )
+    return {
+        (spreadsheet_id, sheet_name): sheet_id
+        for spreadsheet_id, sheets in sheets_by_spreadsheet.items()
+        for sheet_name, sheet_id in sheets.items()
+    }
+
+
+def configured_sheet_ranges(config: RosterConfig) -> list[tuple[str, str, str]]:
+    """Return every spreadsheet/range/clear_range tuple in write order."""
+    ranges = []
+    for target in config.ministries:
+        ranges.append((target.spreadsheet_id, target.range_name, target.clear_range))
+        ranges.extend(
+            (role.spreadsheet_id, role.range_name, role.clear_range)
+            for role in target.role_sheets
+        )
+    ranges.extend(
+        (target.spreadsheet_id, target.range_name, target.clear_range)
+        for target in config.workgroups
+    )
+    return ranges
+
+
+def validate_unique_roster_targets(config: RosterConfig) -> None:
+    """Reject multiple roster outputs targeting the same spreadsheet range."""
+    seen: dict[tuple[str, str], str] = {}
+    named_ranges = []
+    for target in config.ministries:
+        named_ranges.append((target.name, target.spreadsheet_id, target.range_name))
+        named_ranges.extend(
+            (role.name, role.spreadsheet_id, role.range_name)
+            for role in target.role_sheets
+        )
+    named_ranges.extend(
+        (target.name, target.spreadsheet_id, target.range_name)
+        for target in config.workgroups
+    )
+    for name, spreadsheet_id, range_name in named_ranges:
+        key = (spreadsheet_id, range_name)
+        if key in seen:
+            raise ConfigError(
+                "rosters outputs must not share the same spreadsheet and range: "
+                f"{seen[key]!r} and {name!r} both target "
+                f"{spreadsheet_id}:{range_name}"
+            )
+        seen[key] = name
 
 
 def validate_configured_parishsoft_sources(
@@ -488,18 +608,15 @@ def available_member_workgroup_source_names(
     return names
 
 
-def write_roster_target(
-    sheets_service: Any,
+def roster_target_plan(
     target: RosterTarget,
     members: Sequence[RosterMember],
     *,
     update_time: dt.datetime,
-    dry_run: bool,
-    log: logging.Logger,
-) -> None:
-    """Write one configured roster target to Sheets."""
-    write_values(
-        sheets_service,
+    sheet_ids: Mapping[tuple[str, str], int],
+) -> RosterWritePlan:
+    """Build a validated write plan for one configured roster target."""
+    return write_plan(
         target.spreadsheet_id,
         target.range_name,
         target.clear_range,
@@ -509,54 +626,103 @@ def write_roster_target(
             include_birthday=target.include_birthday,
             now=update_time,
         ),
-        spreadsheet_title=roster_spreadsheet_title(target.name, update_time),
-        dry_run=dry_run,
-        log=log,
+        sheet_ids=sheet_ids,
     )
 
 
-def write_values(
-    sheets_service: Any,
+def write_plan(
     spreadsheet_id: str,
     range_name: str,
     clear_range: str,
     values: list[list[Any]],
     *,
-    spreadsheet_title: str,
+    sheet_ids: Mapping[tuple[str, str], int],
+) -> RosterWritePlan:
+    """Build one rectangular Sheets write and stale-row clear plan."""
+    stale_clear_range = stale_row_clear_range(
+        clear_range,
+        len(values),
+        range_name=range_name,
+    )
+    padded_values = rectangular_values(values, clear_range_width(clear_range))
+    sheet_name = sheet_name_from_a1_range(range_name)
+    sheet_id = sheet_ids.get((spreadsheet_id, sheet_name)) if sheet_ids else None
+    return RosterWritePlan(
+        spreadsheet_id=spreadsheet_id,
+        range_name=range_name,
+        clear_range=clear_range,
+        padded_values=padded_values,
+        stale_clear_range=stale_clear_range,
+        sheet_id=sheet_id,
+    )
+
+
+def write_values(
+    sheets_service: Any,
+    plan: RosterWritePlan,
+    *,
     dry_run: bool,
     log: logging.Logger,
 ) -> None:
-    """Clear ``clear_range`` then write ``values`` to a Google Sheet range.
+    """Apply a planned Sheets write and then clear stale rows below it.
 
-    The range is cleared first so stale rows from a previous, longer roster do
-    not linger below the freshly written data. When ``dry_run`` is set, nothing
-    is written; the intended write is only logged.
+    Updating first avoids blanking a previously published roster if the write
+    fails. Once the new roster and formatting succeed, only rows below the new
+    row count are cleared so stale rows from an older, longer roster do not
+    remain visible. When ``dry_run`` is set, nothing is written; the intended
+    write is only logged.
     """
     if dry_run:
         log.info(
             "dry-run: would write %s row(s) to spreadsheet %s range %s",
-            len(values),
-            spreadsheet_id,
-            range_name,
+            len(plan.padded_values),
+            plan.spreadsheet_id,
+            plan.range_name,
         )
         return
+    if plan.sheet_id is None:
+        raise ConfigError(
+            "Roster sheet ID was not resolved before writing spreadsheet "
+            f"{plan.spreadsheet_id} range {plan.range_name}. This indicates an "
+            "internal planning error."
+        )
     try:
-        clear_values(sheets_service, spreadsheet_id, clear_range)
-        update_values(sheets_service, spreadsheet_id, range_name, values)
+        update_values(
+            sheets_service,
+            plan.spreadsheet_id,
+            plan.range_name,
+            plan.padded_values,
+        )
+        log.info(
+            "Updated roster values in spreadsheet %s range %s",
+            plan.spreadsheet_id,
+            plan.range_name,
+        )
+        if plan.stale_clear_range is not None:
+            clear_values(sheets_service, plan.spreadsheet_id, plan.stale_clear_range)
+            log.info(
+                "Cleared stale roster values in spreadsheet %s range %s",
+                plan.spreadsheet_id,
+                plan.stale_clear_range,
+            )
         format_roster_sheet(
             sheets_service,
-            spreadsheet_id,
-            range_name,
-            spreadsheet_title=spreadsheet_title,
-            column_count=max(len(row) for row in values),
-            row_count=len(values),
+            plan.spreadsheet_id,
+            plan.sheet_id,
+            column_count=max(len(row) for row in plan.padded_values),
+            row_count=len(plan.padded_values),
+        )
+        log.info(
+            "Formatted roster sheet in spreadsheet %s range %s",
+            plan.spreadsheet_id,
+            plan.range_name,
         )
     except GoogleAPIError as exc:
         config_error = sheet_range_config_error(
             exc,
-            spreadsheet_id=spreadsheet_id,
-            range_name=range_name,
-            clear_range=clear_range,
+            spreadsheet_id=plan.spreadsheet_id,
+            range_name=plan.range_name,
+            clear_range=plan.clear_range,
         )
         if config_error is not None:
             raise config_error from exc
@@ -589,12 +755,88 @@ def sheet_range_config_error(
     return None
 
 
+def stale_row_clear_range(
+    clear_range: str,
+    row_count: int,
+    *,
+    range_name: str = DEFAULT_RANGE,
+) -> str | None:
+    """Return the A1 range that clears rows below ``row_count``.
+
+    Roster configs usually clear whole columns such as ``Roster!A:Z``. After a
+    successful update, only rows below the newly written roster should be
+    cleared; clearing the original range would delete the new roster. The
+    write range may start below row 1, so the clear start must account for the
+    write range's starting row.
+    """
+    match = _CLEAR_RANGE_RE.fullmatch(clear_range)
+    if match is None:
+        raise ConfigError(
+            f"rosters.clear_range must be a column range like Roster!A:Z "
+            f"or bounded range like Roster!A1:Z500: {clear_range!r}"
+        )
+    sheet = match.group("sheet") or ""
+    start_col = match.group("start_col")
+    start_row = int(match.group("start_row") or "1")
+    end_col = match.group("end_col")
+    end_row_text = match.group("end_row")
+    end_row = int(end_row_text) if end_row_text else None
+    clear_start = max(start_row, a1_start_row(range_name) + row_count)
+    if end_row is not None and clear_start > end_row:
+        return None
+    end_ref = f"{end_col}{end_row}" if end_row is not None else end_col
+    return f"{sheet}{start_col}{clear_start}:{end_ref}"
+
+
+def clear_range_width(clear_range: str) -> int:
+    """Return how many columns a configured clear range covers."""
+    match = _CLEAR_RANGE_RE.fullmatch(clear_range)
+    if match is None:
+        raise ConfigError(
+            f"rosters.clear_range must be a column range like Roster!A:Z "
+            f"or bounded range like Roster!A1:Z500: {clear_range!r}"
+        )
+    width = (
+        a1_column_number(match.group("end_col"))
+        - a1_column_number(match.group("start_col"))
+        + 1
+    )
+    if width < 1:
+        raise ConfigError(f"rosters.clear_range ends before it starts: {clear_range!r}")
+    return width
+
+
+def rectangular_values(values: Sequence[Sequence[Any]], width: int) -> list[list[Any]]:
+    """Pad rows to ``width`` so Sheets update clears stale cells in each row."""
+    max_width = max((len(row) for row in values), default=0)
+    if max_width > width:
+        raise ConfigError(
+            "rosters.clear_range must be at least as wide as the generated roster "
+            f"({width} configured column(s), {max_width} needed)"
+        )
+    return [list(row) + [""] * (width - len(row)) for row in values]
+
+
+def a1_column_number(column: str) -> int:
+    """Return the 1-based number for an A1 column label."""
+    value = 0
+    for char in column.upper():
+        value = value * 26 + ord(char) - ord("A") + 1
+    return value
+
+
+def a1_start_row(range_name: str) -> int:
+    """Return the 1-based starting row for an A1 range."""
+    cell = range_name.split("!", 1)[-1].split(":", 1)[0]
+    match = _A1_START_RE.fullmatch(cell)
+    return int(match.group("row")) if match else 1
+
+
 def format_roster_sheet(
     sheets_service: Any,
     spreadsheet_id: str,
-    range_name: str,
+    sheet_id: int,
     *,
-    spreadsheet_title: str,
     column_count: int,
     row_count: int,
 ) -> None:
@@ -606,14 +848,11 @@ def format_roster_sheet(
     merge the title text across A-D, color the spacer row blue, widen columns,
     wrap text, and top-align all roster cells.
     """
-    sheet_name = sheet_name_from_a1_range(range_name)
-    sheet_id = sheet_id_for_title(sheets_service, spreadsheet_id, sheet_name)
     batch_update_spreadsheet(
         sheets_service,
         spreadsheet_id,
         roster_format_requests(
             sheet_id,
-            spreadsheet_title=spreadsheet_title,
             column_count=column_count,
             row_count=row_count,
         ),
@@ -623,7 +862,6 @@ def format_roster_sheet(
 def roster_format_requests(
     sheet_id: int,
     *,
-    spreadsheet_title: str | None = None,
     column_count: int,
     row_count: int,
 ) -> list[dict[str, Any]]:
@@ -693,19 +931,7 @@ def roster_format_requests(
                 }
             }
         )
-    if spreadsheet_title is not None:
-        requests.append(spreadsheet_title_request(spreadsheet_title))
     return requests
-
-
-def spreadsheet_title_request(spreadsheet_title: str) -> dict[str, Any]:
-    """Return a request that renames the spreadsheet document."""
-    return {
-        "updateSpreadsheetProperties": {
-            "properties": {"title": spreadsheet_title},
-            "fields": "title",
-        }
-    }
 
 
 def title_merge_requests(
@@ -942,11 +1168,6 @@ def current_roster_time(timezone_name: str) -> dt.datetime:
     return dt.datetime.now(ZoneInfo(timezone_name)).replace(microsecond=0)
 
 
-def roster_spreadsheet_title(title: str, update_time: dt.datetime) -> str:
-    """Return the spreadsheet document title for one roster update."""
-    return f"{title} as of {format_update_timestamp(update_time)}"
-
-
 def format_update_timestamp(update_time: dt.datetime) -> str:
     """Format an update timestamp, including timezone abbreviation when known."""
     value = update_time.replace(microsecond=0)
@@ -1072,6 +1293,20 @@ def _target(
     remains easy to audit and test.
     """
     item = _mapping(value, name)
+    allowed_keys = {
+        "name",
+        source_key,
+        "spreadsheet_id",
+        "range",
+        "clear_range",
+        "include_birthday",
+        "birthday",
+        "role_sheets",
+        "role sheets",
+    }
+    if plural_source_key:
+        allowed_keys.add(plural_source_key)
+    reject_unknown_keys(item, allowed_keys, name)
     source_names = _source_names(item, name, source_key, plural_source_key)
     target_name = _optional_string(item.get("name"), f"{name}.name") or ", ".join(
         source_names
@@ -1123,6 +1358,11 @@ def _role_target(
 ) -> RoleRosterTarget:
     """Parse one role-specific roster target."""
     item = _mapping(value, name)
+    reject_unknown_keys(
+        item,
+        {"name", "roles", "spreadsheet_id", "range", "clear_range"},
+        name,
+    )
     role_name = _required_string(item.get("name"), f"{name}.name")
     roles = tuple(_string_list(item.get("roles"), f"{name}.roles"))
     spreadsheet_id = _target_spreadsheet_id(item, name, default_spreadsheet_id)

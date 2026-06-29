@@ -21,6 +21,7 @@ import copy
 import datetime as dt
 import fcntl
 import json
+import logging
 import random
 import time
 from dataclasses import dataclass
@@ -34,6 +35,8 @@ from parishkit.config import ConfigError
 from parishkit.files import atomic_write_text
 from parishkit.parishsoft import salutation_for_members
 from parishkit.retry import RetryError, RetryPolicy, TransientRetryError, retry_call
+
+LOGGER = logging.getLogger(__name__)
 
 
 class CCAPIError(RuntimeError):
@@ -175,17 +178,31 @@ class ConstantContactClient:
         headers, _ = self.headers()
         headers["Content-Type"] = "application/json"
         action = getattr(self.session, method)
+        # PUT updates are safe to retry under our normal policy. POST creates
+        # are intentionally one-shot because a transient response can hide a
+        # successful create, and retrying could duplicate the contact.
+        policy = (
+            self.config.retry_policy
+            if method == "put"
+            else RetryPolicy(attempts=1, initial_delay=0)
+        )
         response = self._request(
             lambda: action(
                 self._url(api_endpoint),
                 headers=headers,
                 data=json.dumps(body),
                 timeout=self.config.timeout,
-            )
+            ),
+            policy=policy,
         )
         return self._json_response(response, api_endpoint)
 
-    def _request(self, func: Any) -> requests.Response:
+    def _request(
+        self,
+        func: Any,
+        *,
+        policy: RetryPolicy | None = None,
+    ) -> requests.Response:
         """Execute an HTTP call under the retry policy, normalizing errors.
 
         ``func`` is a no-argument callable that performs the actual request.
@@ -196,10 +213,19 @@ class ConstantContactClient:
 
         def call() -> requests.Response:
             """Run one attempt, raising on retryable or fatal HTTP errors."""
-            response = func()
+            try:
+                response = func()
+            except requests.RequestException as exc:
+                LOGGER.warning("Constant Contact API request failed: %s", exc)
+                raise
             # 429 (rate limit) and 5xx are transient; raising a transient error
             # lets retry_call back off and try again rather than failing hard.
             if response.status_code in {429, 500, 502, 503, 504}:
+                LOGGER.warning(
+                    "Constant Contact API request failed for %s with HTTP %s",
+                    response.url,
+                    response.status_code,
+                )
                 raise _TransientCCAPIError(
                     response.status_code,
                     response.text,
@@ -207,11 +233,16 @@ class ConstantContactClient:
                     f"transient Constant Contact HTTP {response.status_code}",
                 )
             if not 200 <= response.status_code <= 299:
+                LOGGER.warning(
+                    "Constant Contact API request failed for %s with HTTP %s",
+                    response.url,
+                    response.status_code,
+                )
                 raise CCAPIError(response.status_code, response.text, response.url)
             return response
 
         try:
-            return retry_call(call, policy=self.config.retry_policy)
+            return retry_call(call, policy=policy or self.config.retry_policy)
         except RetryError as exc:
             # When retries are exhausted on a transient HTTP error, re-raise it
             # as a normal CCAPIError so callers see a single error type.
@@ -346,7 +377,7 @@ def load_access_token(path: str | Path) -> dict[str, Any]:
         raise ConfigError(
             f"Constant Contact token file {token_path} is missing {exc.args[0]!r}"
         ) from exc
-    except ValueError as exc:
+    except (TypeError, ValueError) as exc:
         raise ConfigError(
             f"Constant Contact token file {token_path} has invalid timestamp: {exc}"
         ) from exc
@@ -393,15 +424,47 @@ def refresh_access_token(
         raise ConfigError("Constant Contact refresh_token is required")
     http = session or requests.Session()
     start = now or dt.datetime.now(dt.UTC)
-    response = http.post(
-        token_url,
-        data={
-            "client_id": cc_client_id,
-            "refresh_token": refresh_token,
-            "grant_type": "refresh_token",
-        },
-        timeout=timeout,
-    )
+
+    def post_refresh() -> requests.Response:
+        """Post the refresh request, classifying retryable HTTP statuses."""
+        try:
+            refresh_response = http.post(
+                token_url,
+                data={
+                    "client_id": cc_client_id,
+                    "refresh_token": refresh_token,
+                    "grant_type": "refresh_token",
+                },
+                timeout=timeout,
+            )
+        except requests.RequestException as exc:
+            LOGGER.warning(
+                "Constant Contact token refresh request failed for %s: %s",
+                token_url,
+                exc,
+            )
+            raise
+        if refresh_response.status_code == 429 or refresh_response.status_code >= 500:
+            LOGGER.warning(
+                "Constant Contact token refresh failed for %s with HTTP %s",
+                token_url,
+                refresh_response.status_code,
+            )
+            raise TransientRetryError(
+                "Constant Contact token refresh returned HTTP "
+                f"{refresh_response.status_code}"
+            )
+        return refresh_response
+
+    try:
+        response = retry_call(
+            post_refresh,
+            policy=RetryPolicy(attempts=3, initial_delay=0.2),
+        )
+    except RetryError as exc:
+        raise ConfigError(
+            f"Constant Contact token refresh failed after retries: {exc.last_exception}"
+        ) from exc
     try:
         payload = response.json()
     except ValueError as exc:
@@ -409,6 +472,11 @@ def refresh_access_token(
             f"Constant Contact token refresh returned invalid JSON: {exc}"
         ) from exc
     if response.status_code < 200 or response.status_code > 299 or "error" in payload:
+        LOGGER.warning(
+            "Constant Contact token refresh failed for %s with HTTP %s",
+            token_url,
+            response.status_code,
+        )
         detail = (
             payload.get("error_description") or payload.get("error") or response.text
         )
@@ -459,18 +527,31 @@ def run_device_oauth_flow(
             "and endpoints.token"
         )
     http = session or requests.Session()
-    auth_response = http.post(
-        auth_url,
-        data={
-            "client_id": cc_client_id,
-            "response_type": "code",
-            "scope": "contact_data offline_access",
-            "state": str(random.randrange(4294967296)),
-        },
-        timeout=timeout,
-    )
+    try:
+        auth_response = http.post(
+            auth_url,
+            data={
+                "client_id": cc_client_id,
+                "response_type": "code",
+                "scope": "contact_data offline_access",
+                "state": str(random.randrange(4294967296)),
+            },
+            timeout=timeout,
+        )
+    except requests.RequestException as exc:
+        LOGGER.warning(
+            "Constant Contact device authorization request failed for %s: %s",
+            auth_url,
+            exc,
+        )
+        raise
     auth_payload = _json_payload(auth_response, "device authorization")
     if auth_response.status_code < 200 or auth_response.status_code > 299:
+        LOGGER.warning(
+            "Constant Contact device authorization failed for %s with HTTP %s",
+            auth_url,
+            auth_response.status_code,
+        )
         raise ConfigError(
             f"Constant Contact device authorization failed: {auth_response.text}"
         )
@@ -485,18 +566,32 @@ def run_device_oauth_flow(
     start = now or dt.datetime.now(dt.UTC)
     # The server tells us how often to poll (interval) and how long the device
     # code stays valid (expires_in); honor both to avoid hammering the API.
-    interval = int(auth_payload.get("interval", 5))
-    deadline = time.monotonic() + int(auth_payload.get("expires_in", 600))
+    try:
+        interval = int(auth_payload.get("interval", 5))
+        deadline = time.monotonic() + int(auth_payload.get("expires_in", 600))
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(
+            "Constant Contact device authorization response has invalid "
+            f"poll timing: {exc}"
+        ) from exc
     while True:
-        token_response = http.post(
-            token_url,
-            data={
-                "client_id": cc_client_id,
-                "device_code": device_code,
-                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
-            },
-            timeout=timeout,
-        )
+        try:
+            token_response = http.post(
+                token_url,
+                data={
+                    "client_id": cc_client_id,
+                    "device_code": device_code,
+                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                },
+                timeout=timeout,
+            )
+        except requests.RequestException as exc:
+            LOGGER.warning(
+                "Constant Contact device token request failed for %s: %s",
+                token_url,
+                exc,
+            )
+            raise
         token_payload = _json_payload(token_response, "device token")
         if token_response.status_code < 200 or token_response.status_code > 299:
             error = token_payload.get("error")
@@ -506,6 +601,11 @@ def run_device_oauth_flow(
             if error == "authorization_pending" and time.monotonic() < deadline:
                 sleep_fn(interval)
                 continue
+            LOGGER.warning(
+                "Constant Contact device token request failed for %s with HTTP %s",
+                token_url,
+                token_response.status_code,
+            )
             detail = (
                 token_payload.get("error_description") or error or token_response.text
             )
@@ -540,6 +640,7 @@ def get_access_token(
     session: requests.Session | None = None,
     now: dt.datetime | None = None,
     timeout: float = 30.0,
+    allow_refresh: bool = True,
 ) -> dict[str, Any]:
     """Return a valid Constant Contact access token, refreshing if needed.
 
@@ -560,6 +661,12 @@ def get_access_token(
         access_token = load_access_token(path)
         if token_is_valid(access_token, now=now):
             return access_token
+        if not allow_refresh:
+            raise ConfigError(
+                "Constant Contact access token is expired; dry-run mode will not "
+                "refresh or rewrite credential files. Run without --dry-run once "
+                "to refresh the token, then retry the dry run."
+            )
         refreshed = refresh_access_token(
             client_id,
             access_token,

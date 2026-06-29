@@ -7,11 +7,13 @@ import fcntl
 import json
 import logging
 import os
+import re
 import shlex
 import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import uuid
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
@@ -27,7 +29,12 @@ from parishkit.cli import (
     default_run_dir,
     resolve_common_options,
 )
-from parishkit.config import ConfigData, ConfigError, load_yaml_config
+from parishkit.config import (
+    ConfigData,
+    ConfigError,
+    load_yaml_config,
+    reject_unknown_keys,
+)
 from parishkit.logging import log_extra, setup_logging
 
 EXIT_SUCCESS = 0
@@ -40,6 +47,13 @@ DEFAULT_RUNNER_CONFIG = default_config_dir() / "runner.yaml"
 _IMPORTED_DEFAULT_RUNNER_CONFIG = DEFAULT_RUNNER_CONFIG
 DEFAULT_LOCK_FILE = default_run_dir() / "runner.lock"
 SENSITIVE_WORDS = ("TOKEN", "SECRET", "PASSWORD", "PASS", "KEY", "CREDENTIAL", "AUTH")
+MAX_CAPTURED_OUTPUT_BYTES = 200_000
+EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
+SECRET_ASSIGNMENT_RE = re.compile(
+    r"(?i)\b([A-Z0-9_.-]*(?:TOKEN|SECRET|PASSWORD|PASS|KEY|CREDENTIAL|AUTH)"
+    r"[A-Z0-9_.-]*)\s*[:=]\s*([^\s,;]+)"
+)
+LONG_TOKEN_RE = re.compile(r"\b[A-Za-z0-9_./~+=-]{32,}\b")
 
 
 @dataclass(frozen=True)
@@ -286,12 +300,30 @@ def parse_runner_config(
     lock_data = data.get("lock", {})
     if not isinstance(lock_data, dict):
         raise ConfigError("lock must be a mapping")
+    reject_unknown_keys(lock_data, {"path", "stale_after", "stale_action"}, "lock")
     runner_data = data.get("runner", {})
     if not isinstance(runner_data, dict):
         raise ConfigError("runner must be a mapping")
+    reject_unknown_keys(
+        runner_data,
+        {"stop_on_first_failure", "notify_success", "context"},
+        "runner",
+    )
     slack_data = data.get("slack", {})
     if not isinstance(slack_data, dict):
         raise ConfigError("slack must be a mapping")
+    reject_unknown_keys(
+        slack_data,
+        {
+            "token_file",
+            "channel",
+            "level",
+            "notify_success",
+            "context",
+            "include_output",
+        },
+        "slack",
+    )
 
     lock_path = _path(lock_data.get("path"), "lock.path") or (
         default_run_dir() / "runner.lock"
@@ -349,6 +381,9 @@ def _parse_job(raw: Any, *, base_dir: Path | None) -> JobConfig:
     """Parse one configured runner job."""
     if not isinstance(raw, dict):
         raise ConfigError("each job must be a mapping")
+    reject_unknown_keys(
+        raw, {"name", "command", "enabled", "cwd", "env", "timeout"}, "job"
+    )
     name = raw.get("name")
     if not isinstance(name, str) or not name:
         raise ConfigError("job.name must be a non-empty string")
@@ -584,57 +619,74 @@ def run_job(job: JobConfig) -> JobResult:
     """Run one job to completion and capture its result.
 
     The job's ``env`` is layered on top of the current environment, output is
-    captured as text, and the child runs in its own session/process group
-    (``start_new_session=True``) so a timeout can signal the whole group rather
-    than orphaning grandchildren. The steps are kept explicit so operational
-    behavior stays easy to audit and test. Returns a ``JobResult`` for every
-    outcome: a failed spawn yields ``EXIT_JOB_FAILED`` and a timeout yields
-    ``EXIT_TIMEOUT`` with ``timed_out=True``; no exception escapes.
+    spooled to temporary files and read back with a size limit, and the child
+    runs in its own session/process group (``start_new_session=True``) so a
+    timeout can signal the whole group rather than orphaning grandchildren. The
+    steps are kept explicit so operational behavior stays easy to audit and
+    test. Returns a ``JobResult`` for every outcome: a failed spawn yields
+    ``EXIT_JOB_FAILED`` and a timeout yields ``EXIT_TIMEOUT`` with
+    ``timed_out=True``; no exception escapes.
     """
     env = os.environ.copy()
     env.update(job.env)
-    try:
-        process = subprocess.Popen(
-            job.command,
-            cwd=job.cwd,
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            start_new_session=True,
-        )
-    except OSError as exc:
-        # Command could not be launched at all (e.g. missing executable).
+    with (
+        tempfile.TemporaryFile() as stdout_file,
+        tempfile.TemporaryFile() as stderr_file,
+    ):
+        try:
+            process = subprocess.Popen(
+                job.command,
+                cwd=job.cwd,
+                env=env,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                start_new_session=True,
+            )
+        except OSError as exc:
+            # Command could not be launched at all (e.g. missing executable).
+            return JobResult(
+                name=job.name,
+                returncode=EXIT_JOB_FAILED,
+                stdout="",
+                stderr=str(exc),
+            )
+        # Track the live process so signal handlers can tear it down on shutdown.
+        _ACTIVE_PROCESSES.append(process)
+        try:
+            process.wait(timeout=job.timeout)
+        except subprocess.TimeoutExpired:
+            _terminate_process(process)
+            process.wait()
+            return JobResult(
+                name=job.name,
+                returncode=EXIT_TIMEOUT,
+                stdout=_read_captured_output(stdout_file),
+                stderr=_read_captured_output(stderr_file),
+                timed_out=True,
+            )
+        finally:
+            if process in _ACTIVE_PROCESSES:
+                _ACTIVE_PROCESSES.remove(process)
         return JobResult(
             name=job.name,
-            returncode=EXIT_JOB_FAILED,
-            stdout="",
-            stderr=str(exc),
+            returncode=process.returncode,
+            stdout=_read_captured_output(stdout_file),
+            stderr=_read_captured_output(stderr_file),
         )
-    # Track the live process so signal handlers can tear it down on shutdown.
-    _ACTIVE_PROCESSES.append(process)
-    try:
-        stdout, stderr = process.communicate(timeout=job.timeout)
-    except subprocess.TimeoutExpired as exc:
-        _terminate_process(process)
-        # Drain any buffered output produced before the kill.
-        stdout, stderr = process.communicate()
-        return JobResult(
-            name=job.name,
-            returncode=EXIT_TIMEOUT,
-            stdout=stdout or exc.stdout or "",
-            stderr=stderr or exc.stderr or "",
-            timed_out=True,
-        )
-    finally:
-        if process in _ACTIVE_PROCESSES:
-            _ACTIVE_PROCESSES.remove(process)
-    return JobResult(
-        name=job.name,
-        returncode=process.returncode,
-        stdout=stdout,
-        stderr=stderr,
-    )
+
+
+def _read_captured_output(output_file: Any) -> str:
+    """Read a bounded tail of child output from a temporary file."""
+    output_file.flush()
+    output_file.seek(0, os.SEEK_END)
+    size = output_file.tell()
+    start = max(0, size - MAX_CAPTURED_OUTPUT_BYTES)
+    output_file.seek(start)
+    data = output_file.read()
+    text = data.decode("utf-8", errors="replace")
+    if start:
+        return "... output truncated ...\n" + text
+    return text
 
 
 def run_jobs(
@@ -960,9 +1012,17 @@ def _bounded_output(result: JobResult, limit: int = 1500) -> str:
     if result.stdout:
         parts.append(f"stdout:\n{result.stdout.strip()}")
     output = "\n".join(parts)
+    output = _redacted_output(output)
     if len(output) > limit:
         return output[:limit] + "\n... output truncated ..."
     return output
+
+
+def _redacted_output(output: str) -> str:
+    """Redact likely PII and secrets from job output before Slack delivery."""
+    redacted = SECRET_ASSIGNMENT_RE.sub(r"\1=[redacted]", output)
+    redacted = EMAIL_RE.sub("[redacted-email]", redacted)
+    return LONG_TOKEN_RE.sub("[redacted-token]", redacted)
 
 
 _ACTIVE_LOCKS: list[LockFile] = []

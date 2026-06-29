@@ -1,6 +1,12 @@
 import pytest
 
-from parishkit.config import ConfigError, load_yaml_config, require_keys, validate_with
+from parishkit.config import (
+    ConfigError,
+    load_yaml_config,
+    reject_unknown_keys,
+    require_keys,
+    validate_with,
+)
 
 
 def test_load_yaml_config_empty_when_optional_missing(tmp_path):
@@ -35,6 +41,16 @@ def test_require_keys_reports_missing():
     """Missing required keys are all named in the raised ConfigError message."""
     with pytest.raises(ConfigError, match="alpha, beta"):
         require_keys({}, {"alpha", "beta"})
+
+
+def test_reject_unknown_keys_names_bad_and_allowed_keys():
+    """Unsupported config keys are reported with the accepted schema."""
+    with pytest.raises(ConfigError) as exc_info:
+        reject_unknown_keys({"dryrn": True}, {"dry_run"}, "common")
+
+    message = str(exc_info.value)
+    assert "common has unsupported key(s): dryrn" in message
+    assert "dry_run" in message
 
 
 def test_validate_with_normalizes_value_errors():

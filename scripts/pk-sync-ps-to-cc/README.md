@@ -1,45 +1,71 @@
 # pk-sync-ps-to-cc
 
-Synchronize ParishSoft contacts to Constant Contact lists.
+Keep Constant Contact email lists in step with ParishSoft. The tool works out
+who should be on each list from your ParishSoft workgroups, respects anyone who
+has unsubscribed in Constant Contact, and adds or removes contacts to match.
 
-This wrapper delegates to the installed `pk-sync-ps-to-cc` command.
+## What you need first
 
-## Usage
+- A working ParishSoft API key.
+- A Constant Contact developer application and a saved OAuth token. See
+  **Constant Contact** in the [top-level README](../../README.md) for the
+  one-time setup, then the [authorization steps below](#constant-contact-authorization).
+- Optionally, an email provider configured for the change-summary notifications.
+
+## Configure it
+
+Copy the example config and edit it with your parish's values:
 
 ```sh
-pk-sync-ps-to-cc --config example-config.yaml --dry-run
+cp example-config.yaml /opt/parishkit/config/pk-sync-ps-to-cc.yaml
 ```
 
-Mappings live in YAML under `sync.lists`. The command resolves desired
-Constant Contact list membership from ParishSoft member workgroups, filters
-contacts that have unsubscribed in Constant Contact, computes an action list,
-and writes through the shared Constant Contact client unless `--dry-run` or
-`common.dry_run` is enabled.
+List mappings live under `sync.lists`: each entry maps one ParishSoft workgroup
+to one Constant Contact list. The tool resolves the desired list membership from
+the workgroup, filters out contacts that have unsubscribed in Constant Contact,
+computes the additions and removals, and applies them unless dry-run is in
+effect. The comments in `example-config.yaml` explain every field, including the
+`allow_empty` / `max_removals` / `max_removal_fraction` guardrails and the
+optional `unsubscribed_report` that summarizes still-subscribed-in-ParishSoft
+but unsubscribed-in-Constant-Contact members on a schedule.
+
+## Run it
+
+Always start with a dry run. It still reads ParishSoft and Constant Contact and
+reports the changes it *would* make, but writes no contacts and sends no email:
+
+```sh
+pk-sync-ps-to-cc --config /opt/parishkit/config/pk-sync-ps-to-cc.yaml --dry-run
+```
+
+When the dry run looks right, set `common.dry_run: false` (or pass
+`--no-dry-run`) to apply changes for real.
 
 Keep ParishSoft, Constant Contact, and email credentials outside git.
 
-## Constant Contact Authorization
+## Constant Contact authorization
 
-The sync needs a Constant Contact client metadata file and an OAuth token file.
-The YAML config names these as `constant_contact.client_id_file` and
-`constant_contact.access_token_file`.
+The sync needs two secret files, both referenced from your config:
+`constant_contact.client_id_file` (your app's client metadata) and
+`constant_contact.access_token_file` (the OAuth token).
 
-The client metadata file is a local secret JSON file. It must include the app
-client ID plus Constant Contact API, authorization, and token endpoints:
+The client metadata file holds your Constant Contact app client ID plus the API,
+authorization, and token endpoints:
 
 ```json
 {
   "client id": "constant-contact-app-client-id",
   "endpoints": {
     "api": "https://api.cc.email",
-    "auth": "constant-contact-device-authorization-endpoint",
-    "token": "constant-contact-token-endpoint"
+    "auth": "https://authz.constantcontact.com/oauth2/default/v1/device/authorize",
+    "token": "https://authz.constantcontact.com/oauth2/default/v1/token"
   }
 }
 ```
 
-Create or refresh the token file from the repository root with the manual
-device OAuth helper:
+Create or refresh the token file with the manual device OAuth helper. It prints
+an authorization URL, waits for you to approve access in a browser, then saves
+the token:
 
 ```sh
 PYTHONPATH=src scripts/smoke-tests/constant-contact-device-oauth.py \
@@ -47,10 +73,6 @@ PYTHONPATH=src scripts/smoke-tests/constant-contact-device-oauth.py \
   --access-token-file /opt/parishkit/credentials/constant-contact-token.json \
   --send
 ```
-
-The helper prints a Constant Contact authorization URL, waits for you to finish
-authorization in a browser, and saves the resulting token JSON to
-`--access-token-file`.
 
 Validate the token with the read-only list smoke test:
 
@@ -61,13 +83,8 @@ PYTHONPATH=src scripts/smoke-tests/constant-contact-lists.py \
   --send
 ```
 
-The smoke test refreshes expired tokens when the token file contains a refresh
-token and the client file contains `endpoints.token` plus the app client ID. If
-refresh fails or no token file exists, rerun the manual device OAuth helper.
-
-## Credential Smoke Test
-
-Automated tests mock Constant Contact writes. After creating and validating the
-token file, run `pk-sync-ps-to-cc` with `--dry-run` first. Dry-run still reads
-Constant Contact and ParishSoft but does not write contacts or send
-notifications.
+The token includes a refresh token, so scheduled runs renew themselves
+automatically. The smoke test also refreshes an expired token when the token
+file has a refresh token and the client file has `endpoints.token` plus the
+client ID. If a refresh fails or the token file is missing, rerun the device
+OAuth helper above.

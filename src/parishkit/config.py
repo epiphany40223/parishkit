@@ -85,6 +85,22 @@ def require_keys(config: Mapping[str, Any], required_keys: set[str]) -> None:
         raise ConfigError(f"missing required configuration key(s): {joined}")
 
 
+def reject_unknown_keys(
+    config: Mapping[str, Any],
+    allowed_keys: set[str],
+    name: str,
+) -> None:
+    """Raise ``ConfigError`` when ``config`` contains unsupported keys."""
+    unknown = sorted(str(key) for key in config if key not in allowed_keys)
+    if not unknown:
+        return
+    allowed = ", ".join(sorted(allowed_keys))
+    raise ConfigError(
+        f"{name} has unsupported key(s): {', '.join(unknown)}. "
+        f"Allowed key(s): {allowed}."
+    )
+
+
 def validate_with[T](config: ConfigData, validator: Callable[[ConfigData], T]) -> T:
     """Run a config validator and normalize common failures."""
 

@@ -24,6 +24,7 @@ from parishkit.parishsoft import (
     load_families_and_members,
     member_is_active,
     ministry_membership_is_current,
+    normalize_dates,
     normalize_family_email,
     normalize_member_email,
     parse_cache_limit,
@@ -201,6 +202,16 @@ def test_cache_round_trip(tmp_path):
     assert stat.S_IMODE(cache_file.stat().st_mode) == 0o600
 
 
+def test_invalid_cache_file_is_treated_as_miss(tmp_path):
+    """A corrupt cache file does not crash a later ParishSoft read."""
+    ps = client(tmp_path, [Response([{"id": 2}])])
+    cache_path = ps._cache_path("lookup", None)
+    cache_path.write_text("{not json", encoding="utf-8")
+
+    assert ps.get("lookup") == [{"id": 2}]
+    assert len(ps.session.calls) == 1
+
+
 def test_validate_organization_bypasses_stale_cache(tmp_path):
     """Organization validation always calls ParishSoft, never stale cache data."""
     ps = client(
@@ -269,7 +280,7 @@ def test_post_uncached_bypasses_cache(tmp_path):
     assert len(ps.session.calls) == 2
 
 
-def test_exhausted_transient_response_raises_typed_api_error(tmp_path):
+def test_exhausted_transient_response_raises_typed_api_error(tmp_path, caplog):
     """A persistent transient (503) surfaces as ParishSoftAPIError once retries run out.
 
     The retry policy is replaced with a single, zero-delay attempt so the test
@@ -277,9 +288,13 @@ def test_exhausted_transient_response_raises_typed_api_error(tmp_path):
     """
     ps = client(tmp_path, [Response({}, status_code=503)])
     ps.retry_policy = type(ps.retry_policy)(attempts=1, initial_delay=0)
+    caplog.set_level(logging.WARNING, logger="parishkit.parishsoft")
 
     with pytest.raises(ParishSoftAPIError, match="503"):
         ps.get("lookup")
+
+    assert "ParishSoft API request failed" in caplog.text
+    assert "HTTP 503" in caplog.text
 
 
 def test_malformed_json_response_raises_typed_api_error(tmp_path):
@@ -910,6 +925,14 @@ def test_email_normalization_drops_blank_fragments_and_deduplicates():
     assert family["py eMailAddresses"] == ["a@example.org"]
     assert member["emailAddress"] == "ann@example.org"
     assert member["py emailAddresses"] == ["ann@example.org"]
+
+
+def test_normalize_dates_reports_field_and_record_for_bad_api_value():
+    """Unexpected ParishSoft date strings fail with actionable context."""
+    records = [{"memberDUID": 42, "birthdate": "not-a-date"}]
+
+    with pytest.raises(ConfigError, match="birthdate.*42.*not-a-date"):
+        normalize_dates(records, ["birthdate"])
 
 
 def test_string_registered_organization_id_is_parishioner():

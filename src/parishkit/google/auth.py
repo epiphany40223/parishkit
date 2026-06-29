@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ from parishkit.retry import RetryError, RetryPolicy, TransientRetryError, retry_
 # HTTP statuses that indicate a transient Google API condition worth retrying:
 # 429 (rate limited) plus the 5xx server/gateway errors.
 TRANSIENT_GOOGLE_STATUSES = {429, 500, 502, 503, 504}
+LOGGER = logging.getLogger(__name__)
 
 
 class GoogleAPIError(RuntimeError):
@@ -101,11 +103,17 @@ def load_service_account_credentials(
     ``key_file`` is expanded. Returns a google-auth credentials object.
     """
 
+    key_path = Path(key_file).expanduser()
     service_account, _ = _import_google_auth()
-    credentials = service_account.Credentials.from_service_account_file(
-        str(Path(key_file).expanduser()),
-        scopes=list(scopes),
-    )
+    try:
+        credentials = service_account.Credentials.from_service_account_file(
+            str(key_path),
+            scopes=list(scopes),
+        )
+    except Exception as exc:
+        raise ConfigError(
+            f"could not load Google service-account credential file {key_path}: {exc}"
+        ) from exc
     # with_subject() turns plain service-account creds into domain-wide
     # delegation creds that act on behalf of the named user.
     if subject:
@@ -126,11 +134,17 @@ def load_user_credentials(
     libraries can refresh as needed.
     """
 
+    token_path = Path(token_file).expanduser()
     _, user_credentials = _import_google_auth()
-    return user_credentials.Credentials.from_authorized_user_file(
-        str(Path(token_file).expanduser()),
-        scopes=list(scopes),
-    )
+    try:
+        return user_credentials.Credentials.from_authorized_user_file(
+            str(token_path),
+            scopes=list(scopes),
+        )
+    except Exception as exc:
+        raise ConfigError(
+            f"could not load Google user credential file {token_path}: {exc}"
+        ) from exc
 
 
 def run_user_oauth_flow(
@@ -227,9 +241,17 @@ def execute_google_request(
         try:
             return request.execute()
         except Exception as exc:
+            endpoint = str(getattr(request, "uri", request.__class__.__name__))
             if http_error is None or not isinstance(exc, http_error):
+                LOGGER.warning("Google API request failed for %s: %s", endpoint, exc)
                 raise
             status = int(getattr(getattr(exc, "resp", None), "status", 0) or 0)
+            LOGGER.warning(
+                "Google API request failed for %s with HTTP %s: %s",
+                endpoint,
+                status,
+                exc,
+            )
             if status in TRANSIENT_GOOGLE_STATUSES:
                 raise _TransientGoogleAPIError(status, str(exc)) from exc
             raise GoogleAPIError(status, str(exc)) from exc

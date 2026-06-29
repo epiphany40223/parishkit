@@ -10,7 +10,7 @@ import html
 import json
 import logging
 from collections import defaultdict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from importlib.metadata import version
 from pathlib import Path
@@ -24,7 +24,13 @@ from parishkit.cli import (
     resolve_common_options,
     run_user_facing,
 )
-from parishkit.config import ConfigData, ConfigError, load_yaml_config, resolve_path
+from parishkit.config import (
+    ConfigData,
+    ConfigError,
+    load_yaml_config,
+    reject_unknown_keys,
+    resolve_path,
+)
 from parishkit.constant_contact import (
     ConstantContactClient,
     ConstantContactConfig,
@@ -86,6 +92,8 @@ class CCSyncMapping:
     target_list: str
     notifications: tuple[str, ...] = ()
     allow_empty: bool = False
+    max_removals: int = 25
+    max_removal_fraction: float = 0.5
 
 
 @dataclass(frozen=True)
@@ -267,7 +275,11 @@ def _run(
         cc_client = (
             cc_factory(config)
             if cc_factory
-            else constant_contact_client(config, base_dir=config_base_dir)
+            else constant_contact_client(
+                config,
+                base_dir=config_base_dir,
+                allow_token_refresh=not common.dry_run,
+            )
         )
         log.info("Loading Constant Contact lists and contacts")
         cc_lists, cc_contacts = load_cc_data(cc_client)
@@ -292,12 +304,12 @@ def _run(
                 _text_list(sorted(emails)),
                 extra=log_extra(sorted(emails)),
             )
+        validate_non_empty_desired_state(sync_config, desired_emails, cc_lists)
         unsubscribed = filter_unsubscribed(
             cc_contacts,
             desired_emails,
             ps_members_by_email,
         )
-        validate_non_empty_desired_state(sync_config, desired_emails, cc_lists)
         filtered_count = sum(len(items) for items in unsubscribed)
         if filtered_count:
             log.info("Filtered %s unsubscribed desired address(es)", filtered_count)
@@ -326,8 +338,14 @@ def _run(
             detect_name_mismatches(
                 contacts_by_email,
                 update_names=sync_config.update_names,
+                candidate_sync_indices=name_update_candidate_sync_indices(
+                    sync_config,
+                    desired_emails,
+                    cc_lists,
+                ),
             )
         )
+        validate_large_removal_guard(sync_config, actions, cc_lists)
         validate_unsubscribed_report_config(
             sync_config,
             unsubscribed,
@@ -335,14 +353,15 @@ def _run(
             dry_run=common.dry_run,
         )
         provider = email_provider
-        # Only build a real email provider when one was not injected and the run
-        # will actually send: skip it for dry runs or when no mapping requests
-        # notification/report mail, so we never touch email config we do not need.
-        if (
-            provider is None
-            and not common.dry_run
-            and any(mapping.notifications for mapping in sync_config.mappings)
-        ):
+        needs_email = sync_notifications_will_send(
+            sync_config, actions, unsubscribed
+        ) or unsubscribed_report_will_send(
+            sync_config,
+            unsubscribed,
+            report_decision,
+            dry_run=common.dry_run,
+        )
+        if provider is None and not common.dry_run and needs_email:
             provider = provider_from_config(
                 _mapping(config.get("email", {}), "email"),
                 base_dir=config_base_dir,
@@ -369,6 +388,8 @@ def _run(
             unsubscribed,
             contacts_by_email,
             ps_members_by_email,
+            generated_at=now or dt.datetime.now(ZoneInfo(common.timezone)),
+            dry_run=common.dry_run,
         )
         send_unsubscribed_report(
             provider,
@@ -377,8 +398,14 @@ def _run(
             report_decision,
             dry_run=common.dry_run,
             log=log,
+            generated_at=now or dt.datetime.now(ZoneInfo(common.timezone)),
         )
         log.info("Computed %s Constant Contact action(s)", len(actions))
+        log.info(
+            "Constant Contact sync operation completed successfully "
+            "for %s list mapping(s)",
+            len(sync_config.mappings),
+        )
     except ConfigError as exc:
         log.error("Configuration validation failed: %s", exc)
         raise
@@ -398,14 +425,26 @@ def cc_sync_config_from_yaml(
     ``ConfigError`` if required values are missing or malformed.
     """
     section = _mapping(config.get("sync", {}), "sync")
+    reject_unknown_keys(
+        section,
+        {"lists", "notifications", "unsubscribed_report", "update_names"},
+        "sync",
+    )
     mappings = tuple(
         _mapping_config(item, f"sync.lists[{index}]")
         for index, item in enumerate(_list(section.get("lists"), "sync.lists"))
     )
     if not mappings:
         raise ConfigError("sync.lists must not be empty")
+    _validate_unique_target_lists(mappings)
     notifications = _mapping(section.get("notifications", {}), "sync.notifications")
+    reject_unknown_keys(notifications, {"sender"}, "sync.notifications")
     sender = _optional_string(notifications.get("sender"), "sync.notifications.sender")
+    if any(mapping.notifications for mapping in mappings) and not sender:
+        raise ConfigError(
+            "sync.notifications.sender is required when any "
+            "sync.lists[].notifications recipient is configured"
+        )
     report = _unsubscribed_report_config(
         section.get("unsubscribed_report", {}),
         "sync.unsubscribed_report",
@@ -417,6 +456,22 @@ def cc_sync_config_from_yaml(
         sender=sender,
         unsubscribed_report=report,
     )
+
+
+def _validate_unique_target_lists(mappings: Sequence[CCSyncMapping]) -> None:
+    """Reject duplicate Constant Contact list targets before reconciliation."""
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for mapping in mappings:
+        normalized = mapping.target_list.casefold()
+        if normalized in seen:
+            duplicates.append(mapping.target_list)
+        seen.add(normalized)
+    if duplicates:
+        raise ConfigError(
+            "sync.lists[].target_list values must be unique; duplicate target "
+            f"list(s): {_text_list(duplicates)}"
+        )
 
 
 def validate_configured_parishsoft_workgroups(
@@ -452,6 +507,7 @@ def constant_contact_client(
     config: ConfigData,
     *,
     base_dir: Path | None = None,
+    allow_token_refresh: bool = True,
 ) -> ConstantContactClient:
     """Construct a Constant Contact client from configured credential files.
 
@@ -461,6 +517,11 @@ def constant_contact_client(
     missing.
     """
     section = _mapping(config.get("constant_contact", {}), "constant_contact")
+    reject_unknown_keys(
+        section,
+        {"client_id_file", "access_token_file"},
+        "constant_contact",
+    )
     client_id_file = _required_string(
         section.get("client_id_file"), "constant_contact.client_id_file"
     )
@@ -481,6 +542,7 @@ def constant_contact_client(
             base_dir=base_dir,
         ),
         client_id,
+        allow_refresh=allow_token_refresh,
     )
     return ConstantContactClient(
         ConstantContactConfig(client_id=client_id, access_token=access_token)
@@ -492,12 +554,13 @@ def load_cc_data(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Load Constant Contact list and contact state."""
     lists = client.get_all("contact_lists", "lists")
-    contacts = client.get_all(
+    loaded_contacts = client.get_all(
         "contacts",
         "contacts",
         include="list_memberships",
         status="all",
     )
+    contacts = [contact for contact in loaded_contacts if "deleted_at" not in contact]
     link_cc_data(contacts, [], lists)
     return lists, contacts
 
@@ -598,6 +661,49 @@ def validate_non_empty_desired_state(
         )
 
 
+def validate_large_removal_guard(
+    config: CCSyncConfig,
+    actions: Sequence[CCAction],
+    cc_lists: Sequence[Mapping[str, Any]],
+) -> None:
+    """Reject unexpectedly large unsubscribe batches before any CC writes."""
+    list_by_name = {item["name"]: item for item in cc_lists}
+    for index, mapping in enumerate(config.mappings):
+        removals = [
+            action
+            for action in actions
+            if action.sync_index == index and action.type == "unsubscribe"
+        ]
+        current_count = len(list_by_name[mapping.target_list].get("CONTACTS", {}))
+        if not removal_guard_tripped(
+            len(removals),
+            current_count,
+            max_removals=mapping.max_removals,
+            max_removal_fraction=mapping.max_removal_fraction,
+        ):
+            continue
+        raise ConfigError(
+            f"Constant Contact list {mapping.target_list!r} would remove "
+            f"{len(removals)} of {current_count} current contact(s). Check "
+            "sync.lists[].source_workgroup and ParishSoft data. To allow this "
+            "run, raise sync.lists[].max_removals or "
+            "sync.lists[].max_removal_fraction."
+        )
+
+
+def removal_guard_tripped(
+    removal_count: int,
+    current_count: int,
+    *,
+    max_removals: int,
+    max_removal_fraction: float,
+) -> bool:
+    """Return whether a removal batch exceeds both count and fraction guards."""
+    if current_count <= 0 or removal_count <= max_removals:
+        return False
+    return (removal_count / current_count) > max_removal_fraction
+
+
 def compute_all_actions(
     config: CCSyncConfig,
     desired_emails: Sequence[set[str]],
@@ -611,6 +717,37 @@ def compute_all_actions(
         compute_subscribe_unsubscribe_actions(config, desired_emails, cc_lists)
     )
     return actions
+
+
+def name_update_candidate_sync_indices(
+    config: CCSyncConfig,
+    desired_emails: Sequence[set[str]],
+    cc_lists: Sequence[Mapping[str, Any]],
+) -> dict[str, tuple[int, ...]]:
+    """Return emails eligible for name updates and their notification mappings.
+
+    ``update_names`` should only touch contacts related to this sync: desired
+    ParishSoft addresses and contacts already on configured Constant Contact
+    target lists. Constant Contact accounts can contain many unrelated lists,
+    and this command should not rename contacts outside its configured scope.
+    """
+    cc_list_by_name = {item["name"]: item for item in cc_lists}
+    candidates: dict[str, list[int]] = {}
+    for index, mapping in enumerate(config.mappings):
+        scoped = set(desired_emails[index])
+        scoped.update(cc_list_by_name[mapping.target_list].get("CONTACTS", {}))
+        for email in scoped:
+            candidates.setdefault(email, []).append(index)
+    return {email: tuple(indices) for email, indices in candidates.items()}
+
+
+def name_update_candidate_emails(
+    config: CCSyncConfig,
+    desired_emails: Sequence[set[str]],
+    cc_lists: Sequence[Mapping[str, Any]],
+) -> set[str]:
+    """Return emails eligible for configured-list name updates."""
+    return set(name_update_candidate_sync_indices(config, desired_emails, cc_lists))
 
 
 def compute_create_actions(
@@ -684,13 +821,15 @@ def detect_name_mismatches(
     contacts_by_email: Mapping[str, Mapping[str, Any]],
     *,
     update_names: bool,
+    candidate_emails: Collection[str] | None = None,
+    candidate_sync_indices: Mapping[str, Sequence[int]] | None = None,
 ) -> list[CCAction]:
     """Find contacts whose Constant Contact name differs from ParishSoft.
 
     Returns an empty list unless ``update_names`` is set. For each contact
-    linked to ParishSoft members, the canonical salutation name is compared
-    against the stored Constant Contact name, and an ``update_name`` action is
-    produced for any difference.
+    linked to ParishSoft members and included in the supplied scope, the
+    canonical salutation name is compared against the stored Constant Contact
+    name, and ``update_name`` actions are produced for any difference.
     """
     if not update_names:
         return []
@@ -698,6 +837,17 @@ def detect_name_mismatches(
 
     actions = []
     for email, contact in contacts_by_email.items():
+        sync_indices: Sequence[int | None]
+        if candidate_sync_indices is not None:
+            if email not in candidate_sync_indices:
+                continue
+            sync_indices = candidate_sync_indices[email]
+        elif candidate_emails is not None and email not in candidate_emails:
+            continue
+        else:
+            sync_indices = (None,)
+        if candidate_emails is not None and candidate_sync_indices is None:
+            sync_indices = (None,)
         members = contact.get("PS MEMBERS")
         if not members:
             continue
@@ -709,16 +859,17 @@ def detect_name_mismatches(
             "last_name", ""
         ):
             continue
-        actions.append(
-            CCAction(
-                type="update_name",
-                email=email,
-                sync_index=None,
-                detail=f"Update name for {email}",
-                new_first=first,
-                new_last=last,
+        for sync_index in sync_indices:
+            actions.append(
+                CCAction(
+                    type="update_name",
+                    email=email,
+                    sync_index=sync_index,
+                    detail=f"Update name for {email}",
+                    new_first=first,
+                    new_last=last,
+                )
             )
-        )
     return actions
 
 
@@ -781,6 +932,8 @@ def execute_actions(
                     extra=log_extra(post_body),
                 )
             client.post("contacts/sign_up_form", sign_up_form_body(post_body))
+            if log:
+                log.info("Applied Constant Contact POST action(s) for %s", email)
         if put_body:
             if log:
                 log.debug(
@@ -791,6 +944,8 @@ def execute_actions(
             client.put(
                 f"contacts/{put_body['contact_id']}", update_contact_body(put_body)
             )
+            if log:
+                log.info("Applied Constant Contact PUT action(s) for %s", email)
 
 
 def post_body_for_actions(
@@ -866,6 +1021,9 @@ def send_notifications(
     unsubscribed: Sequence[Sequence[tuple[str, str, str]]],
     contacts_by_email: Mapping[str, Mapping[str, Any]],
     ps_members_by_email: Mapping[str, list[dict[str, Any]]],
+    *,
+    generated_at: dt.datetime | None = None,
+    dry_run: bool = False,
 ) -> None:
     """Email a per-mapping summary of actions and filtered unsubscribes.
 
@@ -875,6 +1033,7 @@ def send_notifications(
     """
     if provider is None or not config.sender:
         return
+    notification_time = generated_at or dt.datetime.now()
     for index, mapping in enumerate(config.mappings):
         list_actions = [action for action in actions if action.sync_index == index]
         suppressed_count = None
@@ -895,11 +1054,47 @@ def send_notifications(
                 contacts_by_email,
                 ps_members_by_email,
                 sender=config.sender,
-                generated_at=dt.datetime.now(),
+                generated_at=notification_time,
                 suppressed_unsubscribed_count=suppressed_count,
             ),
-            dry_run=False,
+            dry_run=dry_run,
         )
+
+
+def sync_notifications_will_send(
+    config: CCSyncConfig,
+    actions: Sequence[CCAction],
+    unsubscribed: Sequence[Sequence[tuple[str, str, str]]],
+) -> bool:
+    """Return whether normal sync notification email has content to send."""
+    if not config.sender:
+        return False
+    for index, mapping in enumerate(config.mappings):
+        if not mapping.notifications:
+            continue
+        list_actions = [action for action in actions if action.sync_index == index]
+        reported_unsubscribed = (
+            [] if config.unsubscribed_report.enabled else unsubscribed[index]
+        )
+        if list_actions or reported_unsubscribed:
+            return True
+    return False
+
+
+def unsubscribed_report_will_send(
+    config: CCSyncConfig,
+    unsubscribed: Sequence[Sequence[tuple[str, str, str]]],
+    decision: ReportScheduleDecision,
+    *,
+    dry_run: bool,
+) -> bool:
+    """Return whether the standalone unsubscribed report needs email."""
+    return (
+        config.unsubscribed_report.enabled
+        and decision.due
+        and not dry_run
+        and any(unsubscribed)
+    )
 
 
 def build_notification_email(
@@ -1177,6 +1372,7 @@ def send_unsubscribed_report(
     *,
     dry_run: bool,
     log: logging.Logger,
+    generated_at: dt.datetime | None = None,
 ) -> int:
     """Send the standalone unsubscribed report when the schedule is due.
 
@@ -1211,7 +1407,7 @@ def send_unsubscribed_report(
     )
 
     sent = 0
-    generated_at = dt.datetime.now(dt.UTC)
+    report_time = generated_at or dt.datetime.now(dt.UTC)
     with unsubscribed_report_state_lock(config.unsubscribed_report) as state:
         for index, mapping in enumerate(config.mappings):
             if not unsubscribed[index]:
@@ -1228,7 +1424,7 @@ def send_unsubscribed_report(
                     mapping,
                     unsubscribed[index],
                     sender=config.sender or "",
-                    generated_at=generated_at,
+                    generated_at=report_time,
                 ),
                 dry_run=False,
             )
@@ -1237,7 +1433,7 @@ def send_unsubscribed_report(
                 state,
                 decision.run_date,
                 mapping,
-                now=generated_at,
+                now=report_time,
             )
             sent += 1
         if all(
@@ -1249,7 +1445,7 @@ def send_unsubscribed_report(
                 config.unsubscribed_report,
                 state,
                 decision.run_date,
-                now=generated_at,
+                now=report_time,
             )
     return sent
 
@@ -1457,6 +1653,20 @@ def _mapping_config(value: Any, name: str) -> CCSyncMapping:
     files keep working. Raises ``ConfigError`` on missing required fields.
     """
     item = _mapping(value, name)
+    reject_unknown_keys(
+        item,
+        {
+            "source_workgroup",
+            "source ps member wg",
+            "target_list",
+            "target cc list",
+            "notifications",
+            "allow_empty",
+            "max_removals",
+            "max_removal_fraction",
+        },
+        name,
+    )
     return CCSyncMapping(
         source_workgroup=_required_string(
             item.get("source_workgroup", item.get("source ps member wg")),
@@ -1470,6 +1680,14 @@ def _mapping_config(value: Any, name: str) -> CCSyncMapping:
             _string_list(item.get("notifications", []), f"{name}.notifications")
         ),
         allow_empty=_bool(item.get("allow_empty", False), f"{name}.allow_empty"),
+        max_removals=_positive_int(
+            item.get("max_removals", 25),
+            f"{name}.max_removals",
+        ),
+        max_removal_fraction=_fraction(
+            item.get("max_removal_fraction", 0.5),
+            f"{name}.max_removal_fraction",
+        ),
     )
 
 
@@ -1481,6 +1699,11 @@ def _unsubscribed_report_config(
 ) -> CCUnsubscribedReportConfig:
     """Parse the optional standalone unsubscribed-report schedule."""
     item = _mapping(value, name)
+    reject_unknown_keys(
+        item,
+        {"enabled", "day_of_week", "time", "window_minutes", "state_file"},
+        name,
+    )
     enabled = _bool(item.get("enabled", False), f"{name}.enabled")
     return CCUnsubscribedReportConfig(
         enabled=enabled,
@@ -1652,6 +1875,16 @@ def _positive_int(value: Any, name: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
         raise ConfigError(f"{name} must be a positive integer")
     return value
+
+
+def _fraction(value: Any, name: str) -> float:
+    """Read a numeric fraction in the inclusive range 0.0 through 1.0."""
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        raise ConfigError(f"{name} must be a number between 0 and 1")
+    fraction = float(value)
+    if not 0 <= fraction <= 1:
+        raise ConfigError(f"{name} must be a number between 0 and 1")
+    return fraction
 
 
 def _bool(value: Any, name: str) -> bool:

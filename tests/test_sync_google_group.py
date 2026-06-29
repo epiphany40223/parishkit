@@ -19,6 +19,7 @@ from parishkit.pk_sync_ps_to_ggroup import (
     normalize_email,
     sync_config_from_yaml,
     sync_group,
+    validate_large_removal_guard,
 )
 from parishkit.pk_sync_ps_to_ggroup import (
     main as sync_google_group_main,
@@ -50,10 +51,14 @@ class Members:
     def __init__(self):
         self.calls = []
         self.list_error: Exception | None = None
+        self.list_errors_by_group: dict[str, Exception] = {}
 
     def list(self, **kwargs):
         """Record the list call and return the current group roster fixture."""
         self.calls.append(("list", kwargs))
+        group_key = str(kwargs.get("groupKey", ""))
+        if group_key in self.list_errors_by_group:
+            return Request(exc=self.list_errors_by_group[group_key])
         if self.list_error is not None:
             return Request(exc=self.list_error)
         return Request(
@@ -87,10 +92,13 @@ class Groups:
     def __init__(self, permission: str = "ALL_MEMBERS_CAN_POST"):
         self.calls = []
         self.permission = permission
+        self.get_error: Exception | None = None
 
     def get(self, **kwargs):
         """Record the get call and return canned group settings."""
         self.calls.append(("get", kwargs))
+        if self.get_error is not None:
+            return Request(exc=self.get_error)
         return Request({"whoCanPostMessage": self.permission})
 
 
@@ -262,6 +270,63 @@ def test_sync_config_validation():
     assert config.sender == "no-reply@example.org"
 
 
+def test_sync_config_rejects_duplicate_group_targets():
+    """One Google Group must not be reconciled by multiple config entries."""
+    with pytest.raises(ConfigError, match="group values must be unique"):
+        sync_config_from_yaml(
+            {
+                "sync": {
+                    "groups": [
+                        {
+                            "group": "group@example.org",
+                            "static_members": [{"email": "ann@example.org"}],
+                        },
+                        {
+                            "group": "GROUP@example.org",
+                            "static_members": [{"email": "bob@example.org"}],
+                        },
+                    ]
+                }
+            }
+        )
+
+
+def test_sync_config_rejects_unknown_group_key():
+    """Misspelled group guardrail keys fail instead of using defaults."""
+    with pytest.raises(ConfigError, match="unsupported key"):
+        sync_config_from_yaml(
+            {
+                "sync": {
+                    "groups": [
+                        {
+                            "group": "group@example.org",
+                            "static_members": [{"email": "ann@example.org"}],
+                            "max_removal_fractions": 0.1,
+                        }
+                    ]
+                }
+            }
+        )
+
+
+def test_sync_config_requires_sender_for_notifications():
+    """Group notification recipients require a configured sender."""
+    with pytest.raises(ConfigError, match="sync.notifications.sender is required"):
+        sync_config_from_yaml(
+            {
+                "sync": {
+                    "groups": [
+                        {
+                            "group": "group@example.org",
+                            "notify": ["admin@example.org"],
+                            "static_members": [{"email": "ann@example.org"}],
+                        }
+                    ]
+                }
+            }
+        )
+
+
 def test_sync_config_rejects_group_without_source():
     """Verify parsing fails for a group with no member source defined.
 
@@ -321,6 +386,36 @@ def test_google_group_credentials_resolve_relative_paths(tmp_path, monkeypatch):
     assert calls[0][0] == tmp_path / "credentials" / "google-service-account.json"
 
 
+def test_google_group_credentials_can_skip_settings_scope(tmp_path, monkeypatch):
+    """Notification-free syncs do not require the Groups Settings scope."""
+    calls = []
+
+    def fake_load(path, *, scopes, subject):
+        """Capture scopes for assertion instead of loading credentials."""
+        calls.append((path, scopes, subject))
+        return object()
+
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.load_service_account_credentials",
+        fake_load,
+    )
+
+    load_google_credentials(
+        {
+            "google": {
+                "service_account_file": "credentials/google-service-account.json",
+                "delegated_subject": "itadmin@example.org",
+            }
+        },
+        base_dir=tmp_path,
+        include_settings_scope=False,
+    )
+
+    assert calls[0][1] == [
+        "https://www.googleapis.com/auth/admin.directory.group.member"
+    ]
+
+
 def test_desired_members_from_ministries_workgroups_and_static():
     """Verify desired_members merges ministry, workgroup, and static sources.
 
@@ -350,6 +445,35 @@ def test_desired_members_from_ministries_workgroups_and_static():
         ("leader@example.org", True),
         ("bob.mover+tag@gmail.com", False),
         ("static@example.org", True),
+    ]
+
+
+def test_configured_leader_roles_control_ministry_owner_mapping():
+    """Parishes can choose which ParishSoft ministry roles become owners."""
+    data = parishsoft_data()
+    data.members[1]["py ministries"]["Readers"]["role"] = "Coordinator"
+    config = sync_config_from_yaml(
+        {
+            "sync": {
+                "leader_roles": ["Coordinator"],
+                "groups": [
+                    {
+                        "group": "group@example.org",
+                        "ministries": ["Readers"],
+                    }
+                ],
+            }
+        }
+    )
+
+    desired = desired_members(
+        data,
+        config.groups[0],
+        leader_roles=config.leader_roles,
+    )
+
+    assert [(item.email, item.leader) for item in desired] == [
+        ("leader@example.org", True)
     ]
 
 
@@ -421,6 +545,26 @@ def test_sync_group_refuses_empty_desired_state_with_current_members():
             dry_run=True,
             log=logging.getLogger("test"),
         )
+
+
+def test_sync_group_plans_without_mutating_google_group():
+    """The compatibility helper returns actions but leaves writes to apply phase."""
+    group = GroupSync(group="group@example.org", notify=(), workgroups=("Movers",))
+    admin = AdminService()
+
+    actions = sync_group(
+        admin,
+        SettingsService(),
+        None,
+        parishsoft_data(),
+        SyncConfig(groups=(group,), sender=None, google_mail_domains=frozenset()),
+        group,
+        dry_run=False,
+        log=logging.getLogger("test"),
+    )
+
+    assert actions
+    assert [call[0] for call in admin._members.calls] == ["list"]
 
 
 def test_all_ministry_chairs_selector_can_filter_ministry_names_by_pattern():
@@ -503,6 +647,49 @@ def test_all_ministry_chairs_staff_owner_uses_primary_email_domain():
     assert ("pat@gmail.com", False) in [(item.email, item.leader) for item in desired]
 
 
+def test_ministry_role_selector_preserves_leader_match_across_ministries():
+    """A later non-leader role must not demote an earlier leader role."""
+    data = parishsoft_data()
+    data.members[3] = {
+        "memberDUID": 3,
+        "firstName": "Riley",
+        "lastName": "Roles",
+        "py friendly name FL": "Riley Roles",
+        "emailAddress": "riley@example.org",
+        "py emailAddresses": ["riley@example.org"],
+        "py ministries": {
+            "500-Alpha": {"name": "500-Alpha", "role": "Leader"},
+            "500-Beta": {"name": "500-Beta", "role": "Team Member"},
+        },
+        "py workgroups": {},
+    }
+    config = sync_config_from_yaml(
+        {
+            "sync": {
+                "groups": [
+                    {
+                        "group": "roles@example.org",
+                        "selectors": [
+                            {
+                                "type": "ministry_role",
+                                "ministry_prefix": "500",
+                                "member_roles": ["Team Member"],
+                                "leader_roles": ["Leader"],
+                            }
+                        ],
+                    }
+                ]
+            }
+        }
+    )
+
+    desired = desired_members(data, config.groups[0])
+
+    assert ("riley@example.org", True) in [
+        (item.email, item.leader) for item in desired
+    ]
+
+
 def test_compute_actions_add_delete_and_change_role():
     """Verify compute_actions diffs desired vs current group membership.
 
@@ -533,6 +720,26 @@ def test_compute_actions_add_delete_and_change_role():
         normalize_email("bob.mover+tag@gmail.com", frozenset({"gmail.com"}))
         == "bobmover@gmail.com"
     )
+    assert (
+        normalize_email("First.Last+tag@example.org", frozenset({"example.org"}))
+        == "first.last@example.org"
+    )
+
+
+def test_google_group_refuses_large_delete_batch_by_default():
+    """A mostly destructive non-empty group sync requires guardrail changes."""
+    group = GroupSync(
+        group="big@example.org",
+        notify=(),
+    )
+    actions = [
+        SimpleNamespace(action="delete", email=f"old{index}@example.org")
+        for index in range(40)
+    ]
+    current = [{"email": f"old{index}@example.org"} for index in range(40)]
+
+    with pytest.raises(ConfigError, match="would remove 40 of 40"):
+        validate_large_removal_guard(group, actions, current)
 
 
 def test_sync_google_group_main_writes_group_changes_and_notifications(
@@ -551,6 +758,7 @@ def test_sync_google_group_main_writes_group_changes_and_notifications(
     settings = SettingsService()
     email = EmailProvider()
     loader_calls = []
+    log_file = tmp_path / "sync-google-group.log"
     # Replace the real ParishSoft client builder with a no-op stand-in; the
     # injected loader below supplies the data, so the client is never used.
     monkeypatch.setattr(
@@ -565,7 +773,7 @@ def test_sync_google_group_main_writes_group_changes_and_notifications(
 
     assert (
         sync_google_group_main(
-            ["--config", str(write_config(tmp_path))],
+            ["--config", str(write_config(tmp_path)), "--log-file", str(log_file)],
             loader=loader,
             service_factory=lambda _config: (admin, settings),
             email_provider=email,
@@ -574,6 +782,9 @@ def test_sync_google_group_main_writes_group_changes_and_notifications(
     )
 
     assert loader_calls == [{"active_only": True, "parishioners_only": False}]
+    assert "Google Group sync operation completed successfully" in (
+        log_file.read_text(encoding="utf-8")
+    )
     assert (
         "insert",
         {
@@ -694,6 +905,164 @@ def test_sync_google_group_dry_run_skips_writes_and_email(tmp_path, monkeypatch)
     assert [call[0] for call in admin._members.calls] == ["list"]
 
 
+def test_sync_google_group_live_noop_does_not_build_email_provider(
+    tmp_path,
+    monkeypatch,
+):
+    """Notification credentials are not required when a live run has no email."""
+    config = write_config(tmp_path)
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            """      ministries:
+        - Readers
+      workgroups:
+        - Movers
+      static_members:
+        - email: static@example.org
+          leader: false
+""",
+            """      static_members:
+        - email: leader@example.org
+          leader: false
+        - email: old@example.org
+          leader: false
+""",
+        ),
+        encoding="utf-8",
+    )
+    admin = AdminService()
+    settings = SettingsService()
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.provider_from_config",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ConfigError("email loaded")),
+    )
+
+    assert (
+        sync_google_group_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            service_factory=lambda _config: (admin, settings),
+        )
+        == 0
+    )
+
+    assert [call[0] for call in admin._members.calls] == ["list"]
+
+
+def test_sync_google_group_live_noop_does_not_build_settings_scope(
+    tmp_path,
+    monkeypatch,
+):
+    """A no-op live run with notify configured does not need settings scope."""
+    config = write_config(tmp_path)
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            """      ministries:
+        - Readers
+      workgroups:
+        - Movers
+      static_members:
+        - email: static@example.org
+          leader: false
+""",
+            """      static_members:
+        - email: leader@example.org
+          leader: false
+        - email: old@example.org
+          leader: false
+""",
+        ),
+        encoding="utf-8",
+    )
+    admin = AdminService()
+    scope_calls = []
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.load_google_credentials",
+        lambda _config, *, base_dir=None, include_settings_scope=True: (
+            scope_calls.append(include_settings_scope) or object()
+        ),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.build_admin_directory_service",
+        lambda _credentials: admin,
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.build_groups_settings_service",
+        lambda _credentials: (_ for _ in ()).throw(AssertionError("settings built")),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.provider_from_config",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ConfigError("email loaded")),
+    )
+
+    assert (
+        sync_google_group_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+        )
+        == 0
+    )
+
+    assert scope_calls == [False]
+    assert [call[0] for call in admin._members.calls] == ["list"]
+
+
+def test_sync_google_group_notification_failure_does_not_skip_later_writes(
+    tmp_path,
+    monkeypatch,
+):
+    """Notification failures are reported after every group plan is applied."""
+    config = write_config(tmp_path)
+    config.write_text(
+        config.read_text(encoding="utf-8")
+        + """
+    - group: second@example.org
+      static_members:
+        - email: second@example.org
+          leader: false
+""",
+        encoding="utf-8",
+    )
+    admin = AdminService()
+    settings = SettingsService()
+
+    class FailingEmailProvider:
+        """Email provider that fails when the first notification is sent."""
+
+        def send(self, *_args, **_kwargs):
+            """Raise a user-facing delivery error."""
+            raise ConfigError("smtp failed")
+
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_google_group_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            service_factory=lambda _config: (admin, settings),
+            email_provider=FailingEmailProvider(),
+        )
+        == 2
+    )
+
+    assert any(
+        call[0] in {"insert", "delete", "update"}
+        and call[1]["groupKey"] == "second@example.org"
+        for call in admin._members.calls
+    )
+
+
 def test_sync_google_group_reports_missing_google_group(
     tmp_path,
     monkeypatch,
@@ -723,6 +1092,45 @@ def test_sync_google_group_reports_missing_google_group(
     assert "Configured Google Group was not found" in error
     assert "sync.groups[].group" in error
     assert [call[0] for call in admin._members.calls] == ["list"]
+
+
+def test_sync_google_group_preflights_all_groups_before_writes(
+    tmp_path,
+    monkeypatch,
+):
+    """A later group failure prevents earlier group mutations."""
+    config = write_config(tmp_path)
+    config.write_text(
+        config.read_text(encoding="utf-8")
+        + """
+    - group: missing@example.org
+      static_members:
+        - email: somebody@example.org
+""",
+        encoding="utf-8",
+    )
+    admin = AdminService()
+    admin._members.list_errors_by_group["missing@example.org"] = GoogleAPIError(
+        404,
+        "group not found",
+    )
+    settings = SettingsService()
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_google_group_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            service_factory=lambda _config: (admin, settings),
+            email_provider=EmailProvider(),
+        )
+        == 2
+    )
+
+    assert [call[0] for call in admin._members.calls] == ["list", "list"]
 
 
 def test_sync_google_group_reports_missing_parishsoft_source(
@@ -760,6 +1168,75 @@ def test_sync_google_group_reports_missing_parishsoft_source(
     assert "Configured ParishSoft ministry was not found" in error
     assert "sync.groups[].ministries" in error
     assert admin._members.calls == []
+
+
+def test_sync_google_group_checks_posting_permissions_before_writes(
+    tmp_path,
+    monkeypatch,
+):
+    """Notification context failures must happen before group membership writes."""
+    admin = AdminService()
+    settings = SettingsService()
+    settings._groups.get_error = GoogleAPIError(403, "settings denied")
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_google_group_main(
+            ["--config", str(write_config(tmp_path))],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            service_factory=lambda _config: (admin, settings),
+            email_provider=EmailProvider(),
+        )
+        == 2
+    )
+
+    assert [call[0] for call in admin._members.calls] == ["list"]
+    assert settings._groups.calls == [
+        (
+            "get",
+            {
+                "groupUniqueId": "group@example.org",
+                "fields": "whoCanPostMessage",
+            },
+        )
+    ]
+
+
+def test_sync_google_group_without_notifications_skips_settings_api(
+    tmp_path,
+    monkeypatch,
+):
+    """Membership-only syncs do not require Groups Settings API permission."""
+    admin = AdminService()
+    settings = SettingsService()
+    settings._groups.get_error = GoogleAPIError(403, "settings denied")
+    config = write_config(tmp_path)
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "      notify:\n        - admin@example.org\n",
+            "",
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_google_group_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            service_factory=lambda _config: (admin, settings),
+        )
+        == 0
+    )
+
+    assert any(call[0] == "insert" for call in admin._members.calls)
+    assert settings._groups.calls == []
 
 
 def test_sync_google_group_reports_selector_with_no_matching_ministries(

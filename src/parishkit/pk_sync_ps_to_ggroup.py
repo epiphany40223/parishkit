@@ -18,7 +18,13 @@ from parishkit.cli import (
     resolve_common_options,
     run_user_facing,
 )
-from parishkit.config import ConfigData, ConfigError, load_yaml_config, resolve_path
+from parishkit.config import (
+    ConfigData,
+    ConfigError,
+    load_yaml_config,
+    reject_unknown_keys,
+    resolve_path,
+)
 from parishkit.email.base import Email, EmailProvider, provider_from_config
 from parishkit.google.auth import (
     GoogleAPIError,
@@ -96,6 +102,8 @@ class GroupSync:
     static_members: tuple[StaticMember, ...] = ()
     selectors: tuple[Selector, ...] = ()
     allow_empty: bool = False
+    max_removals: int = 25
+    max_removal_fraction: float = 0.5
 
 
 @dataclass(frozen=True)
@@ -109,6 +117,7 @@ class SyncConfig:
     groups: tuple[GroupSync, ...]
     sender: str | None
     google_mail_domains: frozenset[str]
+    leader_roles: frozenset[str] = frozenset(LEADER_ROLES)
 
 
 @dataclass
@@ -139,6 +148,16 @@ class SyncAction:
     role: str | None = None
     group_member_id: str | None = None
     desired: DesiredMember | None = None
+
+
+@dataclass(frozen=True)
+class GroupSyncPlan:
+    """A fully validated Google Group sync plan ready to apply."""
+
+    group: GroupSync
+    actions: tuple[SyncAction, ...]
+    email_provider: EmailProvider | None = None
+    posting_permission: str | None = None
 
 
 Loader = Callable[..., ParishSoftData]
@@ -273,26 +292,43 @@ def _run(
         )
         validate_configured_parishsoft_sources(data, sync_config)
         log.debug("Dry-run mode is %s", "enabled" if common.dry_run else "disabled")
-        admin_service, settings_service = (
-            service_factory(config)
-            if service_factory is not None
-            else build_google_services(
-                load_google_credentials(config, base_dir=config_base_dir)
-            )
-        )
-        # Only build an email provider when one was not injected, we are actually
-        # applying changes, and at least one group wants notifications. This avoids
-        # requiring email credentials for dry runs or notification-free configs.
         provider = email_provider
-        if (
-            provider is None
-            and not common.dry_run
-            and any(group.notify for group in sync_config.groups)
-        ):
-            provider = provider_from_config(
-                _mapping(config.get("email", {}), "email"),
-                base_dir=config_base_dir,
+
+        def provider_for_notifications() -> EmailProvider:
+            """Build the email provider lazily once a notification is needed."""
+            nonlocal provider
+            if provider is None:
+                provider = provider_from_config(
+                    _mapping(config.get("email", {}), "email"),
+                    base_dir=config_base_dir,
+                )
+            return provider
+
+        if service_factory is not None:
+            admin_service, settings_service = service_factory(config)
+        else:
+            admin_service = build_admin_directory_service(
+                load_google_credentials(
+                    config,
+                    base_dir=config_base_dir,
+                    include_settings_scope=False,
+                )
             )
+            settings_service = None
+
+        def settings_service_for_notifications() -> Any:
+            """Build the Groups Settings service only once it is needed."""
+            nonlocal settings_service
+            if settings_service is None:
+                credentials = load_google_credentials(
+                    config,
+                    base_dir=config_base_dir,
+                    include_settings_scope=True,
+                )
+                settings_service = build_groups_settings_service(credentials)
+            return settings_service
+
+        plans = []
         for group in sync_config.groups:
             log.info("Synchronizing Google Group %s", group.group)
             log.debug(
@@ -309,16 +345,39 @@ def _run(
                 ),
                 extra=log_extra(group),
             )
-            sync_group(
+            plans.append(
+                plan_group(
+                    admin_service,
+                    settings_service,
+                    provider,
+                    data,
+                    sync_config,
+                    group,
+                    dry_run=common.dry_run,
+                    log=log,
+                    email_provider_factory=provider_for_notifications,
+                    settings_service_factory=(
+                        None
+                        if service_factory is not None
+                        else settings_service_for_notifications
+                    ),
+                )
+            )
+        for plan in plans:
+            apply_group_plan(
                 admin_service,
-                settings_service,
-                provider,
-                data,
                 sync_config,
-                group,
+                plan,
                 dry_run=common.dry_run,
                 log=log,
             )
+        if not common.dry_run:
+            for plan in plans:
+                send_group_plan_notification(sync_config, plan)
+        log.info(
+            "Google Group sync operation completed successfully for %s group(s)",
+            len(sync_config.groups),
+        )
     except ConfigError as exc:
         log.error("Configuration validation failed: %s", exc)
         raise
@@ -334,36 +393,77 @@ def sync_config_from_yaml(config: ConfigData) -> SyncConfig:
     ``ConfigError`` on malformed or missing required values.
     """
     section = _mapping(config.get("sync", {}), "sync")
+    reject_unknown_keys(
+        section,
+        {"groups", "notifications", "google_mail_domains", "leader_roles"},
+        "sync",
+    )
     groups = tuple(
         _group_sync(item, f"sync.groups[{index}]")
         for index, item in enumerate(_list(section.get("groups"), "sync.groups"))
     )
     if not groups:
         raise ConfigError("sync.groups must not be empty")
+    _validate_unique_groups(groups)
     notifications = _mapping(section.get("notifications", {}), "sync.notifications")
+    reject_unknown_keys(notifications, {"sender"}, "sync.notifications")
     sender = _optional_string(notifications.get("sender"), "sync.notifications.sender")
+    if any(group.notify for group in groups) and not sender:
+        raise ConfigError(
+            "sync.notifications.sender is required when any sync.groups[].notify "
+            "recipient is configured"
+        )
     domains = _string_list(
         section.get("google_mail_domains", ["gmail.com"]),
         "sync.google_mail_domains",
+    )
+    leader_roles = _string_list(
+        section.get("leader_roles", sorted(LEADER_ROLES)),
+        "sync.leader_roles",
     )
     return SyncConfig(
         groups=groups,
         sender=sender,
         google_mail_domains=frozenset(domain.casefold() for domain in domains),
+        leader_roles=frozenset(leader_roles),
     )
+
+
+def _validate_unique_groups(groups: Sequence[GroupSync]) -> None:
+    """Reject duplicate Google Group targets before destructive reconciliation."""
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for group in groups:
+        normalized = group.group.casefold()
+        if normalized in seen:
+            duplicates.append(group.group)
+        seen.add(normalized)
+    if duplicates:
+        raise ConfigError(
+            "sync.groups[].group values must be unique; duplicate group target(s): "
+            f"{_text_list(duplicates)}"
+        )
 
 
 def load_google_credentials(
     config: ConfigData,
     *,
     base_dir: Path | None = None,
+    include_settings_scope: bool = True,
 ) -> Any:
     """Load credentials for Google group synchronization."""
     google = _mapping(config.get("google", {}), "google")
+    reject_unknown_keys(
+        google,
+        {"service_account_file", "user_token_file", "delegated_subject"},
+        "google",
+    )
     service_account_file = google.get("service_account_file")
     user_token_file = google.get("user_token_file")
     delegated_subject = google.get("delegated_subject")
-    scopes = [ADMIN_SCOPE, GROUP_SETTINGS_SCOPE]
+    scopes = [ADMIN_SCOPE]
+    if include_settings_scope:
+        scopes.append(GROUP_SETTINGS_SCOPE)
     if service_account_file and user_token_file:
         raise ConfigError(
             "google configuration must not set both service_account_file "
@@ -395,17 +495,21 @@ def load_google_credentials(
     )
 
 
-def build_google_services(credentials: Any) -> tuple[Any, Any]:
+def build_google_services(
+    credentials: Any,
+    *,
+    include_settings: bool = True,
+) -> tuple[Any, Any | None]:
     """Build Google API services used by sync."""
     return (
         build_admin_directory_service(credentials),
-        build_groups_settings_service(credentials),
+        build_groups_settings_service(credentials) if include_settings else None,
     )
 
 
 def sync_group(
     admin_service: Any,
-    settings_service: Any,
+    settings_service: Any | None,
     email_provider: EmailProvider | None,
     data: ParishSoftData,
     config: SyncConfig,
@@ -413,16 +517,51 @@ def sync_group(
     *,
     dry_run: bool,
     log: logging.Logger,
+    email_provider_factory: Callable[[], EmailProvider] | None = None,
+    settings_service_factory: Callable[[], Any] | None = None,
 ) -> list[SyncAction]:
-    """Synchronize one configured Google group and return its actions.
+    """Plan one configured Google group and return its actions.
 
     Computes the desired-vs-current diff and always logs the resulting
-    actions. When ``dry_run`` is false it also writes the changes to Google and
-    sends the notification email; in dry-run mode it computes and returns the
-    actions without performing any side effects. The returned action list is
-    the same whether or not it was applied.
+    actions. This compatibility helper intentionally performs no Google
+    writes; callers that need mutation should call ``plan_group`` for every
+    configured group first, then apply those plans with ``apply_group_plan``.
     """
-    desired = desired_members(data, group, config.google_mail_domains)
+    plan = plan_group(
+        admin_service,
+        settings_service,
+        email_provider,
+        data,
+        config,
+        group,
+        dry_run=dry_run,
+        log=log,
+        email_provider_factory=email_provider_factory,
+        settings_service_factory=settings_service_factory,
+    )
+    return list(plan.actions)
+
+
+def plan_group(
+    admin_service: Any,
+    settings_service: Any | None,
+    email_provider: EmailProvider | None,
+    data: ParishSoftData,
+    config: SyncConfig,
+    group: GroupSync,
+    *,
+    dry_run: bool,
+    log: logging.Logger,
+    email_provider_factory: Callable[[], EmailProvider] | None = None,
+    settings_service_factory: Callable[[], Any] | None = None,
+) -> GroupSyncPlan:
+    """Compute and validate one group plan without mutating Google Groups."""
+    desired = desired_members(
+        data,
+        group,
+        config.google_mail_domains,
+        leader_roles=config.leader_roles,
+    )
     log.info("Computed %s desired member(s) for %s", len(desired), group.group)
     log.debug(
         "Desired members for %s: %s",
@@ -449,6 +588,7 @@ def sync_group(
             "group, set sync.groups[].allow_empty to true."
         )
     actions = compute_actions(desired, current, config.google_mail_domains)
+    validate_large_removal_guard(group, actions, current)
     log.info(
         "Actions for %s: %s",
         group.group,
@@ -461,17 +601,111 @@ def sync_group(
             len(actions),
             group.group,
         )
-        return actions
-    apply_actions(admin_service, group.group, actions)
-    log.info("Applied %s Google Group action(s) for %s", len(actions), group.group)
-    send_notification(
-        email_provider,
-        config,
-        group,
-        get_group_posting_permissions(settings_service, group.group),
-        actions,
+        return GroupSyncPlan(group, tuple(actions))
+    if (
+        email_provider is None
+        and email_provider_factory is not None
+        and group_has_notification_content(config, group, actions)
+    ):
+        email_provider = email_provider_factory()
+    should_notify = group_notification_will_send(email_provider, config, group, actions)
+    if should_notify and settings_service is None:
+        if settings_service_factory is None:
+            raise ConfigError(
+                "Google Groups Settings service is required for notifications"
+            )
+        settings_service = settings_service_factory()
+    posting_permission = (
+        get_group_posting_permissions(settings_service, group.group)
+        if should_notify
+        else None
     )
-    return actions
+    return GroupSyncPlan(group, tuple(actions), email_provider, posting_permission)
+
+
+def apply_group_plan(
+    admin_service: Any,
+    config: SyncConfig,
+    plan: GroupSyncPlan,
+    *,
+    dry_run: bool,
+    log: logging.Logger,
+) -> None:
+    """Apply a planned Google Group sync after all groups have been validated."""
+    if dry_run:
+        return
+    apply_actions(admin_service, plan.group.group, plan.actions, log=log)
+    log.info(
+        "Applied %s Google Group action(s) for %s",
+        len(plan.actions),
+        plan.group.group,
+    )
+
+
+def send_group_plan_notification(config: SyncConfig, plan: GroupSyncPlan) -> None:
+    """Send the notification email for an already-applied Google Group plan."""
+    send_notification(
+        plan.email_provider,
+        config,
+        plan.group,
+        plan.posting_permission,
+        plan.actions,
+    )
+
+
+def group_notification_will_send(
+    provider: EmailProvider | None,
+    config: SyncConfig,
+    group: GroupSync,
+    actions: Sequence[SyncAction],
+) -> bool:
+    """Return whether a Google Group sync notification will actually be sent."""
+    return bool(provider and group_has_notification_content(config, group, actions))
+
+
+def group_has_notification_content(
+    config: SyncConfig,
+    group: GroupSync,
+    actions: Sequence[SyncAction],
+) -> bool:
+    """Return whether config and actions warrant building a notification."""
+    return bool(config.sender and group.notify and actions)
+
+
+def validate_large_removal_guard(
+    group: GroupSync,
+    actions: Sequence[SyncAction],
+    current_members: Sequence[Mapping[str, Any]],
+) -> None:
+    """Reject unexpectedly large delete batches before Google Group writes."""
+    removals = [action for action in actions if action.action == "delete"]
+    current_count = len(current_members)
+    if not removal_guard_tripped(
+        len(removals),
+        current_count,
+        max_removals=group.max_removals,
+        max_removal_fraction=group.max_removal_fraction,
+    ):
+        return
+    raise ConfigError(
+        f"Google Group {group.group!r} would remove {len(removals)} of "
+        f"{current_count} current member(s). Check sync.groups[].sources and "
+        "ParishSoft data. To allow this run, raise sync.groups[].max_removals "
+        "or sync.groups[].max_removal_fraction."
+    )
+
+
+def removal_guard_tripped(
+    removal_count: int,
+    current_count: int,
+    *,
+    max_removals: int,
+    max_removal_fraction: float,
+) -> bool:
+    """Return whether a removal batch exceeds both count and fraction guards."""
+    if current_count <= 0 or removal_count <= max_removals:
+        return False
+    return (removal_count / current_count) > max_removal_fraction
 
 
 def list_group_members_or_config_error(
@@ -575,6 +809,8 @@ def desired_members(
     data: ParishSoftData,
     group: GroupSync,
     google_mail_domains: frozenset[str] = frozenset(),
+    *,
+    leader_roles: frozenset[str] = frozenset(LEADER_ROLES),
 ) -> list[DesiredMember]:
     """Build the desired Google group member set from data plus static members.
 
@@ -585,7 +821,11 @@ def desired_members(
     """
     found: dict[str, DesiredMember] = {}
     for member in data.members.values():
-        is_member, is_leader = member_matches_group(member, group)
+        is_member, is_leader = member_matches_group(
+            member,
+            group,
+            leader_roles=leader_roles,
+        )
         if not is_member and not is_leader:
             continue
         emails = member_email_addresses(member)
@@ -613,6 +853,8 @@ def desired_members(
 def member_matches_group(
     member: Mapping[str, Any],
     group: GroupSync,
+    *,
+    leader_roles: frozenset[str] = frozenset(LEADER_ROLES),
 ) -> tuple[bool, bool]:
     """Return ``(is_member, is_leader)`` for a member against all group sources.
 
@@ -622,12 +864,20 @@ def member_matches_group(
     """
     is_member = False
     is_leader = False
-    ministry_member, ministry_leader = member_in_ministries(member, group.ministries)
+    ministry_member, ministry_leader = member_in_ministries(
+        member,
+        group.ministries,
+        leader_roles=leader_roles,
+    )
     workgroup_member, workgroup_leader = member_in_workgroups(member, group.workgroups)
     is_member = ministry_member or workgroup_member
     is_leader = ministry_leader or workgroup_leader
     for selector in group.selectors:
-        selector_member, selector_leader = selector_matches_member(member, selector)
+        selector_member, selector_leader = selector_matches_member(
+            member,
+            selector,
+            configured_leader_roles=leader_roles,
+        )
         is_member = is_member or selector_member
         is_leader = is_leader or selector_leader
     # A leader is always a member, even if only a leader-only source matched.
@@ -709,13 +959,25 @@ def compute_actions(
     return actions
 
 
-def apply_actions(service: Any, group_key: str, actions: Sequence[SyncAction]) -> None:
+def apply_actions(
+    service: Any,
+    group_key: str,
+    actions: Sequence[SyncAction],
+    *,
+    log: logging.Logger | None = None,
+) -> None:
     """Apply computed Google group changes."""
     for action in actions:
         if action.action == "add":
             insert_group_member(
                 service, group_key, action.email, action.role or "MEMBER"
             )
+            if log:
+                log.info(
+                    "Applied Google Group add for %s in %s",
+                    action.email,
+                    group_key,
+                )
         elif action.action == "change_role":
             update_group_member_role(
                 service,
@@ -723,10 +985,23 @@ def apply_actions(service: Any, group_key: str, actions: Sequence[SyncAction]) -
                 action.group_member_id or action.email,
                 action.role or "MEMBER",
             )
+            if log:
+                log.info(
+                    "Applied Google Group role change for %s in %s to %s",
+                    action.email,
+                    group_key,
+                    action.role or "MEMBER",
+                )
         elif action.action == "delete":
             delete_group_member(
                 service, group_key, action.group_member_id or action.email
             )
+            if log:
+                log.info(
+                    "Applied Google Group delete for %s in %s",
+                    action.email,
+                    group_key,
+                )
         else:
             raise ConfigError(f"unknown sync action: {action.action}")
 
@@ -952,6 +1227,8 @@ def add_desired_member(
 def member_in_ministries(
     member: Mapping[str, Any],
     ministries: Sequence[str],
+    *,
+    leader_roles: frozenset[str] = frozenset(LEADER_ROLES),
 ) -> tuple[bool, bool]:
     """Return whether a member belongs to selected ministries."""
     found = False
@@ -960,7 +1237,7 @@ def member_in_ministries(
     for ministry in member.get("py ministries", {}).values():
         if ministry.get("name") in configured:
             found = True
-            leader = leader or is_ministry_leader(ministry)
+            leader = leader or is_ministry_leader(ministry, leader_roles)
     return found, leader
 
 
@@ -989,6 +1266,8 @@ def member_in_workgroups(
 def selector_matches_member(
     member: Mapping[str, Any],
     selector: Selector,
+    *,
+    configured_leader_roles: frozenset[str] = frozenset(LEADER_ROLES),
 ) -> tuple[bool, bool]:
     """Return ``(is_member, is_leader)`` for a member against one selector.
 
@@ -1005,10 +1284,10 @@ def selector_matches_member(
     """
     if selector.type == "all_ministry_chairs":
         for ministry in member.get("py ministries", {}).values():
-            if is_ministry_leader(ministry) and ministry_matches_selector(
+            if is_ministry_leader(
                 ministry,
-                selector,
-            ):
+                configured_leader_roles,
+            ) and ministry_matches_selector(ministry, selector):
                 emails = member_email_addresses(member)
                 email = emails[0] if emails else ""
                 domain = email.rsplit("@", 1)[-1] if "@" in email else ""
@@ -1016,24 +1295,28 @@ def selector_matches_member(
         return False, False
     if selector.type == "ministry_chair":
         for ministry in member.get("py ministries", {}).values():
-            if is_ministry_leader(ministry) and ministry_matches_selector(
+            if is_ministry_leader(
                 ministry,
-                selector,
-            ):
+                configured_leader_roles,
+            ) and ministry_matches_selector(ministry, selector):
                 return True, True
         return False, False
     if selector.type == "ministry_role":
         is_member = False
         is_leader = False
         member_roles = set(selector.member_roles)
-        leader_roles = set(selector.leader_roles)
+        selector_leader_roles = set(selector.leader_roles)
         for ministry in member.get("py ministries", {}).values():
             if not ministry_matches_selector(ministry, selector):
                 continue
             role = ministry.get("role")
-            if role in member_roles or role in leader_roles:
+            if role in member_roles or role in selector_leader_roles:
                 is_member = True
-                is_leader = role in leader_roles or is_ministry_leader(ministry)
+                is_leader = (
+                    is_leader
+                    or role in selector_leader_roles
+                    or is_ministry_leader(ministry, configured_leader_roles)
+                )
         return is_member, is_leader
     raise ConfigError(f"unknown sync selector type: {selector.type}")
 
@@ -1061,25 +1344,30 @@ def ministry_name_matches_selector(ministry_name: str, selector: Selector) -> bo
     )
 
 
-def is_ministry_leader(ministry: Mapping[str, Any]) -> bool:
+def is_ministry_leader(
+    ministry: Mapping[str, Any],
+    leader_roles: frozenset[str] = frozenset(LEADER_ROLES),
+) -> bool:
     """Return True if the ministry role is one of the configured leader roles."""
-    return ministry.get("role") in LEADER_ROLES
+    return ministry.get("role") in leader_roles
 
 
 def normalize_email(email: str, google_mail_domains: frozenset[str]) -> str:
     """Normalize an email address for equality comparison.
 
-    Always lowercases. For domains in ``google_mail_domains`` (Gmail-style),
-    also strips any ``+tag`` suffix and removes dots from the local part, since
-    Google treats those as the same mailbox. Addresses without ``@`` or on
-    other domains are only lowercased.
+    Always lowercases. For configured Google-hosted domains, strips any
+    ``+tag`` suffix because Google Workspace aliases commonly treat plus-tags
+    as equivalent. Dot removal is limited to consumer Gmail domains, because
+    Workspace domains can have distinct dotted local parts.
     """
     if "@" not in email:
         return email.lower()
     local, domain = email.lower().split("@", 1)
     if domain not in google_mail_domains:
         return f"{local}@{domain}"
-    local = local.split("+", 1)[0].replace(".", "")
+    local = local.split("+", 1)[0]
+    if domain in {"gmail.com", "googlemail.com"}:
+        local = local.replace(".", "")
     return f"{local}@{domain}"
 
 
@@ -1123,6 +1411,22 @@ def _group_sync(value: Any, name: str) -> GroupSync:
     selectors). Raises ``ConfigError`` on malformed entries.
     """
     item = _mapping(value, name)
+    reject_unknown_keys(
+        item,
+        {
+            "group",
+            "ggroup",
+            "notify",
+            "ministries",
+            "workgroups",
+            "static_members",
+            "selectors",
+            "allow_empty",
+            "max_removals",
+            "max_removal_fraction",
+        },
+        name,
+    )
     # "ggroup" is the legacy key name; "group" is preferred going forward.
     group = _required_string(item.get("group", item.get("ggroup")), f"{name}.group")
     notify = tuple(_string_list(item.get("notify", []), f"{name}.notify"))
@@ -1150,12 +1454,21 @@ def _group_sync(value: Any, name: str) -> GroupSync:
         static_members=static_members,
         selectors=selectors,
         allow_empty=_bool(item.get("allow_empty", False), f"{name}.allow_empty"),
+        max_removals=_positive_int(
+            item.get("max_removals", 25),
+            f"{name}.max_removals",
+        ),
+        max_removal_fraction=_fraction(
+            item.get("max_removal_fraction", 0.5),
+            f"{name}.max_removal_fraction",
+        ),
     )
 
 
 def _static_member(value: Any, name: str) -> StaticMember:
     """Parse a static Google group member configuration."""
     item = _mapping(value, name)
+    reject_unknown_keys(item, {"email", "leader", "owner"}, name)
     return StaticMember(
         email=_required_string(item.get("email"), f"{name}.email").lower(),
         # Accept "owner" as an alias for "leader" for config friendliness.
@@ -1166,6 +1479,19 @@ def _static_member(value: Any, name: str) -> StaticMember:
 def _selector(value: Any, name: str) -> Selector:
     """Parse a selector configuration."""
     item = _mapping(value, name)
+    reject_unknown_keys(
+        item,
+        {
+            "type",
+            "ministry_prefix",
+            "ministry_pattern",
+            "member_roles",
+            "leader_roles",
+            "staff_owner_domains",
+            "purpose",
+        },
+        name,
+    )
     selector_type = _required_string(item.get("type"), f"{name}.type")
     return Selector(
         type=selector_type,
@@ -1243,3 +1569,20 @@ def _bool(value: Any, name: str) -> bool:
     if not isinstance(value, bool):
         raise ConfigError(f"{name} must be a boolean")
     return value
+
+
+def _positive_int(value: Any, name: str) -> int:
+    """Read a positive integer config value."""
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise ConfigError(f"{name} must be a positive integer")
+    return value
+
+
+def _fraction(value: Any, name: str) -> float:
+    """Read a numeric fraction in the inclusive range 0.0 through 1.0."""
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        raise ConfigError(f"{name} must be a number between 0 and 1")
+    fraction = float(value)
+    if not 0 <= fraction <= 1:
+        raise ConfigError(f"{name} must be a number between 0 and 1")
+    return fraction

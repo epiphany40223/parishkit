@@ -355,10 +355,19 @@ class ParishSoftClient:
 
         def call() -> requests.Response:
             """Issue one attempt and translate the HTTP status into exceptions."""
-            response = func()
+            try:
+                response = func()
+            except requests.RequestException as exc:
+                LOGGER.warning("ParishSoft API request failed: %s", exc)
+                raise
             # 429 and these 5xx codes are worth retrying; signal transience so
             # retry_call backs off and tries again.
             if response.status_code in {429, 500, 502, 503, 504}:
+                LOGGER.warning(
+                    "ParishSoft API request failed for %s with HTTP %s",
+                    response.url,
+                    response.status_code,
+                )
                 raise _TransientParishSoftAPIError(
                     response.status_code,
                     response.url,
@@ -366,6 +375,11 @@ class ParishSoftClient:
                     f"transient ParishSoft HTTP {response.status_code}",
                 )
             if not 200 <= response.status_code <= 299:
+                LOGGER.warning(
+                    "ParishSoft API request failed for %s with HTTP %s",
+                    response.url,
+                    response.status_code,
+                )
                 raise ParishSoftAPIError(
                     response.status_code, response.url, response.text
                 )
@@ -433,7 +447,15 @@ class ParishSoftClient:
                 LOGGER.debug("ParishSoft cache stale for %s", endpoint)
                 return None
         LOGGER.debug("ParishSoft cache hit for %s", endpoint)
-        return json.loads(cache_path.read_text(encoding="utf-8"))
+        try:
+            return json.loads(cache_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            LOGGER.warning(
+                "Ignoring invalid ParishSoft cache file %s for %s",
+                cache_path,
+                endpoint,
+            )
+            return None
 
     def _save_cache(
         self, endpoint: str, params: dict[str, Any] | None, data: Any
@@ -578,7 +600,16 @@ def normalize_dates(elements: list[dict[str, Any]], fields: list[str]) -> None:
         for field in fields:
             if field not in element or element[field] in (None, ""):
                 continue
-            element[field] = _parse_optional_date(element[field])
+            try:
+                element[field] = _parse_optional_date(element[field])
+            except ConfigError as exc:
+                identifier = element.get("memberDUID") or element.get(
+                    "familyDUID",
+                    element.get("id", "unknown"),
+                )
+                raise ConfigError(
+                    f"invalid ParishSoft date in {field} for record {identifier}: {exc}"
+                ) from exc
 
 
 def link_families_and_members(
@@ -1532,7 +1563,10 @@ def _parse_optional_date(value: Any) -> dt.date | None:
     if isinstance(value, dt.date):
         return value
     if isinstance(value, str):
-        return dt.datetime.fromisoformat(value).date()
+        try:
+            return dt.datetime.fromisoformat(value).date()
+        except ValueError as exc:
+            raise ConfigError(f"invalid date value: {value!r}") from exc
     raise ConfigError(f"invalid date value: {value!r}")
 
 

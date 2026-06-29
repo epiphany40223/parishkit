@@ -51,11 +51,19 @@ email:
 
 # Google Group synchronization settings.
 sync:
-  # google_mail_domains are domains treated as Google-hosted mailboxes when
-  # normalizing equivalent addresses.
+  # google_mail_domains are domains treated as Google-hosted mailboxes for
+  # equality checks. For these domains, plus-tags such as user+tag@example.org
+  # compare as user@example.org. Dots are ignored only for gmail.com and
+  # googlemail.com; dots are preserved for Workspace domains because
+  # first.last@example.org and firstlast@example.org can be different accounts.
   google_mail_domains:
     - gmail.com
-    - example.org
+  # leader_roles are ParishSoft ministry role labels that make a matched
+  # ministry member an OWNER in the Google Group for exact ministry sources and
+  # chair-style selectors. Add parish-specific labels such as Coordinator here.
+  leader_roles:
+    - Chairperson
+    - Staff
   notifications:
     # sender is the From address used for notification summary emails.
     sender: no-reply@example.org
@@ -67,6 +75,11 @@ sync:
       # if the configured sources unexpectedly resolve to zero desired members.
       # Set true only when intentionally emptying this group.
       allow_empty: false
+      # max_removals and max_removal_fraction are a second guardrail for
+      # non-empty but unexpectedly destructive runs. The sync aborts when both
+      # thresholds are exceeded; raise them only for an intentional large prune.
+      max_removals: 25
+      max_removal_fraction: 0.5
       # notify receives an email summary for this group when changes are
       # applied. Dry-run mode suppresses actual email sends.
       notify:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import stat
 
 import pytest
@@ -9,6 +10,8 @@ from parishkit.google.auth import (
     GoogleAPIError,
     build_service,
     execute_google_request,
+    load_service_account_credentials,
+    load_user_credentials,
     run_user_oauth_flow,
 )
 from parishkit.google.calendar import list_events, patch_attendee_response
@@ -26,7 +29,7 @@ from parishkit.google.sheets import (
     get_spreadsheet,
     update_values,
 )
-from parishkit.retry import RetryPolicy, TransientRetryError
+from parishkit.retry import RetryError, RetryPolicy, TransientRetryError
 
 
 def test_build_service_uses_injected_builder():
@@ -54,6 +57,56 @@ def test_build_service_uses_injected_builder():
             "cache_discovery": False,
         }
     ]
+
+
+def test_service_account_credential_load_errors_are_config_errors(monkeypatch):
+    """Malformed Google service-account files are reported as config errors."""
+
+    class ServiceAccountCredentials:
+        """Fake service-account credential loader that rejects the file."""
+
+        @staticmethod
+        def from_service_account_file(*_args, **_kwargs):
+            """Raise like google-auth would for an invalid credential file."""
+            raise ValueError("invalid service account")
+
+    class ServiceAccountModule:
+        """Fake google.oauth2.service_account module."""
+
+        Credentials = ServiceAccountCredentials
+
+    monkeypatch.setattr(
+        "parishkit.google.auth._import_google_auth",
+        lambda: (ServiceAccountModule, object()),
+    )
+
+    with pytest.raises(ConfigError, match="service-account credential file.*invalid"):
+        load_service_account_credentials("bad.json", scopes=["scope"])
+
+
+def test_user_credential_load_errors_are_config_errors(monkeypatch):
+    """Malformed Google user token files are reported as config errors."""
+
+    class UserCredentials:
+        """Fake authorized-user credential loader that rejects the file."""
+
+        @staticmethod
+        def from_authorized_user_file(*_args, **_kwargs):
+            """Raise like google-auth would for an invalid token file."""
+            raise ValueError("invalid user token")
+
+    class UserCredentialsModule:
+        """Fake google.oauth2.credentials module."""
+
+        Credentials = UserCredentials
+
+    monkeypatch.setattr(
+        "parishkit.google.auth._import_google_auth",
+        lambda: (object(), UserCredentialsModule),
+    )
+
+    with pytest.raises(ConfigError, match="user credential file.*invalid"):
+        load_user_credentials("bad-token.json", scopes=["scope"])
 
 
 def test_execute_google_request_retries_transient_errors():
@@ -139,6 +192,38 @@ def test_execute_google_request_maps_permanent_http_error(monkeypatch):
 
     with pytest.raises(GoogleAPIError, match="403"):
         execute_google_request(FakeRequest(), policy=RetryPolicy(attempts=1))
+
+
+def test_execute_google_request_logs_warning_on_http_failure(monkeypatch, caplog):
+    """Google request failures emit a warning before raising."""
+
+    class FakeHttpError(Exception):
+        """Stand-in for googleapiclient HttpError carrying a status code."""
+
+        def __init__(self, status):
+            """Build an error exposing ``resp.status`` like the real HttpError."""
+            self.resp = type("Response", (), {"status": status})()
+            super().__init__(f"HTTP {status}")
+
+    class FakeRequest:
+        """Request that always fails with a permanent Google HTTP error."""
+
+        uri = "https://google.example/request"
+
+        def execute(self):
+            """Raise a permanent HTTP error."""
+            raise FakeHttpError(403)
+
+    monkeypatch.setattr(
+        "parishkit.google.auth._import_google_http_error", lambda: FakeHttpError
+    )
+    caplog.set_level(logging.WARNING, logger="parishkit.google.auth")
+
+    with pytest.raises(GoogleAPIError):
+        execute_google_request(FakeRequest(), policy=RetryPolicy(attempts=1))
+
+    assert "Google API request failed for https://google.example/request" in caplog.text
+    assert "HTTP 403" in caplog.text
 
 
 def test_execute_google_request_exhausts_transient_http_error(monkeypatch):
@@ -321,6 +406,38 @@ def test_group_write_helpers_use_directory_api():
     assert permission == "ALL_MEMBERS_CAN_POST"
 
 
+def test_group_write_helpers_do_not_retry_transient_write_failures():
+    """Non-idempotent group writes are attempted only once."""
+    attempts = {"count": 0}
+
+    class Request:
+        """Fake write request that always fails transiently."""
+
+        def execute(self):
+            """Count the attempt and raise a retryable error."""
+            attempts["count"] += 1
+            raise TransientRetryError("applied but response failed")
+
+    class Members:
+        """Fake members resource returning the failing request."""
+
+        def insert(self, **kwargs):
+            """Return a request for the insert operation."""
+            return Request()
+
+    class Service:
+        """Fake Directory API service exposing members."""
+
+        def members(self):
+            """Return the fake members resource."""
+            return Members()
+
+    with pytest.raises(RetryError):
+        insert_group_member(Service(), "group@example.org", "a@example.org", "MEMBER")
+
+    assert attempts["count"] == 1
+
+
 def test_list_calendar_events_pages():
     """list_events pages through the Calendar API, threading the pageToken."""
 
@@ -420,6 +537,38 @@ def test_patch_attendee_response_uses_calendar_patch():
             },
         }
     ]
+
+
+def test_patch_attendee_response_does_not_retry_notification_write():
+    """Calendar attendee patches are one-shot because they send notifications."""
+    attempts = {"count": 0}
+
+    class Request:
+        """Fake Calendar request that always fails transiently."""
+
+        def execute(self):
+            """Raise a transient error and record the attempt count."""
+            attempts["count"] += 1
+            raise TransientRetryError("temporary")
+
+    class Events:
+        """Fake events resource returning the failing patch request."""
+
+        def patch(self, **_kwargs):
+            """Return a request that fails if executed."""
+            return Request()
+
+    class Service:
+        """Fake Calendar API service exposing the events resource."""
+
+        def events(self):
+            """Return the fake events resource."""
+            return Events()
+
+    with pytest.raises(RetryError):
+        patch_attendee_response(Service(), "room@example.org", "event-1", "accepted")
+
+    assert attempts["count"] == 1
 
 
 def test_google_optional_import_error_is_config_error(monkeypatch):

@@ -5,6 +5,7 @@ from __future__ import annotations
 import gzip
 import json
 import logging
+import os
 import shutil
 from collections.abc import Mapping, Sequence, Set
 from dataclasses import asdict, is_dataclass
@@ -20,6 +21,9 @@ DEFAULT_SLACK_LEVEL = logging.CRITICAL
 DEFAULT_MAX_BYTES = 50_000_000
 DEFAULT_BACKUP_COUNT = 50
 STRUCTURED_EXTRA_FIELD = "extra"
+LOG_FILE_MODE = 0o600
+API_LOGGER = logging.getLogger("parishkit.api")
+_SLACK_FAILURE_WARNING_ACTIVE = False
 
 
 def log_extra(value: Any) -> dict[str, Any]:
@@ -86,11 +90,17 @@ class CompressingRotatingFileHandler(RotatingFileHandler):
         self.namer = lambda name: f"{name}.gz"
         self.rotator = self._gzip_rotator
 
+    def _open(self) -> Any:
+        """Open the active log file with ParishKit's restrictive file mode."""
+        _prepare_log_file(Path(self.baseFilename))
+        return super()._open()
+
     @staticmethod
     def _gzip_rotator(source: str, dest: str) -> None:
         """Compress a rotated log file with gzip."""
         with Path(source).open("rb") as source_file, gzip.open(dest, "wb") as target:
             shutil.copyfileobj(source_file, target)
+        Path(dest).chmod(LOG_FILE_MODE)
         Path(source).unlink()
 
 
@@ -119,9 +129,20 @@ class SlackLogHandler(logging.Handler):
         notification problem never propagates back into the code that logged
         the original message.
         """
+        global _SLACK_FAILURE_WARNING_ACTIVE
         try:
             self.client.chat_postMessage(channel=self.channel, text=self.format(record))
-        except Exception:  # pragma: no cover - logging must not mask original errors
+        except Exception as exc:  # pragma: no cover - do not mask original errors
+            if not _SLACK_FAILURE_WARNING_ACTIVE:
+                _SLACK_FAILURE_WARNING_ACTIVE = True
+                try:
+                    API_LOGGER.warning(
+                        "Slack API request failed for channel %s: %s",
+                        self.channel,
+                        exc,
+                    )
+                finally:
+                    _SLACK_FAILURE_WARNING_ACTIVE = False
             self.handleError(record)
 
 
@@ -149,6 +170,23 @@ def parse_log_level(level: str | int | None, *, default: int = logging.INFO) -> 
     if normalized not in logging._nameToLevel:
         raise ValueError(f"unknown log level: {level}")
     return logging._nameToLevel[normalized]
+
+
+def _prepare_log_file(path: Path) -> None:
+    """Create ``path`` with owner-only permissions before logging opens it."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_CREAT | os.O_APPEND | os.O_WRONLY, LOG_FILE_MODE)
+    os.close(fd)
+    path.chmod(LOG_FILE_MODE)
+
+
+def _parishkit_child_loggers() -> list[logging.Logger]:
+    """Return existing ParishKit child loggers known to logging's manager."""
+    children = []
+    for name, logger in logging.Logger.manager.loggerDict.items():
+        if name.startswith("parishkit.") and isinstance(logger, logging.Logger):
+            children.append(logger)
+    return children
 
 
 def setup_logging(
@@ -190,6 +228,11 @@ def setup_logging(
     """
 
     logger = logging.getLogger(logger_name)
+    package_logger = (
+        logging.getLogger("parishkit")
+        if logger_name is not None and logger_name.startswith("parishkit.")
+        else None
+    )
     # Slack delivery needs both a token and a destination; reject a half
     # configuration early rather than silently dropping notifications.
     if bool(slack_token_file) != bool(slack_channel):
@@ -213,7 +256,7 @@ def setup_logging(
             chosen_log_file = Path(log_dir).expanduser() / "parishkit.log"
 
         if chosen_log_file is not None:
-            chosen_log_file.parent.mkdir(parents=True, exist_ok=True)
+            _prepare_log_file(chosen_log_file)
             if rotate:
                 file_handler: logging.Handler = CompressingRotatingFileHandler(
                     chosen_log_file,
@@ -244,15 +287,25 @@ def setup_logging(
 
     # Swap handlers only after all new ones are ready, so a failure above leaves
     # the previously configured logger untouched.
-    for handler in list(logger.handlers):
-        logger.removeHandler(handler)
+    configured_loggers = [logger] if package_logger is None else [package_logger]
+    parishkit_children = _parishkit_child_loggers() if package_logger else []
+    reset_loggers = configured_loggers + parishkit_children
+    old_handlers = set()
+    for target_logger in reset_loggers:
+        for handler in list(target_logger.handlers):
+            target_logger.removeHandler(handler)
+            old_handlers.add(handler)
+    for handler in old_handlers:
         handler.close()
     # Keep the logger itself permissive; per-handler levels do the real
     # filtering, and propagation is disabled to avoid duplicate root output.
-    logger.setLevel(logging.DEBUG)
-    logger.propagate = False
+    for target_logger in reset_loggers:
+        target_logger.setLevel(logging.DEBUG)
+        target_logger.propagate = (
+            package_logger is not None and target_logger.name != "parishkit"
+        )
     for handler in new_handlers:
-        logger.addHandler(handler)
+        configured_loggers[0].addHandler(handler)
 
     return logger
 
