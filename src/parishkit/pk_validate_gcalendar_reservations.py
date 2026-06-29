@@ -17,7 +17,7 @@ from parishkit.cli import (
     resolve_common_options,
     run_user_facing,
 )
-from parishkit.config import ConfigData, ConfigError, load_yaml_config
+from parishkit.config import ConfigData, ConfigError, load_yaml_config, resolve_path
 from parishkit.google.auth import (
     load_service_account_credentials,
     load_user_credentials,
@@ -177,7 +177,12 @@ def _run(
         service = (
             service_factory(config)
             if service_factory is not None
-            else build_calendar_service(load_calendar_credentials(config))
+            else build_calendar_service(
+                load_calendar_credentials(
+                    config,
+                    base_dir=common.config.parent if common.config else None,
+                )
+            )
         )
     except ConfigError as exc:
         log.error("Configuration validation failed: %s", exc)
@@ -253,7 +258,11 @@ def calendar_reservation_config(
     )
 
 
-def load_calendar_credentials(config: ConfigData) -> Any:
+def load_calendar_credentials(
+    config: ConfigData,
+    *,
+    base_dir: Path | None = None,
+) -> Any:
     """Load Google Calendar credentials from the ``google`` config section.
 
     Supports either a service account file (optionally impersonating
@@ -273,12 +282,23 @@ def load_calendar_credentials(config: ConfigData) -> Any:
         raise ConfigError("google.delegated_subject must be a string")
     if isinstance(service_account_file, str):
         return load_service_account_credentials(
-            Path(service_account_file),
+            resolve_path(
+                service_account_file,
+                "google.service_account_file",
+                base_dir=base_dir,
+            ),
             scopes=[CALENDAR_SCOPE],
             subject=delegated_subject,
         )
     if isinstance(user_token_file, str):
-        return load_user_credentials(Path(user_token_file), scopes=[CALENDAR_SCOPE])
+        return load_user_credentials(
+            resolve_path(
+                user_token_file,
+                "google.user_token_file",
+                base_dir=base_dir,
+            ),
+            scopes=[CALENDAR_SCOPE],
+        )
     raise ConfigError(
         "google.service_account_file or google.user_token_file is required"
     )
@@ -550,7 +570,7 @@ def _string_list(value: Any, name: str) -> list[str]:
 
 def _positive_int(value: Any, name: str) -> int:
     """Read a positive integer config value."""
-    if not isinstance(value, int) or value < 1:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
         raise ConfigError(f"{name} must be a positive integer")
     return value
 

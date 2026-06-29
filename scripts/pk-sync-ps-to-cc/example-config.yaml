@@ -68,6 +68,10 @@ sync:
     - source_workgroup: Example Newsletter Workgroup
       # target_list is the visible Constant Contact list name.
       target_list: Example Newsletter
+      # allow_empty=false aborts instead of unsubscribing every current list
+      # contact if the ParishSoft workgroup unexpectedly resolves to zero
+      # desired addresses. Set true only when intentionally emptying this list.
+      allow_empty: false
       # notifications receives an email summary for this mapping when changes
       # are applied. Dry-run mode suppresses actual email sends.
       notifications:

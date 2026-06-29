@@ -17,7 +17,7 @@ from parishkit.cli import (
     resolve_common_options,
     run_user_facing,
 )
-from parishkit.config import ConfigData, ConfigError, load_yaml_config
+from parishkit.config import ConfigData, ConfigError, load_yaml_config, resolve_path
 from parishkit.google.auth import (
     GoogleAPIError,
     load_service_account_credentials,
@@ -201,7 +201,12 @@ def _run(
         sheets_service = (
             sheets_factory(config)
             if sheets_factory is not None
-            else build_sheets_service(load_sheets_credentials(config))
+            else build_sheets_service(
+                load_sheets_credentials(
+                    config,
+                    base_dir=common.config.parent if common.config else None,
+                )
+            )
         )
         write_configured_rosters(
             sheets_service,
@@ -283,7 +288,11 @@ def roster_config_from_yaml(config: ConfigData) -> RosterConfig:
     )
 
 
-def load_sheets_credentials(config: ConfigData) -> Any:
+def load_sheets_credentials(
+    config: ConfigData,
+    *,
+    base_dir: Path | None = None,
+) -> Any:
     """Load credentials for Google Sheets access."""
     google = _mapping(config.get("google", {}), "google")
     service_account_file = google.get("service_account_file")
@@ -298,12 +307,23 @@ def load_sheets_credentials(config: ConfigData) -> Any:
         raise ConfigError("google.delegated_subject must be a string")
     if isinstance(service_account_file, str):
         return load_service_account_credentials(
-            Path(service_account_file),
+            resolve_path(
+                service_account_file,
+                "google.service_account_file",
+                base_dir=base_dir,
+            ),
             scopes=[SHEETS_SCOPE],
             subject=delegated_subject,
         )
     if isinstance(user_token_file, str):
-        return load_user_credentials(Path(user_token_file), scopes=[SHEETS_SCOPE])
+        return load_user_credentials(
+            resolve_path(
+                user_token_file,
+                "google.user_token_file",
+                base_dir=base_dir,
+            ),
+            scopes=[SHEETS_SCOPE],
+        )
     raise ConfigError(
         "google.service_account_file or google.user_token_file is required"
     )

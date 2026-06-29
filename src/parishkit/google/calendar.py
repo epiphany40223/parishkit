@@ -66,12 +66,16 @@ def patch_attendee_response(
         sendUpdates="all",
         eventId=event_id,
         body={
+            # Without attendeesOmitted, Calendar treats the attendees array as
+            # the full replacement list. This flag says "only update the
+            # attendee entry supplied here" and preserves all other attendees.
+            "attendeesOmitted": True,
             "attendees": [
                 {
                     "email": calendar_id,
                     "responseStatus": response_status,
                 }
-            ]
+            ],
         },
     )
     execute_google_request(request)

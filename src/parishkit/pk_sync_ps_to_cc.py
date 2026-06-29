@@ -23,7 +23,7 @@ from parishkit.cli import (
     resolve_common_options,
     run_user_facing,
 )
-from parishkit.config import ConfigData, ConfigError, load_yaml_config
+from parishkit.config import ConfigData, ConfigError, load_yaml_config, resolve_path
 from parishkit.constant_contact import (
     ConstantContactClient,
     ConstantContactConfig,
@@ -75,6 +75,7 @@ class CCSyncMapping:
     source_workgroup: str
     target_list: str
     notifications: tuple[str, ...] = ()
+    allow_empty: bool = False
 
 
 @dataclass(frozen=True)
@@ -251,7 +252,9 @@ def _run(
         log.debug("Dry-run mode is %s", "enabled" if common.dry_run else "disabled")
         validate_configured_parishsoft_workgroups(sync_config, data)
         cc_client = (
-            cc_factory(config) if cc_factory else constant_contact_client(config)
+            cc_factory(config)
+            if cc_factory
+            else constant_contact_client(config, base_dir=config_base_dir)
         )
         log.info("Loading Constant Contact lists and contacts")
         cc_lists, cc_contacts = load_cc_data(cc_client)
@@ -281,6 +284,7 @@ def _run(
             desired_emails,
             ps_members_by_email,
         )
+        validate_non_empty_desired_state(sync_config, desired_emails, cc_lists)
         filtered_count = sum(len(items) for items in unsubscribed)
         if filtered_count:
             log.info("Filtered %s unsubscribed desired address(es)", filtered_count)
@@ -326,7 +330,10 @@ def _run(
             and not common.dry_run
             and any(mapping.notifications for mapping in sync_config.mappings)
         ):
-            provider = provider_from_config(_mapping(config.get("email", {}), "email"))
+            provider = provider_from_config(
+                _mapping(config.get("email", {}), "email"),
+                base_dir=config_base_dir,
+            )
         validate_unsubscribed_report_provider(
             provider,
             sync_config,
@@ -428,7 +435,11 @@ def _missing_workgroup_error(
     )
 
 
-def constant_contact_client(config: ConfigData) -> ConstantContactClient:
+def constant_contact_client(
+    config: ConfigData,
+    *,
+    base_dir: Path | None = None,
+) -> ConstantContactClient:
     """Construct a Constant Contact client from configured credential files.
 
     Reads the client-id and access-token file paths from the
@@ -443,8 +454,21 @@ def constant_contact_client(config: ConfigData) -> ConstantContactClient:
     access_token_file = _required_string(
         section.get("access_token_file"), "constant_contact.access_token_file"
     )
-    client_id = load_client_id(Path(client_id_file))
-    access_token = get_access_token(Path(access_token_file), client_id)
+    client_id = load_client_id(
+        resolve_path(
+            client_id_file,
+            "constant_contact.client_id_file",
+            base_dir=base_dir,
+        )
+    )
+    access_token = get_access_token(
+        resolve_path(
+            access_token_file,
+            "constant_contact.access_token_file",
+            base_dir=base_dir,
+        ),
+        client_id,
+    )
     return ConstantContactClient(
         ConstantContactConfig(client_id=client_id, access_token=access_token)
     )
@@ -535,6 +559,28 @@ def filter_unsubscribed(
             duids = ", ".join(str(member.get("memberDUID", "")) for member in members)
             unsubscribed[index].append((email, names, duids))
     return unsubscribed
+
+
+def validate_non_empty_desired_state(
+    config: CCSyncConfig,
+    desired_emails: Sequence[set[str]],
+    cc_lists: Sequence[Mapping[str, Any]],
+) -> None:
+    """Abort before an empty desired set would remove every current contact."""
+    list_by_name = {item["name"]: item for item in cc_lists}
+    for index, mapping in enumerate(config.mappings):
+        if desired_emails[index] or mapping.allow_empty:
+            continue
+        current = set(list_by_name[mapping.target_list].get("CONTACTS", {}))
+        if not current:
+            continue
+        raise ConfigError(
+            f"Constant Contact list {mapping.target_list!r} has current "
+            "contacts, but the configured ParishSoft source resolved to zero "
+            "desired email addresses. Check sync.lists[].source_workgroup in "
+            "the YAML and the source workgroup membership in ParishSoft. To "
+            "intentionally empty this list, set sync.lists[].allow_empty to true."
+        )
 
 
 def compute_all_actions(
@@ -1405,6 +1451,7 @@ def _mapping_config(value: Any, name: str) -> CCSyncMapping:
         notifications=tuple(
             _string_list(item.get("notifications", []), f"{name}.notifications")
         ),
+        allow_empty=_bool(item.get("allow_empty", False), f"{name}.allow_empty"),
     )
 
 

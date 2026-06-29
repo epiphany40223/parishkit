@@ -43,7 +43,11 @@ class ParishSoftAPIError(RuntimeError):
         self.status_code = status_code
         self.endpoint = endpoint
         self.response_text = response_text
-        super().__init__(f"ParishSoft API error on {endpoint}: HTTP {status_code}")
+        detail = response_text[:500] if response_text else ""
+        message = f"ParishSoft API error on {endpoint}: HTTP {status_code}"
+        if detail:
+            message = f"{message}: {detail}"
+        super().__init__(message)
 
 
 def parse_cache_limit(cache_limit: str | int | float | None) -> float | None:
@@ -186,7 +190,7 @@ class ParishSoftClient:
             lambda: self.session.get(url, params=params, timeout=self.config.timeout)
         )
         # An empty response body is normalized to [] so callers always get JSON.
-        data = response.json() if response.text else []
+        data = _response_json(response, endpoint)
         self._save_cache(endpoint, params, data)
         return data
 
@@ -215,7 +219,7 @@ class ParishSoftClient:
                 url, json=payload or {}, timeout=self.config.timeout
             )
         )
-        return response.json() if response.text else []
+        return _response_json(response, endpoint)
 
     def get_paginated(
         self,
@@ -262,7 +266,7 @@ class ParishSoftClient:
                     timeout=self.config.timeout,
                 )
             )
-            data = response.json()
+            data = _response_json(response, endpoint)
             page_items, done = _extract_page(data)
             items.extend(page_items)
             LOGGER.debug(
@@ -319,7 +323,7 @@ class ParishSoftClient:
                     timeout=self.config.timeout,
                 )
             )
-            data = response.json()
+            data = _response_json(response, endpoint)
             page_items, done = _extract_page(data)
             items.extend(page_items)
             LOGGER.debug(
@@ -446,6 +450,20 @@ class _TransientParishSoftAPIError(TransientRetryError):
         self.status_code = status_code
         self.endpoint = endpoint
         self.response_text = response_text
+
+
+def _response_json(response: requests.Response, endpoint: str) -> Any:
+    """Parse a ParishSoft JSON response or raise the public API error type."""
+    if not response.text:
+        return []
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise ParishSoftAPIError(
+            response.status_code,
+            endpoint,
+            f"invalid JSON response from ParishSoft: {exc}",
+        ) from exc
 
 
 def _extract_page(data: Any) -> tuple[list[dict[str, Any]], bool]:

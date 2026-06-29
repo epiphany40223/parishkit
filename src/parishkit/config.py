@@ -94,3 +94,21 @@ def validate_with[T](config: ConfigData, validator: Callable[[ConfigData], T]) -
         raise
     except (TypeError, ValueError) as exc:
         raise ConfigError(str(exc)) from exc
+
+
+def resolve_path(value: Any, name: str, *, base_dir: Path | None = None) -> Path:
+    """Resolve a required config path with config-relative semantics.
+
+    Strings and ``Path`` objects are accepted. ``~`` is expanded, and relative
+    paths are resolved against ``base_dir`` when provided so tool-specific
+    credential files behave like the shared common paths.
+    """
+    if isinstance(value, Path):
+        path = value.expanduser()
+    elif isinstance(value, str) and value:
+        path = Path(value).expanduser()
+    else:
+        raise ConfigError(f"{name} must be a path string")
+    if base_dir is not None and not path.is_absolute():
+        path = base_dir / path
+    return path

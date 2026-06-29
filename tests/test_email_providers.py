@@ -50,6 +50,35 @@ def test_provider_selection_rejects_unknown():
         provider_from_config({"provider": "unknown"})
 
 
+def test_google_workspace_provider_resolves_relative_service_account(
+    tmp_path,
+    monkeypatch,
+):
+    """Relative email credential paths resolve against the config directory."""
+    calls = []
+
+    def fake_load(path, *, scopes, subject):
+        """Capture the resolved key path instead of loading Google credentials."""
+        calls.append((path, scopes, subject))
+        return object()
+
+    monkeypatch.setattr(
+        "parishkit.email.google_workspace.load_service_account_credentials",
+        fake_load,
+    )
+
+    provider_from_config(
+        {
+            "provider": "google-workspace",
+            "service_account_file": "credentials/mail-service-account.json",
+            "delegated_user": "no-reply@example.org",
+        },
+        base_dir=tmp_path,
+    )
+
+    assert calls[0][0] == tmp_path / "credentials" / "mail-service-account.json"
+
+
 def test_xoauth2_string_contains_user_and_token():
     """xoauth2_string returns a non-empty auth string for the given user and token."""
     auth = xoauth2_string("user@example.org", "token")

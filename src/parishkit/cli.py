@@ -13,6 +13,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from parishkit.config import ConfigData, ConfigError, load_yaml_config
+from parishkit.constant_contact import CCAPIError
+from parishkit.google.auth import GoogleAPIError
 from parishkit.logging import parse_log_level
 from parishkit.parishsoft import ParishSoftAPIError
 from parishkit.retry import RetryError
@@ -357,7 +359,14 @@ def run_user_facing(action: Callable[[], int]) -> int:
 
     try:
         return action()
-    except (ConfigError, OSError, ParishSoftAPIError, RetryError) as exc:
+    except (
+        ConfigError,
+        OSError,
+        ParishSoftAPIError,
+        GoogleAPIError,
+        CCAPIError,
+        RetryError,
+    ) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 

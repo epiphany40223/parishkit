@@ -42,9 +42,11 @@ class CCAPIError(RuntimeError):
         self.status_code = status_code
         self.response_text = response_text
         self.endpoint = endpoint
-        super().__init__(
-            f"Constant Contact API error on {endpoint}: HTTP {status_code}"
-        )
+        detail = response_text[:500] if response_text else ""
+        message = f"Constant Contact API error on {endpoint}: HTTP {status_code}"
+        if detail:
+            message = f"{message}: {detail}"
+        super().__init__(message)
 
 
 @dataclass(frozen=True)
@@ -140,7 +142,7 @@ class ConstantContactClient:
                     timeout=self.config.timeout,
                 )
             )
-            payload = response.json()
+            payload = self._json_response(response, api_endpoint)
             items.extend(payload.get(json_response_field, []))
             # Follow the API's "next" pagination link until it is absent. The
             # href is server-relative, so prefix it with the configured API
@@ -179,7 +181,7 @@ class ConstantContactClient:
                 timeout=self.config.timeout,
             )
         )
-        return response.json() if response.text else {}
+        return self._json_response(response, api_endpoint)
 
     def _request(self, func: Any) -> requests.Response:
         """Execute an HTTP call under the retry policy, normalizing errors.
@@ -224,6 +226,30 @@ class ConstantContactClient:
         return (
             f"{self.config.client_id['endpoints']['api'].rstrip('/')}/v3/{api_endpoint}"
         )
+
+    def _json_response(
+        self,
+        response: requests.Response,
+        api_endpoint: str,
+    ) -> dict[str, Any]:
+        """Parse a Constant Contact JSON response or raise CCAPIError."""
+        if not response.text:
+            return {}
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise CCAPIError(
+                response.status_code,
+                f"invalid JSON response from Constant Contact: {exc}",
+                response.url or api_endpoint,
+            ) from exc
+        if not isinstance(payload, dict):
+            raise CCAPIError(
+                response.status_code,
+                "Constant Contact response must be a JSON object",
+                response.url or api_endpoint,
+            )
+        return payload
 
 
 class _TransientCCAPIError(TransientRetryError):

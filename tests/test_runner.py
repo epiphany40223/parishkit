@@ -1,6 +1,7 @@
 import json
 import logging
 import multiprocessing
+import stat
 import sys
 import time
 from datetime import UTC, datetime, timedelta
@@ -57,6 +58,7 @@ def test_lock_acquisition_writes_metadata_and_cleans_up(tmp_path):
 
     with LockFile(LockConfig(path=lock_path), command=["test"]):
         assert lock_path.exists()
+        assert stat.S_IMODE(lock_path.stat().st_mode) == 0o600
         metadata = json.loads(lock_path.read_text(encoding="utf-8"))
         assert metadata["command"] == ["test"]
         assert metadata["pid"]
@@ -294,6 +296,41 @@ def test_run_job_success():
 
     assert result.ok
     assert result.stdout.strip() == "ok"
+
+
+def test_redacted_runner_config_hides_likely_secret_values():
+    """Debug serialization redacts env values and CLI secret arguments."""
+    config = RunnerConfig(
+        jobs=[
+            JobConfig(
+                "secret",
+                [
+                    "tool",
+                    "--token",
+                    "abc123",
+                    "--client-secret=def456",
+                    "--plain",
+                    "visible",
+                ],
+                env={"API_TOKEN": "secret", "VISIBLE": "ok"},
+            )
+        ]
+    )
+
+    redacted = runner.redacted_runner_config(config)
+
+    assert redacted["jobs"][0]["env"] == {
+        "API_TOKEN": "[redacted]",
+        "VISIBLE": "ok",
+    }
+    assert redacted["jobs"][0]["command"] == [
+        "tool",
+        "--token",
+        "[redacted]",
+        "--client-secret=[redacted]",
+        "--plain",
+        "visible",
+    ]
 
 
 def test_run_job_timeout():

@@ -29,15 +29,25 @@ from parishkit.retry import RetryPolicy
 class Response:
     """Minimal stand-in for a requests Response used by the fake Session."""
 
-    def __init__(self, payload, *, status_code=200, url="https://api.example/v3/items"):
+    def __init__(
+        self,
+        payload,
+        *,
+        status_code=200,
+        url="https://api.example/v3/items",
+        json_error: Exception | None = None,
+    ):
         """Capture the JSON payload, status, and URL the client will inspect."""
         self.payload = payload
         self.status_code = status_code
         self.text = json.dumps(payload)
         self.url = url
+        self.json_error = json_error
 
     def json(self):
         """Return the decoded payload, mimicking Response.json()."""
+        if self.json_error is not None:
+            raise self.json_error
         return self.payload
 
 
@@ -142,6 +152,17 @@ def test_exhausted_transient_response_raises_typed_exception():
     )
 
     with pytest.raises(CCAPIError, match="429"):
+        client.get_all("items", "items")
+
+
+def test_malformed_api_json_raises_typed_exception():
+    """A 2xx Constant Contact response with invalid JSON raises CCAPIError."""
+    client = ConstantContactClient(
+        config(),
+        session=Session([Response("not json", json_error=ValueError("not json"))]),
+    )
+
+    with pytest.raises(CCAPIError, match="invalid JSON"):
         client.get_all("items", "items")
 
 

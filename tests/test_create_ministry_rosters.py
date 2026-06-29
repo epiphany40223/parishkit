@@ -17,6 +17,7 @@ from parishkit.pk_create_ps_ministry_rosters import (
     ROSTER_FROZEN_ROWS,
     ROSTER_TITLE_MERGE_COLUMNS,
     RosterMember,
+    load_sheets_credentials,
     ministry_roster_members,
     roster_config_from_yaml,
     roster_format_requests,
@@ -103,6 +104,33 @@ class SheetsService:
 
     def spreadsheets(self):
         return self._spreadsheets
+
+
+def test_sheets_credentials_resolve_relative_paths(tmp_path, monkeypatch):
+    """Relative Google Sheets credential paths resolve against the config directory."""
+    calls = []
+
+    def fake_load(path, *, scopes, subject):
+        """Capture the resolved service account path for assertion."""
+        calls.append((path, scopes, subject))
+        return object()
+
+    monkeypatch.setattr(
+        "parishkit.pk_create_ps_ministry_rosters.load_service_account_credentials",
+        fake_load,
+    )
+
+    load_sheets_credentials(
+        {
+            "google": {
+                "service_account_file": "credentials/google-service-account.json",
+                "delegated_subject": "itadmin@example.org",
+            }
+        },
+        base_dir=tmp_path,
+    )
+
+    assert calls[0][0] == tmp_path / "credentials" / "google-service-account.json"
 
 
 def write_config(tmp_path: Path, *, dry_run: bool = False) -> Path:

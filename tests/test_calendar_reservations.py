@@ -9,6 +9,7 @@ from parishkit.config import ConfigError
 from parishkit.pk_validate_gcalendar_reservations import (
     ReservationCalendar,
     calendar_reservation_config,
+    load_calendar_credentials,
     reservation_decisions,
 )
 from parishkit.pk_validate_gcalendar_reservations import (
@@ -307,12 +308,13 @@ def test_calendar_reservations_main_lists_and_patches_events(tmp_path):
             "sendUpdates": "all",
             "eventId": "two",
             "body": {
+                "attendeesOmitted": True,
                 "attendees": [
                     {
                         "email": "room@example.org",
                         "responseStatus": "declined",
                     }
-                ]
+                ],
             },
         },
         {
@@ -320,12 +322,13 @@ def test_calendar_reservations_main_lists_and_patches_events(tmp_path):
             "sendUpdates": "all",
             "eventId": "one",
             "body": {
+                "attendeesOmitted": True,
                 "attendees": [
                     {
                         "email": "room@example.org",
                         "responseStatus": "accepted",
                     }
-                ]
+                ],
             },
         },
     ]
@@ -373,3 +376,44 @@ calendars:
     assert "ERROR parishkit.pk_validate_gcalendar_reservations" in error
     assert "Configuration validation failed" in error
     assert "calendars.calendars[0] ('Room').calendar_id" in error
+
+
+def test_calendar_config_rejects_boolean_day_window():
+    """YAML booleans are not accepted as positive integer day counts."""
+    with pytest.raises(ConfigError, match="lookback_days"):
+        calendar_reservation_config(
+            {
+                "calendars": {
+                    "acceptable_domains": ["example.org"],
+                    "lookback_days": True,
+                    "calendars": [
+                        {
+                            "name": "Room",
+                            "calendar_id": "room@example.org",
+                        }
+                    ],
+                }
+            }
+        )
+
+
+def test_calendar_credentials_resolve_relative_paths(tmp_path, monkeypatch):
+    """Relative Google credential paths resolve against the config directory."""
+    calls = []
+
+    def fake_load(path, *, scopes):
+        """Capture the resolved token path instead of parsing credentials."""
+        calls.append((path, scopes))
+        return object()
+
+    monkeypatch.setattr(
+        "parishkit.pk_validate_gcalendar_reservations.load_user_credentials",
+        fake_load,
+    )
+
+    load_calendar_credentials(
+        {"google": {"user_token_file": "credentials/google-token.json"}},
+        base_dir=tmp_path,
+    )
+
+    assert calls[0][0] == tmp_path / "credentials" / "google-token.json"

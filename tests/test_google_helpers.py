@@ -410,12 +410,13 @@ def test_patch_attendee_response_uses_calendar_patch():
             "sendUpdates": "all",
             "eventId": "event-1",
             "body": {
+                "attendeesOmitted": True,
                 "attendees": [
                     {
                         "email": "room@example.org",
                         "responseStatus": "accepted",
                     }
-                ]
+                ],
             },
         }
     ]

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -10,10 +11,14 @@ from parishkit.google.auth import GoogleAPIError
 from parishkit.parishsoft import ParishSoftData
 from parishkit.pk_sync_ps_to_ggroup import (
     DesiredMember,
+    GroupSync,
+    SyncConfig,
     compute_actions,
     desired_members,
+    load_google_credentials,
     normalize_email,
     sync_config_from_yaml,
+    sync_group,
 )
 from parishkit.pk_sync_ps_to_ggroup import (
     main as sync_google_group_main,
@@ -289,6 +294,33 @@ def test_sync_config_rejects_invalid_ministry_pattern():
         )
 
 
+def test_google_group_credentials_resolve_relative_paths(tmp_path, monkeypatch):
+    """Relative Google group credential paths resolve against the config directory."""
+    calls = []
+
+    def fake_load(path, *, scopes, subject):
+        """Capture the resolved service account path for assertion."""
+        calls.append((path, scopes, subject))
+        return object()
+
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.load_service_account_credentials",
+        fake_load,
+    )
+
+    load_google_credentials(
+        {
+            "google": {
+                "service_account_file": "credentials/google-service-account.json",
+                "delegated_subject": "itadmin@example.org",
+            }
+        },
+        base_dir=tmp_path,
+    )
+
+    assert calls[0][0] == tmp_path / "credentials" / "google-service-account.json"
+
+
 def test_desired_members_from_ministries_workgroups_and_static():
     """Verify desired_members merges ministry, workgroup, and static sources.
 
@@ -319,6 +351,23 @@ def test_desired_members_from_ministries_workgroups_and_static():
         ("bob.mover+tag@gmail.com", False),
         ("static@example.org", True),
     ]
+
+
+def test_sync_group_refuses_empty_desired_state_with_current_members():
+    """A zero-member source cannot remove all group members without opt-in."""
+    group = GroupSync(group="group@example.org", notify=(), workgroups=("Empty",))
+
+    with pytest.raises(ConfigError, match="allow_empty"):
+        sync_group(
+            AdminService(),
+            SettingsService(),
+            None,
+            parishsoft_data(),
+            SyncConfig(groups=(group,), sender=None, google_mail_domains=frozenset()),
+            group,
+            dry_run=True,
+            log=logging.getLogger("test"),
+        )
 
 
 def test_all_ministry_chairs_selector_can_filter_ministry_names_by_pattern():

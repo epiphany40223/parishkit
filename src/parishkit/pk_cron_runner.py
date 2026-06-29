@@ -13,7 +13,7 @@ import socket
 import subprocess
 import sys
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
@@ -38,6 +38,7 @@ EXIT_TIMEOUT = 4
 
 DEFAULT_RUNNER_CONFIG = DEFAULT_CONFIG_DIR / "runner.yaml"
 DEFAULT_LOCK_FILE = DEFAULT_RUN_DIR / "runner.lock"
+SENSITIVE_WORDS = ("TOKEN", "SECRET", "PASSWORD", "PASS", "KEY", "CREDENTIAL", "AUTH")
 
 
 @dataclass(frozen=True)
@@ -106,6 +107,69 @@ class JobResult:
     def ok(self) -> bool:
         """Return True only if the job exited 0 and did not time out."""
         return self.returncode == 0 and not self.timed_out
+
+
+def redacted_runner_config(config: RunnerConfig) -> dict[str, Any]:
+    """Return a JSON-friendly runner config view with secrets redacted."""
+    return {
+        "lock": {
+            "path": str(config.lock.path),
+            "stale_after": (
+                config.lock.stale_after.total_seconds()
+                if config.lock.stale_after is not None
+                else None
+            ),
+            "stale_action": config.lock.stale_action,
+        },
+        "jobs": [
+            {
+                "name": job.name,
+                "command": _redacted_command(job.command),
+                "enabled": job.enabled,
+                "cwd": str(job.cwd) if job.cwd is not None else None,
+                "env": _redacted_env(job.env),
+                "timeout": job.timeout,
+            }
+            for job in config.jobs
+        ],
+        "stop_on_first_failure": config.stop_on_first_failure,
+        "notify_success": config.notify_success,
+        "context": config.context,
+        "include_output_in_slack": config.include_output_in_slack,
+    }
+
+
+def _redacted_env(env: Mapping[str, str]) -> dict[str, str]:
+    """Redact likely secret values from a job environment mapping."""
+    return {
+        key: "[redacted]" if _looks_sensitive(key) else value
+        for key, value in env.items()
+    }
+
+
+def _redacted_command(command: Sequence[str]) -> list[str]:
+    """Redact likely secret CLI argument values from a command list."""
+    redacted: list[str] = []
+    redact_next = False
+    for token in command:
+        if redact_next:
+            redacted.append("[redacted]")
+            redact_next = False
+            continue
+        if "=" in token:
+            key, value = token.split("=", 1)
+            redacted.append(f"{key}=[redacted]" if _looks_sensitive(key) else token)
+            continue
+        redacted.append(token)
+        if token.startswith("-") and _looks_sensitive(token):
+            redact_next = True
+    return redacted
+
+
+def _looks_sensitive(value: str) -> bool:
+    """Return whether a key or flag name is likely to carry a secret."""
+    upper = value.upper().replace("-", "_")
+    return any(word in upper for word in SENSITIVE_WORDS)
 
 
 class RunnerError(RuntimeError):
@@ -366,12 +430,12 @@ class LockFile:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self._stale_recovery_guard():
                 try:
-                    fd = os.open(self.path, flags, 0o644)
+                    fd = os.open(self.path, flags, 0o600)
                 except FileExistsError:
                     # Lock present: drop it only if stale, then retry once.
                     self._handle_existing_lock()
                     try:
-                        fd = os.open(self.path, flags, 0o644)
+                        fd = os.open(self.path, flags, 0o600)
                     except FileExistsError as exc:
                         raise LockUnavailable(
                             "runner lock changed while recovering stale lock: "
@@ -746,7 +810,7 @@ def main(argv: list[str] | None = None) -> int:
             len(runner_config.jobs),
             runner_config.stop_on_first_failure,
             runner_config.notify_success,
-            extra=log_extra(runner_config),
+            extra=log_extra(redacted_runner_config(runner_config)),
         )
         with (
             _signal_handlers(),

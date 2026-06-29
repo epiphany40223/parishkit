@@ -101,7 +101,11 @@ def build_message(message: Email) -> EmailMessage:
     return email_message
 
 
-def provider_from_config(config: Mapping[str, Any]) -> EmailProvider:
+def provider_from_config(
+    config: Mapping[str, Any],
+    *,
+    base_dir: Path | None = None,
+) -> EmailProvider:
     """Instantiate the email provider named by the config's ``provider`` key.
 
     Recognizes ``google-workspace`` (or the underscore spelling) and ``ms365``;
@@ -113,7 +117,7 @@ def provider_from_config(config: Mapping[str, Any]) -> EmailProvider:
     if provider in {"google-workspace", "google_workspace"}:
         from parishkit.email.google_workspace import GoogleWorkspaceSMTPProvider
 
-        return GoogleWorkspaceSMTPProvider.from_config(config)
+        return GoogleWorkspaceSMTPProvider.from_config(config, base_dir=base_dir)
     if provider == "ms365":
         from parishkit.email.ms365 import MS365Provider
 

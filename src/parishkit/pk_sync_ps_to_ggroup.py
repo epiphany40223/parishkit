@@ -17,7 +17,7 @@ from parishkit.cli import (
     resolve_common_options,
     run_user_facing,
 )
-from parishkit.config import ConfigData, ConfigError, load_yaml_config
+from parishkit.config import ConfigData, ConfigError, load_yaml_config, resolve_path
 from parishkit.email.base import Email, EmailProvider, provider_from_config
 from parishkit.google.auth import (
     GoogleAPIError,
@@ -90,6 +90,7 @@ class GroupSync:
     workgroups: tuple[str, ...] = ()
     static_members: tuple[StaticMember, ...] = ()
     selectors: tuple[Selector, ...] = ()
+    allow_empty: bool = False
 
 
 @dataclass(frozen=True)
@@ -233,6 +234,7 @@ def _run(
     """
     common = resolve_common_options(args)
     config = load_yaml_config(common.config)
+    config_base_dir = common.config.parent if common.config else None
     log = setup_logging(
         verbose=common.verbose or common.dry_run,
         debug=common.debug,
@@ -267,7 +269,9 @@ def _run(
         admin_service, settings_service = (
             service_factory(config)
             if service_factory is not None
-            else build_google_services(load_google_credentials(config))
+            else build_google_services(
+                load_google_credentials(config, base_dir=config_base_dir)
+            )
         )
         # Only build an email provider when one was not injected, we are actually
         # applying changes, and at least one group wants notifications. This avoids
@@ -278,7 +282,10 @@ def _run(
             and not common.dry_run
             and any(group.notify for group in sync_config.groups)
         ):
-            provider = provider_from_config(_mapping(config.get("email", {}), "email"))
+            provider = provider_from_config(
+                _mapping(config.get("email", {}), "email"),
+                base_dir=config_base_dir,
+            )
         for group in sync_config.groups:
             log.info("Synchronizing Google Group %s", group.group)
             log.debug(
@@ -339,7 +346,11 @@ def sync_config_from_yaml(config: ConfigData) -> SyncConfig:
     )
 
 
-def load_google_credentials(config: ConfigData) -> Any:
+def load_google_credentials(
+    config: ConfigData,
+    *,
+    base_dir: Path | None = None,
+) -> Any:
     """Load credentials for Google group synchronization."""
     google = _mapping(config.get("google", {}), "google")
     service_account_file = google.get("service_account_file")
@@ -355,12 +366,23 @@ def load_google_credentials(config: ConfigData) -> Any:
         raise ConfigError("google.delegated_subject must be a string")
     if isinstance(service_account_file, str):
         return load_service_account_credentials(
-            Path(service_account_file),
+            resolve_path(
+                service_account_file,
+                "google.service_account_file",
+                base_dir=base_dir,
+            ),
             scopes=scopes,
             subject=delegated_subject,
         )
     if isinstance(user_token_file, str):
-        return load_user_credentials(Path(user_token_file), scopes=scopes)
+        return load_user_credentials(
+            resolve_path(
+                user_token_file,
+                "google.user_token_file",
+                base_dir=base_dir,
+            ),
+            scopes=scopes,
+        )
     raise ConfigError(
         "google.service_account_file or google.user_token_file is required"
     )
@@ -411,6 +433,14 @@ def sync_group(
         _text_list([_current_member_summary(member) for member in current]),
         extra=log_extra(current),
     )
+    if not desired and current and not group.allow_empty:
+        raise ConfigError(
+            f"Google Group {group.group!r} has current members, but the "
+            "configured ParishSoft/static sources resolved to zero desired "
+            "members. Check sync.groups[].ministries, workgroups, selectors, "
+            "and static_members in the YAML. To intentionally empty this "
+            "group, set sync.groups[].allow_empty to true."
+        )
     actions = compute_actions(desired, current, config.google_mail_domains)
     log.info(
         "Actions for %s: %s",
@@ -1091,6 +1121,7 @@ def _group_sync(value: Any, name: str) -> GroupSync:
         workgroups=workgroups,
         static_members=static_members,
         selectors=selectors,
+        allow_empty=_bool(item.get("allow_empty", False), f"{name}.allow_empty"),
     )
 
 

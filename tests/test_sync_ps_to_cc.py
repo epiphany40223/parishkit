@@ -13,10 +13,12 @@ from parishkit.pk_sync_ps_to_cc import (
     DEFAULT_UNSUBSCRIBED_REPORT_STATE,
     cc_sync_config_from_yaml,
     compute_all_actions,
+    constant_contact_client,
     detect_name_mismatches,
     filter_unsubscribed,
     parishsoft_members_by_email,
     resolve_desired_state,
+    validate_non_empty_desired_state,
 )
 from parishkit.pk_sync_ps_to_cc import (
     main as sync_ps_to_cc_main,
@@ -387,6 +389,47 @@ def test_cc_sync_config_rejects_missing_lists():
         cc_sync_config_from_yaml({"sync": {}})
 
 
+def test_constant_contact_client_resolves_relative_credential_paths(
+    tmp_path,
+    monkeypatch,
+):
+    """Relative Constant Contact credential paths resolve against the config dir."""
+    calls = []
+
+    def fake_load_client_id(path):
+        """Capture the resolved client-id path."""
+        calls.append(("client_id", path))
+        return {"endpoints": {"api": "https://api.example"}}
+
+    def fake_get_access_token(path, client_id):
+        """Capture the resolved token path."""
+        calls.append(("access_token", path, client_id))
+        return {"access_token": "token"}
+
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_cc.load_client_id",
+        fake_load_client_id,
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_cc.get_access_token",
+        fake_get_access_token,
+    )
+
+    constant_contact_client(
+        {
+            "constant_contact": {
+                "client_id_file": "credentials/cc-client.json",
+                "access_token_file": "credentials/cc-token.json",
+            }
+        },
+        base_dir=tmp_path,
+    )
+
+    assert calls[0] == ("client_id", tmp_path / "credentials" / "cc-client.json")
+    assert calls[1][0] == "access_token"
+    assert calls[1][1] == tmp_path / "credentials" / "cc-token.json"
+
+
 def test_desired_state_and_unsubscribed_filtering():
     """Verify desired-state resolution then unsubscribed filtering.
 
@@ -420,6 +463,25 @@ def test_desired_state_and_unsubscribed_filtering():
     assert desired == [{"ann@example.org"}]
     assert unsubscribed[0][0][0] == "bob@example.org"
     assert "Bob Jones" in unsubscribed[0][0][1]
+
+
+def test_cc_sync_refuses_empty_desired_state_with_current_contacts():
+    """A zero-member source cannot unsubscribe a populated list without opt-in."""
+    config = cc_sync_config_from_yaml(
+        {
+            "sync": {
+                "lists": [
+                    {
+                        "source_workgroup": "Newsletter WG",
+                        "target_list": "Newsletter",
+                    }
+                ]
+            }
+        }
+    )
+
+    with pytest.raises(ConfigError, match="allow_empty"):
+        validate_non_empty_desired_state(config, [set()], cc_lists())
 
 
 def test_action_computation_and_name_updates():

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from parishkit.config import ConfigError
+from parishkit.config import ConfigError, resolve_path
 from parishkit.email.base import Email, EmailMessage, EmailProvider, build_message
 from parishkit.google.auth import load_service_account_credentials
 
@@ -59,7 +59,12 @@ class GoogleWorkspaceSMTPProvider(EmailProvider):
     smtp_factory: Any = smtplib.SMTP_SSL
 
     @classmethod
-    def from_config(cls, config: Mapping[str, Any]) -> GoogleWorkspaceSMTPProvider:
+    def from_config(
+        cls,
+        config: Mapping[str, Any],
+        *,
+        base_dir: Path | None = None,
+    ) -> GoogleWorkspaceSMTPProvider:
         """Build the provider from YAML configuration.
 
         Requires ``service_account_file`` and a delegated user (``delegated_user``
@@ -80,8 +85,13 @@ class GoogleWorkspaceSMTPProvider(EmailProvider):
             raise ConfigError("google-workspace smtp_host must be a string")
         if not isinstance(smtp_port, int):
             raise ConfigError("google-workspace smtp_port must be an integer")
+        key_path = resolve_path(
+            key_file,
+            "email.service_account_file",
+            base_dir=base_dir,
+        )
         credentials = load_service_account_credentials(
-            Path(key_file),
+            key_path,
             scopes=[GMAIL_SMTP_SCOPE],
             subject=user,
         )

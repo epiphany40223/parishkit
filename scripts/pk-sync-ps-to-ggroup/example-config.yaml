@@ -63,6 +63,10 @@ sync:
   groups:
     # group is the Google Group email/key to synchronize.
     - group: group@example.org
+      # allow_empty=false aborts instead of deleting every current group member
+      # if the configured sources unexpectedly resolve to zero desired members.
+      # Set true only when intentionally emptying this group.
+      allow_empty: false
       # notify receives an email summary for this group when changes are
       # applied. Dry-run mode suppresses actual email sends.
       notify:

@@ -34,15 +34,25 @@ from parishkit.parishsoft import (
 class Response:
     """Minimal stand-in for a ``requests`` response backed by a fixed payload."""
 
-    def __init__(self, payload, *, status_code=200, url="https://example/api"):
+    def __init__(
+        self,
+        payload,
+        *,
+        status_code=200,
+        url="https://example/api",
+        json_error: Exception | None = None,
+    ):
         """Store the canned payload, status, and URL the client will read."""
         self.payload = payload
         self.status_code = status_code
         self.text = json.dumps(payload)
         self.url = url
+        self.json_error = json_error
 
     def json(self):
         """Return the canned payload, mirroring ``requests.Response.json``."""
+        if self.json_error is not None:
+            raise self.json_error
         return self.payload
 
 
@@ -214,6 +224,14 @@ def test_exhausted_transient_response_raises_typed_api_error(tmp_path):
     ps.retry_policy = type(ps.retry_policy)(attempts=1, initial_delay=0)
 
     with pytest.raises(ParishSoftAPIError, match="503"):
+        ps.get("lookup")
+
+
+def test_malformed_json_response_raises_typed_api_error(tmp_path):
+    """A successful HTTP status with invalid JSON stays a user-facing API error."""
+    ps = client(tmp_path, [Response("not json", json_error=ValueError("not json"))])
+
+    with pytest.raises(ParishSoftAPIError, match="invalid JSON"):
         ps.get("lookup")
 
 
