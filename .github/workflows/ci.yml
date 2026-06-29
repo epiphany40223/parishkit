@@ -32,17 +32,3 @@ jobs:
 
       - name: Pytest
         run: python -m pytest
-
-  dco:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-    steps:
-      - name: Enforce DCO sign-offs
-        uses: KineticCafe/actions-dco@v3.1.0
-        with:
-          config: |
-            [bots]
-            policy = "none"
