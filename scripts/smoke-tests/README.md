@@ -1,32 +1,41 @@
-# Manual Smoke Tests
+# Smoke tests
 
-Smoke tests in this directory are for human operators with real credentials.
-They are not part of normal CI.
+Smoke tests are small scripts you run by hand to confirm that a set of
+credentials actually works, *before* you wire it into a scheduled job. They are
+for a human operator with real credentials installed locally — they are not part
+of normal automated testing.
 
-Run them only after reviewing what they will send or read. Prefer read-only
-checks, use dry-run options where available, and keep token files outside git.
+Run them only after reviewing what they will read or send. They prefer read-only
+checks, offer dry-run/preview options, and expect token files to live outside
+git. Most preview what they will do and require `--send` before making any
+network call.
 
-Slack smoke tests require the Slack optional dependency group:
+## Install the optional dependencies
 
-```sh
-python -m pip install '.[slack]'
-```
-
-The Slack notification smoke test previews the target and message by default.
-Add `--send` only after confirming the preview is safe to post.
-
-Google smoke tests require the Google optional dependency group:
+Each integration's client libraries are optional dependency groups:
 
 ```sh
-python -m pip install '.[google]'
+python -m pip install '.[slack]'    # Slack smoke test
+python -m pip install '.[google]'   # Google smoke tests
 ```
 
-Use `google-api.py` for a read-only service-account or user-OAuth check. Use
+## ParishSoft (read-only)
+
+```sh
+scripts/smoke-tests/parishsoft-connectivity.py \
+  --api-key-file /opt/parishkit/credentials/parishsoft-api-key.txt \
+  --expected-organization "Example Parish"
+```
+
+Add `--send --deep` to run representative read-only probes across the family,
+member, contact, workgroup, ministry, and offering endpoints.
+
+## Google (read-only)
+
+Use `google-api.py` for a read-only service-account or user-OAuth check, and
 `google-workspace-email.py` to preview or send a Google Workspace SMTP/XOAUTH2
-message with a service account delegated to a mailbox.
-
-When running `google-api.py` with `--send`, provide a read-only target for the
-selected service:
+message. When running `google-api.py` with `--send`, give it a read-only target
+for the selected service:
 
 ```sh
 # Calendar
@@ -54,7 +63,8 @@ scripts/smoke-tests/google-api.py --service admin --version directory_v1 \
   --delegated-subject admin@example.org --group-key group@example.org --send
 ```
 
-Create a user OAuth token for workflows that cannot use service accounts with:
+Create a user OAuth token for the rare workflow that cannot use a service
+account:
 
 ```sh
 scripts/smoke-tests/google-api.py \
@@ -67,22 +77,26 @@ scripts/smoke-tests/google-api.py \
   --send
 ```
 
-ParishSoft and Constant Contact smoke tests are read-only by default:
+## Constant Contact (read-only)
 
 ```sh
-scripts/smoke-tests/parishsoft-connectivity.py \
-  --api-key-file /opt/parishkit/credentials/parishsoft-api-key.txt \
-  --expected-organization "Example Parish"
-
 scripts/smoke-tests/constant-contact-lists.py \
   --client-id-file /opt/parishkit/credentials/constant-contact-client.json \
   --access-token-file /opt/parishkit/credentials/constant-contact-token.json
 ```
 
-Add `--send --deep` to the ParishSoft smoke test to run representative
-read-only probes for family, member, contact, workgroup, ministry, and offering
-endpoints. Add `--send --deep` to the Constant Contact smoke test to read
-lists, contacts, and custom fields without mutating data.
+Add `--send --deep` to read lists, contacts, and custom fields without mutating
+data. The one-time `constant-contact-device-oauth.py` token bootstrap and the
+automatic refresh behavior are documented in
+[`scripts/pk-sync-ps-to-cc/README.md`](../pk-sync-ps-to-cc/README.md).
 
-The Constant Contact token bootstrap and refresh process is documented in
-`scripts/pk-sync-ps-to-cc/README.md`.
+## Slack
+
+```sh
+scripts/smoke-tests/slack-notification.py \
+  --slack-token-file /opt/parishkit/credentials/slack-token.txt \
+  --slack-channel '#bot-alerts'
+```
+
+The Slack notification smoke test previews the target and message by default. Add
+`--send` only after confirming the preview is safe to post.

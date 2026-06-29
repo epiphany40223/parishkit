@@ -1,40 +1,77 @@
 # pk-cron-runner
 
-`pk-cron-runner` is a cron-friendly scheduled job runner. It provides lockfile
-protection, stale-lock handling, child-process timeouts, captured output, common
-logging, and optional Slack reporting.
+`pk-cron-runner` is the recommended way to run ParishKit tools on a schedule. You
+point `cron` at the runner, and the runner runs your configured jobs with
+safety features that bare cron does not give you:
 
-Run a configured job list:
+- **Lock files**, so two runs cannot overlap and step on each other.
+- **Stale-lock recovery**, so a crashed run does not block future runs forever.
+- **Per-job timeouts**, so a hung job is cleaned up instead of running forever.
+- **Captured logs** in JSON Lines format.
+- **Optional Slack summaries** on failure (or on success, if you want them).
+
+## Configure it
+
+Copy the example config and edit it. The `jobs` list defines what runs and in
+what order; `lock`, `logging`, `slack`, and `runner` control the safety and
+notification behavior. The comments in `example-config.yaml` explain every
+field.
+
+```sh
+cp example-config.yaml /opt/parishkit/config/runner.yaml
+```
+
+Each job's `command` is an argument list (no shell expansion). Use absolute paths
+so scheduled runs do not depend on the environment. A typical job invokes one of
+the ParishKit commands with its own config:
+
+```yaml
+jobs:
+  - name: pk-sync-ps-to-ggroup
+    command:
+      - /opt/parishkit/bin/pk-sync-ps-to-ggroup
+      - --config
+      - /opt/parishkit/config/pk-sync-ps-to-ggroup.yaml
+```
+
+## Run it
+
+Run all configured jobs:
 
 ```sh
 pk-cron-runner --config /opt/parishkit/config/runner.yaml
 ```
 
-If `PARISHKIT_ROOT` is set, the default runner config and lock paths move from
-`/opt/parishkit` to that directory. Explicit `--config`, `--lock-file`, and YAML
-paths are used as provided.
-
-Run selected configured jobs:
+Run only selected jobs by name:
 
 ```sh
 pk-cron-runner --config /opt/parishkit/config/runner.yaml pk-sync-ps-to-ggroup
 ```
 
-Run one command without a runner config:
+Run a single command without a runner config (handy for testing):
 
 ```sh
 pk-cron-runner --lock-file /opt/parishkit/run/manual.lock --command echo ok
 ```
 
-Disabled jobs are skipped by default, even when named explicitly. Use
-`--include-disabled` only for deliberate manual testing.
+Disabled jobs (`enabled: false`) are skipped even when named explicitly; use
+`--include-disabled` only for deliberate manual testing. If `PARISHKIT_ROOT` is
+set, the default runner config and lock paths move under it; explicit `--config`,
+`--lock-file`, and YAML paths are always used as written.
 
-Commands are argument lists by default. Shell interpolation is intentionally not
-enabled in this phase; wrap shell behavior in an explicit script when needed.
+## Schedule it with cron
 
-## Manual Smoke Tests
+Add a cron entry that calls the runner on the interval you want. Use absolute
+paths, since cron runs with a minimal environment:
 
-Use a temporary directory so these checks do not touch production locks or logs:
+```cron
+*/15 * * * * /opt/parishkit/bin/pk-cron-runner --config /opt/parishkit/config/runner.yaml
+```
+
+## Manual smoke tests
+
+These checks exercise the runner's behavior without touching production locks or
+logs. Use a temporary directory:
 
 ```sh
 tmpdir="$(mktemp -d)"
@@ -114,15 +151,8 @@ pk-cron-runner --config "$config"
 test "$?" -eq 4
 ```
 
-Cron entries should call the wrapper or console script with explicit config and
-logs:
-
-```cron
-*/15 * * * * /opt/parishkit/bin/pk-cron-runner --config /opt/parishkit/config/runner.yaml
-```
-
-Slack notification smoke tests require human-provided credentials at runtime.
-Do not commit the token file.
+Slack notification smoke tests require human-provided credentials at runtime. Do
+not commit the token file:
 
 ```sh
 printf '%s' "$SLACK_BOT_TOKEN" > "$tmpdir/slack-token.txt"
