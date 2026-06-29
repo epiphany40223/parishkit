@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
+import fcntl
 import html
 import json
 import logging
@@ -215,7 +217,8 @@ def _run(
         slack_level=common.slack_log_level,
     )
     try:
-        sync_config = cc_sync_config_from_yaml(config)
+        config_base_dir = common.config.parent if common.config else None
+        sync_config = cc_sync_config_from_yaml(config, base_dir=config_base_dir)
         # CLI flags can only turn the toggles on, never off: a command-line opt-in
         # is OR'd with whatever the YAML already requested.
         sync_config = CCSyncConfig(
@@ -246,6 +249,7 @@ def _run(
             len(data.member_workgroup_memberships),
         )
         log.debug("Dry-run mode is %s", "enabled" if common.dry_run else "disabled")
+        validate_configured_parishsoft_workgroups(sync_config, data)
         cc_client = (
             cc_factory(config) if cc_factory else constant_contact_client(config)
         )
@@ -307,13 +311,11 @@ def _run(
                 update_names=sync_config.update_names,
             )
         )
-        execute_actions(
-            cc_client,
-            actions,
-            contacts_by_email,
-            ps_members_by_email,
+        validate_unsubscribed_report_config(
+            sync_config,
+            unsubscribed,
+            report_decision,
             dry_run=common.dry_run,
-            log=log,
         )
         provider = email_provider
         # Only build a real email provider when one was not injected and the run
@@ -325,6 +327,21 @@ def _run(
             and any(mapping.notifications for mapping in sync_config.mappings)
         ):
             provider = provider_from_config(_mapping(config.get("email", {}), "email"))
+        validate_unsubscribed_report_provider(
+            provider,
+            sync_config,
+            unsubscribed,
+            report_decision,
+            dry_run=common.dry_run,
+        )
+        execute_actions(
+            cc_client,
+            actions,
+            contacts_by_email,
+            ps_members_by_email,
+            dry_run=common.dry_run,
+            log=log,
+        )
         send_notifications(
             provider,
             sync_config,
@@ -333,7 +350,7 @@ def _run(
             contacts_by_email,
             ps_members_by_email,
         )
-        sent_reports = send_unsubscribed_report(
+        send_unsubscribed_report(
             provider,
             sync_config,
             unsubscribed,
@@ -341,12 +358,6 @@ def _run(
             dry_run=common.dry_run,
             log=log,
         )
-        if sent_reports and not common.dry_run:
-            mark_unsubscribed_report_sent(
-                sync_config.unsubscribed_report,
-                report_decision.run_date,
-                now=now or dt.datetime.now(ZoneInfo(common.timezone)),
-            )
         log.info("Computed %s Constant Contact action(s)", len(actions))
     except ConfigError as exc:
         log.error("Configuration validation failed: %s", exc)
@@ -354,12 +365,17 @@ def _run(
     return 0
 
 
-def cc_sync_config_from_yaml(config: ConfigData) -> CCSyncConfig:
+def cc_sync_config_from_yaml(
+    config: ConfigData,
+    *,
+    base_dir: Path | None = None,
+) -> CCSyncConfig:
     """Build a ``CCSyncConfig`` from the ``sync`` config section.
 
     Validates and parses the configured list mappings (which must be non-empty)
-    and the optional notification sender. Raises ``ConfigError`` if required
-    values are missing or malformed.
+    and the optional notification sender. Relative report state paths are
+    resolved against ``base_dir`` when the config came from a file. Raises
+    ``ConfigError`` if required values are missing or malformed.
     """
     section = _mapping(config.get("sync", {}), "sync")
     mappings = tuple(
@@ -373,12 +389,42 @@ def cc_sync_config_from_yaml(config: ConfigData) -> CCSyncConfig:
     report = _unsubscribed_report_config(
         section.get("unsubscribed_report", {}),
         "sync.unsubscribed_report",
+        base_dir=base_dir,
     )
     return CCSyncConfig(
         mappings=mappings,
         update_names=_bool(section.get("update_names", False), "sync.update_names"),
         sender=sender,
         unsubscribed_report=report,
+    )
+
+
+def validate_configured_parishsoft_workgroups(
+    config: CCSyncConfig,
+    data: ParishSoftData,
+) -> None:
+    """Verify configured ParishSoft member workgroups exist before CC access."""
+    workgroup_by_name = {
+        item["name"]: item for item in data.member_workgroup_memberships.values()
+    }
+    for mapping in config.mappings:
+        if mapping.source_workgroup in workgroup_by_name:
+            continue
+        raise _missing_workgroup_error(mapping, workgroup_by_name)
+
+
+def _missing_workgroup_error(
+    mapping: CCSyncMapping,
+    workgroup_by_name: Mapping[str, Any],
+) -> ConfigError:
+    """Build the shared missing-workgroup config error."""
+    return ConfigError(
+        f"Configured ParishSoft member workgroup was not found for "
+        f"Constant Contact list {mapping.target_list!r}: "
+        f"{mapping.source_workgroup!r}. Check sync.lists[].source_workgroup "
+        "in the YAML and make sure it exactly matches a ParishSoft "
+        "member workgroup. Available member workgroups: "
+        f"{_text_list(sorted(workgroup_by_name))}."
     )
 
 
@@ -436,16 +482,6 @@ def resolve_desired_state(
         item["name"]: item for item in data.member_workgroup_memberships.values()
     }
     for mapping in config.mappings:
-        workgroup = workgroup_by_name.get(mapping.source_workgroup)
-        if workgroup is None:
-            raise ConfigError(
-                f"Configured ParishSoft member workgroup was not found for "
-                f"Constant Contact list {mapping.target_list!r}: "
-                f"{mapping.source_workgroup!r}. Check sync.lists[].source_workgroup "
-                "in the YAML and make sure it exactly matches a ParishSoft "
-                "member workgroup. Available member workgroups: "
-                f"{_text_list(sorted(workgroup_by_name))}."
-            )
         cc_list = list_by_name.get(mapping.target_list)
         if cc_list is None:
             raise ConfigError(
@@ -455,6 +491,9 @@ def resolve_desired_state(
                 "Contact list. Available Constant Contact lists: "
                 f"{_text_list(sorted(list_by_name))}."
             )
+        workgroup = workgroup_by_name.get(mapping.source_workgroup)
+        if workgroup is None:
+            raise _missing_workgroup_error(mapping, workgroup_by_name)
         emails = set()
         for item in workgroup.get("membership", []):
             member_id = item.get("py member duid")
@@ -777,9 +816,12 @@ def send_notifications(
         return
     for index, mapping in enumerate(config.mappings):
         list_actions = [action for action in actions if action.sync_index == index]
+        suppressed_count = None
         reported_unsubscribed = (
             [] if config.unsubscribed_report.enabled else unsubscribed[index]
         )
+        if config.unsubscribed_report.enabled and unsubscribed[index]:
+            suppressed_count = len(unsubscribed[index])
         if not list_actions and not reported_unsubscribed:
             continue
         provider.send(
@@ -791,6 +833,7 @@ def send_notifications(
                 ps_members_by_email,
                 sender=config.sender,
                 generated_at=dt.datetime.now(),
+                suppressed_unsubscribed_count=suppressed_count,
             ),
             dry_run=False,
         )
@@ -805,6 +848,7 @@ def build_notification_email(
     *,
     sender: str,
     generated_at: dt.datetime,
+    suppressed_unsubscribed_count: int | None = None,
 ) -> Email:
     """Build the styled Constant Contact sync update notification.
 
@@ -818,6 +862,10 @@ def build_notification_email(
     unsubscribed_actions = [
         action for action in actions if action.type == "unsubscribe"
     ]
+    unsubscribed_summary = _unsubscribed_count_summary(
+        len(unsubscribed),
+        suppressed_unsubscribed_count=suppressed_unsubscribed_count,
+    )
     text_lines = [
         subject,
         f"Generated: {generated_at:%Y-%m-%d %H:%M:%S}",
@@ -828,7 +876,7 @@ def build_notification_email(
         f"- Contacts created: {len(created)}",
         f"- Contacts subscribed: {len(subscribed)}",
         f"- Contacts unsubscribed: {len(unsubscribed_actions)}",
-        f"- Unsubscribed contacts filtered: {len(unsubscribed)}",
+        f"- Unsubscribed contacts filtered: {unsubscribed_summary}",
         "",
     ]
     text_lines.extend(action.detail for action in actions)
@@ -849,7 +897,7 @@ def build_notification_email(
         f"<li>Contacts created: {len(created)}</li>",
         f"<li>Contacts subscribed: {len(subscribed)}</li>",
         f"<li>Contacts unsubscribed: {len(unsubscribed_actions)}</li>",
-        f"<li>Unsubscribed contacts filtered: {len(unsubscribed)}</li>",
+        f"<li>Unsubscribed contacts filtered: {html.escape(unsubscribed_summary)}</li>",
         "</ul>",
     ]
     if actions:
@@ -943,6 +991,17 @@ def _cc_action_sort_key(action: CCAction) -> tuple[int, str, str]:
 def _cc_action_label(action: CCAction) -> str:
     """Return a display label for one Constant Contact action."""
     return action.type.replace("_", " ")
+
+
+def _unsubscribed_count_summary(
+    visible_count: int,
+    *,
+    suppressed_unsubscribed_count: int | None,
+) -> str:
+    """Return the sync email's filtered-unsubscribe count explanation."""
+    if suppressed_unsubscribed_count is None:
+        return str(visible_count)
+    return f"{suppressed_unsubscribed_count} (handled by scheduled report)"
 
 
 def _cc_contact_names_and_duids(
@@ -1079,46 +1138,133 @@ def send_unsubscribed_report(
             for email, names, duids in unsubscribed[index]:
                 log.info("  %s (DUID: %s): %s", names, duids, email)
         return 0
-    has_recipients = any(
-        mapping.notifications and unsubscribed[index]
-        for index, mapping in enumerate(config.mappings)
+    validate_unsubscribed_report_config(config, unsubscribed, decision, dry_run=dry_run)
+    validate_unsubscribed_report_provider(
+        provider,
+        config,
+        unsubscribed,
+        decision,
+        dry_run=dry_run,
     )
-    if has_recipients and not config.sender:
+
+    sent = 0
+    generated_at = dt.datetime.now(dt.UTC)
+    with unsubscribed_report_state_lock(config.unsubscribed_report) as state:
+        for index, mapping in enumerate(config.mappings):
+            if not unsubscribed[index]:
+                continue
+            if unsubscribed_report_mapping_sent(state, decision.run_date, mapping):
+                log.info(
+                    "Unsubscribed report for %s was already sent for %s",
+                    mapping.target_list,
+                    decision.run_date,
+                )
+                continue
+            provider.send(
+                build_unsubscribed_report_email(
+                    mapping,
+                    unsubscribed[index],
+                    sender=config.sender or "",
+                    generated_at=generated_at,
+                ),
+                dry_run=False,
+            )
+            mark_unsubscribed_report_mapping_sent(
+                config.unsubscribed_report,
+                state,
+                decision.run_date,
+                mapping,
+                now=generated_at,
+            )
+            sent += 1
+        if all(
+            not items
+            or unsubscribed_report_mapping_sent(state, decision.run_date, mapping)
+            for mapping, items in zip(config.mappings, unsubscribed, strict=True)
+        ):
+            mark_unsubscribed_report_sent(
+                config.unsubscribed_report,
+                state,
+                decision.run_date,
+                now=generated_at,
+            )
+    return sent
+
+
+def validate_unsubscribed_report_config(
+    config: CCSyncConfig,
+    unsubscribed: Sequence[Sequence[tuple[str, str, str]]],
+    decision: ReportScheduleDecision,
+    *,
+    dry_run: bool,
+) -> None:
+    """Validate due report config before any external writes happen."""
+    if (
+        not config.unsubscribed_report.enabled
+        or not decision.due
+        or dry_run
+        or not any(unsubscribed)
+    ):
+        return
+    missing_recipient_targets = [
+        mapping.target_list
+        for index, mapping in enumerate(config.mappings)
+        if unsubscribed[index] and not mapping.notifications
+    ]
+    if missing_recipient_targets:
+        raise ConfigError(
+            "sync.lists[].notifications is required when "
+            "sync.unsubscribed_report.enabled sends email for: "
+            f"{_text_list(missing_recipient_targets)}"
+        )
+    if not config.sender:
         raise ConfigError(
             "sync.notifications.sender is required when "
             "sync.unsubscribed_report.enabled sends email"
         )
-    if has_recipients and provider is None:
+    ensure_unsubscribed_report_state_writable(config.unsubscribed_report)
+
+
+def validate_unsubscribed_report_provider(
+    provider: EmailProvider | None,
+    config: CCSyncConfig,
+    unsubscribed: Sequence[Sequence[tuple[str, str, str]]],
+    decision: ReportScheduleDecision,
+    *,
+    dry_run: bool,
+) -> None:
+    """Verify a due report has an email provider before writes happen."""
+    if (
+        not config.unsubscribed_report.enabled
+        or not decision.due
+        or dry_run
+        or not any(unsubscribed)
+    ):
+        return
+    if provider is None:
         raise ConfigError(
             "email configuration is required when "
             "sync.unsubscribed_report.enabled sends email"
         )
-    if provider is None or not config.sender:
-        log.warning("Unsubscribed report is due, but no report email can be sent")
-        return 0
 
-    sent = 0
-    generated_at = dt.datetime.now(dt.UTC)
-    for index, mapping in enumerate(config.mappings):
-        if not unsubscribed[index]:
-            continue
-        if not mapping.notifications:
-            log.warning(
-                "Unsubscribed report for %s has no notification recipients",
-                mapping.target_list,
-            )
-            continue
-        provider.send(
-            build_unsubscribed_report_email(
-                mapping,
-                unsubscribed[index],
-                sender=config.sender,
-                generated_at=generated_at,
-            ),
-            dry_run=False,
-        )
-        sent += 1
-    return sent
+
+def ensure_unsubscribed_report_state_writable(
+    config: CCUnsubscribedReportConfig,
+) -> None:
+    """Verify the report state directory and lock can be written.
+
+    The report send path records state after each successful per-list email.
+    This probe catches bad paths and permissions before any external writes.
+    """
+    state_path = config.state_file.expanduser()
+    probe = state_path.parent / f".{state_path.name}.write-test"
+    lock_probe = _unsubscribed_report_lock_path(state_path)
+    try:
+        atomic_write_text(probe, "{}")
+        atomic_write_text(lock_probe, "{}")
+    finally:
+        probe.unlink(missing_ok=True)
+        lock_probe.unlink(missing_ok=True)
 
 
 def unsubscribed_report_decision(
@@ -1156,24 +1302,72 @@ def unsubscribed_report_decision(
     return ReportScheduleDecision(True, f"due for {run_date}", run_date)
 
 
+@contextlib.contextmanager
+def unsubscribed_report_state_lock(
+    config: CCUnsubscribedReportConfig,
+):
+    """Yield report state while holding an exclusive state-file lock."""
+    state_path = config.state_file.expanduser()
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = _unsubscribed_report_lock_path(state_path)
+    with lock_path.open("a+", encoding="utf-8") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield _read_unsubscribed_report_state(state_path)
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def unsubscribed_report_mapping_sent(
+    state: Mapping[str, Any],
+    run_date: str,
+    mapping: CCSyncMapping,
+) -> bool:
+    """Return whether one mapping's report is already recorded as sent."""
+    sent_reports = state.get("sent_reports")
+    if not isinstance(sent_reports, Mapping):
+        return False
+    sent_for_date = sent_reports.get(run_date)
+    return isinstance(sent_for_date, list) and _report_mapping_key(mapping) in set(
+        sent_for_date
+    )
+
+
+def mark_unsubscribed_report_mapping_sent(
+    config: CCUnsubscribedReportConfig,
+    state: ConfigData,
+    run_date: str,
+    mapping: CCSyncMapping,
+    *,
+    now: dt.datetime,
+) -> None:
+    """Record one successfully sent per-list report immediately."""
+    sent_reports = state.setdefault("sent_reports", {})
+    if not isinstance(sent_reports, dict):
+        sent_reports = {}
+        state["sent_reports"] = sent_reports
+    sent_for_date = sent_reports.setdefault(run_date, [])
+    if not isinstance(sent_for_date, list):
+        sent_for_date = []
+        sent_reports[run_date] = sent_for_date
+    key = _report_mapping_key(mapping)
+    if key not in sent_for_date:
+        sent_for_date.append(key)
+    state["last_mapping_sent_at"] = now.isoformat()
+    _write_unsubscribed_report_state(config.state_file, state)
+
+
 def mark_unsubscribed_report_sent(
     config: CCUnsubscribedReportConfig,
+    state: ConfigData,
     run_date: str,
     *,
     now: dt.datetime,
 ) -> None:
     """Record that the standalone report was sent for ``run_date``."""
-    atomic_write_text(
-        config.state_file,
-        json.dumps(
-            {
-                "last_sent_date": run_date,
-                "last_sent_at": now.isoformat(),
-            },
-            sort_keys=True,
-            indent=2,
-        ),
-    )
+    state["last_sent_date"] = run_date
+    state["last_sent_at"] = now.isoformat()
+    _write_unsubscribed_report_state(config.state_file, state)
 
 
 def parishsoft_members_by_email(
@@ -1214,7 +1408,12 @@ def _mapping_config(value: Any, name: str) -> CCSyncMapping:
     )
 
 
-def _unsubscribed_report_config(value: Any, name: str) -> CCUnsubscribedReportConfig:
+def _unsubscribed_report_config(
+    value: Any,
+    name: str,
+    *,
+    base_dir: Path | None,
+) -> CCUnsubscribedReportConfig:
     """Parse the optional standalone unsubscribed-report schedule."""
     item = _mapping(value, name)
     enabled = _bool(item.get("enabled", False), f"{name}.enabled")
@@ -1229,22 +1428,14 @@ def _unsubscribed_report_config(value: Any, name: str) -> CCUnsubscribedReportCo
         state_file=_path(
             item.get("state_file", DEFAULT_UNSUBSCRIBED_REPORT_STATE),
             f"{name}.state_file",
+            base_dir=base_dir,
         ),
     )
 
 
 def _last_unsubscribed_report_date(path: Path) -> str | None:
     """Read the last report date from the state file, if it exists."""
-    try:
-        payload = json.loads(path.expanduser().read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return None
-    except json.JSONDecodeError as exc:
-        raise ConfigError(
-            f"invalid unsubscribed report state file {path}: {exc}"
-        ) from exc
-    if not isinstance(payload, Mapping):
-        raise ConfigError(f"unsubscribed report state file {path} must be a mapping")
+    payload = _read_unsubscribed_report_state(path)
     value = payload.get("last_sent_date")
     if value is None:
         return None
@@ -1253,6 +1444,42 @@ def _last_unsubscribed_report_date(path: Path) -> str | None:
             f"unsubscribed report state file {path} last_sent_date must be a string"
         )
     return value
+
+
+def _read_unsubscribed_report_state(path: Path) -> ConfigData:
+    """Read the report state JSON file, returning an empty state if absent."""
+    try:
+        payload = json.loads(path.expanduser().read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError as exc:
+        raise ConfigError(
+            f"invalid unsubscribed report state file {path}: {exc}"
+        ) from exc
+    if not isinstance(payload, Mapping):
+        raise ConfigError(f"unsubscribed report state file {path} must be a mapping")
+    return dict(payload)
+
+
+def _write_unsubscribed_report_state(path: Path, state: Mapping[str, Any]) -> None:
+    """Write the report state JSON file with stable formatting."""
+    atomic_write_text(
+        path,
+        json.dumps(dict(state), sort_keys=True, indent=2),
+    )
+
+
+def _unsubscribed_report_lock_path(path: Path) -> Path:
+    """Return the advisory lock path for a report state file."""
+    return path.with_name(f"{path.name}.lock")
+
+
+def _report_mapping_key(mapping: CCSyncMapping) -> str:
+    """Return the stable per-list key used inside the report state file."""
+    return json.dumps(
+        [mapping.source_workgroup, mapping.target_list],
+        separators=(",", ":"),
+    )
 
 
 def _unsubscribed_sort_key(row: tuple[str, str, str]) -> tuple[str, str]:
@@ -1325,13 +1552,17 @@ def _optional_string(value: Any, name: str) -> str | None:
     return _required_string(value, name)
 
 
-def _path(value: Any, name: str) -> Path:
+def _path(value: Any, name: str, *, base_dir: Path | None = None) -> Path:
     """Read a path config value."""
     if isinstance(value, Path):
-        return value.expanduser()
-    if not isinstance(value, str) or not value:
+        path = value.expanduser()
+    elif isinstance(value, str) and value:
+        path = Path(value).expanduser()
+    else:
         raise ConfigError(f"{name} must be a path string")
-    return Path(value).expanduser()
+    if base_dir is not None and not path.is_absolute():
+        path = base_dir / path
+    return path
 
 
 def _time(value: Any, name: str) -> dt.time:
