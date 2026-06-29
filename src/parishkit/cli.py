@@ -21,6 +21,7 @@ from parishkit.retry import RetryError
 
 
 def _default_root() -> Path:
+    """Return the runtime root implied by the current environment."""
     return Path(os.environ.get("PARISHKIT_ROOT", "/opt/parishkit")).expanduser()
 
 
@@ -41,8 +42,11 @@ _CACHE_LIMIT_PATTERN = re.compile(r"^[1-9][0-9]*[smhd]$")
 
 @dataclass(frozen=True)
 class CommonOptions:
+    """Resolved options shared by ParishKit command-line tools."""
+
     config: Path | None
     dry_run: bool
+    dry_run_explicit: bool
     verbose: bool
     debug: bool
     log_file: Path | None
@@ -130,6 +134,46 @@ def _validate_cache_limit(value: str) -> str:
             "parishsoft.cache_limit must be a duration like 30s, 14m, 12h, or 7d"
         )
     return value
+
+
+def default_config_dir() -> Path:
+    """Return the current default config directory."""
+    return _default_root() / "config"
+
+
+def default_credentials_dir() -> Path:
+    """Return the current default credentials directory."""
+    return _default_root() / "credentials"
+
+
+def default_cache_dir() -> Path:
+    """Return the current default cache directory."""
+    return _default_root() / "cache"
+
+
+def default_log_dir() -> Path:
+    """Return the current default log directory."""
+    return _default_root() / "logs"
+
+
+def default_reports_dir() -> Path:
+    """Return the current default reports directory."""
+    return _default_root() / "reports"
+
+
+def default_run_dir() -> Path:
+    """Return the current default run-state directory."""
+    return _default_root() / "run"
+
+
+def default_ps_api_key_file() -> Path:
+    """Return the current default ParishSoft API key path."""
+    return default_credentials_dir() / "parishsoft-api-key.txt"
+
+
+def default_ps_cache_dir() -> Path:
+    """Return the current default ParishSoft cache directory."""
+    return default_cache_dir() / "parishsoft"
 
 
 def validate_timezone(value: str, *, name: str = "common.timezone") -> str:
@@ -234,6 +278,7 @@ def resolve_common_options(args: argparse.Namespace) -> CommonOptions:
     config_debug = _config_bool(common, "debug", "common")
     config_verbose = _config_bool(common, "verbose", "common")
     config_dry_run = _config_bool(common, "dry_run", "common")
+    config_dry_run_explicit = "dry_run" in common
     config_timezone = _config_str(common, "timezone", "common")
     if config_timezone is not None:
         validate_timezone(config_timezone)
@@ -285,6 +330,7 @@ def resolve_common_options(args: argparse.Namespace) -> CommonOptions:
     cli_debug = getattr(args, "debug", None)
     cli_verbose = getattr(args, "verbose", None)
     cli_dry_run = getattr(args, "dry_run", None)
+    dry_run_explicit = cli_dry_run is not None or config_dry_run_explicit
     debug = config_debug if cli_debug is None else cli_debug
     # Debug logging implies verbose, regardless of how verbose was resolved.
     verbose = debug or (config_verbose if cli_verbose is None else cli_verbose)
@@ -304,6 +350,7 @@ def resolve_common_options(args: argparse.Namespace) -> CommonOptions:
     return CommonOptions(
         config=config_path,
         dry_run=config_dry_run if cli_dry_run is None else cli_dry_run,
+        dry_run_explicit=dry_run_explicit,
         verbose=verbose,
         debug=debug,
         log_file=_cli_path(getattr(args, "log_file", None)) or config_log_file,
@@ -315,15 +362,25 @@ def resolve_common_options(args: argparse.Namespace) -> CommonOptions:
         timezone=config_timezone or DEFAULT_TIMEZONE,
         ps_api_key_file=_cli_path(getattr(args, "ps_api_key_file", None))
         or config_ps_api_key_file
-        or DEFAULT_PS_API_KEY_FILE,
+        or default_ps_api_key_file(),
         ps_cache_dir=_cli_path(getattr(args, "ps_cache_dir", None))
         or config_ps_cache_dir
-        or DEFAULT_PS_CACHE_DIR,
+        or default_ps_cache_dir(),
         ps_cache_limit=(
             _validate_cache_limit(getattr(args, "ps_cache_limit", None))
             if getattr(args, "ps_cache_limit", None)
             else config_ps_cache_limit or DEFAULT_PS_CACHE_LIMIT
         ),
+    )
+
+
+def require_explicit_write_mode(options: CommonOptions, tool_name: str) -> None:
+    """Require mutating tools to state dry-run or live-write intent explicitly."""
+    if options.dry_run_explicit:
+        return
+    raise ConfigError(
+        f"{tool_name} can modify external systems; set common.dry_run to true "
+        "for a dry run or false for live writes, or pass --dry-run/--no-dry-run"
     )
 
 

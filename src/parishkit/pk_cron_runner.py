@@ -22,9 +22,9 @@ from pathlib import Path
 from typing import Any
 
 from parishkit.cli import (
-    DEFAULT_CONFIG_DIR,
-    DEFAULT_RUN_DIR,
     add_common_arguments,
+    default_config_dir,
+    default_run_dir,
     resolve_common_options,
 )
 from parishkit.config import ConfigData, ConfigError, load_yaml_config
@@ -36,8 +36,9 @@ EXIT_CONFIG_ERROR = 2
 EXIT_LOCKED = 3
 EXIT_TIMEOUT = 4
 
-DEFAULT_RUNNER_CONFIG = DEFAULT_CONFIG_DIR / "runner.yaml"
-DEFAULT_LOCK_FILE = DEFAULT_RUN_DIR / "runner.lock"
+DEFAULT_RUNNER_CONFIG = default_config_dir() / "runner.yaml"
+_IMPORTED_DEFAULT_RUNNER_CONFIG = DEFAULT_RUNNER_CONFIG
+DEFAULT_LOCK_FILE = default_run_dir() / "runner.lock"
 SENSITIVE_WORDS = ("TOKEN", "SECRET", "PASSWORD", "PASS", "KEY", "CREDENTIAL", "AUTH")
 
 
@@ -49,7 +50,7 @@ class LockConfig:
     abandoned; ``stale_action`` chooses what to do when a stale lock is found.
     """
 
-    path: Path = DEFAULT_LOCK_FILE
+    path: Path = field(default_factory=lambda: default_run_dir() / "runner.lock")
     stale_after: timedelta | None = None
     stale_action: str = "exit-and-alert"
 
@@ -292,7 +293,9 @@ def parse_runner_config(
     if not isinstance(slack_data, dict):
         raise ConfigError("slack must be a mapping")
 
-    lock_path = _path(lock_data.get("path"), "lock.path") or DEFAULT_LOCK_FILE
+    lock_path = _path(lock_data.get("path"), "lock.path") or (
+        default_run_dir() / "runner.lock"
+    )
     # Relative paths are resolved against the config file's directory so a
     # config remains portable regardless of the process working directory.
     if base_dir and not lock_path.is_absolute():
@@ -706,7 +709,7 @@ def _single_command_config(args: argparse.Namespace) -> RunnerConfig:
     """Build runner config for direct command mode."""
     if not args.command:
         raise ConfigError("--command requires at least one command argument")
-    lock_path = args.lock_file or DEFAULT_LOCK_FILE
+    lock_path = args.lock_file or default_run_dir() / "runner.lock"
     stale_after = (
         timedelta(seconds=parse_duration(args.stale_after))
         if args.stale_after
@@ -850,9 +853,9 @@ def _load_or_build_config(
         return load_runner_config(config_path)
     if args.command is not None:
         return _single_command_config(args)
+    default_config = _default_runner_config_path()
     raise RunnerConfigError(
-        f"no runner config found at {DEFAULT_RUNNER_CONFIG}; "
-        "provide --config or --command"
+        f"no runner config found at {default_config}; provide --config or --command"
     )
 
 
@@ -900,9 +903,17 @@ def _effective_config_path(args: argparse.Namespace) -> Path | None:
         return Path(args.config).expanduser().resolve()
     if args.command is not None:
         return None
-    if DEFAULT_RUNNER_CONFIG.exists():
-        return DEFAULT_RUNNER_CONFIG
+    default_config = _default_runner_config_path()
+    if default_config.exists():
+        return default_config
     return None
+
+
+def _default_runner_config_path() -> Path:
+    """Return the current default runner config, preserving test monkeypatches."""
+    if DEFAULT_RUNNER_CONFIG != _IMPORTED_DEFAULT_RUNNER_CONFIG:
+        return DEFAULT_RUNNER_CONFIG
+    return default_config_dir() / "runner.yaml"
 
 
 def _log_summary(

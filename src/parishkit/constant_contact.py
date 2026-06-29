@@ -294,7 +294,15 @@ def _validate_access_token(access_token: dict[str, Any]) -> None:
 
 def load_client_id(path: str | Path) -> dict[str, Any]:
     """Load the OAuth client-id JSON file into a dict."""
-    return json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
+    client_path = Path(path).expanduser()
+    try:
+        client_id = json.loads(client_path.read_text(encoding="utf-8"))
+    except (OSError, JSONDecodeError) as exc:
+        raise ConfigError(
+            f"invalid Constant Contact client ID file {client_path}: {exc}"
+        ) from exc
+    _validate_client_id(client_id)
+    return client_id
 
 
 def set_valid_from_to(start: dt.datetime, response: dict[str, Any]) -> None:

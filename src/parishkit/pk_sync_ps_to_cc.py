@@ -11,15 +11,16 @@ import json
 import logging
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from parishkit.cli import (
-    DEFAULT_RUN_DIR,
+    default_run_dir,
     parser_with_common_options,
+    require_explicit_write_mode,
     resolve_common_options,
     run_user_facing,
 )
@@ -38,11 +39,15 @@ from parishkit.constant_contact import (
 from parishkit.email.base import Email, EmailProvider, provider_from_config
 from parishkit.files import atomic_write_text
 from parishkit.logging import log_extra, setup_logging
-from parishkit.parishsoft import ParishSoftData, load_families_and_members
+from parishkit.parishsoft import (
+    ParishSoftData,
+    load_families_and_members,
+    member_email_addresses,
+)
 from parishkit.parishsoft_runtime import parishsoft_client_from_config
 
 DEFAULT_UNSUBSCRIBED_REPORT_STATE = (
-    DEFAULT_RUN_DIR / "pk-sync-ps-to-cc-unsubscribed-report.json"
+    default_run_dir() / "pk-sync-ps-to-cc-unsubscribed-report.json"
 )
 DEFAULT_UNSUBSCRIBED_REPORT_TIME = dt.time(hour=2)
 DEFAULT_UNSUBSCRIBED_REPORT_WINDOW_MINUTES = 60
@@ -62,6 +67,11 @@ WEEKDAY_NAMES = {
     "sunday": 6,
     "sun": 6,
 }
+
+
+def default_unsubscribed_report_state() -> Path:
+    """Return the current default Constant Contact report state path."""
+    return default_run_dir() / "pk-sync-ps-to-cc-unsubscribed-report.json"
 
 
 @dataclass(frozen=True)
@@ -92,7 +102,9 @@ class CCUnsubscribedReportConfig:
     day_of_week: int | None = None
     time: dt.time = DEFAULT_UNSUBSCRIBED_REPORT_TIME
     window_minutes: int = DEFAULT_UNSUBSCRIBED_REPORT_WINDOW_MINUTES
-    state_file: Path = DEFAULT_UNSUBSCRIBED_REPORT_STATE
+    state_file: Path = field(
+        default_factory=lambda: default_unsubscribed_report_state()
+    )
 
 
 @dataclass(frozen=True)
@@ -218,6 +230,7 @@ def _run(
         slack_level=common.slack_log_level,
     )
     try:
+        require_explicit_write_mode(common, "pk-sync-ps-to-cc")
         config_base_dir = common.config.parent if common.config else None
         sync_config = cc_sync_config_from_yaml(config, base_dir=config_base_dir)
         # CLI flags can only turn the toggles on, never off: a command-line opt-in
@@ -524,8 +537,10 @@ def resolve_desired_state(
             member = data.members.get(member_id)
             # Use only the member's primary (first) email; members without any
             # email simply contribute nothing to the desired set.
-            if member and member.get("py emailAddresses"):
-                emails.add(str(member["py emailAddresses"][0]).lower())
+            if member:
+                addresses = member_email_addresses(member)
+                if addresses:
+                    emails.add(addresses[0])
         desired.append(emails)
     return desired
 
@@ -1429,8 +1444,8 @@ def parishsoft_members_by_email(
     """
     by_email: dict[str, list[dict[str, Any]]] = {}
     for member in members.values():
-        for email in member.get("py emailAddresses", []):
-            by_email.setdefault(str(email).lower(), []).append(member)
+        for email in member_email_addresses(member):
+            by_email.setdefault(email, []).append(member)
     return by_email
 
 
@@ -1476,7 +1491,7 @@ def _unsubscribed_report_config(
             f"{name}.window_minutes",
         ),
         state_file=_path(
-            item.get("state_file", DEFAULT_UNSUBSCRIBED_REPORT_STATE),
+            item.get("state_file", default_unsubscribed_report_state()),
             f"{name}.state_file",
             base_dir=base_dir,
         ),

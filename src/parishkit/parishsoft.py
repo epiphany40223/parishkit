@@ -17,6 +17,7 @@ import hashlib
 import json
 import logging
 import time
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -513,10 +514,9 @@ def normalize_family_email(family: dict[str, Any]) -> None:
     """
     value = family.get("eMailAddress")
     if value:
-        family["eMailAddress"] = value.lower()
-        family["py eMailAddresses"] = [
-            item.strip() for item in value.lower().split(";")
-        ]
+        addresses = split_email_addresses(value)
+        family["eMailAddress"] = "; ".join(addresses)
+        family["py eMailAddresses"] = addresses
 
 
 def normalize_member_email(member: dict[str, Any]) -> None:
@@ -527,13 +527,12 @@ def normalize_member_email(member: dict[str, Any]) -> None:
     """
     value = member.get("emailAddress")
     if value:
-        member["emailAddress"] = value.lower()
-        member["py emailAddresses"] = [
-            item.strip() for item in value.lower().split(";")
-        ]
+        addresses = split_email_addresses(value)
+        member["emailAddress"] = "; ".join(addresses)
+        member["py emailAddresses"] = addresses
 
 
-def member_email_addresses(member: dict[str, Any]) -> list[str]:
+def member_email_addresses(member: Mapping[str, Any]) -> list[str]:
     """Return all email addresses for a member as a cleaned, lowercased list.
 
     Prefers the pre-split ``"py emailAddresses"`` list when present; otherwise
@@ -542,11 +541,30 @@ def member_email_addresses(member: dict[str, Any]) -> list[str]:
     """
     emails = member.get("py emailAddresses")
     if isinstance(emails, list):
-        return emails
+        return split_email_addresses([str(email) for email in emails])
     value = member.get("emailAddress")
     if value:
-        return [item.strip().lower() for item in value.split(";") if item.strip()]
+        return split_email_addresses(value)
     return []
+
+
+def split_email_addresses(value: str | Sequence[str]) -> list[str]:
+    """Split, lowercase, de-duplicate, and drop blank email fragments."""
+    raw_items: list[str] = []
+    if isinstance(value, str):
+        raw_items = value.split(";")
+    else:
+        for item in value:
+            raw_items.extend(item.split(";"))
+    addresses: list[str] = []
+    seen: set[str] = set()
+    for item in raw_items:
+        email = item.strip().lower()
+        if not email or email in seen:
+            continue
+        seen.add(email)
+        addresses.append(email)
+    return addresses
 
 
 def normalize_dates(elements: list[dict[str, Any]], fields: list[str]) -> None:

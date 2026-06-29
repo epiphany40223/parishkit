@@ -14,6 +14,7 @@ from typing import Any
 
 from parishkit.cli import (
     parser_with_common_options,
+    require_explicit_write_mode,
     resolve_common_options,
     run_user_facing,
 )
@@ -34,7 +35,11 @@ from parishkit.google.groups import (
     update_group_member_role,
 )
 from parishkit.logging import log_extra, setup_logging
-from parishkit.parishsoft import ParishSoftData, load_families_and_members
+from parishkit.parishsoft import (
+    ParishSoftData,
+    load_families_and_members,
+    member_email_addresses,
+)
 from parishkit.parishsoft_runtime import parishsoft_client_from_config
 
 ADMIN_SCOPE = "https://www.googleapis.com/auth/admin.directory.group.member"
@@ -247,6 +252,7 @@ def _run(
         slack_level=common.slack_log_level,
     )
     try:
+        require_explicit_write_mode(common, "pk-sync-ps-to-ggroup")
         sync_config = sync_config_from_yaml(config)
         log.info("Configured %s Google Group sync(s)", len(sync_config.groups))
         log.debug(
@@ -416,7 +422,7 @@ def sync_group(
     actions without performing any side effects. The returned action list is
     the same whether or not it was applied.
     """
-    desired = desired_members(data, group)
+    desired = desired_members(data, group, config.google_mail_domains)
     log.info("Computed %s desired member(s) for %s", len(desired), group.group)
     log.debug(
         "Desired members for %s: %s",
@@ -565,7 +571,11 @@ def selector_matches_any_ministry_name(
     )
 
 
-def desired_members(data: ParishSoftData, group: GroupSync) -> list[DesiredMember]:
+def desired_members(
+    data: ParishSoftData,
+    group: GroupSync,
+    google_mail_domains: frozenset[str] = frozenset(),
+) -> list[DesiredMember]:
     """Build the desired Google group member set from data plus static members.
 
     Each ParishSoft member matching the group is keyed by their primary email
@@ -578,18 +588,25 @@ def desired_members(data: ParishSoftData, group: GroupSync) -> list[DesiredMembe
         is_member, is_leader = member_matches_group(member, group)
         if not is_member and not is_leader:
             continue
-        emails = member.get("py emailAddresses") or []
+        emails = member_email_addresses(member)
         if not emails:
             continue
         # Use only the first (primary) email; a person maps to one group entry.
         add_desired_member(
             found,
-            str(emails[0]).lower(),
+            emails[0],
             is_leader,
             member.get("py friendly name FL") or member_display_name(member),
+            google_mail_domains=google_mail_domains,
         )
     for static_member in group.static_members:
-        add_desired_member(found, static_member.email, static_member.leader, None)
+        add_desired_member(
+            found,
+            static_member.email,
+            static_member.leader,
+            None,
+            google_mail_domains=google_mail_domains,
+        )
     return list(found.values())
 
 
@@ -908,14 +925,17 @@ def add_desired_member(
     email: str,
     leader: bool,
     name: str | None,
+    *,
+    google_mail_domains: frozenset[str] = frozenset(),
 ) -> None:
-    """Insert or merge a desired member into ``found`` keyed by lowercase email.
+    """Insert or merge a desired member into ``found`` keyed by comparable email.
 
     If the email is already present, leadership is OR-ed in (any leader source
     wins) and the name, if given, is appended to that member's name list rather
     than overwriting. Otherwise a new ``DesiredMember`` is created.
     """
-    normalized = email.lower()
+    display_email = email.lower()
+    normalized = normalize_email(display_email, google_mail_domains)
     existing = found.get(normalized)
     if existing:
         existing.leader = existing.leader or leader
@@ -923,7 +943,7 @@ def add_desired_member(
             existing.names.append(name)
     else:
         found[normalized] = DesiredMember(
-            email=normalized,
+            email=display_email,
             leader=leader,
             names=[name] if name else [],
         )
@@ -989,8 +1009,9 @@ def selector_matches_member(
                 ministry,
                 selector,
             ):
-                email = str(member.get("emailAddress") or "")
-                domain = email.rsplit("@", 1)[-1].lower() if "@" in email else ""
+                emails = member_email_addresses(member)
+                email = emails[0] if emails else ""
+                domain = email.rsplit("@", 1)[-1] if "@" in email else ""
                 return True, domain in selector.staff_owner_domains
         return False, False
     if selector.type == "ministry_chair":

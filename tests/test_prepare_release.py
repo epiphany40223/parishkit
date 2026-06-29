@@ -208,6 +208,31 @@ def test_workflow_release_notes_path_excludes_current_tag(monkeypatch):
     assert ["log", "--format=%s%x1f%b%x1e", "v1.2.3..HEAD"] in calls
 
 
+def test_auto_bump_requires_explicit_bump_for_unclassified_commits(monkeypatch):
+    """Auto bump fails when post-release commits have no semver classification."""
+    release = load_release_module()
+
+    def fake_git(args):
+        """Stub git so a docs-only post-release history is visible."""
+        if args == ["tag", "--merged", "HEAD", "--list", "v*"]:
+            return "v1.2.3"
+        if args[:2] == ["cat-file", "-t"]:
+            return "tag"
+        if args == ["log", "--format=%s%x1f%b%x1e", "v1.2.3..HEAD"]:
+            return "Update deployment notes\x1f\x1e"
+        raise AssertionError(args)
+
+    monkeypatch.setattr(release, "run_git", fake_git)
+    monkeypatch.setattr(release, "read_project_version", lambda: "1.2.3")
+
+    try:
+        release.build_release_plan(release_args())
+    except RuntimeError as exc:
+        assert "--bump" in str(exc)
+    else:
+        raise AssertionError("expected explicit bump/version requirement")
+
+
 def test_tag_prerequisites_reject_dirty_worktree(monkeypatch):
     """Verify tag validation refuses to tag when the worktree is dirty."""
     release = load_release_module()

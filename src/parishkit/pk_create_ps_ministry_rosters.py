@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 
 from parishkit.cli import (
     parser_with_common_options,
+    require_explicit_write_mode,
     resolve_common_options,
     run_user_facing,
 )
@@ -168,6 +169,7 @@ def _run(
         slack_level=common.slack_log_level,
     )
     try:
+        require_explicit_write_mode(common, "pk-create-ps-ministry-rosters")
         config = load_yaml_config(common.config)
         roster_config = roster_config_from_yaml(config)
         log.info(
@@ -198,16 +200,18 @@ def _run(
         )
         validate_configured_parishsoft_sources(data, roster_config)
         log.debug("Dry-run mode is %s", "enabled" if common.dry_run else "disabled")
-        sheets_service = (
-            sheets_factory(config)
-            if sheets_factory is not None
-            else build_sheets_service(
-                load_sheets_credentials(
-                    config,
-                    base_dir=common.config.parent if common.config else None,
+        sheets_service = None
+        if not common.dry_run:
+            sheets_service = (
+                sheets_factory(config)
+                if sheets_factory is not None
+                else build_sheets_service(
+                    load_sheets_credentials(
+                        config,
+                        base_dir=common.config.parent if common.config else None,
+                    )
                 )
             )
-        )
         write_configured_rosters(
             sheets_service,
             data,

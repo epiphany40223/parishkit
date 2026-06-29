@@ -141,6 +141,11 @@ ParishKit's built-in defaults.
 Use `common.timezone` in YAML config for user-visible local timestamps. It
 defaults to `America/Kentucky/Louisville`.
 
+Commands that can modify external systems fail closed unless write intent is
+explicit. Set `common.dry_run: true` for a dry run, set
+`common.dry_run: false` for live writes, or pass `--dry-run` / `--no-dry-run`
+on the command line.
+
 ## Linux and macOS Install
 
 Use the top-level `install.py` script from a ParishKit checkout to create the
@@ -425,8 +430,9 @@ tools/prepare-release.py \
 
 The tool infers semver impact from commit messages. `feat:` commits select a
 minor bump, `fix:` and `perf:` commits select a patch bump, and commits with
-`!` or `BREAKING CHANGE:` select a major bump. Use `--bump` or `--version` when
-the automated choice needs human correction.
+`!` or `BREAKING CHANGE:` select a major bump. If post-release commits do not
+declare a semver impact, release prep exits with instructions; rerun with
+`--bump` or `--version` when the automated choice needs human correction.
 
 Creating a local annotated tag is explicit:
 

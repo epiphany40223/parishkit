@@ -180,6 +180,18 @@ def build_release_plan(args: argparse.Namespace) -> ReleasePlan:
     previous_tag = latest_annotated_release_tag(exclude_tag=excluded_tag)
     commits = commits_since(previous_tag)
     detected_bump = determine_bump(commits)
+    if (
+        args.bump == "auto"
+        and args.version is None
+        and not args.tag
+        and previous_tag is not None
+        and commits
+        and detected_bump == "none"
+    ):
+        raise RuntimeError(
+            "could not infer a release bump from commit messages; rerun with "
+            "--bump patch|minor|major|none or --version VERSION"
+        )
     bump = detected_bump if args.bump == "auto" else args.bump
 
     release_version = select_release_version(

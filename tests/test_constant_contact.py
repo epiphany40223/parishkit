@@ -16,6 +16,7 @@ from parishkit.constant_contact import (
     link_cc_data,
     link_contacts_to_ps_members,
     load_access_token,
+    load_client_id,
     run_device_oauth_flow,
     save_access_token,
     set_valid_from_to,
@@ -192,6 +193,24 @@ def test_load_access_token_rejects_bad_shape(tmp_path):
 
     with pytest.raises(ConfigError, match="missing"):
         load_access_token(path)
+
+
+def test_load_client_id_rejects_malformed_json(tmp_path):
+    """A malformed Constant Contact client ID file raises ConfigError."""
+    path = tmp_path / "client-id.json"
+    path.write_text("{not json", encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="invalid Constant Contact client ID file"):
+        load_client_id(path)
+
+
+def test_load_client_id_rejects_bad_shape(tmp_path):
+    """A client ID file missing endpoints.api raises ConfigError."""
+    path = tmp_path / "client-id.json"
+    path.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="endpoints.api"):
+        load_client_id(path)
 
 
 def test_refresh_access_token_rejects_non_json_response(tmp_path):

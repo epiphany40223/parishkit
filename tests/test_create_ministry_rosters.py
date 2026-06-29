@@ -596,6 +596,34 @@ def test_create_ministry_rosters_dry_run_skips_sheet_writes(tmp_path, monkeypatc
     assert service._spreadsheets.batch_update_calls == []
 
 
+def test_create_ministry_rosters_dry_run_does_not_require_google_config(
+    tmp_path,
+    monkeypatch,
+):
+    """Dry-run roster generation does not build a Google Sheets service."""
+    config = write_config(tmp_path, dry_run=True)
+    text = config.read_text(encoding="utf-8")
+    config.write_text(
+        text.replace(
+            f"google:\n  user_token_file: {tmp_path / 'google-user-token.json'}\n",
+            "",
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_create_ps_ministry_rosters.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        create_ministry_rosters_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+        )
+        == 0
+    )
+
+
 def test_create_ministry_rosters_reports_missing_parishsoft_source(
     tmp_path,
     monkeypatch,
@@ -685,7 +713,10 @@ def test_create_ministry_rosters_reports_invalid_yaml(tmp_path, capsys):
 def test_create_ministry_rosters_logs_config_validation_error(tmp_path, capsys):
     """Roster config validation failures are logged as ERROR before exit."""
     config = tmp_path / "config.yaml"
-    config.write_text("rosters:\n  ministries: []\n", encoding="utf-8")
+    config.write_text(
+        "common:\n  dry_run: true\nrosters:\n  ministries: []\n",
+        encoding="utf-8",
+    )
 
     assert create_ministry_rosters_main(["--config", str(config)]) == 2
 
