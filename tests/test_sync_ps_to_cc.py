@@ -71,12 +71,28 @@ class EmailProvider:
         return message
 
 
+class FailingEmailProvider(EmailProvider):
+    """Fake email provider that fails for selected message subjects."""
+
+    def __init__(self, fail_subject_contains: str):
+        """Store the subject fragment that should raise an OSError."""
+        super().__init__()
+        self.fail_subject_contains = fail_subject_contains
+
+    def send(self, message, *, dry_run=False):
+        """Record successful messages and fail matching subjects."""
+        if self.fail_subject_contains in message.subject:
+            raise OSError(f"forced email failure for {message.subject}")
+        return super().send(message, dry_run=dry_run)
+
+
 def write_config(
     tmp_path: Path,
     *,
     dry_run: bool = False,
     unsubscribed_report: bool = False,
     unsubscribed_report_day: str | None = None,
+    state_file: str | Path | None = None,
 ) -> Path:
     """Write a complete contacts YAML config under tmp_path.
 
@@ -89,6 +105,7 @@ def write_config(
     api_key = tmp_path / "parishsoft-api-key.txt"
     api_key.write_text("key", encoding="utf-8")
     config = tmp_path / "config.yaml"
+    state_file_value = state_file or (tmp_path / "unsubscribed-report-state.json")
     config.write_text(
         f"""
 common:
@@ -113,7 +130,7 @@ sync:
     day_of_week: {unsubscribed_report_day or "null"}
     time: "02:00"
     window_minutes: 60
-    state_file: {tmp_path / "unsubscribed-report-state.json"}
+    state_file: {state_file_value}
   lists:
     - source_workgroup: Newsletter WG
       target_list: Newsletter
@@ -237,8 +254,9 @@ def cc_contacts():
     ]
 
 
-def cc_contacts_without_sync_actions():
+def cc_contacts_without_sync_actions(*, ann_lists: list[str] | None = None):
     """Return contacts where only Bob's unsubscribed status needs reporting."""
+    ann_memberships = ann_lists or ["list-1"]
     return [
         {
             "contact_id": "contact-ann",
@@ -248,7 +266,7 @@ def cc_contacts_without_sync_actions():
             },
             "first_name": "Ann",
             "last_name": "Smith",
-            "list_memberships": ["list-1"],
+            "list_memberships": ann_memberships,
         },
         {
             "contact_id": "contact-bob",
@@ -259,6 +277,22 @@ def cc_contacts_without_sync_actions():
             "first_name": "Bob",
             "last_name": "Jones",
             "list_memberships": [],
+        },
+    ]
+
+
+def cc_lists_without_sync_actions():
+    """Return a fixture where Ann is already on both report target lists."""
+    return [
+        {
+            "list_id": "list-1",
+            "name": "Newsletter",
+            "CONTACTS": {"ann@example.org": {}},
+        },
+        {
+            "list_id": "list-2",
+            "name": "Second Newsletter",
+            "CONTACTS": {"ann@example.org": {}},
         },
     ]
 
@@ -320,6 +354,31 @@ def test_cc_sync_config_accepts_unsubscribed_report_schedule(tmp_path):
     assert config.unsubscribed_report.time.minute == 15
     assert config.unsubscribed_report.window_minutes == 30
     assert config.unsubscribed_report.state_file == tmp_path / "state.json"
+
+
+def test_cc_sync_config_resolves_relative_report_state_path(tmp_path):
+    """Relative report state paths resolve against the config file directory."""
+    config = cc_sync_config_from_yaml(
+        {
+            "sync": {
+                "unsubscribed_report": {
+                    "enabled": True,
+                    "state_file": "run/unsubscribed-report-state.json",
+                },
+                "lists": [
+                    {
+                        "source_workgroup": "Newsletter WG",
+                        "target_list": "Newsletter",
+                    }
+                ],
+            }
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.unsubscribed_report.state_file == (
+        tmp_path / "run" / "unsubscribed-report-state.json"
+    )
 
 
 def test_cc_sync_config_rejects_missing_lists():
@@ -501,6 +560,50 @@ def test_sync_ps_to_cc_sends_due_unsubscribed_report_once(tmp_path, monkeypatch)
     )
 
 
+def test_sync_ps_to_cc_relative_report_state_uses_config_dir(
+    tmp_path,
+    monkeypatch,
+):
+    """Cron cwd changes must not move the report state file."""
+    cc = CCClient(contacts=cc_contacts_without_sync_actions())
+    email = EmailProvider()
+    config = write_config(
+        tmp_path,
+        unsubscribed_report=True,
+        unsubscribed_report_day="sunday",
+        state_file="run/unsubscribed-report-state.json",
+    )
+    cwd = tmp_path / "elsewhere"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    now = dt.datetime(
+        2026,
+        6,
+        28,
+        2,
+        5,
+        tzinfo=ZoneInfo("America/Kentucky/Louisville"),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_cc.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_ps_to_cc_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            cc_factory=lambda _config: cc,
+            email_provider=email,
+            now=now,
+        )
+        == 0
+    )
+
+    assert (tmp_path / "run" / "unsubscribed-report-state.json").exists()
+    assert not (cwd / "run" / "unsubscribed-report-state.json").exists()
+
+
 def test_sync_ps_to_cc_scheduled_report_suppresses_regular_unsubscribed_notice(
     tmp_path,
     monkeypatch,
@@ -552,13 +655,62 @@ def test_sync_ps_to_cc_scheduled_report_suppresses_regular_unsubscribed_notice(
     ]
 
 
+def test_sync_ps_to_cc_scheduled_report_notice_explains_filtered_count(
+    tmp_path,
+    monkeypatch,
+):
+    """Regular emails do not claim zero filtered contacts when details move."""
+    cc = CCClient()
+    email = EmailProvider()
+    config = write_config(
+        tmp_path,
+        unsubscribed_report=True,
+        unsubscribed_report_day="monday",
+    )
+    sunday = dt.datetime(
+        2026,
+        6,
+        28,
+        2,
+        5,
+        tzinfo=ZoneInfo("America/Kentucky/Louisville"),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_cc.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_ps_to_cc_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            cc_factory=lambda _config: cc,
+            email_provider=email,
+            now=sunday,
+        )
+        == 0
+    )
+
+    sync_messages = [
+        message
+        for message, _dry_run in email.sent
+        if message.subject == "Constant Contact sync update: Newsletter"
+    ]
+    assert len(sync_messages) == 1
+    assert (
+        "Unsubscribed contacts filtered: 1 (handled by scheduled report)"
+        in sync_messages[0].text
+    )
+    assert "Unsubscribed contacts filtered: 0" not in sync_messages[0].text
+
+
 def test_sync_ps_to_cc_due_unsubscribed_report_requires_sender(
     tmp_path,
     monkeypatch,
     capsys,
 ):
     """A due report with recipients but no sender is a config error."""
-    cc = CCClient(contacts=cc_contacts_without_sync_actions())
+    cc = CCClient()
     email = EmailProvider()
     config = write_config(
         tmp_path,
@@ -600,6 +752,186 @@ def test_sync_ps_to_cc_due_unsubscribed_report_requires_sender(
     assert "ERROR parishkit.pk_sync_ps_to_cc" in error
     assert "sync.notifications.sender is required" in error
     assert email.sent == []
+    assert [call[0] for call in cc.calls] == ["get_all", "get_all"]
+
+
+def test_sync_ps_to_cc_due_unsubscribed_report_requires_recipients(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    """A due report with filtered contacts but no recipients is a config error."""
+    cc = CCClient()
+    email = EmailProvider()
+    config = write_config(
+        tmp_path,
+        unsubscribed_report=True,
+        unsubscribed_report_day="sunday",
+    )
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "      notifications:\n        - admin@example.org\n",
+            "      notifications: []\n",
+        ),
+        encoding="utf-8",
+    )
+    now = dt.datetime(
+        2026,
+        6,
+        28,
+        2,
+        5,
+        tzinfo=ZoneInfo("America/Kentucky/Louisville"),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_cc.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_ps_to_cc_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            cc_factory=lambda _config: cc,
+            email_provider=email,
+            now=now,
+        )
+        == 2
+    )
+
+    error = capsys.readouterr().err
+    assert "ERROR parishkit.pk_sync_ps_to_cc" in error
+    assert "sync.lists[].notifications is required" in error
+    assert email.sent == []
+    assert [call[0] for call in cc.calls] == ["get_all", "get_all"]
+
+
+def test_sync_ps_to_cc_due_unsubscribed_report_preflights_state_path(
+    tmp_path,
+    monkeypatch,
+):
+    """The report must fail before email if the state path cannot be written."""
+    cc = CCClient()
+    email = EmailProvider()
+    blocked_parent = tmp_path / "not-a-directory"
+    blocked_parent.write_text("blocked", encoding="utf-8")
+    config = write_config(
+        tmp_path,
+        unsubscribed_report=True,
+        unsubscribed_report_day="sunday",
+        state_file=blocked_parent / "state.json",
+    )
+    now = dt.datetime(
+        2026,
+        6,
+        28,
+        2,
+        5,
+        tzinfo=ZoneInfo("America/Kentucky/Louisville"),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_cc.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_ps_to_cc_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            cc_factory=lambda _config: cc,
+            email_provider=email,
+            now=now,
+        )
+        == 2
+    )
+
+    assert email.sent == []
+    assert [call[0] for call in cc.calls] == ["get_all", "get_all"]
+
+
+def test_sync_ps_to_cc_unsubscribed_report_retries_only_unsent_mapping(
+    tmp_path,
+    monkeypatch,
+):
+    """Per-list report state prevents duplicate reports after partial failure."""
+    cc = CCClient(
+        lists=cc_lists_without_sync_actions(),
+        contacts=cc_contacts_without_sync_actions(ann_lists=["list-1", "list-2"]),
+    )
+    first_email = FailingEmailProvider("Second Newsletter")
+    config = write_config(
+        tmp_path,
+        unsubscribed_report=True,
+        unsubscribed_report_day="sunday",
+    )
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "    - source_workgroup: Newsletter WG\n"
+            "      target_list: Newsletter\n"
+            "      notifications:\n"
+            "        - admin@example.org\n",
+            "    - source_workgroup: Newsletter WG\n"
+            "      target_list: Newsletter\n"
+            "      notifications:\n"
+            "        - admin@example.org\n"
+            "    - source_workgroup: Newsletter WG\n"
+            "      target_list: Second Newsletter\n"
+            "      notifications:\n"
+            "        - admin@example.org\n",
+        ),
+        encoding="utf-8",
+    )
+    now = dt.datetime(
+        2026,
+        6,
+        28,
+        2,
+        5,
+        tzinfo=ZoneInfo("America/Kentucky/Louisville"),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_cc.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_ps_to_cc_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            cc_factory=lambda _config: cc,
+            email_provider=first_email,
+            now=now,
+        )
+        == 2
+    )
+
+    first_subjects = [message.subject for message, _dry_run in first_email.sent]
+    assert first_subjects == [
+        "Constant Contact unsubscribed contacts report: Newsletter"
+    ]
+
+    second_email = EmailProvider()
+    assert (
+        sync_ps_to_cc_main(
+            ["--config", str(config)],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            cc_factory=lambda _config: cc,
+            email_provider=second_email,
+            now=now,
+        )
+        == 0
+    )
+
+    second_subjects = [message.subject for message, _dry_run in second_email.sent]
+    assert second_subjects == [
+        "Constant Contact unsubscribed contacts report: Second Newsletter"
+    ]
+    state_text = (tmp_path / "unsubscribed-report-state.json").read_text(
+        encoding="utf-8"
+    )
+    assert "Newsletter" in state_text
+    assert "Second Newsletter" in state_text
+    assert "last_sent_date" in state_text
 
 
 def test_sync_ps_to_cc_unsubscribed_report_waits_for_configured_weekday(
@@ -705,7 +1037,7 @@ def test_sync_ps_to_cc_reports_missing_parishsoft_workgroup(
     assert "ERROR parishkit.pk_sync_ps_to_cc" in error
     assert "Configured ParishSoft member workgroup was not found" in error
     assert "sync.lists[].source_workgroup" in error
-    assert [call[0] for call in cc.calls] == ["get_all", "get_all"]
+    assert cc.calls == []
 
 
 def test_sync_ps_to_cc_reports_missing_constant_contact_list(
