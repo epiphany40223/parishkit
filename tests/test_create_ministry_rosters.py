@@ -565,12 +565,7 @@ def test_create_ministry_rosters_main_writes_sheet_values(
     assert calls[2][1]["body"]["values"][4][0] == "Smith, Ann"
     assert calls[4][0] == "update"
     assert calls[4][1]["spreadsheetId"] == "movers-sheet"
-    assert service._spreadsheets.get_calls[:3] == [
-        {"spreadsheetId": "default-sheet", "fields": "sheets.properties"},
-        {"spreadsheetId": "lead-sheet", "fields": "sheets.properties"},
-        {"spreadsheetId": "movers-sheet", "fields": "sheets.properties"},
-    ]
-    assert service._spreadsheets.get_calls[3:] == [
+    assert service._spreadsheets.get_calls == [
         {"spreadsheetId": "default-sheet", "fields": "sheets.properties"},
         {"spreadsheetId": "lead-sheet", "fields": "sheets.properties"},
         {"spreadsheetId": "movers-sheet", "fields": "sheets.properties"},
@@ -633,6 +628,38 @@ def test_create_ministry_rosters_preflights_missing_sheet_before_writes(
     assert (
         create_ministry_rosters_main(
             ["--config", str(write_config(tmp_path))],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            sheets_factory=lambda _config: service,
+        )
+        == 2
+    )
+
+    assert service._spreadsheets._values.calls == []
+    assert service._spreadsheets.batch_update_calls == []
+
+
+def test_create_ministry_rosters_plans_generated_width_before_writes(
+    tmp_path,
+    monkeypatch,
+):
+    """A too-narrow later target fails before any earlier roster writes."""
+    service = SheetsService()
+    config = write_config(tmp_path)
+    config.write_text(
+        config.read_text(encoding="utf-8").replace(
+            "clear_range: Movers!A:Z",
+            "clear_range: Movers!A:C",
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_create_ps_ministry_rosters.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        create_ministry_rosters_main(
+            ["--config", str(config)],
             loader=lambda _client, **_kwargs: parishsoft_data(),
             sheets_factory=lambda _config: service,
         )

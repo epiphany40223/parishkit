@@ -529,6 +529,26 @@ def test_sync_group_refuses_empty_desired_state_with_current_members():
         )
 
 
+def test_sync_group_plans_without_mutating_google_group():
+    """The compatibility helper returns actions but leaves writes to apply phase."""
+    group = GroupSync(group="group@example.org", notify=(), workgroups=("Movers",))
+    admin = AdminService()
+
+    actions = sync_group(
+        admin,
+        SettingsService(),
+        None,
+        parishsoft_data(),
+        SyncConfig(groups=(group,), sender=None, google_mail_domains=frozenset()),
+        group,
+        dry_run=False,
+        log=logging.getLogger("test"),
+    )
+
+    assert actions
+    assert [call[0] for call in admin._members.calls] == ["list"]
+
+
 def test_all_ministry_chairs_selector_can_filter_ministry_names_by_pattern():
     """ministry_pattern limits broad all_ministry_chairs selection by ministry name."""
     data = parishsoft_data()

@@ -487,13 +487,12 @@ def sync_group(
     log: logging.Logger,
     email_provider_factory: Callable[[], EmailProvider] | None = None,
 ) -> list[SyncAction]:
-    """Synchronize one configured Google group and return its actions.
+    """Plan one configured Google group and return its actions.
 
     Computes the desired-vs-current diff and always logs the resulting
-    actions. When ``dry_run`` is false it also writes the changes to Google and
-    sends the notification email; in dry-run mode it computes and returns the
-    actions without performing any side effects. The returned action list is
-    the same whether or not it was applied.
+    actions. This compatibility helper intentionally performs no Google
+    writes; callers that need mutation should call ``plan_group`` for every
+    configured group first, then apply those plans with ``apply_group_plan``.
     """
     plan = plan_group(
         admin_service,
@@ -505,13 +504,6 @@ def sync_group(
         dry_run=dry_run,
         log=log,
         email_provider_factory=email_provider_factory,
-    )
-    apply_group_plan(
-        admin_service,
-        config,
-        plan,
-        dry_run=dry_run,
-        log=log,
     )
     return list(plan.actions)
 
@@ -578,7 +570,7 @@ def plan_group(
     if (
         email_provider is None
         and email_provider_factory is not None
-        and group_notification_will_send(True, config, group, actions)
+        and group_has_notification_content(config, group, actions)
     ):
         email_provider = email_provider_factory()
     should_notify = group_notification_will_send(email_provider, config, group, actions)
@@ -621,13 +613,22 @@ def apply_group_plan(
 
 
 def group_notification_will_send(
-    provider: EmailProvider | bool | None,
+    provider: EmailProvider | None,
     config: SyncConfig,
     group: GroupSync,
     actions: Sequence[SyncAction],
 ) -> bool:
     """Return whether a Google Group sync notification will actually be sent."""
-    return bool(provider and config.sender and group.notify and actions)
+    return bool(provider and group_has_notification_content(config, group, actions))
+
+
+def group_has_notification_content(
+    config: SyncConfig,
+    group: GroupSync,
+    actions: Sequence[SyncAction],
+) -> bool:
+    """Return whether config and actions warrant building a notification."""
+    return bool(config.sender and group.notify and actions)
 
 
 def validate_large_removal_guard(
