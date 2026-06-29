@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import stat
 
 import pytest
@@ -191,6 +192,38 @@ def test_execute_google_request_maps_permanent_http_error(monkeypatch):
 
     with pytest.raises(GoogleAPIError, match="403"):
         execute_google_request(FakeRequest(), policy=RetryPolicy(attempts=1))
+
+
+def test_execute_google_request_logs_warning_on_http_failure(monkeypatch, caplog):
+    """Google request failures emit a warning before raising."""
+
+    class FakeHttpError(Exception):
+        """Stand-in for googleapiclient HttpError carrying a status code."""
+
+        def __init__(self, status):
+            """Build an error exposing ``resp.status`` like the real HttpError."""
+            self.resp = type("Response", (), {"status": status})()
+            super().__init__(f"HTTP {status}")
+
+    class FakeRequest:
+        """Request that always fails with a permanent Google HTTP error."""
+
+        uri = "https://google.example/request"
+
+        def execute(self):
+            """Raise a permanent HTTP error."""
+            raise FakeHttpError(403)
+
+    monkeypatch.setattr(
+        "parishkit.google.auth._import_google_http_error", lambda: FakeHttpError
+    )
+    caplog.set_level(logging.WARNING, logger="parishkit.google.auth")
+
+    with pytest.raises(GoogleAPIError):
+        execute_google_request(FakeRequest(), policy=RetryPolicy(attempts=1))
+
+    assert "Google API request failed for https://google.example/request" in caplog.text
+    assert "HTTP 403" in caplog.text
 
 
 def test_execute_google_request_exhausts_transient_http_error(monkeypatch):

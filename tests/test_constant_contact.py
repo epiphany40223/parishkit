@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 import stat
 
 import pytest
@@ -138,6 +139,20 @@ def test_api_error_raises_typed_exception():
 
     with pytest.raises(CCAPIError):
         client.post("items", {})
+
+
+def test_api_error_logs_warning(caplog):
+    """A failed Constant Contact REST call emits a warning."""
+    client = ConstantContactClient(
+        config(), session=Session([Response({}, status_code=400)])
+    )
+    caplog.set_level(logging.WARNING, logger="parishkit.constant_contact")
+
+    with pytest.raises(CCAPIError):
+        client.post("items", {})
+
+    assert "Constant Contact API request failed" in caplog.text
+    assert "HTTP 400" in caplog.text
 
 
 def test_post_does_not_retry_transient_create_response():
@@ -414,7 +429,7 @@ def test_refresh_access_token_retries_transient_http_response(tmp_path):
     assert len(session.calls) == 2
 
 
-def test_refresh_access_token_wraps_exhausted_request_failures(tmp_path):
+def test_refresh_access_token_wraps_exhausted_request_failures(tmp_path, caplog):
     """Repeated transient request failures surface as a clean ConfigError."""
     start = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
     token_path = tmp_path / "token.json"
@@ -436,6 +451,8 @@ def test_refresh_access_token_wraps_exhausted_request_failures(tmp_path):
             self.calls.append(("post", url, kwargs))
             raise requests.exceptions.Timeout("network down")
 
+    caplog.set_level(logging.WARNING, logger="parishkit.constant_contact")
+
     with pytest.raises(ConfigError, match="failed after retries"):
         get_access_token(
             token_path,
@@ -449,6 +466,7 @@ def test_refresh_access_token_wraps_exhausted_request_failures(tmp_path):
             session=BrokenSession([]),
             now=start,
         )
+    assert "Constant Contact token refresh request failed" in caplog.text
 
 
 def test_contact_body_helpers_strip_periods():

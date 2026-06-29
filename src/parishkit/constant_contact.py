@@ -21,6 +21,7 @@ import copy
 import datetime as dt
 import fcntl
 import json
+import logging
 import random
 import time
 from dataclasses import dataclass
@@ -34,6 +35,8 @@ from parishkit.config import ConfigError
 from parishkit.files import atomic_write_text
 from parishkit.parishsoft import salutation_for_members
 from parishkit.retry import RetryError, RetryPolicy, TransientRetryError, retry_call
+
+LOGGER = logging.getLogger(__name__)
 
 
 class CCAPIError(RuntimeError):
@@ -210,10 +213,19 @@ class ConstantContactClient:
 
         def call() -> requests.Response:
             """Run one attempt, raising on retryable or fatal HTTP errors."""
-            response = func()
+            try:
+                response = func()
+            except requests.RequestException as exc:
+                LOGGER.warning("Constant Contact API request failed: %s", exc)
+                raise
             # 429 (rate limit) and 5xx are transient; raising a transient error
             # lets retry_call back off and try again rather than failing hard.
             if response.status_code in {429, 500, 502, 503, 504}:
+                LOGGER.warning(
+                    "Constant Contact API request failed for %s with HTTP %s",
+                    response.url,
+                    response.status_code,
+                )
                 raise _TransientCCAPIError(
                     response.status_code,
                     response.text,
@@ -221,6 +233,11 @@ class ConstantContactClient:
                     f"transient Constant Contact HTTP {response.status_code}",
                 )
             if not 200 <= response.status_code <= 299:
+                LOGGER.warning(
+                    "Constant Contact API request failed for %s with HTTP %s",
+                    response.url,
+                    response.status_code,
+                )
                 raise CCAPIError(response.status_code, response.text, response.url)
             return response
 
@@ -410,16 +427,29 @@ def refresh_access_token(
 
     def post_refresh() -> requests.Response:
         """Post the refresh request, classifying retryable HTTP statuses."""
-        refresh_response = http.post(
-            token_url,
-            data={
-                "client_id": cc_client_id,
-                "refresh_token": refresh_token,
-                "grant_type": "refresh_token",
-            },
-            timeout=timeout,
-        )
+        try:
+            refresh_response = http.post(
+                token_url,
+                data={
+                    "client_id": cc_client_id,
+                    "refresh_token": refresh_token,
+                    "grant_type": "refresh_token",
+                },
+                timeout=timeout,
+            )
+        except requests.RequestException as exc:
+            LOGGER.warning(
+                "Constant Contact token refresh request failed for %s: %s",
+                token_url,
+                exc,
+            )
+            raise
         if refresh_response.status_code == 429 or refresh_response.status_code >= 500:
+            LOGGER.warning(
+                "Constant Contact token refresh failed for %s with HTTP %s",
+                token_url,
+                refresh_response.status_code,
+            )
             raise TransientRetryError(
                 "Constant Contact token refresh returned HTTP "
                 f"{refresh_response.status_code}"
@@ -442,6 +472,11 @@ def refresh_access_token(
             f"Constant Contact token refresh returned invalid JSON: {exc}"
         ) from exc
     if response.status_code < 200 or response.status_code > 299 or "error" in payload:
+        LOGGER.warning(
+            "Constant Contact token refresh failed for %s with HTTP %s",
+            token_url,
+            response.status_code,
+        )
         detail = (
             payload.get("error_description") or payload.get("error") or response.text
         )
@@ -492,18 +527,31 @@ def run_device_oauth_flow(
             "and endpoints.token"
         )
     http = session or requests.Session()
-    auth_response = http.post(
-        auth_url,
-        data={
-            "client_id": cc_client_id,
-            "response_type": "code",
-            "scope": "contact_data offline_access",
-            "state": str(random.randrange(4294967296)),
-        },
-        timeout=timeout,
-    )
+    try:
+        auth_response = http.post(
+            auth_url,
+            data={
+                "client_id": cc_client_id,
+                "response_type": "code",
+                "scope": "contact_data offline_access",
+                "state": str(random.randrange(4294967296)),
+            },
+            timeout=timeout,
+        )
+    except requests.RequestException as exc:
+        LOGGER.warning(
+            "Constant Contact device authorization request failed for %s: %s",
+            auth_url,
+            exc,
+        )
+        raise
     auth_payload = _json_payload(auth_response, "device authorization")
     if auth_response.status_code < 200 or auth_response.status_code > 299:
+        LOGGER.warning(
+            "Constant Contact device authorization failed for %s with HTTP %s",
+            auth_url,
+            auth_response.status_code,
+        )
         raise ConfigError(
             f"Constant Contact device authorization failed: {auth_response.text}"
         )
@@ -527,15 +575,23 @@ def run_device_oauth_flow(
             f"poll timing: {exc}"
         ) from exc
     while True:
-        token_response = http.post(
-            token_url,
-            data={
-                "client_id": cc_client_id,
-                "device_code": device_code,
-                "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
-            },
-            timeout=timeout,
-        )
+        try:
+            token_response = http.post(
+                token_url,
+                data={
+                    "client_id": cc_client_id,
+                    "device_code": device_code,
+                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                },
+                timeout=timeout,
+            )
+        except requests.RequestException as exc:
+            LOGGER.warning(
+                "Constant Contact device token request failed for %s: %s",
+                token_url,
+                exc,
+            )
+            raise
         token_payload = _json_payload(token_response, "device token")
         if token_response.status_code < 200 or token_response.status_code > 299:
             error = token_payload.get("error")
@@ -545,6 +601,11 @@ def run_device_oauth_flow(
             if error == "authorization_pending" and time.monotonic() < deadline:
                 sleep_fn(interval)
                 continue
+            LOGGER.warning(
+                "Constant Contact device token request failed for %s with HTTP %s",
+                token_url,
+                token_response.status_code,
+            )
             detail = (
                 token_payload.get("error_description") or error or token_response.text
             )

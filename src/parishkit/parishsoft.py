@@ -355,10 +355,19 @@ class ParishSoftClient:
 
         def call() -> requests.Response:
             """Issue one attempt and translate the HTTP status into exceptions."""
-            response = func()
+            try:
+                response = func()
+            except requests.RequestException as exc:
+                LOGGER.warning("ParishSoft API request failed: %s", exc)
+                raise
             # 429 and these 5xx codes are worth retrying; signal transience so
             # retry_call backs off and tries again.
             if response.status_code in {429, 500, 502, 503, 504}:
+                LOGGER.warning(
+                    "ParishSoft API request failed for %s with HTTP %s",
+                    response.url,
+                    response.status_code,
+                )
                 raise _TransientParishSoftAPIError(
                     response.status_code,
                     response.url,
@@ -366,6 +375,11 @@ class ParishSoftClient:
                     f"transient ParishSoft HTTP {response.status_code}",
                 )
             if not 200 <= response.status_code <= 299:
+                LOGGER.warning(
+                    "ParishSoft API request failed for %s with HTTP %s",
+                    response.url,
+                    response.status_code,
+                )
                 raise ParishSoftAPIError(
                     response.status_code, response.url, response.text
                 )

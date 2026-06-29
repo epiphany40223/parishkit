@@ -22,6 +22,8 @@ DEFAULT_MAX_BYTES = 50_000_000
 DEFAULT_BACKUP_COUNT = 50
 STRUCTURED_EXTRA_FIELD = "extra"
 LOG_FILE_MODE = 0o600
+API_LOGGER = logging.getLogger("parishkit.api")
+_SLACK_FAILURE_WARNING_ACTIVE = False
 
 
 def log_extra(value: Any) -> dict[str, Any]:
@@ -127,9 +129,20 @@ class SlackLogHandler(logging.Handler):
         notification problem never propagates back into the code that logged
         the original message.
         """
+        global _SLACK_FAILURE_WARNING_ACTIVE
         try:
             self.client.chat_postMessage(channel=self.channel, text=self.format(record))
-        except Exception:  # pragma: no cover - logging must not mask original errors
+        except Exception as exc:  # pragma: no cover - do not mask original errors
+            if not _SLACK_FAILURE_WARNING_ACTIVE:
+                _SLACK_FAILURE_WARNING_ACTIVE = True
+                try:
+                    API_LOGGER.warning(
+                        "Slack API request failed for channel %s: %s",
+                        self.channel,
+                        exc,
+                    )
+                finally:
+                    _SLACK_FAILURE_WARNING_ACTIVE = False
             self.handleError(record)
 
 

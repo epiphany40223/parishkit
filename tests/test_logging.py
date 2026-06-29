@@ -9,6 +9,7 @@ from parishkit.logging import (
     DEFAULT_MAX_BYTES,
     CompressingRotatingFileHandler,
     JsonLogFormatter,
+    SlackLogHandler,
     describe_handlers,
     log_extra,
     parse_log_level,
@@ -243,6 +244,37 @@ def test_setup_logging_adds_mocked_slack_handler(monkeypatch, tmp_path):
     assert sent[0][0] == "#alerts"
     assert "ERROR test.slack: problem" in sent[0][1]
     assert not sent[0][1].startswith("{")
+
+
+def test_slack_handler_logs_api_warning_on_delivery_failure(caplog):
+    """Slack delivery failures emit a warning without propagating."""
+
+    class Client:
+        """Fake Slack WebClient that fails every post."""
+
+        def chat_postMessage(self, **_kwargs):
+            """Simulate a Slack API failure."""
+            raise RuntimeError("slack down")
+
+    handler = SlackLogHandler.__new__(SlackLogHandler)
+    logging.Handler.__init__(handler)
+    handler.channel = "#alerts"
+    handler.client = Client()
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    record = logging.LogRecord(
+        "test.slack.failure",
+        logging.ERROR,
+        __file__,
+        1,
+        "problem",
+        (),
+        None,
+    )
+    caplog.set_level(logging.WARNING, logger="parishkit.api")
+
+    handler.emit(record)
+
+    assert "Slack API request failed for channel #alerts" in caplog.text
 
 
 def test_setup_logging_rejects_partial_slack_config(tmp_path):

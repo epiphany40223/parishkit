@@ -22,9 +22,9 @@ from parishkit.parishsoft import (
     link_families_and_members,
     load_contribution_details,
     load_families_and_members,
-    normalize_dates,
     member_is_active,
     ministry_membership_is_current,
+    normalize_dates,
     normalize_family_email,
     normalize_member_email,
     parse_cache_limit,
@@ -280,7 +280,7 @@ def test_post_uncached_bypasses_cache(tmp_path):
     assert len(ps.session.calls) == 2
 
 
-def test_exhausted_transient_response_raises_typed_api_error(tmp_path):
+def test_exhausted_transient_response_raises_typed_api_error(tmp_path, caplog):
     """A persistent transient (503) surfaces as ParishSoftAPIError once retries run out.
 
     The retry policy is replaced with a single, zero-delay attempt so the test
@@ -288,9 +288,13 @@ def test_exhausted_transient_response_raises_typed_api_error(tmp_path):
     """
     ps = client(tmp_path, [Response({}, status_code=503)])
     ps.retry_policy = type(ps.retry_policy)(attempts=1, initial_delay=0)
+    caplog.set_level(logging.WARNING, logger="parishkit.parishsoft")
 
     with pytest.raises(ParishSoftAPIError, match="503"):
         ps.get("lookup")
+
+    assert "ParishSoft API request failed" in caplog.text
+    assert "HTTP 503" in caplog.text
 
 
 def test_malformed_json_response_raises_typed_api_error(tmp_path):

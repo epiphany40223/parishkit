@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ from parishkit.retry import RetryError, RetryPolicy, TransientRetryError, retry_
 # HTTP statuses that indicate a transient Google API condition worth retrying:
 # 429 (rate limited) plus the 5xx server/gateway errors.
 TRANSIENT_GOOGLE_STATUSES = {429, 500, 502, 503, 504}
+LOGGER = logging.getLogger(__name__)
 
 
 class GoogleAPIError(RuntimeError):
@@ -239,9 +241,17 @@ def execute_google_request(
         try:
             return request.execute()
         except Exception as exc:
+            endpoint = str(getattr(request, "uri", request.__class__.__name__))
             if http_error is None or not isinstance(exc, http_error):
+                LOGGER.warning("Google API request failed for %s: %s", endpoint, exc)
                 raise
             status = int(getattr(getattr(exc, "resp", None), "status", 0) or 0)
+            LOGGER.warning(
+                "Google API request failed for %s with HTTP %s: %s",
+                endpoint,
+                status,
+                exc,
+            )
             if status in TRANSIENT_GOOGLE_STATUSES:
                 raise _TransientGoogleAPIError(status, str(exc)) from exc
             raise GoogleAPIError(status, str(exc)) from exc
