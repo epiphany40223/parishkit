@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
+import html
+import json
 import logging
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
@@ -10,8 +13,10 @@ from dataclasses import dataclass
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from parishkit.cli import (
+    DEFAULT_RUN_DIR,
     parser_with_common_options,
     resolve_common_options,
     run_user_facing,
@@ -29,9 +34,32 @@ from parishkit.constant_contact import (
     update_contact_body,
 )
 from parishkit.email.base import Email, EmailProvider, provider_from_config
+from parishkit.files import atomic_write_text
 from parishkit.logging import log_extra, setup_logging
 from parishkit.parishsoft import ParishSoftData, load_families_and_members
 from parishkit.parishsoft_runtime import parishsoft_client_from_config
+
+DEFAULT_UNSUBSCRIBED_REPORT_STATE = (
+    DEFAULT_RUN_DIR / "pk-sync-ps-to-cc-unsubscribed-report.json"
+)
+DEFAULT_UNSUBSCRIBED_REPORT_TIME = dt.time(hour=2)
+DEFAULT_UNSUBSCRIBED_REPORT_WINDOW_MINUTES = 60
+WEEKDAY_NAMES = {
+    "monday": 0,
+    "mon": 0,
+    "tuesday": 1,
+    "tue": 1,
+    "wednesday": 2,
+    "wed": 2,
+    "thursday": 3,
+    "thu": 3,
+    "friday": 4,
+    "fri": 4,
+    "saturday": 5,
+    "sat": 5,
+    "sunday": 6,
+    "sun": 6,
+}
 
 
 @dataclass(frozen=True)
@@ -48,16 +76,43 @@ class CCSyncMapping:
 
 
 @dataclass(frozen=True)
+class CCUnsubscribedReportConfig:
+    """Schedule for the standalone unsubscribed-contacts report.
+
+    ``day_of_week`` optionally restricts the report to one local weekday.
+    ``time`` and ``window_minutes`` define the local-time send window.
+    ``state_file`` records the last local date for which the report was sent,
+    so frequent cron invocations do not send duplicate reports.
+    """
+
+    enabled: bool = False
+    day_of_week: int | None = None
+    time: dt.time = DEFAULT_UNSUBSCRIBED_REPORT_TIME
+    window_minutes: int = DEFAULT_UNSUBSCRIBED_REPORT_WINDOW_MINUTES
+    state_file: Path = DEFAULT_UNSUBSCRIBED_REPORT_STATE
+
+
+@dataclass(frozen=True)
+class ReportScheduleDecision:
+    """Decision describing whether the standalone report should run now."""
+
+    due: bool
+    reason: str
+    run_date: str
+
+
+@dataclass(frozen=True)
 class CCSyncConfig:
     """Resolved configuration for a sync run.
 
     Holds the ordered list mappings and the global toggle for pushing name
-    updates, plus the sender used for notification emails.
+    updates, plus notification and report settings.
     """
 
     mappings: tuple[CCSyncMapping, ...]
     update_names: bool = False
     sender: str | None = None
+    unsubscribed_report: CCUnsubscribedReportConfig = CCUnsubscribedReportConfig()
 
 
 @dataclass(frozen=True)
@@ -113,6 +168,7 @@ def main(
     loader: Loader = load_families_and_members,
     cc_factory: CCFactory | None = None,
     email_provider: EmailProvider | None = None,
+    now: dt.datetime | None = None,
 ) -> int:
     """Parse arguments and dispatch the sync command.
 
@@ -131,7 +187,7 @@ def main(
     if args.version:
         print(f"pk-sync-ps-to-cc {version('parishkit')}")
         return 0
-    return run_user_facing(lambda: _run(args, loader, cc_factory, email_provider))
+    return run_user_facing(lambda: _run(args, loader, cc_factory, email_provider, now))
 
 
 def _run(
@@ -139,6 +195,7 @@ def _run(
     loader: Loader,
     cc_factory: CCFactory | None,
     email_provider: EmailProvider | None,
+    now: dt.datetime | None,
 ) -> int:
     """Run the command after common CLI setup.
 
@@ -154,6 +211,7 @@ def _run(
         mappings=sync_config.mappings,
         update_names=sync_config.update_names or bool(args.update_names),
         sender=sync_config.sender,
+        unsubscribed_report=sync_config.unsubscribed_report,
     )
     log = setup_logging(
         verbose=common.verbose or common.dry_run,
@@ -224,6 +282,12 @@ def _run(
             _unsubscribed_summary(unsubscribed),
             extra=log_extra(unsubscribed),
         )
+    report_decision = unsubscribed_report_decision(
+        sync_config.unsubscribed_report,
+        now=now or dt.datetime.now(ZoneInfo(common.timezone)),
+    )
+    if sync_config.unsubscribed_report.enabled:
+        log.info("Unsubscribed report schedule: %s", report_decision.reason)
     contacts_by_email = {
         contact["email_address"]["address"].lower(): contact for contact in cc_contacts
     }
@@ -250,7 +314,7 @@ def _run(
     provider = email_provider
     # Only build a real email provider when one was not injected and the run
     # will actually send: skip it for dry runs or when no mapping requests
-    # notifications, so we never touch email config we do not need.
+    # notification/report mail, so we never touch email config we do not need.
     if (
         provider is None
         and not common.dry_run
@@ -258,6 +322,20 @@ def _run(
     ):
         provider = provider_from_config(_mapping(config.get("email", {}), "email"))
     send_notifications(provider, sync_config, actions, unsubscribed)
+    sent_reports = send_unsubscribed_report(
+        provider,
+        sync_config,
+        unsubscribed,
+        report_decision,
+        dry_run=common.dry_run,
+        log=log,
+    )
+    if sent_reports and not common.dry_run:
+        mark_unsubscribed_report_sent(
+            sync_config.unsubscribed_report,
+            report_decision.run_date,
+            now=now or dt.datetime.now(ZoneInfo(common.timezone)),
+        )
     log.info("Computed %s Constant Contact action(s)", len(actions))
     return 0
 
@@ -278,10 +356,15 @@ def cc_sync_config_from_yaml(config: ConfigData) -> CCSyncConfig:
         raise ConfigError("sync.lists must not be empty")
     notifications = _mapping(section.get("notifications", {}), "sync.notifications")
     sender = _optional_string(notifications.get("sender"), "sync.notifications.sender")
+    report = _unsubscribed_report_config(
+        section.get("unsubscribed_report", {}),
+        "sync.unsubscribed_report",
+    )
     return CCSyncConfig(
         mappings=mappings,
         update_names=_bool(section.get("update_names", False), "sync.update_names"),
         sender=sender,
+        unsubscribed_report=report,
     )
 
 
@@ -688,6 +771,207 @@ def send_notifications(
         )
 
 
+def build_unsubscribed_report_email(
+    mapping: CCSyncMapping,
+    unsubscribed: Sequence[tuple[str, str, str]],
+    *,
+    sender: str,
+    generated_at: dt.datetime,
+) -> Email:
+    """Build the standalone unsubscribed-contacts report email.
+
+    The content mirrors the old Epiphany report: it explains that the listed
+    ParishSoft members are still in the source workgroup but have manually
+    unsubscribed in Constant Contact, and should therefore be reviewed in
+    ParishSoft.
+    """
+    sorted_unsubscribed = sorted(unsubscribed, key=_unsubscribed_sort_key)
+    subject = f"Constant Contact unsubscribed contacts report: {mapping.target_list}"
+    text_lines = [
+        subject,
+        f"Generated: {generated_at:%Y-%m-%d %H:%M:%S %Z}",
+        "",
+        "The following ParishSoft Members are in the "
+        f"'{mapping.source_workgroup}' workgroup but have manually unsubscribed "
+        "from Constant Contact.",
+        "",
+        "These ParishSoft Members should be removed from the "
+        f"'{mapping.source_workgroup}' workgroup in ParishSoft.",
+        "",
+    ]
+    for email, names, duids in sorted_unsubscribed:
+        text_lines.append(f"- {names} (DUID: {duids}): {email}")
+
+    table_rows = []
+    for row, (email, names, duids) in enumerate(sorted_unsubscribed):
+        background = "#f2f2f2" if row % 2 == 0 else "#ffffff"
+        cell = (
+            "border: 1px solid #dddddd; padding: 8px; "
+            f"background-color: {background}; white-space: nowrap;"
+        )
+        table_rows.append(
+            "<tr>"
+            f'<td style="{cell}">{html.escape(names)}</td>'
+            f'<td style="{cell}">{html.escape(duids)}</td>'
+            f'<td style="{cell}">{html.escape(email)}</td>'
+            "</tr>"
+        )
+
+    header_cell = (
+        "border: 1px solid #dddddd; padding: 8px; text-align: center; "
+        "background-color: #4472C4; color: white; white-space: nowrap;"
+    )
+    report_html = (
+        '<html><body style="font-family: Arial, sans-serif; font-size: 14px;">'
+        '<h2 style="color: #333333;">Constant Contact Unsubscribed '
+        f"Contacts Report: {html.escape(mapping.target_list)}</h2>"
+        f'<p style="color: #666666;">Generated: '
+        f"{html.escape(generated_at.strftime('%Y-%m-%d %H:%M:%S %Z'))}</p>"
+        "<p>The following ParishSoft Members are in the "
+        f"'{html.escape(mapping.source_workgroup)}' workgroup but have manually "
+        "unsubscribed from Constant Contact.</p>"
+        '<p style="color: #cc0000; font-weight: bold; font-size: 16px;">'
+        "These ParishSoft Members should be removed from the "
+        f"'{html.escape(mapping.source_workgroup)}' workgroup in ParishSoft.</p>"
+        '<table style="border-collapse: collapse; margin-bottom: 20px; width: auto;">'
+        "<tr>"
+        f'<th style="{header_cell}">PS Member Name(s)</th>'
+        f'<th style="{header_cell}">PS Member DUID(s)</th>'
+        f'<th style="{header_cell}">Email</th>'
+        "</tr>"
+        f"{''.join(table_rows)}</table>"
+        '<hr style="border: 1px solid #dddddd; margin-top: 30px;">'
+        '<p style="color: #999999; font-size: 12px;">'
+        "This is an automated message from the ParishSoft to Constant Contact "
+        "synchronization script.</p>"
+        "</body></html>"
+    )
+    return Email(
+        subject=subject,
+        sender=sender,
+        to=mapping.notifications,
+        text="\n".join(text_lines),
+        html=report_html,
+    )
+
+
+def send_unsubscribed_report(
+    provider: EmailProvider | None,
+    config: CCSyncConfig,
+    unsubscribed: Sequence[Sequence[tuple[str, str, str]]],
+    decision: ReportScheduleDecision,
+    *,
+    dry_run: bool,
+    log: logging.Logger,
+) -> int:
+    """Send the standalone unsubscribed report when the schedule is due.
+
+    Returns the number of report emails sent. Dry runs log the exact report
+    contents but do not send email or update the state file, keeping the old
+    script's safety behavior.
+    """
+    if not config.unsubscribed_report.enabled or not decision.due:
+        return 0
+    total_unsubscribed = sum(len(items) for items in unsubscribed)
+    if not total_unsubscribed:
+        log.info("Unsubscribed report is due, but there are no contacts to report")
+        return 0
+    if dry_run:
+        log.warning("Unsubscribed report is due, but dry-run mode prevents email")
+        for index, mapping in enumerate(config.mappings):
+            if not unsubscribed[index]:
+                continue
+            log.info("Unsubscribed report subject: %s", mapping.target_list)
+            log.info("CC List: %s", mapping.target_list)
+            log.info("PS Workgroup: %s", mapping.source_workgroup)
+            for email, names, duids in unsubscribed[index]:
+                log.info("  %s (DUID: %s): %s", names, duids, email)
+        return 0
+    if provider is None or not config.sender:
+        log.warning(
+            "Unsubscribed report is due, but email provider or sender is not configured"
+        )
+        return 0
+
+    sent = 0
+    generated_at = dt.datetime.now(dt.UTC)
+    for index, mapping in enumerate(config.mappings):
+        if not unsubscribed[index]:
+            continue
+        if not mapping.notifications:
+            log.warning(
+                "Unsubscribed report for %s has no notification recipients",
+                mapping.target_list,
+            )
+            continue
+        provider.send(
+            build_unsubscribed_report_email(
+                mapping,
+                unsubscribed[index],
+                sender=config.sender,
+                generated_at=generated_at,
+            ),
+            dry_run=False,
+        )
+        sent += 1
+    return sent
+
+
+def unsubscribed_report_decision(
+    config: CCUnsubscribedReportConfig,
+    *,
+    now: dt.datetime,
+) -> ReportScheduleDecision:
+    """Return whether the daily unsubscribed report should run at ``now``."""
+    run_date = now.date().isoformat()
+    if not config.enabled:
+        return ReportScheduleDecision(False, "disabled", run_date)
+    if config.day_of_week is not None and now.weekday() != config.day_of_week:
+        return ReportScheduleDecision(
+            False,
+            f"not configured weekday {_weekday_name(config.day_of_week)}",
+            run_date,
+        )
+    scheduled = dt.datetime.combine(now.date(), config.time, tzinfo=now.tzinfo)
+    elapsed = now - scheduled
+    if elapsed < dt.timedelta(0):
+        return ReportScheduleDecision(
+            False,
+            f"before daily {config.time:%H:%M}",
+            run_date,
+        )
+    if elapsed >= dt.timedelta(minutes=config.window_minutes):
+        return ReportScheduleDecision(
+            False,
+            f"after daily {config.time:%H:%M}",
+            run_date,
+        )
+    last_sent = _last_unsubscribed_report_date(config.state_file)
+    if last_sent == run_date:
+        return ReportScheduleDecision(False, f"already sent for {run_date}", run_date)
+    return ReportScheduleDecision(True, f"due for {run_date}", run_date)
+
+
+def mark_unsubscribed_report_sent(
+    config: CCUnsubscribedReportConfig,
+    run_date: str,
+    *,
+    now: dt.datetime,
+) -> None:
+    """Record that the standalone report was sent for ``run_date``."""
+    atomic_write_text(
+        config.state_file,
+        json.dumps(
+            {
+                "last_sent_date": run_date,
+                "last_sent_at": now.isoformat(),
+            },
+            sort_keys=True,
+            indent=2,
+        ),
+    )
+
+
 def parishsoft_members_by_email(
     members: Mapping[int, dict[str, Any]],
 ) -> dict[str, list[dict[str, Any]]]:
@@ -726,6 +1010,82 @@ def _mapping_config(value: Any, name: str) -> CCSyncMapping:
     )
 
 
+def _unsubscribed_report_config(value: Any, name: str) -> CCUnsubscribedReportConfig:
+    """Parse the optional standalone unsubscribed-report schedule."""
+    item = _mapping(value, name)
+    enabled = _bool(item.get("enabled", False), f"{name}.enabled")
+    return CCUnsubscribedReportConfig(
+        enabled=enabled,
+        day_of_week=_day_of_week(item.get("day_of_week"), f"{name}.day_of_week"),
+        time=_time(item.get("time", "02:00"), f"{name}.time"),
+        window_minutes=_positive_int(
+            item.get("window_minutes", DEFAULT_UNSUBSCRIBED_REPORT_WINDOW_MINUTES),
+            f"{name}.window_minutes",
+        ),
+        state_file=_path(
+            item.get("state_file", DEFAULT_UNSUBSCRIBED_REPORT_STATE),
+            f"{name}.state_file",
+        ),
+    )
+
+
+def _last_unsubscribed_report_date(path: Path) -> str | None:
+    """Read the last report date from the state file, if it exists."""
+    try:
+        payload = json.loads(path.expanduser().read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except json.JSONDecodeError as exc:
+        raise ConfigError(
+            f"invalid unsubscribed report state file {path}: {exc}"
+        ) from exc
+    if not isinstance(payload, Mapping):
+        raise ConfigError(f"unsubscribed report state file {path} must be a mapping")
+    value = payload.get("last_sent_date")
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ConfigError(
+            f"unsubscribed report state file {path} last_sent_date must be a string"
+        )
+    return value
+
+
+def _unsubscribed_sort_key(row: tuple[str, str, str]) -> tuple[str, str]:
+    """Sort report rows by the first listed member's apparent last/first name."""
+    parts = row[1].split(",")[0].strip().split()
+    last = parts[-1].lower() if parts else ""
+    first = parts[0].lower() if parts else ""
+    return (last, first)
+
+
+def _day_of_week(value: Any, name: str) -> int | None:
+    """Read an optional weekday name, returning Python's weekday index."""
+    if value in (None, ""):
+        return None
+    if not isinstance(value, str):
+        raise ConfigError(f"{name} must be a weekday name")
+    normalized = value.strip().lower()
+    if normalized not in WEEKDAY_NAMES:
+        raise ConfigError(
+            f"{name} must be a weekday name like monday, tuesday, or sunday"
+        )
+    return WEEKDAY_NAMES[normalized]
+
+
+def _weekday_name(index: int) -> str:
+    """Return the full lowercase weekday name for an index."""
+    return (
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+    )[index]
+
+
 def _mapping(value: Any, name: str) -> Mapping[str, Any]:
     """Read a mapping config value."""
     if not isinstance(value, Mapping):
@@ -759,6 +1119,39 @@ def _optional_string(value: Any, name: str) -> str | None:
     if value in (None, ""):
         return None
     return _required_string(value, name)
+
+
+def _path(value: Any, name: str) -> Path:
+    """Read a path config value."""
+    if isinstance(value, Path):
+        return value.expanduser()
+    if not isinstance(value, str) or not value:
+        raise ConfigError(f"{name} must be a path string")
+    return Path(value).expanduser()
+
+
+def _time(value: Any, name: str) -> dt.time:
+    """Read a local HH:MM or HH:MM:SS time config value."""
+    if isinstance(value, dt.time):
+        if value.tzinfo is not None:
+            raise ConfigError(f"{name} must be a local time without timezone")
+        return value
+    if not isinstance(value, str) or not value:
+        raise ConfigError(f"{name} must be a time string like 02:00")
+    try:
+        parsed = dt.time.fromisoformat(value)
+    except ValueError as exc:
+        raise ConfigError(f"{name} must be a time string like 02:00") from exc
+    if parsed.tzinfo is not None:
+        raise ConfigError(f"{name} must be a local time without timezone")
+    return parsed
+
+
+def _positive_int(value: Any, name: str) -> int:
+    """Read a positive integer config value."""
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        raise ConfigError(f"{name} must be a positive integer")
+    return value
 
 
 def _bool(value: Any, name: str) -> bool:
