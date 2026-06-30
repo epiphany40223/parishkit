@@ -11,6 +11,7 @@ from parishkit.logging import (
     JsonLogFormatter,
     SlackLogHandler,
     describe_handlers,
+    display_logger_name,
     log_extra,
     parse_log_level,
     setup_logging,
@@ -117,6 +118,13 @@ def test_json_log_formatter_includes_structured_object(tmp_path):
     assert payload["extra"] == [{"count": 3, "name": "sample"}]
 
 
+def test_display_logger_name_shortens_parishkit_prefix():
+    """Displayed log names use the compact ParishKit prefix."""
+    assert display_logger_name("parishkit") == "pk"
+    assert display_logger_name("parishkit.google.auth") == "pk.google.auth"
+    assert display_logger_name("other.logger") == "other.logger"
+
+
 def test_parishkit_tool_logging_captures_package_and_sibling_records(tmp_path):
     """Tool logging also captures shared ParishKit helper records."""
     log_file = tmp_path / "parishkit.log"
@@ -138,6 +146,11 @@ def test_parishkit_tool_logging_captures_package_and_sibling_records(tmp_path):
         "tool record",
         "shared record",
         "package record",
+    ]
+    assert [payload["logger"] for payload in payloads] == [
+        "pk.tool",
+        "pk.shared",
+        "pk",
     ]
     assert logger.handlers == []
 

@@ -968,7 +968,7 @@ def test_create_ministry_rosters_reports_missing_parishsoft_source(
     )
 
     error = capsys.readouterr().err
-    assert "ERROR parishkit.pk_create_ps_ministry_rosters" in error
+    assert "ERROR pk.pk_create_ps_ministry_rosters" in error
     assert "Configured ParishSoft ministry was not found" in error
     assert "rosters.ministries[].ministry" in error
     assert uploads == []
@@ -1034,6 +1034,6 @@ def test_create_ministry_rosters_logs_config_validation_error(tmp_path, capsys):
     assert create_ministry_rosters_main(["--config", str(config)]) == 2
 
     error = capsys.readouterr().err
-    assert "ERROR parishkit.pk_create_ps_ministry_rosters" in error
+    assert "ERROR pk.pk_create_ps_ministry_rosters" in error
     assert "Configuration validation failed" in error
     assert "rosters must configure ministries or workgroups" in error

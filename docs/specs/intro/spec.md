@@ -285,6 +285,12 @@ and closed, so a construction failure leaves the previously-configured logger
 intact and never leaks file descriptors. Console/error/Slack text stays
 human-readable; only the log *file* is JSONL.
 
+Logger names use normal Python package names internally (`parishkit.*`) so
+logger hierarchy, imports, monkeypatch targets, and tests remain conventional.
+Output sinks display that package prefix as `pk.*` (`parishkit` becomes `pk`,
+`parishkit.google.auth` becomes `pk.google.auth`) to keep operational log lines
+short.
+
 Email notifications are a separate concern handled by the
 [email provider layer](#email-provider-layer); Slack is for alerting, email is
 for human-readable change summaries.
