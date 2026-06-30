@@ -15,19 +15,18 @@ from parishkit.google.auth import (
     run_user_oauth_flow,
 )
 from parishkit.google.calendar import list_events, patch_attendee_response
-from parishkit.google.drive import get_file_metadata
+from parishkit.google.drive import (
+    GOOGLE_SHEET_MIME_TYPE,
+    XLSX_MIME_TYPE,
+    get_file_metadata,
+    update_file_with_xlsx,
+)
 from parishkit.google.groups import (
     delete_group_member,
     get_group_posting_permissions,
     insert_group_member,
     list_group_members,
     update_group_member_role,
-)
-from parishkit.google.sheets import (
-    batch_update_spreadsheet,
-    clear_values,
-    get_spreadsheet,
-    update_values,
 )
 from parishkit.retry import RetryError, RetryPolicy, TransientRetryError
 
@@ -623,23 +622,36 @@ def test_run_user_oauth_flow_saves_token(tmp_path):
 
 
 def test_drive_metadata_helper_supports_shared_drives():
+    """Drive metadata lookups include the shared-drive support flag."""
+
     class Request:
+        """Fake Drive request returning a file metadata body."""
+
         def execute(self):
+            """Return a canned metadata response."""
             return {"id": "file-id", "name": "Roster"}
 
     class Files:
+        """Fake Drive files resource recording get calls."""
+
         def __init__(self):
+            """Initialize the call recorder."""
             self.calls = []
 
         def get(self, **kwargs):
+            """Record a files.get call."""
             self.calls.append(kwargs)
             return Request()
 
     class Service:
+        """Fake Drive service exposing the files resource."""
+
         def __init__(self):
+            """Initialize the fake files resource."""
             self._files = Files()
 
         def files(self):
+            """Return the fake files resource."""
             return self._files
 
     service = Service()
@@ -654,113 +666,87 @@ def test_drive_metadata_helper_supports_shared_drives():
     ]
 
 
-def test_sheet_helpers_use_expected_spreadsheets_calls():
-    """Sheet helpers issue value, metadata, and batchUpdate calls correctly.
-
-    The setup stays local to this test so fixtures remain easy to understand
-    and change.
-    """
+def test_drive_xlsx_update_uploads_with_conversion_and_shared_drive_support(tmp_path):
+    """XLSX uploads replace a Drive file and request Google Sheets conversion."""
 
     class Request:
-        """Fake Sheets API request returning a canned response."""
-
-        def __init__(self, response=None):
-            """Store the response returned by execute."""
-            self.response = {} if response is None else response
+        """Fake Drive request returning updated file metadata."""
 
         def execute(self):
-            """Return the canned response body."""
-            return self.response
+            """Return a canned update response."""
+            return {"id": "file-id", "name": "Roster"}
 
-    class Values:
-        """Fake values resource recording each clear/update call."""
+    class Files:
+        """Fake Drive files resource recording update calls."""
 
         def __init__(self):
+            """Initialize the call recorder."""
             self.calls = []
-
-        def clear(self, **kwargs):
-            """Record a clear call and return an empty request."""
-            self.calls.append(("clear", kwargs))
-            return Request()
 
         def update(self, **kwargs):
-            """Record an update call and return an empty request."""
-            self.calls.append(("update", kwargs))
-            return Request()
-
-    class Spreadsheets:
-        """Fake spreadsheets resource exposing values and spreadsheet methods."""
-
-        def __init__(self):
-            self._values = Values()
-            self.calls = []
-
-        def values(self):
-            """Return the fake values resource."""
-            return self._values
-
-        def get(self, **kwargs):
-            """Record a metadata request and return one sheet property."""
-            self.calls.append(("get", kwargs))
-            return Request({"sheets": [{"properties": {"title": "Roster"}}]})
-
-        def batchUpdate(self, **kwargs):
-            """Record a batchUpdate request."""
-            self.calls.append(("batchUpdate", kwargs))
+            """Record a files.update call."""
+            self.calls.append(kwargs)
             return Request()
 
     class Service:
-        """Fake Sheets API service exposing the spreadsheets resource."""
+        """Fake Drive service exposing the files resource."""
 
         def __init__(self):
-            self._spreadsheets = Spreadsheets()
+            """Initialize the fake files resource."""
+            self._files = Files()
 
-        def spreadsheets(self):
-            """Return the fake spreadsheets resource."""
-            return self._spreadsheets
+        def files(self):
+            """Return the fake files resource."""
+            return self._files
 
+    xlsx_path = tmp_path / "roster.xlsx"
+    xlsx_path.write_bytes(b"fake xlsx")
     service = Service()
 
-    clear_values(service, "sheet-id", "Roster!A:Z")
-    update_values(service, "sheet-id", "Roster!A1", [["Name"]])
-    assert get_spreadsheet(service, "sheet-id") == {
-        "sheets": [{"properties": {"title": "Roster"}}]
+    assert update_file_with_xlsx(service, "file-id", xlsx_path, name="Roster") == {
+        "id": "file-id",
+        "name": "Roster",
     }
-    batch_update_spreadsheet(service, "sheet-id", [{"request": "value"}])
-    batch_update_spreadsheet(service, "sheet-id", [])
+    assert len(service._files.calls) == 1
+    call = service._files.calls[0]
+    assert call["fileId"] == "file-id"
+    assert call["body"] == {"name": "Roster", "mimeType": GOOGLE_SHEET_MIME_TYPE}
+    assert call["media_body"].mimetype() == XLSX_MIME_TYPE
+    assert call["media_body"].resumable() is False
+    assert call["supportsAllDrives"] is True
+    assert call["fields"] == "id,name,mimeType"
 
-    assert service._spreadsheets._values.calls == [
-        (
-            "clear",
-            {
-                "spreadsheetId": "sheet-id",
-                "range": "Roster!A:Z",
-                "body": {},
-            },
-        ),
-        (
-            "update",
-            {
-                "spreadsheetId": "sheet-id",
-                "range": "Roster!A1",
-                "valueInputOption": "RAW",
-                "body": {"values": [["Name"]]},
-            },
-        ),
-    ]
-    assert service._spreadsheets.calls == [
-        (
-            "get",
-            {
-                "spreadsheetId": "sheet-id",
-                "fields": "sheets.properties",
-            },
-        ),
-        (
-            "batchUpdate",
-            {
-                "spreadsheetId": "sheet-id",
-                "body": {"requests": [{"request": "value"}]},
-            },
-        ),
-    ]
+
+def test_drive_xlsx_update_does_not_retry_transient_write_failures(tmp_path):
+    """Drive file replacement is attempted once because it is a write."""
+    attempts = {"count": 0}
+
+    class Request:
+        """Fake Drive upload request that always fails transiently."""
+
+        def execute(self):
+            """Count the attempt and raise a retryable error."""
+            attempts["count"] += 1
+            raise TransientRetryError("upload result unknown")
+
+    class Files:
+        """Fake Drive files resource returning the failing update request."""
+
+        def update(self, **_kwargs):
+            """Return a request for the update operation."""
+            return Request()
+
+    class Service:
+        """Fake Drive service exposing the files resource."""
+
+        def files(self):
+            """Return the fake files resource."""
+            return Files()
+
+    xlsx_path = tmp_path / "roster.xlsx"
+    xlsx_path.write_bytes(b"fake xlsx")
+
+    with pytest.raises(RetryError):
+        update_file_with_xlsx(Service(), "file-id", xlsx_path, name="Roster")
+
+    assert attempts["count"] == 1

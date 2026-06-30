@@ -9,6 +9,7 @@ description = "Parish-neutral operations automation tools."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+  "openpyxl>=3.1.0",
   "PyYAML>=6.0.2",
   "requests>=2.32.0",
 ]

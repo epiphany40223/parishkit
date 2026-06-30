@@ -6,25 +6,29 @@ from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
+from openpyxl import load_workbook
 
 from parishkit.config import ConfigError
 from parishkit.google.auth import GoogleAPIError
+from parishkit.google.drive import GOOGLE_SHEET_MIME_TYPE
 from parishkit.parishsoft import ParishSoftData
 from parishkit.pk_create_ps_ministry_rosters import (
+    DRIVE_SCOPE,
     HEADER_BACKGROUND_COLOR,
     HEADER_TEXT_COLOR,
     ROSTER_COLUMN_WIDTHS,
     ROSTER_FROZEN_ROWS,
     ROSTER_TITLE_MERGE_COLUMNS,
+    ROSTER_WORKSHEET_TITLE,
     RosterMember,
-    load_sheets_credentials,
+    load_drive_credentials,
     ministry_roster_members,
     roster_config_from_yaml,
-    roster_format_requests,
+    roster_drive_name,
     roster_role_matches,
     roster_values,
-    sheet_name_from_a1_range,
-    stale_row_clear_range,
+    roster_workbook,
+    safe_roster_filename,
     workgroup_roster_members,
 )
 from parishkit.pk_create_ps_ministry_rosters import (
@@ -33,7 +37,7 @@ from parishkit.pk_create_ps_ministry_rosters import (
 
 
 class Request:
-    """Fake Sheets API request whose execute() returns a canned response."""
+    """Fake Google API request whose execute() returns a canned response."""
 
     def __init__(self, response=None, exc: Exception | None = None):
         """Store either the canned response or exception to raise."""
@@ -47,67 +51,12 @@ class Request:
         return self.response
 
 
-class Values:
-    """Fake spreadsheet values resource recording each clear/update call."""
-
-    def __init__(self):
-        """Initialize the call recorder and optional clear failure."""
-        self.calls = []
-        self.clear_error: Exception | None = None
-        self.update_error: Exception | None = None
-
-    def clear(self, **kwargs):
-        """Record a clear call as ("clear", kwargs)."""
-        self.calls.append(("clear", kwargs))
-        return Request(exc=self.clear_error)
-
-    def update(self, **kwargs):
-        """Record an update call as ("update", kwargs)."""
-        self.calls.append(("update", kwargs))
-        return Request(exc=self.update_error)
+class DriveService:
+    """Fake Drive service used as an identity token in roster tests."""
 
 
-class Spreadsheets:
-    """Fake spreadsheets resource exposing values plus metadata/format calls."""
-
-    def __init__(self):
-        self._values = Values()
-        self.get_calls = []
-        self.batch_update_calls = []
-        self.batch_update_error: Exception | None = None
-        self.sheets = [
-            {"properties": {"title": "Readers", "sheetId": 101}},
-            {"properties": {"title": "Leads", "sheetId": 102}},
-            {"properties": {"title": "Movers", "sheetId": 103}},
-        ]
-
-    def values(self):
-        """Return the fake values resource."""
-        return self._values
-
-    def get(self, **kwargs):
-        """Record a metadata get call and return tab titles and sheet IDs."""
-        self.get_calls.append(kwargs)
-        return Request({"sheets": self.sheets})
-
-    def batchUpdate(self, **kwargs):
-        """Record a formatting batchUpdate call."""
-        self.batch_update_calls.append(kwargs)
-        return Request(exc=self.batch_update_error)
-
-
-class SheetsService:
-    """Fake Sheets service exposing the recording spreadsheets resource."""
-
-    def __init__(self):
-        self._spreadsheets = Spreadsheets()
-
-    def spreadsheets(self):
-        return self._spreadsheets
-
-
-def test_sheets_credentials_resolve_relative_paths(tmp_path, monkeypatch):
-    """Relative Google Sheets credential paths resolve against the config directory."""
+def test_drive_credentials_resolve_relative_paths(tmp_path, monkeypatch):
+    """Relative Google Drive credential paths resolve against the config directory."""
     calls = []
 
     def fake_load(path, *, scopes, subject):
@@ -120,7 +69,7 @@ def test_sheets_credentials_resolve_relative_paths(tmp_path, monkeypatch):
         fake_load,
     )
 
-    load_sheets_credentials(
+    load_drive_credentials(
         {
             "google": {
                 "service_account_file": "credentials/google-service-account.json",
@@ -131,6 +80,7 @@ def test_sheets_credentials_resolve_relative_paths(tmp_path, monkeypatch):
     )
 
     assert calls[0][0] == tmp_path / "credentials" / "google-service-account.json"
+    assert calls[0][1] == [DRIVE_SCOPE]
 
 
 def write_config(tmp_path: Path, *, dry_run: bool = False) -> Path:
@@ -157,21 +107,15 @@ rosters:
   spreadsheet_id: default-sheet
   ministries:
     - ministry: Readers
-      range: Readers!A1
-      clear_range: Readers!A:Z
       include_birthday: true
       role_sheets:
         - name: Reader Leads
           roles:
             - Lead
           spreadsheet_id: lead-sheet
-          range: Leads!A1
-          clear_range: Leads!A:Z
   workgroups:
     - workgroup: Movers
       spreadsheet_id: movers-sheet
-      range: Movers!A1
-      clear_range: Movers!A:Z
 """,
         encoding="utf-8",
     )
@@ -266,6 +210,88 @@ def parishsoft_data() -> ParishSoftData:
     )
 
 
+def fixed_update_time() -> dt.datetime:
+    """Return a deterministic roster update timestamp for tests."""
+    return dt.datetime(
+        2026,
+        1,
+        2,
+        3,
+        4,
+        tzinfo=ZoneInfo("America/Kentucky/Louisville"),
+    )
+
+
+def install_upload_recorder(monkeypatch):
+    """Patch Drive uploads and capture workbook content before temp cleanup."""
+    uploads = []
+
+    def fake_upload(_service, file_id, xlsx_path, *, name):
+        """Record the Drive file ID, upload name, and generated workbook."""
+        workbook = load_workbook(xlsx_path)
+        worksheet = workbook.active
+        rows = [
+            [cell.value for cell in row]
+            for row in worksheet.iter_rows(max_row=worksheet.max_row)
+        ]
+        uploads.append(
+            {
+                "file_id": file_id,
+                "name": name,
+                "worksheet_title": worksheet.title,
+                "rows": rows,
+                "freeze_panes": worksheet.freeze_panes,
+                "merged_ranges": {
+                    str(range_) for range_ in worksheet.merged_cells.ranges
+                },
+                "widths": [
+                    worksheet.column_dimensions[chr(ord("A") + index)].width
+                    for index in range(len(ROSTER_COLUMN_WIDTHS))
+                ],
+            }
+        )
+        workbook.close()
+        return {"id": file_id, "name": name}
+
+    monkeypatch.setattr(
+        "parishkit.pk_create_ps_ministry_rosters.update_file_with_xlsx",
+        fake_upload,
+    )
+    return uploads
+
+
+def install_drive_preflight(monkeypatch, *, metadata_by_id=None, errors_by_id=None):
+    """Patch Drive metadata lookups and capture preflighted file IDs."""
+    calls = []
+    metadata_by_id = {} if metadata_by_id is None else metadata_by_id
+    errors_by_id = {} if errors_by_id is None else errors_by_id
+
+    def fake_get_file_metadata(_service, file_id, *, fields):
+        """Return canned Drive metadata or raise the configured API error."""
+        calls.append((file_id, fields))
+        if file_id in errors_by_id:
+            raise errors_by_id[file_id]
+        return metadata_by_id.get(
+            file_id,
+            {
+                "id": file_id,
+                "name": f"Sheet {file_id}",
+                "mimeType": GOOGLE_SHEET_MIME_TYPE,
+                "capabilities": {
+                    "canEdit": True,
+                    "canModifyContent": True,
+                    "canRename": True,
+                },
+            },
+        )
+
+    monkeypatch.setattr(
+        "parishkit.pk_create_ps_ministry_rosters.get_file_metadata",
+        fake_get_file_metadata,
+    )
+    return calls
+
+
 def test_roster_config_validation_and_role_sheets():
     """Config parsing keeps the ministry name, multiple source ministries, and
     nested role-sheet targets (including the legacy "role sheets" key)."""
@@ -320,9 +346,20 @@ def test_roster_config_rejects_unknown_target_key():
         )
 
 
-def test_roster_config_rejects_clear_range_on_different_sheet():
-    """A clear_range must target the same worksheet tab as the write range."""
-    with pytest.raises(ConfigError, match="same sheet"):
+def test_roster_config_rejects_removed_range_keys():
+    """The XLSX upload writer rejects obsolete range settings."""
+    with pytest.raises(ConfigError, match="unsupported key.*range"):
+        roster_config_from_yaml(
+            {
+                "rosters": {
+                    "spreadsheet_id": "default-sheet",
+                    "range": "Roster!A1",
+                    "ministries": [{"ministry": "Readers"}],
+                }
+            }
+        )
+
+    with pytest.raises(ConfigError, match="unsupported key.*clear_range"):
         roster_config_from_yaml(
             {
                 "rosters": {
@@ -330,8 +367,7 @@ def test_roster_config_rejects_clear_range_on_different_sheet():
                     "ministries": [
                         {
                             "ministry": "Readers",
-                            "range": "Readers!A1",
-                            "clear_range": "Wrong!A:Z",
+                            "clear_range": "Roster!A:Z",
                         }
                     ],
                 }
@@ -339,8 +375,56 @@ def test_roster_config_rejects_clear_range_on_different_sheet():
         )
 
 
-def test_roster_config_rejects_duplicate_output_ranges():
-    """Role sheets must not inherit a range that overwrites the parent roster."""
+def test_roster_config_requires_role_sheet_drive_file():
+    """Role sheets must name their own Drive file because uploads replace files."""
+    with pytest.raises(ConfigError, match=r"role_sheets\[0\]\.spreadsheet_id"):
+        roster_config_from_yaml(
+            {
+                "rosters": {
+                    "spreadsheet_id": "default-sheet",
+                    "ministries": [
+                        {
+                            "ministry": "Readers",
+                            "role_sheets": [
+                                {
+                                    "name": "Reader Leads",
+                                    "roles": ["Lead"],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            }
+        )
+
+
+def test_roster_config_rejects_workgroup_role_sheets():
+    """Workgroup targets reject role-sheet config instead of ignoring it."""
+    for key in ("role_sheets", "role sheets"):
+        with pytest.raises(ConfigError, match="unsupported key"):
+            roster_config_from_yaml(
+                {
+                    "rosters": {
+                        "spreadsheet_id": "default-sheet",
+                        "workgroups": [
+                            {
+                                "workgroup": "Movers",
+                                key: [
+                                    {
+                                        "name": "Mover Leaders",
+                                        "roles": ["Leader"],
+                                        "spreadsheet_id": "leader-sheet",
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                }
+            )
+
+
+def test_roster_config_rejects_duplicate_drive_files():
+    """Roster outputs must not share Drive files that would overwrite each other."""
     with pytest.raises(ConfigError, match="must not share"):
         roster_config_from_yaml(
             {
@@ -349,12 +433,11 @@ def test_roster_config_rejects_duplicate_output_ranges():
                     "ministries": [
                         {
                             "ministry": "Readers",
-                            "range": "Readers!A1",
-                            "clear_range": "Readers!A:Z",
                             "role_sheets": [
                                 {
                                     "name": "Reader Leads",
                                     "roles": ["Lead"],
+                                    "spreadsheet_id": "default-sheet",
                                 }
                             ],
                         }
@@ -434,110 +517,99 @@ def test_roster_values_separate_phone_and_email_rows():
     assert values[6] == ["", "", "ann@example.org", "", ""]
 
 
-def test_roster_format_requests_freeze_headers_and_size_columns():
-    """Formatting requests freeze rows, style headers, top-align cells, and
-    set the expected column widths."""
-    requests = roster_format_requests(
-        99,
-        column_count=5,
-        row_count=8,
+def test_roster_workbook_freezes_headers_and_sizes_columns():
+    """Generated XLSX files freeze rows, style headers, and size columns."""
+    workbook = roster_workbook(
+        [
+            ["Ministry: Readers"],
+            ["Last updated: 2026-01-02 03:04:00 EST"],
+            [],
+            ["Member name", "Address", "Phone / email", "Birthday", "Role"],
+            ["Smith, Ann", "1 Main St", "502-555-1000 cell", "May 4", "Lead"],
+        ]
+    )
+    worksheet = workbook.active
+
+    assert worksheet.title == ROSTER_WORKSHEET_TITLE
+    assert worksheet.freeze_panes == f"A{ROSTER_FROZEN_ROWS + 1}"
+    assert {str(range_) for range_ in worksheet.merged_cells.ranges} == {
+        f"A1:{chr(ord('A') + ROSTER_TITLE_MERGE_COLUMNS - 1)}1",
+        f"A2:{chr(ord('A') + ROSTER_TITLE_MERGE_COLUMNS - 1)}2",
+    }
+    assert worksheet["A1"].fill.fgColor.rgb.endswith(HEADER_BACKGROUND_COLOR)
+    assert worksheet["A1"].font.color.rgb.endswith(HEADER_TEXT_COLOR)
+    assert worksheet["A1"].alignment.horizontal == "left"
+    assert worksheet["A4"].fill.fgColor.rgb.endswith(HEADER_BACKGROUND_COLOR)
+    assert worksheet["A4"].font.color.rgb.endswith(HEADER_TEXT_COLOR)
+    assert worksheet["A4"].alignment.horizontal == "center"
+    assert worksheet["A5"].alignment.vertical == "top"
+    assert worksheet["A5"].alignment.wrap_text is True
+    assert [
+        worksheet.column_dimensions[chr(ord("A") + index)].width
+        for index in range(len(ROSTER_COLUMN_WIDTHS))
+    ] == list(ROSTER_COLUMN_WIDTHS)
+    workbook.close()
+
+
+def test_roster_workbook_preserves_formula_like_text(tmp_path):
+    """Generated XLSX files keep ParishSoft text from becoming formulas."""
+    workbook_path = tmp_path / "roster.xlsx"
+    workbook = roster_workbook([["=1+1"]])
+    worksheet = workbook.active
+
+    assert worksheet["A1"].value == "=1+1"
+    assert worksheet["A1"].data_type == "s"
+
+    workbook.save(workbook_path)
+    workbook.close()
+    reloaded = load_workbook(workbook_path, data_only=False)
+
+    assert reloaded.active["A1"].value == "=1+1"
+    assert reloaded.active["A1"].data_type == "s"
+    reloaded.close()
+
+
+def test_roster_drive_name_sanitizes_slashes_and_uses_timestamp():
+    """Drive names are readable and avoid slash-separated path fragments."""
+    update_time = dt.datetime(
+        2026,
+        1,
+        2,
+        3,
+        4,
+        tzinfo=ZoneInfo("America/Kentucky/Louisville"),
     )
 
-    assert requests[0] == {
-        "updateSheetProperties": {
-            "properties": {
-                "sheetId": 99,
-                "gridProperties": {"frozenRowCount": ROSTER_FROZEN_ROWS},
-            },
-            "fields": "gridProperties.frozenRowCount",
-        }
-    }
-    assert requests[1]["repeatCell"]["cell"]["userEnteredFormat"] == {
-        "verticalAlignment": "TOP",
-        "wrapStrategy": "WRAP",
-    }
-    assert requests[2]["repeatCell"]["cell"]["userEnteredFormat"] == {
-        "backgroundColor": HEADER_BACKGROUND_COLOR,
-        "horizontalAlignment": "LEFT",
-        "textFormat": {
-            "foregroundColor": HEADER_TEXT_COLOR,
-            "bold": True,
-        },
-        "verticalAlignment": "MIDDLE",
-        "wrapStrategy": "WRAP",
-    }
-    assert requests[3]["repeatCell"]["range"]["startRowIndex"] == 2
-    assert requests[3]["repeatCell"]["cell"]["userEnteredFormat"] == {
-        "backgroundColor": HEADER_BACKGROUND_COLOR
-    }
-    assert requests[4]["repeatCell"]["range"]["startRowIndex"] == 3
-    assert (
-        requests[4]["repeatCell"]["cell"]["userEnteredFormat"]["horizontalAlignment"]
-        == "CENTER"
+    assert safe_roster_filename("Care / Prayer") == "Care - Prayer"
+    assert roster_drive_name("Care / Prayer", update_time) == (
+        "Care - Prayer as of 2026-01-02 03:04:00 EST"
     )
-    assert requests[5:9] == [
-        {
-            "unmergeCells": {
-                "range": {
-                    "sheetId": 99,
-                    "startRowIndex": row_index,
-                    "endRowIndex": row_index + 1,
-                    "startColumnIndex": 0,
-                    "endColumnIndex": ROSTER_TITLE_MERGE_COLUMNS,
-                }
-            }
-        }
-        if operation == "unmergeCells"
-        else {
-            "mergeCells": {
-                "range": {
-                    "sheetId": 99,
-                    "startRowIndex": row_index,
-                    "endRowIndex": row_index + 1,
-                    "startColumnIndex": 0,
-                    "endColumnIndex": ROSTER_TITLE_MERGE_COLUMNS,
-                },
-                "mergeType": "MERGE_ALL",
-            }
-        }
-        for row_index in range(2)
-        for operation in ("unmergeCells", "mergeCells")
-    ]
-    widths = [
-        request["updateDimensionProperties"]["properties"]["pixelSize"]
-        for request in requests[9:]
-    ]
-    assert widths == list(ROSTER_COLUMN_WIDTHS)
-    assert not any("updateSpreadsheetProperties" in request for request in requests)
 
 
-def test_sheet_name_from_a1_range_handles_quoted_and_default_ranges():
-    """A1 sheet-name parsing supports regular, quoted, escaped, and bare ranges."""
-    assert sheet_name_from_a1_range("Roster!A1") == "Roster"
-    assert sheet_name_from_a1_range("'Sunday Roster'!A1:E20") == "Sunday Roster"
-    assert sheet_name_from_a1_range("'Pastor''s Roster'!A1") == "Pastor's Roster"
-    assert sheet_name_from_a1_range("A1:E20") == "Sheet1"
-
-
-def test_create_ministry_rosters_main_writes_sheet_values(
+def test_create_ministry_rosters_main_uploads_workbooks(
     tmp_path,
     monkeypatch,
     capsys,
 ):
-    """main updates then clears stale rows, routing role-sheet and
-    workgroup rows to their own spreadsheet ids.
+    """main uploads one XLSX workbook per configured roster target.
 
     The ParishSoft client is stubbed out so no real data is loaded, and the
     loader is replaced with a recorder to confirm the expected load options.
     The setup stays local to this test so fixtures remain easy to understand
     and change.
     """
-    service = SheetsService()
+    service = DriveService()
+    uploads = install_upload_recorder(monkeypatch)
+    preflight_calls = install_drive_preflight(monkeypatch)
     loader_calls = []
     # Avoid building a real ParishSoft client; the loader returns canned data.
     monkeypatch.setattr(
         "parishkit.pk_create_ps_ministry_rosters.parishsoft_client_from_config",
         lambda _common, _config: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_create_ps_ministry_rosters.current_roster_time",
+        lambda _timezone_name: fixed_update_time(),
     )
 
     def loader(_client, **kwargs):
@@ -549,7 +621,7 @@ def test_create_ministry_rosters_main_writes_sheet_values(
         create_ministry_rosters_main(
             ["--config", str(write_config(tmp_path)), "--debug"],
             loader=loader,
-            sheets_factory=lambda _config: service,
+            drive_factory=lambda _config: service,
         )
         == 0
     )
@@ -558,58 +630,45 @@ def test_create_ministry_rosters_main_writes_sheet_values(
     assert "Ministry roster operation completed successfully" in error
     assert "Ministry roster targets: Readers" in error
     assert "Workgroup roster targets: Movers" in error
+    assert "Uploaded roster workbook for Readers to Drive file default-sheet" in error
+    assert "Uploaded roster workbook Readers as of" not in error
     assert "RosterTarget(" not in error
     assert loader_calls == [{"active_only": True, "parishioners_only": False}]
-    # Each target is an update followed by a stale-row clear; ministry first,
-    # then its role sheet, then the workgroup, on their respective spreadsheet
-    # ids.
-    calls = service._spreadsheets._values.calls
-    assert calls[0][0] == "update"
-    assert calls[0][1]["spreadsheetId"] == "default-sheet"
-    assert calls[0][1]["range"] == "Readers!A1"
-    assert all(len(row) == 26 for row in calls[0][1]["body"]["values"])
-    assert calls[0][1]["body"]["values"][0][1:] == [""] * 25
-    assert calls[0][1]["body"]["values"][4][4] == "Member"
-    assert calls[0][1]["body"]["values"][6][4] == ""
-    assert calls[1] == (
-        "clear",
-        {
-            "spreadsheetId": "default-sheet",
-            "range": "Readers!A10:Z",
-            "body": {},
-        },
-    )
-    assert calls[2][0] == "update"
-    assert calls[2][1]["spreadsheetId"] == "lead-sheet"
-    assert calls[2][1]["body"]["values"][4][0] == "Smith, Ann"
-    assert calls[4][0] == "update"
-    assert calls[4][1]["spreadsheetId"] == "movers-sheet"
-    assert service._spreadsheets.get_calls == [
-        {"spreadsheetId": "default-sheet", "fields": "sheets.properties"},
-        {"spreadsheetId": "lead-sheet", "fields": "sheets.properties"},
-        {"spreadsheetId": "movers-sheet", "fields": "sheets.properties"},
+    assert [upload["file_id"] for upload in uploads] == [
+        "default-sheet",
+        "lead-sheet",
+        "movers-sheet",
     ]
-    assert [
-        call["body"]["requests"][0]["updateSheetProperties"]["properties"]["sheetId"]
-        for call in service._spreadsheets.batch_update_calls
-    ] == [101, 102, 103]
-    assert all(
-        call["body"]["requests"][0]["updateSheetProperties"]["properties"][
-            "gridProperties"
-        ]["frozenRowCount"]
-        == 4
-        for call in service._spreadsheets.batch_update_calls
-    )
-    assert all(
-        "updateSpreadsheetProperties" not in request
-        for call in service._spreadsheets.batch_update_calls
-        for request in call["body"]["requests"]
-    )
+    assert [call[0] for call in preflight_calls] == [
+        "default-sheet",
+        "lead-sheet",
+        "movers-sheet",
+    ]
+    assert [upload["name"] for upload in uploads] == [
+        "Readers as of 2026-01-02 03:04:00 EST",
+        "Reader Leads as of 2026-01-02 03:04:00 EST",
+        "Movers as of 2026-01-02 03:04:00 EST",
+    ]
+    assert uploads[0]["worksheet_title"] == ROSTER_WORKSHEET_TITLE
+    assert uploads[0]["freeze_panes"] == "A5"
+    assert uploads[0]["merged_ranges"] == {"A1:D1", "A2:D2"}
+    assert uploads[0]["widths"] == list(ROSTER_COLUMN_WIDTHS)
+    assert uploads[0]["rows"][0][0] == "Ministry: Readers"
+    assert uploads[0]["rows"][1][0] == "Last updated: 2026-01-02 03:04:00 EST"
+    assert uploads[0]["rows"][4][4] == "Member"
+    assert uploads[0]["rows"][6][4] is None
+    assert uploads[1]["rows"][4][0] == "Smith, Ann"
+    assert uploads[2]["rows"][4][0] == "Adams, Bob"
 
 
-def test_create_ministry_rosters_dry_run_skips_sheet_writes(tmp_path, monkeypatch):
-    """In dry-run mode main loads data but performs no clear/update sheet writes."""
-    service = SheetsService()
+def test_create_ministry_rosters_dry_run_skips_drive_uploads(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    """In dry-run mode main loads data but performs no Drive uploads."""
+    service = DriveService()
+    uploads = install_upload_recorder(monkeypatch)
     monkeypatch.setattr(
         "parishkit.pk_create_ps_ministry_rosters.parishsoft_client_from_config",
         lambda _common, _config: SimpleNamespace(),
@@ -619,132 +678,39 @@ def test_create_ministry_rosters_dry_run_skips_sheet_writes(tmp_path, monkeypatc
         create_ministry_rosters_main(
             ["--config", str(write_config(tmp_path, dry_run=True))],
             loader=lambda _client, **_kwargs: parishsoft_data(),
-            sheets_factory=lambda _config: service,
+            drive_factory=lambda _config: service,
         )
         == 0
     )
 
-    assert service._spreadsheets._values.calls == []
-    assert service._spreadsheets.get_calls == []
-    assert service._spreadsheets.batch_update_calls == []
+    assert uploads == []
+    error = capsys.readouterr().err
+    assert "dry-run: would upload" in error
+    assert "for Readers to Drive file default-sheet" in error
+    assert "would upload 8 row(s) as Readers as of" not in error
 
 
-def test_create_ministry_rosters_preflights_missing_sheet_before_writes(
+def test_create_ministry_rosters_upload_failure_stops_later_uploads(
     tmp_path,
     monkeypatch,
 ):
-    """A missing target tab fails before any roster sheet is updated."""
-    service = SheetsService()
-    service._spreadsheets.sheets = [
-        {"properties": {"title": "Readers", "sheetId": 101}},
-        {"properties": {"title": "Leads", "sheetId": 102}},
-    ]
+    """A failed Drive upload aborts before later targets are uploaded."""
+    service = DriveService()
+    uploads = []
+    install_drive_preflight(monkeypatch)
+
+    def fake_upload(_service, file_id, _xlsx_path, *, name):
+        """Record the attempted upload, then fail like Drive did."""
+        uploads.append((file_id, name))
+        raise GoogleAPIError(500, "temporary Drive failure")
+
     monkeypatch.setattr(
-        "parishkit.pk_create_ps_ministry_rosters.parishsoft_client_from_config",
-        lambda _common, _config: SimpleNamespace(),
-    )
-
-    assert (
-        create_ministry_rosters_main(
-            ["--config", str(write_config(tmp_path))],
-            loader=lambda _client, **_kwargs: parishsoft_data(),
-            sheets_factory=lambda _config: service,
-        )
-        == 2
-    )
-
-    assert service._spreadsheets._values.calls == []
-    assert service._spreadsheets.batch_update_calls == []
-
-
-def test_create_ministry_rosters_plans_generated_width_before_writes(
-    tmp_path,
-    monkeypatch,
-):
-    """A too-narrow later target fails before any earlier roster writes."""
-    service = SheetsService()
-    config = write_config(tmp_path)
-    config.write_text(
-        config.read_text(encoding="utf-8").replace(
-            "clear_range: Movers!A:Z",
-            "clear_range: Movers!A:C",
-        ),
-        encoding="utf-8",
+        "parishkit.pk_create_ps_ministry_rosters.update_file_with_xlsx",
+        fake_upload,
     )
     monkeypatch.setattr(
-        "parishkit.pk_create_ps_ministry_rosters.parishsoft_client_from_config",
-        lambda _common, _config: SimpleNamespace(),
-    )
-
-    assert (
-        create_ministry_rosters_main(
-            ["--config", str(config)],
-            loader=lambda _client, **_kwargs: parishsoft_data(),
-            sheets_factory=lambda _config: service,
-        )
-        == 2
-    )
-
-    assert service._spreadsheets._values.calls == []
-    assert service._spreadsheets.batch_update_calls == []
-
-
-def test_create_ministry_rosters_clears_stale_rows_before_formatting(
-    tmp_path,
-    monkeypatch,
-):
-    """A formatting failure after value update does not leave stale rows visible."""
-    service = SheetsService()
-    service._spreadsheets.batch_update_error = GoogleAPIError(400, "format failed")
-    monkeypatch.setattr(
-        "parishkit.pk_create_ps_ministry_rosters.parishsoft_client_from_config",
-        lambda _common, _config: SimpleNamespace(),
-    )
-
-    assert (
-        create_ministry_rosters_main(
-            ["--config", str(write_config(tmp_path))],
-            loader=lambda _client, **_kwargs: parishsoft_data(),
-            sheets_factory=lambda _config: service,
-        )
-        == 2
-    )
-
-    assert [call[0] for call in service._spreadsheets._values.calls] == [
-        "update",
-        "clear",
-    ]
-    assert service._spreadsheets._values.calls[1][1]["range"] == "Readers!A10:Z"
-    assert service._spreadsheets.batch_update_calls
-
-
-def test_stale_row_clear_range_starts_below_written_roster():
-    """Stale-row cleanup preserves the rows that were just written."""
-    assert stale_row_clear_range("Readers!A:Z", 7) == "Readers!A8:Z"
-    assert stale_row_clear_range("Readers!A:Z", 7, range_name="Readers!A5") == (
-        "Readers!A12:Z"
-    )
-    assert stale_row_clear_range("'Sunday Readers'!A1:Z500", 7) == (
-        "'Sunday Readers'!A8:Z500"
-    )
-    assert stale_row_clear_range("Readers!A1:Z7", 7) is None
-
-
-def test_stale_row_clear_range_rejects_unsafe_clear_range():
-    """Unsupported clear ranges fail before the sheet update is attempted."""
-    with pytest.raises(ConfigError, match="clear_range"):
-        stale_row_clear_range("Readers!A1", 7)
-
-
-def test_create_ministry_rosters_update_failure_does_not_clear_existing_sheet(
-    tmp_path,
-    monkeypatch,
-):
-    """A failed values update must leave the old roster intact."""
-    service = SheetsService()
-    service._spreadsheets._values.update_error = GoogleAPIError(
-        500,
-        "temporary Sheets failure",
+        "parishkit.pk_create_ps_ministry_rosters.current_roster_time",
+        lambda _timezone_name: fixed_update_time(),
     )
     monkeypatch.setattr(
         "parishkit.pk_create_ps_ministry_rosters.parishsoft_client_from_config",
@@ -755,21 +721,198 @@ def test_create_ministry_rosters_update_failure_does_not_clear_existing_sheet(
         create_ministry_rosters_main(
             ["--config", str(write_config(tmp_path))],
             loader=lambda _client, **_kwargs: parishsoft_data(),
-            sheets_factory=lambda _config: service,
+            drive_factory=lambda _config: service,
         )
         == 2
     )
 
-    calls = service._spreadsheets._values.calls
-    assert calls[0][0] == "update"
-    assert all(call[0] != "clear" for call in calls)
+    assert uploads == [("default-sheet", "Readers as of 2026-01-02 03:04:00 EST")]
+
+
+def test_create_ministry_rosters_prepares_all_workbooks_before_uploads(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    """Local XLSX build failures abort before any Drive file is replaced."""
+    service = DriveService()
+    uploads = install_upload_recorder(monkeypatch)
+    install_drive_preflight(monkeypatch)
+    workbook_calls = {"count": 0}
+
+    def fake_roster_workbook(values):
+        """Fail on the second workbook to simulate bad local XLSX data."""
+        workbook_calls["count"] += 1
+        if workbook_calls["count"] == 2:
+            raise ValueError("bad local workbook data")
+        return roster_workbook(values)
+
+    monkeypatch.setattr(
+        "parishkit.pk_create_ps_ministry_rosters.roster_workbook",
+        fake_roster_workbook,
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_create_ps_ministry_rosters.current_roster_time",
+        lambda _timezone_name: fixed_update_time(),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_create_ps_ministry_rosters.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        create_ministry_rosters_main(
+            ["--config", str(write_config(tmp_path))],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            drive_factory=lambda _config: service,
+        )
+        == 2
+    )
+
+    error = capsys.readouterr().err
+    assert "Could not build XLSX roster workbook for 'Reader Leads'" in error
+    assert "bad local workbook data" in error
+    assert uploads == []
+
+
+def test_create_ministry_rosters_preflight_failure_skips_uploads(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    """A bad Drive target fails before any configured file is replaced."""
+    service = DriveService()
+    uploads = install_upload_recorder(monkeypatch)
+    install_drive_preflight(
+        monkeypatch,
+        metadata_by_id={
+            "movers-sheet": {
+                "id": "movers-sheet",
+                "name": "Movers",
+                "mimeType": GOOGLE_SHEET_MIME_TYPE,
+                "capabilities": {"canEdit": False},
+            },
+        },
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_create_ps_ministry_rosters.current_roster_time",
+        lambda _timezone_name: fixed_update_time(),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_create_ps_ministry_rosters.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        create_ministry_rosters_main(
+            ["--config", str(write_config(tmp_path))],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            drive_factory=lambda _config: service,
+        )
+        == 2
+    )
+
+    error = capsys.readouterr().err
+    assert "not editable by the delegated Google user" in error
+    assert "movers-sheet" in error
+    assert uploads == []
+
+
+def test_create_ministry_rosters_preflight_requires_content_changes(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    """A Drive target must allow replacing file content before uploads begin."""
+    service = DriveService()
+    uploads = install_upload_recorder(monkeypatch)
+    install_drive_preflight(
+        monkeypatch,
+        metadata_by_id={
+            "lead-sheet": {
+                "id": "lead-sheet",
+                "name": "Lead Sheet",
+                "mimeType": GOOGLE_SHEET_MIME_TYPE,
+                "capabilities": {"canEdit": True, "canModifyContent": False},
+            },
+        },
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_create_ps_ministry_rosters.current_roster_time",
+        lambda _timezone_name: fixed_update_time(),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_create_ps_ministry_rosters.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        create_ministry_rosters_main(
+            ["--config", str(write_config(tmp_path))],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            drive_factory=lambda _config: service,
+        )
+        == 2
+    )
+
+    error = capsys.readouterr().err
+    assert "cannot have its content replaced" in error
+    assert "lead-sheet" in error
+    assert uploads == []
+
+
+def test_create_ministry_rosters_preflight_requires_rename_permission(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    """A Drive target must allow renaming before uploads begin."""
+    service = DriveService()
+    uploads = install_upload_recorder(monkeypatch)
+    install_drive_preflight(
+        monkeypatch,
+        metadata_by_id={
+            "movers-sheet": {
+                "id": "movers-sheet",
+                "name": "Movers",
+                "mimeType": GOOGLE_SHEET_MIME_TYPE,
+                "capabilities": {
+                    "canEdit": True,
+                    "canModifyContent": True,
+                    "canRename": False,
+                },
+            },
+        },
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_create_ps_ministry_rosters.current_roster_time",
+        lambda _timezone_name: fixed_update_time(),
+    )
+    monkeypatch.setattr(
+        "parishkit.pk_create_ps_ministry_rosters.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        create_ministry_rosters_main(
+            ["--config", str(write_config(tmp_path))],
+            loader=lambda _client, **_kwargs: parishsoft_data(),
+            drive_factory=lambda _config: service,
+        )
+        == 2
+    )
+
+    error = capsys.readouterr().err
+    assert "cannot be renamed by the delegated Google user" in error
+    assert "movers-sheet" in error
+    assert uploads == []
 
 
 def test_create_ministry_rosters_dry_run_does_not_require_google_config(
     tmp_path,
     monkeypatch,
 ):
-    """Dry-run roster generation does not build a Google Sheets service."""
+    """Dry-run roster generation does not build a Google Drive service."""
     config = write_config(tmp_path, dry_run=True)
     text = config.read_text(encoding="utf-8")
     config.write_text(
@@ -798,8 +941,9 @@ def test_create_ministry_rosters_reports_missing_parishsoft_source(
     monkeypatch,
     capsys,
 ):
-    """Unknown roster ministry/workgroup source names abort before sheet writes."""
-    service = SheetsService()
+    """Unknown roster ministry/workgroup source names abort before Drive uploads."""
+    service = DriveService()
+    uploads = install_upload_recorder(monkeypatch)
     config = write_config(tmp_path)
     text = config.read_text(encoding="utf-8")
     config.write_text(
@@ -818,7 +962,7 @@ def test_create_ministry_rosters_reports_missing_parishsoft_source(
         create_ministry_rosters_main(
             ["--config", str(config)],
             loader=lambda _client, **_kwargs: parishsoft_data(),
-            sheets_factory=lambda _config: service,
+            drive_factory=lambda _config: service,
         )
         == 2
     )
@@ -827,7 +971,7 @@ def test_create_ministry_rosters_reports_missing_parishsoft_source(
     assert "ERROR parishkit.pk_create_ps_ministry_rosters" in error
     assert "Configured ParishSoft ministry was not found" in error
     assert "rosters.ministries[].ministry" in error
-    assert service._spreadsheets._values.calls == []
+    assert uploads == []
 
 
 def test_create_ministry_rosters_validation_uses_custom_leader_suffix(
@@ -835,7 +979,9 @@ def test_create_ministry_rosters_validation_uses_custom_leader_suffix(
     monkeypatch,
 ):
     """A leader-only workgroup source can use the configured suffix."""
-    service = SheetsService()
+    service = DriveService()
+    uploads = install_upload_recorder(monkeypatch)
+    install_drive_preflight(monkeypatch)
     config = write_config(tmp_path)
     config.write_text(
         config.read_text(encoding="utf-8").replace(
@@ -856,15 +1002,13 @@ def test_create_ministry_rosters_validation_uses_custom_leader_suffix(
         create_ministry_rosters_main(
             ["--config", str(config)],
             loader=lambda _client, **_kwargs: data,
-            sheets_factory=lambda _config: service,
+            drive_factory=lambda _config: service,
         )
         == 0
     )
 
-    movers_update = service._spreadsheets._values.calls[4]
-    assert movers_update[0] == "update"
-    assert movers_update[1]["body"]["values"][4][0] == "Adams, Bob"
-    assert movers_update[1]["body"]["values"][4][3] == "Leader"
+    assert uploads[2]["rows"][4][0] == "Adams, Bob"
+    assert uploads[2]["rows"][4][3] == "Leader"
 
 
 def test_create_ministry_rosters_reports_invalid_yaml(tmp_path, capsys):
@@ -893,37 +1037,3 @@ def test_create_ministry_rosters_logs_config_validation_error(tmp_path, capsys):
     assert "ERROR parishkit.pk_create_ps_ministry_rosters" in error
     assert "Configuration validation failed" in error
     assert "rosters must configure ministries or workgroups" in error
-
-
-def test_create_ministry_rosters_explains_unparseable_sheet_range(
-    tmp_path,
-    monkeypatch,
-    capsys,
-):
-    """A Sheets range parse failure points operators at the configured ranges."""
-    service = SheetsService()
-    service._spreadsheets._values.clear_error = GoogleAPIError(
-        400,
-        'HTTP 400 returned "Unable to parse range: Sheet1!A:Z"',
-    )
-    monkeypatch.setattr(
-        "parishkit.pk_create_ps_ministry_rosters.parishsoft_client_from_config",
-        lambda _common, _config: SimpleNamespace(),
-    )
-
-    assert (
-        create_ministry_rosters_main(
-            ["--config", str(write_config(tmp_path))],
-            loader=lambda _client, **_kwargs: parishsoft_data(),
-            sheets_factory=lambda _config: service,
-        )
-        == 2
-    )
-
-    error = capsys.readouterr().err
-    assert "ERROR parishkit.pk_create_ps_ministry_rosters" in error
-    assert "Google Sheets rejected a configured roster range" in error
-    assert "spreadsheet default-sheet" in error
-    assert "range='Readers!A1'" in error
-    assert "clear_range='Readers!A:Z'" in error
-    assert "worksheet/tab 'Readers'" in error

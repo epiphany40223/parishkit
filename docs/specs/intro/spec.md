@@ -117,8 +117,7 @@ src/parishkit/            Reusable, parish-neutral package code
   google/                 Google API helpers
     auth.py               Service-account/user creds, build_service, execute_google_request
     calendar.py           Calendar v3 list/patch helpers
-    sheets.py             Sheets v4 read/clear/update/batchUpdate helpers
-    drive.py              Drive v3 metadata helper
+    drive.py              Drive v3 metadata and XLSX-to-Sheets upload helper
     groups.py             Admin SDK Directory + Groups Settings helpers
   email/                  Email notification providers
     base.py               Email/Attachment models, build_message, provider_from_config
@@ -128,7 +127,7 @@ src/parishkit/            Reusable, parish-neutral package code
   pk_query_ps_memfam.py   Member/family lookup tool
   pk_print_ps_ministries.py  Ministry-name listing tool
   pk_validate_gcalendar_reservations.py  Calendar reservation auditor
-  pk_create_ps_ministry_rosters.py       Ministry rosters → Google Sheets
+  pk_create_ps_ministry_rosters.py       Ministry rosters → Drive/Sheets
   pk_sync_ps_to_ggroup.py Google Group membership sync
   pk_sync_ps_to_cc.py     Constant Contact list sync
 
@@ -388,9 +387,8 @@ extra.
 - **`google.calendar`**: `list_events` (paginated, single-events expansion,
   start-time order) and `patch_attendee_response` (set this account's RSVP
   without disturbing other attendees). Writes use a one-shot retry policy.
-- **`google.sheets`**: `get_values`, `clear_values`, `update_values`,
-  `get_spreadsheet` (metadata for title→sheetId mapping), `batch_update_spreadsheet`.
-- **`google.drive`**: `get_file_metadata` (shared-drive aware).
+- **`google.drive`**: `get_file_metadata` and `update_file_with_xlsx`
+  (shared-drive aware Drive metadata/file-replacement helpers).
 - **`google.groups`**: `build_admin_directory_service` /
   `build_groups_settings_service`; `list_group_members`,
   `get_group_posting_permissions`, `insert_group_member`,
@@ -568,7 +566,7 @@ cases, and link back to the shared sections here.
 | `pk-cron-runner` | [spec](../pk-cron-runner/spec.md) | Scheduler | Local locks/logs; Slack |
 | `pk-sync-ps-to-ggroup` | [spec](../pk-sync-ps-to-ggroup/spec.md) | Sync | Google Group membership |
 | `pk-sync-ps-to-cc` | [spec](../pk-sync-ps-to-cc/spec.md) | Sync | Constant Contact lists |
-| `pk-create-ps-ministry-rosters` | [spec](../pk-create-ps-ministry-rosters/spec.md) | Sync/report | Google Sheets |
+| `pk-create-ps-ministry-rosters` | [spec](../pk-create-ps-ministry-rosters/spec.md) | Sync/report | Google Drive spreadsheet files |
 | `pk-validate-gcalendar-reservations` | [spec](../pk-validate-gcalendar-reservations/spec.md) | Audit | Google Calendar RSVPs |
 | `pk-query-ps-memfam` | [spec](../pk-query-ps-memfam/spec.md) | Lookup (read-only) | — |
 | `pk-print-ps-ministries` | [spec](../pk-print-ps-ministries/spec.md) | Lookup (read-only) | — |

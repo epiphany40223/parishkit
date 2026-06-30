@@ -23,7 +23,7 @@ Per-tool specifications (one folder per command in `scripts/`):
 - **[pk-sync-ps-to-cc/spec.md](pk-sync-ps-to-cc/spec.md)** — Constant Contact list
   sync.
 - **[pk-create-ps-ministry-rosters/spec.md](pk-create-ps-ministry-rosters/spec.md)** —
-  ministry rosters into Google Sheets.
+  ministry rosters into Google Drive/Sheets.
 - **[pk-validate-gcalendar-reservations/spec.md](pk-validate-gcalendar-reservations/spec.md)** —
   Google Calendar reservation auditor.
 - **[pk-query-ps-memfam/spec.md](pk-query-ps-memfam/spec.md)** — member/family
