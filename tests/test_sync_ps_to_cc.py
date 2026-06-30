@@ -1032,7 +1032,7 @@ def test_sync_ps_to_cc_due_unsubscribed_report_requires_sender(
     )
 
     error = capsys.readouterr().err
-    assert "ERROR parishkit.pk_sync_ps_to_cc" in error
+    assert "ERROR pk.pk_sync_ps_to_cc" in error
     assert "sync.notifications.sender is required" in error
     assert email.sent == []
     assert cc.calls == []
@@ -1083,7 +1083,7 @@ def test_sync_ps_to_cc_due_unsubscribed_report_requires_recipients(
     )
 
     error = capsys.readouterr().err
-    assert "ERROR parishkit.pk_sync_ps_to_cc" in error
+    assert "ERROR pk.pk_sync_ps_to_cc" in error
     assert "sync.lists[].notifications is required" in error
     assert email.sent == []
     assert [call[0] for call in cc.calls] == ["get_all", "get_all"]
@@ -1371,7 +1371,7 @@ def test_sync_ps_to_cc_reports_missing_parishsoft_workgroup(
     )
 
     error = capsys.readouterr().err
-    assert "ERROR parishkit.pk_sync_ps_to_cc" in error
+    assert "ERROR pk.pk_sync_ps_to_cc" in error
     assert "Configured ParishSoft member workgroup was not found" in error
     assert "sync.lists[].source_workgroup" in error
     assert cc.calls == []
@@ -1399,7 +1399,7 @@ def test_sync_ps_to_cc_reports_missing_constant_contact_list(
     )
 
     error = capsys.readouterr().err
-    assert "ERROR parishkit.pk_sync_ps_to_cc" in error
+    assert "ERROR pk.pk_sync_ps_to_cc" in error
     assert "Configured Constant Contact list was not found" in error
     assert "sync.lists[].target_list" in error
     assert [call[0] for call in cc.calls] == ["get_all", "get_all"]

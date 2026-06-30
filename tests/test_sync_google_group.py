@@ -1088,7 +1088,7 @@ def test_sync_google_group_reports_missing_google_group(
     )
 
     error = capsys.readouterr().err
-    assert "ERROR parishkit.pk_sync_ps_to_ggroup" in error
+    assert "ERROR pk.pk_sync_ps_to_ggroup" in error
     assert "Configured Google Group was not found" in error
     assert "sync.groups[].group" in error
     assert [call[0] for call in admin._members.calls] == ["list"]
@@ -1164,7 +1164,7 @@ def test_sync_google_group_reports_missing_parishsoft_source(
     )
 
     error = capsys.readouterr().err
-    assert "ERROR parishkit.pk_sync_ps_to_ggroup" in error
+    assert "ERROR pk.pk_sync_ps_to_ggroup" in error
     assert "Configured ParishSoft ministry was not found" in error
     assert "sync.groups[].ministries" in error
     assert admin._members.calls == []
@@ -1286,7 +1286,7 @@ sync:
     )
 
     error = capsys.readouterr().err
-    assert "ERROR parishkit.pk_sync_ps_to_ggroup" in error
+    assert "ERROR pk.pk_sync_ps_to_ggroup" in error
     assert "Configured ParishSoft selector matched no ministries" in error
     assert "sync.groups[].selectors[].ministry_pattern" in error
     assert admin._members.calls == []

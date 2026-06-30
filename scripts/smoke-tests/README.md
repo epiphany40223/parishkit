@@ -50,11 +50,14 @@ scripts/smoke-tests/google-api.py --service drive --version v3 \
   --service-account-file /opt/parishkit/credentials/google-service-account.json \
   --drive-file-id example-file-id --send
 
-# Sheets
-scripts/smoke-tests/google-api.py --service sheets --version v4 \
-  --scope https://www.googleapis.com/auth/spreadsheets.readonly \
+# Drive scope used by pk-create-ps-ministry-rosters. The smoke test still reads
+# only file metadata, but it verifies that the delegated client can use the
+# write-capable scope authorized for roster uploads.
+scripts/smoke-tests/google-api.py --service drive --version v3 \
+  --scope https://www.googleapis.com/auth/drive \
   --service-account-file /opt/parishkit/credentials/google-service-account.json \
-  --spreadsheet-id example-sheet-id --sheet-range A1:A1 --send
+  --delegated-subject admin@example.org \
+  --drive-file-id example-spreadsheet-file-id --send
 
 # Google Workspace Admin SDK group membership
 scripts/smoke-tests/google-api.py --service admin --version directory_v1 \

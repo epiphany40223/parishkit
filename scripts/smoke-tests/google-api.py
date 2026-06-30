@@ -36,8 +36,6 @@ def main() -> int:
     parser.add_argument("--version", required=True)
     parser.add_argument("--calendar-id")
     parser.add_argument("--drive-file-id")
-    parser.add_argument("--spreadsheet-id")
-    parser.add_argument("--sheet-range", default="A1:A1")
     parser.add_argument("--group-key")
     parser.add_argument(
         "--send", action="store_true", help="execute the read-only call"
@@ -101,15 +99,6 @@ def main() -> int:
             )
         )
         print(f"Read Drive file metadata: {response.get('name', response.get('id'))}.")
-    elif args.service == "sheets":
-        if not args.spreadsheet_id:
-            parser.error("--spreadsheet-id is required for sheets smoke tests")
-        response = execute_google_request(
-            service.spreadsheets()
-            .values()
-            .get(spreadsheetId=args.spreadsheet_id, range=args.sheet_range)
-        )
-        print(f"Read {len(response.get('values', []))} sheet row(s).")
     elif args.service == "admin":
         if not args.group_key:
             parser.error("--group-key is required for admin smoke tests")
@@ -118,9 +107,7 @@ def main() -> int:
         )
         print(f"Read {len(response.get('members', []))} group member(s).")
     else:
-        parser.error(
-            "supported smoke-test services are calendar, drive, sheets, and admin"
-        )
+        parser.error("supported smoke-test services are calendar, drive, and admin")
     return 0
 
 

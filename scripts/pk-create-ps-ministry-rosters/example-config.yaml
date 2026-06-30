@@ -23,14 +23,14 @@ parishsoft:
   cache_limit: 14m
   expected_organization: Example Parish
 
-# Google Sheets credentials. service_account_file identifies the service
+# Google Drive credentials. service_account_file identifies the service
 # account credential. delegated_subject is the real Workspace user that the
 # service account impersonates via domain-wide delegation; it must not be the
 # service-account email. Prefer a dedicated least-privileged automation user
 # over a Super Admin. That delegated user needs Editor access to each
-# configured spreadsheet, or edit-capable access to the shared drive containing
-# it, and the service account's OAuth client ID must be authorized for the
-# Sheets scope in Workspace Admin.
+# configured Drive spreadsheet file, or edit-capable access to the shared drive
+# containing it, and the service account's OAuth client ID must be authorized
+# for the Drive scope in Workspace Admin.
 google:
   service_account_file: /opt/parishkit/credentials/google-service-account.json
   delegated_subject: user_with_rw_perms_to_the_google_drive_files@example.org
@@ -40,12 +40,6 @@ google:
 rosters:
   # spreadsheet_id is optional when every entry has its own spreadsheet_id.
   spreadsheet_id: example-spreadsheet-id
-  # range is the first cell where roster data is written. The sheet/tab name
-  # before "!" must exist in the target spreadsheet.
-  range: Roster!A1
-  # clear_range is erased before writing so stale rows from previous runs are
-  # removed. It must reference an existing sheet/tab.
-  clear_range: Roster!A:Z
   # Workgroup leaders are modeled in ParishSoft as a companion workgroup whose
   # name is the base workgroup plus this suffix.
   workgroup_leader_suffix: " Ldr"
@@ -53,7 +47,8 @@ rosters:
   # entry. source names must match ParishSoft exactly.
   ministries:
     - ministry: Example Ministry
-      # Target spreadsheet for this ministry roster.
+      # Target Google Drive spreadsheet file for this ministry roster. The file
+      # is replaced with an uploaded XLSX workbook converted to Google Sheets.
       spreadsheet_id: example-ministry-spreadsheet-id
       # include_birthday=true adds birthday month/day to roster output.
       include_birthday: false
@@ -64,7 +59,7 @@ rosters:
           roles:
             - Chairperson
             - Leader
-          # Each role sheet can write to its own spreadsheet.
+          # Each role sheet should write to its own Drive spreadsheet file.
           spreadsheet_id: example-role-spreadsheet-id
   # workgroups selects ParishSoft member workgroups. Leaders are detected using
   # workgroup_leader_suffix.

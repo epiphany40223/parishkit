@@ -22,8 +22,20 @@ DEFAULT_MAX_BYTES = 50_000_000
 DEFAULT_BACKUP_COUNT = 50
 STRUCTURED_EXTRA_FIELD = "extra"
 LOG_FILE_MODE = 0o600
-API_LOGGER = logging.getLogger("parishkit.api")
+PACKAGE_LOGGER_NAME = "parishkit"
+DISPLAY_LOGGER_NAME = "pk"
+API_LOGGER = logging.getLogger(f"{PACKAGE_LOGGER_NAME}.api")
 _SLACK_FAILURE_WARNING_ACTIVE = False
+
+
+def display_logger_name(name: str) -> str:
+    """Return the compact logger name used in human and JSONL output."""
+    if name == PACKAGE_LOGGER_NAME:
+        return DISPLAY_LOGGER_NAME
+    prefix = f"{PACKAGE_LOGGER_NAME}."
+    if name.startswith(prefix):
+        return f"{DISPLAY_LOGGER_NAME}.{name[len(prefix) :]}"
+    return name
 
 
 def log_extra(value: Any) -> dict[str, Any]:
@@ -62,7 +74,7 @@ class JsonLogFormatter(logging.Formatter):
         payload: dict[str, Any] = {
             "timestamp": self.formatTime(record),
             "level": record.levelname,
-            "logger": record.name,
+            "logger": display_logger_name(record.name),
             "message": record.getMessage(),
         }
         if record.exc_info:
@@ -74,6 +86,19 @@ class JsonLogFormatter(logging.Formatter):
                 getattr(record, STRUCTURED_EXTRA_FIELD)
             )
         return json.dumps(payload)
+
+
+class CompactLoggerNameFormatter(logging.Formatter):
+    """Format text records with compact ParishKit logger names."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        """Format ``record`` while displaying ``parishkit`` as ``pk``."""
+        original_name = record.name
+        record.name = display_logger_name(original_name)
+        try:
+            return super().format(record)
+        finally:
+            record.name = original_name
 
 
 class CompressingRotatingFileHandler(RotatingFileHandler):
@@ -241,7 +266,7 @@ def setup_logging(
     console_level = (
         logging.DEBUG if debug else logging.INFO if verbose else logging.WARNING
     )
-    text_formatter = logging.Formatter(DEFAULT_LOG_FORMAT)
+    text_formatter = CompactLoggerNameFormatter(DEFAULT_LOG_FORMAT)
     file_formatter = JsonLogFormatter()
     new_handlers: list[logging.Handler] = []
 

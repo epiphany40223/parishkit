@@ -579,7 +579,7 @@ calendars:
     )
 
     error = capsys.readouterr().err
-    assert "ERROR parishkit.pk_validate_gcalendar_reservations" in error
+    assert "ERROR pk.pk_validate_gcalendar_reservations" in error
     assert "Configuration validation failed" in error
     assert "calendars.calendars[0] ('Room').calendar_id" in error
 

@@ -11,7 +11,7 @@ ministry, stewardship, and financial data. ParishKit treats ParishSoft as the
 single source of truth and copies the relevant pieces of that data *outward* to
 the other services your parish uses, such as:
 
-- **Google Workspace** (Google Groups, Google Sheets, Google Calendar)
+- **Google Workspace** (Google Groups, Google Drive/Sheets, Google Calendar)
 - **Constant Contact** email lists
 - **Status and error notifications** by email and Slack
 
@@ -58,7 +58,7 @@ the ones your parish actually uses. Every tool has its own folder under
 - **`pk-sync-ps-to-cc`** — keeps Constant Contact email lists in step with
   ParishSoft workgroups, while respecting people who have unsubscribed.
 - **`pk-create-ps-ministry-rosters`** — builds ministry roster tables from
-  ParishSoft and writes them into Google Sheets.
+  ParishSoft and uploads them into Google Drive as native Google Sheets.
 
 **Audit and reporting tools:**
 
@@ -288,7 +288,7 @@ Workspace Admin steps.
    need. Go to **APIs & Services > Library**, search for each API, and click
    **Enable**:
    - **Google Calendar API** — for `pk-validate-gcalendar-reservations`.
-   - **Google Sheets API** — for `pk-create-ps-ministry-rosters`.
+   - **Google Drive API** — for `pk-create-ps-ministry-rosters`.
    - **Admin SDK API** — for `pk-sync-ps-to-ggroup` (Google Group membership).
    - You do **not** need the Gmail API for the current email provider. ParishKit
      sends Workspace email over SMTP with OAuth, not the Gmail API. Enable the
@@ -359,7 +359,7 @@ ParishKit makes a request.
 
 - **Pick a dedicated, least-privileged Workspace user** for this, not a super
   admin. The user only needs the specific access each tool requires (managing
-  group membership, editing the target spreadsheets, responding to calendar
+  group membership, editing the target Drive/Sheets files, responding to calendar
   invitations, or sending mail).
 - **Important:** the delegated user is a normal Workspace account
   (`someone@yourparish.org`), **not** the service-account email address.
@@ -381,13 +381,13 @@ email:
 Now grant that delegated user access to the specific Google objects the tool
 will touch:
 
-- **Google Sheets** (for `pk-create-ps-ministry-rosters`): the delegated user
-  must have **Editor** access to each target spreadsheet. Open the spreadsheet,
-  click **Share**, add the delegated user's email, and choose **Editor**. For a
-  spreadsheet in a shared drive, either share that one file as **Editor** or add
-  the delegated user to the shared drive with an edit-capable role
-  (**Contributor**, **Content manager**, or **Manager**). A Sheets `403` error
-  on write means this user cannot edit that spreadsheet.
+- **Google Drive/Sheets** (for `pk-create-ps-ministry-rosters`): the delegated
+  user must have **Editor** access to each target spreadsheet file. Open the
+  spreadsheet, click **Share**, add the delegated user's email, and choose
+  **Editor**. For a spreadsheet in a shared drive, either share that one file as
+  **Editor** or add the delegated user to the shared drive with an edit-capable
+  role (**Contributor**, **Content manager**, or **Manager**). A Drive `403`
+  error on upload means this user cannot edit that file.
 - **Google Groups** (for `pk-sync-ps-to-ggroup`): the delegated user needs the
   authority to manage group membership, such as an appropriate Groups Admin or
   delegated-admin role.
@@ -424,9 +424,16 @@ production use, and prefer read-only scopes when a deployment only audits data.
 | Tool or integration | Google API | Scope(s) to authorize | Notes |
 | --- | --- | --- | --- |
 | `pk-validate-gcalendar-reservations` | Calendar API | `https://www.googleapis.com/auth/calendar` | Write-capable: the tool changes this account's invitation responses. |
-| `pk-create-ps-ministry-rosters` | Sheets API | `https://www.googleapis.com/auth/spreadsheets` | Write-capable for the configured spreadsheet ranges. |
+| `pk-create-ps-ministry-rosters` | Drive API | `https://www.googleapis.com/auth/drive` | Write-capable: replaces each configured Drive spreadsheet file with an uploaded XLSX workbook converted to Google Sheets. |
 | `pk-sync-ps-to-ggroup` | Admin SDK Directory API, Groups Settings API | `https://www.googleapis.com/auth/admin.directory.group.member`, `https://www.googleapis.com/auth/apps.groups.settings` | Write-capable for group membership; reads group settings. |
 | Google Workspace email notifications | Gmail SMTP (XOAUTH2) | `https://mail.google.com/` | Restricted, high-risk mail scope; used to send notification emails. |
+
+`pk-create-ps-ministry-rosters` intentionally uses the broad Drive scope
+because it updates pre-existing spreadsheet file IDs from unattended automation.
+The narrower Drive `drive.file` scope is for files the app created or that a
+user explicitly selected/opened with the app, which is not how these parish
+roster files are managed. Use a dedicated least-privileged delegated Workspace
+user and share only the required files or shared drives with that user.
 
 Treat the restricted mail scope (and any future Gmail send scope) as
 high-risk: have it reviewed before authorizing it.
@@ -596,7 +603,7 @@ A few settings appear in most configs:
   above.
 
 The rest of each config is specific to that tool — which ministries map to which
-group or list, which spreadsheets to write, and so on. The comments inside each
+group or list, which Drive/Sheets files to write, and so on. The comments inside each
 `example-config.yaml` explain every field, and each tool's README describes the
 tool-specific sections in more detail.
 
