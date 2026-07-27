@@ -12,3 +12,5 @@ directory holds design/analysis material.
 - **[parishsoft-api-analysis.md](parishsoft-api-analysis.md)** — comparison of the
   two ParishSoft API generations (v1 vs. v2), which one ParishKit uses, the
   write-capability analysis, and the switch/hybrid recommendation.
+- **[reference/](reference/README.md)** — non-normative source narratives and
+  development-workflow captures retained for traceability.

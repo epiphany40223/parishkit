@@ -13,15 +13,18 @@ per minute and inserts occurrences with unique idempotency keys. Celery/Redis
 delivers execution hints; workers always claim/check the PostgreSQL record
 before acting.
 
-An occurrence key identifies semantic work, for example
-`family-initial:<campaign>:<family>:<schedule-version>` or
-`daily-digest:<campaign>:<local-date>`. Re-delivery, scheduler restart, or
-manual retry cannot create a second successful occurrence.
+An occurrence key identifies revision-specific work, for example
+`mail:<campaign>:<schedule-uuid>:<revision>:<target>:<slot>:<mode>`. The stable
+schedule fulfillment defined by the
+[data model](../data/spec.md#schedule-revisions-and-fulfillment) prevents a new
+revision, scheduler restart, or manual retry from creating a second successful
+semantic delivery.
 
-Occurrence outcome is `pending`, `running`, `succeeded`, `skipped`, `coalesced`,
-or `failed`. `skipped` and `coalesced` are terminal, include a structured reason,
-and never masquerade as successful delivery; `coalesced` also references the
-replacement occurrence selected for delivery.
+Occurrence outcome is `pending`, `running`, `delivery_unknown`, `succeeded`,
+`skipped`, `coalesced`, or `failed`. `delivery_unknown` pauses automated mail
+handling pending reconciliation. `skipped` and `coalesced` are terminal, include
+a structured reason, and never masquerade as successful delivery; `coalesced`
+also references the replacement occurrence selected for delivery.
 
 Task state is `queued`, `running`, `retry_wait`, `succeeded`, `failed`,
 `cancelled`, or `abandoned`. Workers heartbeat and record phases/progress.
@@ -34,6 +37,30 @@ instants. DST folds run once; nonexistent local times run at the first valid
 instant after the gap. Changing timezone causes future occurrences to be
 recomputed, never already successful ones.
 
+### Schedule replacement and removal
+
+Editing or removing a schedule is one database transaction that locks its
+definition/current revision and related occurrence/outbox rows. Before the
+Admin confirms, the UI presents counts for successful fulfillment, safely
+cancellable work, terminal failures, and blocking in-flight/unknown work.
+
+The change is rejected while an old-revision outbox row is `submitting` or
+`delivery_unknown`; the Admin must wait for provider submission to finish or
+resolve the unknown result. Otherwise the transaction creates the replacement
+revision or removal marker, changes every old-revision `pending` or `retry_wait`
+outbox row to `cancelled`, and marks linked work that has not begun provider
+submission `skipped` with reason `schedule_replaced` or `schedule_removed`.
+Workers holding pre-submission execution hints recheck the locked durable state
+and cannot submit cancelled work. Failed old-revision work is marked superseded
+and loses its manual-retry action without rewriting its recorded failure.
+
+Successful old-revision deliveries cannot be recalled and remain fulfillment
+of the stable logical schedule. The new revision creates work only for semantic
+targets/slots not already fulfilled; removing a schedule creates none. The
+transaction records old/new revisions, all affected counts, and the confirming
+Admin in audit history. Failure rolls back both the revision change and every
+cancellation.
+
 Missed occurrences catch up once when services recover. Before executing, the
 worker rechecks global system mode, campaign state, and recipient eligibility.
 Every missed occurrence retains its own durable outcome, but semantically
@@ -41,6 +68,8 @@ redundant mail is coalesced rather than delivered in a burst. A coalesced record
 names the selected replacement occurrence and reason. A missed Family mail
 after campaign close is skipped with a durable reason, while reports for
 completed campaign days use the recovery-digest behavior below.
+
+### Mode routing
 
 Testing routing is global and applies to every application email: Family mail,
 submission receipts, Admin digests, critical alerts, and manual test/report
@@ -75,11 +104,12 @@ delta loader can prove a complete replacement.
 A full refresh runs nightly at an Admin-configurable local time, default 2:00
 a.m., and on initial setup/manual request. It uses shared
 `load_families_and_members` with active/inactive data sufficient for transition
-recognition. Giving detail is limited to at most two campaigns: the financial
-and comparison periods for the current operational campaign and, if separately
-present, the immediately upcoming draft campaign. Every other campaign reads
-its immutable retained snapshots; its periods do not expand the nightly source
-window.
+recognition. Giving detail is limited to the financial and comparison periods
+of the scheduled or active campaign. When no campaign is scheduled or active,
+it covers the current draft and, if the immediately preceding campaign is
+closed and still undergoing reconciliation, that closed campaign as well. Thus
+the window covers at most two campaigns. Archived and all older campaigns read
+their immutable retained snapshots and never expand the nightly source window.
 
 The cycle:
 
@@ -146,17 +176,48 @@ become the single test address, the subject/body prominently say TEST, and
 intended names/addresses are safely listed. Test delivery never marks a live
 occurrence delivered.
 
-Provider acceptance marks success. Transient failures retry with shared
-backoff; permanent address refusal records that recipient/family and continues.
+Each semantic delivery has a stable application idempotency key. The dispatch
+adapter supplies it as the provider idempotency key when the provider offers a
+contractual idempotent-send facility, and every safe retry reuses it. Provider
+acceptance marks success. A failure known to have occurred before acceptance is
+transient and retries with shared backoff.
+
+A timeout, connection loss, or malformed response after submission begins is
+ambiguous because the provider may already have accepted the message. The
+worker first queries provider status by the stable key or returned message ID
+when that capability exists. Confirmed acceptance succeeds; confirmed
+non-acceptance follows normal retry/failure handling. An unresolved result may
+be retried automatically only when the provider contract guarantees that reuse
+of the same key cannot create a second delivery. Otherwise the outbox row and
+occurrence enter `delivery_unknown`, automatic retry stops, a deduplicated
+WARNING is recorded, and Admins are notified in the portal.
+
+The Admin delivery-resolution screen may re-run provider reconciliation, mark
+the occurrence delivered when external evidence supports that result, or
+explicitly authorize a resend after acknowledging that a duplicate is possible.
+The latter creates a numbered attempt under the same semantic occurrence; it
+does not silently turn the unknown attempt into a failure. Every resolution,
+evidence note, and resend authorization is audited. Until resolution, the row
+is not treated as successful for delivery statistics or as eligible for an
+automatic catch-up duplicate.
+
+A permanent address refusal records that recipient/family, suppresses that
+normalized address until its source value changes or an Admin clears the
+refusal after verification, and continues. A Family whose every otherwise
+eligible address is suppressed is included in the
+[no-deliverable-email report](../reports/spec.md#families-without-eligible-email).
 A systemic provider/authentication failure stops further sending for that run
 and becomes CRITICAL to avoid a flood of identical failures.
 
 ## Submission confirmation
 
-The live submission transaction creates one receipt outbox row addressed to
-current eligible heads. It contains no sensitive answers or credentials. A
-delivery failure does not roll back the already accepted submission; it is
-visible/retryable to Admins. In Testing, it routes only to the test recipient.
+When at least one deliverable eligible-head address exists, the live submission
+transaction creates one receipt outbox row addressed to those heads. If none
+exists, it creates no outbox row and records a non-error `receipt_not_queued`
+outcome with reason `no_deliverable_recipient`; the submission still commits.
+A receipt contains no sensitive answers or credentials. A delivery failure does
+not roll back the already accepted submission; it is visible/retryable to
+Admins. In Testing, it routes only to the test recipient.
 
 ## Administrator digests
 
@@ -214,11 +275,12 @@ recorded Ministry scope. Admins may view every export job. No requester gains
 access to refresh, delivery, publication, purge, backup, or another user's job
 through the export status interface.
 
-Files are written atomically below `<root>/reports`, have opaque names, and
-expire after seven days by default. Metadata/audit persists. Expired files can
-be regenerated from retained source/config where permitted. Files are never
-served directly by the proxy without an authorized application response or
-short-lived single-use download grant.
+Files are written atomically below `<root>/reports`, have opaque names, and use
+the retention policy defined by
+[operations](../operations/spec.md#temporary-retention-and-housekeeping).
+Expired files can be regenerated from retained source/config where permitted.
+Files are never served directly by the proxy without an authorized application
+response or short-lived single-use download grant.
 
 ## ParishSoft publication
 
@@ -245,6 +307,7 @@ including:
 - wrong ParishSoft organization or implausible destructive source change;
 - systemic mail failure during a due campaign occurrence;
 - scheduler/worker health preventing due work;
+- sustained distributed administration-login or Family-code guessing abuse;
 - publication ambiguity after an external write;
 - failed backup beyond RPO; or
 - purge inconsistency/exhausted cleanup.

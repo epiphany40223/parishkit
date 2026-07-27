@@ -131,12 +131,46 @@ records, or a client-supplied value as proof of hosted-domain membership.
 Personal Google accounts using addresses at consumer or externally hosted
 domains therefore cannot inherit roles from a domain rule.
 
+Administration OAuth endpoints use shared Redis sliding-window counters after
+resolving the source address through the configured trusted-proxy policy. The
+default application limits are:
+
+- 20 OAuth initiations per source IP per 10 minutes;
+- 10 failed/invalid callbacks per source IP per 10 minutes; and
+- 5 signed-but-denied callbacks per 15 minutes for each keyed Google `sub`/email
+  fingerprint, plus the callback IP limit.
+
+Exceeding a limit returns the same safe denial response with `429` and a
+progressive `Retry-After`, capped at one hour. No identity receives a permanent
+or global account lock; a successful authorized login clears only its identity
+failure counter. Counter keys and logs never store raw callback tokens or an
+email solely for throttling. Deployment YAML may tune thresholds, but production
+startup warns about values weaker than the defaults.
+
+Caddy also applies a coarse token-bucket limit to `/admin/login` and the OAuth
+callback: 60 requests per source IP per minute with a burst of 20, returning
+`429` before proxying excess traffic. The application additionally detects 100
+failed or denied Admin callbacks across at least 10 source IPs or identity
+fingerprints within five minutes. Crossing that deployment-wide threshold emits
+one deduplicated WARNING/Admin notification and increases progressive backoff;
+sustained abuse for three windows becomes CRITICAL. Development exercises the
+application limits even when Caddy is absent.
+
 Admin sessions have a 30-minute idle timeout and 12-hour absolute lifetime.
 Family sessions have a 60-minute idle timeout and four-hour absolute lifetime.
 Both receive a visible warning before idle expiry. Privileged operations such
 as Production transition, campaign reopening, ParishSoft publication, secret
 replacement, and purge require fresh Google re-authentication no older than
 five minutes.
+
+Passive presence heartbeat and background polling never refresh idle expiry.
+While a Family form is visible, genuine keyboard, input, pointer, or touch
+interaction may schedule a CSRF-protected activity keepalive at most once every
+five minutes. The request contains no answers or field identifiers. The server
+refreshes the 60-minute idle deadline and returns the authoritative deadline,
+but never extends the four-hour absolute lifetime. Merely focusing a tab,
+receiving a timer event, or leaving it visible does not qualify. The idle-warning
+UI uses the returned deadline and remains keyboard and screen-reader operable.
 
 Authorization changes take effect on the next request and invalidate sessions
 that no longer have any role. Removing the last specific-address Administrator
@@ -160,15 +194,36 @@ Only its hash is stored. Tokens are campaign-bound, reusable until invalidated,
 and cease working when the campaign closes or Family becomes ineligible. An
 Admin may rotate a suspected token without changing the manual code.
 
+Code generation, uniqueness, and lookup use one canonical value: remove ASCII
+spaces and hyphens, convert ASCII letters to uppercase, then reject any
+character outside the configured code alphabet or any result of the wrong
+length. The HMAC input is that validated canonical value. Stored uniqueness and
+submitted-code lookup use the identical canonicalization function, so case and
+friendly delimiters cannot create distinct credentials.
+
 Access-token routes never log token path segments. Successful exchange rotates
 the session, redirects to a clean URL, and emits `Referrer-Policy: no-referrer`.
 Family pages and responses use `Cache-Control: no-store`.
 
-Failed Family-code attempts are limited per IP and code fingerprint. Defaults
-are five failures per fingerprint per 15 minutes and ten failures per IP per 10
-minutes, followed by `429` responses with increasing retry intervals. Limits
-are configurable only to stricter values in production. Error messages do not
-distinguish unknown, inactive, or non-Parishioner codes.
+Failed Family-code attempts use Redis sliding-window limits keyed by source IP
+and by source-IP/code-fingerprint pair. Defaults are five failures per pair per
+15 minutes and ten failures per IP per 10 minutes, followed by `429` responses
+with increasing retry intervals. There is no limiter or lock keyed only by a
+code fingerprint: failures from one or more other source addresses cannot
+disable a valid Family credential. A successful request remains usable unless
+its own source IP is limited and clears only that IP/code-pair failure counter.
+
+The application also detects a distributed guessing burst when at least 100
+invalid attempts, representing at least 100 distinct code fingerprints across
+at least 20 source IPs, occur within five minutes. Crossing that deployment-wide
+threshold emits one deduplicated WARNING/Admin notification, temporarily
+tightens the per-IP limit, and adds progressive delay to unsuccessful responses;
+valid codes continue to succeed. Abuse sustained for three consecutive windows
+becomes CRITICAL. Recovery expires the elevated controls automatically and may
+send one resolved notification. Thresholds are deployment-configurable, but
+production startup warns about values weaker than these defaults. Counter keys,
+logs, and notifications never contain plaintext codes. Error messages and
+timing do not distinguish unknown, inactive, or non-Parishioner codes.
 
 ## Web security and privacy
 

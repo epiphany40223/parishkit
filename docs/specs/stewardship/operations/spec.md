@@ -65,7 +65,11 @@ certificate state across upgrades.
 The application trusts forwarded scheme/client information only from the
 single configured proxy hop. Caddy access logs redact `/access/<token>` path
 segments and do not log cookies/query secrets. Upload/body/time limits protect
-the app without blocking configured logo/export workflows.
+the app without blocking configured logo/export workflows. Caddy applies the
+coarse administration-login limits defined by the
+[identity security policy](../architecture/spec.md#identity-and-session-security);
+the shipped local configuration omits that proxy layer but retains application
+limits.
 
 Local development binds an unprivileged HTTP port and uses localhost Google
 OAuth redirect registration. TLS remains optional locally.
@@ -125,7 +129,19 @@ Both modes verify manifest/digests, application/schema compatibility, credential
 availability, and the target-mode precondition before writing. They restore
 database/media/config, run permitted forward migrations, validate one parish,
 check expected ParishSoft organization without mutation, and start in Testing
-mode with workers/mail disabled until an Admin completes readiness review.
+mode with workers/mail disabled. Before the web service becomes externally
+ready, restore atomically sets the durable `restore_review_required` gate. That
+gate blocks every Family authentication, access-token exchange, form, and submit
+route regardless of campaign dates or Testing behavior; public requests receive
+a neutral parish-branded maintenance page without Family-specific information.
+
+The administration login and restore-readiness workflow remain available. The
+gate can be cleared only after readiness passes, a freshly authenticated Admin
+reviews the restored campaign/source/schedule state, and explicitly confirms
+return to Production. Clearing the gate, entering Production, and enabling
+workers/mail is one audited operational transition; partial release is
+prohibited. Failed or abandoned review leaves Family access and delivery
+disabled.
 
 Quarterly restore drills restore to an isolated environment, run integrity and
 application checks, and record success/failure metadata. The target recovery
@@ -137,10 +153,12 @@ campaign purge workflow. A stale/missing backup blocks purge.
 
 ## Temporary retention and housekeeping
 
-Generated export files expire after seven days; metadata remains. ParishSoft
-HTTP cache follows configured freshness and bounded size. Upload staging,
-failed wizard staging, old static bundles, expired sessions, worker results,
-and rotated operational logs have documented cleanup jobs.
+Generated export files expire after seven days by default; their metadata
+remains. This is the normative retention policy used by the
+[export worker](../background-processing/spec.md#exports-and-graph-rendering).
+ParishSoft HTTP cache follows configured freshness and bounded size. Upload
+staging, failed wizard staging, old static bundles, expired sessions, worker
+results, and rotated operational logs have documented cleanup jobs.
 
 Cleanup is idempotent, scoped to explicit subdirectories/records, and cannot
 follow unsafe symlinks or broad/unresolved paths. It never deletes promoted
@@ -178,9 +196,11 @@ external credential and makes no live network calls. Dependencies are injected
 and external responses use fakes/redacted fixtures.
 
 `pytest-cov` enforces at least 80% line coverage across `src/parishkit`, with
-authorization, Family credential verification, submission transaction,
-three-way reconciliation, outbox idempotency, ParishSoft publication, and purge
-state transitions receiving exhaustive branch-oriented tests.
+authorization, Family credential verification and access-token exchange,
+submission transaction, three-way reconciliation, outbox idempotency,
+ParishSoft publication, encryption/signing-key rotation, secret replacement,
+rate limiting, and purge state transitions receiving exhaustive branch-oriented
+tests.
 
 Required suites include:
 
@@ -191,11 +211,23 @@ Required suites include:
   boundary;
 - authentication tests proving that domain rules require matching verified
   email and signed Google hosted-domain claims, while exact-address rules do not;
+- administration-login tests for proxy/application thresholds, trusted source
+  address handling, keyed identity counters, progressive `Retry-After`,
+  distributed-abuse notification, and recovery after window expiry;
+- security tests for Family code normalization, IP/code-pair and per-IP
+  throttling, distributed-guessing detection and recovery, successful access
+  during an attack from other addresses, access-token exchange and revocation,
+  key rotation/migration/retirement, and atomic secret replacement rollback;
+- session tests distinguishing passive heartbeats from interaction-triggered
+  keepalive, including rate limiting, idle renewal, and absolute-expiry denial;
 - PostgreSQL integration tests for constraints, transactions, concurrent
   submissions, task claims, snapshot promotion, publication, and purge rollback;
 - worker tests for retry/idempotency, partial failure, missed schedules, and
-  abandoned-task recovery;
-- email rendering/routing tests for live/testing/recipient/privacy behavior;
+  abandoned-task recovery, plus schedule replacement/removal races proving
+  atomic cancellation and cross-revision fulfillment;
+- email rendering/routing tests for live/testing/recipient/privacy behavior,
+  provider acceptance followed by timeout, provider-status reconciliation,
+  idempotent safe retry, unresolved `delivery_unknown`, and authorized resend;
 - browser tests for setup, Admin/Staff/leader workflows and the full responsive
   Family path, including stale submit and repeat visit;
 - accessibility automation plus keyboard/screen-reader-oriented manual checks;
@@ -208,13 +240,15 @@ Required suites include:
 
 At minimum, end-to-end tests demonstrate:
 
-1. Empty deployment through bootstrap/wizard, aborted wizard rollback, and
-   restored deployment startup.
+1. Empty deployment through bootstrap/wizard, aborted wizard rollback, restored
+   deployment startup with Family access gated, and atomic Admin-approved
+   release from restore maintenance.
 2. Google allow/deny, exact-address override, last-Admin guard, immediate role
    revocation, and assigned-Ministry scoping.
 3. Testing email rerouting, mandatory Family-facing test acknowledgments,
-   segregated test submission, guarded deletion, and exactly-once live catch-up
-   on Production transition.
+   segregated test submission, blocked transition with in-flight test delivery,
+   aggregate creation and guarded deletion of test submissions/outbox detail,
+   and exactly-once live catch-up on Production transition.
 4. Full/delta refresh success, interrupted/invalid load retaining prior truth,
    new/inactive/reactivated Family behavior, and non-overlap/manual coalescing.
 5. No-change Family submission, every census field, proposed/terminal Member,
@@ -231,9 +265,10 @@ At minimum, end-to-end tests demonstrate:
    deduplicated CRITICAL notification, and recovery.
 9. Closed campaign explicit reopen and archive.
 10. Web purge blocked for every non-archived campaign, stale backup, or wrong
-    confirmation; successful resumable batched purge and atomic visible
-    tombstone transition; interrupted-batch recovery; retryable file cleanup;
-    and failure notification.
+    confirmation; durable preparation/resumption/cancellation; request/Campaign
+    state consistency; pre-delete rollback; successful resumable batched purge
+    and atomic visible tombstone transition; interrupted-batch recovery;
+    retryable database/file cleanup; and failure notification.
 
 ## CI and local validation
 

@@ -10,6 +10,8 @@ internal reconciliation/review terms.
 At `/`, the application evaluates configuration and campaign state before
 showing a code form:
 
+- restore review required: a neutral parish-branded maintenance message with no
+  Family authentication or data access;
 - unconfigured: "The system is not configured yet" with parish contact help;
 - before start: the configured parish name and local start date;
 - after close: the configured parish name and ended message;
@@ -18,6 +20,10 @@ showing a code form:
 
 These pages reveal no Family information. Testing mode still honors campaign
 date gates; Admin page previews remain available outside the interval.
+The restore-maintenance gate takes precedence over Testing mode, dates, codes,
+tokens, and existing Family sessions. Enabling it revokes Family sessions; no
+Family route accepts or buffers answers until the Admin releases the gate into
+Production.
 
 The manual credential is exactly eight case-insensitive letters. Spaces/hyphens
 may be stripped for friendly entry, but no digits or additional characters are
@@ -44,6 +50,13 @@ Once the form is dirty, in-application navigation and supported browser
 page-unload hooks warn that unsaved answers will be lost. This warning does not
 create a server or browser draft: preserving the requirement that nothing is
 saved before final Submit is an explicit privacy trade-off.
+
+Active form interaction keeps the authenticated session alive without saving
+answers, using the rate-limited
+[activity keepalive](../architecture/spec.md#identity-and-session-security).
+Passive presence polling does not extend the session. The expiry warning offers
+continued interaction when the idle deadline can still be refreshed and states
+when the absolute four-hour deadline cannot be extended.
 
 Forward/back controls preserve the in-memory state, move focus to the step
 heading, and never submit. A visible progress indicator names the current step
@@ -227,11 +240,13 @@ If eligibility/campaign closes before submit, no answers save and an
 appropriate status page appears.
 
 On success, the response renders the campaign-versioned Thank You content,
-queues a receipt to all currently eligible Family-head addresses, clears all
-client form state, and revokes the Family session. The receipt gives parish,
-campaign, Family display name, UTC-derived browser/local submission time, and
-contact/help information but no census, Ministry, additional-text, pledge,
-code, or secure-token values.
+clears all client form state, and revokes the Family session. When a deliverable
+eligible Family-head address exists, it queues the receipt defined by
+[background processing](../background-processing/spec.md#submission-confirmation).
+Having no deliverable recipient is a recorded non-error and never prevents the
+submission. The receipt gives parish, campaign, Family display name, UTC-derived
+browser/local submission time, and contact/help information but no census,
+Ministry, additional-text, pledge, code, or secure-token values.
 
 ## Repeat visits and source changes
 
@@ -273,7 +288,7 @@ do not:
 - create live census/Ministry/additional-information work; or
 - send a receipt to the intended Family.
 
-The receipt and every other outgoing message is rerouted to the configured test
-address and names intended recipients in the test banner/body. Production
+Testing-message routing follows the single normative
+[mode-routing policy](../background-processing/spec.md#mode-routing). Production
 transition deletes the test submissions and sensitive associated workflow/audit
 detail as defined by the Admin specification.

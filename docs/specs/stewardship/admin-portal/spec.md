@@ -21,6 +21,11 @@ Authentication failure, unverified email, allowlist denial, no role, and
 authorization failure use safe, specific-enough error pages without disclosing
 the allowlist. Each page offers another Google login attempt and parish contact
 guidance. Rate-limit and suspicious-login events are logged.
+Concrete per-IP, verified-identity, proxy, and deployment-wide limits are
+defined by the
+[identity security policy](../architecture/spec.md#identity-and-session-security).
+All login and callback denial pages preserve the retry path while honoring
+`429`/`Retry-After`; they never reveal which authorization check failed.
 
 If bootstrap exists but setup is incomplete, an Admin is routed only to the
 setup wizard. A non-Admin sees "The system is not configured yet" and can only
@@ -99,13 +104,21 @@ Admins have two always-visible indicators:
   activity, and form section; it never shows answers or credentials.
 - **Background work**: count/state of queued and running task runs. Detail shows
   type, initiator, start/heartbeat, phase, processed/total counts and percent,
-  sanitized status, and links to completed/failed records.
+  sanitized status, and links to completed/failed records. A distinct Admin-only
+  delivery warning links to unresolved `delivery_unknown` rows and exposes the
+  reconciliation, evidence-note, delivered-resolution, and acknowledged-resend
+  actions defined by the
+  [delivery workflow](../background-processing/spec.md#family-invitations-and-reminders);
+  it never displays credentials or sealed substitutions.
 
 Family clients heartbeat while a form is actively visible, at no more than one
 request every 30 seconds. Expired/closed/ineligible sessions disappear. Worker
 heartbeats identify abandoned runs; recovery behavior is task-specific.
 Family heartbeat and Admin background-indicator polling are presence-only
 requests: neither refreshes the authenticated session's idle-expiry timestamp.
+The distinct Family activity-keepalive behavior is defined by the
+[session policy](../architecture/spec.md#identity-and-session-security); it does
+not affect presence semantics or carry form answers.
 
 ## Parish and integration configuration
 
@@ -129,11 +142,12 @@ campaign or starting empty. Cloning copies content/share/schedule structures
 but not dates, Family codes, submissions, deliveries, workflow state, or fund
 records without explicit remapping to current ParishSoft IDs.
 
-New draft creation is unavailable while any campaign is draft, scheduled, or
-active and while the global mode is Production. After the current campaign
-closes or is archived, the Admin must complete the guarded return to Testing
-before creating its successor. The server checks both conditions in the draft-
-creation transaction; stale or direct requests cannot bypass them.
+New draft creation is unavailable if any campaign is draft, scheduled, or
+active. Independently, it is unavailable while the global mode is Production.
+After the current campaign closes or is archived, the Admin must complete the
+guarded return to Testing before creating its successor. The server checks both
+conditions in the draft-creation transaction; stale or direct requests cannot
+bypass them.
 
 The campaign editor includes:
 
@@ -156,9 +170,12 @@ Family mail occurs within the open interval.
 
 The UI labels structural settings and their lock trigger. After locking, the
 server rejects structural mutations even if a stale browser exposes controls.
-Content and future unsent schedules remain versioned/editable. Moving/removing
-a schedule whose outbox work already exists cannot recall a sent message; the
-UI shows delivered/queued counts before confirmation.
+Content and future schedules remain versioned/editable under the
+[atomic schedule-replacement policy](../background-processing/spec.md#schedule-replacement-and-removal).
+The confirmation shows successful, safely cancellable, failed, and blocking
+in-flight/unknown counts. A sent message cannot be recalled; its logical
+schedule fulfillment carries across revisions. Provider-submitting or
+`delivery_unknown` work blocks the edit until it is resolved.
 
 ### Production transition
 
@@ -172,15 +189,26 @@ Going live is a dedicated workflow, not a toggle. It requires:
 - at least one preview and test Family mailing;
 - a summary of active/eligible/no-email Families and live messages that will
   be due immediately;
+- no queued, running, or retry-wait Testing delivery, plus a terminal-delivery
+  summary ready for aggregation;
 - deletion of all Testing submissions/workflows and sensitive test audit
-  payloads, with exact submission and distinct-Family counts, an Admin-only
-  Family list for review, and explicit confirmation; and
+  payloads and Testing outbox detail, with exact submission, distinct-Family,
+  and message/result counts, an Admin-only Family list for review, and explicit
+  confirmation; and
 - fresh Google authentication plus a typed Production confirmation.
 
 Testing deliveries do not count as live. If a live occurrence is already due,
 the scheduler catches it up once after transition. Transition failure leaves
 Testing mode and test data intact unless deletion and mode activation can
 commit together; no partial go-live is allowed.
+
+Immediately before deletion, the transition writes one non-sensitive Testing
+delivery aggregate containing counts by message type and terminal result,
+attempt-count totals, transition time, template-version identifiers, and the
+configured Testing-recipient fingerprint. It contains no intended recipient,
+Family/Member link, rendered content, provider message identifier, or error
+detail. All Testing `OutboxMessage` rows and sensitive delivery audit payloads
+are then deleted in the same transition transaction.
 
 The preview screen has an explicit readiness-test send that is available before
 the campaign date interval. It renders a selected Family or safe sample, routes
@@ -192,6 +220,13 @@ check, making the `scheduled` state reachable before the start date.
 The transition changes the global system mode. Because only one campaign can be
 active, the selected campaign is the sole target of the readiness calculation;
 historical records keep their recorded mode.
+
+After restore, this workflow also controls the independent
+`restore_review_required` gate defined by the
+[operations specification](../operations/spec.md#restore). Successful readiness,
+fresh authentication, and final Production confirmation clear that gate in the
+same audited transition that enables workers and mail. Ordinary Testing-to-
+Production transition cannot bypass incomplete restore readiness.
 
 Returning a live deployment to Testing is allowed to halt live delivery, but
 requires fresh authentication, a warning listing affected queued schedules,
@@ -300,7 +335,8 @@ campaign before it becomes purgeable.
 
 The workflow has these required stages:
 
-1. Select an eligible campaign.
+1. Select an eligible campaign and create or resume its durable `draft` purge
+   request.
 2. Run a dry inventory showing campaign identity/dates, submission, workflow,
    email, source-version reference, report/media, and sensitive-audit counts.
 3. Verify a successful encrypted off-host backup completed within the 24-hour
@@ -309,9 +345,20 @@ The workflow has these required stages:
 5. Obtain fresh Google authentication.
 6. Require the exact campaign name and generated short purge phrase in separate
    confirmation fields.
-7. Create one idempotent durable purge job.
+7. Atomically advance the request to `queued` and create one idempotent purge
+   task.
 
-The task first commits the campaign's `purging` state, making it inaccessible.
+The UI displays and resumes the request states defined by the
+[data specification](../data/spec.md#job-outbox-audit-and-purge-records).
+Inventory, backup verification, and acknowledgement advance a `draft` request
+to `ready_for_confirmation`; an expired inventory or backup returns it to
+`draft`. An Admin may cancel through `queued` only while an atomic worker claim
+has not occurred. Terminal pre-deletion failure leaves the archived Campaign
+eligible for a new request. Once deletion has begun, the UI offers only status
+and safe idempotent retry actions, never cancellation or rollback.
+
+Worker claim atomically moves the request to `running` and the Campaign to
+`purging`, making the Campaign inaccessible.
 Database-owned rows are then deleted in bounded, resumable, idempotent batches;
 each batch commits separately so a large campaign does not require one
 long-running transaction. Shared/deduplicated source entities remain if
@@ -321,6 +368,14 @@ ever becomes visible. Associated generated files are deleted from an
 idempotent manifest. A file cleanup failure leaves the campaign in
 `purge_cleanup_failed` with a CRITICAL alert; retry continues cleanup without
 restoring data and finishes in `purged`.
+
+If the job fails after entering `purging` but before its first deletion batch
+commits, it atomically marks the request `failed_pre_delete` and returns the
+intact campaign to `archived`. Once any deletion batch commits, rollback to
+`archived` is prohibited. An exhausted later database failure marks the request
+`deletion_failed`, leaves the Campaign in `purging`, emits CRITICAL, and exposes
+an Admin retry that resumes from committed checkpoints. File cleanup maps the
+request and Campaign states as specified by the data model.
 
 Completion replaces detail with a non-sensitive tombstone: campaign UUID/name,
 date range, initiator, request/start/completion times, backup reference, deleted

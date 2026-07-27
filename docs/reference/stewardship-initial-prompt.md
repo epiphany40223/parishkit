@@ -1,4 +1,9 @@
 <!-- pyml disable md005,md007,md009,md012,md022,md024,md025,md033,md041 -->
+> **Historical, non-normative source narrative.** The cross-linked stewardship
+> specifications contain the resolved requirements and explicitly documented
+> overrides. This capture is retained for traceability and is not implementation
+> guidance.
+
 After analyzing all of the information below, interview me about
 anything that is unclear, gaps in the specification, or anything else
 that would prevent you from writing a high-quality, detailed

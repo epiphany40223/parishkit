@@ -4,6 +4,10 @@ description: Dual-subagent AI-to-AI peer review of current branch changes.
 model: opus
 ---
 
+> **Historical legacy capture.** This predates the current local-review skill,
+> intentionally contains obsolete pika flags and orchestration behavior, and is
+> retained only as development provenance. Do not use it as instructions.
+
 # Local Peer Review
 
 **Scope: review-only.** Subagents review read-only and the parent never edits source — remediation is `/pika:local-review-triage`'s job. Session-directory review artifacts (reviewer outputs, salvage results) are expected workflow writes, not source edits.

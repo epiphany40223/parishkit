@@ -35,10 +35,12 @@ icon, and favicon variants. Accepted inputs are PNG, JPEG, or WebP; files are
 decoded and re-encoded before use.
 
 One versioned `SystemConfiguration` holds the global `testing` or `production`
-mode, single valid Testing recipient, current campaign pointer, and mode-change
-history. The system starts in Testing. Mode is not historical campaign data:
-deliveries/submissions snapshot the mode in which they occurred so old records
-retain their meaning after a later global transition.
+mode, single valid Testing recipient, current campaign pointer, durable
+`restore_review_required` gate, and mode-change history. The system starts in
+Testing. Mode is not historical campaign data: deliveries/submissions snapshot
+the mode in which they occurred so old records retain their meaning after a
+later global transition. The restore gate is an independent fail-closed state;
+Testing-mode Family access does not override it.
 
 Integration records contain non-secret settings and credential fingerprints:
 ParishSoft expected organization, Google OAuth/Workspace delegated identity,
@@ -77,6 +79,22 @@ Deleting a Campaign through ordinary CRUD is impossible. Closing and archiving
 retain all relationships. Exceptional purge is defined by the
 [Admin portal](../admin-portal/spec.md#campaign-purge).
 
+### Schedule revisions and fulfillment
+
+`ScheduleDefinition` gives each initial, reminder, or digest schedule a stable
+logical UUID and campaign/type. Its immutable `ScheduleRevision` rows contain
+the versioned local date/time, template references, and replacement/removal
+metadata; exactly one revision is current unless the definition was removed.
+
+`ScheduleFulfillment` records a successful semantic delivery independently of
+revision. Its unique key combines schedule UUID, mode, semantic recipient or
+audience, and occurrence slot (for example Family DUID for a one-time Family
+mail or campaign-local date for a daily digest). It references the successful
+occurrence. Thus changing a time or template never makes a recipient already
+fulfilled in that mode eligible for the same logical schedule again. Schedule
+replacement and removal follow the atomic cancellation policy in the
+[background-processing specification](../background-processing/spec.md#schedule-replacement-and-removal).
+
 ### Source snapshot
 
 `SourceSnapshot` records form an ordered history. Each stores type (`full` or
@@ -101,7 +119,9 @@ load never exposes a partial corpus.
 - portal eligibility, email eligibility, and active status as of the current
   snapshot;
 - first/last eligible timestamps and status reason;
-- encrypted eight-letter display code plus unique HMAC fingerprint;
+- encrypted eight-letter display code plus the unique canonical HMAC fingerprint
+  defined by the
+  [credential specification](../architecture/spec.md#family-credential-security);
 - hashed email-link token, token generation, and revocation time;
 - initial/live invitation state;
 - first live submission and current effective submission IDs; and
@@ -245,11 +265,17 @@ campaign fields. Unknown placeholders are validation failures, not empty text.
 attempts, timestamps, initiator, heartbeat, summary, and sanitized error.
 `OutboxMessage` stores exact intended/routed recipients, redacted rendered
 content, template version, reason, campaign/Family links, mode, delivery
-attempts, and provider result. Until terminal delivery, credential substitutions
-needed for retry are separately sealed with application-level encryption and a
-versioned key ID; only the dispatch worker may decrypt them. Terminal handling
-scrubs the sealed values. Provider acceptance means sent; bounce processing is
-outside the first release.
+attempts, stable semantic idempotency key, provider-key/message-ID fingerprints,
+reconciliation evidence, resolution actor/time, and provider result. Its state
+is `pending`, `submitting`, `retry_wait`, `delivery_unknown`, `delivered`,
+`permanent_failure`, or `cancelled`; only the final three are terminal.
+`delivery_unknown` follows the provider-acceptance workflow in the
+[background-processing specification](../background-processing/spec.md#family-invitations-and-reminders).
+Until a terminal state, credential substitutions needed for retry are
+separately sealed with application-level encryption and a versioned key ID;
+only the dispatch worker may decrypt them. Terminal handling scrubs the sealed
+values. Provider acceptance means sent; bounce processing is outside the first
+release.
 
 `AuditEvent` is append-only and stores actor type/ID, action, entity, campaign,
 UTC time, request/task correlation, source IP metadata, and redacted structured
@@ -260,8 +286,39 @@ diagnostics are domain audit events.
 `PurgeRequest` records the selected archived campaign, initiating Admin, recent
 backup reference, re-authentication time, typed-confirmation digest, estimated
 counts, state, batch checkpoints, progress, and final non-sensitive tombstone.
-Its state transitions follow the campaign purge lifecycle defined in the
-[overview](../spec.md#campaign-lifecycle).
+It has a durable state machine separate from the associated
+[Campaign lifecycle](../spec.md#campaign-lifecycle):
+
+- `draft`: the campaign was selected and inventory/backup checks may be run or
+  refreshed;
+- `ready_for_confirmation`: inventory is current, the backup is verified, and
+  the irreversible effects have been acknowledged;
+- `queued`: fresh re-authentication and both typed confirmations succeeded and
+  the idempotent worker task exists, but no worker has claimed it;
+- `running`: the worker claimed the request and atomically moved the Campaign
+  from `archived` to `purging`;
+- `failed_pre_delete`: execution failed before any deletion batch committed and
+  the intact Campaign was atomically returned to `archived`;
+- `deletion_failed`: at least one database deletion batch committed, a later
+  database phase exhausted automatic retries, and the Campaign remains
+  inaccessible in `purging` pending an Admin retry;
+- `cleanup_failed`: database deletion completed but generated-file cleanup
+  exhausted automatic retries, corresponding to Campaign
+  `purge_cleanup_failed`;
+- `succeeded`: deletion, verification, and cleanup completed, corresponding to
+  Campaign `purged`; and
+- `cancelled`: an Admin cancelled before a worker claim, leaving the Campaign
+  `archived`.
+
+The permitted request transitions are `draft` to `ready_for_confirmation` or
+`cancelled`; `ready_for_confirmation` back to `draft` when a prerequisite
+expires, or to `queued`/`cancelled`; `queued` to `running` or, through an atomic
+claim cancellation, `cancelled`; `running` to `failed_pre_delete`,
+`deletion_failed`, `cleanup_failed`, or `succeeded`; `deletion_failed` back to
+`running` on retry; and `cleanup_failed` to `succeeded` after idempotent cleanup.
+The four other states are terminal. Every transition is audited. A database
+constraint permits at most one request in a nonterminal state for a Campaign;
+request and Campaign transitions that must correspond occur in one transaction.
 
 ## Effective-value merge
 
@@ -323,8 +380,9 @@ Snapshot promotion performs these effects transactionally:
 - mark three-way conflicts;
 - resolve Ministry requests whose requested roster state is now current;
 - refresh seeded Chairperson suggestions/assignment warnings; and
-- enqueue an initial invitation for newly active, email-eligible,
-  never-submitted Families during an active Production campaign.
+- request the initial-invitation evaluation defined by
+  [background processing](../background-processing/spec.md#family-invitations-and-reminders)
+  for each newly active Family.
 
 If a reactivated Family already has a live submission, it remains a responder
 and does not receive a new initial invitation. Current metrics exclude inactive
@@ -377,7 +435,11 @@ have bounded cleanup policies defined by operations.
 The two exceptions are:
 
 - test responses and their sensitive audit payloads are deleted during the
-  Production transition; and
+  Production transition;
+- Testing-mode outbox rows and sensitive delivery audit payloads are deleted
+  during that transition after producing the non-sensitive aggregate defined by
+  the [Admin readiness workflow](../admin-portal/spec.md#production-transition);
+  and
 - an Admin-approved campaign purge removes campaign-owned live detail through
   the guarded web workflow while retaining only a non-sensitive tombstone.
 

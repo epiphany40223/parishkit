@@ -7,6 +7,10 @@ metadata:
 argument-hint: ""
 ---
 
+> **Non-normative reference capture.** The installed Codex skill outside this
+> repository is authoritative. This copy records the workflow used during
+> specification development and is not an executable repository instruction.
+
 # Local Review Triage
 
 Walk through each finding from a `local-review` run, presenting them as an

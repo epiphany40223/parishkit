@@ -129,10 +129,11 @@ local dates once the campaign is live.
    restored to an earlier lifecycle state.
 8. **Purged**: only the non-sensitive tombstone and purge audit metadata remain.
 
-The only purge transitions are `archived` to `purging`, `purging` to `purged`
-or `purge_cleanup_failed`, and `purge_cleanup_failed` back through cleanup to
-`purged`. A failed purge before any irreversible deletion returns to `archived`;
-after deletion starts it remains inaccessible until cleanup succeeds.
+The only purge transitions are `archived` to `purging`; `purging` to `archived`
+only if the job fails before its first deletion batch commits; `purging` to
+`purged` or `purge_cleanup_failed`; and `purge_cleanup_failed` back through
+cleanup to `purged`. After irreversible deletion starts, the campaign remains
+inaccessible until cleanup succeeds.
 
 Structural settings lock at the first live delivery or live submission:
 enabled modules, financial periods and fund mappings, campaign Ministry set,
@@ -210,8 +211,11 @@ Every source requirement maps to one normative section:
 | Compose, TLS, persistence, release, backups, tests | [Operations](operations/spec.md) |
 
 When requirements conflict, the explicit decisions and definitions in this
-specification set take precedence over the initial narrative. In particular,
-email links use opaque tokens rather than the eight-letter code, campaign history
-is retained, Staff has the named workflow-write exceptions, whole local days
-replace the earlier 12:01/11:59 wording, and campaign purge is an Admin web
+specification set take precedence over the
+[initial narrative](../../reference/stewardship-initial-prompt.md). In
+particular, email links use opaque tokens rather than exposing the manual code;
+the manual code uses eight letters from a confusable-free alphabet rather than
+six alphanumeric characters to resist credential guessing; campaign history is
+retained; Staff has the named workflow-write exceptions; whole local days
+replace the earlier 12:01/11:59 wording; and campaign purge is an Admin web
 workflow rather than an offline command.

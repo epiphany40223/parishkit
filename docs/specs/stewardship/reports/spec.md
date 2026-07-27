@@ -113,8 +113,9 @@ source for the weekly Admin digest.
 
 **Access:** Admin and Staff.
 
-List active Families with display name, Family DUID, six-letter code, current
-email eligibility, and response status. Search supports full/partial
+List active Families with display name, Family DUID, the manual Family code
+defined by the [credential specification](../architecture/spec.md#family-credential-security),
+current email eligibility, and response status. Search supports full/partial
 case-insensitive last/family name, DUID, and exact code. Codes are revealed only
 after authorization and each report/export is audited.
 
@@ -128,9 +129,10 @@ behavior.
 
 **Access:** Admin and Staff.
 
-List every current active registered Family lacking an eligible head email,
-sorted by Family name then DUID. Filters/search include name, DUID, address,
-phone presence, and reason (no head, no address, invalid address).
+List every current active registered Family lacking a deliverable eligible head
+email, sorted by Family name then DUID. Filters/search include name, DUID,
+address, phone presence, and reason (no head, no address, invalid address, or all
+otherwise eligible addresses permanently refused by the provider).
 
 Detail/export contains Family DUID, envelope number where present, Family/head
 names, family/member phone numbers, complete home/mailing address, and reason.

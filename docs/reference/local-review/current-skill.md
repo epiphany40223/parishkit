@@ -7,6 +7,11 @@ metadata:
 argument-hint: "[focus area]"
 ---
 
+> **Non-normative reference capture.** The installed Codex skill outside this
+> repository is authoritative. This copy records the workflow used during
+> specification development and contains machine-specific example paths; do not
+> invoke it as repository documentation.
+
 # Local Peer Review
 
 **Scope: review-only.** Reviewers read only, and this orchestrator never edits
@@ -134,7 +139,7 @@ If any is missing, surface the error and stop.
 
    ```bash
    /Users/jsquyres/.local/bin/claude -p "<salvage instructions>" \
-     --model "$(jq -r '.salvage_model' finalize-output.json)" \
+     --model "$(jq -r '.salvage_model' "$SESSION/finalize-output.json")" \
      --permission-mode acceptEdits --add-dir "$SESSION"
    ```
 
