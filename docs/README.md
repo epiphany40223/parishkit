@@ -9,6 +9,8 @@ directory holds design/analysis material.
   [specs/intro/spec.md](specs/intro/spec.md) (the top-level system spec), then the
   [Stewardship/Census web application spec](specs/stewardship/spec.md) or the
   per-tool specs under `specs/<tool-name>/spec.md`.
+- **[plans/](plans/README.md)** — implementation work breakdowns and sequenced
+  review gates derived from the specifications.
 - **[parishsoft-api-analysis.md](parishsoft-api-analysis.md)** — comparison of the
   two ParishSoft API generations (v1 vs. v2), which one ParishKit uses, the
   write-capability analysis, and the switch/hybrid recommendation.

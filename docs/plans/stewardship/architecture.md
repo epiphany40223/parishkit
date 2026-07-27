@@ -1,0 +1,155 @@
+# Architecture implementation plan
+
+This plan implements the
+[Stewardship architecture specification](../../specs/stewardship/architecture/spec.md).
+It establishes the executable skeleton and security boundaries on which every
+other subsystem depends.
+
+## Work packages
+
+### ARC-01: Dependency decisions and package skeleton
+
+1. Record supported Python, Django, PostgreSQL, Celery, Valkey, Caddy, browser,
+   and cryptography dependency lines with an upgrade policy; pin reproducible
+   development/test inputs.
+2. Create `src/parishkit/stewardship/` as one Django project with cohesive apps
+   for accounts/configuration, source, campaigns, responses, workflows,
+   reports, jobs, and audit.
+3. Add settings modules for shared, development, test, and production behavior,
+   with startup validation and no credential requirement in normal tests.
+4. Add the `pk-stewardship` console entry point and thin executable wrapper;
+   initially expose safe version/configuration diagnostics.
+5. Create URL namespaces for public, Family, Admin, and internal health routes;
+   return intentional placeholders until their owning packages land.
+6. Add import, settings, entry-point, and URL-resolution smoke tests.
+
+### ARC-02: Shared CLI, configuration, paths, and app startup
+
+1. Reuse `parishkit.cli`, `parishkit.config`, logging, retry, email, Google,
+   ParishSoft, and runtime-path helpers; add shared functionality only when it
+   is campaign-neutral.
+2. Define typed deployment configuration and YAML/environment precedence for
+   database, Valkey, public origin, proxy trust, secret references, and service
+   role.
+3. Route every default runtime path through `PARISHKIT_ROOT` or
+   `/opt/parishkit`; preserve CLI/YAML overrides.
+4. Implement fail-fast production startup validation for mode, origin, proxy,
+   secret presence/mount separation, database migration state, and Valkey
+   requirements.
+5. Configure structured redacted logging and request/task correlation before
+   feature code emits logs.
+6. Test configuration precedence, invalid startup, path overrides, and secret
+   redaction.
+
+### ARC-03: Django web foundation and security middleware
+
+1. Configure secure production cookies, CSRF, host/origin checks, clickjacking,
+   CSP, HSTS, Referrer-Policy, no-store utilities, safe proxy resolution, and
+   sanitized error handlers.
+2. Implement public/internal route separation so Caddy cannot proxy health
+   routes and unknown internal-looking paths reveal nothing.
+3. Add upload validation primitives: signature/type validation, size and
+   decompression limits, randomized names, decode/re-encode, and safe graphic
+   variants.
+4. Add rich-text sanitization and template-placeholder allowlisting with
+   stored sanitized HTML and generated/edited plain text.
+5. Add CSV formula neutralization and safe download headers for later export
+   code.
+6. Test malicious headers, hosts, HTML, files, filenames, CSV cells, and error
+   paths.
+
+### ARC-04: Google identity, authorization sessions, and denial paths
+
+1. Integrate Google authorization-code flow with state, nonce, PKCE, verified
+   email, stable `sub`, and signed hosted-domain claim capture; disable all
+   password/signup/recovery routes.
+2. Implement exact-address-over-domain rule evaluation and role loading through
+   the canonical DOM-03 policies.
+3. Store every Admin/Staff/leader session in PostgreSQL with 30-minute idle and
+   12-hour absolute expiry, revocation checks on every privileged request, and
+   standards-compliant logout.
+4. Implement uniform re-login-capable denial/error pages for provider failure,
+   allowlist denial, no role, unconfigured deployment, and maintenance gates.
+5. Implement early and specific Valkey rate limiters, trusted-client address
+   handling, progressive retry, distributed-abuse telemetry including rejected
+   callbacks, notification thresholds, and fail-closed outage behavior.
+6. Add complete authentication, session-fixation, timeout, revocation, hosted-
+   domain, limiter, and denial-response tests.
+
+### ARC-05: Family code, token, and Family-session security
+
+1. Implement reduced-alphabet eight-letter code generation, canonicalization,
+   collision-safe HMAC lookup, general-key encryption, and versioned MAC-key
+   migration services.
+2. Implement independent 256-bit link-token generation, campaign-scoped digest
+   lookup, sealed-box ciphertext, exchange to a token-free Family session, and
+   close/rotation/reopen lifecycle.
+3. Configure PostgreSQL Family sessions with 60-minute idle and four-hour
+   absolute expiry, separate cookie namespace, warnings, passive presence, and
+   the explicitly untrusted CSRF-protected activity keepalive.
+4. Add public code-guessing limiters, distributed detection, uniform timing/
+   errors, invalid-token audit fingerprints, and Valkey fail-closed behavior.
+5. Preserve the low-sensitivity Admin/Staff manual-code access policy while
+   excluding codes/tokens from logs and Ministry-leader scope.
+6. Test entropy/collisions, normalization, key rotation, token replay/rotation,
+   session isolation, throttling, outage, and campaign boundary denial.
+
+### ARC-06: Enforceable cryptographic service boundary
+
+1. Define separate general symmetric, Family-code MAC, signing, and token
+   sealed-box keyrings with versioned envelope formats and fingerprints.
+2. Add a dedicated `mail-dispatch` service/queue and rotation profile; only
+   these service profiles may load token private keys and mail-provider
+   credentials.
+3. Give web/general workers only token public keys; verify at startup that
+   private-key paths are absent from their configuration and mounts.
+4. Implement rotation/backfill/verification/retirement workflows and backup-key
+   compatibility checks for every keyring.
+5. Add Compose inspection and runtime tests proving web, scheduler, reports, and
+   general workers cannot decrypt token ciphertext while dispatch can.
+
+### ARC-07: Application-level privacy and audit primitives
+
+1. Provide audited service wrappers for configuration mutation, role change,
+   secret replacement, code-bearing reports, privileged reauthentication, and
+   destructive confirmation.
+2. Define approved redaction schemas for request, task, email, source, provider,
+   and exception context; reject secret-bearing structured payload fields.
+3. Add optimistic-concurrency helpers and stable machine-readable validation
+   errors for progressive-enhancement endpoints.
+4. Implement common pagination/filter bounds and anti-enumeration response
+   behavior.
+5. Add privacy regression tests that scan logs, audit payloads, responses, and
+   generated support artifacts for seeded secrets.
+
+### ARC-08: Performance, accessibility, and compatibility baseline
+
+1. Establish query-count and latency budgets for interactive pages; add indexes
+   and pagination contracts before loading production-scale fixtures.
+2. Create representative scale fixtures for Families, Members, Ministries,
+   submissions, jobs, and logs.
+3. Configure static asset versioning, progressive enhancement, and supported-
+   browser test matrices.
+4. Integrate automated WCAG 2.2 AA checks plus keyboard/focus/error-summary
+   helpers used by DOM-04.
+5. Add baseline load/query tests for login, dashboard shell, Family lookup, and
+   task status so later packages detect regressions.
+
+## Review handoffs
+
+- Review Gate 1 requires ARC-01 through ARC-07, including a focused identity,
+  rate-limit, session, and key-mount threat-model review.
+- Review Gate 2 rechecks ARC-05 against the completed Family vertical slice.
+- Review Gate 3 rechecks ARC-06 against real mail dispatch and export workers.
+- Review Gate 5 completes ARC-08 at production-scale fixtures.
+
+See the [master review protocol](overall.md#review-gate-protocol).
+
+## Completion criteria
+
+- Development and production services start from the same application image
+  with environment-appropriate settings and enforceable secret mounts.
+- Every public/internal route and authentication/session boundary has positive
+  and negative tests.
+- No feature package must invent its own configuration, authorization,
+  cryptography, redaction, validation-error, or audit mechanism.
