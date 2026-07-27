@@ -10,6 +10,11 @@ one place and is linked rather than duplicated. Each specification file is named
   model, testing/CI philosophy, versioning, and development guidelines. Start
   here.
 
+- **[stewardship/spec.md](stewardship/spec.md)** — web application for annual
+  parish census, Ministry stewardship, and financial stewardship campaigns.
+  Its cross-linked subsystem specs cover architecture, data/reconciliation,
+  both portals, background work, reports, deployment, and operations.
+
 The related ParishSoft API comparison lives one level up in the docs root:
 **[../parishsoft-api-analysis.md](../parishsoft-api-analysis.md)** (v1 vs. v2,
 which API ParishKit uses, the write-capability analysis, and the switch/hybrid
