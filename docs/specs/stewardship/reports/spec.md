@@ -41,10 +41,12 @@ A Family participates on the parish-local date of its first effective live
 submission. Repeat submissions never increase or move that count. Testing
 submissions are excluded everywhere except explicit Admin testing views.
 
-At a historical chart point, pledge total is the sum of then-effective latest
-live annual pledge versions for eligible Families as of the end of that local
-day. Current cards use current eligibility and effective versions. Monetary
-values never derive from rounded installment displays.
+The participation graph has an explicit population scope. **Historical as of
+day** is the default: each point uses eligibility and effective responses at the
+end of that local day. **Current population** applies today's Portal-eligible
+Family set consistently to every historical point. Current cards use current
+eligibility and effective versions. Monetary values never derive from rounded
+installment displays.
 
 Eligible email follows active `get_family_heads()` Members with at least one
 syntactically valid normalized address. Publish privacy flags do not suppress
@@ -59,13 +61,25 @@ The x-axis is every parish-local date from campaign start through the lesser of
 campaign end and today. The graph shows:
 
 - bars: Families making their first live submission that day;
-- line: cumulative currently reportable Families that have submitted; and
+- line: cumulative Families that have submitted under the selected population
+  scope; and
 - line on a dollar axis, when financial is enabled: effective annual pledge
   total at each day end.
 
-Hover shows local date, daily count, cumulative count out of the relevant
-population with percentage, and pledge. Data-table/download values exactly
-match. A scope note explains inactive-Family treatment.
+For **Historical as of day**, each bar, cumulative count and denominator, and
+pledge total uses the Family eligibility/effective response recorded for that
+day. A Family that participated while eligible remains in the historical series
+after becoming inactive. For **Current population**, every point is recomputed
+using the current Portal-eligible Family set; a currently ineligible Family is
+excluded from every series.
+
+The UI defaults to Historical as of day and offers a clearly labeled scope
+toggle. Changing scope updates every series together. Hover shows scope, local
+date, daily count, cumulative count out of the scoped population with
+percentage, and pledge. Report URLs, pinned digest inputs, equivalent data
+tables, PNG/PDF output, and structured downloads record the scope and exactly
+match the displayed values. A scope note explains why the historical endpoint
+may differ from current-statistics cards.
 
 ## Campaign statistics
 
@@ -223,7 +237,12 @@ Staff.
 ## Daily email report parity
 
 The daily Admin digest uses the same query/calculation service and chart data as
-the participation/statistics web reports for its stored as-of point. Separate
-implementations that can drift are prohibited. The email simplifies
-interaction into an image/text table but its values must be reproducible from
-the linked report parameters and snapshot.
+the participation/statistics web reports for its stored as-of point and defaults
+to Historical as of day. The digest occurrence records the promoted source
+snapshot, effective-submission version cutoff, selected population scope,
+report parameters, and parish-local day boundary.
+The linked report opens in an authorized pinned-snapshot mode using exactly
+those inputs even when current eligibility later changes. Separate
+implementations that can drift are prohibited. The email simplifies interaction
+into an image/text table but its values must be reproducible from those recorded
+inputs.

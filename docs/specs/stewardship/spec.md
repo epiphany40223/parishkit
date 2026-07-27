@@ -59,9 +59,10 @@ versioned proposal overlay until upstream data reflects them.
   upstream Family, Member, Ministry, roster, fund, pledge, and contribution
   data. A promoted snapshot is the application's current upstream truth.
 - **Family** and **Member**: records identified by their ParishSoft DUIDs.
-- **Eligible Family**: an active, registered Parishioner Family with at least
-  one valid email address among the active Members returned by
-  `get_family_heads()`.
+- **Portal-eligible Family**: an active, registered Parishioner Family. Email is
+  not required; every such Family receives a campaign identity and manual code.
+- **Email-eligible Family**: a Portal-eligible Family with at least one valid
+  email address among the active Members returned by `get_family_heads()`.
 - **Effective response**: the latest live submission version for a Family and
   campaign. Testing submissions are never effective live responses.
 - **Proposed value**: the value in an effective response after applying any
@@ -86,7 +87,8 @@ external identity-policy service.
 | --- | --- | --- | --- | --- |
 | Configure parish/campaign/integrations | Yes | No | No | No |
 | Manage login rules and Ministry assignments | Yes | No | No | No |
-| Trigger/view background work | Yes | No | No | No |
+| Trigger/view operational background work | Yes | No | No | No |
+| Trigger/view own authorized report exports | Yes | Yes | Assigned Ministries only | No |
 | View all campaign reports | Yes | Yes, except system logs | Assigned Ministries only | No |
 | View Family-level financial detail | Yes | Yes | No | Own Family only |
 | Edit additional-information follow-up | Yes | Yes | No | Submit own text |
@@ -103,11 +105,15 @@ allows editing a Family submission or configuration.
 
 ## Campaign lifecycle
 
-A campaign has `draft`, `scheduled`, `active`, `closed`, and `archived` states.
-State transitions are explicit and audited, although entering `active` and
-`closed` is driven by the configured local dates once the campaign is live.
+A campaign has `draft`, `scheduled`, `active`, `closed`, `archived`, `purging`,
+`purge_cleanup_failed`, and `purged` states. State transitions are explicit and
+audited, although entering `active` and `closed` is driven by the configured
+local dates once the campaign is live.
 
-1. **Draft**: configuration is editable and Testing mode is mandatory.
+1. **Draft**: configuration is editable and Testing mode is mandatory. A draft
+   cannot be created while another campaign is `draft`, `scheduled`, or
+   `active`; the prior campaign must first close or be archived and the Admin
+   must explicitly return the deployment to Testing.
 2. **Scheduled**: Production readiness has passed, but the local start date has
    not arrived.
 3. **Active**: the interval begins at 12:00:00 a.m. on the start date and ends
@@ -116,6 +122,17 @@ State transitions are explicit and audited, although entering `active` and
    available.
 5. **Archived**: the campaign is retained and read-only except for permitted
    workflow notes and the guarded purge operation.
+6. **Purging**: an archived campaign has entered the irreversible guarded purge
+   job and is inaccessible except for Admin purge status.
+7. **Purge cleanup failed**: database-owned campaign data is no longer visible,
+   but generated-file cleanup needs an idempotent retry. The campaign cannot be
+   restored to an earlier lifecycle state.
+8. **Purged**: only the non-sensitive tombstone and purge audit metadata remain.
+
+The only purge transitions are `archived` to `purging`, `purging` to `purged`
+or `purge_cleanup_failed`, and `purge_cleanup_failed` back through cleanup to
+`purged`. A failed purge before any irreversible deletion returns to `archived`;
+after deletion starts it remains inaccessible until cleanup succeeds.
 
 Structural settings lock at the first live delivery or live submission:
 enabled modules, financial periods and fund mappings, campaign Ministry set,
@@ -123,6 +140,13 @@ and identity/population semantics. Testing activity does not lock them.
 Administrators may continue editing content, future unsent schedules, and the
 end date. Reopening a closed campaign requires readiness validation, fresh
 Google authentication, explicit confirmation, and an audit event.
+
+Successor-campaign preparation is intentionally sequential. The administration
+UI disables draft creation while another campaign is draft, scheduled, or
+active, and the server enforces the same rule transactionally. Closing a
+campaign stops Family access and live schedules; after the Admin explicitly
+returns the deployment to Testing, a successor draft may be created while the
+closed campaign remains available for reporting and reconciliation.
 
 All configured Family mail times must fall within the open campaign interval
 and be chronological. Financial stewardship describes a period whose inclusive
@@ -187,7 +211,7 @@ Every source requirement maps to one normative section:
 
 When requirements conflict, the explicit decisions and definitions in this
 specification set take precedence over the initial narrative. In particular,
-email links use opaque tokens rather than the six-letter code, campaign history
+email links use opaque tokens rather than the eight-letter code, campaign history
 is retained, Staff has the named workflow-write exceptions, whole local days
 replace the earlier 12:01/11:59 wording, and campaign purge is an Admin web
 workflow rather than an offline command.

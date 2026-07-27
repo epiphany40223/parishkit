@@ -19,7 +19,7 @@ showing a code form:
 These pages reveal no Family information. Testing mode still honors campaign
 date gates; Admin page previews remain available outside the interval.
 
-The manual credential is exactly six case-insensitive letters. Spaces/hyphens
+The manual credential is exactly eight case-insensitive letters. Spaces/hyphens
 may be stripped for friendly entry, but no digits or additional characters are
 accepted. Unknown, inactive, non-Parishioner, closed-campaign, and revoked codes
 use the same "This Family code cannot be found or used" result and retry link.
@@ -39,6 +39,11 @@ the enabled step definitions. In-progress edits remain in JavaScript memory for
 that tab only. They are not persisted to PostgreSQL, Redis, localStorage,
 sessionStorage, cookies, logs, or analytics. Refresh, tab close, logout, or
 session expiry loses edits. The expiry warning states this consequence.
+
+Once the form is dirty, in-application navigation and supported browser
+page-unload hooks warn that unsaved answers will be lost. This warning does not
+create a server or browser draft: preserving the requirement that nothing is
+saved before final Submit is an explicit privacy trade-off.
 
 Forward/back controls preserve the in-memory state, move focus to the step
 heading, and never submit. A visible progress indicator names the current step
@@ -243,8 +248,24 @@ submission.
 ## Testing mode
 
 During Testing mode every otherwise eligible Family code/token can use the
-portal during campaign dates. Submissions are prominently marked Test on the
-Thank You page and administration views. They do not:
+portal during campaign dates. Immediately after successful authentication and
+before any household data is displayed, an interstitial states that this is a
+test, answers will be permanently deleted before launch, the response will not
+count, and the Family will need to respond again in Production. The user must
+explicitly choose **Continue with test** or sign out.
+
+Every form step has a persistent, non-color-only Testing banner repeating that
+answers are disposable. The final review requires a separate unchecked
+acknowledgment immediately beside a **Submit test response** button. The
+acknowledgment says that this is not the Family's campaign response and will be
+deleted. Server validation requires it; prior acceptance of the entry
+interstitial is not sufficient.
+
+Submissions are prominently marked Test on the Thank You page and administration
+views. The Thank You content explicitly says the campaign response has not been
+recorded, the test will be deleted, and the Family must return during Production
+or contact the parish if it expected to submit a real response. Test submissions
+do not:
 
 - count as participation or pledge;
 - suppress live invitation/reminder eligibility;

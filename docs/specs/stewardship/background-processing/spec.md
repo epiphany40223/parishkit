@@ -18,6 +18,11 @@ An occurrence key identifies semantic work, for example
 `daily-digest:<campaign>:<local-date>`. Re-delivery, scheduler restart, or
 manual retry cannot create a second successful occurrence.
 
+Occurrence outcome is `pending`, `running`, `succeeded`, `skipped`, `coalesced`,
+or `failed`. `skipped` and `coalesced` are terminal, include a structured reason,
+and never masquerade as successful delivery; `coalesced` also references the
+replacement occurrence selected for delivery.
+
 Task state is `queued`, `running`, `retry_wait`, `succeeded`, `failed`,
 `cancelled`, or `abandoned`. Workers heartbeat and record phases/progress.
 Tasks use bounded timeouts and recover an abandoned claim only after its lease
@@ -30,9 +35,12 @@ instant after the gap. Changing timezone causes future occurrences to be
 recomputed, never already successful ones.
 
 Missed occurrences catch up once when services recover. Before executing, the
-worker rechecks global system mode, campaign state, and recipient eligibility. A missed Family
-mail after campaign close is skipped with a durable reason, while a daily
-report for a completed campaign day may still be delivered.
+worker rechecks global system mode, campaign state, and recipient eligibility.
+Every missed occurrence retains its own durable outcome, but semantically
+redundant mail is coalesced rather than delivered in a burst. A coalesced record
+names the selected replacement occurrence and reason. A missed Family mail
+after campaign close is skipped with a durable reason, while reports for
+completed campaign days use the recovery-digest behavior below.
 
 Testing routing is global and applies to every application email: Family mail,
 submission receipts, Admin digests, critical alerts, and manual test/report
@@ -43,8 +51,11 @@ these overrides.
 
 ## ParishSoft refresh
 
-One database advisory/application lock covers full, delta, and manual refresh.
-No two run concurrently.
+One named PostgreSQL advisory lock, `parishsoft-source-mutation`, covers full,
+delta, and manual refresh plus ParishSoft publication execution. No refresh may
+run concurrently with another refresh or with publication writes. Publication
+preflight may hold the lock only while it reads and records a source version;
+it never holds a database lock while awaiting human confirmation.
 
 ### Delta cycle
 
@@ -64,8 +75,11 @@ delta loader can prove a complete replacement.
 A full refresh runs nightly at an Admin-configurable local time, default 2:00
 a.m., and on initial setup/manual request. It uses shared
 `load_families_and_members` with active/inactive data sufficient for transition
-recognition and with contributions from the earliest configured comparison
-period needed by non-purged campaigns.
+recognition. Giving detail is limited to at most two campaigns: the financial
+and comparison periods for the current operational campaign and, if separately
+present, the immediately upcoming draft campaign. Every other campaign reads
+its immutable retained snapshots; its periods do not expand the nightly source
+window.
 
 The cycle:
 
@@ -107,15 +121,30 @@ after the source promotion. Reminders use the same no-submission rule. A
 responder never receives a later reminder even if it proposed email opt-out or
 submits again.
 
+When recovery finds multiple overdue Family-mail occurrences for one campaign
+and Family, it selects at most one for delivery. If no initial invitation has
+succeeded, it sends the initial invitation and marks every already-overdue
+reminder `coalesced`. Otherwise, it sends only the chronologically latest
+applicable reminder and coalesces older overdue reminders. Eligibility and
+submission state are checked again immediately before the selected delivery.
+Future reminders that were not overdue at recovery retain their normal
+schedules.
+
 One email has all deduplicated eligible head addresses in `To`; no address from
 another Family shares that message. Templates include Family names, code,
 secure link, generic URL, parish/campaign values, and mode banner. Render
 failure for one Family records an error and does not block others.
 
-Before provider submission the exact message and intended/routed recipients
-are persisted. In Testing, envelope recipients become the single test address,
-the subject/body prominently say TEST, and intended names/addresses are safely
-listed. Test delivery never marks a live occurrence delivered.
+Before provider submission the exact non-secret message content and intended/
+routed recipients are persisted. Credential-bearing substitutions are sealed
+with application-level encryption and are decryptable only by the dispatch
+worker immediately before provider submission. Admin detail, exports, logs, and
+error context expose only redacted placeholders and fingerprints. Terminal
+delivery or permanent failure destroys the sealed token/code substitutions
+while retaining the redacted rendered record. In Testing, envelope recipients
+become the single test address, the subject/body prominently say TEST, and
+intended names/addresses are safely listed. Test delivery never marks a live
+occurrence delivered.
 
 Provider acceptance marks success. Transient failures retry with shared
 backoff; permanent address refusal records that recipient/family and continues.
@@ -152,6 +181,13 @@ Admin-configurable, send:
 Metrics are snapshotted at digest generation with data-as-of/source snapshot
 metadata. Later source/status changes do not rewrite the sent digest.
 
+If multiple daily digest occurrences are overdue at recovery, the system sends
+one recovery digest per campaign covering the complete missed local-date range.
+It includes per-day rows and the end-of-range cumulative statistics/chart rather
+than sending several messages together. Each original daily occurrence is
+retained as `coalesced` and references the recovery-digest occurrence; the
+recovery record stores every pinned daily input needed to reproduce its values.
+
 ### Weekly additional-information digest
 
 At the configured local weekday/time, send newly created live
@@ -171,6 +207,13 @@ filters, sort, selected IDs, source snapshot, browser timezone, requester, and
 authorization scope. The worker rechecks scope before querying and again when
 the file is downloaded.
 
+An export job is requester-scoped report work, not Admin-only operational
+background work. Staff and Ministry leaders may view, cancel at a safe point,
+and download their own authorized export jobs; leaders remain restricted to the
+recorded Ministry scope. Admins may view every export job. No requester gains
+access to refresh, delivery, publication, purge, backup, or another user's job
+through the export status interface.
+
 Files are written atomically below `<root>/reports`, have opaque names, and
 expire after seven days by default. Metadata/audit persists. Expired files can
 be regenerated from retained source/config where permitted. Files are never
@@ -179,10 +222,12 @@ short-lived single-use download grant.
 
 ## ParishSoft publication
 
-Publication runs in a dedicated queue with an organization lock and lower
-concurrency. Preflight and execution are separate task phases with one durable
-plan version. A changed decision/source after preflight invalidates the plan
-and requires a new confirmation.
+Publication runs in a dedicated queue with lower concurrency and uses the same
+`parishsoft-source-mutation` lock as refresh. Preflight and execution are
+separate task phases with one durable plan version. A changed decision/source
+after preflight invalidates the plan and requires a new confirmation. Execution
+holds the lock through its final ParishSoft verification, releases it, and then
+queues the targeted reconciliation refresh, which acquires the lock normally.
 
 Writes use shared v2 `PUT` contact primitives, expected-tenant guard, current
 full payload merge, idempotent retry, and read-after-write verification as

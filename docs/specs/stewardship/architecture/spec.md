@@ -103,6 +103,17 @@ staged, validated, atomically installed, and audited without value disclosure.
 Every path defaults below `PARISHKIT_ROOT` or `/opt/parishkit` and remains
 overridable through deployment configuration.
 
+Application encryption uses a versioned keyring. Every ciphertext envelope
+records its algorithm/version and key ID; one key is active for writes and older
+keys are decrypt-only during rotation. Rotation installs and validates the new
+key, makes it active, re-encrypts retained values in idempotent transactional
+batches, verifies that no online ciphertext references the old key, and only
+then permits retirement. Failure leaves both keys usable and the migration
+retryable. A key remains recoverable for any retained backup that needs it, or
+that backup must be re-encrypted before retirement. Signing-key rotation keeps
+the prior verification key only for the maximum lifetime of credentials issued
+under it, then removes it after audit confirms the transition window ended.
+
 ## Identity and session security
 
 Administration authentication uses Google through django-allauth with OAuth
@@ -111,6 +122,14 @@ accepted. The stable Google `sub` identifies the external account; normalized
 email is re-evaluated against current login rules on every login and privileged
 request. Password, recovery, signup, and non-Google authentication endpoints
 are disabled.
+
+An exact-address rule matches the verified normalized email without requiring a
+hosted domain. A domain rule matches only when both the email suffix and the
+signed Google ID-token `hd` claim equal the normalized configured domain. The
+application never trusts an OAuth request hint, email suffix alone, DNS/MX
+records, or a client-supplied value as proof of hosted-domain membership.
+Personal Google accounts using addresses at consumer or externally hosted
+domains therefore cannot inherit roles from a domain rule.
 
 Admin sessions have a 30-minute idle timeout and 12-hour absolute lifetime.
 Family sessions have a 60-minute idle timeout and four-hour absolute lifetime.
@@ -129,7 +148,7 @@ sessions are separate namespaces; acquiring one never grants the other.
 
 ## Family credential security
 
-Each participating Family receives one six-character code per campaign from
+Each participating Family receives one eight-character code per campaign from
 the alphabet `ABCDEFGHJKMNPQRSTUVWXYZ`. Codes are case-insensitive, collision
 checked, stable for the campaign, and never recycled within it. A reactivated
 Family regains its original code.

@@ -114,14 +114,17 @@ backup references.
 
 ## Restore
 
-Restore is operator-driven and unavailable as an ordinary web action. It
-requires application downtime or a new empty deployment target, exact backup
-selection, decryption credentials, and destructive confirmation of the target.
+Restore is operator-driven and unavailable as an ordinary web action. It has two
+explicit modes. Empty-target restore is the default and refuses any existing
+application data. In-place disaster recovery requires application downtime, an
+explicit replace-existing option, exact target identity and backup selection,
+and a separate destructive confirmation; it never infers permission from a
+non-empty target.
 
-The restore command verifies manifest/digests, application/schema compatibility,
-credential availability, and target emptiness before writing. It restores
-database/media/config, runs permitted forward migrations, validates one parish,
-checks expected ParishSoft organization without mutation, and starts in Testing
+Both modes verify manifest/digests, application/schema compatibility, credential
+availability, and the target-mode precondition before writing. They restore
+database/media/config, run permitted forward migrations, validate one parish,
+check expected ParishSoft organization without mutation, and start in Testing
 mode with workers/mail disabled until an Admin completes readiness review.
 
 Quarterly restore drills restore to an isolated environment, run integrity and
@@ -155,10 +158,14 @@ Admin UI. Metrics include request latency/error, sessions, queue depth/age,
 task duration/failure, scheduler lag, outbox age/delivery, ParishSoft snapshot
 age, database/broker health, disk usage, backup age, and TLS expiry.
 
-`/health/live` confirms the web process loop only. `/health/ready` confirms
-database, migrations, critical credential presence, and current configuration;
-it must not call external services per probe. Worker/scheduler health uses
-heartbeats and queue-lag records.
+`/health/live` confirms the web process loop only. `/health/ready` confirms the
+database and migrations plus the configuration needed for the deployment's
+current setup phase; it must not call external services per probe. A bootstrapped
+but product-unconfigured deployment is ready when it can safely serve login and
+the first-Admin wizard, even though campaign/integration readiness is incomplete.
+After the wizard commits the configured marker, readiness additionally requires
+the critical credential references and durable configuration for normal
+operation. Worker/scheduler health uses heartbeats and queue-lag records.
 
 No health/metrics endpoint exposes parish names, Family/Member data, emails,
 tokens, campaign content, or credentials. Production metrics endpoints are
@@ -182,6 +189,8 @@ Required suites include:
   escaping;
 - Django request tests for every role/denial/object-scope and CSRF/session
   boundary;
+- authentication tests proving that domain rules require matching verified
+  email and signed Google hosted-domain claims, while exact-address rules do not;
 - PostgreSQL integration tests for constraints, transactions, concurrent
   submissions, task claims, snapshot promotion, publication, and purge rollback;
 - worker tests for retry/idempotency, partial failure, missed schedules, and
@@ -203,8 +212,9 @@ At minimum, end-to-end tests demonstrate:
    restored deployment startup.
 2. Google allow/deny, exact-address override, last-Admin guard, immediate role
    revocation, and assigned-Ministry scoping.
-3. Testing email rerouting, segregated test submission, guarded deletion, and
-   exactly-once live catch-up on Production transition.
+3. Testing email rerouting, mandatory Family-facing test acknowledgments,
+   segregated test submission, guarded deletion, and exactly-once live catch-up
+   on Production transition.
 4. Full/delta refresh success, interrupted/invalid load retaining prior truth,
    new/inactive/reactivated Family behavior, and non-overlap/manual coalescing.
 5. No-change Family submission, every census field, proposed/terminal Member,
@@ -214,13 +224,16 @@ At minimum, end-to-end tests demonstrate:
    partial ParishSoft write failure/retry, read-after-write, and unsupported
    manual resolution.
 7. Every report's access, counts/percentages, inactive/test exclusion, privacy
-   columns, filters, chart parity, and CSV/XLSX/PDF/PNG output.
-8. Missed initial/reminder/digest occurrence, worker/broker restart, systemic
-   email failure, deduplicated CRITICAL notification, and recovery.
+   columns, filters, consistent historical/current participation-chart scopes,
+   chart parity, and CSV/XLSX/PDF/PNG output.
+8. Missed initial/reminder/digest occurrence, per-Family and daily-digest
+   recovery coalescing, worker/broker restart, systemic email failure,
+   deduplicated CRITICAL notification, and recovery.
 9. Closed campaign explicit reopen and archive.
-10. Web purge blocked for active campaign/stale backup/wrong confirmation;
-    successful transactional purge/tombstone; database rollback; retryable file
-    cleanup; and failure notification.
+10. Web purge blocked for every non-archived campaign, stale backup, or wrong
+    confirmation; successful resumable batched purge and atomic visible
+    tombstone transition; interrupted-batch recovery; retryable file cleanup;
+    and failure notification.
 
 ## CI and local validation
 

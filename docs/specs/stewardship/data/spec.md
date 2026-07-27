@@ -19,8 +19,10 @@ instants are timezone-aware UTC.
 
 Historical records reference immutable versions rather than mutable display
 objects. For example, a submission references the source snapshot and content
-version it used, while a delivered email references the exact rendered subject,
-body, intended recipients, and template version.
+version it used, while a delivered email references the redacted rendered
+subject/body, intended recipients, template version, and fingerprints for any
+credential-bearing substitutions. The plaintext code or link token is never
+retained as ordinary rendered content.
 
 ## Core records
 
@@ -66,6 +68,11 @@ financial period has an inclusive end equal to the day before its first
 anniversary. The immediately preceding equivalent period is the default
 comparison period, but fund mappings are explicit.
 
+The campaign-creation service and a transactional database guard permit at most
+one campaign across `draft`, `scheduled`, and `active`. Creating a draft also
+requires global Testing mode. Closed and archived campaigns may coexist with
+the one current draft so their reporting and reconciliation remain available.
+
 Deleting a Campaign through ordinary CRUD is impossible. Closing and archiving
 retain all relationships. Exceptional purge is defined by the
 [Admin portal](../admin-portal/spec.md#campaign-purge).
@@ -91,9 +98,10 @@ load never exposes a partial corpus.
 
 `FamilyCampaign` joins a ParishSoft Family DUID to a Campaign and stores:
 
-- eligibility and active status as of the current snapshot;
+- portal eligibility, email eligibility, and active status as of the current
+  snapshot;
 - first/last eligible timestamps and status reason;
-- encrypted six-letter display code plus unique HMAC fingerprint;
+- encrypted eight-letter display code plus unique HMAC fingerprint;
 - hashed email-link token, token generation, and revocation time;
 - initial/live invitation state;
 - first live submission and current effective submission IDs; and
@@ -107,7 +115,8 @@ change the code.
 ### Administration user and policy
 
 `PortalUser` links a Google `sub` and current normalized verified email to the
-login/audit history. Authorization policy uses:
+login/audit history, including the validated Google hosted-domain claim when
+present. Authorization policy uses:
 
 - `DomainRule`: normalized domain with Staff and/or Ministry-leader roles;
   Administrator is prohibited;
@@ -120,7 +129,10 @@ An exact address rule replaces, rather than unions with, a matching domain
 rule. When the UI creates an override for a chairperson already inheriting a
 domain role, it preselects the inherited roles plus Ministry leader so the
 Admin can see and confirm the replacement. `gmail.com` is prohibited as a
-domain rule but individual Gmail addresses are allowed.
+domain rule but individual Gmail addresses are allowed. Every domain rule is a
+Google Workspace/Cloud Identity hosted-domain rule: it grants roles only when
+the signed `hd` claim and verified email suffix both match. An absent or
+mismatched `hd` claim never falls back to suffix-only authorization.
 
 Chairperson synchronization only seeds missing assignments; it never silently
 revokes an existing explicit assignment. Stale seeded assignments are flagged
@@ -174,10 +186,11 @@ ParishSoft capability registry, not guessed in views. The initial registry is:
 | --- | --- |
 | Family home/mailing contact/address fields | ParishSoft v2 Family contact PUT |
 | Member first/middle/last/maiden names | ParishSoft v2 Member contact PUT |
-| Member birth/death date, language, gender | ParishSoft v2 Member contact PUT where semantically sufficient |
+| Member birth date, language, gender | ParishSoft v2 Member contact PUT where semantically sufficient |
+| Member death-date field correction | ParishSoft v2 Member contact PUT |
 | Member email and home/mobile/work phone | ParishSoft v2 Member contact PUT |
 | Prefix, suffix, marital status | Manual unless a verified API capability is added |
-| Deceased status or moved household | Manual; writing a date alone does not complete the semantic request |
+| Deceased-status or moved-household semantic request | Manual; writing a death date alone does not complete the semantic request |
 | Proposed Member/Family structure | Manual |
 | Parish-wide email opt-out | Manual/report to the responsible source system |
 | Ministry join/leave | Ministry workflow/report only |
@@ -185,6 +198,11 @@ ParishSoft capability registry, not guessed in views. The initial registry is:
 
 The capability registry must be covered by tests against recorded, redacted API
 shapes and updated when ParishSoft support changes.
+
+A submission that marks a Member deceased and supplies a death date creates two
+distinct proposals: an API-writable `death_date` field proposal and a manual
+`deceased_status` semantic request. Their decisions and execution states are
+independent, and neither queue may collapse or silently discard the other.
 
 ### Follow-up records
 
@@ -225,10 +243,13 @@ campaign fields. Unknown placeholders are validation failures, not empty text.
 
 `TaskRun` stores task type, idempotency key, state, progress phase/counts,
 attempts, timestamps, initiator, heartbeat, summary, and sanitized error.
-`OutboxMessage` stores exact intended/routed recipients, rendered content,
-template version, reason, campaign/Family links, mode, delivery attempts, and
-provider result. Provider acceptance means sent; bounce processing is outside
-the first release.
+`OutboxMessage` stores exact intended/routed recipients, redacted rendered
+content, template version, reason, campaign/Family links, mode, delivery
+attempts, and provider result. Until terminal delivery, credential substitutions
+needed for retry are separately sealed with application-level encryption and a
+versioned key ID; only the dispatch worker may decrypt them. Terminal handling
+scrubs the sealed values. Provider acceptance means sent; bounce processing is
+outside the first release.
 
 `AuditEvent` is append-only and stores actor type/ID, action, entity, campaign,
 UTC time, request/task correlation, source IP metadata, and redacted structured
@@ -238,7 +259,9 @@ diagnostics are domain audit events.
 
 `PurgeRequest` records the selected archived campaign, initiating Admin, recent
 backup reference, re-authentication time, typed-confirmation digest, estimated
-counts, state, progress, and final non-sensitive tombstone.
+counts, state, batch checkpoints, progress, and final non-sensitive tombstone.
+Its state transitions follow the campaign purge lifecycle defined in the
+[overview](../spec.md#campaign-lifecycle).
 
 ## Effective-value merge
 
@@ -253,6 +276,15 @@ The value displayed on a repeat visit is computed per field:
 5. If current differs from both baseline and proposal, preserve the proposal,
    mark a source conflict, and show the Family only that its previously supplied
    value remains new; never mention ParishSoft.
+
+Every equality test uses the field type's canonical comparison value, not its
+display or raw upstream representation. Email is Unicode/case normalized;
+phones use normalized dialable components; ordinary text applies the specified
+Unicode and whitespace normalization; dates, enums, booleans, identifiers, and
+money compare in their typed canonical forms; and addresses compare normalized
+components. The same comparison registry is used for portal change markers,
+snapshot reconciliation, and publication preflight. Display forms remain
+unchanged unless an accepted proposal changes them.
 
 Terminal Member states (deceased or no longer in household) and proposed
 Members follow the prior effective response until cancelled by a new
@@ -281,7 +313,8 @@ Snapshot promotion performs these effects transactionally:
 
 - recompute active registered Families and Members using shared ParishKit
   predicates;
-- generate campaign identities for newly eligible Families;
+- generate campaign identities for newly Portal-eligible Families, regardless
+  of email eligibility;
 - revoke access for newly inactive/non-Parishioner Families without deleting
   prior history;
 - restore the existing code if a Family reactivates;
@@ -307,7 +340,7 @@ current authorization/filter snapshot.
 
 `Publish to ParishSoft` performs an asynchronous mandatory preflight:
 
-1. Acquire the tenant/publication lock and validate expected organization.
+1. Acquire `parishsoft-source-mutation` and validate expected organization.
 2. Fetch uncached current contact payloads for every affected entity.
 3. Re-evaluate each approved field against baseline/proposed/current.
 4. Mark already-matching fields resolved upstream.
@@ -315,14 +348,20 @@ current authorization/filter snapshot.
    entity and return it for re-review.
 6. Merge approved values into the freshly fetched full payload, leaving
    unapproved fields at their current upstream values.
-7. Present counts and conflicts; require fresh Google authentication and final
+7. Persist the plan with the source payload digests, release the lock, present
+   counts and conflicts, and require fresh Google authentication and final
    confirmation before queueing writes.
 
-Publication groups fields by entity and uses idempotent v2 `PUT` operations
-with bounded shared retries. Each entity is verified by an uncached read after
-write. Success marks its fields published/resolved; failure records a sanitized
-error and leaves the entity retryable without replaying successful entities.
-A final targeted/full refresh reconciles the promoted snapshot.
+Execution reacquires `parishsoft-source-mutation` and, immediately before each
+entity PUT, fetches its uncached full payload and repeats canonical merge/conflict
+evaluation against the confirmed plan digest. Any difference invalidates that
+entity without writing and returns it for confirmation; a conditional-write
+primitive is used when ParishSoft exposes one. Publication then groups fields by
+entity and uses idempotent v2 `PUT` operations with bounded shared retries. Each
+entity is verified by an uncached read after write. Success marks its fields
+published/resolved; failure records a sanitized error and leaves the entity
+retryable without replaying successful entities. After releasing the lock, a
+final targeted/full refresh reconciles the promoted snapshot.
 
 Admins may publish any reviewed subset during or after an active campaign.
 They need not finish review in one session. Later Family submissions supersede

@@ -104,6 +104,8 @@ Admins have two always-visible indicators:
 Family clients heartbeat while a form is actively visible, at no more than one
 request every 30 seconds. Expired/closed/ineligible sessions disappear. Worker
 heartbeats identify abandoned runs; recovery behavior is task-specific.
+Family heartbeat and Admin background-indicator polling are presence-only
+requests: neither refreshes the authenticated session's idle-expiry timestamp.
 
 ## Parish and integration configuration
 
@@ -126,6 +128,12 @@ Admins create a new draft by cloning selected safe values from a historical
 campaign or starting empty. Cloning copies content/share/schedule structures
 but not dates, Family codes, submissions, deliveries, workflow state, or fund
 records without explicit remapping to current ParishSoft IDs.
+
+New draft creation is unavailable while any campaign is draft, scheduled, or
+active and while the global mode is Production. After the current campaign
+closes or is archived, the Admin must complete the guarded return to Testing
+before creating its successor. The server checks both conditions in the draft-
+creation transaction; stale or direct requests cannot bypass them.
 
 The campaign editor includes:
 
@@ -165,13 +173,21 @@ Going live is a dedicated workflow, not a toggle. It requires:
 - a summary of active/eligible/no-email Families and live messages that will
   be due immediately;
 - deletion of all Testing submissions/workflows and sensitive test audit
-  payloads, with exact counts and explicit confirmation; and
+  payloads, with exact submission and distinct-Family counts, an Admin-only
+  Family list for review, and explicit confirmation; and
 - fresh Google authentication plus a typed Production confirmation.
 
 Testing deliveries do not count as live. If a live occurrence is already due,
 the scheduler catches it up once after transition. Transition failure leaves
 Testing mode and test data intact unless deletion and mode activation can
 commit together; no partial go-live is allowed.
+
+The preview screen has an explicit readiness-test send that is available before
+the campaign date interval. It renders a selected Family or safe sample, routes
+only to the configured Testing recipient, does not create or satisfy a
+scheduled Family-mail occurrence, and does not bypass Family portal date gates.
+Its successful provider delivery satisfies the test-Family-mailing readiness
+check, making the `scheduled` state reachable before the start date.
 
 The transition changes the global system mode. Because only one campaign can be
 active, the selected campaign is the sole target of the readiness calculation;
@@ -200,6 +216,12 @@ Domain rows expose Staff and Ministry-leader columns. Administrator is visibly
 disabled. Creating `gmail.com` fails client and server validation. Address rows
 expose all roles; an empty role set is clearly labeled Explicit deny rather
 than appearing accidental.
+
+The domain table labels its rules as Google Workspace/Cloud Identity hosted-
+domain rules and explains that an email suffix alone never matches. Login-rule
+detail shows whether successful Google sign-ins have presented the matching
+signed hosted-domain claim, without exposing tokens. Personal or consumer-domain
+users must be authorized by exact address.
 
 Adding/removing a rule shows affected currently logged-in users and exact
 address-over-domain behavior. Removing roles takes effect on the next request.
@@ -270,10 +292,11 @@ submission changes, workflow changes, publication, and purge are recorded.
 Campaign purge is available only to Admins through `/admin/operations/purge/`.
 It cannot be invoked by ordinary deletion, API, or console command.
 
-Only closed or archived campaigns that are not running publication/export/
-purge tasks are eligible. The active/scheduled campaign, parish configuration,
-users, shared integration state, and the last restorable backup cannot be
-selected.
+Only archived campaigns that are not running publication/export/purge tasks are
+eligible. Draft, scheduled, active, and closed campaigns; parish configuration;
+users; shared integration state; and the last restorable backup cannot be
+selected. An Admin must finish reconciliation and explicitly archive a closed
+campaign before it becomes purgeable.
 
 The workflow has these required stages:
 
@@ -288,12 +311,16 @@ The workflow has these required stages:
    confirmation fields.
 7. Create one idempotent durable purge job.
 
-The task first marks the campaign `purging`, making it inaccessible. Database
-deletion occurs in a transaction. Shared/deduplicated source entities remain if
-referenced elsewhere. Associated generated files are deleted after commit by
-an idempotent manifest; retries finish cleanup without restoring data. A file
-cleanup failure leaves a visible failed-cleanup state and CRITICAL alert, not a
-partially usable campaign.
+The task first commits the campaign's `purging` state, making it inaccessible.
+Database-owned rows are then deleted in bounded, resumable, idempotent batches;
+each batch commits separately so a large campaign does not require one
+long-running transaction. Shared/deduplicated source entities remain if
+referenced elsewhere. A final transaction verifies the deletion inventory and
+replaces campaign detail with the tombstone, so no partially deleted campaign
+ever becomes visible. Associated generated files are deleted from an
+idempotent manifest. A file cleanup failure leaves the campaign in
+`purge_cleanup_failed` with a CRITICAL alert; retry continues cleanup without
+restoring data and finishes in `purged`.
 
 Completion replaces detail with a non-sensitive tombstone: campaign UUID/name,
 date range, initiator, request/start/completion times, backup reference, deleted
