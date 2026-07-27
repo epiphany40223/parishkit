@@ -67,10 +67,70 @@ campaign-linked work exempt from the gate. The authoritative gate-active and
 release states are defined by the
 [purge data model](../data/spec.md#job-outbox-audit-and-purge-records).
 
+The guarded purge UI may also create one purge-backup task after quiescence.
+That task invokes the shared backup service asynchronously, records progress on
+the PurgeRequest, and publishes a reference only after encryption, off-host
+upload, manifest-digest verification, and a database snapshot at or after the
+recorded quiescence instant all succeed. Retry uses the same request-scoped
+idempotency key until an attempt succeeds; a partial upload never qualifies as
+evidence.
+
 All schedules are evaluated in the parish timezone but persisted as UTC due
 instants. DST folds run once; nonexistent local times run at the first valid
 instant after the gap. Changing timezone causes future occurrences to be
 recomputed, never already successful ones.
+
+### Campaign lifecycle boundaries
+
+The scheduler owns persistence of date-driven campaign transitions. On every
+scan it inserts any due `start` or `close` CampaignBoundaryOccurrence with a
+unique campaign/kind/resolved-boundary key and queues an execution hint. A
+restart scans from durable campaign state and creates overdue occurrences, so a
+scheduler outage cannot permanently strand `scheduled` or `active` state.
+
+The worker claims the occurrence, locks the Campaign and global current-
+campaign record, and rechecks state, global mode, restore/purge gates, and the
+resolved boundary. At or after start, `scheduled` becomes `active`; at or after
+close, `active` becomes `closed`. Each successful or no-longer-applicable
+occurrence is terminal and audited with intended boundary, actual transition
+time, lag, previous/new state, and correlation ID. Transient failure uses the
+ordinary durable retry/lease policy and emits operational alerts when boundary
+lag exceeds the scheduler-health threshold.
+
+An end-date edit transaction replaces a not-yet-running close occurrence with
+one keyed to the new resolved boundary. It races safely under the Campaign lock:
+if closing wins first, changing the date requires the guarded reopen workflow.
+The locked start date cannot be rescheduled after Production readiness.
+
+Portal access, submission, and mail admission always check both lifecycle state
+and the authoritative resolved half-open interval. They deny work immediately
+at close and never wait for the stored transition; similarly, they do not admit
+live work before start merely because a stale state exists. Boundary recovery
+therefore reconciles durable state and side effects without creating an access
+or delivery gap.
+
+### Production-transition cleanup
+
+Starting Production cleanup atomically acquires the Campaign go-live gate and
+creates one idempotent cleanup TaskRun. The campaign-work admission service
+rejects new Testing submissions, test sends, campaign edits, and ordinary
+Testing campaign work while the gate is held. Workers holding older hints
+recheck the gate before mutation. Source refresh, cleanup itself, and
+operational notifications are the only admitted background work.
+
+The cleanup worker selects only rows captured by the request inventory and
+deletes them in bounded transactions ordered by stable primary key. Each batch
+commits its high-water checkpoint and deleted counts with the deletion, making
+retry safe after interruption. It validates campaign ownership and immutable
+`testing_override` routing on every batch, never follows broad cascades, and
+cannot select live or operational data. Completion verifies that no inventoried
+sensitive Testing detail remains before marking the request
+`cleanup_complete`.
+
+The worker never changes global mode or Campaign lifecycle. Those changes occur
+only in the final Admin-confirmed transaction. Cleanup failure enters retry wait
+with sanitized status; cancellation stops at a safe batch boundary, releases
+the gate transactionally, and leaves completed deletions intact.
 
 ### Schedule replacement and removal
 
@@ -170,11 +230,12 @@ A full refresh runs nightly at an Admin-configurable local time, default 2:00
 a.m., and on initial setup/manual request. It uses shared
 `load_families_and_members` with active/inactive data sufficient for transition
 recognition. Giving detail is limited to the financial and comparison periods
-of the scheduled or active campaign. When no campaign is scheduled or active,
-it covers the current draft and, if the immediately preceding campaign is
-closed and still undergoing reconciliation, that closed campaign as well. Thus
-the window covers at most two campaigns. Archived and all older campaigns read
-their immutable retained snapshots and never expand the nightly source window.
+of the sole current campaign while it is `draft`, `scheduled`, `active`, or
+`closed`. A closed campaign therefore continues receiving current giving data
+through reconciliation and cannot be displaced by successor preparation;
+single-campaign sequencing prohibits a successor until archive. Archived and
+older campaigns read their immutable retained snapshots and never expand the
+nightly source window.
 
 The cycle:
 
@@ -238,14 +299,15 @@ failure for one Family records an error and does not block others.
 
 Before provider submission the exact non-secret message content and intended/
 routed recipients are persisted. Credential-bearing substitutions are sealed
-with application-level encryption and are decryptable only by the dispatch
-worker immediately before provider submission. Admin detail, exports, logs, and
-error context expose only redacted placeholders and fingerprints. Terminal
-delivery or permanent failure destroys the sealed token/code substitutions
-while retaining the redacted rendered record. In Testing, envelope recipients
-become the single test address, the subject/body prominently say TEST, and
-intended names/addresses are safely listed. Test delivery never marks a live
-occurrence delivered.
+to the dedicated token-key public key and are decryptable only by the
+`mail-dispatch` worker immediately before provider submission. Admin detail,
+exports, logs, and error context expose only redacted placeholders and
+fingerprints. Terminal
+transition to `delivered`, `permanent_failure`, or `cancelled` destroys the
+sealed token/code substitutions while retaining the redacted rendered record.
+In Testing, envelope recipients become the single test address, the subject/
+body prominently say TEST, and intended names/addresses are safely listed. Test
+delivery never marks a live occurrence delivered.
 
 For each later Family message, dispatch decrypts the Family's primary reusable
 token ciphertext into memory, constructs the secure link, and seals that
@@ -334,10 +396,13 @@ recovery record stores every pinned daily input needed to reproduce its values.
 ### Weekly additional-information digest
 
 At the configured local weekday/time, send newly created live
-AdditionalInformationItems since the last successful weekly occurrence. Include
-Family name/DUID, submitted time, bounded text, and secure Admin link. Skip the
-message if there are no new items; record a successful empty occurrence so it
-does not reconsider the same interval.
+AdditionalInformationItems since the last successful weekly occurrence only if
+they remain `current_actionable` at generation. Include Family name/DUID,
+submitted time, bounded text, and secure Admin link. A correction section names
+previously digested items that have since become `superseded` or `withdrawn`,
+without repeating withdrawn text unnecessarily. Skip the message if there are
+no new actionable items or corrections; record a successful empty occurrence
+so it does not reconsider the same interval.
 
 Changing Admin recipients does not resend past successful digests. An Admin may
 manually generate/send a new report occurrence, visibly labeled manual and

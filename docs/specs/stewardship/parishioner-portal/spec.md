@@ -18,14 +18,19 @@ showing a code form:
 - active: Family code entry; and
 - no campaign: a neutral no-current-campaign message.
 
-These pages reveal no Family information. Testing mode still honors campaign
-date gates; Admin page previews remain available outside the interval.
+These pages reveal no Family information. In Production, lifecycle state and
+the resolved boundaries govern access. In Testing, the one current `draft`
+campaign is treated as active solely for portal gating while the current instant
+falls inside its resolved interval; before/after pages still apply outside that
+interval, and the Testing interstitial/acknowledgments below remain mandatory.
+Admin page previews remain available outside the interval.
 The restore-maintenance gate takes precedence over Testing mode, dates, codes,
 tokens, and existing Family sessions. Enabling it revokes Family sessions; no
 Family route accepts or buffers answers until the Admin completes state-aware
 restore release. Family access resumes only when that release produces an
-`active` campaign in Production; every other resulting state continues to show
-its ordinary no-campaign, before-start, or ended page.
+`active` campaign in Production. A released `draft` in Testing follows the
+Testing date-gating rule above; every other resulting state shows its ordinary
+no-campaign, before-start, or ended page.
 
 The manual credential is exactly eight case-insensitive ASCII letters `A`-`Z`.
 Spaces/hyphens may be stripped for friendly entry, but no digits or additional
@@ -38,6 +43,14 @@ result and retry link.
 Family email uses `/access/<opaque-token>`, not a code query parameter. A valid
 token creates the same Family session and redirects immediately to a clean
 wizard URL. The generic email URL points to `/`.
+
+An unknown, revoked, rotated, closed-campaign, or ineligible-Family token creates
+no session and shows the same generic "This secure Family link cannot be found
+or used" page with a link to manual code entry. Every attempt records result
+class, campaign when knowable, source metadata, and only the token's lookup-
+digest fingerprint, never the token/path. Because the token has 256 bits of
+entropy, failures do not consume guessable-code counters; ordinary request-
+abuse limits still apply uniformly.
 
 An explicit Cancel and sign out action is available throughout. It warns that
 in-progress answers will be lost, clears client state, revokes the server
@@ -229,7 +242,9 @@ When enabled, display the campaign-authored prompt and a bounded multiline text
 field. Repeat visits prefill the latest effective text. A new Staff follow-up
 item is created only when a nonblank value differs from the prior effective
 text. Re-submitting unchanged text does not duplicate work; clearing it does not
-erase an older follow-up record.
+erase an older follow-up record but transactionally marks the current item
+withdrawn. Replacing text supersedes the prior item so Staff do not act on
+obsolete content while history remains auditable.
 
 ## Review and submission
 

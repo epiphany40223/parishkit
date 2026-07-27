@@ -1,9 +1,16 @@
 # Stewardship reports and exports
 
-Reports use the currently selected campaign and make their data-as-of source
-snapshot/time explicit. Admin inherits every report permission. Staff sees all
-reports below except logs; Ministry leaders see only the Ministry reports and
-only rows for assigned Ministries.
+Reports use an explicitly selected campaign and make their data-as-of source
+snapshot/time explicit. The selector is per user/request, encoded as a stable
+campaign UUID in the report URL and never written to the global current-campaign
+pointer. It lists every retained campaign for which that user has report scope;
+purging/purged campaigns expose only permitted status/tombstone views. The
+default is the current pointer when authorized/reportable, otherwise the most
+recent authorized retained campaign. Exports and pinned links persist the UUID,
+so creating a successor cannot silently change a historical report. Admin
+inherits every report permission. Staff sees all reports below except logs;
+Ministry leaders see only Ministry reports and campaigns/rows for assigned
+Ministries.
 
 ## Shared report behavior
 
@@ -43,9 +50,10 @@ comparing unlike units on one scale.
 ## Population and calculation rules
 
 "Active" means current promoted ParishSoft eligibility. Current participation
-and financial totals exclude Families that later became inactive by default;
-an Admin/Staff Include inactive option shows them separately. Historical event
-views retain a submission made while the Family was eligible.
+and financial cards/tables exclude Families that later became inactive by
+default; their Admin/Staff **Include inactive** option adds a separately labeled
+inactive subtotal/row set without changing the active denominator. Historical
+event views retain a submission made while the Family was eligible.
 
 A Family participates on the parish-local date of its first effective live
 submission. Repeat submissions never increase or move that count. Testing
@@ -57,6 +65,14 @@ end of that local day. **Current population** applies today's Portal-eligible
 Family set consistently to every historical point. Current cards use current
 eligibility and effective versions. Monetary values never derive from rounded
 installment displays.
+
+The participation graph exposes only its mutually exclusive **Historical as of
+day** / **Current population** scope control; it does not also expose **Include
+inactive**. Historical scope inherently follows eligibility on each day.
+Current-population scope excludes currently inactive Families at every point.
+Statistics cards and current-scope detail tables may expose **Include inactive**
+using the separate-subtotal rule above. Digest parameters record whichever
+single population scope applies, so digest parity never combines the controls.
 
 Eligible email follows active `get_family_heads()` Members with at least one
 syntactically valid normalized address. Publish privacy flags do not suppress
@@ -120,7 +136,9 @@ source displays Unavailable, not zero.
 
 One row per distinct `AdditionalInformationItem` shows submission time, Family
 name/DUID, text excerpt/full detail, follow-up-needed, followed-up time/actor,
-and Staff notes. Search covers authorized text, Family name/DUID, notes, date,
+disposition, replacement/withdrawal link, and Staff notes. The default queue
+shows only `current_actionable`; history filters expose superseded/withdrawn
+items. Search covers authorized text, Family name/DUID, notes, date, disposition,
 and workflow state. Exports include complete text and workflow history option.
 
 Editing is audited and uses optimistic concurrency. This report is also the
@@ -130,44 +148,25 @@ source for the weekly Admin digest.
 
 **Access:** Admin and Staff.
 
-List active Families with display name, Family DUID, a masked manual-code field,
-current email eligibility/deliverability, and response status. Search supports
-full/partial case-insensitive last/family name and DUID. A separate exact-code
-search canonicalizes and fingerprints the supplied candidate, returning only
-the matching Family without revealing any other code.
+List active Families with display name, Family DUID, manual code, current email
+eligibility/deliverability, and response status. Search supports full/partial
+case-insensitive last/family name, DUID, and exact canonicalized code. The code
+is directly visible to Admin and Staff; there is no per-row reveal action,
+reauthentication ceremony, distinct-Family reveal budget, or Valkey dependency.
+The server rechecks the report role and campaign scope on each request and uses
+`Cache-Control: no-store` for interactive responses.
 
-Exact-code search is a guessable-credential verification surface and uses the
-shared Valkey fail-closed limiter. Defaults permit five failed attempts per
-user/code fingerprint per 15 minutes, ten failed candidates per authenticated
-user per 10 minutes, and 30 failures per source IP per 10 minutes. Wrong-format
-input consumes the user/IP counters without creating a candidate fingerprint.
-Every attempt writes a retained security audit with actor, source metadata,
-result class, and HMAC fingerprint where available, never plaintext code.
-Failures feed the deployment-wide distributed-guessing detection. Responses do
-not distinguish unknown, inactive, or inaccessible codes; excess returns `429`
-with bounded `Retry-After`.
+The manual code is intentionally a low-sensitivity, campaign-bound access
+mechanism. Admin and Staff already hold broader parish-data access, and the code
+cannot be used after campaign close. This classification does not make it
+public: report access and exports remain authenticated, codes are excluded from
+logs, and the public Family login retains its guessing protections.
 
-If Valkey is unavailable, only exact-code search fails closed with the generic
-temporary-unavailability response; ordinary name/DUID directory search remains
-available. A successful match counts that Family against the same per-user
-30-distinct-Families-per-hour reveal budget used by **Show code**, preventing a
-user from bypassing the budget by alternating the two actions. It clears only
-the matching user/code failure counter, not source-IP or other-user counters.
-
-Each row has a CSRF-protected **Show code** action for Admin and Staff. It
-reauthorizes the object, decrypts only that Family's code, writes an audit event
-before returning it, uses `Cache-Control: no-store`, and automatically remasks
-on navigation or after 60 seconds. The audit records actor, campaign/Family,
-time, request correlation, and source metadata, never the code. Reveal attempts
-are limited per user to 30 distinct Families per rolling hour by default;
-exact-code matches share this budget. Excess receives `429` and creates one
-deduplicated Admin WARNING. Production may configure a stricter threshold.
-
-This report is not offered as a bulk downloadable file by default because it is
-a credential directory. If implementation requires print/export for parish
-operations, it must be an explicit Admin-only configuration, freshly
-authenticated, watermarked, and separately specified; it is not first-release
-behavior.
+CSV, XLSX, and PDF exports include the same columns, including the manual code.
+They use the standard asynchronous, short-lived, requester-authorized export
+pipeline. Interactive report execution and exports are audited at report,
+campaign, actor, filter, and row-count granularity without copying codes into
+the audit payload.
 
 ## Families without deliverable email
 
@@ -182,10 +181,10 @@ no address, invalid address, or all otherwise eligible addresses permanently
 refused by the provider).
 
 Detail/export contains Family DUID, envelope number where present, Family/head
-names, family/member phone numbers, complete home/mailing address, and reason.
-Export formats are CSV, XLSX, and PDF suitable for external label/mail-merge
-software. It never includes Family code/token unless the distinct credential
-report policy is invoked.
+names, family/member phone numbers, complete home/mailing address, reason, and
+campaign manual code. Export formats are CSV, XLSX, and PDF suitable for
+external label/mail-merge software. It never includes the opaque email-link
+token.
 
 ## Ministry change summary
 
@@ -218,15 +217,21 @@ Every leader view/export is audited with Ministry scope.
 **Access:** same Ministry scoping as the summary.
 
 The request offers multi-select plus Select all authorized Ministries. For each
-Ministry, output its name, chair names, stewardship period/year, and rows with:
+Ministry, output its name, chair names, stewardship period/year, and one row for
+each latest effective `join` or `leave` MinistryRequest in that Ministry,
+including resolved/cancelled history only when the requester selects the
+history option. Rows contain:
 
 - Member name and DUID;
 - authorized Member email address(es);
 - recorded email-contact date, blank if none;
 - authorized Member phone number(s);
 - recorded phone-contact date, blank if none; and
-- current outcome (`Join ministry`, `No longer interested`, `No response`, or
-  a mapped workflow outcome).
+- current outcome using this exact mapping: unresolved workflow state is blank;
+  `joined` is `Joined ministry`; `leave_confirmed` is `Left ministry`;
+  `declined` is `Declined / no longer interested`; `no_response` is
+  `No response`; `duplicate` is `Duplicate request`; and `other` is `Other`
+  with its notes/reference.
 
 For Ministry leaders, every email and phone value in the packet follows the
 summary report's ParishSoft publish-flag rule and renders `Not published`

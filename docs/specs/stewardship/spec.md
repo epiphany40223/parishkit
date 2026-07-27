@@ -15,10 +15,13 @@ application necessarily differs, as called out below.
 
 ## Goals and boundaries
 
-One deployment serves exactly one parish. It supports many historical annual
-campaigns, but no more than one campaign may be active at a time. A campaign may
-enable any combination of census, Ministry stewardship, and financial
-stewardship, with at least one enabled.
+One deployment serves exactly one parish. It supports many archived historical
+annual campaigns, but exactly one campaign at a time is treated as the current
+campaign through preparation, execution, close, and reconciliation. A
+successor cannot be created until the current campaign is archived and the
+deployment has completed the guarded return to Testing. A campaign may enable
+any combination of census, Ministry stewardship, and financial stewardship,
+with at least one enabled.
 
 The application provides:
 
@@ -91,7 +94,7 @@ external identity-policy service.
 | --- | --- | --- | --- | --- |
 | Configure parish/campaign/integrations | Yes | No | No | No |
 | Manage login rules and Ministry assignments | Yes | No | No | No |
-| Reveal one Family manual code | Yes | Yes | No | Own code through login only |
+| View/export Family manual codes | Yes | Yes | No | Own code through login only |
 | Trigger/view operational background work | Yes | No | No | No |
 | Trigger/view own authorized report exports | Yes | Yes | Assigned Ministries only | No |
 | View all campaign reports | Yes | Yes, except system logs | Assigned-Ministry reports only | No |
@@ -116,9 +119,9 @@ audited, although entering `active` and `closed` is driven by the configured
 local dates once the campaign is live.
 
 1. **Draft**: configuration is editable and Testing mode is mandatory. A draft
-   cannot be created while another campaign is `draft`, `scheduled`, or
-   `active`; the prior campaign must first close or be archived and the Admin
-   must explicitly return the deployment to Testing.
+   cannot be created while another campaign is `draft`, `scheduled`, `active`,
+   or `closed`; the prior campaign must be archived and the Admin must
+   explicitly return the deployment to Testing.
 2. **Scheduled**: Production readiness has passed, but the local start date has
    not arrived. An Admin may use the guarded pre-start withdrawal workflow to
    return it to `draft` and Testing.
@@ -186,11 +189,13 @@ likewise requires readiness validation, fresh Google authentication, explicit
 confirmation, and an audit event before its atomic transition to `active`.
 
 Successor-campaign preparation is intentionally sequential. The administration
-UI disables draft creation while another campaign is draft, scheduled, or
-active, and the server enforces the same rule transactionally. Closing a
-campaign stops Family access and live schedules; after the Admin explicitly
-returns the deployment to Testing, a successor draft may be created while the
-closed campaign remains available for reporting and reconciliation.
+UI disables draft creation while another campaign is draft, scheduled, active,
+or closed, and the server enforces the same rule transactionally. Closing a
+campaign stops Family access and live schedules but leaves it as the sole
+current campaign in Production while reporting and reconciliation finish. The
+Admin must resolve remaining campaign work, archive the campaign, and then use
+the guarded web workflow to return the deployment to Testing before creating a
+successor draft. Archived campaigns remain available for historical reporting.
 
 Temporarily stopping outgoing campaign email uses the Campaign's independent
 live-delivery pause, not a transition from Production to Testing. An active

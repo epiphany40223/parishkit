@@ -14,7 +14,9 @@ the initial implementation baseline is the official Valkey 9.1 image at its
 latest supported security patch release. Celery and its Python client retain
 their Redis-named transport/URL scheme because that is the protocol adapter's
 name. PostgreSQL, not Valkey, remains authoritative for schedules, outbox
-messages, job state, sessions requiring audit visibility, and application data.
+messages, job state, every Admin and Family session, and application data.
+Valkey holds only broker, cache, and rate-limiter state; its restart or eviction
+never invalidates an authenticated session.
 Valkey is selected for its BSD-3-Clause licensing and Redis-protocol
 compatibility. Upgrades may advance only after the broker, result-independent
 task dispatch, cache, atomic limiter scripts, expiry, restart, and outage
@@ -30,7 +32,11 @@ sanitized on input and output.
 Production Compose contains:
 
 - `web`: Gunicorn-hosted Django application;
-- `worker`: Celery workers for polls, mail, exports, and publication;
+- `worker`: general Celery workers for polls, rendering, exports, publication,
+  backup, purge, and cleanup;
+- `mail-dispatch`: a dedicated Celery worker for provider submission and link-
+  token encryption-key rotation, with the private token-key mount unavailable
+  to every other online service;
 - `scheduler`: exactly one scheduler process that materializes due work;
 - `postgres`: PostgreSQL with a durable volume;
 - `valkey`: broker/cache with a durable local volume, though task correctness
@@ -56,10 +62,13 @@ Only service-level capabilities become general ParishKit code:
 - provider-neutral email improvements; and
 - generic safe export helpers when they have no campaign semantics.
 
-The application reuses `parishkit.parishsoft`, `parishkit.retry`,
-`parishkit.logging`, `parishkit.email`, Google credential helpers, and runtime
-path helpers. Campaign models, authorization, content slots, reports, and
-workflows must not leak into general modules.
+The application reuses `parishkit.cli`, `parishkit.config`,
+`parishkit.parishsoft`, `parishkit.retry`, `parishkit.logging`,
+`parishkit.email`, Google credential helpers, and runtime path helpers. The
+console entry point and deployment-YAML layer use the shared CLI/config option,
+loading, validation, and path behavior rather than reimplementing it. Campaign
+models, authorization, content slots, reports, and workflows must not leak into
+general modules.
 
 ## Public interfaces
 
@@ -98,9 +107,9 @@ Three layers are intentionally distinct:
    database is reachable, such as database/broker hosts, public origin, trusted
    proxy count, and credential-file paths.
 2. **Secret material**: files below `<root>/credentials`, written atomically as
-   owner-only files. This includes Django signing/encryption keys, Google OAuth
-   client secret, Workspace service-account JSON, ParishSoft API key, Slack bot
-   token, and backup credentials.
+   owner-only files. This includes Django signing/general-encryption keys,
+   private email-link token keys, Google OAuth client secret, Workspace service-
+   account JSON, ParishSoft API key, Slack bot token, and backup credentials.
 3. **Web-managed configuration**: versioned PostgreSQL records for parish,
    campaign, content, fund/Ministry mappings, roles, and schedules.
 
@@ -115,16 +124,30 @@ staged, validated, atomically installed, and audited without value disclosure.
 Every path defaults below `PARISHKIT_ROOT` or `/opt/parishkit` and remains
 overridable through deployment configuration.
 
-Application encryption uses a versioned keyring. Every ciphertext envelope
-records its algorithm/version and key ID; one key is active for writes and older
-keys are decrypt-only during rotation. Rotation installs and validates the new
-key, makes it active, re-encrypts retained values in idempotent transactional
-batches, verifies that no online ciphertext references the old key, and only
-then permits retirement. Failure leaves both keys usable and the migration
-retryable. A key remains recoverable for any retained backup that needs it, or
-that backup must be re-encrypted before retirement. Signing-key rotation keeps
-the prior verification key only for the maximum lifetime of credentials issued
-under it, then removes it after audit confirms the transition window ended.
+General application encryption uses a versioned symmetric keyring for manual
+Family codes, integration secrets stored in the database, and other reversible
+values. Every ciphertext envelope records its algorithm/version and key ID; one
+key is active for writes and older keys are decrypt-only during rotation.
+Rotation installs and validates the new key, makes it active, re-encrypts
+retained values in idempotent transactional batches, verifies that no online
+ciphertext references the old key, and only then permits retirement. Failure
+leaves both keys usable and the migration retryable. A key remains recoverable
+for any retained backup that needs it, or that backup must be re-encrypted
+before retirement. Signing-key rotation keeps the prior verification key only
+for the maximum lifetime of credentials issued under it, then removes it after
+audit confirms the transition window ended.
+
+Reusable email-link tokens and credential-bearing mail substitutions use a
+separate versioned public/private sealed-box keyring from a maintained
+cryptographic library. Ciphertexts carry format version and recipient key ID.
+`web` and general workers receive only active public encryption keys; they may
+generate and seal a new random token but cannot recover any retained plaintext.
+Only `mail-dispatch` and an explicitly invoked rotation-service profile receive
+the private decryption-key ring. Rotation first distributes a new public key,
+makes it active for encryption, re-encrypts retained ciphertext in idempotent
+batches inside the private-key service, verifies migration, and retires an old
+private key only after retained backups no longer require it. This keyring is
+independent of the general application and Family-code MAC keyrings.
 
 Family-code lookup uses a distinct versioned MAC keyring. Every fingerprint row
 records its MAC algorithm/version and key ID; one key is active for new rows and
@@ -170,9 +193,12 @@ default application limits are:
 Exceeding a limit returns the same safe denial response with `429` and a
 progressive `Retry-After`, capped at one hour. No identity receives a permanent
 or global account lock; a successful authorized login clears only its identity
-failure counter. Counter keys and logs never store raw callback tokens or an
-email solely for throttling. Deployment YAML may tune thresholds, but production
-startup warns about values weaker than the defaults.
+failure counter. Adding or broadening a login rule atomically increments a
+denial-counter namespace version, invalidating existing identity-denial counters
+so a newly authorized user is not held by earlier denials; it audits the reset
+without clearing per-IP abuse counters. Counter keys and logs never store raw
+callback tokens or an email solely for throttling. Deployment YAML may tune
+thresholds, but production startup warns about values weaker than the defaults.
 
 Early Django middleware applies a coarse token bucket to `/admin/login` and the
 OAuth callback after trusted-client-address resolution but before OAuth
@@ -186,6 +212,15 @@ increases progressive backoff; sustained abuse for three windows becomes
 CRITICAL. Local and production deployments exercise the identical application
 limits; stock Caddy provides no authentication rate-limit module.
 
+The deployment-wide counter includes callback attempts rejected by either
+specific sliding-window limiter. Such a request contributes only its keyed,
+short-lived source-address fingerprint and, when already safely available, its
+identity fingerprint; it does not allocate OAuth state, parse or retain a raw
+token, call Google, or reach django-allauth. This telemetry increment occurs
+even though the request receives its ordinary `429`, ensuring coordinated
+traffic can cross the aggregate threshold after individual sources have been
+limited. One request contributes only once to the aggregate counter.
+
 Admin sessions have a 30-minute idle timeout and 12-hour absolute lifetime.
 Family sessions have a 60-minute idle timeout and four-hour absolute lifetime.
 Both receive a visible warning before idle expiry. Privileged operations such
@@ -197,19 +232,24 @@ Passive presence heartbeat and ordinary background polling never refresh idle
 expiry. The sole setup exception is the first-Admin wizard's correlated staged-
 source-load progress page: while that exact TaskRun remains nonterminal, its
 CSRF-protected authenticated progress request may renew the bootstrap Admin's
-30-minute idle deadline at most once every five minutes. It carries only the
-wizard/task correlation, verifies the same Admin/session server-side, and never
-extends the 12-hour absolute lifetime. Renewal stops as soon as the task is
-terminal or the page stops polling; no other wizard task, tab, Admin session, or
-ordinary background request qualifies.
+30-minute idle deadline at most once every five minutes, but only while the
+worker lease has a current valid heartbeat and for no more than two hours from
+TaskRun creation. It carries only the wizard/task correlation, verifies the
+same Admin/session server-side, and never extends the two-hour setup watchdog or
+12-hour session lifetime. Renewal stops as soon as the task is terminal, the
+worker heartbeat is stale, the watchdog expires, or the page stops polling; no
+other wizard task, tab, Admin session, or ordinary background request qualifies.
 
-While a Family form is visible, genuine keyboard, input, pointer, or touch
-interaction may schedule a CSRF-protected activity keepalive at most once every
-five minutes. The request contains no answers or field identifiers. The server
-refreshes the 60-minute idle deadline and returns the authoritative deadline,
-but never extends the four-hour absolute lifetime. Merely focusing a tab,
-receiving a timer event, or leaving it visible does not qualify. The idle-warning
-UI uses the returned deadline and remains keyboard and screen-reader operable.
+While a Family form is visible, the conforming client schedules a CSRF-protected
+activity keepalive after keyboard, input, pointer, or touch interaction, at most
+once every five minutes. Merely focusing a tab, receiving a timer event, or
+leaving it visible does not cause the supplied client to send one. The server
+does not treat the client's activity claim as trustworthy or attempt to prove a
+human interaction: any correctly authenticated, CSRF-valid keepalive within the
+rate limit may refresh the 60-minute idle deadline. The request contains no
+answers or field identifiers, returns the authoritative deadline, and never
+extends the four-hour absolute lifetime. The idle-warning UI uses the returned
+deadline and remains keyboard and screen-reader operable.
 
 Authorization changes take effect on the next request and invalidate sessions
 that no longer have any role. Removing the last specific-address Administrator
@@ -227,15 +267,19 @@ generation uses `ABCDEFGHJKMNPQRSTUVWXYZ`, excluding visually confusable
 the campaign, and never recycled within it. A reactivated Family regains its
 original code.
 
-Because Staff must retrieve codes, the display value is encrypted at the
-application layer; versioned HMAC fingerprint rows support unique lookup without
-decryption scans. Email links contain an independent 256-bit random token. The
-reusable token is stored in a versioned application-encrypted ciphertext
+The manual code is a low-sensitivity, campaign-scoped access mechanism rather
+than a high-security credential. Its usefulness ends when the campaign closes,
+which limits disclosure impact. It remains encrypted at the application layer
+to avoid accidental exposure from raw storage, while authorized Admin/Staff
+report and export services may decrypt it in bulk. Versioned HMAC fingerprint
+rows support unique lookup without decryption scans. Email links contain an
+independent 256-bit random token. The reusable token is stored in a versioned
+sealed-box ciphertext
 envelope alongside an unkeyed SHA-256 lookup digest over a domain-separation
 prefix and the token bytes; its entropy makes a rotatable lookup MAC
 unnecessary. Incoming exchange uses only the digest. Only the mail-dispatch and
-credential-rotation services may decrypt the ciphertext; Admin pages, reports,
-exports, logs, and general workers cannot.
+credential-rotation services may decrypt the token ciphertext; Admin pages,
+reports, exports, logs, and general workers cannot.
 
 Tokens are campaign-bound, reusable until invalidated, and rejected whenever
 the campaign is closed or the Family is ineligible. Explicit rotation atomically
@@ -257,9 +301,11 @@ create distinct credentials.
 Access-token routes never log token path segments. Successful exchange rotates
 the session, redirects to a clean URL, and emits `Referrer-Policy: no-referrer`.
 Family pages and responses use `Cache-Control: no-store`.
-Administration responses that reveal one Family code use the same no-store
-policy and the per-object authorization/audit/rate controls defined by the
-[Family-code report](../reports/spec.md#family-code-lookup).
+Administration pages displaying Family codes use the same no-store policy.
+Code-bearing exports use the ordinary authenticated temporary-export controls
+and complete report/export audit defined by the
+[Family-code report](../reports/spec.md#family-code-lookup). Codes remain absent
+from application logs, operational notifications, and unprivileged reports.
 
 Failed Family-code attempts use Valkey sliding-window limits keyed by source IP
 and by source-IP/code-fingerprint pair. Defaults are five failures per pair per
@@ -286,13 +332,13 @@ production startup warns about values weaker than these defaults. Counter keys,
 logs, and notifications never contain plaintext codes. Error messages and
 timing do not distinguish unknown, inactive, or non-Parishioner codes.
 
-Valkey limiter storage is required for routes that accept guessable credentials.
-If it is unavailable, Admin OAuth initiation/callback, manual Family-code
-submission, and Admin/Staff exact-code directory search fail closed before
-credential evaluation with the same generic temporary-unavailability response
-and bounded `Retry-After`. Existing authenticated sessions, ordinary Family
-name/DUID directory search, and `/access/<token>` exchange remain available
-because they do not verify the guessable code. Limiter-store unavailability
+Valkey limiter storage is required for public routes that accept guessable
+credentials. If it is unavailable, Admin OAuth initiation/callback and manual
+Family-code submission fail closed before credential evaluation with the same
+generic temporary-unavailability response and bounded `Retry-After`. Existing
+authenticated sessions, authorized Admin/Staff Family-code reports/search, and
+`/access/<token>` exchange remain available because they do not expose a public
+guessing oracle. Limiter-store unavailability
 makes readiness unhealthy and creates one deduplicated durable CRITICAL event;
 notification delivery resumes from PostgreSQL-backed work when workers can run.
 
@@ -343,8 +389,9 @@ concurrent Family sessions:
 - interactive traffic remains responsive while all worker categories run.
 
 Database indexes cover campaign/Family DUID, normalized email/domain, code
-fingerprint, submission state/time, Ministry, workflow status, log time/level,
-and outbox/task state. Pagination is server-side for potentially large tables.
+fingerprint, the campaign-scoped access-token lookup digest with uniqueness,
+submission state/time, Ministry, workflow status, log time/level, and outbox/
+task state. Pagination is server-side for potentially large tables.
 
 ## Accessibility and client behavior
 

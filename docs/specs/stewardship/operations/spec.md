@@ -14,10 +14,12 @@ templates, and static inputs are bind-mounted from the checkout so ordinary
 changes reload without rebuilding the application image.
 
 Production Compose references immutable GHCR image tags/digests, never a host
-checkout. It includes web, worker, scheduler, PostgreSQL, Valkey, and Caddy
-services from the [architecture](../architecture/spec.md#technology-and-component-model).
-Only Caddy publishes host ports. PostgreSQL/Valkey are on an internal network;
-worker/scheduler have no inbound public ports.
+checkout. It includes web, general worker, dedicated mail-dispatch worker,
+scheduler, PostgreSQL, Valkey, and Caddy services from the
+[architecture](../architecture/spec.md#technology-and-component-model). Only
+Caddy publishes host ports. PostgreSQL/Valkey are on an internal network;
+workers/scheduler have no inbound public ports. Development Compose preserves
+the same key-mount and queue separation.
 
 One application image contains package code/static build and supplies web,
 worker, scheduler, migration, bootstrap, backup, and restore entry commands.
@@ -50,9 +52,21 @@ durable volumes or explicit operator-selected host paths. Every runtime path is
 overridable by deployment CLI/YAML. Container replacement/restart/upgrade must
 not remove any durable volume.
 
-Credential files/directories use the shared restrictive modes. Compose secrets
-may mount them read-only. Images, Compose files, logs, exceptions, backup
+Credential files/directories use the shared restrictive modes. Compose mounts
+each secret read-only only into services that need it; mounting the whole
+credentials directory into an application service is prohibited. In
+particular, token public keys are available to `web`/general workers, while
+token private keys and Google mail-provider credentials are mounted only into
+`mail-dispatch` or the explicit rotation profile. The scheduler, web, general
+worker, report/export jobs, and ordinary maintenance commands cannot read the
+private token-key path. Images, Compose files, logs, exceptions, backup
 metadata, and support bundles never contain credential values.
+
+The application backup container does not receive the online token private-key
+mount. The backup manifest records its fingerprint; the private key is retained
+through the separately authorized operator secret-backup process and must be
+available for restore validation. Copying it into an application database,
+report, or ordinary backup task is prohibited.
 
 ## Production ingress and TLS
 
@@ -100,8 +114,9 @@ or missing credential file and reports a sanitized actionable error.
 
 ## Backup
 
-The application provides a scheduled/operator command that creates one
-consistent backup set containing:
+The application provides a shared backup service invoked by its scheduled task,
+operator command, or guarded campaign-purge web workflow. Each invocation
+creates one consistent backup set containing:
 
 - PostgreSQL logical/custom-format dump and schema/version metadata;
 - uploaded media/branding required by retained campaigns;
@@ -118,6 +133,12 @@ Backup creation uses PostgreSQL-supported consistency; copying a live data
 directory is prohibited. A manifest has application version, schema migration,
 database-snapshot instant, files, and cryptographic digests. Partial uploads
 never appear as successful backup references.
+
+The purge web action can enqueue this service only for an Admin-owned
+PurgeRequest that has reached quiescence. The web process never receives backup
+credentials or performs the backup inline; the authorized worker reads the
+existing credential reference. Purge-triggered backups follow ordinary
+retention and are additionally referenced immutably by the PurgeRequest.
 
 ## Restore
 
@@ -242,18 +263,23 @@ Normal CI requires no real ParishSoft, Google, email, Slack, backup, or other
 external credential and makes no live network calls. Dependencies are injected
 and external responses use fakes/redacted fixtures.
 
-`pytest-cov` enforces at least 80% line coverage across `src/parishkit`, with
-authorization, Family credential verification and access-token exchange,
-submission transaction, three-way reconciliation, outbox idempotency,
-ParishSoft publication, encryption/signing-key rotation, secret replacement,
-rate limiting, and purge state transitions receiving exhaustive branch-oriented
-tests.
+`pytest-cov` enforces at least 80% line coverage across
+`src/parishkit/stewardship` and any general `src/parishkit` modules newly added
+or materially changed by this project. Pre-existing unrelated tools do not enter
+this new gate merely because they share the package root. Authorization, Family
+credential verification and access-token exchange, submission transaction,
+three-way reconciliation, outbox idempotency, ParishSoft publication,
+encryption/signing-key rotation, secret replacement, rate limiting, and purge
+state transitions receive exhaustive branch-oriented tests.
 
 Required suites include:
 
 - pure unit tests for validation, normalization, dates/DST including
   midnight-gap/fold campaign boundaries, money, percentages, role precedence,
   state machines, merge/diff, report calculations, and export escaping;
+- scheduler/transaction tests for idempotent campaign-boundary occurrence
+  creation, exact interval gating despite state lag, start/close lock races,
+  end-date replacement, retry, and overdue recovery after scheduler outage;
 - Django request tests for every role/denial/object-scope and CSRF/session
   boundary;
 - authentication tests proving that domain rules require matching verified
@@ -262,37 +288,43 @@ Required suites include:
   application thresholds, trusted source address handling, rejection before
   OAuth state/session allocation, keyed identity counters, progressive
   `Retry-After`, distributed-abuse notification, recovery after window expiry,
-  fail-closed limiter-store outage, and empty-window recovery after counter
-  loss;
+  fail-closed limiter-store outage, empty-window recovery after counter loss,
+  and denial-counter namespace reset after an authorizing rule change without
+  clearing IP counters;
 - security tests for Family code normalization, reduced-alphabet generation,
   full-A-Z lookup candidates, malformed-attempt accounting, IP/code-pair and
   per-IP throttling, distributed-guessing detection and recovery, successful
   access during an attack from other addresses, fail-closed limiter-store
-  outage, continued opaque-token access, access-token exchange and revocation,
+  outage, continued opaque-token access, generic/audited invalid-token handling,
+  access-token exchange and revocation plus digest uniqueness/index use,
   MAC dual-read rotation/backfill/cross-key collision/retirement, encryption and
   signing-key rotation/migration/retirement, and atomic secret replacement
   rollback;
-- reusable-token tests for digest-only exchange, dispatch-only decryption,
-  repeat-mail rendering, atomic token rotation, ineligibility/reactivation, and
-  ciphertext destruction plus new-token issuance across close/reopen;
-- credential-report tests for masked pagination, exact-code lookup, per-object
-  reveal authorization/audit/no-store/remasking, shared reveal budgeting,
-  exact-search user/IP/fingerprint throttling and audit, distributed-abuse
-  contribution, and fail-closed exact-search limiter outage while name/DUID
-  search remains available;
+- reusable-token tests for digest-only exchange, public-key sealing,
+  dispatch/rotation-only private-key mounts and decryption, failure to decrypt
+  from web/general-worker service profiles, repeat-mail rendering, atomic token
+  rotation, ineligibility/reactivation, and ciphertext destruction plus new-
+  token issuance across close/reopen;
+- code-report tests for Admin/Staff-only direct display, exact-code lookup,
+  no-store responses, bulk CSV/XLSX/PDF inclusion, report/export audit without
+  code values, denial to Ministry leaders, continued availability during
+  limiter-store outage, and manual-code inclusion in the no-deliverable-email
+  mail-merge export;
 - security-content tests using sanitizer allow/deny corpora, upload signature
   and media-type rejection, image re-encoding/decompression bounds, and
   template placeholder validation for both correct substitution and unknown-
   placeholder rejection;
-- session tests distinguishing passive heartbeats from interaction-triggered
-  keepalive, including rate limiting, idle renewal, and absolute-expiry denial;
+- session tests distinguishing passive heartbeats from the untrusted activity
+  keepalive, including CSRF enforcement, hostile-client rate limiting, idle
+  renewal, empty payload enforcement, and absolute-expiry denial;
 - PostgreSQL integration tests for constraints, transactions, concurrent
   submissions, task claims, source-mutation lease fencing/heartbeat/takeover,
   stale-owner promotion/PUT denial, snapshot promotion, publication, and purge
   rollback;
 - worker tests for retry/idempotency, partial failure, missed schedules, and
   abandoned-task recovery, plus schedule replacement/removal races proving
-  atomic cancellation and cross-revision fulfillment;
+  atomic cancellation, sealed-credential scrubbing on every terminal outbox
+  state, direct-activation coalescing, and cross-revision fulfillment;
 - Valkey integration tests using the production major/minor line for Celery
   broker delivery, cache operations, atomic sliding-window/token-bucket scripts,
   expiry, restart with accepted counter loss, and fail-closed outage behavior;
@@ -306,6 +338,13 @@ Required suites include:
   and post-close held-message release/cancellation before archive;
 - browser tests for setup, Admin/Staff/leader workflows and the full responsive
   Family path, including stale submit and repeat visit;
+- browser and authorization tests proving that role checkbox changes autosave
+  without reauthentication or a confirmation dialog while enforcing CSRF,
+  optimistic concurrency, current-Admin authorization, last-Administrator
+  protection, and complete audit records;
+- limiter tests proving that rejected Admin callback attempts contribute once
+  to distributed-abuse telemetry without OAuth state allocation, provider
+  calls, raw token retention, or duplicate counting;
 - accessibility automation plus keyboard/screen-reader-oriented manual checks;
 - CSV/XLSX/PDF/PNG structure/content tests without committing generated reports;
 - backup/restore manifest and isolated restore smoke tests, including
@@ -327,18 +366,21 @@ At minimum, end-to-end tests demonstrate:
    expired-to-`closed`, and already `closed`/`archived` campaigns. Interrupted
    purge state blocks release pending explicit recovery.
    First-Admin setup additionally proves that correlated source-load polling
-   renews idle but not absolute expiry, stops renewing when the page/task ends,
-   and expiry safely prevents a late worker from restoring discarded staging.
+   renews idle only with a current worker heartbeat, never renews the two-hour
+   watchdog or absolute expiry, stops renewing when the page/task ends, and
+   watchdog/expiry cleanup prevents a late worker from restoring discarded
+   staging.
 2. Google allow/deny, exact-address override, last-Admin guard, immediate role
    revocation, assigned-Ministry scoping, immediate suspension after a seeded
    Chairperson relationship disappears, auto-role cleanup, manual restoration,
    and source-return reactivation.
 3. Testing email rerouting, mandatory Family-facing test acknowledgments,
    segregated test submission, blocked transition with in-flight test delivery,
-   aggregate creation and guarded deletion of test submissions/outbox detail,
-   structural lock, pre-start `draft`-to-`scheduled`, in-interval direct
-   `draft`-to-`active` with exactly-once live catch-up, and at/after-close
-   rejection on Production transition;
+   aggregate creation, go-live admission gating, resumable bounded cleanup of
+   test submissions/outbox detail, irreversible cancellation semantics, short
+   atomic final activation, structural lock, pre-start `draft`-to-`scheduled`,
+   in-interval direct `draft`-to-`active` with exactly-once live catch-up, and
+   at/after-close rejection on Production transition;
    guarded pre-start withdrawal cancels future live work, returns atomically to
    Testing/draft, and unlocks structural settings, while an active campaign and
    unresolved provider-submitting/delivery-unknown work cannot be withdrawn.
@@ -360,8 +402,9 @@ At minimum, end-to-end tests demonstrate:
    atomic coalescing/resume, and post-close held-message resolution.
 9. Closed campaign explicit reopen directly to `active`, atomic access-token/
    Production activation, no replay of work skipped while closed, archive,
-   guarded unarchive to `closed`, and denial of unarchive after purge
-   preparation begins.
+   guarded post-archive return to Testing, denial of successor draft before
+   both steps complete, guarded unarchive to `closed`, and denial of unarchive
+   after purge preparation begins.
 10. Web purge blocked for every non-archived campaign, stale backup, or wrong
     confirmation; atomic gate acquisition; concurrent admission rejection;
     cancellation of queued/retrying work; drain/reconciliation of running and

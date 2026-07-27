@@ -23,7 +23,7 @@ If no review findings are in the conversation, look for the most recent pika
 finalize output before giving up:
 
 ```bash
-LATEST=$(ls -dt ~/.pika/sessions/*/finalize-output.json 2>/dev/null | head -1)
+LATEST=$(ls -dt "${PIKA_SESSION_ROOT}"/*/finalize-output.json 2>/dev/null | head -1)
 ```
 
 If that file exists, read it and use it as the finding source (bucket mapping
@@ -45,8 +45,8 @@ skill first and stop.
 - Codex has no `Read` tool — read files with plain shell (`cat`, `sed -n`,
   `jq`).
 - Stage 3 auto-fix and step 6 both edit repository source, so this skill needs
-  write access to the workspace. Reading `~/.pika/sessions/` for the fallback
-  above only needs read access.
+  write access to the workspace. `PIKA_SESSION_ROOT` above denotes the redacted
+  machine-local session location; fallback discovery needs read access to it.
 
 ## Instructions
 

@@ -2,8 +2,9 @@
 
 > **Non-normative reference capture.** The installed Codex skill outside this
 > repository is authoritative. This copy records the workflow used during
-> specification development and contains machine-specific example paths; do not
-> invoke it as repository documentation.
+> specification development; machine-specific paths and permission-escalation
+> instructions are intentionally elided. Do not invoke it as repository
+> documentation.
 
 **Captured metadata:** Name `local-review`; short description "Peer-review
 current branch changes"; optional argument hint `[focus area]`. The installed
@@ -35,25 +36,22 @@ cross-source agreement depends on.
 Both reviewers write into the pika session directory; finalize is
 vendor-agnostic and reads whatever is there.
 
-## Absolute tool paths
+## Tool locations
 
-Do not rely on `PATH`. Use these:
+The captured workflow used machine-local absolute paths. They are redacted here:
 
-- pika: `/Users/jsquyres/git/pika/pika`
-- claude: `/Users/jsquyres/.local/bin/claude`
-- codex: `/opt/homebrew/bin/codex` (pika resolves this itself; recorded here for
-  diagnostics only)
+- pika: `<pika-binary>`
+- claude: `<claude-binary>`
+- codex: `<codex-binary>` (resolved by pika)
 
 If any is missing, surface the error and stop.
 
 ## Preconditions
 
-- pika writes its artifacts to `~/.pika/sessions/<id>/`, which is **outside the
-  repo workspace**, and both reviewer subprocesses need network access. A
-  `read-only` or default `workspace-write` sandbox will therefore break the run.
-  Start the driving session with full access, or approve the escalation when
-  prompted, or grant `~/.pika` in `sandbox_workspace_write.writable_roots`
-  together with `sandbox_workspace_write.network_access = true`.
+- The workflow required write access to a machine-local pika session directory
+  outside the repository and network access for reviewer subprocesses. Exact
+  permission provisioning is intentionally elided; use the installed skill and
+  the current environment's security policy.
 - Codex has no `Read` tool: read manifests and JSON with `cat` / `jq`.
 - Codex has no `Task` tool: the Claude reviewer is a `claude -p` subprocess.
 
@@ -73,7 +71,7 @@ If any is missing, surface the error and stop.
 3. Run:
 
    ```bash
-   /Users/jsquyres/git/pika/pika review run --branch --base "$BASE_REF" --focus "<focus>"
+   <pika-binary> review run --branch --base "$BASE_REF" --focus "<focus>"
    ```
 
    Output is one line:
@@ -94,7 +92,7 @@ If any is missing, surface the error and stop.
    i=0
    while read -r agent; do
      PROMPT_PATH=$(printf '%s' "$agent" | jq -r '.prompt_path')
-     /Users/jsquyres/.local/bin/claude -p "$(cat "$PROMPT_PATH")" \
+     <claude-binary> -p "$(cat "$PROMPT_PATH")" \
        --model opus \
        --permission-mode acceptEdits \
        --add-dir "$SESSION" \
@@ -114,7 +112,7 @@ If any is missing, surface the error and stop.
 5. Run:
 
    ```bash
-   /Users/jsquyres/git/pika/pika review finalize --manifest <path> --diff "$SESSION/review.diff"
+   <pika-binary> review finalize --manifest <path> --diff "$SESSION/review.diff"
    ```
 
    This waits for the Codex reviewer's run-status before returning. If stdout
@@ -136,7 +134,7 @@ If any is missing, surface the error and stop.
    salvage runs through `claude -p`, never `codex exec`:
 
    ```bash
-   /Users/jsquyres/.local/bin/claude -p "<salvage instructions>" \
+   <claude-binary> -p "<salvage instructions>" \
      --model "$(jq -r '.salvage_model' "$SESSION/finalize-output.json")" \
      --permission-mode acceptEdits --add-dir "$SESSION"
    ```
@@ -146,7 +144,7 @@ If any is missing, surface the error and stop.
    `[{"index":N,"verdict":"YES"|"NO"}]`. Then run:
 
    ```bash
-   /Users/jsquyres/git/pika/pika review salvage-merge \
+   <pika-binary> review salvage-merge \
      --finalize "$SESSION/finalize-output.json" \
      --results "$SESSION/salvage-results.json"
    ```

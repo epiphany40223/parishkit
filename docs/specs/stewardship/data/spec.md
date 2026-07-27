@@ -76,9 +76,11 @@ anniversary. The immediately preceding equivalent period is the default
 comparison period, but fund mappings are explicit.
 
 The campaign-creation service and a transactional database guard permit at most
-one campaign across `draft`, `scheduled`, and `active`. Creating a draft also
-requires global Testing mode. Closed and archived campaigns may coexist with
-the one current draft so their reporting and reconciliation remain available.
+one current campaign across `draft`, `scheduled`, `active`, and `closed`.
+Creating a draft also requires global Testing mode, a null current-campaign
+pointer, and no campaign in any of those four states. Only archived or purged
+historical campaigns may coexist with a new current draft; archived campaigns
+remain available for historical reporting.
 The only backward transition among these current-campaign states is the
 guarded, pre-start `scheduled` to `draft` Production withdrawal defined by the
 [campaign lifecycle](../spec.md#campaign-lifecycle). It changes global mode to
@@ -95,6 +97,21 @@ The guarded reopen transition moves `closed` directly to `active` only when its
 extended closing instant is after the transaction time. Campaign/global-mode
 updates and new access-token issuance commit atomically; original start and
 structural settings remain locked.
+
+The guarded post-archive Return to Testing transaction requires the current
+campaign to remain archived and quiescent, changes global mode from Production
+to Testing, and clears the current-campaign pointer under the same global lock.
+It does not alter historical OutboxMessage modes or the archived Campaign row.
+Draft creation and this transition therefore cannot race to violate the
+single-current-campaign invariant.
+
+`CampaignBoundaryOccurrence` stores campaign, kind (`start` or `close`),
+resolved UTC boundary, state, attempts/lease, intended and actual transition
+times, before/after lifecycle states, and audit/task correlation. A unique
+constraint on campaign, kind, and resolved boundary makes scheduler insertion
+and recovery idempotent. The transition and successful occurrence state commit
+in one transaction under Campaign/global locks; obsolete occurrences terminate
+with a structured reason rather than rewriting campaign history.
 
 Live delivery pause is orthogonal to lifecycle and global mode. It never changes
 an `active` Campaign to Testing, never changes live Submission classification,
@@ -178,7 +195,9 @@ verify the expected fencing token.
 Codes are generated for every newly active registered Family during initial
 campaign population or snapshot promotion, even if the Family lacks eligible
 email. A code is never changed during that campaign. Token rotation does not
-change the code.
+change it. A non-null access-token lookup digest is unique within its campaign
+and backed by a database unique index; close-time destruction sets both token
+ciphertext and digest null without weakening retained audit metadata.
 
 `FamilyCodeFingerprint` stores FamilyCampaign, campaign, MAC key ID/algorithm,
 and the canonical digest. Constraints allow at most one row per Family/key and
@@ -209,16 +228,19 @@ Google Workspace/Cloud Identity hosted-domain rule: it grants roles only when
 the signed `hd` claim and verified email suffix both match. An absent or
 mismatched `hd` claim never falls back to suffix-only authorization.
 
-Chairperson synchronization seeds missing assignments. When a promoted snapshot
-no longer shows the active Member as Chairperson of that active Ministry, it
-atomically changes the corresponding `chair-seed` assignment from `active` to
-`suspended`, records the source evidence, and opens an Admin review task. A
-suspended assignment grants no row scope on the next authorization check.
-Manual assignments are never changed from source data. If the exact AddressRule
-and Ministry-leader role were auto-created solely for seeded assignments, the
-role is removed when no active assignment remains; unrelated roles/rules are
-preserved. If the source Chairperson relationship returns before review, the
-seeded assignment reactivates and the task closes with audit.
+Chairperson synchronization creates or refreshes suggestions only; it never
+creates an AddressRule, grants a role, or creates an active assignment. The
+Admin-confirmed suggestion transaction is the sole creator of a `chair-seed`
+assignment and any corresponding exact-address/Ministry-leader grant. For an
+existing `chair-seed`, a promoted snapshot that no longer shows the active
+Member as Chairperson of that active Ministry atomically changes it from
+`active` to `suspended`, records the source evidence, and opens an Admin review
+task. A suspended assignment grants no row scope on the next authorization
+check. Manual assignments are never changed from source data. If the exact
+AddressRule and Ministry-leader role were created solely for seeded assignments,
+the role is removed when no active assignment remains; unrelated roles/rules
+are preserved. If the source Chairperson relationship returns before review,
+the seeded assignment reactivates and the task closes with audit.
 
 ### Submission
 
@@ -290,9 +312,15 @@ independent, and neither queue may collapse or silently discard the other.
 
 An `AdditionalInformationItem` is created only when a live submission's
 nonblank text differs from the Family's prior effective text. It retains the
-submitted text, submission reference, `follow_up_needed`, `followed_up_at`, and
-versioned Staff notes. Clearing/changing the effective text does not delete
-older items.
+submitted text, submission reference, disposition (`current_actionable`,
+`superseded`, or `withdrawn`), `follow_up_needed`, `followed_up_at`, and
+versioned Staff notes. In the submission transaction, replacement text marks
+the prior current item `superseded` and links the replacement; clearing text
+marks it `withdrawn` without deleting history. Default Staff queues and weekly
+digest content include only items still `current_actionable` at generation.
+The next digest includes a compact correction section for items sent in a prior
+digest and since superseded/withdrawn, preventing stale emailed work from
+remaining silently actionable. History views expose every disposition.
 
 A `MinistryRequest` represents one Member/Ministry requested action (`join` or
 `leave`). Latest effective submissions may create, cancel, or supersede a
@@ -325,6 +353,15 @@ campaign fields. Unknown placeholders are validation failures, not empty text.
 
 `TaskRun` stores task type, idempotency key, state, progress phase/counts,
 attempts, timestamps, initiator, heartbeat, summary, and sanitized error.
+`ProductionTransitionRequest` stores campaign/Admin, state, gate version,
+inventory digest and counts, non-sensitive Testing aggregate reference, cleanup
+TaskRun, batch checkpoints/counts, acknowledgement and reauthentication times,
+readiness evidence, activation result, and sanitized failure. Its states are
+`cleanup_queued`, `cleanup_running`, `cleanup_retry_wait`, `cleanup_complete`,
+`activated`, and `cancelled`. Every state except the last two owns the Campaign's
+go-live gate; a constraint permits at most one gate-owning request. Cleanup
+checkpoints and deletions commit together, while final campaign/mode activation
+and gate release commit together. No transition restores a deleted Testing row.
 `OutboxMessage` stores exact intended/routed recipients, redacted rendered
 content, template version, reason, campaign/Family links, mode, immutable routing
 class (`testing_override`, `production`, or `operational`), delivery attempts,
@@ -350,10 +387,12 @@ campaign UUID/tombstone reference rather than a campaign-owned foreign key. The
 retained event contains no viewed report data and is outside purge inventory;
 exports and mutations remain blocked.
 
-`PurgeRequest` records the selected archived campaign, initiating Admin, recent
-backup reference, re-authentication time, typed-confirmation digest, estimated
-counts, gate-acquisition/quiescence times, state, batch checkpoints, progress,
-and final non-sensitive tombstone. A request in any state other than
+`PurgeRequest` records the selected archived campaign, initiating Admin,
+post-quiescence inventory and completion/expiry times, purge-triggered backup
+task and immutable verified-backup reference, backup completion/expiry times,
+re-authentication time, typed-confirmation digest, estimated counts, gate-
+acquisition/quiescence times, state, batch checkpoints, progress, and final
+non-sensitive tombstone. A request in any state other than
 `cancelled` or `failed_pre_delete` owns the durable campaign purge gate. It has
 a state machine separate from the associated
 [Campaign lifecycle](../spec.md#campaign-lifecycle):
@@ -381,10 +420,15 @@ a state machine separate from the associated
 
 The permitted request transitions are `draft` to `ready_for_confirmation` or
 `cancelled`; `ready_for_confirmation` back to `draft` when a prerequisite
-expires, or to `queued`/`cancelled`; `queued` to `running` or, through an atomic
-claim cancellation, `cancelled`; `running` to `failed_pre_delete`,
-`deletion_failed`, `cleanup_failed`, or `succeeded`; `deletion_failed` back to
-`running` on retry; and `cleanup_failed` to `succeeded` after idempotent cleanup.
+expires, or to `queued`/`cancelled`; and `queued` to `running` or, through an
+atomic claim cancellation, `cancelled`. An initial `running` attempt may enter
+`failed_pre_delete` only while its durable checkpoint proves no deletion batch
+has committed; any `running` attempt may enter `deletion_failed`,
+`cleanup_failed`, or `succeeded` as appropriate. `deletion_failed` returns to
+`running` on retry or remains `deletion_failed` when that retry exhausts without
+progress. `cleanup_failed` moves to `succeeded` after idempotent cleanup or
+remains `cleanup_failed` when cleanup retry again exhausts. No post-deletion
+retry path can reach `failed_pre_delete` or release the gate.
 The three terminal states are `failed_pre_delete`, `succeeded`, and `cancelled`.
 Every transition is audited. A database constraint permits at most one request
 in a nonterminal state for a Campaign; request and Campaign transitions that
@@ -407,8 +451,10 @@ work after acquisition; safely cancellable records become terminal
 otherwise irreversible work must reach an accurately reconciled terminal state.
 The request records a quiescence time only after none remain. Inventory and
 backup evidence used for confirmation must describe a database snapshot at or
-after that quiescence time, and any later campaign-owned mutation invalidates
-them.
+after that quiescence time. Each expires 60 minutes after its respective
+completion, and any later campaign-owned mutation invalidates both. The final
+confirmation transaction checks the stored expirations and invalidation version
+under the request and Campaign locks.
 
 The gate is released only when the request becomes `cancelled` or
 `failed_pre_delete`, before any deletion has committed. It remains permanent
@@ -421,17 +467,21 @@ snapshot. Failure performs no deletion and atomically enters
 
 ## Effective-value merge
 
-The value displayed on a repeat visit is computed per field:
+The value displayed on a repeat Family visit is computed from the immutable
+Family-submitted value, never an Admin review edit:
 
 1. Start with the current ParishSoft value.
 2. If there is no prior effective response change, use current.
-3. If current now equals the prior proposed value, the proposal is resolved
-   upstream and current is used without a change marker.
-4. If current still equals the prior baseline, overlay the prior proposed value
-   and mark it changed.
-5. If current differs from both baseline and proposal, preserve the proposal,
-   mark a source conflict, and show the Family only that its previously supplied
-   value remains new; never mention ParishSoft.
+3. If current now equals the prior Family-submitted value, the proposal is
+   resolved upstream and current is used without a change marker.
+4. If a published/resolved ProposedChange has an Admin-edited value and current
+   equals that edit, use current without attributing the edit to the Family.
+5. If current still equals the prior baseline, overlay the prior Family-
+   submitted value and mark it changed.
+6. If current differs from baseline, Family-submitted value, and any resolved
+   Admin edit, preserve the Family-submitted value, mark a source conflict, and
+   say only that the Family's previously supplied value remains new; never show
+   or attribute the Admin edit and never mention ParishSoft.
 
 Every equality test uses the field type's canonical comparison value, not its
 display or raw upstream representation. Email is Unicode/case normalized;
@@ -540,10 +590,10 @@ have bounded cleanup policies defined by operations.
 
 The three exceptions are:
 
-- test responses and their sensitive audit payloads are deleted during the
-  Production transition;
+- test responses and their sensitive audit payloads are deleted in bounded
+  batches during the gated Production-transition cleanup phase;
 - `testing_override` outbox rows and sensitive delivery audit payloads are
-  deleted during that transition after producing the non-sensitive aggregate
+  deleted during that cleanup after producing the non-sensitive aggregate
   defined by the
   [Admin readiness workflow](../admin-portal/spec.md#production-transition);
   `operational` rows are retained under normal policy even when created while

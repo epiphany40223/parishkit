@@ -73,17 +73,22 @@ tables/files, but no durable product configuration is visible until final
 commit. While the bootstrap Admin remains on the correlated source-load
 progress page, bounded authenticated polling renews only idle expiry under the
 [session-policy exception](../architecture/spec.md#identity-and-session-security).
-The page warns that closing it stops renewal and that the 12-hour absolute
-lifetime still applies; it displays both authoritative deadlines.
+The page warns that closing it stops renewal and that the source-load watchdog
+expires two hours after TaskRun creation even though the Admin session has a
+later 12-hour absolute lifetime. It displays the idle, source-load-watchdog, and
+absolute-session deadlines.
 
-Cancel, idle expiry after polling stops, or absolute expiry marks the staging
-set expired, safely cancels/abandons its load TaskRun, and removes staged
-settings, source rows, files, and credentials idempotently. The worker checks
-that state before external-page fetches and before promotion to staging, so it
-cannot repopulate expired setup. Wizard staging is not resumable under a new
-login in the first release. Finalization atomically installs staged credential
-files, commits configuration/snapshot, generates Family codes, enters Testing
-mode, and records one setup audit event with secret values redacted.
+Cancel, idle expiry after polling stops, the two-hour watchdog, or absolute
+expiry marks the staging set expired, safely cancels/abandons its load TaskRun,
+and removes staged settings, source rows, files, and credentials idempotently.
+The worker checks that state before external-page fetches and before promotion
+to staging, so it cannot repopulate expired setup. At the watchdog deadline the
+server refuses further renewal, requests cancellation, and cleanup proceeds at
+the worker's next safe point; lease expiry handles an unresponsive worker.
+Wizard staging is not resumable under a new login in the first release.
+Finalization atomically installs staged credential files, commits configuration/
+snapshot, generates Family codes, enters Testing mode, and records one setup
+audit event with secret values redacted.
 
 Restore is an operator command performed before bootstrap/wizard. A restored,
 valid configured database skips initial setup after version/migration and
@@ -152,12 +157,12 @@ campaign or starting empty. Cloning copies content/share/schedule structures
 but not dates, Family codes, submissions, deliveries, workflow state, or fund
 records without explicit remapping to current ParishSoft IDs.
 
-New draft creation is unavailable if any campaign is draft, scheduled, or
-active. Independently, it is unavailable while the global mode is Production.
-After the current campaign closes or is archived, the Admin must complete the
-guarded return to Testing before creating its successor. The server checks both
-conditions in the draft-creation transaction; stale or direct requests cannot
-bypass them.
+New draft creation is unavailable if any campaign is draft, scheduled, active,
+or closed. Independently, it is unavailable while the global mode is
+Production. The Admin must finish reconciliation, archive the current campaign,
+and complete the guarded return to Testing before creating its successor. The
+server checks all conditions in the draft-creation transaction; stale or direct
+requests cannot bypass them.
 
 The campaign editor includes:
 
@@ -208,24 +213,48 @@ Going live is a dedicated workflow, not a toggle. It requires:
   `permanent_failure`, or `cancelled`), with none `pending`, `submitting`,
   `retry_wait`, or `delivery_unknown`, plus a terminal-delivery summary ready
   for aggregation;
-- deletion of all Testing submissions/workflows and sensitive test audit
-  payloads and Testing outbox detail, with exact submission, distinct-Family,
-  and message/result counts, an Admin-only Family list for review, and explicit
-  confirmation; and
-- fresh Google authentication plus a typed Production confirmation.
+- a cleanup inventory of all Testing submissions/workflows, sensitive test
+  audit payloads, and Testing outbox detail, with exact submission, distinct-
+  Family, and message/result counts plus an Admin-only Family list; and
+- completion of the gated asynchronous cleanup below, followed by fresh Google
+  authentication and a typed Production confirmation.
 
-Testing deliveries do not count as live. Under a campaign row lock, successful
-transition compares its commit instant with the resolved half-open campaign
-interval: before start it moves `draft` to `scheduled`; from start through the
-instant before close it moves `draft` directly to `active`; at or after close it
-is rejected without cleanup or mode change. Either successful path changes
-global mode to Production, records the readiness result, and locks structural
-settings atomically. Direct activation materializes/catches up every already-due
-live occurrence once under the stable idempotency/fulfillment rules.
+Testing deliveries do not count as live. After readiness and inventory, the
+Admin explicitly acknowledges that cleanup is irreversible and starts it. One
+transaction creates a durable ProductionTransitionRequest, acquires the
+campaign go-live gate, records the inventory/aggregate described below, and
+queues an idempotent cleanup task. The gate rejects new Testing submissions,
+test sends, campaign content/configuration changes, and Testing campaign work;
+existing authenticated pages explain that go-live is in progress. Source
+refresh and operational notifications may continue.
 
-Transition failure leaves Testing mode and test data intact unless deletion and
-mode activation can commit together; no partial go-live is allowed. Only the
-pre-start `scheduled` result offers **Withdraw from Production**. That action
+The worker deletes the recorded Testing corpus in bounded, checkpointed batches
+and exposes progress/retry in the web workflow. It rechecks the gate before each
+batch and never touches production or operational rows. When cleanup completes,
+the request becomes `cleanup_complete`; deleted rows are not restored if a
+later check fails or the Admin cancels. Cancellation before activation releases
+the gate and leaves the campaign in Testing with whatever cleanup completed.
+
+From `cleanup_complete`, fresh authentication and typed confirmation invoke a
+short final transaction. Under the request, campaign, and global locks it
+recomputes readiness and compares its commit instant with the resolved half-open
+campaign interval: before start it moves `draft` to `scheduled`; from start
+through the instant before close it moves `draft` directly to `active`; at or
+after close it is rejected without a mode change. Either successful path changes
+global mode to Production, records the readiness result, locks structural
+settings, marks the request activated, and releases the gate atomically. Direct
+activation materializes/catches up every already-due live occurrence under the
+same overdue Family-mail/digest coalescing plan used for service recovery. The
+readiness preview's immediately-due count is the post-coalescing provider-
+message count, with coalesced semantic slots shown separately. Stable
+idempotency/fulfillment rules prevent duplicate catch-up.
+
+Cleanup or final-transition failure leaves global mode Testing and never creates
+a partially live campaign. The UI states separately that completed cleanup is
+not rolled back. Retry resumes from durable cleanup checkpoints or reruns the
+short final transaction; cancelling releases the gate without restoring deleted
+Testing data. Only the pre-start `scheduled` result offers **Withdraw from
+Production**. That action
 requires fresh Google authentication, an entered reason, and explicit
 confirmation that Testing data deleted by the prior transition cannot be
 restored. Under a campaign row lock, the server must verify that the state is
@@ -238,13 +267,13 @@ already `active`, withdrawal is rejected. Going live again requires a complete
 new readiness run, preview/test evidence, cleanup, reauthentication, and
 confirmation.
 
-Immediately before deletion, the transition writes one non-sensitive Testing
-delivery aggregate containing counts by message type and terminal result,
-attempt-count totals, transition time, template-version identifiers, and the
-configured Testing-recipient fingerprint. It contains no intended recipient,
-Family/Member link, rendered content, provider message identifier, or error
-detail. All `testing_override` OutboxMessage rows and sensitive delivery audit
-payloads are then deleted in the same transition transaction. Operational
+Before the first cleanup batch, gate acquisition writes one non-sensitive
+Testing delivery aggregate containing counts by message type and terminal
+result, attempt-count totals, cleanup-start time, template-version identifiers,
+and the configured Testing-recipient fingerprint. It contains no intended
+recipient, Family/Member link, rendered content, provider message identifier,
+or error detail. Batch deletion covers all recorded `testing_override`
+OutboxMessage rows and sensitive delivery audit payloads. Operational
 notification rows are excluded from both aggregation and deletion.
 
 The preview screen has an explicit readiness-test send that is available before
@@ -344,11 +373,16 @@ held-message state is resolved.
 Extending a closed campaign into the future can reopen it only through a
 readiness workflow equivalent to Production transition, excluding test-data
 deletion and the `draft`-to-`scheduled` state change. The proposed end date must
-place the commit instant inside the reopened half-open campaign interval. The UI
-lists reactivated Family access, regenerated access-link-token counts, and each
+place the commit instant inside the reopened half-open campaign interval. The
+single-current-campaign rule means a successor cannot yet exist; the server
+nevertheless rechecks that no other campaign is `draft`, `scheduled`, `active`,
+or `closed` and reports any inconsistent state rather than surfacing a database-
+constraint error. The UI lists reactivated Family access, regenerated access-
+link-token counts, and each
 explicitly configured future mail occurrence. Fresh authentication and final
-confirmation atomically move `closed` to `active`, enter Production, issue new
-Family access-link tokens, and enable Family access.
+confirmation atomically rechecks the single-current-campaign guard, moves
+`closed` to `active`, enters Production, issues new Family access-link tokens,
+and enables Family access.
 
 Reopen does not alter or unlock the original start date. Work that became due
 and was durably skipped while the campaign was closed remains terminal and is
@@ -356,8 +390,10 @@ not caught up; an Admin must configure a new future reminder schedule when
 contact is desired. A reopen failure leaves the campaign closed, Testing, and
 inaccessible with no partial token/schedule activation.
 
-Archiving cannot occur with a live-delivery pause, held production messages, or
-nonterminal publication, export, or purge work. An
+Archiving cannot occur with a live-delivery pause, held production messages,
+provider-submitting or delivery-unknown messages, nonterminal production
+outbox/schedule occurrences, or nonterminal publication, export, or purge work.
+An
 Admin may return a Campaign from `archived` to `closed` only while it remains
 exactly `archived`, has no active purge gate as defined by the
 [purge data model](../data/spec.md#job-outbox-audit-and-purge-records), has no
@@ -365,12 +401,43 @@ conflicting campaign work, and after fresh Google authentication plus explicit
 confirmation. The transition is audited and leaves Family access and schedules
 disabled; reopening is still the separate readiness workflow above.
 
+### Return to Testing after archive
+
+Archiving does not itself change the global mode. Once the sole current
+campaign is archived, the Admin portal exposes **Return to Testing**. This is a
+dedicated web workflow; there is no ordinary API or console shortcut.
+
+The workflow requires fresh Google authentication and a confirmation naming the
+archived campaign. Its preflight transaction locks the global configuration and
+campaign, then verifies that the campaign remains archived, has no purge gate,
+and still satisfies every archive quiescence condition above. It also verifies
+that no other campaign is `draft`, `scheduled`, `active`, or `closed`. A failed
+check leaves Production mode unchanged and links to the work that must be
+resolved.
+
+On success, one transaction changes global mode from Production to Testing,
+clears the current-campaign pointer, invalidates campaign-specific Production
+readiness, and records the actor, reauthentication time, campaign, preflight
+counts, and before/after mode in the audit log. It neither changes the archived
+campaign nor reroutes or recreates any historical production message. Draft
+creation becomes available only after this transaction commits. Historical
+reports remain selectable by campaign.
+
 ## Portal user management
 
 The Admin user page contains sorted domain and exact-address tables. Rows show
 normalized value, effective roles, source, last login, and warnings. Role
 checkbox changes autosave with a transient saved/error indicator; each request
 uses an expected row version to prevent lost updates.
+
+Every role addition, removal, or replacement—including an exact-address
+Administrator grant—uses this immediate autosave interaction. Role changes do
+not require fresh Google authentication or a separate confirmation dialog. This
+is an intentional low-friction administration policy. Each mutation still
+requires a currently authorized Admin session and CSRF token, re-evaluates the
+actor's current login rule and role, enforces the last-Administrator guard, and
+records the actor, target, before/after roles, timestamp, and request correlation
+in the audit log.
 
 Domain rows expose Staff and Ministry-leader columns. Administrator is visibly
 disabled. Creating `gmail.com` fails client and server validation. Address rows
@@ -488,9 +555,11 @@ The workflow has these required stages:
 3. Run a post-quiescence dry inventory showing campaign identity/dates,
    submission, workflow,
    email, source-version reference, report/media, and sensitive-audit counts.
-4. Verify and store the immutable reference to a successful encrypted off-host
-   backup whose database snapshot is at or after quiescence and within the
-   24-hour RPO.
+4. Offer **Create purge backup** in the web workflow. It queues an asynchronous
+   backup through the shared backup service, displays durable progress, and on
+   success verifies and stores the immutable reference to the encrypted
+   off-host backup. Its database snapshot must be at or after quiescence;
+   partial, local-only, or unverified uploads do not qualify.
 5. Explain irreversible effects and retained tombstone fields.
 6. Obtain fresh Google authentication.
 7. Require the exact campaign name and generated short purge phrase in separate
@@ -507,6 +576,15 @@ has not occurred. Cancellation and terminal pre-deletion failure release the
 gate and leave the archived Campaign eligible for a new request. Once deletion
 has begun, the UI offers only status and safe idempotent retry actions, never
 cancellation or rollback.
+
+Inventory evidence expires 60 minutes after inventory completion, and verified
+backup evidence expires 60 minutes after backup completion. Both must remain
+valid when the final confirmation transaction commits. Any admitted conflicting
+mutation or change to the quiescence checkpoint invalidates both immediately.
+Expiration preserves completed task history but requires the Admin to rerun the
+inventory and create a new post-quiescence backup; it never silently substitutes
+an older scheduled backup. A failed backup leaves the purge request in `draft`,
+shows redacted failure detail, and permits an idempotent retry.
 
 While the gate exists, every UI entry point that would create campaign-owned
 work explains that purge preparation has paused the campaign and links Admins
