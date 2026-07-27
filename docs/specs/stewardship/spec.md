@@ -63,6 +63,10 @@ versioned proposal overlay until upstream data reflects them.
   not required; every such Family receives a campaign identity and manual code.
 - **Email-eligible Family**: a Portal-eligible Family with at least one valid
   email address among the active Members returned by `get_family_heads()`.
+- **Email-deliverable Family**: an Email-eligible Family with at least one
+  normalized eligible-head address that is not currently suppressed after a
+  permanent provider refusal. Deliverability changes when source addresses or
+  suppression records change; it is distinct from syntactic eligibility.
 - **Effective response**: the latest live submission version for a Family and
   campaign. Testing submissions are never effective live responses.
 - **Proposed value**: the value in an effective response after applying any
@@ -89,7 +93,7 @@ external identity-policy service.
 | Manage login rules and Ministry assignments | Yes | No | No | No |
 | Trigger/view operational background work | Yes | No | No | No |
 | Trigger/view own authorized report exports | Yes | Yes | Assigned Ministries only | No |
-| View all campaign reports | Yes | Yes, except system logs | Assigned Ministries only | No |
+| View all campaign reports | Yes | Yes, except system logs | Assigned-Ministry reports only | No |
 | View Family-level financial detail | Yes | Yes | No | Own Family only |
 | Edit additional-information follow-up | Yes | Yes | No | Submit own text |
 | Edit Ministry follow-up | All Ministries | All Ministries | Assigned Ministries | Submit own requests |
@@ -115,13 +119,14 @@ local dates once the campaign is live.
    `active`; the prior campaign must first close or be archived and the Admin
    must explicitly return the deployment to Testing.
 2. **Scheduled**: Production readiness has passed, but the local start date has
-   not arrived.
+   not arrived. An Admin may use the guarded pre-start withdrawal workflow to
+   return it to `draft` and Testing.
 3. **Active**: the interval begins at 12:00:00 a.m. on the start date and ends
    at 12:00:00 a.m. following the end date in the parish timezone.
 4. **Closed**: Family access is denied, but reporting and reconciliation remain
    available.
 5. **Archived**: the campaign is retained and read-only except for permitted
-   workflow notes and the guarded purge operation.
+   workflow notes, guarded return to `closed`, and the guarded purge operation.
 6. **Purging**: an archived campaign has entered the irreversible guarded purge
    job and is inaccessible except for Admin purge status.
 7. **Purge cleanup failed**: database-owned campaign data is no longer visible,
@@ -135,12 +140,37 @@ only if the job fails before its first deletion batch commits; `purging` to
 cleanup to `purged`. After irreversible deletion starts, the campaign remains
 inaccessible until cleanup succeeds.
 
-Structural settings lock at the first live delivery or live submission:
-enabled modules, financial periods and fund mappings, campaign Ministry set,
-and identity/population semantics. Testing activity does not lock them.
-Administrators may continue editing content, future unsent schedules, and the
-end date. Reopening a closed campaign requires readiness validation, fresh
-Google authentication, explicit confirmation, and an audit event.
+The only unarchive transition is `archived` to `closed`. It is permitted only
+while the Campaign is still exactly `archived`, has no nonterminal
+`PurgeRequest`, and has no conflicting campaign work. It requires fresh Google
+authentication, explicit confirmation, and audit. Unarchive does not enable
+Family access, restart schedules, or enter Production; those effects require
+the distinct closed-campaign reopen workflow.
+
+Resolving either campaign boundary to UTC uses the scheduling DST policy: a
+nonexistent local midnight moves to the first valid instant after the gap, and
+an ambiguous local midnight uses its earlier UTC occurrence. The same resolved
+instants gate portal access and local-day report buckets.
+
+Structural settings lock when Production readiness atomically moves the
+campaign from `draft` to `scheduled`: enabled modules, financial periods and
+fund mappings, campaign Ministry set, and identity/population semantics.
+Testing activity does not lock them. Administrators may continue editing
+content, future unsent schedules, and the end date. An `active` campaign never
+unlocks structural settings.
+
+Before the resolved start instant, a freshly authenticated Admin may use an
+explicit, confirmed **Withdraw from Production** workflow. It transactionally
+locks the campaign, verifies that it is still `scheduled`, cancels all safely
+cancellable future live work, changes global mode to Testing, invalidates the
+readiness result, moves the campaign to `draft`, unlocks its structural
+settings, and records the reason and complete audit event. Provider-submitting
+or delivery-unknown work blocks withdrawal until resolved. A race that has
+already moved the campaign to `active` is rejected. Previously deleted Testing
+responses and delivery details are not restored; a later Production transition
+must pass the complete readiness workflow again. Reopening a closed campaign
+likewise requires readiness validation, fresh Google authentication, explicit
+confirmation, and an audit event.
 
 Successor-campaign preparation is intentionally sequential. The administration
 UI disables draft creation while another campaign is draft, scheduled, or
@@ -217,5 +247,7 @@ particular, email links use opaque tokens rather than exposing the manual code;
 the manual code uses eight letters from a confusable-free alphabet rather than
 six alphanumeric characters to resist credential guessing; campaign history is
 retained; Staff has the named workflow-write exceptions; whole local days
-replace the earlier 12:01/11:59 wording; and campaign purge is an Admin web
-workflow rather than an offline command.
+replace the earlier 12:01/11:59 wording; safety-critical operational
+notifications reach all current Admins instead of using the Testing-recipient
+override; and campaign purge is an Admin web workflow rather than an offline
+command.

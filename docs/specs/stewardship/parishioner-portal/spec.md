@@ -25,10 +25,13 @@ tokens, and existing Family sessions. Enabling it revokes Family sessions; no
 Family route accepts or buffers answers until the Admin releases the gate into
 Production.
 
-The manual credential is exactly eight case-insensitive letters. Spaces/hyphens
-may be stripped for friendly entry, but no digits or additional characters are
-accepted. Unknown, inactive, non-Parishioner, closed-campaign, and revoked codes
-use the same "This Family code cannot be found or used" result and retry link.
+The manual credential is exactly eight case-insensitive ASCII letters `A`-`Z`.
+Spaces/hyphens may be stripped for friendly entry, but no digits or additional
+characters are accepted. Generated codes omit `I`, `L`, and `O`, but an entered
+candidate containing them is processed normally and receives the same generic
+result if it does not match. Unknown, inactive, non-Parishioner, closed-campaign,
+and revoked codes use the same "This Family code cannot be found or used"
+result and retry link.
 
 Family email uses `/access/<opaque-token>`, not a code query parameter. A valid
 token creates the same Family session and redirects immediately to a clean
@@ -42,7 +45,7 @@ session, and returns to `/`.
 
 One server response supplies a normalized baseline/effective form payload and
 the enabled step definitions. In-progress edits remain in JavaScript memory for
-that tab only. They are not persisted to PostgreSQL, Redis, localStorage,
+that tab only. They are not persisted to PostgreSQL, Valkey, localStorage,
 sessionStorage, cookies, logs, or analytics. Refresh, tab close, logout, or
 session expiry loses edits. The expiry warning states this consequence.
 

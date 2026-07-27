@@ -9,9 +9,16 @@ the [operations specification](../operations/spec.md).
 
 The application targets Python 3.12 or newer and uses the maintained patch
 release of Django 5.2 LTS. PostgreSQL 18 is the only supported production
-database. Celery 5.6 executes asynchronous work with Redis as broker/cache.
-PostgreSQL, not Redis, remains authoritative for schedules, outbox messages,
-job state, sessions requiring audit visibility, and application data.
+database. Celery 5.6 executes asynchronous work with Valkey as broker/cache;
+the initial implementation baseline is the official Valkey 9.1 image at its
+latest supported security patch release. Celery and its Python client retain
+their Redis-named transport/URL scheme because that is the protocol adapter's
+name. PostgreSQL, not Valkey, remains authoritative for schedules, outbox
+messages, job state, sessions requiring audit visibility, and application data.
+Valkey is selected for its BSD-3-Clause licensing and Redis-protocol
+compatibility. Upgrades may advance only after the broker, result-independent
+task dispatch, cache, atomic limiter scripts, expiry, restart, and outage
+behaviors pass the integration suite against the candidate image.
 
 The web UI uses Django templates and progressive enhancement. Small,
 self-hosted JavaScript modules manage the Family wizard, inline validation,
@@ -26,7 +33,7 @@ Production Compose contains:
 - `worker`: Celery workers for polls, mail, exports, and publication;
 - `scheduler`: exactly one scheduler process that materializes due work;
 - `postgres`: PostgreSQL with a durable volume;
-- `redis`: broker/cache with a durable local volume, though task correctness
+- `valkey`: broker/cache with a durable local volume, though task correctness
   cannot depend on broker persistence; and
 - `proxy`: Caddy on ports 80/443 with durable ACME state.
 
@@ -64,8 +71,13 @@ The human-facing interface consists of:
 - `/family/...`: authenticated wizard steps and final submission endpoint;
 - `/admin/login`: Google-only login;
 - `/admin/...`: every administration page, JSON/HTML partial endpoint, export,
-  job detail, and purge workflow; and
-- `/health/live` and `/health/ready`: non-sensitive container health endpoints.
+  job detail, and purge workflow.
+
+`/health/live` and `/health/ready` are internal operational interfaces, not
+public interfaces. They listen on the application service network for Compose
+health checks, are not routed by Caddy, and return only an HTTP status plus the
+generic body `ok` or `unavailable`. Detailed health phase/reason information is
+available only through the operator CLI and protected logs.
 
 There is no public REST/GraphQL API. Internal browser endpoints use the same
 cookie session, authorization, CSRF, rate limits, and audit policy as their HTML
@@ -114,6 +126,21 @@ that backup must be re-encrypted before retirement. Signing-key rotation keeps
 the prior verification key only for the maximum lifetime of credentials issued
 under it, then removes it after audit confirms the transition window ended.
 
+Family-code lookup uses a distinct versioned MAC keyring. Every fingerprint row
+records its MAC algorithm/version and key ID; one key is active for new rows and
+older keys may be lookup-only during migration. A lookup computes the
+domain-separated HMAC of the canonical candidate under every accepted key and
+matches any corresponding row.
+
+MAC-key rotation installs the new key, makes it active, and idempotently
+backfills new-version fingerprint rows by decrypting each retained display code.
+Code generation checks candidate fingerprints under every accepted key in a
+campaign-scoped serializable transaction, so a code indexed only under an older
+key cannot be duplicated. The prior key and rows may be retired only after all
+online Families have a new-version row and every retained backup containing
+old-only rows either remains paired with the prior key or has been re-encrypted/
+migrated. Failure leaves both versions accepted and the migration retryable.
+
 ## Identity and session security
 
 Administration authentication uses Google through django-allauth with OAuth
@@ -131,7 +158,7 @@ records, or a client-supplied value as proof of hosted-domain membership.
 Personal Google accounts using addresses at consumer or externally hosted
 domains therefore cannot inherit roles from a domain rule.
 
-Administration OAuth endpoints use shared Redis sliding-window counters after
+Administration OAuth endpoints use shared Valkey sliding-window counters after
 resolving the source address through the configured trusted-proxy policy. The
 default application limits are:
 
@@ -147,14 +174,17 @@ failure counter. Counter keys and logs never store raw callback tokens or an
 email solely for throttling. Deployment YAML may tune thresholds, but production
 startup warns about values weaker than the defaults.
 
-Caddy also applies a coarse token-bucket limit to `/admin/login` and the OAuth
-callback: 60 requests per source IP per minute with a burst of 20, returning
-`429` before proxying excess traffic. The application additionally detects 100
-failed or denied Admin callbacks across at least 10 source IPs or identity
-fingerprints within five minutes. Crossing that deployment-wide threshold emits
-one deduplicated WARNING/Admin notification and increases progressive backoff;
-sustained abuse for three windows becomes CRITICAL. Development exercises the
-application limits even when Caddy is absent.
+Early Django middleware applies a coarse token bucket to `/admin/login` and the
+OAuth callback after trusted-client-address resolution but before OAuth
+state/session allocation or django-allauth handling: 60 requests per source IP
+per minute with a burst of 20, returning `429` for excess traffic. The more
+specific sliding-window limits above still run for admitted requests. The
+application additionally detects 100 failed or denied Admin callbacks across at
+least 10 source IPs or identity fingerprints within five minutes. Crossing that
+deployment-wide threshold emits one deduplicated WARNING/Admin notification and
+increases progressive backoff; sustained abuse for three windows becomes
+CRITICAL. Local and production deployments exercise the identical application
+limits; stock Caddy provides no authentication rate-limit module.
 
 Admin sessions have a 30-minute idle timeout and 12-hour absolute lifetime.
 Family sessions have a 60-minute idle timeout and four-hour absolute lifetime.
@@ -182,36 +212,58 @@ sessions are separate namespaces; acquiring one never grants the other.
 
 ## Family credential security
 
-Each participating Family receives one eight-character code per campaign from
-the alphabet `ABCDEFGHJKMNPQRSTUVWXYZ`. Codes are case-insensitive, collision
-checked, stable for the campaign, and never recycled within it. A reactivated
-Family regains its original code.
+Each participating Family receives one eight-character code per campaign. Code
+generation uses `ABCDEFGHJKMNPQRSTUVWXYZ`, excluding visually confusable
+`I`, `L`, and `O`. Codes are case-insensitive, collision checked, stable for
+the campaign, and never recycled within it. A reactivated Family regains its
+original code.
 
 Because Staff must retrieve codes, the display value is encrypted at the
-application layer; an HMAC fingerprint supports unique lookup without
-decryption scans. Email links contain an independent 256-bit random token.
-Only its hash is stored. Tokens are campaign-bound, reusable until invalidated,
-and cease working when the campaign closes or Family becomes ineligible. An
-Admin may rotate a suspected token without changing the manual code.
+application layer; versioned HMAC fingerprint rows support unique lookup without
+decryption scans. Email links contain an independent 256-bit random token. The
+reusable token is stored in a versioned application-encrypted ciphertext
+envelope alongside an unkeyed SHA-256 lookup digest over a domain-separation
+prefix and the token bytes; its entropy makes a rotatable lookup MAC
+unnecessary. Incoming exchange uses only the digest. Only the mail-dispatch and
+credential-rotation services may decrypt the ciphertext; Admin pages, reports,
+exports, logs, and general workers cannot.
 
-Code generation, uniqueness, and lookup use one canonical value: remove ASCII
-spaces and hyphens, convert ASCII letters to uppercase, then reject any
-character outside the configured code alphabet or any result of the wrong
-length. The HMAC input is that validated canonical value. Stored uniqueness and
-submitted-code lookup use the identical canonicalization function, so case and
-friendly delimiters cannot create distinct credentials.
+Tokens are campaign-bound, reusable until invalidated, and rejected whenever
+the campaign is closed or the Family is ineligible. Explicit rotation atomically
+replaces ciphertext and digest, invalidating every prior email link without
+changing the manual code. Campaign close destroys recoverable token ciphertext
+and digest while retaining non-secret generation/revocation audit metadata; a
+later guarded reopen generates new tokens before new Family mail can be sent.
+Temporary Family ineligibility does not destroy the ciphertext, so reactivation
+during the same open campaign can restore the existing link.
+
+Stored uniqueness and submitted lookup use one canonical value: remove ASCII
+spaces and hyphens, convert ASCII letters to uppercase, and require exactly
+eight ASCII `A`-`Z` letters. The HMAC input is that validated canonical value.
+Submitted `I`, `L`, and `O` are valid lookup candidates even though generation
+never emits them; they therefore follow the same constant-behavior not-found
+path as any other nonmatching candidate. Case and friendly delimiters cannot
+create distinct credentials.
 
 Access-token routes never log token path segments. Successful exchange rotates
 the session, redirects to a clean URL, and emits `Referrer-Policy: no-referrer`.
 Family pages and responses use `Cache-Control: no-store`.
+Administration responses that reveal one Family code use the same no-store
+policy and the per-object authorization/audit/rate controls defined by the
+[Family-code report](../reports/spec.md#family-code-lookup).
 
-Failed Family-code attempts use Redis sliding-window limits keyed by source IP
+Failed Family-code attempts use Valkey sliding-window limits keyed by source IP
 and by source-IP/code-fingerprint pair. Defaults are five failures per pair per
 15 minutes and ten failures per IP per 10 minutes, followed by `429` responses
 with increasing retry intervals. There is no limiter or lock keyed only by a
 code fingerprint: failures from one or more other source addresses cannot
 disable a valid Family credential. A successful request remains usable unless
 its own source IP is limited and clears only that IP/code-pair failure counter.
+Every unsuccessful eight-letter candidate, including one containing `I`, `L`,
+or `O`, consumes both applicable failure counters. A server request with the
+wrong length or nonletter input consumes the per-IP counter but has no
+code-fingerprint counter; ordinary browser validation rejects that format
+before submission.
 
 The application also detects a distributed guessing burst when at least 100
 invalid attempts, representing at least 100 distinct code fingerprints across
@@ -224,6 +276,21 @@ send one resolved notification. Thresholds are deployment-configurable, but
 production startup warns about values weaker than these defaults. Counter keys,
 logs, and notifications never contain plaintext codes. Error messages and
 timing do not distinguish unknown, inactive, or non-Parishioner codes.
+
+Valkey limiter storage is required for routes that accept guessable credentials.
+If it is unavailable, Admin OAuth initiation/callback and manual Family-code
+submission fail closed before credential evaluation with the same generic
+temporary-unavailability response and bounded `Retry-After`. Existing
+authenticated sessions and `/access/<token>` exchange remain available because
+the latter uses an independent 256-bit credential. Limiter-store unavailability
+makes readiness unhealthy and creates one deduplicated durable CRITICAL event;
+notification delivery resumes from PostgreSQL-backed work when workers can run.
+
+Rate-limit windows are intentionally ephemeral. A Valkey restart or eviction may
+start affected windows empty; the application records that loss but does not
+reconstruct counters from security logs. This accepted reset never permits
+serving a guessable-credential route while the limiter store itself is
+unavailable.
 
 ## Web security and privacy
 

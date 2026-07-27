@@ -14,9 +14,9 @@ templates, and static inputs are bind-mounted from the checkout so ordinary
 changes reload without rebuilding the application image.
 
 Production Compose references immutable GHCR image tags/digests, never a host
-checkout. It includes web, worker, scheduler, PostgreSQL, Redis, and Caddy
+checkout. It includes web, worker, scheduler, PostgreSQL, Valkey, and Caddy
 services from the [architecture](../architecture/spec.md#technology-and-component-model).
-Only Caddy publishes host ports. PostgreSQL/Redis are on an internal network;
+Only Caddy publishes host ports. PostgreSQL/Valkey are on an internal network;
 worker/scheduler have no inbound public ports.
 
 One application image contains package code/static build and supplies web,
@@ -45,7 +45,7 @@ still explicitly authorizes release-tag push.
 | `reports/` | Authorized temporary generated exports |
 | `run/` | Locks, bootstrap markers, health/runtime state |
 
-PostgreSQL data, Redis state, Caddy ACME state, and uploaded media use named
+PostgreSQL data, Valkey state, Caddy ACME state, and uploaded media use named
 durable volumes or explicit operator-selected host paths. Every runtime path is
 overridable by deployment CLI/YAML. Container replacement/restart/upgrade must
 not remove any durable volume.
@@ -62,14 +62,17 @@ and proxies dynamic traffic. Production requires a DNS hostname pointing to the
 VM and inbound ports 80/443. Caddy's data/config volumes persist account and
 certificate state across upgrades.
 
+Caddy has no route for `/health/live` or `/health/ready`; those paths receive
+the same public not-found response as any unknown route. Container health checks
+call the application service directly over the internal Compose network.
+
 The application trusts forwarded scheme/client information only from the
 single configured proxy hop. Caddy access logs redact `/access/<token>` path
 segments and do not log cookies/query secrets. Upload/body/time limits protect
-the app without blocking configured logo/export workflows. Caddy applies the
-coarse administration-login limits defined by the
-[identity security policy](../architecture/spec.md#identity-and-session-security);
-the shipped local configuration omits that proxy layer but retains application
-limits.
+the app without blocking configured logo/export workflows. The official stock
+Caddy image is used without third-party rate-limit modules; coarse and specific
+administration-login limits are application middleware defined by the
+[identity security policy](../architecture/spec.md#identity-and-session-security).
 
 Local development binds an unprivileged HTTP port and uses localhost Google
 OAuth redirect registration. TLS remains optional locally.
@@ -79,7 +82,7 @@ OAuth redirect registration. TLS remains optional locally.
 Documented first deployment order is:
 
 1. Create operator-owned config/credential/volume locations.
-2. Start PostgreSQL/Redis and verify health.
+2. Start PostgreSQL/Valkey and verify health.
 3. Run `pk-stewardship migrate` as a one-shot container.
 4. Run `pk-stewardship bootstrap` if not restoring.
 5. Start web/worker/scheduler/proxy.
@@ -113,8 +116,8 @@ CRITICAL. Backup logs contain sizes/digests/durations, never contents/secrets.
 
 Backup creation uses PostgreSQL-supported consistency; copying a live data
 directory is prohibited. A manifest has application version, schema migration,
-files and cryptographic digests. Partial uploads never appear as successful
-backup references.
+database-snapshot instant, files, and cryptographic digests. Partial uploads
+never appear as successful backup references.
 
 ## Restore
 
@@ -142,6 +145,23 @@ return to Production. Clearing the gate, entering Production, and enabling
 workers/mail is one audited operational transition; partial release is
 prohibited. Failed or abandoned review leaves Family access and delivery
 disabled.
+
+Restore review calculates a delivery-uncertainty window from the backup's
+database-snapshot instant through the eventual mail-release instant. It creates
+durable `RestoreDeliveryHold` rows for every reconstructable campaign delivery
+that could have become due in that interval but whose outcome is absent from the
+backup. Full source refresh during the gate expands the inventory to newly
+visible Families whose already-due initial invitation may have been delivered
+after the snapshot. Immediately before release, the transition recomputes and
+atomically materializes any remaining holds; inability to complete that
+inventory leaves the gate closed.
+
+Unreviewed holds are safe at release because they suppress only the uncertain
+semantic occurrence, not future distinct schedules. They never apply to
+operational notifications. The Admin can later resolve each hold as assumed
+delivered or authorize resend after acknowledging duplicate risk; neither the
+restore command nor readiness workflow may globally treat unknown delivery as
+provider success.
 
 Quarterly restore drills restore to an isolated environment, run integrity and
 application checks, and record success/failure metadata. The target recovery
@@ -185,6 +205,10 @@ After the wizard commits the configured marker, readiness additionally requires
 the critical credential references and durable configuration for normal
 operation. Worker/scheduler health uses heartbeats and queue-lag records.
 
+The two HTTP health routes are internal-only and return no phase or reason
+detail. `pk-stewardship health` provides detailed operator diagnostics on the VM
+without creating a public endpoint.
+
 No health/metrics endpoint exposes parish names, Family/Member data, emails,
 tokens, campaign content, or credentials. Production metrics endpoints are
 internal/authenticated.
@@ -204,37 +228,63 @@ tests.
 
 Required suites include:
 
-- pure unit tests for validation, normalization, dates/DST, money, percentages,
-  role precedence, state machines, merge/diff, report calculations, and export
-  escaping;
+- pure unit tests for validation, normalization, dates/DST including
+  midnight-gap/fold campaign boundaries, money, percentages, role precedence,
+  state machines, merge/diff, report calculations, and export escaping;
 - Django request tests for every role/denial/object-scope and CSRF/session
   boundary;
 - authentication tests proving that domain rules require matching verified
   email and signed Google hosted-domain claims, while exact-address rules do not;
-- administration-login tests for proxy/application thresholds, trusted source
-  address handling, keyed identity counters, progressive `Retry-After`,
-  distributed-abuse notification, and recovery after window expiry;
-- security tests for Family code normalization, IP/code-pair and per-IP
-  throttling, distributed-guessing detection and recovery, successful access
-  during an attack from other addresses, access-token exchange and revocation,
-  key rotation/migration/retirement, and atomic secret replacement rollback;
+- administration-login tests for early-middleware token-bucket and specific
+  application thresholds, trusted source address handling, rejection before
+  OAuth state/session allocation, keyed identity counters, progressive
+  `Retry-After`, distributed-abuse notification, recovery after window expiry,
+  fail-closed limiter-store outage, and empty-window recovery after counter
+  loss;
+- security tests for Family code normalization, reduced-alphabet generation,
+  full-A-Z lookup candidates, malformed-attempt accounting, IP/code-pair and
+  per-IP throttling, distributed-guessing detection and recovery, successful
+  access during an attack from other addresses, fail-closed limiter-store
+  outage, continued opaque-token access, access-token exchange and revocation,
+  MAC dual-read rotation/backfill/cross-key collision/retirement, encryption and
+  signing-key rotation/migration/retirement, and atomic secret replacement
+  rollback;
+- reusable-token tests for digest-only exchange, dispatch-only decryption,
+  repeat-mail rendering, atomic token rotation, ineligibility/reactivation, and
+  ciphertext destruction plus new-token issuance across close/reopen;
+- credential-report tests for masked pagination, exact-code lookup, per-object
+  reveal authorization/audit/no-store/remasking, and per-user reveal limiting;
+- security-content tests using sanitizer allow/deny corpora, upload signature
+  and media-type rejection, image re-encoding/decompression bounds, and
+  template placeholder validation for both correct substitution and unknown-
+  placeholder rejection;
 - session tests distinguishing passive heartbeats from interaction-triggered
   keepalive, including rate limiting, idle renewal, and absolute-expiry denial;
 - PostgreSQL integration tests for constraints, transactions, concurrent
-  submissions, task claims, snapshot promotion, publication, and purge rollback;
+  submissions, task claims, source-mutation lease fencing/heartbeat/takeover,
+  stale-owner promotion/PUT denial, snapshot promotion, publication, and purge
+  rollback;
 - worker tests for retry/idempotency, partial failure, missed schedules, and
   abandoned-task recovery, plus schedule replacement/removal races proving
   atomic cancellation and cross-revision fulfillment;
+- Valkey integration tests using the production major/minor line for Celery
+  broker delivery, cache operations, atomic sliding-window/token-bucket scripts,
+  expiry, restart with accepted counter loss, and fail-closed outage behavior;
 - email rendering/routing tests for live/testing/recipient/privacy behavior,
   provider acceptance followed by timeout, provider-status reconciliation,
-  idempotent safe retry, unresolved `delivery_unknown`, and authorized resend;
+  idempotent safe retry, unresolved `delivery_unknown`, authorized resend, and
+  immutable operational-notification classification/bypass in Testing;
 - browser tests for setup, Admin/Staff/leader workflows and the full responsive
   Family path, including stale submit and repeat visit;
 - accessibility automation plus keyboard/screen-reader-oriented manual checks;
 - CSV/XLSX/PDF/PNG structure/content tests without committing generated reports;
-- backup/restore manifest and isolated restore smoke tests; and
+- backup/restore manifest and isolated restore smoke tests, including
+  uncertainty-window inventory, newly discovered Families, atomic release-time
+  hold creation, catch-up suppression, assumed-delivered accounting, and
+  duplicate-aware authorized resend; and
 - Compose startup, health, migration, bind-mount reload, and production image
-  smoke tests.
+  smoke tests, including proof that internal health succeeds while Caddy does
+  not proxy either health path.
 
 ## Acceptance scenarios
 
@@ -248,7 +298,10 @@ At minimum, end-to-end tests demonstrate:
 3. Testing email rerouting, mandatory Family-facing test acknowledgments,
    segregated test submission, blocked transition with in-flight test delivery,
    aggregate creation and guarded deletion of test submissions/outbox detail,
-   and exactly-once live catch-up on Production transition.
+   structural lock and exactly-once live catch-up on Production transition;
+   guarded pre-start withdrawal cancels future live work, returns atomically to
+   Testing/draft, and unlocks structural settings, while an active campaign and
+   unresolved provider-submitting/delivery-unknown work cannot be withdrawn.
 4. Full/delta refresh success, interrupted/invalid load retaining prior truth,
    new/inactive/reactivated Family behavior, and non-overlap/manual coalescing.
 5. No-change Family submission, every census field, proposed/terminal Member,
@@ -263,11 +316,16 @@ At minimum, end-to-end tests demonstrate:
 8. Missed initial/reminder/digest occurrence, per-Family and daily-digest
    recovery coalescing, worker/broker restart, systemic email failure,
    deduplicated CRITICAL notification, and recovery.
-9. Closed campaign explicit reopen and archive.
+9. Closed campaign explicit reopen/archive, guarded unarchive to `closed`, and
+   denial of unarchive after purge preparation begins.
 10. Web purge blocked for every non-archived campaign, stale backup, or wrong
-    confirmation; durable preparation/resumption/cancellation; request/Campaign
-    state consistency; pre-delete rollback; successful resumable batched purge
-    and atomic visible tombstone transition; interrupted-batch recovery;
+    confirmation; atomic gate acquisition; concurrent admission rejection;
+    cancellation of queued/retrying work; drain/reconciliation of running and
+    externally uncertain work; post-quiescence inventory/backup freshness;
+    durable preparation/resumption/cancellation; request/Campaign state
+    consistency; gate release only on cancellation/pre-delete failure; atomic
+    worker-claim recheck; pre-delete rollback; successful resumable batched
+    purge and atomic visible tombstone transition; interrupted-batch recovery;
     retryable database/file cleanup; and failure notification.
 
 ## CI and local validation

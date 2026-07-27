@@ -74,6 +74,11 @@ The campaign-creation service and a transactional database guard permit at most
 one campaign across `draft`, `scheduled`, and `active`. Creating a draft also
 requires global Testing mode. Closed and archived campaigns may coexist with
 the one current draft so their reporting and reconciliation remain available.
+The only backward transition among these current-campaign states is the
+guarded, pre-start `scheduled` to `draft` Production withdrawal defined by the
+[campaign lifecycle](../spec.md#campaign-lifecycle). It changes global mode to
+Testing and invalidates readiness in the same transaction; database guards
+reject it after the campaign has become `active`.
 
 Deleting a Campaign through ordinary CRUD is impossible. Closing and archiving
 retain all relationships. Exceptional purge is defined by the
@@ -95,6 +100,16 @@ fulfilled in that mode eligible for the same logical schedule again. Schedule
 replacement and removal follow the atomic cancellation policy in the
 [background-processing specification](../background-processing/spec.md#schedule-replacement-and-removal).
 
+`RestoreDeliveryHold` records restore identifier, campaign/schedule semantic
+key, target/slot, backup-snapshot and release-window instants, discovery source,
+state, resolution actor/time, evidence note, and linked recovery occurrence.
+State is `unreviewed`, `assumed_delivered`, `resend_authorized`, or
+`not_applicable`. A unique semantic key makes inventory recomputation
+idempotent. Unreviewed and assumed-delivered rows suppress only their referenced
+occurrence; they are not `ScheduleFulfillment` and never count as provider
+success. Resolution transitions and resend creation follow the
+[restore workflow](../operations/spec.md#restore).
+
 ### Source snapshot
 
 `SourceSnapshot` records form an ordered history. Each stores type (`full` or
@@ -112,17 +127,25 @@ Exactly one promoted snapshot is current. Promotion changes that pointer and
 all derived current indexes in one database transaction. A failed or rejected
 load never exposes a partial corpus.
 
+`SourceMutationLease` is the singleton durable exclusion record defined by
+[background processing](../background-processing/spec.md#parishsoft-refresh).
+It stores owner TaskRun, monotonically increasing fencing token, phase,
+acquired/heartbeat/expiry times, and the external-request deadline used for
+safe takeover. Task claims and snapshot promotion record and transactionally
+verify the expected fencing token.
+
 ### Family campaign identity
 
 `FamilyCampaign` joins a ParishSoft Family DUID to a Campaign and stores:
 
-- portal eligibility, email eligibility, and active status as of the current
-  snapshot;
+- portal eligibility, syntactic email eligibility, current email deliverability
+  and its reason, and active status;
 - first/last eligible timestamps and status reason;
-- encrypted eight-letter display code plus the unique canonical HMAC fingerprint
-  defined by the
+- encrypted eight-letter display code plus the versioned canonical HMAC lookup
+  rows defined by the
   [credential specification](../architecture/spec.md#family-credential-security);
-- hashed email-link token, token generation, and revocation time;
+- versioned encrypted reusable email-link token, its domain-separated SHA-256
+  lookup digest, token generation, destruction, and revocation times;
 - initial/live invitation state;
 - first live submission and current effective submission IDs; and
 - latest session/activity metadata used by the Admin indicator.
@@ -131,6 +154,12 @@ Codes are generated for every newly active registered Family during initial
 campaign population or snapshot promotion, even if the Family lacks eligible
 email. A code is never changed during that campaign. Token rotation does not
 change the code.
+
+`FamilyCodeFingerprint` stores FamilyCampaign, campaign, MAC key ID/algorithm,
+and the canonical digest. Constraints allow at most one row per Family/key and
+one digest per campaign/key. Generation and migration use the cross-key
+collision protocol defined by the credential specification; no view performs
+decryption scans.
 
 ### Administration user and policy
 
@@ -205,7 +234,7 @@ ParishSoft capability registry, not guessed in views. The initial registry is:
 | Change | Handling |
 | --- | --- |
 | Family home/mailing contact/address fields | ParishSoft v2 Family contact PUT |
-| Member first/middle/last/maiden names | ParishSoft v2 Member contact PUT |
+| Member first/middle/last/nickname/maiden names | ParishSoft v2 Member contact PUT |
 | Member birth date, language, gender | ParishSoft v2 Member contact PUT where semantically sufficient |
 | Member death-date field correction | ParishSoft v2 Member contact PUT |
 | Member email and home/mobile/work phone | ParishSoft v2 Member contact PUT |
@@ -264,8 +293,9 @@ campaign fields. Unknown placeholders are validation failures, not empty text.
 `TaskRun` stores task type, idempotency key, state, progress phase/counts,
 attempts, timestamps, initiator, heartbeat, summary, and sanitized error.
 `OutboxMessage` stores exact intended/routed recipients, redacted rendered
-content, template version, reason, campaign/Family links, mode, delivery
-attempts, stable semantic idempotency key, provider-key/message-ID fingerprints,
+content, template version, reason, campaign/Family links, mode, immutable routing
+class (`testing_override`, `production`, or `operational`), delivery attempts,
+stable semantic idempotency key, provider-key/message-ID fingerprints,
 reconciliation evidence, resolution actor/time, and provider result. Its state
 is `pending`, `submitting`, `retry_wait`, `delivery_unknown`, `delivered`,
 `permanent_failure`, or `cancelled`; only the final three are terminal.
@@ -285,8 +315,9 @@ diagnostics are domain audit events.
 
 `PurgeRequest` records the selected archived campaign, initiating Admin, recent
 backup reference, re-authentication time, typed-confirmation digest, estimated
-counts, state, batch checkpoints, progress, and final non-sensitive tombstone.
-It has a durable state machine separate from the associated
+counts, gate-acquisition/quiescence times, state, batch checkpoints, progress,
+and final non-sensitive tombstone. Its existence in any nonterminal state is
+the durable campaign purge gate. It has a state machine separate from the associated
 [Campaign lifecycle](../spec.md#campaign-lifecycle):
 
 - `draft`: the campaign was selected and inventory/backup checks may be run or
@@ -316,9 +347,39 @@ expires, or to `queued`/`cancelled`; `queued` to `running` or, through an atomic
 claim cancellation, `cancelled`; `running` to `failed_pre_delete`,
 `deletion_failed`, `cleanup_failed`, or `succeeded`; `deletion_failed` back to
 `running` on retry; and `cleanup_failed` to `succeeded` after idempotent cleanup.
-The four other states are terminal. Every transition is audited. A database
-constraint permits at most one request in a nonterminal state for a Campaign;
-request and Campaign transitions that must correspond occur in one transaction.
+The three terminal states are `failed_pre_delete`, `succeeded`, and `cancelled`.
+Every transition is audited. A database constraint permits at most one request
+in a nonterminal state for a Campaign; request and Campaign transitions that
+must correspond occur in one transaction.
+
+Creating the `draft` request and acquiring its purge gate are one transaction
+under a Campaign row lock. The shared campaign-work admission service checks
+that gate under the same lock before it creates any new campaign-owned task,
+occurrence, outbox message, export, publication plan, workflow mutation, or
+other durable campaign work. Only purge preparation/execution, its operational
+notifications, safe cancellation/drain actions, and gate cancellation are
+admitted while the gate exists. Read-only access that creates no campaign-owned
+record may continue. This check applies to web requests, schedulers, workers,
+retries, and internal service calls rather than relying on disabled UI alone.
+
+Gate acquisition inventories every already nonterminal campaign task,
+occurrence, outbox row, and export. No new worker may claim queued or retrying
+work after acquisition; safely cancellable records become terminal
+`cancelled`, while already running, provider-submitting, delivery-unknown, or
+otherwise irreversible work must reach an accurately reconciled terminal state.
+The request records a quiescence time only after none remain. Inventory and
+backup evidence used for confirmation must describe a database snapshot at or
+after that quiescence time, and any later campaign-owned mutation invalidates
+them.
+
+The gate is released only when the request becomes `cancelled` or
+`failed_pre_delete`, before any deletion has committed. It remains permanent
+through `running`, either post-deletion failure state, and `succeeded`. Worker
+claim rechecks under row locks that the request owns the gate, the Campaign is
+still `archived`, all conflicting work is terminal, inventory and backup
+evidence remain current, and no campaign mutation occurred after their
+snapshot. Failure performs no deletion and atomically enters
+`failed_pre_delete`, releases the gate, and leaves the Campaign `archived`.
 
 ## Effective-value merge
 
@@ -361,8 +422,10 @@ read sessions are otherwise allowed.
 
 Within a successful transaction, the system writes the immutable submission,
 sets it effective, derives proposals/workflows, records audit events, updates
-participation facts, and inserts the confirmation-email outbox row. Either all
-commit or none do.
+participation facts, and either inserts the confirmation-email outbox row or,
+when no deliverable eligible-head address exists, records
+`receipt_not_queued` with reason `no_deliverable_recipient`. Either all commit
+or none do.
 
 ## ParishSoft refresh reconciliation
 
@@ -375,7 +438,8 @@ Snapshot promotion performs these effects transactionally:
 - revoke access for newly inactive/non-Parishioner Families without deleting
   prior history;
 - restore the existing code if a Family reactivates;
-- recompute eligible head email addresses;
+- recompute eligible head email addresses and current deliverability after
+  applying provider-suppression records;
 - resolve proposals that now match upstream;
 - mark three-way conflicts;
 - resolve Ministry requests whose requested roster state is now current;
@@ -398,28 +462,32 @@ current authorization/filter snapshot.
 
 `Publish to ParishSoft` performs an asynchronous mandatory preflight:
 
-1. Acquire `parishsoft-source-mutation` and validate expected organization.
-2. Fetch uncached current contact payloads for every affected entity.
+1. In a short transaction, create the preflight record with the configured
+   expected-organization and promoted source-version identifiers. Preflight
+   does not claim the mutation lease.
+2. Validate the upstream organization without cache and fetch uncached current
+   contact payloads for every affected entity without holding a database lock.
 3. Re-evaluate each approved field against baseline/proposed/current.
 4. Mark already-matching fields resolved upstream.
 5. If any field on an entity is a three-way conflict, block all writes to that
    entity and return it for re-review.
 6. Merge approved values into the freshly fetched full payload, leaving
    unapproved fields at their current upstream values.
-7. Persist the plan with the source payload digests, release the lock, present
-   counts and conflicts, and require fresh Google authentication and final
-   confirmation before queueing writes.
+7. Persist the plan with the recorded source version and source-payload digests,
+   present counts and conflicts, and require fresh Google authentication and
+   final confirmation before queueing writes.
 
-Execution reacquires `parishsoft-source-mutation` and, immediately before each
-entity PUT, fetches its uncached full payload and repeats canonical merge/conflict
-evaluation against the confirmed plan digest. Any difference invalidates that
-entity without writing and returns it for confirmation; a conditional-write
-primitive is used when ParishSoft exposes one. Publication then groups fields by
-entity and uses idempotent v2 `PUT` operations with bounded shared retries. Each
-entity is verified by an uncached read after write. Success marks its fields
-published/resolved; failure records a sanitized error and leaves the entity
-retryable without replaying successful entities. After releasing the lock, a
-final targeted/full refresh reconciles the promoted snapshot.
+Execution claims `SourceMutationLease` and, immediately before each entity PUT,
+revalidates its fencing token, fetches the uncached full payload, and repeats
+canonical merge/conflict evaluation against the confirmed plan digest. Any
+difference invalidates that entity without writing and returns it for
+confirmation; a conditional-write primitive is used when ParishSoft exposes
+one. Publication then groups fields by entity and uses idempotent v2 `PUT`
+operations with bounded shared retries. Each entity is verified by an uncached
+read after write. Success marks its fields published/resolved; failure records a
+sanitized error and leaves the entity retryable without replaying successful
+entities. After releasing the lease, a final targeted/full refresh reconciles
+the promoted snapshot under a new lease claim.
 
 Admins may publish any reviewed subset during or after an active campaign.
 They need not finish review in one session. Later Family submissions supersede
@@ -436,9 +504,12 @@ The two exceptions are:
 
 - test responses and their sensitive audit payloads are deleted during the
   Production transition;
-- Testing-mode outbox rows and sensitive delivery audit payloads are deleted
-  during that transition after producing the non-sensitive aggregate defined by
-  the [Admin readiness workflow](../admin-portal/spec.md#production-transition);
+- `testing_override` outbox rows and sensitive delivery audit payloads are
+  deleted during that transition after producing the non-sensitive aggregate
+  defined by the
+  [Admin readiness workflow](../admin-portal/spec.md#production-transition);
+  `operational` rows are retained under normal policy even when created while
+  the global mode was Testing;
   and
 - an Admin-approved campaign purge removes campaign-owned live detail through
   the guarded web workflow while retaining only a non-sensitive tombstone.

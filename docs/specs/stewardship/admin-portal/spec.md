@@ -168,8 +168,11 @@ Ministries/funds; analogous module-dependent fields remain hidden and invalid
 when stray values are submitted. Reminder times follow initial mail and all
 Family mail occurs within the open interval.
 
-The UI labels structural settings and their lock trigger. After locking, the
-server rejects structural mutations even if a stale browser exposes controls.
+The UI labels structural settings and their Production-readiness lock trigger.
+After the `draft` to `scheduled` transition locks them, the server rejects
+structural mutations even if a stale browser exposes controls. They unlock only
+through the guarded pre-start withdrawal below; an `active` campaign never
+unlocks them.
 Content and future schedules remain versioned/editable under the
 [atomic schedule-replacement policy](../background-processing/spec.md#schedule-replacement-and-removal).
 The confirmation shows successful, safely cancellable, failed, and blocking
@@ -189,8 +192,10 @@ Going live is a dedicated workflow, not a toggle. It requires:
 - at least one preview and test Family mailing;
 - a summary of active/eligible/no-email Families and live messages that will
   be due immediately;
-- no queued, running, or retry-wait Testing delivery, plus a terminal-delivery
-  summary ready for aggregation;
+- every `testing_override` OutboxMessage in a terminal state (`delivered`,
+  `permanent_failure`, or `cancelled`), with none `pending`, `submitting`,
+  `retry_wait`, or `delivery_unknown`, plus a terminal-delivery summary ready
+  for aggregation;
 - deletion of all Testing submissions/workflows and sensitive test audit
   payloads and Testing outbox detail, with exact submission, distinct-Family,
   and message/result counts, an Admin-only Family list for review, and explicit
@@ -202,13 +207,30 @@ the scheduler catches it up once after transition. Transition failure leaves
 Testing mode and test data intact unless deletion and mode activation can
 commit together; no partial go-live is allowed.
 
+Successful transition atomically changes the campaign from `draft` to
+`scheduled`, changes global mode to Production, records the readiness result,
+and locks structural settings. Before the resolved campaign start instant, the
+campaign editor offers a distinct **Withdraw from Production** action. It
+requires fresh Google authentication, an entered reason, and explicit
+confirmation that Testing data deleted by the prior transition cannot be
+restored. Under a campaign row lock, the server must verify that the state is
+still `scheduled`, account for and safely cancel future live work under the
+schedule-replacement policy, then atomically return global mode to Testing,
+invalidate readiness, return the campaign to `draft`, unlock structural
+settings, and audit the result. Provider-submitting or `delivery_unknown` work
+blocks completion. If the start transition has won the race and the campaign is
+already `active`, withdrawal is rejected. Going live again requires a complete
+new readiness run, preview/test evidence, cleanup, reauthentication, and
+confirmation.
+
 Immediately before deletion, the transition writes one non-sensitive Testing
 delivery aggregate containing counts by message type and terminal result,
 attempt-count totals, transition time, template-version identifiers, and the
 configured Testing-recipient fingerprint. It contains no intended recipient,
 Family/Member link, rendered content, provider message identifier, or error
-detail. All Testing `OutboxMessage` rows and sensitive delivery audit payloads
-are then deleted in the same transition transaction.
+detail. All `testing_override` OutboxMessage rows and sensitive delivery audit
+payloads are then deleted in the same transition transaction. Operational
+notification rows are excluded from both aggregation and deletion.
 
 The preview screen has an explicit readiness-test send that is available before
 the campaign date interval. It renders a selected Family or safe sample, routes
@@ -228,6 +250,15 @@ fresh authentication, and final Production confirmation clear that gate in the
 same audited transition that enables workers and mail. Ordinary Testing-to-
 Production transition cannot bypass incomplete restore readiness.
 
+Restore readiness displays the backup snapshot/release uncertainty window and
+counts by campaign, schedule type, local due date, and hold state. Searchable
+Family-level detail never shows credentials. Admins may leave holds unreviewed,
+mark selected holds assumed delivered with an evidence note, or authorize a
+resend after a duplicate-risk confirmation. Bulk actions show exact affected
+counts and are audited. Assumed delivery suppresses that semantic occurrence
+without increasing provider-success statistics; resend authorization creates a
+new recovery attempt linked to the hold.
+
 Returning a live deployment to Testing is allowed to halt live delivery, but
 requires fresh authentication, a warning listing affected queued schedules,
 and audit. It does not turn existing live responses into test data.
@@ -237,8 +268,12 @@ and audit. It does not turn existing live responses into test data.
 Extending a closed campaign into the future can reopen it only through a
 readiness workflow equivalent to Production transition, excluding test-data
 deletion. The UI lists new reminder implications and reactivated Family access.
-Archiving is reversible only while the campaign has not been purged and cannot
-occur with running publication/purge jobs.
+Archiving cannot occur with nonterminal publication, export, or purge work. An
+Admin may return a Campaign from `archived` to `closed` only while it remains
+exactly `archived`, has no nonterminal `PurgeRequest` or conflicting campaign
+work, and after fresh Google authentication plus explicit confirmation. The
+transition is audited and leaves Family access and schedules disabled; reopening
+is still the separate readiness workflow above.
 
 ## Portal user management
 
@@ -327,25 +362,31 @@ submission changes, workflow changes, publication, and purge are recorded.
 Campaign purge is available only to Admins through `/admin/operations/purge/`.
 It cannot be invoked by ordinary deletion, API, or console command.
 
-Only archived campaigns that are not running publication/export/purge tasks are
-eligible. Draft, scheduled, active, and closed campaigns; parish configuration;
-users; shared integration state; and the last restorable backup cannot be
-selected. An Admin must finish reconciliation and explicitly archive a closed
-campaign before it becomes purgeable.
+Only archived campaigns without another nonterminal purge request are eligible.
+Draft, scheduled, active, and closed campaigns; parish configuration; users;
+shared integration state; and the last restorable backup cannot be selected.
+An Admin must finish reconciliation and explicitly archive a closed campaign
+before it becomes purgeable. Existing campaign work is handled by the gate and
+quiescence stage below; irreversible in-flight work can delay readiness.
 
 The workflow has these required stages:
 
-1. Select an eligible campaign and create or resume its durable `draft` purge
-   request.
-2. Run a dry inventory showing campaign identity/dates, submission, workflow,
+1. Select an eligible campaign and transactionally create or resume its durable
+   `draft` purge request and campaign-wide purge gate.
+2. Display existing campaign work; cancel queued/retrying work at safe points
+   and wait for running, provider-submitting, or delivery-unknown work to reach
+   a reconciled terminal state. Record the resulting quiescence time.
+3. Run a post-quiescence dry inventory showing campaign identity/dates,
+   submission, workflow,
    email, source-version reference, report/media, and sensitive-audit counts.
-3. Verify a successful encrypted off-host backup completed within the 24-hour
-   RPO and store its immutable reference.
-4. Explain irreversible effects and retained tombstone fields.
-5. Obtain fresh Google authentication.
-6. Require the exact campaign name and generated short purge phrase in separate
+4. Verify and store the immutable reference to a successful encrypted off-host
+   backup whose database snapshot is at or after quiescence and within the
+   24-hour RPO.
+5. Explain irreversible effects and retained tombstone fields.
+6. Obtain fresh Google authentication.
+7. Require the exact campaign name and generated short purge phrase in separate
    confirmation fields.
-7. Atomically advance the request to `queued` and create one idempotent purge
+8. Atomically advance the request to `queued` and create one idempotent purge
    task.
 
 The UI displays and resumes the request states defined by the
@@ -353,12 +394,23 @@ The UI displays and resumes the request states defined by the
 Inventory, backup verification, and acknowledgement advance a `draft` request
 to `ready_for_confirmation`; an expired inventory or backup returns it to
 `draft`. An Admin may cancel through `queued` only while an atomic worker claim
-has not occurred. Terminal pre-deletion failure leaves the archived Campaign
-eligible for a new request. Once deletion has begun, the UI offers only status
-and safe idempotent retry actions, never cancellation or rollback.
+has not occurred. Cancellation and terminal pre-deletion failure release the
+gate and leave the archived Campaign eligible for a new request. Once deletion
+has begun, the UI offers only status and safe idempotent retry actions, never
+cancellation or rollback.
 
-Worker claim atomically moves the request to `running` and the Campaign to
-`purging`, making the Campaign inaccessible.
+While the gate exists, every UI entry point that would create campaign-owned
+work explains that purge preparation has paused the campaign and links Admins
+to its status; direct requests receive the same server-side rejection. This
+includes new exports, publication/reconciliation mutations, report executions
+that would create campaign-owned audit detail, workflow-note changes, and
+manual/retry task creation. Existing read-only detail and already-generated
+downloads may remain available when they create no campaign-owned record.
+
+Worker claim first repeats the gate, quiescence, inventory, backup, and
+last-mutation checks under row locks. Any mismatch performs no deletion and
+enters `failed_pre_delete`; success atomically moves the request to `running`
+and the Campaign to `purging`, making the Campaign inaccessible.
 Database-owned rows are then deleted in bounded, resumable, idempotent batches;
 each batch commits separately so a large campaign does not require one
 long-running transaction. Shared/deduplicated source entities remain if

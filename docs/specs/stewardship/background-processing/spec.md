@@ -9,7 +9,7 @@ responsive while workers run.
 
 PostgreSQL stores schedule definitions, occurrence records, task runs, and
 outbox rows. Exactly one scheduler service scans due definitions at least once
-per minute and inserts occurrences with unique idempotency keys. Celery/Redis
+per minute and inserts occurrences with unique idempotency keys. Celery/Valkey
 delivers execution hints; workers always claim/check the PostgreSQL record
 before acting.
 
@@ -31,6 +31,15 @@ Task state is `queued`, `running`, `retry_wait`, `succeeded`, `failed`,
 Tasks use bounded timeouts and recover an abandoned claim only after its lease
 expires. Cancellation is permitted only at task-defined safe points and never
 pretends an in-flight external write was undone.
+
+Before creating or claiming campaign-scoped work, schedulers, web services, and
+workers use the transactional campaign-work admission check. A nonterminal
+`PurgeRequest` closes that gate. Existing queued/retrying tasks are safely
+cancelled rather than claimed; running or externally uncertain operations drain
+and reconcile before purge readiness. Purge preparation/execution and its
+operational notifications are the only new campaign-linked work exempt from
+the gate. The complete gate and release semantics are defined by the
+[purge data model](../data/spec.md#job-outbox-audit-and-purge-records).
 
 All schedules are evaluated in the parish timezone but persisted as UTC due
 instants. DST folds run once; nonexistent local times run at the first valid
@@ -69,22 +78,49 @@ names the selected replacement occurrence and reason. A missed Family mail
 after campaign close is skipped with a durable reason, while reports for
 completed campaign days use the recovery-digest behavior below.
 
+A semantic occurrence covered by an unreviewed or assumed-delivered
+`RestoreDeliveryHold` is excluded from automatic missed-work selection and
+coalescing. The hold does not satisfy provider-delivery statistics and does not
+block a different future reminder schedule. A resend-authorized hold creates
+one explicitly linked recovery occurrence; normal idempotency and ambiguous-
+acceptance handling apply to that attempt.
+
 ### Mode routing
 
-Testing routing is global and applies to every application email: Family mail,
-submission receipts, Admin digests, critical alerts, and manual test/report
-mail. The envelope has only the single configured Testing address; the subject
-and both body alternatives prominently identify Testing and safely name the
-intended recipients. Slack routing is unchanged. Production applies none of
-these overrides.
+Testing routing is global for campaign communication: Family mail, submission
+receipts, Admin campaign digests, manual report mail, previews, and test sends.
+Those messages have routing class `testing_override`; the envelope has only the
+single configured Testing address, and the subject and both body alternatives
+prominently identify Testing and safely name the intended recipients. Production
+applies none of these overrides.
+
+Safety-critical operational notifications are exempt. CRITICAL alerts and
+privileged backup, restore, publication, and purge outcome messages have routing
+class `operational` and are sent individually to every current Admin exact
+address regardless of global mode; optional Slack routing is likewise
+unchanged. Their subject identifies the current deployment mode, but their
+content contains no Family/Member data, credentials, rendered campaign content,
+or access links. Classification is fixed by notification type rather than an
+Admin-editable template or caller flag.
 
 ## ParishSoft refresh
 
-One named PostgreSQL advisory lock, `parishsoft-source-mutation`, covers full,
-delta, and manual refresh plus ParishSoft publication execution. No refresh may
-run concurrently with another refresh or with publication writes. Publication
-preflight may hold the lock only while it reads and records a source version;
-it never holds a database lock while awaiting human confirmation.
+A singleton durable PostgreSQL `SourceMutationLease` covers full, delta, and
+manual refresh plus ParishSoft publication execution. Its row stores owner task,
+monotonically increasing fencing token, phase, heartbeat, and expiry. Claim,
+renewal, release, and takeover use short row-locking transactions; no database
+connection is held while waiting on ParishSoft. No refresh may run concurrently
+with another refresh or with publication writes.
+
+The owner heartbeats throughout external work and revalidates its fence before
+each upstream write and immediately before snapshot promotion. Loss of ownership
+stops further calls and prohibits promotion. Takeover is allowed only after both
+lease expiry and the configured maximum external-request timeout plus safety
+margin, limiting overlap with a request initiated by an abandoned owner. An
+ambiguous already-started ParishSoft write still follows publication
+reconciliation rather than being assumed undone. Publication preflight merely
+records a source version in a short transaction; it holds no mutation lease or
+database lock while fetching data or awaiting human confirmation.
 
 ### Delta cycle
 
@@ -121,7 +157,7 @@ The cycle:
 5. Builds derived eligibility, roster, giving, and reconciliation data.
 6. Promotes all staged data atomically as defined by the
    [data specification](../data/spec.md#source-snapshot).
-7. Records counts/duration/deltas and releases the lock.
+7. Records counts/duration/deltas and releases the lease.
 
 Unexpected empty/large-loss data fails closed and emits CRITICAL rather than
 making it current. A load failure preserves the prior truth. Cache entries are
@@ -141,9 +177,15 @@ Families. One personalized message is due only when:
 
 - the campaign is open and the global mode matches the occurrence's mode;
 - the Family is currently eligible for mail;
-- it has at least one valid email among active `get_family_heads()` Members;
+- it is Email-deliverable, with at least one unsuppressed valid email among
+  active `get_family_heads()` Members;
 - it has no effective live submission for live mail; and
 - that Family/schedule occurrence has not succeeded.
+
+An otherwise qualifying Family with no deliverable head address receives no
+outbox row. Its occurrence is `skipped` with the non-error reason
+`no_deliverable_recipient`; permanent refusals therefore cannot create empty
+recipient messages or systemic-provider failures.
 
 The initial schedule sends once to each qualifying Family. A Family becoming
 active after the initial occurrence receives one catch-up initial invitation
@@ -175,6 +217,12 @@ while retaining the redacted rendered record. In Testing, envelope recipients
 become the single test address, the subject/body prominently say TEST, and
 intended names/addresses are safely listed. Test delivery never marks a live
 occurrence delivered.
+
+For each later Family message, dispatch decrypts the Family's primary reusable
+token ciphertext into memory, constructs the secure link, and seals that
+message's substitution. Scrubbing a terminal outbox substitution does not
+destroy the primary ciphertext; primary token rotation/closure follows the
+[credential lifecycle](../architecture/spec.md#family-credential-security).
 
 Each semantic delivery has a stable application idempotency key. The dispatch
 adapter supplies it as the provider idempotency key when the provider offers a
@@ -266,7 +314,9 @@ independently audited.
 Large CSV/XLSX/PDF/PNG requests create export jobs. The request stores report,
 filters, sort, selected IDs, source snapshot, browser timezone, requester, and
 authorization scope. The worker rechecks scope before querying and again when
-the file is downloaded.
+the file is downloaded. Creation and worker claim also use the campaign-work
+admission gate; an archived campaign in purge preparation cannot start or
+resume an export that could make the verified purge inventory stale.
 
 An export job is requester-scoped report work, not Admin-only operational
 background work. Staff and Ministry leaders may view, cancel at a safe point,
@@ -285,11 +335,12 @@ response or short-lived single-use download grant.
 ## ParishSoft publication
 
 Publication runs in a dedicated queue with lower concurrency and uses the same
-`parishsoft-source-mutation` lock as refresh. Preflight and execution are
-separate task phases with one durable plan version. A changed decision/source
-after preflight invalidates the plan and requires a new confirmation. Execution
-holds the lock through its final ParishSoft verification, releases it, and then
-queues the targeted reconciliation refresh, which acquires the lock normally.
+`SourceMutationLease` as refresh. Preflight and execution are separate task
+phases with one durable plan version. A changed decision/source after preflight
+invalidates the plan and requires a new confirmation. Execution owns and
+heartbeats the lease through final ParishSoft verification, releases it, and
+then queues the targeted reconciliation refresh, which claims the lease
+normally.
 
 Writes use shared v2 `PUT` contact primitives, expected-tenant guard, current
 full payload merge, idempotent retry, and read-after-write verification as
@@ -316,6 +367,10 @@ CRITICAL events create deduplicated notification occurrences to current Admin
 email addresses and optional Slack. Repeated identical events within a
 configurable suppression window update occurrence counts rather than storming.
 Recovery sends one resolved notification where useful.
+
+CRITICAL and other privileged operational notifications follow the
+[operational routing exception](#mode-routing), including while the deployment
+is in Testing or restore review.
 
 Slack delivery failure is logged and cannot mask the original error. If email
 itself is failing, the system does not recursively create email-failure alerts;

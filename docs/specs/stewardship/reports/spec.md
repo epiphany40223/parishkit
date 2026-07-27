@@ -19,6 +19,12 @@ row count estimate, format, timezone, and sensitive-data warning. Each export
 is audited with report, filters, requester, campaign, source snapshot, and row
 count, but not a duplicate of every exported value.
 
+The campaign purge gate rejects a new report execution or export when it would
+create campaign-owned audit, task, or file records. The UI identifies purge
+preparation as the reason and links Admins to its status; disabling controls is
+not the authorization boundary. Existing read-only views or completed downloads
+may continue only when they add no campaign-owned record.
+
 CSV is UTF-8 with a header row and CRLF-compatible output. Cells beginning with
 formula-significant characters are neutralized. XLSX uses freeze panes,
 filters, meaningful widths, types, repeated print headings, and no macros. PDF
@@ -50,8 +56,11 @@ installment displays.
 
 Eligible email follows active `get_family_heads()` Members with at least one
 syntactically valid normalized address. Publish privacy flags do not suppress
-operational Family campaign email eligibility. No-email reports explain invalid
-versus absent head email without showing credential/link data.
+operational Family campaign email eligibility. **Email deliverability** further
+requires at least one such address not currently suppressed after permanent
+provider refusal. Statistics name these as separate populations; the
+no-deliverable-email report complements the deliverable count and explains
+invalid, absent, and suppressed head email without showing credential/link data.
 
 ## Participation graph
 
@@ -89,6 +98,7 @@ Cards show:
 
 - active Families and active Members;
 - active Families with eligible email out of active Families and percentage;
+- active Families with deliverable email out of active Families and percentage;
 - active Families with first live response out of active Families and
   percentage;
 - effective campaign annual pledge total, when enabled; and
@@ -113,11 +123,20 @@ source for the weekly Admin digest.
 
 **Access:** Admin and Staff.
 
-List active Families with display name, Family DUID, the manual Family code
-defined by the [credential specification](../architecture/spec.md#family-credential-security),
-current email eligibility, and response status. Search supports full/partial
-case-insensitive last/family name, DUID, and exact code. Codes are revealed only
-after authorization and each report/export is audited.
+List active Families with display name, Family DUID, a masked manual-code field,
+current email eligibility/deliverability, and response status. Search supports
+full/partial case-insensitive last/family name and DUID. A separate exact-code
+search canonicalizes and fingerprints the supplied candidate, returning only
+the matching Family without revealing any other code.
+
+Each row has a CSRF-protected **Show code** action for Admin and Staff. It
+reauthorizes the object, decrypts only that Family's code, writes an audit event
+before returning it, uses `Cache-Control: no-store`, and automatically remasks
+on navigation or after 60 seconds. The audit records actor, campaign/Family,
+time, request correlation, and source metadata, never the code. Reveal attempts
+are limited per user to 30 distinct Families per rolling hour by default;
+excess receives `429` and creates one deduplicated Admin WARNING. Production may
+configure a stricter threshold.
 
 This report is not offered as a bulk downloadable file by default because it is
 a credential directory. If implementation requires print/export for parish
@@ -129,10 +148,13 @@ behavior.
 
 **Access:** Admin and Staff.
 
-List every current active registered Family lacking a deliverable eligible head
-email, sorted by Family name then DUID. Filters/search include name, DUID,
-address, phone presence, and reason (no head, no address, invalid address, or all
-otherwise eligible addresses permanently refused by the provider).
+The UI labels this report **Families without deliverable email**. It lists every
+current active registered Family lacking a deliverable eligible-head email,
+sorted by Family name then DUID. This population is the complement of the
+deliverable-email statistics card, not of the syntactic eligible-email card.
+Filters/search include name, DUID, address, phone presence, and reason (no head,
+no address, invalid address, or all otherwise eligible addresses permanently
+refused by the provider).
 
 Detail/export contains Family DUID, envelope number where present, Family/head
 names, family/member phone numbers, complete home/mailing address, and reason.
