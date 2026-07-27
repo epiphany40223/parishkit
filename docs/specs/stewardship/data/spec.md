@@ -78,9 +78,10 @@ comparison period, but fund mappings are explicit.
 The campaign-creation service and a transactional database guard permit at most
 one current campaign across `draft`, `scheduled`, `active`, and `closed`.
 Creating a draft also requires global Testing mode, a null current-campaign
-pointer, and no campaign in any of those four states. Only archived or purged
-historical campaigns may coexist with a new current draft; archived campaigns
-remain available for historical reporting.
+pointer, no campaign in any of those four states, and no campaign in `purging`
+or `purge_cleanup_failed`. Only archived or purged historical campaigns may
+coexist with a new current draft; archived campaigns remain available for
+historical reporting.
 The only backward transition among these current-campaign states is the
 guarded, pre-start `scheduled` to `draft` Production withdrawal defined by the
 [campaign lifecycle](../spec.md#campaign-lifecycle). It changes global mode to
@@ -94,16 +95,23 @@ either successful state. Direct activation creates already-due live work under
 the ordinary stable idempotency and fulfillment keys.
 
 The guarded reopen transition moves `closed` directly to `active` only when its
-extended closing instant is after the transaction time. Campaign/global-mode
-updates and new access-token issuance commit atomically; original start and
-structural settings remain locked.
+proposed extended closing instant is after the transaction time. The end-date,
+Campaign/global-mode updates, and new access-token issuance commit atomically;
+failure preserves the prior end date and mode. Original start and structural
+settings remain locked.
 
 The guarded post-archive Return to Testing transaction requires the current
-campaign to remain archived and quiescent, changes global mode from Production
-to Testing, and clears the current-campaign pointer under the same global lock.
+campaign to remain archived and quiescent, sets or confirms global Testing mode,
+and clears the current-campaign pointer under the same global lock even if the
+mode was already Testing.
 It does not alter historical OutboxMessage modes or the archived Campaign row.
 Draft creation and this transition therefore cannot race to violate the
 single-current-campaign invariant.
+
+The guarded unarchive transaction can move `archived` to `closed` only while
+that Campaign remains the current-campaign pointer and no other current-state
+Campaign exists. Clearing the pointer through Return to Testing permanently
+makes that archived Campaign historical and ineligible for unarchive.
 
 `CampaignBoundaryOccurrence` stores campaign, kind (`start` or `close`),
 resolved UTC boundary, state, attempts/lease, intended and actual transition
@@ -202,8 +210,10 @@ ciphertext and digest null without weakening retained audit metadata.
 `FamilyCodeFingerprint` stores FamilyCampaign, campaign, MAC key ID/algorithm,
 and the canonical digest. Constraints allow at most one row per Family/key and
 one digest per campaign/key. Generation and migration use the cross-key
-collision protocol defined by the credential specification; no view performs
-decryption scans.
+collision protocol defined by the credential specification. Bulk population
+uses the surrounding `READ COMMITTED` transaction and savepoint-scoped retries,
+so all Family identities promote atomically while a rare unique-index conflict
+retries only one random candidate. No view performs decryption scans.
 
 ### Administration user and policy
 
@@ -435,7 +445,10 @@ in a nonterminal state for a Campaign; request and Campaign transitions that
 must correspond occur in one transaction.
 
 Creating the `draft` request and acquiring its purge gate are one transaction
-under a Campaign row lock. The shared campaign-work admission service checks
+under the Campaign and global current-campaign locks. It requires no other
+campaign in `draft`, `scheduled`, `active`, `closed`, `purging`, or
+`purge_cleanup_failed`, so purge cannot begin after successor preparation. The
+shared campaign-work admission service checks
 that gate under the same lock before it creates any new campaign-owned task,
 occurrence, outbox message, export, publication plan, workflow mutation, or
 other durable campaign work. Only purge preparation/execution, its operational
@@ -452,8 +465,10 @@ otherwise irreversible work must reach an accurately reconciled terminal state.
 The request records a quiescence time only after none remain. Inventory and
 backup evidence used for confirmation must describe a database snapshot at or
 after that quiescence time. Each expires 60 minutes after its respective
-completion, and any later campaign-owned mutation invalidates both. The final
-confirmation transaction checks the stored expirations and invalidation version
+completion. Ordinary expiration invalidates only that artifact and preserves
+the other artifact when it remains current; a later campaign-owned mutation or
+change to quiescence invalidates both. The final confirmation transaction checks
+both stored expirations and the shared mutation/quiescence invalidation version
 under the request and Campaign locks.
 
 The gate is released only when the request becomes `cancelled` or
@@ -535,6 +550,12 @@ Snapshot promotion performs these effects transactionally:
 - request the initial-invitation evaluation defined by
   [background processing](../background-processing/spec.md#family-invitations-and-reminders)
   for each newly active Family.
+
+When `restore_review_required` is active, that request is durable deferred
+intent only: promotion does not materialize or dispatch an ordinary invitation.
+The restore-release transaction re-evaluates each affected Family and
+atomically creates the applicable occurrence and uncertainty hold before it
+opens normal work admission.
 
 If a reactivated Family already has a live submission, it remains a responder
 and does not receive a new initial invitation. Current metrics exclude inactive

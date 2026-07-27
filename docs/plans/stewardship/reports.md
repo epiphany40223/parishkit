@@ -92,8 +92,11 @@ charts, and digest mail; templates do not independently recalculate metrics.
 2. Generate one section/page per Ministry with name, active chair names,
    stewardship year, and rows derived from latest join/leave requests plus
    existing follow-up state.
-3. Map exact outcomes to Join ministry, no longer interested, or No response;
-   leave human email/phone date columns blank where specified.
+3. Map exact outcomes as follows: unresolved to a blank value, joined to
+   `Joined ministry`, leave confirmed to `Left ministry`,
+   declined to `Declined / no longer interested`, no response to `No response`,
+   duplicate to `Duplicate request`, and other to `Other` with its notes or
+   reference; leave human email/phone date columns blank where specified.
 4. Implement PDF page breaks, XLSX sheets/sections, and CSV blank-row/repeated-
    header boundaries.
 5. Test deterministic ordering, empty Ministries, long content, leader scope,
@@ -127,8 +130,9 @@ charts, and digest mail; templates do not independently recalculate metrics.
 
 ## Review handoffs
 
-- Review Gate 3 covers RPT-01 through RPT-07 and focuses on calculation parity,
-  role/column privacy, code access, export authorization, and formula safety.
+- Review Gate 3 covers RPT-01 through RPT-07 and RPT-09 and focuses on
+  calculation parity, role/column privacy, code access, export authorization,
+  operational log/export behavior, and formula safety.
 - Review Gate 4 covers RPT-08 publication/workflow links.
 - Review Gate 5 completes scale, accessibility, and every-format validation.
 

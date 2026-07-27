@@ -62,7 +62,8 @@ remain below `/admin/` and apply server-side authorization.
 4. Implement page/email previews using safe sample or explicitly selected
    Family, including readiness-test sends that never satisfy live schedules.
 5. Implement atomic schedule edit/removal previews and conflict handling for
-   in-flight/unknown work.
+   in-flight/unknown work, including the combined reconciliation editor required
+   when an end-date shortening would strand future Family mail.
 6. Add form/request tests for hidden stray values, locking, cloning exclusions,
    preview privacy, and schedule races.
 
@@ -103,13 +104,15 @@ remain below `/admin/` and apply server-side authorization.
    `gmail.com` validation.
 2. Preserve the selected no-reauth/no-confirmation policy for every role change
    while enforcing CSRF, current-Admin authorization, last-Admin protection,
-   and complete before/after audit.
+   and complete before/after audit; an Administrator grant additionally creates
+   a persistent security event and notifies all preexisting Administrators.
 3. Build chairperson suggestion review, inherited-role preview, bulk selection,
    confirmed rule/assignment creation, and suspended/source-return review.
 4. Build manual Ministry assignments without allowing source synchronization to
    modify them.
 5. Test hosted-domain behavior, precedence, concurrent changes, immediate
-   revocation, and Ministry row-scope updates.
+   revocation, Administrator-grant notification failure/retry/acknowledgement,
+   and Ministry row-scope updates.
 
 ### ADM-08: Manual refresh, follow-up queues, and logs
 
@@ -146,8 +149,8 @@ remain below `/admin/` and apply server-side authorization.
 2. Acquire the campaign work gate, show/cancel/drain conflicting work, reconcile
    external uncertainty, and record quiescence.
 3. Build dry inventory and **Create purge backup** asynchronous action with
-   verified encrypted off-host reference and independent 60-minute evidence
-   expirations.
+   verified encrypted off-host reference, independent 60-minute evidence
+   expirations, and refresh of only the expired artifact.
 4. Require fresh authentication, exact campaign name and generated phrase, then
    queue the idempotent purge worker after atomic prerequisite recheck.
 5. Expose safe pre-delete rollback, resumable deletion, cleanup retry, terminal
@@ -157,11 +160,12 @@ remain below `/admin/` and apply server-side authorization.
 
 ## Review handoffs
 
-- Review Gate 1 covers ADM-01 and the bootstrap security skeleton of ADM-02.
-- Review Gate 2 covers ADM-02 through ADM-05 and user-facing campaign setup.
-- Review Gate 3 covers ADM-07 and ADM-08 authorization/privacy.
-- Review Gate 4 is mandatory before merging ADM-06, ADM-09, or ADM-10
-  destructive/external-write workflows.
+- Review Gate 1 covers ADM-01.
+- Review Gate 2 covers ADM-02 through ADM-04 and user-facing campaign setup.
+- Review Gate 3 covers ADM-05, the restore/delivery-pause subset of ADM-06,
+  ADM-07, and ADM-08, with focused authorization and privacy review.
+- Review Gate 4 is mandatory before merging the remaining reopen/archive
+  subset of ADM-06, ADM-09, or ADM-10 destructive/external-write workflows.
 
 ## Completion criteria
 

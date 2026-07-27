@@ -48,17 +48,18 @@ and traceability owner.
 
 Execute in this order:
 
-1. **DOM-01** — establish domain vocabulary and decision records.
-2. **ARC-01** — create the Django package/apps, settings, URLs, entry point, and
+1. **ARC-01** — create the Django package/apps, settings, URLs, entry point, and
    safe placeholders.
+2. **DOM-01** — establish domain vocabulary and decision records in that
+   package skeleton.
 3. **ARC-02** — integrate shared ParishKit configuration, paths, logging, and
    startup validation.
 4. **OPS-01** — start the development/production Compose topology with web,
    general worker, mail-dispatch, scheduler, PostgreSQL, Valkey, and Caddy.
 5. Start **OPS-09** with fast lint/format/Markdown/unit/migration checks and
    scoped coverage reporting.
-6. Start **DOM-05** with factories, deterministic clock/timezone helpers, and an
-   acceptance traceability table.
+6. Start **DOM-05** with deterministic clock/timezone helpers and an acceptance
+   traceability table; defer database-backed factories until DAT-01 exists.
 
 Phase demonstration:
 
@@ -83,6 +84,7 @@ and lifecycle foundations before collecting parish data.
 3. **DOM-02** — interval resolution and lifecycle policies over those records.
 4. **DAT-05** — portal users, login rules, assignments, and constraints.
 5. **DOM-03** — canonical role/capability/object-scope policy.
+6. Begin the database-backed **DOM-05** factories/builders after DAT-01 lands.
 
 ### 1B: Web and identity security
 
@@ -125,8 +127,8 @@ Pause all Phase 2 work. Apply the
 - configuration/secret/log redaction and Caddy trust boundaries; and
 - restart/migration durability.
 
-Exit only with no unresolved validated High or Medium findings and with the
-Phase 1 demonstration rerun after corrections.
+Exit only with no unresolved validated Critical, High, or Medium findings and
+with the Phase 1 demonstration rerun after corrections.
 
 ## Phase 2: Source truth, initial setup, and campaign preparation
 
@@ -139,7 +141,7 @@ Execute in this dependency order:
 2. **BG-01** — durable tasks, scheduler hints, leases, progress, recovery, and
    admission checks.
 3. **BG-05** — full/delta/manual ParishSoft refresh and atomic promotion.
-4. Complete **ADM-02** — bootstrap and first-Admin wizard, including staged load
+4. **ADM-02** — bootstrap and first-Admin wizard, including staged load
    and two-hour watchdog.
 5. **ADM-03** — dashboard, indicators, parish/integration configuration, and
    secret tests.
@@ -224,15 +226,17 @@ Execute in this order:
    credential scrubbing.
 2. **BG-02**, **BG-03**, and **BG-04** — lifecycle boundaries, batched go-live
    cleanup, schedule revisions/fulfillment, mode routing, and recovery.
-3. **BG-06** — Family mail rendering, sealed substitutions, dedicated dispatch,
+3. Begin **BG-08** with the deterministic chart-rendering and authorized export-
+   job substrate needed by digest/report consumers.
+4. **BG-06** — Family mail rendering, sealed substitutions, dedicated dispatch,
    provider outcomes, pause holds, and reconciliation.
-4. **BG-07** — submission confirmation and daily/weekly digests.
-5. **BG-10** — operational escalation and safe shutdown behavior.
-6. **ADM-05** — readiness, cleanup status/cancel, Production activation, and
+5. **BG-07** — submission confirmation and daily/weekly digests.
+6. **BG-10** — operational escalation and safe shutdown behavior.
+7. **ADM-05** — readiness, cleanup status/cancel, Production activation, and
    pre-start withdrawal.
-7. Implement delivery-pause portions of **ADM-06** needed during an active
+8. Implement delivery-pause portions of **ADM-06** needed during an active
    campaign.
-8. Recheck **ARC-06**, **OPS-01**, and **OPS-02** with actual queue/task and
+9. Recheck **ARC-06**, **OPS-01**, and **OPS-02** with actual queue/task and
    credential needs; do not broaden mounts to solve routing mistakes.
 
 Phase demonstration:
@@ -247,6 +251,10 @@ Phase demonstration:
 - Pause/resume and close-during-pause preserve submissions and correctly resolve
   held receipts/digests.
 
+Keep live provider dispatch and the final Production-transition commit limited
+to fake-backed or disposable environments until Review Gate 3 exits. This is
+the review gate associated with Phase 4's external and irreversible behavior.
+
 ## Phase 5: Reports, exports, users, and follow-up
 
 Goal: Staff/Admin/leaders can monitor and act on the live campaign within exact
@@ -254,9 +262,9 @@ role, Ministry, column, and campaign scope.
 
 Execute in this order:
 
-1. **RPT-01** and finish **RPT-02** shared selection, authorization, query, and
+1. Complete **BG-08** export/chart worker and temporary-file authorization.
+2. **RPT-01** and finish **RPT-02** shared selection, authorization, query, and
    calculation services.
-2. **BG-08** export/chart worker and temporary-file authorization.
 3. **RPT-03**, **RPT-04**, **RPT-05**, **RPT-06**, and **RPT-07** participation/
    statistics, additional information, codes/postal outreach, Ministry summary,
    and packet.
@@ -320,8 +328,8 @@ focused review passes.
 1. Complete PurgeRequest/gate/batch behavior from **DAT-09**.
 2. **ADM-10** guarded web inventory, quiescence, backup freshness,
    confirmations, status, and retry UI.
-3. Add purge execution/recovery to **BG-10** or a dedicated task module governed
-   by BG-01; preserve all state transitions and checkpoints from DAT-09.
+3. **BG-11** — implement purge execution/recovery under BG-01 while preserving
+   all state transitions and checkpoints from DAT-09.
 4. Exercise purge only in disposable/restored test environments until Review
    Gate 4 exits.
 
@@ -350,8 +358,8 @@ This is the strictest gate. In addition to the standard protocol:
    state-aware release scenarios.
 5. Run purge on a disposable copy, interrupt it before and after first deletion,
    and verify rollback/retry/tombstone behavior.
-6. Re-run review after all corrections; no accepted unresolved High or Medium
-   finding is permitted for these workflows.
+6. Re-run review after all corrections; no accepted unresolved Critical, High,
+   or Medium finding is permitted for these workflows.
 
 ## Phase 7: Production hardening and release readiness
 
@@ -397,15 +405,20 @@ Every formal gate uses this sequence:
    logically signed commits. Squash fixups appropriately before final review.
 2. Run the repository checks plus gate-specific migration, PostgreSQL/Valkey,
    browser, accessibility, Compose, coverage, and failure-injection suites.
-3. Run `$local-review` on the complete gate diff and preserve its manifest/
-   findings for triage.
-4. Run `$local-review-triage`. Apply single-answer corrections automatically;
+3. Obtain two independent reviews of the complete gate diff, preferably through
+   the installed `$local-review` skill, and preserve their findings for triage.
+   If that skill is unavailable, stop for the human to provision it or approve
+   an equivalent independent dual-review procedure before continuing.
+4. Triage all validated findings, preferably through the installed
+   `$local-review-triage` skill. Apply single-answer corrections automatically;
    obtain human decisions for product/security tradeoffs one finding at a time.
 5. Add regression tests with every correction, run narrow tests while fixing,
    then rerun the full gate validation.
-6. Run `$local-review` again on the corrected diff. Repeat triage/review when
-   material corrections introduce new behavior.
-7. Gate exit requires no unresolved validated High or Medium finding. A Low
+6. Repeat the independent review, preferably with `$local-review`, on the
+   corrected diff. Repeat triage/review when material corrections introduce new
+   behavior.
+7. Gate exit requires no unresolved validated Critical, High, or Medium finding
+   and explicit human approval of the evidence. A Low
    finding may be deferred only with a written rationale, owner, and target
    phase; correctness/security/data-loss issues are never deferred merely to
    preserve schedule.
@@ -413,9 +426,10 @@ Every formal gate uses this sequence:
    human approval in the pull request or implementation-status document before
    Phase work resumes.
 
-Review tools are advisory, not an authorization mechanism. Destructive smoke
-tests, real external writes, deployment, merge, and release still require the
-human authority defined by repository policy.
+Review tools produce evidence and recommendations; they do not themselves grant
+authority for destructive smoke tests, real external writes, deployment, merge,
+or release. Gate exit and those actions still require the human authority
+defined by repository policy.
 
 ## Package definition of done
 

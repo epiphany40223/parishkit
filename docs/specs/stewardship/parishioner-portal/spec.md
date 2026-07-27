@@ -27,10 +27,11 @@ Admin page previews remain available outside the interval.
 The restore-maintenance gate takes precedence over Testing mode, dates, codes,
 tokens, and existing Family sessions. Enabling it revokes Family sessions; no
 Family route accepts or buffers answers until the Admin completes state-aware
-restore release. Family access resumes only when that release produces an
-`active` campaign in Production. A released `draft` in Testing follows the
-Testing date-gating rule above; every other resulting state shows its ordinary
-no-campaign, before-start, or ended page.
+restore release. Live Production Family access resumes only when that release
+produces an `active` campaign in Production. A released `draft` in Testing may
+provide the separate Administrator-enabled rehearsal access described below and
+follows the Testing date-gating rule above; every other resulting state shows
+its ordinary no-campaign, before-start, or ended page.
 
 The manual credential is exactly eight case-insensitive ASCII letters `A`-`Z`.
 Spaces/hyphens may be stripped for friendly entry, but no digits or additional
@@ -50,7 +51,8 @@ or used" page with a link to manual code entry. Every attempt records result
 class, campaign when knowable, source metadata, and only the token's lookup-
 digest fingerprint, never the token/path. Because the token has 256 bits of
 entropy, failures do not consume guessable-code counters; ordinary request-
-abuse limits still apply uniformly.
+abuse limits still apply uniformly through the
+[secure-link anti-flood policy](../architecture/spec.md#identity-and-session-security).
 
 An explicit Cancel and sign out action is available throughout. It warns that
 in-progress answers will be lost, clears client state, revokes the server
@@ -84,7 +86,9 @@ Steps are assembled from enabled modules:
 
 1. Welcome and prior-submission status.
 2. Family census, when enabled.
-3. One Member census/Ministry section per current/proposed active Member.
+3. One Member section per current/proposed active Member when census or Ministry
+   stewardship is enabled; its census and Ministry subsections appear only when
+   their respective modules are enabled.
 4. Add proposed Member, when census is enabled.
 5. Financial stewardship, when enabled.
 6. Additional information, when enabled.

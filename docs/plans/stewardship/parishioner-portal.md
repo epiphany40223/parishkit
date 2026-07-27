@@ -12,13 +12,18 @@ The flow is a single guided response, not a general Family dashboard.
    pre-start, active, Testing-draft, closed, and ended states.
 2. Implement manual code authentication and `/access/<token>` digest exchange,
    session rotation, clean redirect, no-referrer/no-store headers, generic
-   invalid pages, and manual-code retry link.
-3. Apply active/registered Family eligibility and exact interval gates on every
+   invalid pages, manual-code retry link, and the Valkey-backed secure-link
+   anti-flood limit with bounded per-process fallback.
+3. In Testing mode, require the authenticated Family session to pass an
+   explicit server-recorded rehearsal acknowledgement before household data is
+   shown; show the persistent Testing banner throughout the Family flow.
+4. Apply active/registered Family eligibility and exact interval gates on every
    Family route, not only login.
-4. Emit privacy-safe access/session/logout/denial audit and active-Family
+5. Emit privacy-safe access/session/logout/denial audit and active-Family
    presence metadata.
-5. Test guessing limiters, invalid/inactive/deactivated Families, token close/
-   rotation, Testing behavior, and restore/go-live gates.
+6. Test guessing limiters, invalid/inactive/deactivated Families, token close/
+   rotation, missing/stale Testing acknowledgement, banner persistence, and
+   restore/go-live gates.
 
 ### FAM-02: In-memory form engine and navigation
 
@@ -86,7 +91,9 @@ The flow is a single guided response, not a general Family dashboard.
    silently invalidate/logout the Family session.
 5. On failure, retain in-memory answers, return accessible field/summary errors,
    and never create a partial submission/workflow.
-6. Test double click/retry, network interruption, stale concurrent visit,
+6. Require the same server-side Testing rehearsal acknowledgement at final
+   submission; a banner or client-side flag alone never authorizes the write.
+7. Test double click/retry, network interruption, stale concurrent visit,
    no-change response, all modules, and transaction rollback.
 
 ### FAM-07: Repeat visits and source-change merge

@@ -20,6 +20,10 @@ server-paginated, sortable only by allowlisted fields, searchable, and
 filterable. Filter URLs are shareable only within an authorized session and do
 not contain PII values unnecessarily.
 
+Every interactive report response containing Family PII, Family codes,
+financial data, or census data sends `Cache-Control: no-store`, including
+details and partial responses.
+
 Exports represent the complete filtered result, not merely the current page,
 unless the user explicitly selects rows. Before generation, the UI shows scope,
 row count estimate, format, timezone, and sensitive-data warning. Each export
@@ -150,7 +154,9 @@ source for the weekly Admin digest.
 
 List active Families with display name, Family DUID, manual code, current email
 eligibility/deliverability, and response status. Search supports full/partial
-case-insensitive last/family name, DUID, and exact canonicalized code. The code
+case-insensitive last/family name and DUID. Exact canonicalized-code search uses
+a separate CSRF-protected POST body and never places the candidate in a URL or
+query string. The code
 is directly visible to Admin and Staff; there is no per-row reveal action,
 reauthentication ceremony, distinct-Family reveal budget, or Valkey dependency.
 The server rechecks the report role and campaign scope on each request and uses
@@ -166,7 +172,8 @@ CSV, XLSX, and PDF exports include the same columns, including the manual code.
 They use the standard asynchronous, short-lived, requester-authorized export
 pipeline. Interactive report execution and exports are audited at report,
 campaign, actor, filter, and row-count granularity without copying codes into
-the audit payload.
+the audit payload. Exact-code-search audit records omit the raw filter and store
+only a keyed fingerprint when correlation is operationally necessary.
 
 ## Families without deliverable email
 

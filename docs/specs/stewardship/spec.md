@@ -116,7 +116,10 @@ allows editing a Family submission or configuration.
 A campaign has `draft`, `scheduled`, `active`, `closed`, `archived`, `purging`,
 `purge_cleanup_failed`, and `purged` states. State transitions are explicit and
 audited, although entering `active` and `closed` is driven by the configured
-local dates once the campaign is live.
+local dates once the campaign is live. The sole portal exception is an
+Administrator-enabled Testing rehearsal against the current `draft` campaign
+during that campaign's resolved date interval; it does not change lifecycle
+state or admit Production background work.
 
 1. **Draft**: configuration is editable and Testing mode is mandatory. A draft
    cannot be created while another campaign is `draft`, `scheduled`, `active`,
@@ -147,19 +150,24 @@ cleanup to `purged`. After irreversible deletion starts, the campaign remains
 inaccessible until cleanup succeeds.
 
 The only unarchive transition is `archived` to `closed`. It is permitted only
-while the Campaign is still exactly `archived`, has no nonterminal
-`PurgeRequest`, and has no conflicting campaign work. It requires fresh Google
-authentication, explicit confirmation, and audit. Unarchive does not enable
-Family access, restart schedules, or enter Production; those effects require
-the distinct closed-campaign reopen workflow.
+while the Campaign is still exactly `archived` and is still the global current-
+campaign pointer, no other campaign is `draft`, `scheduled`, `active`, or
+`closed`, and it has no nonterminal `PurgeRequest` or conflicting campaign work.
+Once Return to Testing clears that pointer, the historical Campaign cannot be
+unarchived. The transition requires fresh Google authentication, explicit
+confirmation, and audit. It preserves the global mode and does not enable
+Family access or restart schedules; those effects require the distinct closed-
+campaign reopen workflow.
 
-The only reopen transition is `closed` to `active`. The Admin first extends the
-closing date so the commit instant is within the resulting campaign interval
-and passes the guarded readiness workflow. Reopen never returns to `scheduled`
-or changes/unlocks the original start date. It atomically enters Production,
-issues new Family access-link tokens, and restores Family access. Occurrences
-that became due and were skipped while closed remain terminal; only explicitly
-configured future schedules run after reopening.
+The only reopen transition is `closed` to `active`. The Admin proposes an
+extended closing date and passes the guarded readiness workflow; the end-date
+change is not committed separately. The final transaction atomically applies
+the new closing date only if its commit instant is within the resulting
+campaign interval, preserves or asserts Production mode, issues new Family
+access-link tokens, and restores Family access. Reopen never returns to
+`scheduled` or changes/unlocks the original start date. Occurrences that became
+due and were skipped while closed remain terminal; only explicitly configured
+future schedules run after reopening.
 
 Resolving either campaign boundary to UTC uses the scheduling DST policy: a
 nonexistent local midnight moves to the first valid instant after the gap, and
@@ -174,6 +182,15 @@ date. A Production transition at or after the closing instant is rejected.
 Testing activity does not lock them. Administrators may continue editing
 content, future unsent schedules, and the end date. An `active` campaign never
 unlocks structural settings.
+
+Shortening a `scheduled` or `active` campaign cannot strand configured Family
+mail outside the proposed interval. The edit opens a combined reconciliation
+workflow listing every affected schedule; the Admin must reschedule each one to
+a valid future instant or remove it. The new end date and all resulting schedule
+revisions/cancellations commit atomically with exact affected counts. Any
+provider-submitting or delivery-unknown affected work blocks the operation until
+resolved. If the campaign closes first, the ordinary editor loses the race and
+the guarded reopen workflow applies instead.
 
 Before the resolved start instant, a freshly authenticated Admin may use an
 explicit, confirmed **Withdraw from Production** workflow. It transactionally
@@ -190,7 +207,8 @@ confirmation, and an audit event before its atomic transition to `active`.
 
 Successor-campaign preparation is intentionally sequential. The administration
 UI disables draft creation while another campaign is draft, scheduled, active,
-or closed, and the server enforces the same rule transactionally. Closing a
+closed, purging, or awaiting failed purge cleanup, and the server enforces the
+same rule transactionally. Closing a
 campaign stops Family access and live schedules but leaves it as the sole
 current campaign in Production while reporting and reconciliation finish. The
 Admin must resolve remaining campaign work, archive the campaign, and then use

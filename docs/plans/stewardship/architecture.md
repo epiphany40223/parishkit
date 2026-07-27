@@ -80,7 +80,8 @@ other subsystem depends.
 
 1. Implement reduced-alphabet eight-letter code generation, canonicalization,
    collision-safe HMAC lookup, general-key encryption, and versioned MAC-key
-   migration services.
+   migration services, including a stable accepted-key set and savepoint-scoped
+   retry after unique-index conflicts during bulk promotion.
 2. Implement independent 256-bit link-token generation, campaign-scoped digest
    lookup, sealed-box ciphertext, exchange to a token-free Family session, and
    close/rotation/reopen lifecycle.

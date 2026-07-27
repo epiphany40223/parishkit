@@ -25,8 +25,10 @@ validation is never sufficient.
 3. Enforce the singleton parish/configuration rules and Testing default.
 4. Add PostgreSQL-backed session configuration and base audit correlation
    fields.
-5. Test constraints, UTC round trips, optimistic versions, and secret-value
-   exclusion.
+5. Implement the base TaskRun record/claim metadata required by BG-01; later job
+   packages extend it with outbox and workflow records.
+6. Test constraints, UTC round trips, optimistic versions, TaskRun claims, and
+   secret-value exclusion.
 
 ### DAT-02: Campaign lifecycle and schedule schema
 
@@ -64,8 +66,9 @@ validation is never sufficient.
    state, response pointers, and activity metadata.
 2. Add campaign/key-scoped uniqueness and cross-key collision constraints for
    codes and campaign-scoped token-digest uniqueness.
-3. Implement population/reconciliation services for new, inactive, and
-   reactivated Families without changing an existing campaign code.
+3. Implement atomic `READ COMMITTED` population/reconciliation services for new,
+   inactive, and reactivated Families, using savepoints to retry only a
+   colliding code candidate without changing an existing campaign code.
 4. Add token destruction/reissuance and close/reopen metadata without retaining
    secret material in audit rows.
 5. Test concurrent generation, migration, inactive/reactivated behavior, and
@@ -102,8 +105,9 @@ validation is never sufficient.
 1. Implement AdditionalInformationItem dispositions/history, MinistryRequest,
    contact attempts, Staff notes, manual-census resolution metadata, named
    content versions, and email template versions.
-2. Implement TaskRun, OutboxMessage, sealed substitution metadata, AuditEvent,
-   OperationalLog, and appropriate ownership/correlation indexes.
+2. Extend the DAT-01 TaskRun substrate and implement OutboxMessage, sealed
+   substitution metadata, AuditEvent, OperationalLog, and appropriate ownership/
+   correlation indexes.
 3. Implement ProductionTransitionRequest, delivery-pause holds, export records,
    publication plan/attempt records, and stable idempotency keys.
 4. Enforce immutable/append-only behavior and terminal-state credential
@@ -143,9 +147,9 @@ validation is never sufficient.
 
 ## Review handoffs
 
-- Review Gate 1: DAT-01 through DAT-05 schema/constraint and migration review.
-- Review Gate 2: DAT-06 and DAT-08 submission/merge review using the Family
-  vertical slice.
+- Review Gate 1: DAT-01, DAT-02, and the Phase 1 portions of DAT-04/DAT-05.
+- Review Gate 2: DAT-03, the remaining DAT-04/DAT-05 source-driven behavior,
+  and DAT-06/DAT-08 submission/merge using the Family vertical slice.
 - Review Gate 3: DAT-07 outbox/job/idempotency review.
 - Review Gate 4: DAT-09 destructive-state and ParishSoft publication review.
 

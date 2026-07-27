@@ -83,10 +83,12 @@ The human-facing interface consists of:
   job detail, and purge workflow.
 
 `/health/live` and `/health/ready` are internal operational interfaces, not
-public interfaces. They listen on the application service network for Compose
-health checks, are not routed by Caddy, and return only an HTTP status plus the
-generic body `ok` or `unavailable`. Detailed health phase/reason information is
-available only through the operator CLI and protected logs.
+public interfaces. They listen on the application service network and are not
+routed by Caddy. Compose restart checks use only `/health/live`;
+`/health/ready` is queried by operator diagnostics and alerting, not by an
+ingress controller. Both return only an HTTP status plus the generic body `ok`
+or `unavailable`. Detailed health phase/reason information is available only
+through the operator CLI and protected logs.
 
 There is no public REST/GraphQL API. Internal browser endpoints use the same
 cookie session, authorization, CSRF, rate limits, and audit policy as their HTML
@@ -157,12 +159,18 @@ matches any corresponding row.
 
 MAC-key rotation installs the new key, makes it active, and idempotently
 backfills new-version fingerprint rows by decrypting each retained display code.
-Code generation checks candidate fingerprints under every accepted key in a
-campaign-scoped serializable transaction, so a code indexed only under an older
-key cannot be duplicated. The prior key and rows may be retired only after all
-online Families have a new-version row and every retained backup containing
-old-only rows either remains paired with the prior key or has been re-encrypted/
-migrated. Failure leaves both versions accepted and the migration retryable.
+Bulk code generation runs inside its surrounding atomic `READ COMMITTED`
+population/promotion transaction. That transaction holds the accepted MAC-key
+set stable against rotation, computes and inserts a fingerprint row under every
+accepted key, and relies on the unique `(campaign, key ID, digest)` indexes to
+arbitrate concurrent candidates. Each candidate attempt uses a database
+savepoint; a uniqueness conflict rolls back only that candidate's rows and
+retries with fresh randomness, never the complete source promotion. This also
+prevents duplication of a code indexed only under an older accepted key. The
+prior key and rows may be retired only after all online Families have a new-
+version row and every retained backup containing old-only rows either remains
+paired with the prior key or has been re-encrypted/migrated. Failure leaves both
+versions accepted and the migration retryable.
 
 ## Identity and session security
 
@@ -221,6 +229,18 @@ even though the request receives its ordinary `429`, ensuring coordinated
 traffic can cross the aggregate threshold after individual sources have been
 limited. One request contributes only once to the aggregate counter.
 
+Early middleware also applies a coarse token bucket to every
+`/access/<token>` exchange, before token digest computation or database lookup:
+120 requests per trusted source IP per minute with a burst of 30. Valid and
+invalid tokens consume the same bucket and excess requests receive a generic
+`429` with bounded `Retry-After`; limiter keys and telemetry contain only a
+short-lived keyed source-address fingerprint, never the path or token. Valkey
+is authoritative during normal operation. If Valkey is unavailable, each web
+process immediately uses an equivalent bounded in-memory bucket so secure links
+remain available with a per-process rather than deployment-wide ceiling. The
+fallback resets on process restart, does not weaken the separate readiness/
+CRITICAL signal, and returns to Valkey automatically when it recovers.
+
 Admin sessions have a 30-minute idle timeout and 12-hour absolute lifetime.
 Family sessions have a 60-minute idle timeout and four-hour absolute lifetime.
 Both receive a visible warning before idle expiry. Privileged operations such
@@ -254,6 +274,10 @@ deadline and remains keyboard and screen-reader operable.
 Authorization changes take effect on the next request and invalidate sessions
 that no longer have any role. Removing the last specific-address Administrator
 or the bootstrap Administrator before another Admin exists is prohibited.
+An immediate exact-address Administrator grant creates the durable dashboard
+security event and preexisting-Administrator operational notifications defined
+by the Admin portal; notification delivery is not part of the grant transaction
+and cannot erase or delay its audit evidence.
 
 Cookies are `Secure` in production, `HttpOnly`, `SameSite=Lax`, narrowly
 scoped, and rotated at login/privilege transition. Family and administration
@@ -301,8 +325,12 @@ create distinct credentials.
 Access-token routes never log token path segments. Successful exchange rotates
 the session, redirects to a clean URL, and emits `Referrer-Policy: no-referrer`.
 Family pages and responses use `Cache-Control: no-store`.
-Administration pages displaying Family codes use the same no-store policy.
-Code-bearing exports use the ordinary authenticated temporary-export controls
+Every administration report response containing Family PII, Family codes,
+financial data, or census data uses the same no-store policy.
+Exact-code search values are accepted only in a CSRF-protected POST request
+body, never a URL/query string, and are omitted from application/proxy request
+logs. Code-bearing exports use the ordinary authenticated temporary-export
+controls
 and complete report/export audit defined by the
 [Family-code report](../reports/spec.md#family-code-lookup). Codes remain absent
 from application logs, operational notifications, and unprivileged reports.
@@ -338,7 +366,8 @@ Family-code submission fail closed before credential evaluation with the same
 generic temporary-unavailability response and bounded `Retry-After`. Existing
 authenticated sessions, authorized Admin/Staff Family-code reports/search, and
 `/access/<token>` exchange remain available because they do not expose a public
-guessing oracle. Limiter-store unavailability
+guessing oracle; token exchange uses the bounded per-process anti-flood fallback
+above. Limiter-store unavailability
 makes readiness unhealthy and creates one deduplicated durable CRITICAL event;
 notification delivery resumes from PostgreSQL-backed work when workers can run.
 

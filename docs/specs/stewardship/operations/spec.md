@@ -82,8 +82,10 @@ call the application service directly over the internal Compose network.
 
 The application trusts forwarded scheme/client information only from the
 single configured proxy hop. Caddy access logs redact `/access/<token>` path
-segments and do not log cookies/query secrets. Upload/body/time limits protect
-the app without blocking configured logo/export workflows. The official stock
+segments and do not log cookies/query secrets or request bodies. Exact Family-
+code searches are POST-body-only and therefore never enter access-log URLs.
+Upload/body/time limits protect the app without blocking configured logo/export
+workflows. The official stock
 Caddy image is used without third-party rate-limit modules; coarse and specific
 administration-login limits are application middleware defined by the
 [identity security policy](../architecture/spec.md#identity-and-session-security).
@@ -189,9 +191,11 @@ durable `RestoreDeliveryHold` rows for every reconstructable campaign delivery
 that could have become due in that interval but whose outcome is absent from the
 backup. Full source refresh during the gate expands the inventory to newly
 visible Families whose already-due initial invitation may have been delivered
-after the snapshot. Immediately before release, the transition recomputes and
-atomically materializes any remaining holds; inability to complete that
-inventory leaves the gate closed.
+after the snapshot. Refresh never materializes or dispatches an ordinary
+initial invitation while the gate is active. Immediately before release, the
+transition recomputes and atomically materializes the applicable initial
+occurrence plus a hold whenever its restored delivery is uncertain; inability
+to complete that inventory leaves the gate closed.
 
 Unreviewed holds are safe at release because they suppress only the uncertain
 semantic occurrence, not future distinct schedules. They never apply to
@@ -244,10 +248,12 @@ configuration for normal operation. Worker/scheduler health uses heartbeats and
 queue-lag records.
 
 Container restart health checks use `/health/live`, not `/health/ready`.
-Readiness is an ingress/admission and alerting signal, so loss of Valkey removes
-the instance from guessable-credential traffic without restarting an otherwise
-live web process; existing authenticated sessions and opaque-token exchange can
-remain available as specified by the architecture.
+Readiness is an operator and alerting signal only; no proxy or orchestrator
+removes this single application instance from traffic when it fails. Admission
+middleware independently fails closed for guessable-credential authentication
+when Valkey is unavailable, without restarting an otherwise live web process;
+existing authenticated sessions and opaque-token exchange can remain available
+as specified by the architecture.
 
 The two HTTP health routes are internal-only and return no phase or reason
 detail. `pk-stewardship health` provides detailed operator diagnostics on the VM
@@ -295,7 +301,8 @@ Required suites include:
   full-A-Z lookup candidates, malformed-attempt accounting, IP/code-pair and
   per-IP throttling, distributed-guessing detection and recovery, successful
   access during an attack from other addresses, fail-closed limiter-store
-  outage, continued opaque-token access, generic/audited invalid-token handling,
+  outage, continued opaque-token access with 120-per-minute/burst-30 limiting
+  and bounded per-process fallback, generic/audited invalid-token handling,
   access-token exchange and revocation plus digest uniqueness/index use,
   MAC dual-read rotation/backfill/cross-key collision/retirement, encryption and
   signing-key rotation/migration/retirement, and atomic secret replacement
@@ -369,11 +376,13 @@ At minimum, end-to-end tests demonstrate:
    renews idle only with a current worker heartbeat, never renews the two-hour
    watchdog or absolute expiry, stops renewing when the page/task ends, and
    watchdog/expiry cleanup prevents a late worker from restoring discarded
-   staging.
+   staging. A simulated two-hour overrun is treated as a failed/stuck import and
+   leaves redacted diagnostic correlation for operator investigation.
 2. Google allow/deny, exact-address override, last-Admin guard, immediate role
-   revocation, assigned-Ministry scoping, immediate suspension after a seeded
-   Chairperson relationship disappears, auto-role cleanup, manual restoration,
-   and source-return reactivation.
+   revocation, immediate Administrator grant with durable dashboard event and
+   preexisting-Admin notification/retry, assigned-Ministry scoping, immediate
+   suspension after a seeded Chairperson relationship disappears, auto-role
+   cleanup, manual restoration, and source-return reactivation.
 3. Testing email rerouting, mandatory Family-facing test acknowledgments,
    segregated test submission, blocked transition with in-flight test delivery,
    aggregate creation, go-live admission gating, resumable bounded cleanup of

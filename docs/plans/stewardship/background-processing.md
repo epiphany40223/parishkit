@@ -49,7 +49,8 @@ PostgreSQL is authoritative; Celery/Valkey only delivers execution hints.
 2. Implement revision-specific occurrence and stable semantic fulfillment keys
    for initial, reminder, receipt, and digest work.
 3. Implement replacement/removal locking, safe cancellation, provider-unknown
-   blockers, cross-revision fulfillment, and no recall of sent messages.
+   blockers, cross-revision fulfillment, no recall of sent messages, and atomic
+   multi-schedule reconciliation with an end-date shortening.
 4. Implement Testing override, production, and operational routing as immutable
    classifications; operational notifications never inherit Testing rerouting.
 5. Implement missed-work recovery and Family/digest coalescing with accurate
@@ -141,12 +142,27 @@ PostgreSQL is authoritative; Celery/Valkey only delivers execution hints.
    leases/checkpoints, and recover after upgrade.
 5. Add failure-injection and graceful/forced-shutdown tests.
 
+### BG-11: Exceptional purge worker
+
+1. Execute only a confirmed, current ADM-10 purge request after independently
+   rechecking the campaign work gate, quiescence, inventory, backup evidence,
+   authentication freshness, and confirmation evidence.
+2. Delete the inventoried campaign-owned data in stable, resumable batches with
+   durable high-water checkpoints and idempotent retry behavior.
+3. Permit rollback only before the first destructive checkpoint; after deletion
+   begins, expose recovery and cleanup retry without implying data restoration.
+4. Finish by deleting derived files/cache, retaining the minimum tombstone and
+   audit evidence, and verifying that no campaign-sensitive inventory remains.
+5. Convert every inconsistency or cleanup failure into CRITICAL operational
+   state and test crashes, stale hints, lease loss, retry, and terminal cleanup.
+
 ## Review handoffs
 
-- Review Gate 1 covers BG-01, BG-02, and BG-05 source atomicity.
-- Review Gate 3 covers BG-03 through BG-08, with focused idempotency, email
-  privacy, service-key, and restart review.
-- Review Gate 4 covers BG-09 and purge-related worker behavior.
+- Review Gate 2 covers BG-01 and BG-05 source atomicity.
+- Review Gate 3 covers BG-02 through BG-08 and the notification/shutdown subset
+  of BG-10, with focused idempotency, email privacy, service-key, and restart
+  review.
+- Review Gate 4 covers BG-09, BG-11, and the purge-recovery additions to BG-10.
 
 ## Completion criteria
 

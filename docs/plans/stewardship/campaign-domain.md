@@ -83,7 +83,7 @@ gate until these policies are used server-side.
 5. Add unit tests for formatters and a small accessibility/browser component
    smoke suite before feature pages multiply.
 
-Dependencies: ARC-02 and OPS-08. ADM-03 and FAM-02 consume these components.
+Dependencies: ARC-02 and OPS-09. ADM-03 and FAM-02 consume these components.
 
 ### DOM-05: Cross-domain acceptance harness
 
@@ -97,7 +97,7 @@ Dependencies: ARC-02 and OPS-08. ADM-03 and FAM-02 consume these components.
    to one or more executable tests and owning subsystem work packages.
 4. Add a traceability check or maintained table ensuring every specification
    section and master-plan work package has an acceptance owner.
-5. Run the final scenarios in Phase 8 of the overall plan; do not defer creation
+5. Run the final scenarios in Phase 7 of the overall plan; do not defer creation
    of the harness itself until that phase.
 
 Dependencies: initial factories begin after DAT-01 and grow throughout the
@@ -107,8 +107,9 @@ project. Final completion depends on all subsystem plans.
 
 - At Review Gate 1, review DOM-01 through DOM-03 for inconsistent state or role
   logic before feature views are built.
-- At Review Gate 2, review DOM-04 and the first DOM-05 vertical scenarios on
-  mobile and desktop.
+- At Review Gate 1, review DOM-04's shared component/formatting foundation; at
+  Review Gate 2, recheck it and the first DOM-05 vertical scenarios on mobile
+  and desktop.
 - At Review Gate 5, close every traceability entry and run all lifecycle and
   cross-timezone scenarios.
 

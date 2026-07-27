@@ -17,10 +17,11 @@ evaluated as follows:
 3. Expand Administrator to include Staff and Ministry leader.
 4. Deny access if no effective application role remains.
 
-Authentication failure, unverified email, allowlist denial, no role, and
-authorization failure use safe, specific-enough error pages without disclosing
-the allowlist. Each page offers another Google login attempt and parish contact
-guidance. Rate-limit and suspicious-login events are logged.
+Provider authentication failure and an unverified email may use distinct safe
+error pages. Allowlist denial, no effective role, and any authorization denial
+use one generic not-authorized page that does not reveal which check failed.
+Each page offers another Google login attempt and parish contact guidance.
+Rate-limit and suspicious-login events are logged.
 Concrete per-IP, verified-identity, proxy, and deployment-wide limits are
 defined by the
 [identity security policy](../architecture/spec.md#identity-and-session-security).
@@ -77,6 +78,12 @@ The page warns that closing it stops renewal and that the source-load watchdog
 expires two hours after TaskRun creation even though the Admin session has a
 later 12-hour absolute lifetime. It displays the idle, source-load-watchdog, and
 absolute-session deadlines.
+
+The two-hour watchdog is an intentional hard, non-extendable fail-safe. A normal
+complete ParishSoft load is expected to take approximately two to three minutes;
+reaching two hours indicates an unhealthy or stuck import that must be discarded
+and diagnosed rather than resumed. The operator uses the task correlation and
+redacted diagnostics to correct the underlying problem before restarting setup.
 
 Cancel, idle expiry after polling stops, the two-hour watchdog, or absolute
 expiry marks the staging set expired, safely cancels/abandons its load TaskRun,
@@ -158,10 +165,11 @@ but not dates, Family codes, submissions, deliveries, workflow state, or fund
 records without explicit remapping to current ParishSoft IDs.
 
 New draft creation is unavailable if any campaign is draft, scheduled, active,
-or closed. Independently, it is unavailable while the global mode is
-Production. The Admin must finish reconciliation, archive the current campaign,
-and complete the guarded return to Testing before creating its successor. The
-server checks all conditions in the draft-creation transaction; stale or direct
+closed, `purging`, or `purge_cleanup_failed`. Independently, it is unavailable
+while the global mode is Production. The Admin must finish reconciliation,
+archive the current campaign, complete any exceptional purge and cleanup, and
+complete the guarded return to Testing before creating its successor. The server
+checks all conditions in the draft-creation transaction; stale or direct
 requests cannot bypass them.
 
 The campaign editor includes:
@@ -184,16 +192,26 @@ when stray values are submitted. Reminder times follow initial mail and all
 Family mail occurs within the open interval.
 
 The UI labels structural settings and their Production-readiness lock trigger.
-After the `draft` to `scheduled` transition locks them, the server rejects
-structural mutations even if a stale browser exposes controls. They unlock only
-through the guarded pre-start withdrawal below; an `active` campaign never
-unlocks them.
+After a `draft` campaign moves to `scheduled` or directly to `active`, the
+server rejects structural mutations even if a stale browser exposes controls.
+They unlock only through the guarded pre-start withdrawal below; an `active`
+campaign never unlocks them.
 Content and future schedules remain versioned/editable under the
 [atomic schedule-replacement policy](../background-processing/spec.md#schedule-replacement-and-removal).
 The confirmation shows successful, safely cancellable, failed, and blocking
 in-flight/unknown counts. A sent message cannot be recalled; its logical
 schedule fulfillment carries across revisions. Provider-submitting or
 `delivery_unknown` work blocks the edit until it is resolved.
+
+When a proposed end-date shortening would place future Family mail outside the
+new interval, the campaign editor opens one combined reconciliation screen. It
+lists every affected schedule and requires an explicit valid future replacement
+or removal for each; the Admin cannot leave an item unresolved. The final
+confirmation shows exact schedule, occurrence, outbox, cancellation, and
+replacement counts. One transaction locks the Campaign, close occurrence,
+schedule definitions/revisions, occurrences, and outbox rows; rechecks state and
+provider uncertainty; and commits the new end date together with every selected
+schedule change. Any failure rolls back the complete edit.
 
 ### Production transition
 
@@ -315,7 +333,9 @@ recomputes boundaries at its commit instant:
 
 Only a resulting `scheduled` or `active` current campaign changes global mode
 to Production. Otherwise release clears the restore gate into Testing. In the
-same transaction the system recomputes/materializes delivery holds, removes
+same transaction the system recomputes/materializes delivery holds, including
+holds for newly visible Families whose initial invitation became due during
+restore, removes
 segregated maintenance-test detail under the Testing cleanup policy, records
 the chosen state and counts, and clears the gate. Normal worker admission then
 resumes according to the resulting state/mode; partial release is prohibited.
@@ -365,15 +385,19 @@ Accepted receipts and completed-day Admin digests remain held. Before archive,
 an Admin must use a freshly authenticated **Resolve held messages** workflow to
 release selected non-Family-access message types after a provider check or
 cancel them with exact counts and a reason. This does not reopen Family access
-or campaign schedules. Reopen readiness is blocked until the prior pause and
-held-message state is resolved.
+or campaign schedules. Once every held or uncertain row is resolved, the same
+atomic workflow clears the durable pause control; closed campaigns do not use
+the ordinary Resume action. Reopen readiness is blocked until the prior pause
+and held-message state is resolved.
 
 ### Reopen and archive
 
 Extending a closed campaign into the future can reopen it only through a
 readiness workflow equivalent to Production transition, excluding test-data
-deletion and the `draft`-to-`scheduled` state change. The proposed end date must
-place the commit instant inside the reopened half-open campaign interval. The
+deletion and the `draft`-to-`scheduled` state change. The proposed end date is
+staged in that workflow and is committed only by the final reopen transaction;
+it must place the commit instant inside the reopened half-open campaign
+interval. The
 single-current-campaign rule means a successor cannot yet exist; the server
 nevertheless rechecks that no other campaign is `draft`, `scheduled`, `active`,
 or `closed` and reports any inconsistent state rather than surfacing a database-
@@ -381,21 +405,24 @@ constraint error. The UI lists reactivated Family access, regenerated access-
 link-token counts, and each
 explicitly configured future mail occurrence. Fresh authentication and final
 confirmation atomically rechecks the single-current-campaign guard, moves
-`closed` to `active`, enters Production, issues new Family access-link tokens,
-and enables Family access.
+`closed` to `active`, applies the proposed end date, preserves or asserts
+Production, issues new Family access-link tokens, and enables Family access.
 
 Reopen does not alter or unlock the original start date. Work that became due
 and was durably skipped while the campaign was closed remains terminal and is
 not caught up; an Admin must configure a new future reminder schedule when
-contact is desired. A reopen failure leaves the campaign closed, Testing, and
-inaccessible with no partial token/schedule activation.
+contact is desired. A reopen failure preserves the prior closed Campaign,
+global mode, and end date and leaves Family access disabled with no partial
+token/schedule activation.
 
 Archiving cannot occur with a live-delivery pause, held production messages,
 provider-submitting or delivery-unknown messages, nonterminal production
 outbox/schedule occurrences, or nonterminal publication, export, or purge work.
 An
 Admin may return a Campaign from `archived` to `closed` only while it remains
-exactly `archived`, has no active purge gate as defined by the
+exactly `archived`, remains the global current-campaign pointer, has no other
+campaign in `draft`, `scheduled`, `active`, or `closed`, has no active purge
+gate as defined by the
 [purge data model](../data/spec.md#job-outbox-audit-and-purge-records), has no
 conflicting campaign work, and after fresh Google authentication plus explicit
 confirmation. The transition is audited and leaves Family access and schedules
@@ -411,17 +438,20 @@ The workflow requires fresh Google authentication and a confirmation naming the
 archived campaign. Its preflight transaction locks the global configuration and
 campaign, then verifies that the campaign remains archived, has no purge gate,
 and still satisfies every archive quiescence condition above. It also verifies
-that no other campaign is `draft`, `scheduled`, `active`, or `closed`. A failed
-check leaves Production mode unchanged and links to the work that must be
-resolved.
+that no other campaign is `draft`, `scheduled`, `active`, `closed`, `purging`,
+or `purge_cleanup_failed`. A failed check preserves the prior global mode and
+links to the work that must be resolved.
 
-On success, one transaction changes global mode from Production to Testing,
-clears the current-campaign pointer, invalidates campaign-specific Production
-readiness, and records the actor, reauthentication time, campaign, preflight
+On success, one idempotent transaction sets or confirms global Testing mode,
+clears the current-campaign pointer even if the mode was already Testing,
+invalidates campaign-specific Production readiness, and records the actor,
+reauthentication time, campaign, preflight
 counts, and before/after mode in the audit log. It neither changes the archived
 campaign nor reroutes or recreates any historical production message. Draft
 creation becomes available only after this transaction commits. Historical
 reports remain selectable by campaign.
+After the pointer is cleared, unarchive is prohibited; the archived Campaign is
+historical and a successor draft may be created.
 
 ## Portal user management
 
@@ -438,6 +468,17 @@ requires a currently authorized Admin session and CSRF token, re-evaluates the
 actor's current login rule and role, enforces the last-Administrator guard, and
 records the actor, target, before/after roles, timestamp, and request correlation
 in the audit log.
+
+Adding Administrator to an address is effective immediately but also creates a
+durable unacknowledged security event and independently queues an operational
+email to every Administrator who existed immediately before the grant. The
+event names the actor, target address, time, and before/after roles without
+including session or provider credentials. It remains prominent on every Admin
+dashboard until an existing Admin acknowledges it; when another Admin existed
+at grant time, acknowledgement by the granting actor alone does not clear the
+event for those other recipients. Delivery failure does not roll back or hide
+the grant: it follows durable operational retry/escalation, while the dashboard
+event remains visible. Acknowledgements and notification outcomes are audited.
 
 Domain rows expose Staff and Ministry-leader columns. Administrator is visibly
 disabled. Creating `gmail.com` fails client and server validation. Address rows
@@ -541,6 +582,9 @@ eligible; the authoritative gate states are defined by the
 [purge data model](../data/spec.md#job-outbox-audit-and-purge-records).
 Draft, scheduled, active, and closed campaigns; parish configuration; users;
 shared integration state; and the last restorable backup cannot be selected.
+Purge preparation also requires that no other campaign is `draft`, `scheduled`,
+`active`, `closed`, `purging`, or `purge_cleanup_failed`; an historical purge
+cannot be started after successor preparation begins.
 An Admin must finish reconciliation and explicitly archive a closed campaign
 before it becomes purgeable. Existing campaign work is handled by the gate and
 quiescence stage below; irreversible in-flight work can delay readiness.
@@ -571,20 +615,25 @@ The UI displays and resumes the request states defined by the
 [data specification](../data/spec.md#job-outbox-audit-and-purge-records).
 Inventory, backup verification, and acknowledgement advance a `draft` request
 to `ready_for_confirmation`; an expired inventory or backup returns it to
-`draft`. An Admin may cancel through `queued` only while an atomic worker claim
-has not occurred. Cancellation and terminal pre-deletion failure release the
-gate and leave the archived Campaign eligible for a new request. Once deletion
-has begun, the UI offers only status and safe idempotent retry actions, never
-cancellation or rollback.
+`draft` but invalidates only the expired artifact. The UI shows each artifact's
+completion and expiration time and offers the corresponding refresh action. An
+Admin may cancel through `queued` only while an atomic worker claim has not
+occurred. Cancellation and terminal pre-deletion failure release the gate and
+leave the archived Campaign eligible for a new request. Once deletion has begun,
+the UI offers only status and safe idempotent retry actions, never cancellation
+or rollback.
 
 Inventory evidence expires 60 minutes after inventory completion, and verified
 backup evidence expires 60 minutes after backup completion. Both must remain
 valid when the final confirmation transaction commits. Any admitted conflicting
 mutation or change to the quiescence checkpoint invalidates both immediately.
-Expiration preserves completed task history but requires the Admin to rerun the
-inventory and create a new post-quiescence backup; it never silently substitutes
-an older scheduled backup. A failed backup leaves the purge request in `draft`,
-shows redacted failure detail, and permits an idempotent retry.
+Expiration preserves completed task history and requires the Admin to refresh
+only the expired artifact; an inventory that expires during a long backup is
+rerun after backup completion without discarding that still-current backup. The
+workflow never silently substitutes an older scheduled backup. A failed backup
+leaves the purge request in `draft`, shows redacted failure detail, and permits
+an idempotent retry without invalidating current inventory merely because the
+backup attempt failed.
 
 While the gate exists, every UI entry point that would create campaign-owned
 work explains that purge preparation has paused the campaign and links Admins

@@ -13,6 +13,12 @@ per minute and inserts occurrences with unique idempotency keys. Celery/Valkey
 delivers execution hints; workers always claim/check the PostgreSQL record
 before acting.
 
+Ordinary Production campaign occurrences are created and claimed only when
+global mode is Production and lifecycle/date/admission predicates permit them.
+Testing rehearsal work is separately and immutably classified, never satisfies
+a Production occurrence, and runs only for the current `draft` campaign during
+its resolved parish-local interval.
+
 An occurrence key identifies revision-specific work, for example
 `mail:<campaign>:<schedule-uuid>:<revision>:<target>:<slot>:<mode>`. The stable
 schedule fulfillment defined by the
@@ -101,6 +107,14 @@ An end-date edit transaction replaces a not-yet-running close occurrence with
 one keyed to the new resolved boundary. It races safely under the Campaign lock:
 if closing wins first, changing the date requires the guarded reopen workflow.
 The locked start date cannot be rescheduled after Production readiness.
+
+If shortening the interval affects future Family-mail schedules, that same
+transaction includes the complete Admin-selected reconciliation plan. Every
+affected schedule receives a valid replacement revision or removal marker under
+the schedule locks below, related cancellable work becomes terminal with the
+specified reason, and the close occurrence is replaced only if every change can
+commit. Provider-submitting or delivery-unknown affected rows reject the whole
+transaction; no partial end-date or schedule change is visible.
 
 Portal access, submission, and mail admission always check both lifecycle state
 and the authoritative resolved half-open interval. They deny work immediately
