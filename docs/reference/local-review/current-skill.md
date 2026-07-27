@@ -1,16 +1,14 @@
 <!-- pyml disable md003,md022,md023,md041 -->
----
-name: local-review
-description: Dual-model AI-to-AI peer review of the current branch's changes — one Claude Code reviewer and one Codex reviewer, orchestrated through the pika CLI. Use when the user asks for a local peer review, a pre-PR review, or a review of the current branch diff. Read-only review; remediation belongs to local-review-triage.
-metadata:
-  short-description: Peer-review current branch changes
-argument-hint: "[focus area]"
----
 
 > **Non-normative reference capture.** The installed Codex skill outside this
 > repository is authoritative. This copy records the workflow used during
 > specification development and contains machine-specific example paths; do not
 > invoke it as repository documentation.
+
+**Captured metadata:** Name `local-review`; short description "Peer-review
+current branch changes"; optional argument hint `[focus area]`. The installed
+skill's full description identifies this as a read-only dual-model review whose
+remediation belongs to `local-review-triage`.
 
 # Local Peer Review
 

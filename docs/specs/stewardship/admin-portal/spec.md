@@ -70,10 +70,20 @@ campaign configuration before making the system configured:
 The staged ParishSoft load provides the Ministries/funds needed by later steps.
 Wizard progress may be kept in the authenticated session and temporary staging
 tables/files, but no durable product configuration is visible until final
-commit. Cancel/expiry removes staged settings and credentials. Finalization
-atomically installs staged credential files, commits configuration/snapshot,
-generates Family codes, enters Testing mode, and records one setup audit event
-with secret values redacted.
+commit. While the bootstrap Admin remains on the correlated source-load
+progress page, bounded authenticated polling renews only idle expiry under the
+[session-policy exception](../architecture/spec.md#identity-and-session-security).
+The page warns that closing it stops renewal and that the 12-hour absolute
+lifetime still applies; it displays both authoritative deadlines.
+
+Cancel, idle expiry after polling stops, or absolute expiry marks the staging
+set expired, safely cancels/abandons its load TaskRun, and removes staged
+settings, source rows, files, and credentials idempotently. The worker checks
+that state before external-page fetches and before promotion to staging, so it
+cannot repopulate expired setup. Wizard staging is not resumable under a new
+login in the first release. Finalization atomically installs staged credential
+files, commits configuration/snapshot, generates Family codes, enters Testing
+mode, and records one setup audit event with secret values redacted.
 
 Restore is an operator command performed before bootstrap/wizard. A restored,
 valid configured database skips initial setup after version/migration and
@@ -185,6 +195,8 @@ schedule fulfillment carries across revisions. Provider-submitting or
 Going live is a dedicated workflow, not a toggle. It requires:
 
 - valid, complete campaign configuration and no overlapping active campaign;
+- a commit instant before the campaign closing instant, with the preview
+  explicitly identifying whether the result will be `scheduled` or `active`;
 - recent successful full ParishSoft refresh and expected-tenant validation;
 - successful Google email and optional Slack checks;
 - valid Admin recipients, sender, templates/placeholders, links, and DNS/public
@@ -202,15 +214,18 @@ Going live is a dedicated workflow, not a toggle. It requires:
   confirmation; and
 - fresh Google authentication plus a typed Production confirmation.
 
-Testing deliveries do not count as live. If a live occurrence is already due,
-the scheduler catches it up once after transition. Transition failure leaves
-Testing mode and test data intact unless deletion and mode activation can
-commit together; no partial go-live is allowed.
+Testing deliveries do not count as live. Under a campaign row lock, successful
+transition compares its commit instant with the resolved half-open campaign
+interval: before start it moves `draft` to `scheduled`; from start through the
+instant before close it moves `draft` directly to `active`; at or after close it
+is rejected without cleanup or mode change. Either successful path changes
+global mode to Production, records the readiness result, and locks structural
+settings atomically. Direct activation materializes/catches up every already-due
+live occurrence once under the stable idempotency/fulfillment rules.
 
-Successful transition atomically changes the campaign from `draft` to
-`scheduled`, changes global mode to Production, records the readiness result,
-and locks structural settings. Before the resolved campaign start instant, the
-campaign editor offers a distinct **Withdraw from Production** action. It
+Transition failure leaves Testing mode and test data intact unless deletion and
+mode activation can commit together; no partial go-live is allowed. Only the
+pre-start `scheduled` result offers **Withdraw from Production**. That action
 requires fresh Google authentication, an entered reason, and explicit
 confirmation that Testing data deleted by the prior transition cannot be
 restored. Under a campaign row lock, the server must verify that the state is
@@ -241,14 +256,44 @@ check, making the `scheduled` state reachable before the start date.
 
 The transition changes the global system mode. Because only one campaign can be
 active, the selected campaign is the sole target of the readiness calculation;
-historical records keep their recorded mode.
+historical records keep their recorded mode. Ordinary Testing-to-Production
+transition cannot clear or bypass the independent `restore_review_required`
+gate.
 
-After restore, this workflow also controls the independent
-`restore_review_required` gate defined by the
-[operations specification](../operations/spec.md#restore). Successful readiness,
-fresh authentication, and final Production confirmation clear that gate in the
-same audited transition that enables workers and mail. Ordinary Testing-to-
-Production transition cannot bypass incomplete restore readiness.
+### Restore release
+
+Restore release is a distinct state-aware workflow, not a reuse of the
+`draft`-to-`scheduled` Production transition. While the restore gate is active,
+the UI can queue only the restricted maintenance work defined by the
+[restore specification](../operations/spec.md#restore). It shows each restored
+campaign state and resolved date interval, source and integration evidence,
+delivery-uncertainty inventory, proposed release state, and whether live Family
+access/mail will resume.
+
+After readiness succeeds, a freshly authenticated Admin confirms the exact
+state-aware result. Under the current-campaign lock, the release transaction
+recomputes boundaries at its commit instant:
+
+- a `draft` campaign remains `draft` and the system remains Testing;
+- a `scheduled` or `active` campaign becomes/remains `scheduled` before its
+  start, becomes/remains `active` within its open interval, or becomes `closed`
+  at/after its closing instant;
+- `closed`, `archived`, and `purged` campaigns remain in those states and do
+  not resume Family access or live mail; and
+- `purging`, `purge_cleanup_failed`, an inconsistent request/Campaign pair, or
+  any overlapping-current-campaign invariant blocks release for explicit
+  operator recovery.
+
+Only a resulting `scheduled` or `active` current campaign changes global mode
+to Production. Otherwise release clears the restore gate into Testing. In the
+same transaction the system recomputes/materializes delivery holds, removes
+segregated maintenance-test detail under the Testing cleanup policy, records
+the chosen state and counts, and clears the gate. Normal worker admission then
+resumes according to the resulting state/mode; partial release is prohibited.
+Readiness checks for live sender/templates/test delivery and catch-up impact are
+mandatory only when a campaign will resume `scheduled` or `active`. Database,
+schema, credential-reference, tenant, integrity, and uncertainty-inventory
+checks apply to every release.
 
 Restore readiness displays the backup snapshot/release uncertainty window and
 counts by campaign, schedule type, local due date, and hold state. Searchable
@@ -259,21 +304,66 @@ counts and are audited. Assumed delivery suppresses that semantic occurrence
 without increasing provider-success statistics; resend authorization creates a
 new recovery attempt linked to the hold.
 
-Returning a live deployment to Testing is allowed to halt live delivery, but
-requires fresh authentication, a warning listing affected queued schedules,
-and audit. It does not turn existing live responses into test data.
+### Live delivery pause
+
+An Admin may pause production delivery without changing global mode or Campaign
+lifecycle state. The action requires fresh authentication, a reason, explicit
+confirmation, and a preview of queued, submitting, delivery-unknown, and next-
+due counts. It atomically sets the Campaign's durable delivery-pause control and
+holds every production message that has not begun provider submission. Family
+access and live submissions continue; their receipts are accepted but held.
+Nothing is rerouted to the Testing recipient. Operational notifications and
+explicit readiness/test-recipient sends remain allowed.
+
+Messages already `submitting` may have reached the provider and
+`delivery_unknown` messages retain their reconciliation workflow; the pause UI
+states this limitation and tracks both. Workers recheck the pause immediately
+before provider submission, so no later production attempt crosses the pause.
+The campaign header and background-work view show a persistent delivery-paused
+banner, duration, actor/reason, held counts/types, and provider-uncertain counts.
+
+Resume requires fresh authentication, successful current provider/sender
+health, an exact backlog preview, and explicit confirmation. Under Campaign and
+affected-work locks, it applies the normal overdue Family-mail/digest coalescing
+plan, cancels redundant pending outbox rows, records semantic coverage, clears
+pause holds/control, and queues only selected messages in one transaction.
+Submission receipts remain distinct and are all released. Failure leaves every
+message held; stable fulfillment keys prevent duplicate delivery.
+
+If the campaign closes while paused, invitation/reminder work is terminally
+skipped and its pending outbox cancelled under the ordinary close policy.
+Accepted receipts and completed-day Admin digests remain held. Before archive,
+an Admin must use a freshly authenticated **Resolve held messages** workflow to
+release selected non-Family-access message types after a provider check or
+cancel them with exact counts and a reason. This does not reopen Family access
+or campaign schedules. Reopen readiness is blocked until the prior pause and
+held-message state is resolved.
 
 ### Reopen and archive
 
 Extending a closed campaign into the future can reopen it only through a
 readiness workflow equivalent to Production transition, excluding test-data
-deletion. The UI lists new reminder implications and reactivated Family access.
-Archiving cannot occur with nonterminal publication, export, or purge work. An
+deletion and the `draft`-to-`scheduled` state change. The proposed end date must
+place the commit instant inside the reopened half-open campaign interval. The UI
+lists reactivated Family access, regenerated access-link-token counts, and each
+explicitly configured future mail occurrence. Fresh authentication and final
+confirmation atomically move `closed` to `active`, enter Production, issue new
+Family access-link tokens, and enable Family access.
+
+Reopen does not alter or unlock the original start date. Work that became due
+and was durably skipped while the campaign was closed remains terminal and is
+not caught up; an Admin must configure a new future reminder schedule when
+contact is desired. A reopen failure leaves the campaign closed, Testing, and
+inaccessible with no partial token/schedule activation.
+
+Archiving cannot occur with a live-delivery pause, held production messages, or
+nonterminal publication, export, or purge work. An
 Admin may return a Campaign from `archived` to `closed` only while it remains
-exactly `archived`, has no nonterminal `PurgeRequest` or conflicting campaign
-work, and after fresh Google authentication plus explicit confirmation. The
-transition is audited and leaves Family access and schedules disabled; reopening
-is still the separate readiness workflow above.
+exactly `archived`, has no active purge gate as defined by the
+[purge data model](../data/spec.md#job-outbox-audit-and-purge-records), has no
+conflicting campaign work, and after fresh Google authentication plus explicit
+confirmation. The transition is audited and leaves Family access and schedules
+disabled; reopening is still the separate readiness workflow above.
 
 ## Portal user management
 
@@ -311,7 +401,19 @@ Admins confirm before saving. Duplicate emails/Members/Ministries are grouped
 and ambiguities shown, never silently guessed.
 
 An assignments editor supports manual additions/removals. Losing a current
-Chairperson role flags a seeded assignment as stale but does not revoke it.
+Chairperson role immediately suspends a `chair-seed` assignment during source
+promotion, removes its Ministry row scope on the next request, and creates a
+persistent Admin review task/notification. Existing sessions are not trusted to
+retain cached scope. If no other active assignment remains, a Ministry-leader
+role that was auto-added solely for seeding is removed without changing Staff,
+Admin, or independently configured roles.
+
+The suspended list shows prior Member/Ministry/source evidence, suspension
+time, current source state, affected user/session, and role effects. An Admin
+may revoke/delete the assignment or explicitly restore it as `manual` after
+confirmation and an entered reason; restoration never silently rewrites the
+source. If the same active Chairperson relationship returns before a decision,
+the seed reactivates automatically and closes the task with an audit event.
 
 ## Manual ParishSoft refresh
 
@@ -351,6 +453,11 @@ Only Admins access the combined log screen. It supports:
 - before/after detail for audit events; and
 - text or structured JSONL export of the filtered result.
 
+Log exports use the asynchronous export-job pipeline, authorization rechecks,
+atomic file publication, purge admission gate, and temporary retention defined
+for other large exports. Text and JSONL are additional formats of that shared
+pipeline; an unbounded export is never assembled in a web request.
+
 Stored timestamps are UTC. The screen renders browser-local timestamps. Export
 requires choosing UTC or browser-local timezone; the chosen zone is recorded in
 export metadata. Logins/logouts, configuration, polls/tasks, each email and
@@ -362,7 +469,9 @@ submission changes, workflow changes, publication, and purge are recorded.
 Campaign purge is available only to Admins through `/admin/operations/purge/`.
 It cannot be invoked by ordinary deletion, API, or console command.
 
-Only archived campaigns without another nonterminal purge request are eligible.
+Only archived campaigns without an active gate from another purge request are
+eligible; the authoritative gate states are defined by the
+[purge data model](../data/spec.md#job-outbox-audit-and-purge-records).
 Draft, scheduled, active, and closed campaigns; parish configuration; users;
 shared integration state; and the last restorable backup cannot be selected.
 An Admin must finish reconciliation and explicitly archive a closed campaign
@@ -402,10 +511,12 @@ cancellation or rollback.
 While the gate exists, every UI entry point that would create campaign-owned
 work explains that purge preparation has paused the campaign and links Admins
 to its status; direct requests receive the same server-side rejection. This
-includes new exports, publication/reconciliation mutations, report executions
-that would create campaign-owned audit detail, workflow-note changes, and
-manual/retry task creation. Existing read-only detail and already-generated
-downloads may remain available when they create no campaign-owned record.
+includes new exports, publication/reconciliation mutations, workflow-note
+changes, and manual/retry task creation. Existing read-only detail and already-
+generated downloads remain available. Their access is recorded as a parish-
+owned retained security event with only the campaign UUID/tombstone reference,
+under the [shared report policy](../reports/spec.md#shared-report-behavior), so
+it does not mutate or invalidate campaign-owned purge inventory.
 
 Worker claim first repeats the gate, quiescence, inventory, backup, and
 last-mutation checks under row locks. Any mismatch performs no deletion and

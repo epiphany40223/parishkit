@@ -19,11 +19,15 @@ row count estimate, format, timezone, and sensitive-data warning. Each export
 is audited with report, filters, requester, campaign, source snapshot, and row
 count, but not a duplicate of every exported value.
 
-The campaign purge gate rejects a new report execution or export when it would
-create campaign-owned audit, task, or file records. The UI identifies purge
+The campaign purge gate rejects every new export and any report action that
+would mutate or create campaign-owned records. The UI identifies purge
 preparation as the reason and links Admins to its status; disabling controls is
-not the authorization boundary. Existing read-only views or completed downloads
-may continue only when they add no campaign-owned record.
+not the authorization boundary. Existing read-only report views and completed
+downloads may continue. During the gate, each view writes a parish-owned,
+indefinitely retained security audit containing actor, time, action, and the
+campaign UUID/tombstone reference but no report data or campaign-owned foreign
+key. That access audit neither enters nor invalidates the campaign purge
+inventory.
 
 CSV is UTF-8 with a header row and CRLF-compatible output. Cells beginning with
 formula-significant characters are neutralized. XLSX uses freeze panes,
@@ -76,11 +80,14 @@ campaign end and today. The graph shows:
   total at each day end.
 
 For **Historical as of day**, each bar, cumulative count and denominator, and
-pledge total uses the Family eligibility/effective response recorded for that
-day. A Family that participated while eligible remains in the historical series
-after becoming inactive. For **Current population**, every point is recomputed
-using the current Portal-eligible Family set; a currently ineligible Family is
-excluded from every series.
+pledge total uses the last promoted `SourceSnapshot` at or before the resolved
+end instant of that local day, plus effective live submissions whose committed
+UTC time is before that instant. If no snapshot exists by that boundary, the
+point is unavailable rather than inferred from a later snapshot. A Family that
+participated while eligible remains in the historical series after becoming
+inactive. For **Current population**, every point is recomputed using the
+current Portal-eligible Family set; a currently ineligible Family is excluded
+from every series.
 
 The UI defaults to Historical as of day and offers a clearly labeled scope
 toggle. Changing scope updates every series together. Hover shows scope, local
@@ -129,14 +136,32 @@ full/partial case-insensitive last/family name and DUID. A separate exact-code
 search canonicalizes and fingerprints the supplied candidate, returning only
 the matching Family without revealing any other code.
 
+Exact-code search is a guessable-credential verification surface and uses the
+shared Valkey fail-closed limiter. Defaults permit five failed attempts per
+user/code fingerprint per 15 minutes, ten failed candidates per authenticated
+user per 10 minutes, and 30 failures per source IP per 10 minutes. Wrong-format
+input consumes the user/IP counters without creating a candidate fingerprint.
+Every attempt writes a retained security audit with actor, source metadata,
+result class, and HMAC fingerprint where available, never plaintext code.
+Failures feed the deployment-wide distributed-guessing detection. Responses do
+not distinguish unknown, inactive, or inaccessible codes; excess returns `429`
+with bounded `Retry-After`.
+
+If Valkey is unavailable, only exact-code search fails closed with the generic
+temporary-unavailability response; ordinary name/DUID directory search remains
+available. A successful match counts that Family against the same per-user
+30-distinct-Families-per-hour reveal budget used by **Show code**, preventing a
+user from bypassing the budget by alternating the two actions. It clears only
+the matching user/code failure counter, not source-IP or other-user counters.
+
 Each row has a CSRF-protected **Show code** action for Admin and Staff. It
 reauthorizes the object, decrypts only that Family's code, writes an audit event
 before returning it, uses `Cache-Control: no-store`, and automatically remasks
 on navigation or after 60 seconds. The audit records actor, campaign/Family,
 time, request correlation, and source metadata, never the code. Reveal attempts
 are limited per user to 30 distinct Families per rolling hour by default;
-excess receives `429` and creates one deduplicated Admin WARNING. Production may
-configure a stricter threshold.
+exact-code matches share this budget. Excess receives `429` and creates one
+deduplicated Admin WARNING. Production may configure a stricter threshold.
 
 This report is not offered as a bulk downloadable file by default because it is
 a credential directory. If implementation requires print/export for parish
@@ -144,7 +169,7 @@ operations, it must be an explicit Admin-only configuration, freshly
 authenticated, watermarked, and separately specified; it is not first-release
 behavior.
 
-## Families without eligible email
+## Families without deliverable email
 
 **Access:** Admin and Staff.
 
@@ -202,6 +227,12 @@ Ministry, output its name, chair names, stewardship period/year, and rows with:
 - recorded phone-contact date, blank if none; and
 - current outcome (`Join ministry`, `No longer interested`, `No response`, or
   a mapped workflow outcome).
+
+For Ministry leaders, every email and phone value in the packet follows the
+summary report's ParishSoft publish-flag rule and renders `Not published`
+instead of the source value. Admin/Staff retain the operational-contact access
+defined by that rule. This privacy policy applies identically to screen, CSV,
+XLSX, and PDF output.
 
 Recorded workflow values are prefilled; empty cells remain printable for human
 completion. The XLSX is one workbook with a sheet per Ministry. PDF starts each

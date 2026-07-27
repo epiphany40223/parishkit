@@ -91,6 +91,7 @@ external identity-policy service.
 | --- | --- | --- | --- | --- |
 | Configure parish/campaign/integrations | Yes | No | No | No |
 | Manage login rules and Ministry assignments | Yes | No | No | No |
+| Reveal one Family manual code | Yes | Yes | No | Own code through login only |
 | Trigger/view operational background work | Yes | No | No | No |
 | Trigger/view own authorized report exports | Yes | Yes | Assigned Ministries only | No |
 | View all campaign reports | Yes | Yes, except system logs | Assigned-Ministry reports only | No |
@@ -121,8 +122,10 @@ local dates once the campaign is live.
 2. **Scheduled**: Production readiness has passed, but the local start date has
    not arrived. An Admin may use the guarded pre-start withdrawal workflow to
    return it to `draft` and Testing.
-3. **Active**: the interval begins at 12:00:00 a.m. on the start date and ends
-   at 12:00:00 a.m. following the end date in the parish timezone.
+3. **Active**: the half-open interval begins at 12:00:00 a.m. on the start date
+   and ends immediately before 12:00:00 a.m. following the end date in the
+   parish timezone. At that closing instant the campaign is `closed`; portal
+   submissions and scheduled sends at exactly that instant are rejected.
 4. **Closed**: Family access is denied, but reporting and reconciliation remain
    available.
 5. **Archived**: the campaign is retained and read-only except for permitted
@@ -147,14 +150,24 @@ authentication, explicit confirmation, and audit. Unarchive does not enable
 Family access, restart schedules, or enter Production; those effects require
 the distinct closed-campaign reopen workflow.
 
+The only reopen transition is `closed` to `active`. The Admin first extends the
+closing date so the commit instant is within the resulting campaign interval
+and passes the guarded readiness workflow. Reopen never returns to `scheduled`
+or changes/unlocks the original start date. It atomically enters Production,
+issues new Family access-link tokens, and restores Family access. Occurrences
+that became due and were skipped while closed remain terminal; only explicitly
+configured future schedules run after reopening.
+
 Resolving either campaign boundary to UTC uses the scheduling DST policy: a
 nonexistent local midnight moves to the first valid instant after the gap, and
 an ambiguous local midnight uses its earlier UTC occurrence. The same resolved
 instants gate portal access and local-day report buckets.
 
 Structural settings lock when Production readiness atomically moves the
-campaign from `draft` to `scheduled`: enabled modules, financial periods and
-fund mappings, campaign Ministry set, and identity/population semantics.
+campaign from `draft` to `scheduled` before its start or directly to `active`
+within its open interval: enabled modules, financial periods and fund mappings,
+campaign Ministry set, identity/population semantics, and the campaign start
+date. A Production transition at or after the closing instant is rejected.
 Testing activity does not lock them. Administrators may continue editing
 content, future unsent schedules, and the end date. An `active` campaign never
 unlocks structural settings.
@@ -170,7 +183,7 @@ already moved the campaign to `active` is rejected. Previously deleted Testing
 responses and delivery details are not restored; a later Production transition
 must pass the complete readiness workflow again. Reopening a closed campaign
 likewise requires readiness validation, fresh Google authentication, explicit
-confirmation, and an audit event.
+confirmation, and an audit event before its atomic transition to `active`.
 
 Successor-campaign preparation is intentionally sequential. The administration
 UI disables draft creation while another campaign is draft, scheduled, or
@@ -178,6 +191,13 @@ active, and the server enforces the same rule transactionally. Closing a
 campaign stops Family access and live schedules; after the Admin explicitly
 returns the deployment to Testing, a successor draft may be created while the
 closed campaign remains available for reporting and reconciliation.
+
+Temporarily stopping outgoing campaign email uses the Campaign's independent
+live-delivery pause, not a transition from Production to Testing. An active
+campaign remains active, Family access/submissions remain live, and production
+messages are durably held until the guarded resume/coalescing workflow. Testing
+mode is reserved for draft preparation, pre-start Production withdrawal, or a
+deployment without an open live campaign.
 
 All configured Family mail times must fall within the open campaign interval
 and be chronological. Financial stewardship describes a period whose inclusive
@@ -192,7 +212,8 @@ and Admin confirmation.
    setup wizard, including an initial ParishSoft load and the first campaign.
 3. Admins preview pages/mail, exercise Testing mode, and correct configuration.
 4. A readiness workflow verifies integrations and deletes segregated test
-   responses before moving to Production.
+   responses before moving to Production and truthfully selecting `scheduled`
+   or `active` from the commit instant.
 5. The system opens the campaign, sends idempotent scheduled invitations and
    reminders, refreshes ParishSoft, collects versioned responses, and reports
    progress.

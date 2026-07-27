@@ -22,8 +22,10 @@ These pages reveal no Family information. Testing mode still honors campaign
 date gates; Admin page previews remain available outside the interval.
 The restore-maintenance gate takes precedence over Testing mode, dates, codes,
 tokens, and existing Family sessions. Enabling it revokes Family sessions; no
-Family route accepts or buffers answers until the Admin releases the gate into
-Production.
+Family route accepts or buffers answers until the Admin completes state-aware
+restore release. Family access resumes only when that release produces an
+`active` campaign in Production; every other resulting state continues to show
+its ordinary no-campaign, before-start, or ended page.
 
 The manual credential is exactly eight case-insensitive ASCII letters `A`-`Z`.
 Spaces/hyphens may be stripped for friendly entry, but no digits or additional
@@ -248,8 +250,11 @@ eligible Family-head address exists, it queues the receipt defined by
 [background processing](../background-processing/spec.md#submission-confirmation).
 Having no deliverable recipient is a recorded non-error and never prevents the
 submission. The receipt gives parish, campaign, Family display name, UTC-derived
-browser/local submission time, and contact/help information but no census,
-Ministry, additional-text, pledge, code, or secure-token values.
+submission time rendered in the configured parish timezone with its timezone
+abbreviation, and contact/help information but no census, Ministry, additional-
+text, pledge, code, or secure-token values. Browser confirmation/history pages
+still render timestamps in the browser timezone; email uses parish time because
+no browser context exists when the worker renders it.
 
 ## Repeat visits and source changes
 

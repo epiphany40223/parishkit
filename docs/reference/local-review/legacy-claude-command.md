@@ -1,12 +1,11 @@
 <!-- pyml disable md003,md022,md032,md041 -->
----
-description: Dual-subagent AI-to-AI peer review of current branch changes.
-model: opus
----
 
 > **Historical legacy capture.** This predates the current local-review skill,
 > intentionally contains obsolete pika flags and orchestration behavior, and is
 > retained only as development provenance. Do not use it as instructions.
+
+**Captured metadata:** Description "Dual-subagent AI-to-AI peer review of
+current branch changes"; model `opus`.
 
 # Local Peer Review
 

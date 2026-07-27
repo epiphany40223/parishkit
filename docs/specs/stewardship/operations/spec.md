@@ -132,19 +132,35 @@ Both modes verify manifest/digests, application/schema compatibility, credential
 availability, and the target-mode precondition before writing. They restore
 database/media/config, run permitted forward migrations, validate one parish,
 check expected ParishSoft organization without mutation, and start in Testing
-mode with workers/mail disabled. Before the web service becomes externally
-ready, restore atomically sets the durable `restore_review_required` gate. That
-gate blocks every Family authentication, access-token exchange, form, and submit
+mode with the scheduler, ordinary worker admission, production outbox dispatch,
+and Family mail disabled. Before the web service becomes externally ready,
+restore atomically sets the durable `restore_review_required` gate. That gate
+blocks every Family authentication, access-token exchange, form, and submit
 route regardless of campaign dates or Testing behavior; public requests receive
 a neutral parish-branded maintenance page without Family-specific information.
 
-The administration login and restore-readiness workflow remain available. The
-gate can be cleared only after readiness passes, a freshly authenticated Admin
-reviews the restored campaign/source/schedule state, and explicitly confirms
-return to Production. Clearing the gate, entering Production, and enabling
-workers/mail is one audited operational transition; partial release is
-prohibited. Failed or abandoned review leaves Family access and delivery
-disabled.
+Administration login and the restore-readiness workflow remain available. A
+restricted maintenance worker pool/queue runs while the gate is closed and may
+claim only tenant-validation and read-only full refresh, integration tests,
+mail routed to the configured Testing recipient, restore inventory/hold
+calculation, backup verification, integrity/health diagnostics, operational
+notifications, and explicitly authorized recovery of an interrupted purge.
+It cannot materialize live schedules, dispatch a `production` outbox row,
+publish/write to ParishSoft, generate ordinary campaign exports, or claim other
+restored work. Every task carries a restore-maintenance type checked at durable
+creation and worker claim; routing to the queue alone is not authorization.
+
+The gate can be cleared only after applicable readiness passes and a freshly
+authenticated Admin reviews and confirms the proposed state-aware release
+defined by the
+[Admin workflow](../admin-portal/spec.md#restore-release). A release that yields
+`scheduled` or `active` enters Production and enables normal work; release with
+no open campaign remains Testing and leaves Family/live-mail behavior disabled
+by campaign state. Clearing the gate, reconciling lifecycle state, selecting
+mode, materializing holds, and enabling the corresponding work admission are
+one audited transaction. Failed or abandoned review leaves the restore gate,
+Family access, and live delivery disabled while restricted maintenance work
+remains available.
 
 Restore review calculates a delivery-uncertainty window from the backup's
 database-snapshot instant through the eventual mail-release instant. It creates
@@ -197,13 +213,20 @@ task duration/failure, scheduler lag, outbox age/delivery, ParishSoft snapshot
 age, database/broker health, disk usage, backup age, and TLS expiry.
 
 `/health/live` confirms the web process loop only. `/health/ready` confirms the
-database and migrations plus the configuration needed for the deployment's
-current setup phase; it must not call external services per probe. A bootstrapped
-but product-unconfigured deployment is ready when it can safely serve login and
-the first-Admin wizard, even though campaign/integration readiness is incomplete.
-After the wizard commits the configured marker, readiness additionally requires
-the critical credential references and durable configuration for normal
-operation. Worker/scheduler health uses heartbeats and queue-lag records.
+database, migrations, Valkey limiter store, and configuration needed for the
+deployment's current setup phase; it must not call external services per probe.
+A bootstrapped but product-unconfigured deployment is ready when it can safely
+serve login and the first-Admin wizard, even though campaign/integration
+readiness is incomplete. After the wizard commits the configured marker,
+readiness additionally requires the critical credential references and durable
+configuration for normal operation. Worker/scheduler health uses heartbeats and
+queue-lag records.
+
+Container restart health checks use `/health/live`, not `/health/ready`.
+Readiness is an ingress/admission and alerting signal, so loss of Valkey removes
+the instance from guessable-credential traffic without restarting an otherwise
+live web process; existing authenticated sessions and opaque-token exchange can
+remain available as specified by the architecture.
 
 The two HTTP health routes are internal-only and return no phase or reason
 detail. `pk-stewardship health` provides detailed operator diagnostics on the VM
@@ -253,7 +276,10 @@ Required suites include:
   repeat-mail rendering, atomic token rotation, ineligibility/reactivation, and
   ciphertext destruction plus new-token issuance across close/reopen;
 - credential-report tests for masked pagination, exact-code lookup, per-object
-  reveal authorization/audit/no-store/remasking, and per-user reveal limiting;
+  reveal authorization/audit/no-store/remasking, shared reveal budgeting,
+  exact-search user/IP/fingerprint throttling and audit, distributed-abuse
+  contribution, and fail-closed exact-search limiter outage while name/DUID
+  search remains available;
 - security-content tests using sanitizer allow/deny corpora, upload signature
   and media-type rejection, image re-encoding/decompression bounds, and
   template placeholder validation for both correct substitution and unknown-
@@ -274,6 +300,10 @@ Required suites include:
   provider acceptance followed by timeout, provider-status reconciliation,
   idempotent safe retry, unresolved `delivery_unknown`, authorized resend, and
   immutable operational-notification classification/bypass in Testing;
+- delivery-pause race tests for pre-provider recheck, continued live submission,
+  held receipt creation, immutable operational/test exemption, no Testing
+  reroute, atomic backlog coalescing/resume, close-during-pause cancellation,
+  and post-close held-message release/cancellation before archive;
 - browser tests for setup, Admin/Staff/leader workflows and the full responsive
   Family path, including stale submit and repeat visit;
 - accessibility automation plus keyboard/screen-reader-oriented manual checks;
@@ -291,14 +321,24 @@ Required suites include:
 At minimum, end-to-end tests demonstrate:
 
 1. Empty deployment through bootstrap/wizard, aborted wizard rollback, restored
-   deployment startup with Family access gated, and atomic Admin-approved
-   release from restore maintenance.
+   deployment startup with Family access gated, restricted maintenance refresh/
+   test-send/hold work while ordinary work remains blocked, and atomic Admin-
+   approved release of restored `draft`, future `scheduled`, current `active`,
+   expired-to-`closed`, and already `closed`/`archived` campaigns. Interrupted
+   purge state blocks release pending explicit recovery.
+   First-Admin setup additionally proves that correlated source-load polling
+   renews idle but not absolute expiry, stops renewing when the page/task ends,
+   and expiry safely prevents a late worker from restoring discarded staging.
 2. Google allow/deny, exact-address override, last-Admin guard, immediate role
-   revocation, and assigned-Ministry scoping.
+   revocation, assigned-Ministry scoping, immediate suspension after a seeded
+   Chairperson relationship disappears, auto-role cleanup, manual restoration,
+   and source-return reactivation.
 3. Testing email rerouting, mandatory Family-facing test acknowledgments,
    segregated test submission, blocked transition with in-flight test delivery,
    aggregate creation and guarded deletion of test submissions/outbox detail,
-   structural lock and exactly-once live catch-up on Production transition;
+   structural lock, pre-start `draft`-to-`scheduled`, in-interval direct
+   `draft`-to-`active` with exactly-once live catch-up, and at/after-close
+   rejection on Production transition;
    guarded pre-start withdrawal cancels future live work, returns atomically to
    Testing/draft, and unlocks structural settings, while an active campaign and
    unresolved provider-submitting/delivery-unknown work cannot be withdrawn.
@@ -315,9 +355,13 @@ At minimum, end-to-end tests demonstrate:
    chart parity, and CSV/XLSX/PDF/PNG output.
 8. Missed initial/reminder/digest occurrence, per-Family and daily-digest
    recovery coalescing, worker/broker restart, systemic email failure,
-   deduplicated CRITICAL notification, and recovery.
-9. Closed campaign explicit reopen/archive, guarded unarchive to `closed`, and
-   denial of unarchive after purge preparation begins.
+   deduplicated CRITICAL notification, active-campaign delivery pause with
+   continued live submission and held receipts, pre-provider race checks,
+   atomic coalescing/resume, and post-close held-message resolution.
+9. Closed campaign explicit reopen directly to `active`, atomic access-token/
+   Production activation, no replay of work skipped while closed, archive,
+   guarded unarchive to `closed`, and denial of unarchive after purge
+   preparation begins.
 10. Web purge blocked for every non-archived campaign, stale backup, or wrong
     confirmation; atomic gate acquisition; concurrent admission rejection;
     cancellation of queued/retrying work; drain/reconciliation of running and
@@ -326,7 +370,8 @@ At minimum, end-to-end tests demonstrate:
     consistency; gate release only on cancellation/pre-delete failure; atomic
     worker-claim recheck; pre-delete rollback; successful resumable batched
     purge and atomic visible tombstone transition; interrupted-batch recovery;
-    retryable database/file cleanup; and failure notification.
+    retryable database/file cleanup; retained parish-owned audit of read-only
+    report access without inventory invalidation; and failure notification.
 
 ## CI and local validation
 

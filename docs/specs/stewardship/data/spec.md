@@ -40,7 +40,10 @@ mode, single valid Testing recipient, current campaign pointer, durable
 Testing. Mode is not historical campaign data: deliveries/submissions snapshot
 the mode in which they occurred so old records retain their meaning after a
 later global transition. The restore gate is an independent fail-closed state;
-Testing-mode Family access does not override it.
+Testing-mode Family access does not override it. The gate also carries restore
+ID, backup snapshot instant, activation time, and release state/proposed-state
+evidence. It is cleared only by the state-aware release transaction defined in
+operations, which updates current Campaign state and global mode atomically.
 
 Integration records contain non-secret settings and credential fingerprints:
 ParishSoft expected organization, Google OAuth/Workspace delegated identity,
@@ -56,6 +59,8 @@ A `Campaign` includes:
 - enabled census, Ministry, and financial modules;
 - references to the global mode transitions under which it was exercised;
 - first-live-delivery and first-live-submission timestamps;
+- live-delivery-pause flag/version, actor, reason, start/resume times, and
+  post-close resolution metadata;
 - initial/reminder mail schedules and template versions;
 - campaign-owned content versions;
 - the selected set of Ministry DUIDs;
@@ -80,6 +85,23 @@ guarded, pre-start `scheduled` to `draft` Production withdrawal defined by the
 Testing and invalidates readiness in the same transaction; database guards
 reject it after the campaign has become `active`.
 
+Initial Production readiness may move `draft` to `scheduled` before the
+resolved start or directly to `active` within the half-open interval. The
+transaction rejects a commit at/after close and locks structural settings in
+either successful state. Direct activation creates already-due live work under
+the ordinary stable idempotency and fulfillment keys.
+
+The guarded reopen transition moves `closed` directly to `active` only when its
+extended closing instant is after the transaction time. Campaign/global-mode
+updates and new access-token issuance commit atomically; original start and
+structural settings remain locked.
+
+Live delivery pause is orthogonal to lifecycle and global mode. It never changes
+an `active` Campaign to Testing, never changes live Submission classification,
+and never reroutes a `production` OutboxMessage. Outbox rows held by it remain
+in their ordinary nonterminal state with a structured pause-hold reference;
+the dispatch claim must check both state and current pause version.
+
 Deleting a Campaign through ordinary CRUD is impossible. Closing and archiving
 retain all relationships. Exceptional purge is defined by the
 [Admin portal](../admin-portal/spec.md#campaign-purge).
@@ -91,13 +113,16 @@ logical UUID and campaign/type. Its immutable `ScheduleRevision` rows contain
 the versioned local date/time, template references, and replacement/removal
 metadata; exactly one revision is current unless the definition was removed.
 
-`ScheduleFulfillment` records a successful semantic delivery independently of
-revision. Its unique key combines schedule UUID, mode, semantic recipient or
-audience, and occurrence slot (for example Family DUID for a one-time Family
-mail or campaign-local date for a daily digest). It references the successful
-occurrence. Thus changing a time or template never makes a recipient already
-fulfilled in that mode eligible for the same logical schedule again. Schedule
-replacement and removal follow the atomic cancellation policy in the
+`ScheduleFulfillment` records that a semantic slot is covered independently of
+revision. Its disposition is `delivered` or `coalesced`. Its unique key combines
+schedule UUID, mode, semantic recipient or audience, and occurrence slot (for
+example Family DUID for a one-time Family mail or campaign-local date for a
+daily digest). A delivered row references the successful occurrence; a
+coalesced row references the selected replacement occurrence that covers it
+without masquerading as provider success. Thus changing a time or template
+never makes a recipient whose slot is already covered in that mode eligible for
+the same logical schedule again. Schedule replacement and removal follow the
+atomic cancellation policy in the
 [background-processing specification](../background-processing/spec.md#schedule-replacement-and-removal).
 
 `RestoreDeliveryHold` records restore identifier, campaign/schedule semantic
@@ -172,7 +197,8 @@ present. Authorization policy uses:
 - `AddressRule`: normalized exact address with any role set, including an empty
   set that explicitly denies access; and
 - `MinistryAssignment`: user/address to Ministry DUID, source (`chair-seed` or
-  `manual`), active flag, and audit metadata.
+  `manual`), state (`active` or `suspended`), suspension reason/time, and audit
+  metadata.
 
 An exact address rule replaces, rather than unions with, a matching domain
 rule. When the UI creates an override for a chairperson already inheriting a
@@ -183,9 +209,16 @@ Google Workspace/Cloud Identity hosted-domain rule: it grants roles only when
 the signed `hd` claim and verified email suffix both match. An absent or
 mismatched `hd` claim never falls back to suffix-only authorization.
 
-Chairperson synchronization only seeds missing assignments; it never silently
-revokes an existing explicit assignment. Stale seeded assignments are flagged
-for Admin review.
+Chairperson synchronization seeds missing assignments. When a promoted snapshot
+no longer shows the active Member as Chairperson of that active Ministry, it
+atomically changes the corresponding `chair-seed` assignment from `active` to
+`suspended`, records the source evidence, and opens an Admin review task. A
+suspended assignment grants no row scope on the next authorization check.
+Manual assignments are never changed from source data. If the exact AddressRule
+and Ministry-leader role were auto-created solely for seeded assignments, the
+role is removed when no active assignment remains; unrelated roles/rules are
+preserved. If the source Chairperson relationship returns before review, the
+seeded assignment reactivates and the task closes with audit.
 
 ### Submission
 
@@ -307,17 +340,22 @@ only the dispatch worker may decrypt them. Terminal handling scrubs the sealed
 values. Provider acceptance means sent; bounce processing is outside the first
 release.
 
-`AuditEvent` is append-only and stores actor type/ID, action, entity, campaign,
-UTC time, request/task correlation, source IP metadata, and redacted structured
-before/after values. `OperationalLog` stores the five standard levels and
-structured context. The Admin log view queries both without pretending DEBUG
-diagnostics are domain audit events.
+`AuditEvent` is append-only and stores ownership scope, actor type/ID, action,
+entity, optional campaign, UTC time, request/task correlation, source IP
+metadata, and redacted structured before/after values. `OperationalLog` stores
+the five standard levels and structured context. The Admin log view queries both
+without pretending DEBUG diagnostics are domain audit events. While a campaign
+purge gate is active, read-only report access uses parish ownership and a plain
+campaign UUID/tombstone reference rather than a campaign-owned foreign key. The
+retained event contains no viewed report data and is outside purge inventory;
+exports and mutations remain blocked.
 
 `PurgeRequest` records the selected archived campaign, initiating Admin, recent
 backup reference, re-authentication time, typed-confirmation digest, estimated
 counts, gate-acquisition/quiescence times, state, batch checkpoints, progress,
-and final non-sensitive tombstone. Its existence in any nonterminal state is
-the durable campaign purge gate. It has a state machine separate from the associated
+and final non-sensitive tombstone. A request in any state other than
+`cancelled` or `failed_pre_delete` owns the durable campaign purge gate. It has
+a state machine separate from the associated
 [Campaign lifecycle](../spec.md#campaign-lifecycle):
 
 - `draft`: the campaign was selected and inventory/backup checks may be run or
@@ -423,9 +461,9 @@ read sessions are otherwise allowed.
 Within a successful transaction, the system writes the immutable submission,
 sets it effective, derives proposals/workflows, records audit events, updates
 participation facts, and either inserts the confirmation-email outbox row or,
-when no deliverable eligible-head address exists, records
-`receipt_not_queued` with reason `no_deliverable_recipient`. Either all commit
-or none do.
+when no deliverable eligible-head address exists, records the non-error audit
+action `submission_receipt_skipped` with reason
+`no_deliverable_recipient`. Either all commit or none do.
 
 ## ParishSoft refresh reconciliation
 
@@ -500,7 +538,7 @@ email metadata/content, and audit events are retained indefinitely by default.
 Operational HTTP caches, temporary export files, and transient task payloads
 have bounded cleanup policies defined by operations.
 
-The two exceptions are:
+The three exceptions are:
 
 - test responses and their sensitive audit payloads are deleted during the
   Production transition;
@@ -509,8 +547,7 @@ The two exceptions are:
   defined by the
   [Admin readiness workflow](../admin-portal/spec.md#production-transition);
   `operational` rows are retained under normal policy even when created while
-  the global mode was Testing;
-  and
+  the global mode was Testing; and
 - an Admin-approved campaign purge removes campaign-owned live detail through
   the guarded web workflow while retaining only a non-sensitive tombstone.
 

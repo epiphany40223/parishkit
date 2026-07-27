@@ -32,13 +32,39 @@ Tasks use bounded timeouts and recover an abandoned claim only after its lease
 expires. Cancellation is permitted only at task-defined safe points and never
 pretends an in-flight external write was undone.
 
+The restore-maintenance gate is also checked at durable task creation and
+worker claim. While it is active, only tasks bearing an allowlisted maintenance
+type may run on the restricted queue; ordinary tasks remain durable but
+unclaimable. The authoritative allowed types and prohibited side effects are in
+the [restore specification](../operations/spec.md#restore). Clearing the gate
+atomically installs the state/mode-specific admission policy before normal
+workers can claim preserved work.
+
+For a `production` OutboxMessage linked to the current Campaign, dispatch also
+locks/rechecks the durable live-delivery-pause version immediately before
+provider submission. While paused, schedulers and submission transactions may
+materialize idempotent due occurrences/receipts, but they attach a pause hold
+and create no dispatch hint. A worker holding an older hint leaves the message
+pending/held without counting an attempt. `operational` messages and explicit
+test-recipient sends are exempt by immutable type; no Admin/caller flag can
+claim the exemption.
+
+Resume first computes the recovery/coalescing plan under the affected schedule,
+occurrence, fulfillment, and outbox locks. Coalesced originals receive their
+coverage rows, redundant pending messages become `cancelled`, distinct held
+receipts remain selected, and only then does the transaction clear pause holds
+and queue dispatch hints. Provider-submitting/unknown rows continue independent
+reconciliation and are never selected as automatic duplicates. A race with
+campaign close follows the post-close resolution workflow rather than sending
+Family invitations/reminders.
+
 Before creating or claiming campaign-scoped work, schedulers, web services, and
-workers use the transactional campaign-work admission check. A nonterminal
-`PurgeRequest` closes that gate. Existing queued/retrying tasks are safely
-cancelled rather than claimed; running or externally uncertain operations drain
-and reconcile before purge readiness. Purge preparation/execution and its
-operational notifications are the only new campaign-linked work exempt from
-the gate. The complete gate and release semantics are defined by the
+workers use the transactional campaign-work admission check. Existing queued/
+retrying tasks are safely cancelled rather than claimed; running or externally
+uncertain operations drain and reconcile before purge readiness. Purge
+preparation/execution and its operational notifications are the only new
+campaign-linked work exempt from the gate. The authoritative gate-active and
+release states are defined by the
 [purge data model](../data/spec.md#job-outbox-audit-and-purge-records).
 
 All schedules are evaluated in the parish timezone but persisted as UTC due
@@ -74,9 +100,12 @@ Missed occurrences catch up once when services recover. Before executing, the
 worker rechecks global system mode, campaign state, and recipient eligibility.
 Every missed occurrence retains its own durable outcome, but semantically
 redundant mail is coalesced rather than delivered in a burst. A coalesced record
-names the selected replacement occurrence and reason. A missed Family mail
-after campaign close is skipped with a durable reason, while reports for
-completed campaign days use the recovery-digest behavior below.
+names the selected replacement occurrence and reason and transactionally writes
+a `coalesced` ScheduleFulfillment for the original semantic slot. The coverage
+row prevents a later schedule revision from rearming that slot and never counts
+as provider success. A missed Family mail after campaign close is skipped with
+a durable reason, while reports for completed campaign days use the recovery-
+digest behavior below.
 
 A semantic occurrence covered by an unreviewed or assumed-delivered
 `RestoreDeliveryHold` is excluded from automatic missed-work selection and
@@ -253,7 +282,7 @@ A permanent address refusal records that recipient/family, suppresses that
 normalized address until its source value changes or an Admin clears the
 refusal after verification, and continues. A Family whose every otherwise
 eligible address is suppressed is included in the
-[no-deliverable-email report](../reports/spec.md#families-without-eligible-email).
+[no-deliverable-email report](../reports/spec.md#families-without-deliverable-email).
 A systemic provider/authentication failure stops further sending for that run
 and becomes CRITICAL to avoid a flood of identical failures.
 
@@ -261,11 +290,15 @@ and becomes CRITICAL to avoid a flood of identical failures.
 
 When at least one deliverable eligible-head address exists, the live submission
 transaction creates one receipt outbox row addressed to those heads. If none
-exists, it creates no outbox row and records a non-error `receipt_not_queued`
-outcome with reason `no_deliverable_recipient`; the submission still commits.
-A receipt contains no sensitive answers or credentials. A delivery failure does
-not roll back the already accepted submission; it is visible/retryable to
-Admins. In Testing, it routes only to the test recipient.
+exists, it creates no outbox row and records the non-error audit action
+`submission_receipt_skipped` with reason `no_deliverable_recipient`; the
+submission still commits.
+
+A receipt contains no sensitive answers or credentials. Its stored UTC
+submission instant is rendered in the configured parish timezone with timezone
+abbreviation; asynchronous email rendering never assumes a browser timezone.
+A delivery failure does not roll back the already accepted submission; it is
+visible/retryable to Admins. In Testing, it routes only to the test recipient.
 
 ## Administrator digests
 
@@ -285,7 +318,8 @@ Admin-configurable, send:
 - the same participation chart/data basis as the web report, rendered as an
   inline accessible image plus textual summary; and
 - current active Families/Members, eligible-email Families, participation,
-  campaign pledge, and configured prior comparison pledge statistics.
+  deliverable-email Families, campaign pledge, and configured prior comparison
+  pledge statistics.
 
 Metrics are snapshotted at digest generation with data-as-of/source snapshot
 metadata. Later source/status changes do not rewrite the sent digest.

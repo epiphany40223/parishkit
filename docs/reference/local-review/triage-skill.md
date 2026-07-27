@@ -1,15 +1,13 @@
 <!-- pyml disable md003,md022,md023,md041 -->
----
-name: local-review-triage
-description: Triage local-review findings interactively, one task at a time, with context and recommendations. Use after a local-review run to walk the developer through each finding, auto-resolving what has a single correct answer and asking about the rest.
-metadata:
-  short-description: Walk through local-review findings
-argument-hint: ""
----
 
 > **Non-normative reference capture.** The installed Codex skill outside this
 > repository is authoritative. This copy records the workflow used during
 > specification development and is not an executable repository instruction.
+
+**Captured metadata:** Name `local-review-triage`; short description "Walk
+through local-review findings"; no argument hint. The installed skill's full
+description identifies this as interactive, one-finding-at-a-time triage that
+automatically resolves findings with a single correct answer.
 
 # Local Review Triage
 

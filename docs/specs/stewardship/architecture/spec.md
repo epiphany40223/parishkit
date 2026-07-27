@@ -193,7 +193,16 @@ as Production transition, campaign reopening, ParishSoft publication, secret
 replacement, and purge require fresh Google re-authentication no older than
 five minutes.
 
-Passive presence heartbeat and background polling never refresh idle expiry.
+Passive presence heartbeat and ordinary background polling never refresh idle
+expiry. The sole setup exception is the first-Admin wizard's correlated staged-
+source-load progress page: while that exact TaskRun remains nonterminal, its
+CSRF-protected authenticated progress request may renew the bootstrap Admin's
+30-minute idle deadline at most once every five minutes. It carries only the
+wizard/task correlation, verifies the same Admin/session server-side, and never
+extends the 12-hour absolute lifetime. Renewal stops as soon as the task is
+terminal or the page stops polling; no other wizard task, tab, Admin session, or
+ordinary background request qualifies.
+
 While a Family form is visible, genuine keyboard, input, pointer, or touch
 interaction may schedule a CSRF-protected activity keepalive at most once every
 five minutes. The request contains no answers or field identifiers. The server
@@ -278,11 +287,12 @@ logs, and notifications never contain plaintext codes. Error messages and
 timing do not distinguish unknown, inactive, or non-Parishioner codes.
 
 Valkey limiter storage is required for routes that accept guessable credentials.
-If it is unavailable, Admin OAuth initiation/callback and manual Family-code
-submission fail closed before credential evaluation with the same generic
-temporary-unavailability response and bounded `Retry-After`. Existing
-authenticated sessions and `/access/<token>` exchange remain available because
-the latter uses an independent 256-bit credential. Limiter-store unavailability
+If it is unavailable, Admin OAuth initiation/callback, manual Family-code
+submission, and Admin/Staff exact-code directory search fail closed before
+credential evaluation with the same generic temporary-unavailability response
+and bounded `Retry-After`. Existing authenticated sessions, ordinary Family
+name/DUID directory search, and `/access/<token>` exchange remain available
+because they do not verify the guessable code. Limiter-store unavailability
 makes readiness unhealthy and creates one deduplicated durable CRITICAL event;
 notification delivery resumes from PostgreSQL-backed work when workers can run.
 
