@@ -31,14 +31,18 @@ other subsystem depends.
 2. Define typed deployment configuration and YAML/environment precedence for
    database, Valkey, public origin, proxy trust, secret references, and service
    role.
-3. Route every default runtime path through `PARISHKIT_ROOT` or
+3. Define the schema-versioned Stewardship YAML authority, stable-ID/canonical
+   serialization, immutable version files, atomic active manifest, and typed
+   importer/materializer interfaces.
+4. Route every default runtime path through `PARISHKIT_ROOT` or
    `/opt/parishkit`; preserve CLI/YAML overrides.
-4. Implement fail-fast production startup validation for mode, origin, proxy,
-   secret presence/mount separation, database migration state, and Valkey
-   requirements.
-5. Configure structured redacted logging and request/task correlation before
+5. Implement fail-fast production startup validation for active-YAML/database
+   digest agreement, mode, origin, proxy, secret presence/mount separation,
+   database migration state, and Valkey requirements.
+6. Configure structured redacted logging and request/task correlation before
    feature code emits logs.
-6. Test configuration precedence, invalid startup, path overrides, and secret
+7. Test canonical round trips, schema upgrades, atomic manifest recovery,
+   configuration precedence, invalid startup, path overrides, and secret
    redaction.
 
 ### ARC-03: Django web foundation and security middleware
@@ -65,9 +69,9 @@ other subsystem depends.
    password/signup/recovery routes.
 2. Implement exact-address-over-domain rule evaluation and role loading through
    the canonical DOM-03 policies.
-3. Store every Admin/Staff/leader session in PostgreSQL with 30-minute idle and
-   12-hour absolute expiry, revocation checks on every privileged request, and
-   standards-compliant logout.
+3. Store every Admin/Staff/leader session in PostgreSQL with the idle/absolute
+   expiry defined by the architecture specification, revocation checks on every
+   privileged request, and standards-compliant logout.
 4. Implement uniform re-login-capable denial/error pages for provider failure,
    allowlist denial, no role, unconfigured deployment, and maintenance gates.
 5. Implement early and specific Valkey rate limiters, trusted-client address
@@ -85,9 +89,9 @@ other subsystem depends.
 2. Implement independent 256-bit link-token generation, campaign-scoped digest
    lookup, sealed-box ciphertext, exchange to a token-free Family session, and
    close/rotation/reopen lifecycle.
-3. Configure PostgreSQL Family sessions with 60-minute idle and four-hour
-   absolute expiry, separate cookie namespace, warnings, passive presence, and
-   the explicitly untrusted CSRF-protected activity keepalive.
+3. Configure PostgreSQL Family sessions with the specified idle/absolute
+   expiry, separate cookie namespace, warnings, passive presence, and the
+   explicitly untrusted CSRF-protected activity keepalive.
 4. Add public code-guessing limiters, distributed detection, uniform timing/
    errors, invalid-token audit fingerprints, and Valkey fail-closed behavior.
 5. Preserve the low-sensitivity Admin/Staff manual-code access policy while
@@ -99,21 +103,31 @@ other subsystem depends.
 
 1. Define separate general symmetric, Family-code MAC, signing, and token
    sealed-box keyrings with versioned envelope formats and fingerprints.
-2. Add a dedicated `mail-dispatch` service/queue and rotation profile; only
+2. Implement ConfigurationChangeRequest orchestration and the sole
+   `config-installer` service with read-write access only to the Stewardship
+   authority directory, prepared database snapshots, exact-digest activation,
+   crash reconciliation, and fail-closed mismatch handling.
+3. Implement expiring target-key-sealed SecretReplacementRequest handoff and
+   isolated `credential-installer-*` queues/services; each instance can decrypt
+   and write only one credential target and waits for consumer fingerprint
+   acknowledgement.
+4. Add a dedicated `mail-dispatch` service/queue and rotation profile; only
    these service profiles may load token private keys and mail-provider
    credentials.
-3. Give web/general workers only token public keys; verify at startup that
+5. Give web/general workers only token public keys; verify at startup that
    private-key paths are absent from their configuration and mounts.
-4. Implement rotation/backfill/verification/retirement workflows and backup-key
+6. Implement rotation/backfill/verification/retirement workflows and backup-key
    compatibility checks for every keyring.
-5. Add Compose inspection and runtime tests proving web, scheduler, reports, and
-   general workers cannot decrypt token ciphertext while dispatch can.
+7. Add crash/race/privacy and Compose inspection tests proving no partial config
+   activation, no plaintext staging, no cross-target installer claim, and that
+   web, scheduler, reports, and general workers cannot write configuration/
+   credentials or decrypt token ciphertext while dispatch can.
 
 ### ARC-07: Application-level privacy and audit primitives
 
-1. Provide audited service wrappers for configuration mutation, role change,
-   secret replacement, code-bearing reports, privileged reauthentication, and
-   destructive confirmation.
+1. Provide audited service wrappers for configuration-change requests, applied
+   role changes, sealed secret replacement, code-bearing reports, privileged
+   reauthentication, and destructive confirmation.
 2. Define approved redaction schemas for request, task, email, source, provider,
    and exception context; reject secret-bearing structured payload fields.
 3. Add optimistic-concurrency helpers and stable machine-readable validation

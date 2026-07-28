@@ -20,21 +20,25 @@ validation is never sufficient.
 
 1. Add UUID/time/version/audit mixins, UTC enforcement, immutable-row helpers,
    soft historical references, and parish ownership conventions.
-2. Implement Parish, branding references, SystemConfiguration, integration
-   metadata/fingerprints, and configuration version records.
-3. Enforce the singleton parish/configuration rules and Testing default.
+2. Implement AppliedConfigurationVersion, ConfigurationChangeRequest,
+   SecretReplacementRequest, normalized YAML materializations, Parish/branding,
+   SystemConfiguration, and integration metadata/fingerprints.
+3. Enforce one active applied version matching the YAML digest, immutable
+   configuration projections, target-specific request claims, singleton parish/
+   runtime-configuration rules, and Testing default.
 4. Add PostgreSQL-backed session configuration and base audit correlation
    fields.
 5. Implement the base TaskRun record/claim metadata required by BG-01; later job
    packages extend it with outbox and workflow records.
-6. Test constraints, UTC round trips, optimistic versions, TaskRun claims, and
-   secret-value exclusion.
+6. Test constraints, YAML/request state machines and mismatch recovery, UTC
+   round trips, optimistic versions, TaskRun claims, and secret-value exclusion.
 
 ### DAT-02: Campaign lifecycle and schedule schema
 
-1. Implement Campaign, enabled modules, financial/comparison periods, fund and
-   Ministry selections, share-option versions, content references, delivery-
-   pause metadata, and structural-lock state.
+1. Implement Campaign, immutable-after-readiness IANA timezone snapshot, enabled
+   modules, financial/comparison periods, fund and Ministry selections, share-
+   option versions, content references, delivery-pause metadata, and structural-
+   lock state.
 2. Add transactional guards for one current campaign across draft through
    closed, Testing-only draft creation, interval validity, at-least-one module,
    exact-year financial period, and current-campaign pointer consistency.
@@ -42,22 +46,29 @@ validation is never sufficient.
 4. Implement ScheduleDefinition, immutable revisions, occurrence records,
    semantic fulfillment, replacement/removal markers, and restore delivery
    holds with uniqueness constraints.
-5. Add race tests for creation, activation, close, end-date edits, withdrawal,
-   reopen, archive, unarchive, and return to Testing.
+5. Add race tests for creation, activation, close, draft timezone/end-date
+   edits, Parish-default timezone changes, withdrawal, reopen, archive,
+   unarchive, and return to Testing.
 
 ### DAT-03: Versioned ParishSoft source corpus
 
 1. Implement SourceSnapshot metadata and normalized versioned Family, Member,
    contact/address, Ministry, roster, fund, pledge, and contribution tables.
-2. Choose and document deduplication/version-reference strategy while ensuring
-   any snapshot reconstructs one coherent corpus.
+2. Implement mandatory canonical content digests, immutable payload-version
+   reuse, and snapshot membership maps so unchanged entities are never copied
+   by refresh and every uncompacted snapshot reconstructs one coherent corpus.
 3. Add promoted-snapshot/current-index pointers and a transaction that promotes
    all staged data atomically.
 4. Implement SourceMutationLease with fencing token, heartbeat, expiry, phase,
    owner task, and safe-takeover metadata.
-5. Add source watermark/cursor storage, count/digest validation records, and
-   integration tests for failed staging, stale-owner denial, and atomic
-   promotion.
+5. Add permanent manifest/compaction metadata, protected-reference discovery,
+   and deterministic 90-day/all, one-year/daily, and later/monthly anchors.
+6. Add immutable CampaignDailyFactSet/DailyFact generation, completeness,
+   publication-pointer, and pinned-reference constraints.
+7. Add source watermark/cursor storage, count/digest validation records, and
+   integration tests for failed staging, stale-owner denial, atomic promotion,
+   deduplication, fact publication, protected references, cutoff boundaries,
+   and compaction races.
 
 ### DAT-04: Family campaign identity and credentials
 
@@ -78,12 +89,16 @@ validation is never sufficient.
 
 1. Implement PortalUser, DomainRule, AddressRule, MinistryAssignment,
    chairperson suggestions, suspension/review tasks, and login/audit history.
-2. Enforce no domain Administrator, no `gmail.com` domain, explicit-address
+2. Materialize configured rules/manual assignments from exact YAML versions and
+   keep source suspension/reactivation as a fail-closed runtime overlay.
+3. Enforce no domain Administrator, no `gmail.com` domain, explicit-address
    precedence, last-Administrator protection, and hosted-domain evidence.
-3. Implement Admin-confirmed chair-seed creation and snapshot-driven suspension/
-   reactivation while preserving manual assignments and unrelated roles.
-4. Add indexes for normalized email/domain and Ministry row-scope queries.
-5. Test every role-source transition and concurrent autosave version conflict.
+4. Implement Admin-confirmed chair-seed configuration requests and snapshot-
+   driven suspension/reactivation while preserving manual assignments and
+   unrelated roles.
+5. Add indexes for normalized email/domain and Ministry row-scope queries.
+6. Test every role-source transition, activation race, and concurrent autosave
+   digest conflict.
 
 ### DAT-06: Immutable submissions and proposal overlay
 
@@ -137,13 +152,14 @@ validation is never sufficient.
    immutable outcome records.
 2. Implement PurgeRequest state machine, campaign-wide gate ownership,
    inventory/backup expirations, batch checkpoints, tombstone, and allowable
-   rollback boundaries.
-3. Implement retention services for test cleanup, terminal outbox substitution
-   scrubbing, temporary artifacts, indefinite live history, and Admin-approved
-   campaign purge without unsafe cascades.
-4. Add PostgreSQL integration tests for gate races, fencing, deletion batches,
-   pre-delete rollback, post-delete retry, cleanup failure, and retained parish-
-   owned audit.
+   rollback boundaries; require Testing, a null current pointer, and no
+   successor campaign at request creation.
+3. Implement retention services for source-snapshot compaction, test cleanup,
+   terminal outbox substitution scrubbing, temporary artifacts, protected live
+   history, and Admin-approved campaign purge without unsafe cascades.
+4. Add PostgreSQL integration tests for gate/pointer/successor races, fencing,
+   deletion batches, pre-delete rollback, post-delete retry, cleanup failure,
+   and retained parish-owned audit.
 
 ## Review handoffs
 

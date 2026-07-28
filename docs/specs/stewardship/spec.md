@@ -77,8 +77,10 @@ versioned proposal overlay until upstream data reflects them.
 - **Current value**: the value in the currently promoted ParishSoft snapshot.
 - **Baseline value**: the upstream value shown to the Family when the response
   version was started.
-- **Local day**: midnight through the instant before the following midnight in
-  the configured parish timezone. Timestamps remain UTC in storage.
+- **Campaign-local day**: midnight through the instant before the following
+  midnight in the Campaign's IANA timezone snapshot. Timestamps remain UTC in
+  storage. The mutable Parish timezone is only the default for a new draft and
+  for non-campaign presentation.
 - **Admin**: a user with the Administrator role. Administrator implies every
   other portal role.
 - **Ministry leader**: the canonical name of the role called Minister in some
@@ -116,22 +118,26 @@ allows editing a Family submission or configuration.
 A campaign has `draft`, `scheduled`, `active`, `closed`, `archived`, `purging`,
 `purge_cleanup_failed`, and `purged` states. State transitions are explicit and
 audited, although entering `active` and `closed` is driven by the configured
-local dates once the campaign is live. The sole portal exception is an
-Administrator-enabled Testing rehearsal against the current `draft` campaign
-during that campaign's resolved date interval; it does not change lifecycle
-state or admit Production background work.
+local dates once the campaign is live. The sole portal exception is a Testing
+rehearsal against the current `draft` campaign during that campaign's resolved
+date interval; it does not change lifecycle state or admit Production
+background work.
 
-1. **Draft**: configuration is editable and Testing mode is mandatory. A draft
-   cannot be created while another campaign is `draft`, `scheduled`, `active`,
-   or `closed`; the prior campaign must be archived and the Admin must
-   explicitly return the deployment to Testing.
+1. **Draft**: configuration is editable and Testing mode is mandatory. Creation
+   also requires a null current-campaign pointer and no campaign in `draft`,
+   `scheduled`, `active`, `closed`, `purging`, or `purge_cleanup_failed`, as
+   enforced by the
+   [authoritative database guard](data/spec.md#campaign). The prior campaign
+   must be archived and the Admin must explicitly return the deployment to
+   Testing.
 2. **Scheduled**: Production readiness has passed, but the local start date has
    not arrived. An Admin may use the guarded pre-start withdrawal workflow to
    return it to `draft` and Testing.
 3. **Active**: the half-open interval begins at 12:00:00 a.m. on the start date
    and ends immediately before 12:00:00 a.m. following the end date in the
-   parish timezone. At that closing instant the campaign is `closed`; portal
-   submissions and scheduled sends at exactly that instant are rejected.
+   campaign-timezone snapshot. At that closing instant the campaign is
+   `closed`; portal submissions and scheduled sends at exactly that instant are
+   rejected.
 4. **Closed**: Family access is denied, but reporting and reconciliation remain
    available.
 5. **Archived**: the campaign is retained and read-only except for permitted
@@ -178,10 +184,19 @@ Structural settings lock when Production readiness atomically moves the
 campaign from `draft` to `scheduled` before its start or directly to `active`
 within its open interval: enabled modules, financial periods and fund mappings,
 campaign Ministry set, identity/population semantics, and the campaign start
-date. A Production transition at or after the closing instant is rejected.
-Testing activity does not lock them. Administrators may continue editing
-content, future unsent schedules, and the end date. An `active` campaign never
-unlocks structural settings.
+date and campaign-timezone snapshot. A Production transition at or after the
+closing instant is rejected. Testing activity does not lock them.
+Administrators may continue editing content, future unsent schedules, and the
+end date. An `active` campaign never unlocks structural settings.
+
+A new draft copies the current Parish IANA timezone as its campaign timezone.
+Admins may edit that campaign value while it remains `draft`. Production
+readiness resolves boundaries and future schedule instants from it and locks it
+for the remainder of the campaign's life, including closed, archived, and
+historical reporting. Changing the Parish timezone later affects only general
+presentation and subsequently created drafts; it never rebuckets or reschedules
+an existing campaign. A `scheduled` campaign must use Withdraw from Production
+to return to `draft` before its timezone can change.
 
 Shortening a `scheduled` or `active` campaign cannot strand configured Family
 mail outside the proposed interval. The edit opens a combined reconciliation
@@ -213,14 +228,19 @@ campaign stops Family access and live schedules but leaves it as the sole
 current campaign in Production while reporting and reconciliation finish. The
 Admin must resolve remaining campaign work, archive the campaign, and then use
 the guarded web workflow to return the deployment to Testing before creating a
-successor draft. Archived campaigns remain available for historical reporting.
+successor draft. Return to Testing opens the only exceptional-purge window; an
+Admin either completes the guarded purge then or defers it until the next
+campaign has also been archived and returned to Testing. Creating the successor
+draft closes that window. Archived campaigns remain available for historical
+reporting when not purged.
 
 Temporarily stopping outgoing campaign email uses the Campaign's independent
 live-delivery pause, not a transition from Production to Testing. An active
 campaign remains active, Family access/submissions remain live, and production
 messages are durably held until the guarded resume/coalescing workflow. Testing
 mode is reserved for draft preparation, pre-start Production withdrawal, or a
-deployment without an open live campaign.
+deployment without a current Production campaign. A closed current campaign
+remains Production until archive and Return to Testing.
 
 All configured Family mail times must fall within the open campaign interval
 and be chronological. Financial stewardship describes a period whose inclusive
@@ -264,9 +284,9 @@ denominator displays an em dash rather than a misleading percentage.
 
 All instants are stored as timezone-aware UTC. Browser-facing timestamps are
 rendered in the browser timezone and include a timezone abbreviation in detail
-views. Campaign dates, scheduled jobs, and report day buckets use the parish
-timezone. Local-day conversion must handle daylight-saving gaps and folds
-without running an occurrence twice.
+views. Campaign dates, scheduled jobs, and report day buckets use that
+Campaign's immutable timezone snapshot. Local-day conversion must handle
+daylight-saving gaps and folds without running an occurrence twice.
 
 ## Requirement traceability
 
@@ -293,5 +313,6 @@ six alphanumeric characters to resist credential guessing; campaign history is
 retained; Staff has the named workflow-write exceptions; whole local days
 replace the earlier 12:01/11:59 wording; safety-critical operational
 notifications reach all current Admins instead of using the Testing-recipient
-override; and campaign purge is an Admin web workflow rather than an offline
-command.
+override; parish-specific configuration is authoritative in versioned YAML with
+immutable PostgreSQL applied snapshots; and campaign purge is an Admin web
+workflow rather than an offline command.

@@ -52,6 +52,11 @@ It interactively or non-interactively obtains:
 It never collects campaign answers, prints secrets, or stores parish-specific
 values in the image. It is idempotent when given identical values and refuses
 to replace a configured deployment without a separate restore process.
+Bootstrap writes the deployment YAML and a minimal schema-valid Stewardship
+bootstrap YAML version containing only the initial exact-address Admin rule.
+After migration, the latter is imported as the first applied configuration
+snapshot so the initial Admin can authenticate; the wizard supersedes it with
+the first complete version.
 
 On the first Admin login, the wizard collects all required base and first-
 campaign configuration before making the system configured:
@@ -70,8 +75,8 @@ campaign configuration before making the system configured:
 
 The staged ParishSoft load provides the Ministries/funds needed by later steps.
 Wizard progress may be kept in the authenticated session and temporary staging
-tables/files, but no durable product configuration is visible until final
-commit. While the bootstrap Admin remains on the correlated source-load
+tables/files, but no staged configuration is active until installer
+finalization. While the bootstrap Admin remains on the correlated source-load
 progress page, bounded authenticated polling renews only idle expiry under the
 [session-policy exception](../architecture/spec.md#identity-and-session-security).
 The page warns that closing it stops renewal and that the source-load watchdog
@@ -93,9 +98,15 @@ to staging, so it cannot repopulate expired setup. At the watchdog deadline the
 server refuses further renewal, requests cancellation, and cleanup proceeds at
 the worker's next safe point; lease expiry handles an unresponsive worker.
 Wizard staging is not resumable under a new login in the first release.
-Finalization atomically installs staged credential files, commits configuration/
-snapshot, generates Family codes, enters Testing mode, and records one setup
-audit event with secret values redacted.
+Finalization freezes the staged setup, runs each target-specific credential
+installer, applies one complete authoritative YAML version through the
+configuration installer, and then commits the promoted source snapshot, Family
+codes, Testing mode, configured marker, and one redacted setup audit event. The
+configured marker is last and cannot become visible until YAML/DB digests match
+and every required consumer acknowledges its secret fingerprint. A crash or
+failure resumes idempotently from installer checkpoints; before the marker,
+normal routes remain unconfigured/fail-closed and cancel cleanup removes sealed
+staging and any wizard-only files without exposing a partial product setup.
 
 Restore is an operator command performed before bootstrap/wizard. A restored,
 valid configured database skips initial setup after version/migration and
@@ -146,16 +157,32 @@ not affect presence semantics or carry form answers.
 
 Only Admins may view/edit configuration. Required values cannot be cleared.
 URL, timezone, phone, email, date, graphic, integration, and cross-field
-constraints are validated before a new version is committed. Every save shows
-a diff, records actor/before/after, and uses optimistic concurrency.
+constraints are validated before a new version is applied. Every save shows a
+diff, records actor/before/after, uses the expected active YAML digest for
+optimistic concurrency, and creates a `ConfigurationChangeRequest`. The page
+shows **Applying**, **Applied**, or a safe validation/error result; it never says
+Saved while only PostgreSQL or only YAML has changed. The dedicated installer
+and fail-closed mismatch recovery are defined by the
+[configuration architecture](../architecture/spec.md#configuration-and-secrets).
 
-Logo management previews every generated size. Replacing a logo creates a new
-branding version; historical email/page previews retain their campaign version.
+The Parish IANA timezone is the default for non-campaign presentation and newly
+created campaign drafts. Editing it does not mutate an existing Campaign's
+timezone, resolved boundaries, schedules, or historical report buckets. The UI
+shows this scope explicitly and links to the separately editable draft campaign
+timezone when one exists.
+
+Logo management previews every generated size. Uploads remain staged until the
+YAML version referencing their immutable branding version is applied;
+historical email/page previews retain their campaign version.
 
 Integration pages expose connection status, last check, safe fingerprint, and
 Replace/Test actions. Secret replacement requires fresh Google authentication.
-Failure leaves the old working credential installed. Slack is optional; its
-token and channel must be supplied/removed together.
+The UI seals the submitted value to its target-specific installer, shows
+staged/testing/installing/consumer-acknowledged progress, and never redisplays
+it. Failure or expiry destroys sealed staging and leaves the old working
+credential installed. Slack is optional; its token and channel must be
+supplied/removed together. Non-secret integration setting changes use the YAML
+configuration-request path rather than the credential installer.
 
 ## Campaign configuration
 
@@ -164,17 +191,24 @@ campaign or starting empty. Cloning copies content/share/schedule structures
 but not dates, Family codes, submissions, deliveries, workflow state, or fund
 records without explicit remapping to current ParishSoft IDs.
 
+Draft creation and every campaign-editor save apply a new authoritative YAML
+version and its normalized PostgreSQL snapshot. Runtime lifecycle/mode fields
+are changed only by their dedicated database transactions and are never edited
+in YAML. Production readiness rejects pending/failed configuration requests or
+a YAML/database digest mismatch and pins the exact applied version it locks.
+
 New draft creation is unavailable if any campaign is draft, scheduled, active,
 closed, `purging`, or `purge_cleanup_failed`. Independently, it is unavailable
 while the global mode is Production. The Admin must finish reconciliation,
-archive the current campaign, complete any exceptional purge and cleanup, and
-complete the guarded return to Testing before creating its successor. The server
-checks all conditions in the draft-creation transaction; stale or direct
-requests cannot bypass them.
+archive the current campaign, complete the guarded Return to Testing, optionally
+complete an exceptional purge and cleanup, and only then create its successor.
+The server checks all conditions in the draft-creation transaction; stale or
+direct requests cannot bypass them.
 
 The campaign editor includes:
 
-- modules and whole-local-day start/end dates;
+- campaign IANA timezone plus modules and whole-campaign-local-day start/end
+  dates;
 - financial period and explicit current/comparison fund multi-select;
 - campaign Ministry multi-select, initially all active Ministries;
 - editable/reorderable share options with stable IDs and placeholders;
@@ -195,7 +229,9 @@ The UI labels structural settings and their Production-readiness lock trigger.
 After a `draft` campaign moves to `scheduled` or directly to `active`, the
 server rejects structural mutations even if a stale browser exposes controls.
 They unlock only through the guarded pre-start withdrawal below; an `active`
-campaign never unlocks them.
+campaign never unlocks them. The campaign timezone is initialized from the
+current Parish timezone, is editable in `draft`, and is one of these structural
+settings. Scheduled, active, closed, and archived pages display it read-only.
 Content and future schedules remain versioned/editable under the
 [atomic schedule-replacement policy](../background-processing/spec.md#schedule-replacement-and-removal).
 The confirmation shows successful, safely cancellable, failed, and blocking
@@ -232,8 +268,9 @@ Going live is a dedicated workflow, not a toggle. It requires:
   `retry_wait`, or `delivery_unknown`, plus a terminal-delivery summary ready
   for aggregation;
 - a cleanup inventory of all Testing submissions/workflows, sensitive test
-  audit payloads, and Testing outbox detail, with exact submission, distinct-
-  Family, and message/result counts plus an Admin-only Family list; and
+  audit payloads, Testing outbox detail, and Testing ScheduleOccurrence/
+  ScheduleFulfillment rows, with exact submission, distinct-Family, and
+  message/result counts plus an Admin-only Family list; and
 - completion of the gated asynchronous cleanup below, followed by fresh Google
   authentication and a typed Production confirmation.
 
@@ -256,7 +293,11 @@ the gate and leaves the campaign in Testing with whatever cleanup completed.
 From `cleanup_complete`, fresh authentication and typed confirmation invoke a
 short final transaction. Under the request, campaign, and global locks it
 recomputes readiness and compares its commit instant with the resolved half-open
-campaign interval: before start it moves `draft` to `scheduled`; from start
+campaign interval. Test-mailing and terminal-delivery requirements are checked
+against the immutable pre-cleanup aggregate/readiness evidence because their
+sensitive `testing_override` source rows were intentionally deleted; every
+other readiness input is re-read from current durable state. Before start the
+transaction moves `draft` to `scheduled`; from start
 through the instant before close it moves `draft` directly to `active`; at or
 after close it is rejected without a mode change. Either successful path changes
 global mode to Production, records the readiness result, locks structural
@@ -325,22 +366,29 @@ recomputes boundaries at its commit instant:
 - a `scheduled` or `active` campaign becomes/remains `scheduled` before its
   start, becomes/remains `active` within its open interval, or becomes `closed`
   at/after its closing instant;
-- `closed`, `archived`, and `purged` campaigns remain in those states and do
-  not resume Family access or live mail; and
+- a `closed` current campaign remains `closed` in Production so reporting,
+  reconciliation, publication, and operational/digest routing retain their
+  ordinary post-campaign semantics, but Family access and live Family mail stay
+  disabled;
+- `archived` and `purged` campaigns remain in those states and do not resume
+  Family access or live mail; and
 - `purging`, `purge_cleanup_failed`, an inconsistent request/Campaign pair, or
   any overlapping-current-campaign invariant blocks release for explicit
   operator recovery.
 
-Only a resulting `scheduled` or `active` current campaign changes global mode
-to Production. Otherwise release clears the restore gate into Testing. In the
-same transaction the system recomputes/materializes delivery holds, including
-holds for newly visible Families whose initial invitation became due during
-restore, removes
+Any sole current campaign resulting in `scheduled`, `active`, or `closed` sets
+global mode to Production. A `draft` current campaign, an archived or purged
+historical campaign, or no current campaign releases into Testing. There is no
+supported `closed`-current-campaign/Testing combination. In the same transaction
+the system recomputes/materializes delivery holds, including holds for newly
+visible Families whose initial invitation became due during restore, removes
 segregated maintenance-test detail under the Testing cleanup policy, records
 the chosen state and counts, and clears the gate. Normal worker admission then
 resumes according to the resulting state/mode; partial release is prohibited.
 Readiness checks for live sender/templates/test delivery and catch-up impact are
-mandatory only when a campaign will resume `scheduled` or `active`. Database,
+mandatory only when a campaign will resume `scheduled` or `active`. A `closed`
+Production release instead checks the integrations and permissions needed for
+its enabled reconciliation, publication, report, and digest work. Database,
 schema, credential-reference, tenant, integrity, and uncertainty-inventory
 checks apply to every release.
 
@@ -408,6 +456,12 @@ confirmation atomically rechecks the single-current-campaign guard, moves
 `closed` to `active`, applies the proposed end date, preserves or asserts
 Production, issues new Family access-link tokens, and enables Family access.
 
+Reopen readiness also requires every `testing_override` OutboxMessage to be
+terminal and inventories any Testing outbox, occurrence, fulfillment, workflow,
+submission, and sensitive-audit detail. If such rows exist, the ordinary gated
+Testing cleanup and immutable aggregate rules run before the final reopen
+transaction even though no prior Production-transition test cleanup is assumed.
+
 Reopen does not alter or unlock the original start date. Work that became due
 and was durably skipped while the campaign was closed remains terminal and is
 not caught up; an Admin must configure a new future reminder schedule when
@@ -451,27 +505,35 @@ campaign nor reroutes or recreates any historical production message. Draft
 creation becomes available only after this transaction commits. Historical
 reports remain selectable by campaign.
 After the pointer is cleared, unarchive is prohibited; the archived Campaign is
-historical and a successor draft may be created.
+historical. The UI presents a lifecycle checklist with two explicit next
+choices: perform any exceptional purge now, or create the successor draft and
+defer purge until the next post-archive window. It warns that successor creation
+closes the purge window until that successor is archived and returned to
+Testing.
 
 ## Portal user management
 
 The Admin user page contains sorted domain and exact-address tables. Rows show
 normalized value, effective roles, source, last login, and warnings. Role
-checkbox changes autosave with a transient saved/error indicator; each request
-uses an expected row version to prevent lost updates.
+checkbox changes autosave through a `ConfigurationChangeRequest` with a
+transient Applying/Applied/error indicator; each request uses the expected
+active YAML digest to prevent lost updates. A security-policy change is
+effective only when the installer atomically activates its matching normalized
+snapshot, never from an independently edited role row.
 
 Every role addition, removal, or replacement—including an exact-address
-Administrator grant—uses this immediate autosave interaction. Role changes do
-not require fresh Google authentication or a separate confirmation dialog. This
-is an intentional low-friction administration policy. Each mutation still
+Administrator grant—uses this autosave interaction. Role changes do not require
+fresh Google authentication or a separate confirmation dialog. This is an
+intentional low-friction administration policy. Each apply still
 requires a currently authorized Admin session and CSRF token, re-evaluates the
 actor's current login rule and role, enforces the last-Administrator guard, and
 records the actor, target, before/after roles, timestamp, and request correlation
 in the audit log.
 
-Adding Administrator to an address is effective immediately but also creates a
-durable unacknowledged security event and independently queues an operational
-email to every Administrator who existed immediately before the grant. The
+Adding Administrator to an address is effective immediately upon configuration
+activation and also creates, in that activation transaction, a durable
+unacknowledged security event and independently queues an operational email to
+every Administrator who existed immediately before the grant. The
 event names the actor, target address, time, and before/after roles without
 including session or provider credentials. It remains prominent on every Admin
 dashboard until an existing Admin acknowledges it; when another Admin existed
@@ -492,8 +554,9 @@ signed hosted-domain claim, without exposing tokens. Personal or consumer-domain
 users must be authorized by exact address.
 
 Adding/removing a rule shows affected currently logged-in users and exact
-address-over-domain behavior. Removing roles takes effect on the next request.
-The last Administrator guard is enforced transactionally.
+address-over-domain behavior. After activation, removing roles takes effect on
+the next request. The last-Administrator and actor-still-authorized guards are
+rechecked transactionally at request creation and activation.
 
 ### Chairperson suggestions and assignments
 
@@ -505,11 +568,13 @@ rule, and current assignment.
 Selecting suggestions creates/updates an exact address override with Ministry
 leader role and explicit Ministry assignments. If the address inherited domain
 roles, those roles are preselected because the exact rule replaces them.
-Admins confirm before saving. Duplicate emails/Members/Ministries are grouped
-and ambiguities shown, never silently guessed.
+Admins confirm before applying the resulting YAML configuration request.
+Duplicate emails/Members/Ministries are grouped and ambiguities shown, never
+silently guessed.
 
-An assignments editor supports manual additions/removals. Losing a current
-Chairperson role immediately suspends a `chair-seed` assignment during source
+An assignments editor supports manual additions/removals through the same YAML
+configuration-request path. Losing a current Chairperson role immediately
+suspends a `chair-seed` assignment as derived runtime state during source
 promotion, removes its Ministry row scope on the next request, and creates a
 persistent Admin review task/notification. Existing sessions are not trusted to
 retain cached scope. If no other active assignment remains, a Ministry-leader
@@ -519,9 +584,10 @@ Admin, or independently configured roles.
 The suspended list shows prior Member/Ministry/source evidence, suspension
 time, current source state, affected user/session, and role effects. An Admin
 may revoke/delete the assignment or explicitly restore it as `manual` after
-confirmation and an entered reason; restoration never silently rewrites the
-source. If the same active Chairperson relationship returns before a decision,
-the seed reactivates automatically and closes the task with an audit event.
+confirmation and an entered reason through an applied configuration request;
+restoration never silently rewrites the source. If the same active Chairperson
+relationship returns before a decision, the seed reactivates automatically and
+closes the task with an audit event.
 
 ## Manual ParishSoft refresh
 
@@ -582,12 +648,21 @@ eligible; the authoritative gate states are defined by the
 [purge data model](../data/spec.md#job-outbox-audit-and-purge-records).
 Draft, scheduled, active, and closed campaigns; parish configuration; users;
 shared integration state; and the last restorable backup cannot be selected.
-Purge preparation also requires that no other campaign is `draft`, `scheduled`,
-`active`, `closed`, `purging`, or `purge_cleanup_failed`; an historical purge
-cannot be started after successor preparation begins.
-An Admin must finish reconciliation and explicitly archive a closed campaign
-before it becomes purgeable. Existing campaign work is handled by the gate and
-quiescence stage below; irreversible in-flight work can delay readiness.
+Purge preparation also requires global Testing mode, a null current-campaign
+pointer, and no other campaign in `draft`, `scheduled`, `active`, `closed`,
+`purging`, or `purge_cleanup_failed`; an historical purge cannot be started
+after successor preparation begins. The target cannot still be the current-
+campaign pointer. An Admin must finish reconciliation, explicitly archive a
+closed campaign, and complete Return to Testing before it becomes purgeable.
+Existing campaign work is handled by the gate and quiescence stage below;
+irreversible in-flight work can delay readiness.
+
+The purge page and post-archive lifecycle checklist explain the recurring
+availability window: after Return to Testing and before the next draft is
+created. Outside that window the page remains viewable but names the blocking
+campaign/state and does not offer request creation. The system does not imply
+that an exceptional retention/deletion request can be executed mid-campaign;
+operators must plan it for this window.
 
 The workflow has these required stages:
 

@@ -39,13 +39,14 @@ state names independently.
 
 ### DOM-02: Campaign interval and lifecycle policy
 
-1. Implement pure policy functions that resolve parish-local start/end dates to
-   the authoritative half-open UTC interval, including gaps and folds.
+1. Implement pure policy functions that resolve campaign-local start/end dates
+   from the Campaign's IANA timezone snapshot to the authoritative half-open UTC
+   interval, including gaps and folds.
 2. Implement a lifecycle transition registry describing allowed source/target
    states, required guards, actor type, reauthentication, and audit action.
 3. Centralize predicates for portal access, scheduled work admission, structural
-   setting locks, reopen eligibility, archive eligibility, return to Testing,
-   and successor creation.
+   setting locks (including campaign timezone), reopen eligibility, archive
+   eligibility, return to Testing, and successor creation.
 4. Ensure date gates deny access/work at the exact boundary even if persisted
    lifecycle state temporarily lags the scheduler.
 5. Add exhaustive transition-table, DST, race-precondition, and property-style
@@ -67,8 +68,9 @@ DAT-02, BG-02, and ADM-04 through ADM-06.
 5. Build parameterized tests covering every role/capability/object-scope tuple,
    including immediate role and assignment revocation.
 
-Dependencies: ARC-04 and DAT-05. Portal and report work cannot pass its review
-gate until these policies are used server-side.
+Dependencies: DAT-05. ARC-04 consumes and enforces these pure policy functions;
+portal and report work cannot pass its review gate until that integration is
+complete.
 
 ### DOM-04: Shared presentation and client contracts
 

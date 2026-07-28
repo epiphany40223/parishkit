@@ -24,27 +24,35 @@ charts, and digest mail; templates do not independently recalculate metrics.
 ### RPT-02: Population and calculation library
 
 1. Implement effective live/test exclusion, active/inactive population,
-   eligibility/deliverability complements, first/latest response, local-day,
-   pledge, comparison, age-at-reference, and Ministry request calculations.
+   eligibility/deliverability complements, the ever-eligible historical cohort,
+   first/latest response, immutable campaign-timezone local-day, pledge,
+   comparison, age-at-reference, and Ministry request calculations.
 2. Define Include inactive control semantics independently from each report's
    base population and ensure denominators/percentages change coherently.
 3. Return typed unavailable/missing values instead of zero when source/mapping
    is incomplete.
 4. Add table-driven tests for every calculation, denominator zero, historical
-   snapshots, repeat submissions, source changes, and timezone boundary.
+   snapshots, repeat submissions, source changes, timezone boundary, and Parish
+   default changes that must not rebucket campaign history.
 
 ### RPT-03: Participation graph and campaign statistics
 
 1. Implement daily submissions, cumulative Families, and cumulative effective
    pledges on one interactive, titled, labeled, legend-bearing chart.
-2. Keep current and historical campaign population scope consistent and expose
-   source-as-of metadata.
-3. Implement statistics cards for active Families/Members, eligible and
+2. Materialize immutable complete CampaignDailyFactSet generations for exact
+   source/submission/scope/timezone inputs, with idempotent event-triggered
+   rebuilds, atomic publication, drift verification, and explicit updating/
+   stale-as-of states.
+3. Keep current-population and ever-eligible historical scope internally
+   consistent and expose source-as-of metadata.
+4. Implement statistics cards for active Families/Members, eligible and
    deliverable email, responses, effective pledge, and mapped comparison pledge
    using US formatting and `X out of Y (Z%)`.
-4. Share one chart-data/rendering service with PNG/PDF download and BG-07 digest.
-5. Test repeated responses, local days, missing financial data, parity, and
-   accessible tabular fallback.
+5. Share one fact-query/chart-rendering service with the accessible table,
+   PNG/PDF download, and BG-07 digest.
+6. Test repeated responses, source/eligibility changes, failed and concurrent
+   rebuilds, local days, missing financial data, pinned parity, stale labeling,
+   and accessible tabular fallback.
 
 ### RPT-04: Additional-information workflow report
 
@@ -92,11 +100,9 @@ charts, and digest mail; templates do not independently recalculate metrics.
 2. Generate one section/page per Ministry with name, active chair names,
    stewardship year, and rows derived from latest join/leave requests plus
    existing follow-up state.
-3. Map exact outcomes as follows: unresolved to a blank value, joined to
-   `Joined ministry`, leave confirmed to `Left ministry`,
-   declined to `Declined / no longer interested`, no response to `No response`,
-   duplicate to `Duplicate request`, and other to `Other` with its notes or
-   reference; leave human email/phone date columns blank where specified.
+3. Implement the exact outcome mapping defined by the
+   [follow-up-packet specification](../../specs/stewardship/reports/spec.md#multi-ministry-follow-up-packet),
+   and leave human email/phone date columns blank where specified.
 4. Implement PDF page breaks, XLSX sheets/sections, and CSV blank-row/repeated-
    header boundaries.
 5. Test deterministic ordering, empty Ministries, long content, leader scope,
@@ -130,10 +136,11 @@ charts, and digest mail; templates do not independently recalculate metrics.
 
 ## Review handoffs
 
-- Review Gate 3 covers RPT-01 through RPT-07 and RPT-09 and focuses on
-  calculation parity, role/column privacy, code access, export authorization,
-  operational log/export behavior, and formula safety.
-- Review Gate 4 covers RPT-08 publication/workflow links.
+- Review Gate 3 covers RPT-01 through RPT-07, the reporting/financial subset of
+  RPT-08, and RPT-09. It focuses on calculation parity, role/column privacy,
+  code access, export authorization, operational log/export behavior, and
+  formula safety.
+- Review Gate 4 covers the RPT-08 publication/action links.
 - Review Gate 5 completes scale, accessibility, and every-format validation.
 
 ## Completion criteria

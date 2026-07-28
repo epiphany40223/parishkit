@@ -32,6 +32,10 @@ sanitized on input and output.
 Production Compose contains:
 
 - `web`: Gunicorn-hosted Django application;
+- `config-installer`: the only service with write access to the Stewardship
+  configuration-authority directory;
+- target-specific `credential-installer-*` workers, each able to decrypt only
+  its own staged replacement and write only its own credential subdirectory;
 - `worker`: general Celery workers for polls, rendering, exports, publication,
   backup, purge, and cleanup;
 - `mail-dispatch`: a dedicated Celery worker for provider submission and link-
@@ -97,38 +101,76 @@ supported third-party contract.
 
 The package exposes a `pk-stewardship` console entry point and thin executable
 wrapper. Subcommands cover bootstrap, configuration validation, migration,
-health diagnostics, backup, and restore. Web-serving and worker commands remain
-container entry points that import package code. There is no console campaign
-purge; purge is intentionally a guarded Admin web workflow.
+health diagnostics, backup, operator-only secret escrow, and restore. Web-
+serving and worker commands remain container entry points that import package
+code. There is no console campaign purge; purge is intentionally a guarded
+Admin web workflow.
 
 ## Configuration and secrets
 
-Three layers are intentionally distinct:
+Configuration and runtime state are intentionally distinct:
 
 1. **Deployment configuration**: YAML/environment values required before the
    database is reachable, such as database/broker hosts, public origin, trusted
    proxy count, and credential-file paths.
-2. **Secret material**: files below `<root>/credentials`, written atomically as
+2. **Parish configuration authority**: schema-versioned YAML below
+   `<root>/config/stewardship/`. It contains parish profile, non-secret
+   integration settings, login rules/manual role mappings, campaign definitions,
+   content, schedules, share options, Ministry/fund mappings, and other parish-
+   specific operational settings. Immutable version documents are selected by
+   an atomically replaced active manifest; stable IDs make list entries and
+   cross-references mergeable and auditable.
+3. **Secret material**: files below `<root>/credentials`, written atomically as
    owner-only files. This includes Django signing/general-encryption keys,
    private email-link token keys, Google OAuth client secret, Workspace service-
-   account JSON, ParishSoft API key, Slack bot token, and backup credentials.
-3. **Web-managed configuration**: versioned PostgreSQL records for parish,
-   campaign, content, fund/Ministry mappings, roles, and schedules.
+   account JSON, ParishSoft API key, Slack bot token, backup-target credentials,
+   and versioned data-backup encryption keys. Operator recovery private material
+   for secret escrow is held off-host and never belongs to this directory.
+4. **PostgreSQL runtime state and applied snapshots**: runtime mode/lifecycle,
+   current-campaign pointer, source data, submissions, jobs, workflow decisions,
+   sessions, and audit remain database-authoritative. PostgreSQL also holds an
+   immutable canonical copy and normalized materialization of each applied YAML
+   version so transactions and historical campaigns can refer to an exact
+   configuration. Those rows cannot be edited independently and are not a
+   second configuration authority.
 
-This database-backed application configuration is an explicit exception to the
-general YAML rule because it is transactionally edited, audited, and retained
-per campaign. Import/export to YAML may be added later but is not an authority
-in the first release.
+The Admin UI remains the normal configuration editor. A save creates an
+optimistically versioned `ConfigurationChangeRequest` against the active YAML
+digest; web and ordinary workers have no writable configuration mount. The
+dedicated installer renders and schema/cross-reference-validates a candidate,
+writes/fsyncs an immutable version document, prepares its database
+materialization, atomically switches the active YAML manifest, and then
+activates the matching database snapshot. Only after both sides report the same
+digest does the UI call the request applied. A crash is recovered idempotently
+from the request, prepared snapshot, and active-manifest digest. While they
+differ, readiness and configuration-dependent mutations/background work fail
+closed; no process silently chooses one copy. Rollback creates and applies a
+new YAML version derived from a prior version rather than mutating history.
+
+Deployment configuration required to reach PostgreSQL is changed by the
+documented operator workflow, not the web installer. Dynamic runtime state is
+never exported to YAML merely because it names a parish or campaign.
 
 Secret UI controls show only presence, last replacement time, and a fingerprint
 safe for identification. They never return an existing secret. Replacement is
-staged, validated, atomically installed, and audited without value disclosure.
-Every path defaults below `PARISHKIT_ROOT` or `/opt/parishkit` and remains
-overridable through deployment configuration.
+submitted over the authenticated TLS page, immediately sealed to the public
+handoff key for that secret type, and retained only as an expiring ciphertext
+linked to a `SecretReplacementRequest`. The web process does not retain
+plaintext, possess a handoff private key, or have a writable credential mount.
+A target-specific installer sees only its queue, handoff private key, and one
+writable credential subdirectory; it decrypts in memory, validates/tests the
+candidate, atomically replaces the owner-only file, records the safe
+fingerprint, and destroys staged ciphertext. Consumers mount only the resulting
+individual file read-only and acknowledge the new fingerprint before the UI
+reports success. Failure or expiry destroys staging and leaves the old working
+credential installed. No installer mounts the whole credential directory or
+can claim another target's request. Every path defaults below `PARISHKIT_ROOT`
+or `/opt/parishkit` and remains overridable through deployment configuration.
 
 General application encryption uses a versioned symmetric keyring for manual
-Family codes, integration secrets stored in the database, and other reversible
-values. Every ciphertext envelope records its algorithm/version and key ID; one
+Family codes and other reversible values intentionally stored in PostgreSQL;
+integration secret values remain in credential files. Every ciphertext envelope
+records its algorithm/version and key ID; one
 key is active for writes and older keys are decrypt-only during rotation.
 Rotation installs and validates the new key, makes it active, re-encrypts
 retained values in idempotent transactional batches, verifies that no online
@@ -279,6 +321,14 @@ security event and preexisting-Administrator operational notifications defined
 by the Admin portal; notification delivery is not part of the grant transaction
 and cannot erase or delay its audit evidence.
 
+The no-reauthentication Administrator-grant policy is an explicit accepted
+product risk favoring low-friction role maintenance. Its controls are detective,
+not preventive: a compromised Admin session can create persistent access before
+notification is acted upon. The durable event, preexisting-Admin notification,
+CSRF/current-role checks, complete audit, and last-Admin guard are the selected
+compensating controls; implementations must not imply they provide the same
+protection as fresh authentication.
+
 Cookies are `Secure` in production, `HttpOnly`, `SameSite=Lax`, narrowly
 scoped, and rotated at login/privilege transition. Family and administration
 sessions are separate namespaces; acquiring one never grants the other.
@@ -360,6 +410,12 @@ production startup warns about values weaker than these defaults. Counter keys,
 logs, and notifications never contain plaintext codes. Error messages and
 timing do not distinguish unknown, inactive, or non-Parishioner codes.
 
+Attempts rejected by either Family-code sliding-window limiter still contribute
+exactly once to the deployment-wide detector, using only the same keyed,
+short-lived source-address and candidate fingerprints. Rejection never prevents
+aggregate WARNING/CRITICAL detection or causes a plaintext candidate to be
+retained.
+
 Valkey limiter storage is required for public routes that accept guessable
 credentials. If it is unavailable, Admin OAuth initiation/callback and manual
 Family-code submission fail closed before credential evaluation with the same
@@ -416,6 +472,12 @@ concurrent Family sessions:
 - long polls, publication, digests, exports, purge, and backups are always
   asynchronous; and
 - interactive traffic remains responsive while all worker categories run.
+
+The default participation graph meets these targets through immutable
+`CampaignDailyFactSet` materialization keyed by its exact source/submission/
+scope/timezone inputs. Source promotions and live submissions enqueue
+idempotent rebuild hints. Web, export, and digest rendering share those facts;
+no request performs one independent corpus aggregation per campaign day.
 
 Database indexes cover campaign/Family DUID, normalized email/domain, code
 fingerprint, the campaign-scoped access-token lookup digest with uniqueness,

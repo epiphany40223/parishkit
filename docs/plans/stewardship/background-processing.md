@@ -34,18 +34,20 @@ PostgreSQL is authoritative; Celery/Valkey only delivers execution hints.
 
 1. Enforce the go-live gate before old Testing work can mutate state.
 2. Delete only inventoried test submissions, workflows, sensitive audit, and
-   `testing_override` outbox detail in stable bounded batches with atomic
-   high-water checkpoints.
+   `testing_override` outbox detail plus Testing-only occurrence/fulfillment
+   rows in stable bounded batches with atomic high-water checkpoints.
 3. Verify no sensitive inventoried detail remains before `cleanup_complete`.
 4. Implement retry/cancel semantics that never restore deleted data and never
-   change global mode.
+   change global mode, including a CRITICAL `cleanup_failed` state after
+   automatic retry exhaustion.
 5. Test interruption between batches, stale hints, concurrent submissions,
    incorrect ownership/routing, and final readiness races.
 
 ### BG-04: Schedule revision, fulfillment, and mode routing
 
-1. Implement scheduler evaluation in parish timezone with persisted UTC due
-   instants and deterministic gap/fold behavior.
+1. Implement scheduler evaluation in the immutable campaign timezone with
+   persisted UTC due instants and deterministic gap/fold behavior; draft
+   timezone changes recompute only draft previews and resolved boundaries.
 2. Implement revision-specific occurrence and stable semantic fulfillment keys
    for initial, reminder, receipt, and digest work.
 3. Implement replacement/removal locking, safe cancellation, provider-unknown
@@ -77,30 +79,36 @@ PostgreSQL is authoritative; Celery/Valkey only delivers execution hints.
 
 1. Materialize one Family occurrence per eligible target/semantic slot with
    current head-recipient and deliverability evaluation at send time.
-2. Render versioned templates with eligible names, low-sensitivity manual code,
+2. Create distinct, idempotent initial-recovery occurrences when an eligible
+   nonresponder becomes deliverable after its initial occurrence, while sharing
+   the initial semantic fulfillment slot so only one delivery can succeed.
+3. Render versioned templates with eligible names, low-sensitivity manual code,
    opaque secure link, generic URL, parish/campaign values, and mode banner.
-3. Persist redacted message/recipient data, seal credential substitutions to the
+4. Persist redacted message/recipient data, seal credential substitutions to the
    token public key, and route provider submission only to `mail-dispatch`.
-4. Implement provider idempotency, accepted/failed/unknown outcomes,
+5. Implement provider idempotency, accepted/failed/unknown outcomes,
    reconciliation, bounded retry, authorized resend, and terminal sealed-value
    scrubbing including cancellation.
-5. Implement delivery pause pre-provider recheck, holds, close cancellation,
+6. Implement delivery pause pre-provider recheck, holds, close cancellation,
    and resume coalescing.
-6. Test recipient/privacy/routing, repeat rendering, provider timeouts,
-   suppression, source changes, pause races, and systemic failure.
+7. Test recipient/privacy/routing, repeat rendering, provider timeouts,
+   suppression clearing, contact correction, repeated deliverability
+   transitions, source changes, pause races, and systemic failure.
 
 ### BG-07: Submission confirmations and Admin digests
 
 1. Create one idempotent confirmation occurrence in the submission transaction;
    sending remains asynchronous and does not affect accepted response state.
 2. Implement daily post-midnight digest with previous-local-day statistics and
-   participation chart artifact shared with reports.
+   participation chart artifact from the exact ready CampaignDailyFactSet
+   shared with reports; wait/retry rather than substituting another generation.
 3. Implement weekly actionable additional-information digest plus correction
    section for previously mailed superseded/withdrawn items.
 4. Apply Testing/production routing, delivery-pause holds, campaign-close rules,
    and archive prerequisites.
-5. Test local-day boundaries, empty/no-recipient behavior, missed/coalesced
-   digests, chart parity, corrections, and repeat-safe delivery.
+5. Test local-day boundaries, fact-build delay/failure, empty/no-recipient
+   behavior, missed/coalesced digests, pinned chart parity, corrections, and
+   repeat-safe delivery.
 
 ### BG-08: Export and graph workers
 

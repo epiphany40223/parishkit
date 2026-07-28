@@ -15,7 +15,8 @@ changes reload without rebuilding the application image.
 
 Production Compose references immutable GHCR image tags/digests, never a host
 checkout. It includes web, general worker, dedicated mail-dispatch worker,
-scheduler, PostgreSQL, Valkey, and Caddy services from the
+scheduler, configuration installer, target-specific credential installers,
+PostgreSQL, Valkey, and Caddy services from the
 [architecture](../architecture/spec.md#technology-and-component-model). Only
 Caddy publishes host ports. PostgreSQL/Valkey are on an internal network;
 workers/scheduler have no inbound public ports. Development Compose preserves
@@ -40,7 +41,7 @@ still explicitly authorizes release-tag push.
 
 | Path | Stewardship use |
 | --- | --- |
-| `config/` | Deployment YAML and non-secret Compose/operator files |
+| `config/` | Deployment YAML, versioned Stewardship authority, active manifest, and non-secret Compose/operator files |
 | `credentials/` | Google, ParishSoft, Slack, application, backup secrets |
 | `cache/` | Tenant-scoped short-lived ParishSoft/cache artifacts |
 | `logs/` | Optional JSONL/container log exports |
@@ -62,11 +63,35 @@ worker, report/export jobs, and ordinary maintenance commands cannot read the
 private token-key path. Images, Compose files, logs, exceptions, backup
 metadata, and support bundles never contain credential values.
 
-The application backup container does not receive the online token private-key
-mount. The backup manifest records its fingerprint; the private key is retained
-through the separately authorized operator secret-backup process and must be
-available for restore validation. Copying it into an application database,
-report, or ordinary backup task is prohibited.
+Only `config-installer` mounts `<root>/config/stewardship` read-write; other
+online services either mount its active manifest/versions read-only for startup
+verification or consume the matching PostgreSQL materialization. Each
+`credential-installer-*` instance mounts a separate target subdirectory read-
+write plus only its own handoff private key and queue. Consumers mount the
+resulting individual credential file read-only. Neither installer class receives
+the whole credentials directory, broad host paths, Docker socket, campaign
+answers, or unrelated secrets. Compose and runtime tests inspect these mounts
+and service identities.
+
+The application backup container receives only its target credential and active
+data-backup encryption key as individual read-only mounts. It receives no OAuth,
+ParishSoft, mail, Slack, Django, general-encryption, or token-key secret. The
+backup manifest records credential/key fingerprints and key IDs only. All
+credential files, including every retained data-backup decryption key version,
+are protected by the separately authorized operator secret-escrow process below;
+copying them into an application database, report, or ordinary backup task is
+prohibited.
+
+`pk-stewardship backup-secrets` runs only in an explicit operator profile with
+the credential files mounted read-only and no application database access. It
+creates a versioned manifest and encrypted secret bundle at a distinct off-host
+escrow target. The bundle is encrypted to one or more operator-controlled
+recovery public keys or an equivalent external recovery service; the
+corresponding private recovery material is never stored on the application VM
+and the bundle is never encrypted solely by a key contained within itself.
+Restore drills verify that an authorized operator can combine a data-backup
+manifest with the matching secret bundle without exposing secret values in
+logs. Normal application services cannot invoke this profile.
 
 ## Production ingress and TLS
 
@@ -76,9 +101,10 @@ and proxies dynamic traffic. Production requires a DNS hostname pointing to the
 VM and inbound ports 80/443. Caddy's data/config volumes persist account and
 certificate state across upgrades.
 
-Caddy has no route for `/health/live` or `/health/ready`; those paths receive
-the same public not-found response as any unknown route. Container health checks
-call the application service directly over the internal Compose network.
+Caddy has explicit highest-priority matchers that return the ordinary public
+not-found response for `/health/live` and `/health/ready` before the catch-all
+application reverse proxy. Container health checks call the application service
+directly over the internal Compose network.
 
 The application trusts forwarded scheme/client information only from the
 single configured proxy hop. Caddy access logs redact `/access/<token>` path
@@ -99,9 +125,14 @@ Documented first deployment order is:
 
 1. Create operator-owned config/credential/volume locations.
 2. Start PostgreSQL/Valkey and verify health.
-3. Run `pk-stewardship migrate` as a one-shot container.
-4. Run `pk-stewardship bootstrap` if not restoring.
-5. Start web/worker/scheduler/proxy.
+3. Run the pre-migration phase of `pk-stewardship bootstrap` if not restoring;
+   it creates/validates deployment configuration, the minimal initial-Admin
+   Stewardship YAML authority, installer handoff keys, and signing/encryption
+   secret files without requiring application tables.
+4. Run `pk-stewardship migrate` as a one-shot container, then let bootstrap
+   validate the migrated empty database and import the initial applied YAML
+   snapshot/Admin marker.
+5. Start web/worker/scheduler/installers/proxy.
 6. Complete the first-Admin wizard.
 
 Application containers do not race to run migrations. A production upgrade
@@ -122,14 +153,22 @@ creates one consistent backup set containing:
 
 - PostgreSQL logical/custom-format dump and schema/version metadata;
 - uploaded media/branding required by retained campaigns;
-- deployment configuration needed to locate services; and
-- credential files only when the approved encrypted target is authorized to
-  hold them, otherwise an explicit credential manifest/fingerprint list.
+- deployment configuration plus every retained Stewardship YAML version and
+  active manifest needed to match database configuration snapshots; and
+- an explicit credential/key manifest and fingerprint list, never credential
+  values or files.
 
 Backups are encrypted before leaving the VM and transferred to an
 operator-configured off-host target. Defaults retain 30 daily and 12 monthly
 successful backups. Failure to complete a successful backup within 24 hours is
 CRITICAL. Backup logs contain sizes/digests/durations, never contents/secrets.
+
+Each data-backup manifest records its encryption-key ID. Rotation stages a new
+data-backup key, successfully escrows and verifies the updated credential set,
+then activates the key for new backups. Every old decryption key remains in
+verified off-host escrow until all backups using it expire or are re-encrypted;
+retirement is blocked otherwise. The data-backup key never encrypts its own
+secret-escrow bundle.
 
 Backup creation uses PostgreSQL-supported consistency; copying a live data
 directory is prohibited. A manifest has application version, schema migration,
@@ -151,10 +190,19 @@ explicit replace-existing option, exact target identity and backup selection,
 and a separate destructive confirmation; it never infers permission from a
 non-empty target.
 
+Before either restore mode begins, the operator restores the manifest-matching
+credential set from independently held secret escrow and verifies fingerprints
+without printing values. Missing escrow, recovery material, or a required
+historical data-backup key blocks restore with a sanitized diagnostic.
+
 Both modes verify manifest/digests, application/schema compatibility, credential
 availability, and the target-mode precondition before writing. They restore
-database/media/config, run permitted forward migrations, validate one parish,
-check expected ParishSoft organization without mutation, and start in Testing
+database/media/config, run permitted forward migrations, and require the
+restored active Stewardship YAML digest to match an applied/prepared database
+configuration snapshot. A recoverable installer checkpoint is completed
+idempotently; an unexplained mismatch blocks readiness and requires operator
+diagnosis rather than choosing either copy. Restore then validates one parish,
+checks expected ParishSoft organization without mutation, and starts in Testing
 mode with the scheduler, ordinary worker admission, production outbox dispatch,
 and Family mail disabled. Before the web service becomes externally ready,
 restore atomically sets the durable `restore_review_required` gate. That gate
@@ -177,13 +225,14 @@ The gate can be cleared only after applicable readiness passes and a freshly
 authenticated Admin reviews and confirms the proposed state-aware release
 defined by the
 [Admin workflow](../admin-portal/spec.md#restore-release). A release that yields
-`scheduled` or `active` enters Production and enables normal work; release with
-no open campaign remains Testing and leaves Family/live-mail behavior disabled
-by campaign state. Clearing the gate, reconciling lifecycle state, selecting
-mode, materializing holds, and enabling the corresponding work admission are
-one audited transaction. Failed or abandoned review leaves the restore gate,
-Family access, and live delivery disabled while restricted maintenance work
-remains available.
+a sole current `scheduled`, `active`, or `closed` campaign enters Production;
+`closed` admits only its ordinary post-campaign work and does not enable Family
+access or live Family mail. A `draft`, archived/purged history, or no current
+campaign releases into Testing. Clearing the gate, reconciling lifecycle state,
+selecting mode, materializing holds, and enabling the corresponding work
+admission are one audited transaction. Failed or abandoned review leaves the
+restore gate, Family access, and live delivery disabled while restricted
+maintenance work remains available.
 
 Restore review calculates a delivery-uncertainty window from the backup's
 database-snapshot instant through the eventual mail-release instant. It creates
@@ -209,8 +258,9 @@ application checks, and record success/failure metadata. The target recovery
 point objective is 24 hours; recovery time is documented/measured rather than
 promised as HA.
 
-The most recent successful off-host backup reference is exposed to the guarded
-campaign purge workflow. A stale/missing backup blocks purge.
+Campaign purge accepts only the verified, post-quiescence backup created for
+that PurgeRequest. Ordinary scheduled backup references never satisfy purge
+readiness.
 
 ## Temporary retention and housekeeping
 
@@ -222,9 +272,11 @@ staging, failed wizard staging, old static bundles, expired sessions, worker
 results, and rotated operational logs have documented cleanup jobs.
 
 Cleanup is idempotent, scoped to explicit subdirectories/records, and cannot
-follow unsafe symlinks or broad/unresolved paths. It never deletes promoted
-snapshots, submissions, audit history, or backups under an operational cache
-policy.
+follow unsafe symlinks or broad/unresolved paths. Generic operational-cache
+cleanup never deletes source snapshots, submissions, audit history, or backups.
+Only the dedicated source-compaction service may thin unprotected snapshot
+corpora, under the normative retention and reference guards in the
+[data specification](../data/spec.md#source-snapshot).
 
 Live campaign data otherwise remains indefinitely until the Admin web purge
 defined by the [Admin specification](../admin-portal/spec.md#campaign-purge).
@@ -269,14 +321,22 @@ Normal CI requires no real ParishSoft, Google, email, Slack, backup, or other
 external credential and makes no live network calls. Dependencies are injected
 and external responses use fakes/redacted fixtures.
 
-`pytest-cov` enforces at least 80% line coverage across
-`src/parishkit/stewardship` and any general `src/parishkit` modules newly added
-or materially changed by this project. Pre-existing unrelated tools do not enter
-this new gate merely because they share the package root. Authorization, Family
-credential verification and access-token exchange, submission transaction,
-three-way reconciliation, outbox idempotency, ParishSoft publication,
-encryption/signing-key rotation, secret replacement, rate limiting, and purge
-state transitions receive exhaustive branch-oriented tests.
+`pytest-cov` always measures `src/parishkit/stewardship` plus the exact shared
+`src/parishkit` module paths listed in the checked-in
+`coverage-stewardship.toml` manifest. The manifest may add shared modules but
+cannot remove the stewardship package; missing, duplicate, non-Python, or
+out-of-repository paths fail CI. Any shared module implemented or materially
+extended for stewardship must be added to the manifest in the same change;
+pre-existing unrelated tools remain excluded.
+
+Coverage runs with branch measurement. CI reads machine-readable coverage
+output and independently requires at least 80% line coverage and at least 80%
+branch coverage across the combined manifest scope; a blended percentage cannot
+mask either failure. Authorization, Family credential verification and
+access-token exchange, submission transaction, three-way reconciliation,
+outbox idempotency, ParishSoft publication, encryption/signing-key rotation,
+secret replacement, rate limiting, and purge state transitions receive
+exhaustive branch-oriented tests.
 
 Required suites include:
 
@@ -290,6 +350,10 @@ Required suites include:
   boundary;
 - authentication tests proving that domain rules require matching verified
   email and signed Google hosted-domain claims, while exact-address rules do not;
+- configuration-authority tests for canonical YAML, schema migration, stale
+  base-digest denial, immutable version/manifest activation, crash at every
+  installer checkpoint, exact YAML/database digest recovery, fail-closed
+  unexplained mismatch, and rollback-as-new-version;
 - administration-login tests for early-middleware token-bucket and specific
   application thresholds, trusted source address handling, rejection before
   OAuth state/session allocation, keyed identity counters, progressive
@@ -305,8 +369,10 @@ Required suites include:
   and bounded per-process fallback, generic/audited invalid-token handling,
   access-token exchange and revocation plus digest uniqueness/index use,
   MAC dual-read rotation/backfill/cross-key collision/retirement, encryption and
-  signing-key rotation/migration/retirement, and atomic secret replacement
-  rollback;
+  signing-key rotation/migration/retirement, target-key-sealed secret staging,
+  expiry/destruction, cross-target claim denial, consumer fingerprint
+  acknowledgement, absence of plaintext from storage/logs, and atomic secret
+  replacement rollback;
 - reusable-token tests for digest-only exchange, public-key sealing,
   dispatch/rotation-only private-key mounts and decryption, failure to decrypt
   from web/general-worker service profiles, repeat-mail rendering, atomic token
@@ -370,19 +436,26 @@ At minimum, end-to-end tests demonstrate:
    deployment startup with Family access gated, restricted maintenance refresh/
    test-send/hold work while ordinary work remains blocked, and atomic Admin-
    approved release of restored `draft`, future `scheduled`, current `active`,
-   expired-to-`closed`, and already `closed`/`archived` campaigns. Interrupted
-   purge state blocks release pending explicit recovery.
+   expired-to-`closed`, and already `closed`/`archived` campaigns. Both closed
+   cases remain Production without Family/live-Family-mail access; draft,
+   archived, purged, and no-current cases release to Testing. Interrupted purge
+   state blocks release pending explicit recovery.
    First-Admin setup additionally proves that correlated source-load polling
    renews idle only with a current worker heartbeat, never renews the two-hour
    watchdog or absolute expiry, stops renewing when the page/task ends, and
    watchdog/expiry cleanup prevents a late worker from restoring discarded
    staging. A simulated two-hour overrun is treated as a failed/stuck import and
    leaves redacted diagnostic correlation for operator investigation.
+   Wizard and later Admin edits additionally prove that authoritative YAML and
+   the active PostgreSQL snapshot expose one matching digest, every induced
+   installer interruption is recoverable without partial configuration, and
+   sealed credential replacement cannot be claimed by the wrong target.
 2. Google allow/deny, exact-address override, last-Admin guard, immediate role
-   revocation, immediate Administrator grant with durable dashboard event and
-   preexisting-Admin notification/retry, assigned-Ministry scoping, immediate
-   suspension after a seeded Chairperson relationship disappears, auto-role
-   cleanup, manual restoration, and source-return reactivation.
+   revocation after applied-YAML activation, immediate Administrator grant upon
+   activation with durable dashboard event and preexisting-Admin notification/
+   retry, assigned-Ministry scoping, immediate runtime suspension after a
+   seeded Chairperson relationship disappears, auto-role cleanup, YAML-backed
+   manual restoration, and source-return reactivation.
 3. Testing email rerouting, mandatory Family-facing test acknowledgments,
    segregated test submission, blocked transition with in-flight test delivery,
    aggregate creation, go-live admission gating, resumable bounded cleanup of
@@ -393,6 +466,9 @@ At minimum, end-to-end tests demonstrate:
    guarded pre-start withdrawal cancels future live work, returns atomically to
    Testing/draft, and unlocks structural settings, while an active campaign and
    unresolved provider-submitting/delivery-unknown work cannot be withdrawn.
+   Production readiness locks the Campaign timezone snapshot; later Parish
+   timezone changes do not alter its boundaries, schedules, digests, or
+   historical report buckets.
 4. Full/delta refresh success, interrupted/invalid load retaining prior truth,
    new/inactive/reactivated Family behavior, and non-overlap/manual coalescing.
 5. No-change Family submission, every census field, proposed/terminal Member,

@@ -52,10 +52,11 @@ Execute in this order:
    safe placeholders.
 2. **DOM-01** — establish domain vocabulary and decision records in that
    package skeleton.
-3. **ARC-02** — integrate shared ParishKit configuration, paths, logging, and
-   startup validation.
+3. **ARC-02** — integrate shared ParishKit configuration, define the versioned
+   Stewardship YAML authority, paths, logging, and startup validation.
 4. **OPS-01** — start the development/production Compose topology with web,
-   general worker, mail-dispatch, scheduler, PostgreSQL, Valkey, and Caddy.
+   config/credential installers, general worker, mail-dispatch, scheduler,
+   PostgreSQL, Valkey, and Caddy.
 5. Start **OPS-09** with fast lint/format/Markdown/unit/migration checks and
    scoped coverage reporting.
 6. Start **DOM-05** with deterministic clock/timezone helpers and an acceptance
@@ -78,7 +79,8 @@ and lifecycle foundations before collecting parish data.
 
 ### 1A: Base data and lifecycle
 
-1. **DAT-01** — parish/configuration/audit/session base records.
+1. **DAT-01** — applied-YAML/change/secret-request, parish, audit, and session
+   base records.
 2. **DAT-02** — campaigns, schedules, lifecycle constraints, and boundary
    occurrences.
 3. **DOM-02** — interval resolution and lifecycle policies over those records.
@@ -93,7 +95,8 @@ and lifecycle foundations before collecting parish data.
    throttling, and unconfigured-state behavior.
 3. **DAT-04** then **ARC-05** — Family campaign identity, code/token storage,
    sessions, exchange, guessing defense, and key migration.
-4. **ARC-06** — separate public/private token keyring and mail-dispatch mount.
+4. **ARC-06** — config/target-secret installers, sealed handoff, separate token
+   keyrings, and mail-dispatch mount.
 5. **ARC-07** — audit, privacy, optimistic concurrency, and validation-error
    primitives.
 6. Begin **ARC-08** and complete **DOM-04** shared responsive/accessibility/
@@ -124,7 +127,8 @@ Pause all Phase 2 work. Apply the
 - Google/domain/address authorization and immediate revocation;
 - Family code/token/session/throttling threat model;
 - key rotation and service mounts;
-- configuration/secret/log redaction and Caddy trust boundaries; and
+- YAML/database activation and crash recovery, target-scoped secret installers,
+  configuration/secret/log redaction, and Caddy trust boundaries; and
 - restart/migration durability.
 
 Exit only with no unresolved validated Critical, High, or Medium findings and
@@ -142,7 +146,7 @@ Execute in this dependency order:
    admission checks.
 3. **BG-05** — full/delta/manual ParishSoft refresh and atomic promotion.
 4. **ADM-02** — bootstrap and first-Admin wizard, including staged load
-   and two-hour watchdog.
+   and the specified hard setup watchdog.
 5. **ADM-03** — dashboard, indicators, parish/integration configuration, and
    secret tests.
 6. **ADM-04** — campaign editor, content/templates, schedules, previews, and
@@ -153,7 +157,10 @@ Execute in this dependency order:
 Phase demonstration:
 
 - Empty deployment to completed first campaign in Testing.
-- Aborted/expired wizard leaves no product configuration or staged secret.
+- Applied YAML and PostgreSQL digests match after every wizard/editor save;
+  an induced installer crash fails closed and resumes without partial config.
+- Aborted/expired wizard leaves no active product configuration, plaintext, or
+  staged secret.
 - Valid full and delta refresh promote atomically; invalid or interrupted loads
   preserve prior truth.
 - Active/inactive/reactivated Families receive stable campaign codes.
@@ -205,6 +212,9 @@ Phase demonstration:
 
 Pause Phase 4. Run the review protocol with special attention to:
 
+- first-Admin staging, abort/expiry cleanup, and secret replacement/testing;
+- SourceMutationLease fencing, full/delta validation, and atomic snapshot
+  promotion/fallback;
 - immutable submission transactions and derived-work rollback;
 - three-way merge/provenance and test/live isolation;
 - every Family authentication/boundary/session path;
@@ -326,8 +336,9 @@ focused review passes.
 ### 6C: Exceptional purge
 
 1. Complete PurgeRequest/gate/batch behavior from **DAT-09**.
-2. **ADM-10** guarded web inventory, quiescence, backup freshness,
-   confirmations, status, and retry UI.
+2. **ADM-10** guarded web inventory, post-Return-to-Testing/pre-successor
+   eligibility, quiescence, backup freshness, confirmations, status, and retry
+   UI.
 3. **BG-11** — implement purge execution/recovery under BG-01 while preserving
    all state transitions and checkpoints from DAT-09.
 4. Exercise purge only in disposable/restored test environments until Review

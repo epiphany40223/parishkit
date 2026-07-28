@@ -81,10 +81,13 @@ recorded quiescence instant all succeed. Retry uses the same request-scoped
 idempotency key until an attempt succeeds; a partial upload never qualifies as
 evidence.
 
-All schedules are evaluated in the parish timezone but persisted as UTC due
-instants. DST folds run once; nonexistent local times run at the first valid
-instant after the gap. Changing timezone causes future occurrences to be
-recomputed, never already successful ones.
+All campaign schedules are evaluated in that Campaign's immutable IANA timezone
+snapshot but persisted as UTC due instants. DST folds run once; nonexistent
+local times run at the first valid instant after the gap. Changing a draft's
+campaign timezone recomputes its resolved boundaries and future previewed due
+instants before Production readiness. The timezone cannot change once the
+campaign is scheduled, so live and historical occurrences are never rebucketed
+or recomputed because the Parish default changes.
 
 ### Campaign lifecycle boundaries
 
@@ -116,12 +119,15 @@ specified reason, and the close occurrence is replaced only if every change can
 commit. Provider-submitting or delivery-unknown affected rows reject the whole
 transaction; no partial end-date or schedule change is visible.
 
-Portal access, submission, and mail admission always check both lifecycle state
-and the authoritative resolved half-open interval. They deny work immediately
-at close and never wait for the stored transition; similarly, they do not admit
-live work before start merely because a stale state exists. Boundary recovery
-therefore reconciles durable state and side effects without creating an access
-or delivery gap.
+Family portal access, submission, invitation, and reminder admission always
+check both lifecycle state and the authoritative resolved half-open interval.
+They deny that work immediately at close and never wait for the stored
+transition; similarly, they do not admit it before start merely because a stale
+state exists. Receipts and Admin daily/weekly reporting mail whose covered event
+or local-day interval completed while the campaign was active remain eligible
+for their explicit post-close hold/resolution and digest policies. Boundary
+recovery therefore reconciles durable state and side effects without creating
+an access or delivery gap.
 
 ### Production-transition cleanup
 
@@ -133,18 +139,23 @@ recheck the gate before mutation. Source refresh, cleanup itself, and
 operational notifications are the only admitted background work.
 
 The cleanup worker selects only rows captured by the request inventory and
-deletes them in bounded transactions ordered by stable primary key. Each batch
-commits its high-water checkpoint and deleted counts with the deletion, making
-retry safe after interruption. It validates campaign ownership and immutable
-`testing_override` routing on every batch, never follows broad cascades, and
+deletes them in bounded transactions ordered by stable primary key. This
+includes Testing submissions/workflows/audit detail, `testing_override` outbox
+rows, and their Testing-only ScheduleOccurrence and ScheduleFulfillment rows.
+Each batch commits its high-water checkpoint and deleted counts with the
+deletion, making retry safe after interruption. It validates campaign ownership
+and immutable Testing routing on every batch, never follows broad cascades, and
 cannot select live or operational data. Completion verifies that no inventoried
 sensitive Testing detail remains before marking the request
 `cleanup_complete`.
 
 The worker never changes global mode or Campaign lifecycle. Those changes occur
 only in the final Admin-confirmed transaction. Cleanup failure enters retry wait
-with sanitized status; cancellation stops at a safe batch boundary, releases
-the gate transactionally, and leaves completed deletions intact.
+with sanitized status. Exhausting automatic retries enters durable
+`cleanup_failed`, retains the gate/checkpoints, emits a deduplicated CRITICAL
+event, and offers explicit Admin retry or safe cancellation. Cancellation stops
+at a safe batch boundary, releases the gate transactionally, and leaves
+completed deletions intact.
 
 ### Schedule replacement and removal
 
@@ -293,9 +304,18 @@ recipient messages or systemic-provider failures.
 
 The initial schedule sends once to each qualifying Family. A Family becoming
 active after the initial occurrence receives one catch-up initial invitation
-after the source promotion. Reminders use the same no-submission rule. A
-responder never receives a later reminder even if it proposed email opt-out or
-submits again.
+after source promotion. The same catch-up applies when an already eligible
+nonresponder transitions from non-deliverable to deliverable after the initial
+occurrence because source contact changed or provider suppression was cleared.
+The recovery occurrence has a distinct key containing the durable deliverability
+generation, while sharing the initial invitation's semantic fulfillment slot.
+It is created once per qualifying transition, and pre-dispatch checks require
+the campaign to remain open, the Family to remain eligible/deliverable and
+without a live response, and no initial invitation to have succeeded. A later
+transition may create another recovery attempt after a terminal failure, but no
+more than one initial semantic delivery can succeed. Reminders use the same no-
+submission rule. A responder never receives a later reminder even if it proposed
+email opt-out or submits again.
 
 When recovery finds multiple overdue Family-mail occurrences for one campaign
 and Family, it selects at most one for delivery. If no initial invitation has
@@ -371,7 +391,7 @@ exists, it creates no outbox row and records the non-error audit action
 submission still commits.
 
 A receipt contains no sensitive answers or credentials. Its stored UTC
-submission instant is rendered in the configured parish timezone with timezone
+submission instant is rendered in the immutable campaign timezone with timezone
 abbreviation; asynchronous email rendering never assumes a browser timezone.
 A delivery failure does not roll back the already accepted submission; it is
 visible/retryable to Admins. In Testing, it routes only to the test recipient.
@@ -398,7 +418,10 @@ Admin-configurable, send:
   pledge statistics.
 
 Metrics are snapshotted at digest generation with data-as-of/source snapshot
-metadata. Later source/status changes do not rewrite the sent digest.
+metadata and the exact ready `CampaignDailyFactSet`. Digest execution waits and
+retries while that exact generation is building; a failed materialization makes
+the digest visibly failed/retryable rather than substituting stale or mixed
+facts. Later source/status changes do not rewrite the sent digest.
 
 If multiple daily digest occurrences are overdue at recovery, the system sends
 one recovery digest per campaign covering the complete missed local-date range.
@@ -473,6 +496,7 @@ including:
 - scheduler/worker health preventing due work;
 - sustained distributed administration-login or Family-code guessing abuse;
 - publication ambiguity after an external write;
+- exhausted Production-transition cleanup;
 - failed backup beyond RPO; or
 - purge inconsistency/exhausted cleanup.
 

@@ -29,9 +29,9 @@ tokens, and existing Family sessions. Enabling it revokes Family sessions; no
 Family route accepts or buffers answers until the Admin completes state-aware
 restore release. Live Production Family access resumes only when that release
 produces an `active` campaign in Production. A released `draft` in Testing may
-provide the separate Administrator-enabled rehearsal access described below and
-follows the Testing date-gating rule above; every other resulting state shows
-its ordinary no-campaign, before-start, or ended page.
+provide the Testing rehearsal access described below and follows the Testing
+date-gating rule above; every other resulting state shows its ordinary no-
+campaign, before-start, or ended page.
 
 The manual credential is exactly eight case-insensitive ASCII letters `A`-`Z`.
 Spaces/hyphens may be stripped for friendly entry, but no digits or additional
@@ -269,11 +269,11 @@ eligible Family-head address exists, it queues the receipt defined by
 [background processing](../background-processing/spec.md#submission-confirmation).
 Having no deliverable recipient is a recorded non-error and never prevents the
 submission. The receipt gives parish, campaign, Family display name, UTC-derived
-submission time rendered in the configured parish timezone with its timezone
+submission time rendered in the campaign timezone snapshot with its timezone
 abbreviation, and contact/help information but no census, Ministry, additional-
 text, pledge, code, or secure-token values. Browser confirmation/history pages
-still render timestamps in the browser timezone; email uses parish time because
-no browser context exists when the worker renders it.
+still render timestamps in the browser timezone; email uses campaign time
+because no browser context exists when the worker renders it.
 
 ## Repeat visits and source changes
 

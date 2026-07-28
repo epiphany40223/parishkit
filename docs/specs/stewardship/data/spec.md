@@ -28,11 +28,28 @@ retained as ordinary rendered content.
 
 ### Parish and integrations
 
-There is exactly one `Parish` record containing the display name, main website
-URL, IANA timezone, valid US main phone number, public origin, branding, and
-active configuration version. Logo uploads produce normalized large, menu,
-icon, and favicon variants. Accepted inputs are PNG, JPEG, or WebP; files are
-decoded and re-encoded before use.
+`AppliedConfigurationVersion` is the immutable database snapshot of one
+schema-versioned authoritative Stewardship YAML document. It records YAML
+version ID and digest, schema version, predecessor, canonical non-secret
+document, normalized-materialization status/digest, activation instant, actor/
+request, and validation evidence. At most one version is active. The active row
+must match the atomically selected YAML manifest digest; runtime code cannot
+edit a normalized configuration row directly.
+
+`ConfigurationChangeRequest` records requested patch, base digest, actor,
+validation/errors, candidate digest, installer checkpoints, and state:
+`staged`, `validating`, `prepared`, `yaml_activated`, `applied`, `failed`, or
+`cancelled`. The installer state machine is idempotent. A stale base fails
+without changing YAML; a crash after YAML activation leaves the application
+fail-closed until the prepared matching database snapshot is activated.
+
+There is exactly one materialized `Parish` row for each applied configuration
+version containing the display name, main website URL, IANA timezone, valid US
+main phone number, and branding references. Public origin remains solely
+authoritative in deployment configuration and is not duplicated as an editable
+Parish value. Logo uploads produce normalized large, menu, icon, and favicon
+variants. Accepted inputs are PNG, JPEG, or WebP; files are decoded and re-
+encoded before use.
 
 One versioned `SystemConfiguration` holds the global `testing` or `production`
 mode, single valid Testing recipient, current campaign pointer, durable
@@ -45,16 +62,25 @@ ID, backup snapshot instant, activation time, and release state/proposed-state
 evidence. It is cleared only by the state-aware release transaction defined in
 operations, which updates current Campaign state and global mode atomically.
 
-Integration records contain non-secret settings and credential fingerprints:
-ParishSoft expected organization, Google OAuth/Workspace delegated identity,
-outgoing sender/reply address, optional Slack channel, and backup target.
-Secret values remain in credential files.
+Applied integration records materialize non-secret YAML settings and credential
+fingerprints: ParishSoft expected organization, Google OAuth/Workspace delegated
+identity, outgoing sender/reply address, optional Slack channel, and backup
+target. Secret values remain in credential files.
+
+`SecretReplacementRequest` records target type, sealed-staging reference and
+expiry, actor/reauthentication, expected prior fingerprint, validation/test and
+installer checkpoints, resulting safe fingerprint, consumer acknowledgement,
+and terminal outcome. It never stores plaintext. A target-specific uniqueness
+constraint permits only one nonterminal request per credential target; only the
+matching installer identity may claim it. Expiry/failure cleanup removes the
+sealed payload while preserving non-secret audit metadata.
 
 ### Campaign
 
 A `Campaign` includes:
 
 - UUID, unique human name, optional stewardship year label, and lifecycle state;
+- an IANA campaign-timezone snapshot, initialized from the Parish timezone;
 - local start/end dates and their resolved UTC boundary instants;
 - enabled census, Ministry, and financial modules;
 - references to the global mode transitions under which it was exercised;
@@ -68,6 +94,13 @@ A `Campaign` includes:
 - configurable share-option versions;
 - additional-information enabled flag; and
 - daily/weekly Admin digest schedules.
+
+Every configurable Campaign field above is materialized from and references the
+exact `AppliedConfigurationVersion` that defined it. Lifecycle state, global
+mode references, delivery/workflow state, and other runtime facts remain
+PostgreSQL-authoritative and are not written back into YAML. A configuration
+change creates a new applied version and normalized Campaign configuration while
+preserving prior versions for submissions, messages, reports, and audit.
 
 Database constraints prevent overlapping active/scheduled intervals where both
 campaigns could become active, and ensure at least one module is enabled. The
@@ -91,8 +124,11 @@ reject it after the campaign has become `active`.
 Initial Production readiness may move `draft` to `scheduled` before the
 resolved start or directly to `active` within the half-open interval. The
 transaction rejects a commit at/after close and locks structural settings in
-either successful state. Direct activation creates already-due live work under
-the ordinary stable idempotency and fulfillment keys.
+either successful state, including the campaign-timezone snapshot. Every
+campaign boundary, schedule occurrence, digest day, report bucket, and
+campaign-local rendering thereafter uses that immutable snapshot rather than
+the mutable Parish default. Direct activation creates already-due live work
+under the ordinary stable idempotency and fulfillment keys.
 
 The guarded reopen transition moves `closed` directly to `active` only when its
 proposed extended closing instant is after the transaction time. The end-date,
@@ -165,17 +201,57 @@ success. Resolution transitions and resend creation follow the
 `SourceSnapshot` records form an ordered history. Each stores type (`full` or
 `delta`), start/completion/promotion times, ParishSoft organization ID,
 collection counts, validation result, source watermark/change cursor, and a
-content digest.
+content digest. These lightweight manifests remain indefinitely and record
+whether their complete corpus is still reconstructable or has been compacted.
 
-Normalized versioned tables store Family, Member, Ministry, roster, fund,
-pledge, and contribution facts associated with a snapshot. Implementations may
-deduplicate unchanged entity payloads, but querying a snapshot must reproduce
-one coherent corpus. Short-lived HTTP cache files are operational artifacts,
-not durable snapshots, and may be expired normally.
+Normalized versioned tables store canonical Family, Member, Ministry, roster,
+fund, pledge, and contribution payloads by content digest. Content-addressed
+deduplication is mandatory: a snapshot-to-version membership map reuses the
+same immutable version whenever identity and canonical payload are unchanged.
+No nightly or delta refresh may duplicate unchanged entity payload rows.
+Querying an uncompacted snapshot must reproduce one coherent corpus. Short-
+lived HTTP cache files are operational artifacts, not durable snapshots, and
+may be expired normally.
 
 Exactly one promoted snapshot is current. Promotion changes that pointer and
 all derived current indexes in one database transaction. A failed or rejected
 load never exposes a partial corpus.
+
+Source compaction uses UTC cutoff instants and never compacts the current
+snapshot or a snapshot protected by a submission baseline/effective version,
+pinned report or digest, reconciliation/publication record, audit reference,
+campaign boundary anchor, restore/delivery hold, or explicit operator hold.
+Those snapshots and their membership/payload rows remain fully reconstructable
+for the lifetime of the protecting record. Among otherwise unprotected
+promoted snapshots, the system retains:
+
+- every reconstructable snapshot for 90 days after promotion;
+- after 90 days through one year, the latest promoted snapshot in each UTC
+  calendar day; and
+- after one year, the latest promoted snapshot in each UTC calendar month
+  indefinitely.
+
+Compaction keeps every manifest but may remove membership rows for redundant
+unprotected snapshots, marking those manifests compacted. It then removes a
+payload version only when no retained reconstructable snapshot or other
+protected record references it. Anchor selection is deterministic, and a late
+protection reference wins over cleanup under row locks. Cleanup is idempotent,
+bounded, audited by counts/cutoffs rather than values, and cannot run while a
+source promotion owns the mutation lease.
+
+### Campaign daily report facts
+
+`CampaignDailyFactSet` records one immutable, complete graph-calculation
+generation for a Campaign, population scope, source-snapshot cutoff,
+submission-version cutoff, and campaign-timezone version. Its state is
+`building`, `ready`, or `failed`; at most one generation for an exact input key
+may become ready. Child `CampaignDailyFact` rows hold one campaign-local date's
+first-response count, cumulative response count, cohort denominator, percentage
+inputs, effective pledge total/availability, and source-as-of metadata. A fact-
+set pointer changes only after all expected dates validate and commit, so
+readers never combine generations. Facts are derived, rebuildable data; pinned
+digests/reports protect the precise ready generation and its source inputs from
+compaction until their parent retention ends.
 
 `SourceMutationLease` is the singleton durable exclusion record defined by
 [background processing](../background-processing/spec.md#parishsoft-refresh).
@@ -219,7 +295,8 @@ retries only one random candidate. No view performs decryption scans.
 
 `PortalUser` links a Google `sub` and current normalized verified email to the
 login/audit history, including the validated Google hosted-domain claim when
-present. Authorization policy uses:
+present. It is runtime identity state. Authorization policy materialized from
+the active YAML version uses:
 
 - `DomainRule`: normalized domain with Staff and/or Ministry-leader roles;
   Administrator is prohibited;
@@ -228,6 +305,13 @@ present. Authorization policy uses:
 - `MinistryAssignment`: user/address to Ministry DUID, source (`chair-seed` or
   `manual`), state (`active` or `suspended`), suspension reason/time, and audit
   metadata.
+
+Domain rules, address rules, and the configured base of Ministry assignments
+carry their applied-configuration version and cannot be edited independently.
+Source-driven suspension/reactivation and its review task are runtime overlays
+that can remove scope immediately without rewriting YAML; an Admin decision to
+create, restore as manual, or delete configured policy goes through a
+`ConfigurationChangeRequest` and becomes effective on activation.
 
 An exact address rule replaces, rather than unions with, a matching domain
 rule. When the UI creates an override for a chairperson already inheriting a
@@ -240,8 +324,9 @@ mismatched `hd` claim never falls back to suffix-only authorization.
 
 Chairperson synchronization creates or refreshes suggestions only; it never
 creates an AddressRule, grants a role, or creates an active assignment. The
-Admin-confirmed suggestion transaction is the sole creator of a `chair-seed`
-assignment and any corresponding exact-address/Ministry-leader grant. For an
+Admin-confirmed suggestion configuration request is the sole creator of a
+`chair-seed` assignment and any corresponding exact-address/Ministry-leader
+grant. For an
 existing `chair-seed`, a promoted snapshot that no longer shows the active
 Member as Chairperson of that active Ministry atomically changes it from
 `active` to `suspended`, records the source evidence, and opens an Admin review
@@ -368,8 +453,11 @@ inventory digest and counts, non-sensitive Testing aggregate reference, cleanup
 TaskRun, batch checkpoints/counts, acknowledgement and reauthentication times,
 readiness evidence, activation result, and sanitized failure. Its states are
 `cleanup_queued`, `cleanup_running`, `cleanup_retry_wait`, `cleanup_complete`,
-`activated`, and `cancelled`. Every state except the last two owns the Campaign's
-go-live gate; a constraint permits at most one gate-owning request. Cleanup
+`cleanup_failed`, `activated`, and `cancelled`. `cleanup_failed` means automatic
+retries were exhausted; it retains checkpoints and the go-live gate and exposes
+explicit retry/cancel recovery with CRITICAL escalation. Every state except the
+last two owns the Campaign's go-live gate; a constraint permits at most one
+gate-owning request. Cleanup
 checkpoints and deletions commit together, while final campaign/mode activation
 and gate release commit together. No transition restores a deleted Testing row.
 `OutboxMessage` stores exact intended/routed recipients, redacted rendered
@@ -445,10 +533,14 @@ in a nonterminal state for a Campaign; request and Campaign transitions that
 must correspond occur in one transaction.
 
 Creating the `draft` request and acquiring its purge gate are one transaction
-under the Campaign and global current-campaign locks. It requires no other
+under the Campaign and global current-campaign locks. It requires the target to
+remain `archived`, global Testing mode, and a null current-campaign pointer; the
+Admin must already have completed Return to Testing. It also requires no other
 campaign in `draft`, `scheduled`, `active`, `closed`, `purging`, or
 `purge_cleanup_failed`, so purge cannot begin after successor preparation. The
-shared campaign-work admission service checks
+request transaction rejects a stale target that is still the current pointer,
+preventing completion from leaving a pointer to a `purged` tombstone. The shared
+campaign-work admission service checks
 that gate under the same lock before it creates any new campaign-owned task,
 occurrence, outbox message, export, publication plan, workflow mutation, or
 other durable campaign work. Only purge preparation/execution, its operational
@@ -549,7 +641,13 @@ Snapshot promotion performs these effects transactionally:
 - refresh seeded Chairperson suggestions/assignment warnings; and
 - request the initial-invitation evaluation defined by
   [background processing](../background-processing/spec.md#family-invitations-and-reminders)
-  for each newly active Family.
+  for each newly active Family and each eligible nonresponder whose durable
+  deliverability generation changed from non-deliverable to deliverable.
+
+Provider-suppression removal outside snapshot promotion invokes the same
+transactional evaluation service after it increments the Family's deliverability
+generation. Stable occurrence and semantic-fulfillment keys make repeated
+evaluation harmless.
 
 When `restore_review_required` is active, that request is durable deferred
 intent only: promotion does not materialize or dispatch an ordinary invitation.
@@ -604,18 +702,22 @@ unpublished proposals as appropriate but never rewrite publication history.
 
 ## Retention and deletion
 
-Live submissions, promoted normalized snapshot history, workflow history,
-email metadata/content, and audit events are retained indefinitely by default.
-Operational HTTP caches, temporary export files, and transient task payloads
-have bounded cleanup policies defined by operations.
+Live submissions, protected and policy-anchor normalized snapshot history,
+lightweight source manifests, workflow history, email metadata/content, and
+audit events are retained indefinitely by default. Unprotected redundant source
+corpora follow the compaction policy in
+[Source snapshot](#source-snapshot). Operational HTTP caches, temporary export
+files, and transient task payloads have bounded cleanup policies defined by
+operations.
 
 The three exceptions are:
 
 - test responses and their sensitive audit payloads are deleted in bounded
   batches during the gated Production-transition cleanup phase;
 - `testing_override` outbox rows and sensitive delivery audit payloads are
-  deleted during that cleanup after producing the non-sensitive aggregate
-  defined by the
+  deleted during that cleanup together with their Testing-only
+  ScheduleOccurrence and ScheduleFulfillment rows after producing the non-
+  sensitive aggregate defined by the
   [Admin readiness workflow](../admin-portal/spec.md#production-transition);
   `operational` rows are retained under normal policy even when created while
   the global mode was Testing; and

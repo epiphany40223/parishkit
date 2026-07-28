@@ -28,11 +28,12 @@ remain below `/admin/` and apply server-side authorization.
 2. Implement temporary wizard staging for parish, login rules, integration
    credentials/tests, complete source load, mail/Slack, and first campaign.
 3. Implement correlated TaskRun progress polling with worker-heartbeat checks,
-   five-minute renewal limit, and two-hour watchdog.
+   renewal limit, and hard watchdog defined by the Admin specification.
 4. Make cancel/session/watchdog failure expire staging, prevent late worker
    writes, and remove staged credentials/files idempotently.
-5. Atomically finalize all configuration, promoted snapshot, Family codes,
-   Testing mode, and one redacted setup audit event; aborted setup exposes none.
+5. Freeze setup, run target-specific secret installers, apply one complete YAML
+   version/materialization, and commit the configured marker only after source,
+   Family codes, Testing mode, digests, and consumer fingerprints agree.
 6. Add browser and worker-race tests for happy path, every abort boundary,
    timeout, and restored deployment skip.
 
@@ -44,19 +45,23 @@ remain below `/admin/` and apply server-side authorization.
 3. Implement presence/background indicators and detail drawers backed by
    non-idle-renewing polling and authorized data.
 4. Build parish, branding, timezone, contact, mode, integration, sender, Slack,
-   and secret replace/test pages with validation, version diff, optimistic
-   concurrency, and audit.
-5. Add logo variant preview and safe branding-version handling.
-6. Test all role variants, browser sizes, stale saves, secret failure rollback,
-   and browser-local timestamp rendering.
+   and secret replace/test pages with YAML change-request and sealed target-
+   installer progress, version diff, optimistic digest concurrency, and audit.
+5. Make Parish-timezone edits explicitly prospective: they affect general
+   presentation and future drafts but never mutate an existing campaign.
+6. Add logo variant preview and safe branding-version handling.
+7. Test all role variants, browser sizes, applying/applied/error states, stale
+   saves, config-installer crash recovery, secret expiry/failure rollback,
+   campaign-timezone isolation, and browser-local timestamp rendering.
 
 ### ADM-04: Campaign editor, content, schedules, and previews
 
 1. Implement new/clone campaign workflow with the single-current-campaign and
-   Testing guards.
-2. Build module-dependent dates, financial periods/funds, Ministries, share
-   options, additional-information toggle, mail/digest schedules, and structural
-   lock UI/server validation.
+   Testing guards through applied YAML versions and normalized snapshots.
+2. Build campaign-timezone, module-dependent dates, financial periods/funds,
+   Ministries, share options, additional-information toggle, mail/digest
+   schedules, and structural lock UI/server validation; initialize timezone
+   from Parish and keep it editable only in `draft`.
 3. Build content/template WYSIWYG and plain-text controls with named-slot maps,
    placeholder validation, immutable versions, and empty optional slots.
 4. Implement page/email previews using safe sample or explicitly selected
@@ -64,8 +69,8 @@ remain below `/admin/` and apply server-side authorization.
 5. Implement atomic schedule edit/removal previews and conflict handling for
    in-flight/unknown work, including the combined reconciliation editor required
    when an end-date shortening would strand future Family mail.
-6. Add form/request tests for hidden stray values, locking, cloning exclusions,
-   preview privacy, and schedule races.
+6. Add form/request tests for hidden stray values, pending/mismatched config,
+   locking, cloning exclusions, preview privacy, and schedule races.
 
 ### ADM-05: Production transition and pre-start withdrawal
 
@@ -86,33 +91,35 @@ remain below `/admin/` and apply server-side authorization.
 
 1. Build restore-state inventory and maintenance-only controls, delivery-
    uncertainty holds, assumed-delivered/resend resolutions, and atomic state-
-   aware release confirmation.
+   aware release confirmation, preserving Production for a sole current closed
+   campaign while keeping Family access and live Family mail disabled.
 2. Implement delivery pause/resume with fresh authentication, impact counts,
    pre-provider recheck, held message visibility, coalescing, and post-close
    receipt/digest resolution.
 3. Implement closed-campaign end-date extension/readiness/reopen directly to
    active, token reissue, future-only schedules, and no replay of skipped work.
 4. Implement archive eligibility, unarchive-to-closed guards, and the dedicated
-   post-archive Return to Testing workflow that clears the current pointer.
+   post-archive Return to Testing workflow that clears the current pointer and
+   presents the purge-before-successor decision window.
 5. Test restore/pause/reopen/archive races, held messages, inconsistent state,
    successor denial, and audit/reauthentication.
 
 ### ADM-07: User rules and Ministry assignments
 
-1. Build sorted domain/address role tables with immediate autosave, transient
-   status, optimistic versions, explicit deny, disabled domain Admin, and
-   `gmail.com` validation.
+1. Build sorted domain/address role tables with YAML-backed autosave,
+   Applying/Applied/error status, optimistic active-digest checks, explicit
+   deny, disabled domain Admin, and `gmail.com` validation.
 2. Preserve the selected no-reauth/no-confirmation policy for every role change
    while enforcing CSRF, current-Admin authorization, last-Admin protection,
    and complete before/after audit; an Administrator grant additionally creates
    a persistent security event and notifies all preexisting Administrators.
 3. Build chairperson suggestion review, inherited-role preview, bulk selection,
-   confirmed rule/assignment creation, and suspended/source-return review.
-4. Build manual Ministry assignments without allowing source synchronization to
-   modify them.
-5. Test hosted-domain behavior, precedence, concurrent changes, immediate
-   revocation, Administrator-grant notification failure/retry/acknowledgement,
-   and Ministry row-scope updates.
+   confirmed YAML rule/assignment requests, and suspended/source-return review.
+4. Build YAML-backed manual Ministry assignments while source synchronization
+   changes only the fail-closed runtime suspension overlay.
+5. Test hosted-domain behavior, precedence, concurrent digest changes,
+   activation-time revocation, Administrator-grant notification failure/retry/
+   acknowledgement, and Ministry row-scope updates.
 
 ### ADM-08: Manual refresh, follow-up queues, and logs
 
@@ -145,27 +152,29 @@ remain below `/admin/` and apply server-side authorization.
 ### ADM-10: Exceptional campaign purge web workflow
 
 1. Build `/admin/operations/purge/` eligibility selection and durable request
-   resume/cancel/status UI; no ordinary CRUD/API/console purge path exists.
+   resume/cancel/status UI; require completed Return to Testing, a null current
+   pointer, and no successor, and explain when the recurring window is closed.
 2. Acquire the campaign work gate, show/cancel/drain conflicting work, reconcile
    external uncertainty, and record quiescence.
 3. Build dry inventory and **Create purge backup** asynchronous action with
-   verified encrypted off-host reference, independent 60-minute evidence
-   expirations, and refresh of only the expired artifact.
+   verified encrypted off-host reference, independent evidence expirations from
+   the purge specification, and refresh of only the expired artifact.
 4. Require fresh authentication, exact campaign name and generated phrase, then
    queue the idempotent purge worker after atomic prerequisite recheck.
 5. Expose safe pre-delete rollback, resumable deletion, cleanup retry, terminal
    tombstone, and CRITICAL failure behavior without offering forbidden rollback.
-6. Add exhaustive browser/PostgreSQL race tests for every gate/state/expiry/
-   interruption path.
+6. Add exhaustive browser/PostgreSQL race tests for every gate/state/pointer/
+   successor/expiry/interruption path.
 
 ## Review handoffs
 
 - Review Gate 1 covers ADM-01.
 - Review Gate 2 covers ADM-02 through ADM-04 and user-facing campaign setup.
-- Review Gate 3 covers ADM-05, the restore/delivery-pause subset of ADM-06,
-  ADM-07, and ADM-08, with focused authorization and privacy review.
-- Review Gate 4 is mandatory before merging the remaining reopen/archive
-  subset of ADM-06, ADM-09, or ADM-10 destructive/external-write workflows.
+- Review Gate 3 covers ADM-05, the delivery-pause subset of ADM-06, ADM-07, and
+  ADM-08, with focused authorization and privacy review.
+- Review Gate 4 is mandatory before merging the remaining restore-release/
+  reopen/archive subset of ADM-06, ADM-09, or ADM-10 destructive/external-write
+  workflows.
 
 ## Completion criteria
 

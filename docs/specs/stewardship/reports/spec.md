@@ -17,8 +17,11 @@ Ministries.
 Every report has a title, purpose/help text, active filters, source/data-as-of
 metadata, accessible empty/error state, and role-aware column set. Tables are
 server-paginated, sortable only by allowlisted fields, searchable, and
-filterable. Filter URLs are shareable only within an authorized session and do
-not contain PII values unnecessarily.
+filterable. URLs may contain only non-identifying enumerated filters, sort keys,
+page cursors, and the campaign UUID. Free-text search and any filter containing
+a Family/Member name, DUID, address, email, phone, code, census value, financial
+value, or other identifying text use a CSRF-protected POST body and never a URL
+or query string. Proxy/application access logs omit request bodies.
 
 Every interactive report response containing Family PII, Family codes,
 financial data, or census data sends `Cache-Control: no-store`, including
@@ -59,24 +62,29 @@ default; their Admin/Staff **Include inactive** option adds a separately labeled
 inactive subtotal/row set without changing the active denominator. Historical
 event views retain a submission made while the Family was eligible.
 
-A Family participates on the parish-local date of its first effective live
-submission. Repeat submissions never increase or move that count. Testing
+A Family participates on the campaign-local date, resolved with the Campaign's
+immutable timezone snapshot, of its first live submission version. Repeat
+submissions never increase or move that count. Testing
 submissions are excluded everywhere except explicit Admin testing views.
 
 The participation graph has an explicit population scope. **Historical as of
-day** is the default: each point uses eligibility and effective responses at the
-end of that local day. **Current population** applies today's Portal-eligible
-Family set consistently to every historical point. Current cards use current
-eligibility and effective versions. Monetary values never derive from rounded
-installment displays.
+day** is the default: each point uses the ever-eligible cohort through the end
+of that local day and response versions as of that instant. A Family enters the
+cohort on its first Portal-eligible instant in the campaign and never leaves the
+historical cohort, even if later inactive. **Current population** applies
+today's Portal-eligible Family set consistently to every historical point.
+Current cards use current eligibility and effective versions. Monetary values
+never derive from rounded installment displays.
 
 The participation graph exposes only its mutually exclusive **Historical as of
 day** / **Current population** scope control; it does not also expose **Include
-inactive**. Historical scope inherently follows eligibility on each day.
-Current-population scope excludes currently inactive Families at every point.
-Statistics cards and current-scope detail tables may expose **Include inactive**
-using the separate-subtotal rule above. Digest parameters record whichever
-single population scope applies, so digest parity never combines the controls.
+inactive**. Historical scope includes every Family first eligible on or before
+each day, so neither its denominator nor cumulative participant count can
+shrink and its percentage cannot exceed 100%. Current-population scope excludes
+currently inactive Families at every point. Statistics cards and current-scope
+detail tables may expose **Include inactive** using the separate-subtotal rule
+above. Digest parameters record whichever single population scope applies, so
+digest parity never combines the controls.
 
 Eligible email follows active `get_family_heads()` Members with at least one
 syntactically valid normalized address. Publish privacy flags do not suppress
@@ -90,8 +98,9 @@ invalid, absent, and suppressed head email without showing credential/link data.
 
 **Access:** Admin and Staff.
 
-The x-axis is every parish-local date from campaign start through the lesser of
-campaign end and today. The graph shows:
+The x-axis is every campaign-local date from campaign start through the lesser
+of campaign end and today, using the Campaign's immutable timezone snapshot.
+The graph shows:
 
 - bars: Families making their first live submission that day;
 - line: cumulative Families that have submitted under the selected population
@@ -101,13 +110,48 @@ campaign end and today. The graph shows:
 
 For **Historical as of day**, each bar, cumulative count and denominator, and
 pledge total uses the last promoted `SourceSnapshot` at or before the resolved
-end instant of that local day, plus effective live submissions whose committed
-UTC time is before that instant. If no snapshot exists by that boundary, the
-point is unavailable rather than inferred from a later snapshot. A Family that
-participated while eligible remains in the historical series after becoming
-inactive. For **Current population**, every point is recomputed using the
-current Portal-eligible Family set; a currently ineligible Family is excluded
-from every series.
+end instant of that local day. The scoped cohort includes every Family shown by
+any promoted snapshot as Portal-eligible at or before that instant. For each
+Family, response values come from its latest live submission version committed
+at or before that instant, rather than from whichever version is effective
+today. The numerator includes cohort Families whose first live submission was
+accepted while eligible on or before that instant. If no snapshot exists by
+that boundary, the point is unavailable rather than inferred from a later
+snapshot. A Family that participated while eligible remains in the historical
+series after becoming inactive. For **Current population**, every point is
+recomputed using the current Portal-eligible Family set; a currently ineligible
+Family is excluded from every series.
+
+### Participation fact materialization
+
+The graph is served from immutable, versioned `CampaignDailyFactSet` and
+`CampaignDailyFact` records defined by the
+[data specification](../data/spec.md#campaign-daily-report-facts), not from a
+separate
+per-day live aggregation on each request. The materializer calls the same
+calculation library used for validation and creates a complete fact set for an
+exact campaign, scope, promoted-source snapshot, effective-submission cutoff,
+and campaign-timezone version. It atomically publishes that generation only
+after every expected date validates; UI, accessible table, PNG/PDF, and digest
+consumers never combine rows from different input generations.
+
+A successful source promotion, live submission, qualifying eligibility change,
+or approved rebuild request transactionally creates an idempotent rebuild hint.
+The worker rebuilds only affected dates where that is provably equivalent and
+otherwise rebuilds the complete small campaign series. Historical-scope changes
+normally affect the current campaign-local date and later dates; a new current-
+population source snapshot can affect every displayed date. Duplicate hints
+coalesce under the exact input key. Failed or interrupted generations remain
+unpublished and retryable.
+
+If the exact current input generation is not ready, the interactive report
+shows the last complete generation only when it is conspicuously labeled with
+its data-as-of values, together with a non-blocking **Updating** state; it never
+labels stale facts current. The user can refresh after the queued generation
+publishes. A pinned export or digest waits/retries for its exact generation and
+fails visibly rather than substituting a different cutoff. Recalculation from
+the pinned source/submission inputs must reproduce every stored fact, and a
+verification job detects drift.
 
 The UI defaults to Historical as of day and offers a clearly labeled scope
 toggle. Changing scope updates every series together. Hover shows scope, local
@@ -307,9 +351,12 @@ The daily Admin digest uses the same query/calculation service and chart data as
 the participation/statistics web reports for its stored as-of point and defaults
 to Historical as of day. The digest occurrence records the promoted source
 snapshot, effective-submission version cutoff, selected population scope,
-report parameters, and parish-local day boundary.
+report parameters, and campaign-local day boundary. That boundary is resolved
+using the immutable campaign timezone recorded with the campaign, not the
+current Parish default.
+The occurrence waits for and records the exact ready `CampaignDailyFactSet`.
 The linked report opens in an authorized pinned-snapshot mode using exactly
-those inputs even when current eligibility later changes. Separate
-implementations that can drift are prohibited. The email simplifies interaction
-into an image/text table but its values must be reproducible from those recorded
-inputs.
+those inputs and fact generation even when current eligibility later changes.
+Separate implementations that can drift are prohibited. The email simplifies
+interaction into an image/text table but its values must be reproducible from
+those recorded inputs.
