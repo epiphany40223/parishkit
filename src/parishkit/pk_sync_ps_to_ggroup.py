@@ -35,6 +35,7 @@ from parishkit.google.groups import (
     build_admin_directory_service,
     build_groups_settings_service,
     delete_group_member,
+    get_group_member,
     get_group_posting_permissions,
     insert_group_member,
     list_group_members,
@@ -967,11 +968,39 @@ def apply_actions(
     log: logging.Logger | None = None,
 ) -> None:
     """Apply computed Google group changes."""
-    for action in actions:
-        if action.action == "add":
-            insert_group_member(
-                service, group_key, action.email, action.role or "MEMBER"
+    # The predecessor automation ran deletes before adds successfully for years.
+    # This also lets an address replace an existing Google identity alias that
+    # would otherwise make the add fail as a duplicate while the old entry exists.
+    ordered_actions = sorted(actions, key=lambda action: action.action != "delete")
+    for action in ordered_actions:
+        if log:
+            log.debug(
+                "Applying Google Group action for %s: %s",
+                group_key,
+                _action_summary(action),
+                extra=log_extra(action),
             )
+        if action.action == "add":
+            try:
+                insert_group_member(
+                    service, group_key, action.email, action.role or "MEMBER"
+                )
+            except GoogleAPIError as exc:
+                duplicate_email = (
+                    _google_duplicate_member_email(service, group_key, action.email)
+                    if exc.status_code == 409
+                    else None
+                )
+                duplicate_detail = _duplicate_member_error_detail(
+                    action.email,
+                    duplicate_email,
+                )
+                raise GoogleAPIError(
+                    exc.status_code,
+                    f"failed to add {action.email!r} to Google Group "
+                    f"{group_key!r}{duplicate_detail}. Google response: "
+                    f"{exc.message}",
+                ) from exc
             if log:
                 log.info(
                     "Applied Google Group add for %s in %s",
@@ -1004,6 +1033,37 @@ def apply_actions(
                 )
         else:
             raise ConfigError(f"unknown sync action: {action.action}")
+
+
+def _google_duplicate_member_email(
+    service: Any,
+    group_key: str,
+    attempted_email: str,
+) -> str | None:
+    """Ask Google which existing member owns an address rejected as duplicate.
+
+    The Directory API accepts aliases as member lookup keys and returns the
+    member's canonical email. Failure to enrich the error must not replace the
+    original, more useful insert failure.
+    """
+    try:
+        member = get_group_member(service, group_key, attempted_email)
+    except GoogleAPIError:
+        return None
+    email = str(member.get("email", "")).strip()
+    return email or None
+
+
+def _duplicate_member_error_detail(
+    attempted_email: str,
+    duplicate_email: str | None,
+) -> str:
+    """Describe the canonical member returned by a duplicate lookup."""
+    if duplicate_email is None:
+        return ""
+    if duplicate_email.casefold() == attempted_email.casefold():
+        return "; Google confirms that address is already a member"
+    return f"; Google resolves that address to existing member {duplicate_email!r}"
 
 
 def build_notification_email(

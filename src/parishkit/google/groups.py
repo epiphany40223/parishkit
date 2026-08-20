@@ -60,6 +60,16 @@ def list_group_members(service: Any, group_key: str) -> list[dict[str, Any]]:
             return members
 
 
+def get_group_member(
+    service: Any,
+    group_key: str,
+    member_key: str,
+) -> dict[str, Any]:
+    """Return one group member identified by email, alias, or unique ID."""
+    request = service.members().get(groupKey=group_key, memberKey=member_key)
+    return execute_google_request(request)
+
+
 def get_group_posting_permissions(service: Any, group_key: str) -> str | None:
     """Return a group's ``whoCanPostMessage`` setting, or ``None`` if absent.
 

@@ -12,7 +12,9 @@ from parishkit.parishsoft import ParishSoftData
 from parishkit.pk_sync_ps_to_ggroup import (
     DesiredMember,
     GroupSync,
+    SyncAction,
     SyncConfig,
+    apply_actions,
     compute_actions,
     desired_members,
     load_google_credentials,
@@ -85,6 +87,11 @@ class Members:
         self.calls.append(("delete", kwargs))
         return Request()
 
+    def get(self, **kwargs):
+        """Record a member lookup and return no canonical override by default."""
+        self.calls.append(("get", kwargs))
+        return Request({"email": kwargs["memberKey"]})
+
 
 class Groups:
     """Fake Groups Settings resource returning fixed posting permissions."""
@@ -134,6 +141,144 @@ class EmailProvider:
         """Record the message and dry-run flag, then echo the message back."""
         self.sent.append((message, dry_run))
         return message
+
+
+def test_duplicate_add_error_identifies_attempted_and_canonical_addresses(caplog):
+    """A duplicate alias error names both sides of Google's identity mapping."""
+
+    class DuplicateMembers:
+        """Reject an alias insert and resolve it to the existing primary email."""
+
+        def insert(self, **_kwargs):
+            """Return Google's duplicate-member failure."""
+            return Request(exc=GoogleAPIError(409, "Member already exists."))
+
+        def get(self, **kwargs):
+            """Resolve the attempted member alias to its canonical address."""
+            assert kwargs == {
+                "groupKey": "ministry@example.org",
+                "memberKey": "person@me.com",
+            }
+            return Request({"email": "person@gmail.com"})
+
+    service = SimpleNamespace(members=lambda: DuplicateMembers())
+    log = logging.getLogger("test.duplicate-add")
+
+    with (
+        caplog.at_level(logging.DEBUG, logger=log.name),
+        pytest.raises(GoogleAPIError) as exc_info,
+    ):
+        apply_actions(
+            service,
+            "ministry@example.org",
+            [SyncAction(action="add", email="person@me.com", role="MEMBER")],
+            log=log,
+        )
+
+    message = str(exc_info.value)
+    assert "failed to add 'person@me.com'" in message
+    assert "Google Group 'ministry@example.org'" in message
+    assert "existing member 'person@gmail.com'" in message
+    assert "Member already exists." in message
+    assert (
+        "Applying Google Group action for ministry@example.org: "
+        "add person@me.com as MEMBER"
+    ) in caplog.messages
+    assert not any("Applied Google Group add" in item for item in caplog.messages)
+
+
+def test_duplicate_add_error_survives_failed_canonical_member_lookup():
+    """The attempted address remains clear when duplicate enrichment fails."""
+
+    class DuplicateMembers:
+        """Reject both the insert and the subsequent diagnostic lookup."""
+
+        def insert(self, **_kwargs):
+            """Return Google's duplicate-member failure."""
+            return Request(exc=GoogleAPIError(409, "Member already exists."))
+
+        def get(self, **_kwargs):
+            """Simulate Google being unable to resolve the attempted alias."""
+            return Request(exc=GoogleAPIError(404, "Member not found."))
+
+    service = SimpleNamespace(members=lambda: DuplicateMembers())
+
+    with pytest.raises(GoogleAPIError) as exc_info:
+        apply_actions(
+            service,
+            "ministry@example.org",
+            [SyncAction(action="add", email="person@me.com", role="MEMBER")],
+        )
+
+    message = str(exc_info.value)
+    assert "failed to add 'person@me.com'" in message
+    assert "Google Group 'ministry@example.org'" in message
+    assert "Member already exists." in message
+    assert "Member not found." not in message
+
+
+def test_nonduplicate_add_error_identifies_attempted_address_without_lookup():
+    """Every add failure has context, while only duplicate errors trigger lookup."""
+
+    class ForbiddenMembers:
+        """Reject an insert and deliberately provide no member lookup method."""
+
+        def insert(self, **_kwargs):
+            """Return a non-duplicate authorization failure."""
+            return Request(exc=GoogleAPIError(403, "Not authorized."))
+
+    service = SimpleNamespace(members=lambda: ForbiddenMembers())
+
+    with pytest.raises(GoogleAPIError) as exc_info:
+        apply_actions(
+            service,
+            "ministry@example.org",
+            [SyncAction(action="add", email="person@example.org", role="MEMBER")],
+        )
+
+    message = str(exc_info.value)
+    assert "HTTP 403" in message
+    assert "failed to add 'person@example.org'" in message
+    assert "Google Group 'ministry@example.org'" in message
+    assert "Not authorized." in message
+
+
+def test_apply_actions_runs_all_deletes_before_other_actions():
+    """Deletes are stable-partitioned ahead of adds and role changes."""
+    admin = AdminService()
+    actions = [
+        SyncAction(action="add", email="first-new@example.org", role="MEMBER"),
+        SyncAction(
+            action="change_role",
+            email="leader@example.org",
+            role="OWNER",
+            group_member_id="leader-id",
+        ),
+        SyncAction(
+            action="delete",
+            email="first-old@example.org",
+            group_member_id="first-old-id",
+        ),
+        SyncAction(action="add", email="second-new@example.org", role="MEMBER"),
+        SyncAction(
+            action="delete",
+            email="second-old@example.org",
+            group_member_id="second-old-id",
+        ),
+    ]
+
+    apply_actions(admin, "ministry@example.org", actions)
+
+    assert [call[0] for call in admin._members.calls] == [
+        "delete",
+        "delete",
+        "insert",
+        "update",
+        "insert",
+    ]
+    assert [
+        call[1].get("memberKey") for call in admin._members.calls if call[0] == "delete"
+    ] == ["first-old-id", "second-old-id"]
 
 
 def write_config(tmp_path: Path, *, dry_run: bool = False) -> Path:

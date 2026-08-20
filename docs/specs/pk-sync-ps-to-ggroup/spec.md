@@ -338,13 +338,22 @@ and returns `list(plan.actions)`; it performs no writes.
 ### 6.6 Apply
 
 `apply_group_plan` returns immediately in dry-run. Otherwise `apply_actions`
-iterates the plan's actions and calls the Google helpers:
+stably moves all deletes before the other planned actions, then calls the Google
+helpers. This preserves the predecessor automation's long-running
+delete-before-add behavior and permits an address to replace an existing Google
+identity alias that would otherwise cause an add-first HTTP 409:
 
 - `add` → `insert_group_member(service, group, email, role or "MEMBER")`.
 - `change_role` → `update_group_member_role(service, group,
   group_member_id or email, role or "MEMBER")`.
 - `delete` → `delete_group_member(service, group, group_member_id or email)`.
 - Any other action → `ConfigError("unknown sync action: …")`.
+
+An add failure is re-raised with the attempted member address and group key. On
+HTTP 409, the tool also looks up the attempted address as a member key (which
+may be an alias) and includes Google's canonical existing-member address when
+the lookup succeeds. Failure of this diagnostic lookup does not replace the
+original insert error.
 
 ## 7. Guardrails and write safety
 
@@ -382,10 +391,12 @@ client before any data is used.
   configured groups; loaded member/family/ministry/workgroup totals; per group,
   the desired-member count, current-member count, and the computed action list
   (`_actions_summary`). `INFO` shows summaries; `DEBUG` adds full desired/current
-  member dumps with structured `log_extra` payloads. Dry-run logs
-  "dry-run: would apply N action(s) for &lt;group&gt;". On success, logs
-  "Google Group sync operation completed successfully for N group(s)". The JSONL
-  file is the structured output; there is no separate report file.
+  member dumps with structured `log_extra` payloads. During live application, a
+  `DEBUG` entry identifies each action immediately before its Google API call,
+  including an action whose call subsequently fails. Dry-run logs "dry-run:
+  would apply N action(s) for &lt;group&gt;". On success, logs "Google Group sync
+  operation completed successfully for N group(s)". The JSONL file is the
+  structured output; there is no separate report file.
 - **Email summary** (per group, live mode only). Built by
   `build_notification_email` and sent by `send_notification` /
   `send_group_plan_notification` with `dry_run=False`, only after all groups are
@@ -508,7 +519,9 @@ Locked-down behavior asserted:
   (and exits 2); missing group → helpful config error, exit 2; preflight makes a
   later 404 prevent earlier writes; missing ParishSoft source aborts before any
   Google call; settings 403 aborts before writes; membership-only sync skips the
-  Settings API; selector matching no ministry aborts before writes.
+  Settings API; selector matching no ministry aborts before writes; add errors
+  identify the attempted address and group, with canonical duplicate details
+  when Google resolves an HTTP 409 member alias.
 
 ## 12. Re-creation task outline
 
