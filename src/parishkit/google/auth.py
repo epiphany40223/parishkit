@@ -23,6 +23,7 @@ class GoogleAPIError(RuntimeError):
     def __init__(self, status_code: int, message: str):
         """Store the HTTP status code and build a human-readable message."""
         self.status_code = status_code
+        self.message = message
         super().__init__(f"Google API error: HTTP {status_code}: {message}")
 
 

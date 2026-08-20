@@ -23,6 +23,7 @@ from parishkit.google.drive import (
 )
 from parishkit.google.groups import (
     delete_group_member,
+    get_group_member,
     get_group_posting_permissions,
     insert_group_member,
     list_group_members,
@@ -321,7 +322,7 @@ def test_group_write_helpers_use_directory_api():
             return self.response
 
     class Members:
-        """Fake members resource recording each insert/update/delete call."""
+        """Fake members resource recording each membership API call."""
 
         def __init__(self):
             self.calls = []
@@ -330,6 +331,11 @@ def test_group_write_helpers_use_directory_api():
             """Record an insert call and return an empty request."""
             self.calls.append(("insert", kwargs))
             return Request()
+
+        def get(self, **kwargs):
+            """Record a get call and return a canonical member address."""
+            self.calls.append(("get", kwargs))
+            return Request({"email": "primary@example.org"})
 
         def update(self, **kwargs):
             """Record an update call and return an empty request."""
@@ -370,12 +376,20 @@ def test_group_write_helpers_use_directory_api():
 
     service = Service()
 
+    member = get_group_member(service, "group@example.org", "alias@example.org")
     insert_group_member(service, "group@example.org", "a@example.org", "MEMBER")
     update_group_member_role(service, "group@example.org", "a@example.org", "OWNER")
     delete_group_member(service, "group@example.org", "member-id")
     permission = get_group_posting_permissions(service, "group@example.org")
 
     assert service._members.calls == [
+        (
+            "get",
+            {
+                "groupKey": "group@example.org",
+                "memberKey": "alias@example.org",
+            },
+        ),
         (
             "insert",
             {
@@ -393,6 +407,7 @@ def test_group_write_helpers_use_directory_api():
         ),
         ("delete", {"groupKey": "group@example.org", "memberKey": "member-id"}),
     ]
+    assert member == {"email": "primary@example.org"}
     assert service._groups.calls == [
         (
             "get",
