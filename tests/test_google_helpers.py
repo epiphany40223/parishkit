@@ -167,6 +167,42 @@ def test_execute_google_request_retries_transient_http_error(monkeypatch):
     ) == {"ok": True}
 
 
+def test_execute_google_request_retries_403_rate_limit_reason(monkeypatch):
+    """A 403 with Google's rate-limit reason is transient, unlike other 403s."""
+
+    class FakeHttpError(Exception):
+        """Stand-in for HttpError carrying status and structured details."""
+
+        def __init__(self):
+            """Build the rate-limited response Google Calendar emits."""
+            self.resp = type("Response", (), {"status": 403})()
+            self.error_details = [{"reason": "rateLimitExceeded"}]
+            super().__init__("Rate Limit Exceeded")
+
+    attempts = {"count": 0}
+
+    class FakeRequest:
+        """Fail once with rate limiting, then return successfully."""
+
+        def execute(self):
+            """Return success on the retry after a quota rejection."""
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                raise FakeHttpError()
+            return {"ok": True}
+
+    monkeypatch.setattr(
+        "parishkit.google.auth._import_google_http_error", lambda: FakeHttpError
+    )
+
+    assert execute_google_request(
+        FakeRequest(),
+        policy=RetryPolicy(attempts=2, initial_delay=0),
+        sleep=lambda _seconds: None,
+    ) == {"ok": True}
+    assert attempts["count"] == 2
+
+
 def test_execute_google_request_maps_permanent_http_error(monkeypatch):
     """A permanent HTTP status (403) maps to GoogleAPIError without retrying."""
 
@@ -553,8 +589,8 @@ def test_patch_attendee_response_uses_calendar_patch():
     ]
 
 
-def test_patch_attendee_response_does_not_retry_notification_write():
-    """Calendar attendee patches are one-shot because they send notifications."""
+def test_patch_attendee_response_does_not_retry_ambiguous_failure():
+    """Calendar patches do not retry uncertain notification-write failures."""
     attempts = {"count": 0}
 
     class Request:
@@ -579,10 +615,60 @@ def test_patch_attendee_response_does_not_retry_notification_write():
             """Return the fake events resource."""
             return Events()
 
-    with pytest.raises(RetryError):
+    with pytest.raises(TransientRetryError):
         patch_attendee_response(Service(), "room@example.org", "event-1", "accepted")
 
     assert attempts["count"] == 1
+
+
+def test_patch_attendee_response_retries_explicit_rate_limit(monkeypatch):
+    """A rejected Calendar PATCH is retried when Google names a quota reason."""
+    attempts = {"count": 0}
+
+    class FakeHttpError(Exception):
+        """Stand-in for the Calendar API's 403 rate-limit response."""
+
+        def __init__(self):
+            """Expose the status and structured reason used by the classifier."""
+            self.resp = type("Response", (), {"status": 403})()
+            self.error_details = [{"reason": "rateLimitExceeded"}]
+            super().__init__("Rate Limit Exceeded")
+
+    class Request:
+        """Rate-limit the first notification patch and accept the retry."""
+
+        def execute(self):
+            """Raise once, then return a successful response."""
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                raise FakeHttpError()
+            return {}
+
+    class Events:
+        """Fake events resource returning the reusable request."""
+
+        def patch(self, **_kwargs):
+            """Return the request that records its executions."""
+            return Request()
+
+    class Service:
+        """Fake Calendar service exposing the events resource."""
+
+        def events(self):
+            """Return the fake events endpoint."""
+            return Events()
+
+    monkeypatch.setattr(
+        "parishkit.google.auth._import_google_http_error", lambda: FakeHttpError
+    )
+    monkeypatch.setattr(
+        "parishkit.google.calendar._NOTIFICATION_WRITE_POLICY",
+        RetryPolicy(attempts=2, initial_delay=0),
+    )
+
+    patch_attendee_response(Service(), "room@example.org", "event-1", "accepted")
+
+    assert attempts["count"] == 2
 
 
 def test_google_optional_import_error_is_config_error(monkeypatch):

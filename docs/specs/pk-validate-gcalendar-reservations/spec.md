@@ -298,9 +298,12 @@ plan's decisions and, for each:
   of `attendeesOmitted: True` plus a single-element `attendees` list
   `{email, responseStatus}` — updating **only this resource's RSVP** and leaving
   all other attendees untouched. `attendee_email` preserves Google's exact-case
-  address. The Calendar write uses a **one-shot** retry policy
-  (`RetryPolicy(attempts=1)`) so a notification-sending PATCH cannot duplicate on
-  retry (see [retry policy](../intro/spec.md#retry-policy)).
+  address. The Calendar write retries with exponential backoff only when Google
+  explicitly rejects it for quota throttling: HTTP 429 or HTTP 403 with reason
+  `rateLimitExceeded`/`userRateLimitExceeded`. Those responses mean the write
+  was not applied. Ambiguous transport failures and 5xx responses remain
+  one-shot so a notification-sending PATCH cannot duplicate on retry (see
+  [retry policy](../intro/spec.md#retry-policy)).
 
 **Preflight ordering guarantee:** because `process_calendars` builds *every*
 calendar's plan (all `list_events` + decisions) before any `respond_to_decisions`

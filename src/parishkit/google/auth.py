@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Collection, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +14,10 @@ from parishkit.retry import RetryError, RetryPolicy, TransientRetryError, retry_
 # HTTP statuses that indicate a transient Google API condition worth retrying:
 # 429 (rate limited) plus the 5xx server/gateway errors.
 TRANSIENT_GOOGLE_STATUSES = {429, 500, 502, 503, 504}
+# Google sometimes reports quota throttling as HTTP 403 instead of 429. Only
+# these explicit reasons are transient; other 403 responses remain permanent
+# authorization or permission failures.
+TRANSIENT_GOOGLE_REASONS = {"rateLimitExceeded", "userRateLimitExceeded"}
 LOGGER = logging.getLogger(__name__)
 
 
@@ -217,19 +221,39 @@ def execute_google_request(
     *,
     policy: RetryPolicy | None = None,
     sleep: Any = None,
+    retryable_statuses: Collection[int] | None = None,
+    retryable_reasons: Collection[str] | None = None,
+    retry_ambiguous_failures: bool = True,
 ) -> Any:
     """Execute one Google API request under the shared ParishKit retry policy.
 
-    Maps Google ``HttpError`` responses onto ParishKit's retry model: statuses
-    in :data:`TRANSIENT_GOOGLE_STATUSES` (rate limits and 5xx) become retryable
-    errors, anything else becomes a terminal :class:`GoogleAPIError`. ``policy``
-    and ``sleep`` are forwarded to :func:`retry_call` (``sleep`` is injectable so
-    tests need not actually wait). Returns the request's parsed response.
+    Maps Google ``HttpError`` responses onto ParishKit's retry model. By
+    default, statuses in :data:`TRANSIENT_GOOGLE_STATUSES` and explicit quota
+    reasons in :data:`TRANSIENT_GOOGLE_REASONS` become retryable errors;
+    anything else becomes a terminal :class:`GoogleAPIError`.
+
+    Callers performing notification-sending writes can narrow the retryable
+    statuses and set ``retry_ambiguous_failures=False``. That preserves retries
+    for explicit quota rejections while leaving timeouts, connection failures,
+    and uncertain server errors one-shot. ``policy`` and ``sleep`` are forwarded
+    to :func:`retry_call`. Returns the request's parsed response.
     """
 
+    statuses = (
+        TRANSIENT_GOOGLE_STATUSES
+        if retryable_statuses is None
+        else set(retryable_statuses)
+    )
+    reasons = (
+        TRANSIENT_GOOGLE_REASONS
+        if retryable_reasons is None
+        else set(retryable_reasons)
+    )
     kwargs: dict[str, Any] = {}
     if sleep is not None:
         kwargs["sleep"] = sleep
+    if not retry_ambiguous_failures:
+        kwargs["retry_on"] = (_TransientGoogleAPIError,)
 
     def execute() -> Any:
         """Execute the request once, translating HttpError into typed errors.
@@ -253,7 +277,7 @@ def execute_google_request(
                 status,
                 exc,
             )
-            if status in TRANSIENT_GOOGLE_STATUSES:
+            if status in statuses or _google_error_reasons(exc) & reasons:
                 raise _TransientGoogleAPIError(status, str(exc)) from exc
             raise GoogleAPIError(status, str(exc)) from exc
 
@@ -269,3 +293,28 @@ def execute_google_request(
                 exc.last_exception.message,
             ) from exc
         raise
+
+
+def _google_error_reasons(error: BaseException) -> set[str]:
+    """Return structured Google API error reasons exposed by ``HttpError``.
+
+    Modern google-api-python-client releases expose ``error_details`` as nested
+    mappings/lists. Walking that structure avoids treating every HTTP 403 as a
+    rate limit and keeps permission failures terminal.
+    """
+    reasons: set[str] = set()
+
+    def collect(value: Any) -> None:
+        """Recursively collect string values stored under ``reason`` keys."""
+        if isinstance(value, Mapping):
+            reason = value.get("reason")
+            if isinstance(reason, str):
+                reasons.add(reason)
+            for nested in value.values():
+                collect(nested)
+        elif isinstance(value, list | tuple):
+            for nested in value:
+                collect(nested)
+
+    collect(getattr(error, "error_details", None))
+    return reasons
