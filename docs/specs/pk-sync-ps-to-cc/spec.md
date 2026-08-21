@@ -95,9 +95,12 @@ non-empty strings; any other key is rejected).
 Both are read at runtime via `load_client_id` / `get_access_token`. Relative
 paths resolve against the **config file's directory** (`resolve_path(...,
 base_dir=config_base_dir)`). The token is loaded with `allow_refresh = not
-common.dry_run` (see [§8](#8-guardrails-and-write-safety)). These are the
-documented credential files; the *client* and its OAuth lifecycle are specified
-in [Constant Contact layer](../intro/spec.md#constant-contact-layer).
+common.dry_run` (see [§8](#8-guardrails-and-write-safety)). Live runs refresh a
+token when less than 60 seconds of validity remain. If Constant Contact still
+rejects a token with HTTP 401, a side-effect-free GET refreshes the persisted
+token and retries once; writes are not automatically replayed after 401. These
+are the documented credential files; the *client* and its OAuth lifecycle are
+specified in [Constant Contact layer](../intro/spec.md#constant-contact-layer).
 
 ### 4.2 `sync` section (required)
 
@@ -359,6 +362,10 @@ All guards raise `ConfigError` (→ exit 2) before any Constant Contact write.
   (`RetryPolicy(attempts=1)`) so a hidden-success transient response can't
   duplicate a contact; the update PUT uses the normal retry policy. (Client
   detail; see [Retry policy](../intro/spec.md#retry-policy).)
+- **Token-expiration boundary.** Live runs refresh with a 60-second safety
+  margin. A safe GET that unexpectedly receives HTTP 401 forces one token
+  refresh and one retry; a second 401 is terminal, and write calls never use
+  this recovery path.
 - **Dry-run never refreshes tokens.** `allow_token_refresh = not common.dry_run`
   is threaded into `get_access_token`, so a dry run with an expired token raises
   rather than rewriting the credential file; a dry run reads everything, writes

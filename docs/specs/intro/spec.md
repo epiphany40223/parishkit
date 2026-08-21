@@ -411,14 +411,15 @@ repository README; tool specs reference the scopes they need.
 plus its OAuth lifecycle and ParishSoft↔contact mapping.
 
 - **`ConstantContactClient`**: authenticated GET (`get_all`, follows `_links.next`
-  pagination, page size 500), `put` (retryable), `post` (one-shot to avoid
-  duplicate-create on a hidden success). Errors normalize to `CCAPIError`.
+  pagination, page size 500, refreshes and retries once after an unexpected 401),
+  `put` (retryable), `post` (one-shot to avoid duplicate-create on a hidden
+  success). Errors normalize to `CCAPIError`.
 - **OAuth device flow**: `run_device_oauth_flow` (interactive, used by the
   documented smoke-test bootstrap), `refresh_access_token`, and
-  `get_access_token` (loads the saved token, returns it if valid, otherwise
-  refreshes and writes it back — under an `fcntl` file lock so overlapping
-  processes don't race; refresh is suppressed in dry-run so a dry run never
-  rewrites credential files).
+  `get_access_token` (loads the saved token, returns it if it has at least 60
+  seconds of validity remaining, otherwise refreshes and writes it back — under
+  an `fcntl` file lock so overlapping processes don't race; refresh is
+  suppressed in dry-run so a dry run never rewrites credential files).
 - **Mapping helpers**: `update_contact_body` / `sign_up_form_body` (copy only
   writable fields, strip periods from first names), `create_contact_dict`,
   `link_cc_data` and `link_contacts_to_ps_members` (resolve list/custom-field IDs

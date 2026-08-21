@@ -482,7 +482,7 @@ def test_constant_contact_client_resolves_relative_credential_paths(
         fake_get_access_token,
     )
 
-    constant_contact_client(
+    client = constant_contact_client(
         {
             "constant_contact": {
                 "client_id_file": "credentials/cc-client.json",
@@ -496,6 +496,12 @@ def test_constant_contact_client_resolves_relative_credential_paths(
     assert calls[1][0] == "access_token"
     assert calls[1][1] == tmp_path / "credentials" / "cc-token.json"
     assert calls[1][3]["allow_refresh"] is True
+    assert client.access_token_refresh is not None
+
+    client.access_token_refresh()
+
+    assert calls[2][3]["allow_refresh"] is True
+    assert calls[2][3]["force_refresh"] is True
 
 
 def test_load_cc_data_filters_soft_deleted_contacts():

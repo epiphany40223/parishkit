@@ -24,7 +24,8 @@ import json
 import logging
 import random
 import time
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,7 @@ from parishkit.parishsoft import salutation_for_members
 from parishkit.retry import RetryError, RetryPolicy, TransientRetryError, retry_call
 
 LOGGER = logging.getLogger(__name__)
+ACCESS_TOKEN_REFRESH_MARGIN = dt.timedelta(seconds=60)
 
 
 class CCAPIError(RuntimeError):
@@ -94,10 +96,12 @@ class ConstantContactClient:
         config: ConstantContactConfig,
         *,
         session: requests.Session | None = None,
+        access_token_refresh: Callable[[], dict[str, Any]] | None = None,
     ) -> None:
-        """Store config and reuse the given session, or create a new one."""
+        """Store config, session, and an optional unexpected-401 refresher."""
         self.config = config
         self.session = session or requests.Session()
+        self.access_token_refresh = access_token_refresh
 
     def headers(
         self,
@@ -135,14 +139,16 @@ class ConstantContactClient:
         page. The optional ``include`` and ``status`` query parameters are only
         applied to the first request. Returns the concatenated list of records.
         """
-        headers, params = self.headers(include=include, status=status, limit=500)
+        _, params = self.headers(include=include, status=status, limit=500)
         url = self._url(api_endpoint)
         items: list[dict[str, Any]] = []
         while url:
-            response = self._request(
+            # Build the Authorization header inside the callable so a one-time
+            # refresh after HTTP 401 immediately uses the replacement token.
+            response = self._get_with_access_token_refresh(
                 lambda url=url, params=params: self.session.get(
                     url,
-                    headers=headers,
+                    headers=self.headers()[0],
                     params=params,
                     timeout=self.config.timeout,
                 )
@@ -162,6 +168,27 @@ class ConstantContactClient:
             # explicit params to avoid sending them twice.
             params = {}
         return items
+
+    def _get_with_access_token_refresh(self, func: Any) -> requests.Response:
+        """Run one safe GET, refreshing and retrying once after HTTP 401.
+
+        Constant Contact can reject a token that was valid when the scheduled
+        run began but expired while ParishSoft data or earlier pages were being
+        loaded. GET requests have no side effects, so one refresh and retry is
+        safe. Writes deliberately do not use this path.
+        """
+        try:
+            return self._request(func)
+        except CCAPIError as exc:
+            if exc.status_code != 401 or self.access_token_refresh is None:
+                raise
+            LOGGER.info(
+                "Constant Contact access token was rejected; refreshing and "
+                "retrying GET once"
+            )
+            refreshed = self.access_token_refresh()
+            self.config = replace(self.config, access_token=refreshed)
+            return self._request(func)
 
     def put(self, api_endpoint: str, body: dict[str, Any]) -> dict[str, Any]:
         """Send a PUT (update) request and return the parsed response."""
@@ -385,15 +412,23 @@ def load_access_token(path: str | Path) -> dict[str, Any]:
 
 
 def token_is_valid(
-    access_token: dict[str, Any], *, now: dt.datetime | None = None
+    access_token: dict[str, Any],
+    *,
+    now: dt.datetime | None = None,
+    minimum_validity: dt.timedelta = dt.timedelta(0),
 ) -> bool:
     """Report whether a token is currently within its validity window.
 
     Compares ``now`` (defaulting to the current UTC time) against the token's
     "valid from"/"valid to" timestamps set by :func:`set_valid_from_to`.
+    ``minimum_validity`` lets callers refresh before a token becomes unusable
+    during a multi-request operation.
     """
     current = now or dt.datetime.now(dt.UTC)
-    return access_token["valid from"] <= current <= access_token["valid to"]
+    return (
+        access_token["valid from"] <= current
+        and current + minimum_validity <= access_token["valid to"]
+    )
 
 
 def refresh_access_token(
@@ -641,13 +676,16 @@ def get_access_token(
     now: dt.datetime | None = None,
     timeout: float = 30.0,
     allow_refresh: bool = True,
+    force_refresh: bool = False,
 ) -> dict[str, Any]:
     """Return a valid Constant Contact access token, refreshing if needed.
 
     Loads the saved token from ``token_file``; if it is still within its
-    validity window it is returned as-is, otherwise it is refreshed and the new
-    token is written back to disk. Raises :class:`ConfigError` if the token file
-    does not exist (the manual authorization flow must be run first).
+    validity window, including a short safety margin, it is returned as-is;
+    otherwise it is refreshed and the new token is written back to disk.
+    ``force_refresh`` supports recovery after the API unexpectedly rejects a
+    nominally valid token. Raises :class:`ConfigError` if the token file does
+    not exist (the manual authorization flow must be run first).
     """
     path = Path(token_file).expanduser()
     if not path.exists():
@@ -659,13 +697,18 @@ def get_access_token(
         # Re-read after acquiring the lock: another overlapping process may
         # have refreshed and saved the token while we were waiting.
         access_token = load_access_token(path)
-        if token_is_valid(access_token, now=now):
+        if not force_refresh and token_is_valid(
+            access_token,
+            now=now,
+            minimum_validity=ACCESS_TOKEN_REFRESH_MARGIN,
+        ):
             return access_token
         if not allow_refresh:
             raise ConfigError(
-                "Constant Contact access token is expired; dry-run mode will not "
-                "refresh or rewrite credential files. Run without --dry-run once "
-                "to refresh the token, then retry the dry run."
+                "Constant Contact access token is expired or expires too soon; "
+                "dry-run mode will not refresh or rewrite credential files. Run "
+                "without --dry-run once to refresh the token, then retry the dry "
+                "run."
             )
         refreshed = refresh_access_token(
             client_id,
