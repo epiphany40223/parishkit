@@ -535,17 +535,31 @@ def constant_contact_client(
             base_dir=base_dir,
         )
     )
+    access_token_path = resolve_path(
+        access_token_file,
+        "constant_contact.access_token_file",
+        base_dir=base_dir,
+    )
     access_token = get_access_token(
-        resolve_path(
-            access_token_file,
-            "constant_contact.access_token_file",
-            base_dir=base_dir,
-        ),
+        access_token_path,
         client_id,
         allow_refresh=allow_token_refresh,
     )
+
+    def refresh_rejected_access_token() -> dict[str, Any]:
+        """Force a persisted token refresh after a safe GET receives HTTP 401."""
+        return get_access_token(
+            access_token_path,
+            client_id,
+            allow_refresh=True,
+            force_refresh=True,
+        )
+
     return ConstantContactClient(
-        ConstantContactConfig(client_id=client_id, access_token=access_token)
+        ConstantContactConfig(client_id=client_id, access_token=access_token),
+        access_token_refresh=(
+            refresh_rejected_access_token if allow_token_refresh else None
+        ),
     )
 
 

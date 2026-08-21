@@ -110,6 +110,11 @@ def test_access_token_serialization(tmp_path):
     # Tokens are secrets, so the file must be owner-read/write only.
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert token_is_valid(token, now=dt.datetime(2026, 1, 1, 0, 0, 30, tzinfo=dt.UTC))
+    assert not token_is_valid(
+        token,
+        now=dt.datetime(2026, 1, 1, 0, 0, 30, tzinfo=dt.UTC),
+        minimum_validity=dt.timedelta(seconds=60),
+    )
 
 
 def test_api_pagination():
@@ -129,6 +134,52 @@ def test_api_pagination():
     assert len(session.calls) == 2
     # The client applies its default request timeout.
     assert session.calls[0][2]["timeout"] == 30.0
+
+
+def test_get_all_refreshes_and_retries_once_after_401():
+    """A rejected token is refreshed for a safe GET and the new token is used."""
+    session = Session(
+        [
+            Response({}, status_code=401),
+            Response({"items": [{"id": 1}]}),
+        ]
+    )
+    refreshes = []
+
+    def refresh_access_token():
+        """Record the refresh and return replacement credentials."""
+        refreshes.append(True)
+        return {"access_token": "new-token"}
+
+    client = ConstantContactClient(
+        config(),
+        session=session,
+        access_token_refresh=refresh_access_token,
+    )
+
+    assert client.get_all("items", "items") == [{"id": 1}]
+    assert refreshes == [True]
+    assert session.calls[0][2]["headers"]["Authorization"] == "Bearer token"
+    assert session.calls[1][2]["headers"]["Authorization"] == "Bearer new-token"
+
+
+def test_get_all_does_not_refresh_401_more_than_once():
+    """A replacement token rejected by the API surfaces without a refresh loop."""
+    session = Session([Response({}, status_code=401), Response({}, status_code=401)])
+    refreshes = []
+    client = ConstantContactClient(
+        config(),
+        session=session,
+        access_token_refresh=lambda: (
+            refreshes.append(True) or {"access_token": "new-token"}
+        ),
+    )
+
+    with pytest.raises(CCAPIError, match="401"):
+        client.get_all("items", "items")
+
+    assert refreshes == [True]
+    assert len(session.calls) == 2
 
 
 def test_api_error_raises_typed_exception():
@@ -560,6 +611,48 @@ def test_get_access_token_refreshes_expired_token(tmp_path):
     assert load_access_token(token_path)["access_token"] == "new"
     assert session.calls[0][2]["timeout"] == 30.0
     assert (tmp_path / ".token.json.lock").exists()
+
+
+def test_get_access_token_refreshes_before_expiration_margin(tmp_path):
+    """A token expiring during a run is renewed before the first API request."""
+    start = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
+    token_path = tmp_path / "token.json"
+    save_access_token(
+        token_path,
+        {
+            "access_token": "old",
+            "refresh_token": "refresh",
+            "valid from": start - dt.timedelta(hours=1),
+            "valid to": start + dt.timedelta(seconds=30),
+        },
+    )
+    session = Session(
+        [
+            Response(
+                {
+                    "access_token": "new",
+                    "refresh_token": "refresh2",
+                    "expires_in": 3600,
+                }
+            )
+        ]
+    )
+
+    refreshed = get_access_token(
+        token_path,
+        {
+            "client id": "client",
+            "endpoints": {
+                "api": "https://api.example",
+                "token": "https://auth.example/token",
+            },
+        },
+        session=session,
+        now=start,
+    )
+
+    assert refreshed["access_token"] == "new"
+    assert len(session.calls) == 1
 
 
 def test_get_access_token_refresh_failure_requires_manual_reauth(tmp_path):

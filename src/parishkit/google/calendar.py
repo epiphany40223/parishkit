@@ -4,10 +4,21 @@ from __future__ import annotations
 
 from typing import Any
 
-from parishkit.google.auth import build_service, execute_google_request
+from parishkit.google.auth import (
+    TRANSIENT_GOOGLE_REASONS,
+    build_service,
+    execute_google_request,
+)
 from parishkit.retry import RetryPolicy
 
-_NOTIFICATION_WRITE_POLICY = RetryPolicy(attempts=1)
+_NOTIFICATION_WRITE_POLICY = RetryPolicy(
+    attempts=5,
+    initial_delay=2,
+    backoff=2,
+    max_delay=30,
+    jitter=1,
+)
+_NOTIFICATION_RETRYABLE_STATUSES = {429}
 
 
 def build_calendar_service(credentials: Any, *, build_fn: Any | None = None) -> Any:
@@ -85,4 +96,14 @@ def patch_attendee_response(
             ],
         },
     )
-    execute_google_request(request, policy=_NOTIFICATION_WRITE_POLICY)
+    # A 429 or an explicit 403 rate-limit reason means Google rejected the
+    # request before applying it, so retrying with backoff is safe. Ambiguous
+    # transport and 5xx failures remain one-shot because this PATCH sends
+    # attendee notifications and an uncertain success must not be duplicated.
+    execute_google_request(
+        request,
+        policy=_NOTIFICATION_WRITE_POLICY,
+        retryable_statuses=_NOTIFICATION_RETRYABLE_STATUSES,
+        retryable_reasons=TRANSIENT_GOOGLE_REASONS,
+        retry_ambiguous_failures=False,
+    )
