@@ -75,11 +75,11 @@ Scope and dependencies: [FAM-06 work package](../../plans/stewardship/parishione
 
 - [ ] FAM-06.01 — Build the optional additional-information field.
 - [ ] FAM-06.02 — Build complete response review and attestation.
-- [ ] FAM-06.03 — Implement stale-safe atomic final Submit.
+- [ ] FAM-06.03 — Implement atomic Submit with Family-specific source concurrency.
 - [ ] FAM-06.04 — Render Thank You, queue receipt, and invalidate session.
-- [ ] FAM-06.05 — Preserve in-memory answers on submission errors.
+- [ ] FAM-06.05 — Preserve in-memory edits through errors and refreshed-baseline review.
 - [ ] FAM-06.06 — Enforce Testing acknowledgement at final submission.
-- [ ] FAM-06.07 — Test duplicate, stale, interrupted, and no-change submissions.
+- [ ] FAM-06.07 — Test duplicate, concurrent-response, source-promotion, and interrupted submissions.
 
 Evidence: Not started.
 

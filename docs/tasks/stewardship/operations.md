@@ -24,7 +24,7 @@ Evidence: Not started.
 Scope and dependencies: [OPS-02 work package](../../plans/stewardship/operations.md#ops-02-durable-runtime-paths-and-least-privilege-secrets).
 
 - [ ] OPS-02.01 — Configure durable runtime paths and overrides.
-- [ ] OPS-02.02 — Isolate writable configuration and credential mounts.
+- [ ] OPS-02.02 — Isolate online and offline-bootstrap configuration/credential mounts.
 - [ ] OPS-02.03 — Enforce secret and service-mount boundaries.
 - [ ] OPS-02.04 — Configure safe temporary storage and file permissions.
 - [ ] OPS-02.05 — Test topology, identity, isolation, and durable replacement.
@@ -47,11 +47,11 @@ Evidence: Not started.
 
 Scope and dependencies: [OPS-04 work package](../../plans/stewardship/operations.md#ops-04-bootstrap-migrations-startup-and-upgrades).
 
-- [ ] OPS-04.01 — Integrate bootstrap, metrics-credential provisioning, migration, and health commands.
+- [ ] OPS-04.01 — Integrate bootstrap, offline Admin recovery, startup exclusion, health, and budget validation.
 - [ ] OPS-04.02 — Run migrations once before service rollout.
 - [ ] OPS-04.03 — Implement backup-aware image upgrades and readiness checks.
 - [ ] OPS-04.04 — Document schema evolution and recovery procedures.
-- [ ] OPS-04.05 — Test empty startup, mismatch, crash, and upgrade paths.
+- [ ] OPS-04.05 — Test bootstrap isolation, startup races, mismatch, crash, and upgrade paths.
 
 Evidence: Not started.
 
@@ -61,9 +61,9 @@ Scope and dependencies: [OPS-05 work package](../../plans/stewardship/operations
 
 - [ ] OPS-05.01 — Implement consistent data/config/media backup manifests.
 - [ ] OPS-05.02 — Encrypt, transfer, verify, and retain complete backups.
-- [ ] OPS-05.03 — Route every backup through the isolated backup worker.
+- [ ] OPS-05.03 — Route backup creation and revalidation through the isolated backup worker.
 - [ ] OPS-05.04 — Implement operator-only secret escrow and off-host recovery verification.
-- [ ] OPS-05.05 — Test backup failures, retention, RPO alerts, and restore evidence.
+- [ ] OPS-05.05 — Test backup failures, revalidation, retention, RPO alerts, and restore evidence.
 
 Evidence: Not started.
 
@@ -85,7 +85,7 @@ Evidence: Not started.
 Scope and dependencies: [OPS-07 work package](../../plans/stewardship/operations.md#ops-07-housekeeping-and-retention-jobs).
 
 - [ ] OPS-07.01 — Implement temporary retention and owner-only export storage.
-- [ ] OPS-07.02 — Implement protected source-snapshot compaction.
+- [ ] OPS-07.02 — Implement separate protected source-snapshot and derived-fact compactors.
 - [ ] OPS-07.03 — Constrain cleanup to safe owned records and paths.
 - [ ] OPS-07.04 — Integrate gated Testing and exceptional purge cleanup.
 - [ ] OPS-07.05 — Test retention boundaries, permissions, paths, and races.
@@ -113,7 +113,7 @@ Scope and dependencies: [OPS-09 work package](../../plans/stewardship/operations
 - [ ] OPS-09.02 — Enforce separate scoped line and branch coverage floors.
 - [ ] OPS-09.03 — Build integration, browser, Compose, and image validation jobs.
 - [ ] OPS-09.04 — Provide credential-free CI and human-run smoke tools.
-- [ ] OPS-09.05 — Complete required suites and acceptance traceability.
+- [ ] OPS-09.05 — Complete required suites, saturated-download load tests, and acceptance traceability.
 - [ ] OPS-09.06 — Publish release artifacts only after the authorized final gate.
 
 Evidence: Not started.

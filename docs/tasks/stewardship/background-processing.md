@@ -11,11 +11,11 @@ Follow the [execution and completion rules](README.md#execution-and-completion).
 
 Scope and dependencies: [BG-01 work package](../../plans/stewardship/background-processing.md#bg-01-durable-task-scheduler-lease-and-recovery-substrate).
 
-- [ ] BG-01.01 — Implement durable task and occurrence claims.
+- [ ] BG-01.01 — Implement task/occurrence transitions, claims, and retry chains.
 - [ ] BG-01.02 — Configure singleton scheduling, lost-hint recovery, and isolated queues.
 - [ ] BG-01.03 — Implement transactional campaign-work admission.
 - [ ] BG-01.04 — Expose authorized task progress and status.
-- [ ] BG-01.05 — Test duplicates, crashes, leases, and shutdown.
+- [ ] BG-01.05 — Test all state transitions, admission guards, retries, crashes, and leases.
 
 Evidence: Not started.
 
@@ -51,7 +51,7 @@ Scope and dependencies: [BG-04 work package](../../plans/stewardship/background-
 - [ ] BG-04.02 — Implement revision and semantic-fulfillment identity.
 - [ ] BG-04.03 — Implement locked replacement, removal, and cancellation.
 - [ ] BG-04.04 — Enforce immutable Testing/Production/operational routing.
-- [ ] BG-04.05 — Implement missed-work recovery and coalescing.
+- [ ] BG-04.05 — Implement missed-work coalescing and bounded asynchronous activation catch-up.
 - [ ] BG-04.06 — Test schedule, mode, revision, and restart combinations.
 
 Evidence: Not started.

@@ -13,6 +13,11 @@ PostgreSQL is authoritative; Celery/Valkey only delivers execution hints.
 1. Implement PostgreSQL TaskRun/occurrence claiming with idempotency keys,
    leases, heartbeats, bounded phases/progress, retries, safe cancellation, and
    abandoned-claim recovery.
+   Implement the authoritative TaskRun/ScheduleOccurrence transition tables,
+   complete terminal predicates, and append-only attempt history. Automatic
+   retries reuse nonterminal runs; explicit failed-run retries allocate a
+   deduplicated linked run under a serialized retry chain without changing
+   occurrence identity or semantic fulfillment keys.
 2. Configure one scheduler scan loop and service-specific Celery queues without
    treating queue routing as authorization. Re-emit hints for due unclaimed
    durable work after broker loss, including existing occurrences/outbox rows,
@@ -22,6 +27,11 @@ PostgreSQL is authoritative; Celery/Valkey only delivers execution hints.
 4. Add task status/progress APIs consumed by authorized Admin pages.
 5. Test broker loss/duplicate hints, worker crash, lease expiry, shutdown,
    cancellation boundaries, and upgrade restarts.
+   Exercise every allowed and forbidden transition and every state against
+   archive/purge/schedule-replacement guards. Race manual retry commands,
+   stale owners, and fulfillment; prove abandoned/unknown effects still block,
+   failed history survives retry, and terminal failure never fulfills an
+   outstanding reporting obligation.
 
 ### BG-02: Campaign boundary occurrences
 
@@ -76,7 +86,15 @@ both are tested.
    classifications; operational notifications never inherit Testing rerouting.
 5. Implement missed-work recovery and Family/digest coalescing with accurate
    skipped/coalesced outcomes.
+   Implement the [activation catch-up workflow](../../specs/stewardship/background-processing/spec.md#activation-catch-up)
+   over DAT-02's durable demand: bounded checkpointed batches, complete-group
+   coalescing, scheduled-mail preparation hold, and recovery independent of
+   activation HTTP success or broker-hint delivery.
 6. Test every schedule/mode/race/restart combination.
+   Include activation retry/hint loss, large single-Family/digest groups,
+   concurrent scheduler/source producers, submission/eligibility changes,
+   schedule edits, close/restore races, unfinished-demand archive exclusion,
+   and release of only the catch-up hold after verified completion.
 
 ### BG-05: ParishSoft delta and full refresh
 

@@ -65,7 +65,7 @@ Evidence: Not started.
 Scope and dependencies: [ARC-05 work package](../../plans/stewardship/architecture.md#arc-05-family-code-token-and-family-session-security).
 
 - [ ] ARC-05.01 — Implement Family codes, MAC lookup, and collision-safe migration.
-- [ ] ARC-05.02 — Implement Production/rehearsal credentials and exchange lifecycles.
+- [ ] ARC-05.02 — Implement credential lifecycles and collision-only reservation keys.
 - [ ] ARC-05.03 — Implement mode/epoch-scoped Family sessions and activity handling.
 - [ ] ARC-05.04 — Implement and test distributed Family-code guessing controls.
 - [ ] ARC-05.05 — Enforce Admin/Staff code visibility and leader exclusion.

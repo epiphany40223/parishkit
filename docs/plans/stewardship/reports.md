@@ -23,6 +23,8 @@ charts, and digest mail; templates do not independently recalculate metrics.
    download with requester/status visibility.
    Hold the same guard throughout streaming, with bounded total lifetime and
    cleanup on disconnect, timeout, and connection loss.
+   Integrate the dedicated bounded download pool and accessible retryable busy
+   response from DAT-02, without invalidating an already generated export.
 5. Audit report execution/export without copying viewed sensitive values.
 6. Test stale URLs, archived campaigns, role changes, direct export/download,
    and filter serialization.
@@ -58,6 +60,9 @@ The interactive report and complete package validation finish in Phase 5.
    quiet window with a 30-second maximum debounce, atomic input freezing, and
    one pending follow-up during an ordinary build. Give pinned export/digest
    requests priority with fixed inputs and exact-generation reuse.
+   Integrate the data specification's derived-fact retention guards for pointer
+   publication, pinning, build/recovery, and active consumers; OPS-07 owns the
+   periodic compactor.
 3. Keep current-population and ever-eligible historical scope internally
    consistent and expose source-as-of metadata.
 4. Implement statistics cards for active Families/Members, eligible and
@@ -71,6 +76,9 @@ The interactive report and complete package validation finish in Phase 5.
    sustained traffic reaching the maximum debounce, duplicate hints, events
    racing claims/completion, crash recovery, and fixed-cutoff priority requests
    that neither chase submissions nor discard newer interactive demand.
+   Race compaction against selection, rendering, drift verification, and new
+   pins; verify protected generations survive and eligible superseded daily
+   rows are reclaimed without changing report values or source history.
 
 ### RPT-04: Additional-information workflow report
 

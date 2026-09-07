@@ -25,6 +25,12 @@ validation is never sufficient.
 2. Implement AppliedConfigurationVersion, ConfigurationChangeRequest,
    SecretReplacementRequest, normalized YAML materializations, Parish/branding,
    SystemConfiguration, and integration metadata/fingerprints.
+   Include actor-scoped configuration-request idempotency keys, canonical
+   payload/base-digest fingerprints, and applied-version status responses for
+   ADM-07's serialized autosave queue.
+   Represent OPS-04's operator-recovery authority and unique operation ID without
+   a fabricated PortalUser, using the same installer state machine and atomic
+   session-revocation/audit/security-notification activation effects.
 3. Enforce one active applied version matching the YAML digest, immutable
    configuration projections, target-specific request claims, singleton parish/
    runtime-configuration rules, and Testing default.
@@ -32,6 +38,9 @@ validation is never sufficient.
    fields.
 5. Implement the base TaskRun record/claim metadata required by BG-01; later job
    packages extend it with outbox and workflow records.
+   Include logical-operation/retry-chain identity, derived execution keys,
+   retry-command deduplication, and append-only attempt/transition history with
+   unique retry sequences and at most one nonterminal run per chain.
 6. Test constraints, YAML/request state machines and mismatch recovery, UTC
    round trips, optimistic versions, TaskRun claims, and secret-value exclusion.
 
@@ -48,12 +57,20 @@ validation is never sufficient.
    fresh admission checks, and bounded response-lifetime wrapper before any
    campaign-detail/report/download consumers; integrate destructive drainage
    with DAT-09/BG-11 later.
+   Implement deployment-wide guarded-download admission and dedicated bounded
+   connection ownership under the canonical read-guard contract; integrate
+   OPS-04 budget validation and release only after stream/transaction closure.
 3. Implement CampaignBoundaryOccurrence and lifecycle/mode transition history.
+   Add ActivationCatchUpDemand keyed by activation request with input cutoff,
+   retry-chain reference, bounded-progress/group checkpoints, completion, and
+   derived scheduled-mail hold; unfinished demands participate in quiescence.
 4. Implement ScheduleDefinition, immutable revisions, occurrence records,
    semantic fulfillment, replacement/removal markers, restore delivery holds,
    and PostCloseMailResolution coverage/actor/reason records with explicit
    semantic-resolution and occurrence/outbox/task idempotency uniqueness
    constraints. Wire later submission/item references with DAT-06/DAT-07.
+   Preserve occurrence identity across explicit retries and apply BG-01's
+   canonical terminal/transition contract, distinct from semantic fulfillment.
 5. Add race tests for creation, activation, close, draft timezone/end-date
    edits, Parish-default timezone changes, withdrawal, reopen, archive,
    unarchive, and return to Testing.
@@ -74,6 +91,10 @@ validation is never sufficient.
 6. Add immutable CampaignDailyFactSet/DailyFact generation, completeness,
    publication-pointer, and pinned-reference constraints, plus the unique
    per-campaign/scope CampaignFactRebuildDemand row and claim/pending revisions.
+   Add the reference/read guards and safe deletion boundaries required by
+   [derived fact retention](../../specs/stewardship/data/spec.md#derived-fact-retention),
+   preserving task/audit generation-key metadata without retaining disposable
+   daily rows solely for operational history.
 7. Add source watermark/cursor storage, count/digest validation records, and
    integration tests for failed staging, stale-owner denial, atomic promotion,
    deduplication, fact publication, protected references, cutoff boundaries,
@@ -97,6 +118,9 @@ validation is never sufficient.
    so final reopen never rewrites every Family token. Add separate rehearsal
    epochs/credentials, retired-code HMAC reservations, mode/epoch-scoped
    sessions, and transactional invalidation plus bounded sensitive cleanup.
+   Implement RehearsalCodeReservation as its own campaign/key/digest table,
+   atomically reserve at issuance across all epochs, and retain its unlinked
+   rows through cleanup until purge. Do not backfill HMAC-only reservations.
    Bind Production generations and outbox substitutions to the deployment
    Family-link credential epoch; restore invalidates old generations for all
    Families, including future reactivations, before fresh preparation.
@@ -109,14 +133,22 @@ validation is never sufficient.
    chairperson suggestions, suspension/review tasks, and login/audit history.
 2. Materialize configured rules/manual assignments from exact YAML versions and
    keep source suspension/reactivation as a fail-closed runtime overlay.
+   Persist rule creation origin, AddressRoleGrant origin sets and operation
+   references in YAML and materialized rows; validate exact role/grant parity
+   and reject missing or inconsistent provenance rather than inferring it.
 3. Enforce no domain Administrator, no `gmail.com` domain, explicit-address
    precedence, last-Administrator protection, and hosted-domain evidence.
 4. Implement Admin-confirmed chair-seed configuration requests and snapshot-
    driven suspension/reactivation while preserving manual assignments and
    unrelated roles.
+   Apply the explicit provenance predicate and preserve manual origins across
+   seed refreshes, unrelated edits, and immutable configuration versions.
 5. Add indexes for normalized email/domain and Ministry row-scope queries.
 6. Test every role-source transition, activation race, and concurrent autosave
    digest conflict.
+   Test DAT-01's actor-scoped request idempotency, immutable request status, and
+   applied-version handoff for ADM-07's queue. Reject changed-payload key reuse and
+   unauthorized retries without duplicate activation/audit/notification.
 
 ### DAT-06: Immutable submissions and proposal overlay
 
@@ -125,13 +157,20 @@ validation is never sufficient.
    additional information.
 2. Store baseline snapshot/prior response, schema/content versions, mode,
    campaign-local submission date, and monotonic Family version.
+   Implement session-bound FamilyFormBaseline metadata and expiring input pins,
+   trusted reconstruction of the versioned relevant-form projection, and
+   separate reviewed/validation source references without saving draft answers.
 3. Implement atomic final-submit service that validates the complete payload,
-   rejects stale versions, creates derived proposals/workflows, and advances
+   rejects changed effective versions or relevant form inputs, allows unrelated
+   source promotions, creates derived proposals/workflows, and advances
    only the correct test/live effective pointer.
 4. Implement ProposedChange decision/execution dimensions, writability registry,
    provenance, supersession, and separate death-date/deceased-semantic records.
 5. Test no-change and all-field submissions, immutable history, test/live
    isolation, stale races, and retry after a failed transaction.
+   Race relevant/unrelated promotions with baseline creation, compaction, and
+   final submit; cover membership/option additions/removals, disabled modules,
+   canonical equivalence, forged/expired references, and current eligibility.
 
 ### DAT-07: Follow-up, content, templates, jobs, and audit
 
@@ -169,10 +208,14 @@ validation is never sufficient.
    execution checkpoints, conflicts, read-after-write verification, and
    immutable outcome records.
 2. Implement PurgeRequest state machine, campaign-wide gate ownership,
-   inventory/backup expirations, immutable recovery attestations with dependency
+   inventory/backup expirations, append-only backup-verification records with
+   same-backup revalidation guards, immutable recovery attestations with dependency
    versions/expiry/invalidation, batch checkpoints, tombstone, and allowable
-   rollback boundaries; require Testing, a null current pointer, and no
-   successor campaign at creation, confirmation, and claim. Block draft creation
+   rollback boundaries; enforce the canonical
+   [purge eligibility guard](../../specs/stewardship/data/spec.md#job-outbox-audit-and-purge-records)
+   at creation, confirmation, and claim. An archived historical successor does
+   not close the recurring purge window; an unfinished current campaign does.
+   Block draft creation
    while any purge request is nonterminal, under the same global lock; a
    completed purge's permanent tombstone gate must not block a successor.
    Store reader-drain progress/deadlines and integrate the DAT-02 shared guard
@@ -182,7 +225,9 @@ validation is never sufficient.
    history, and Admin-approved campaign purge without unsafe cascades.
 4. Add PostgreSQL integration tests for gate/pointer/successor races, fencing,
    deletion batches, pre-delete rollback, post-delete retry, cleanup failure,
-   and retained parish-owned audit.
+   and retained parish-owned audit. Test that successful same-backup
+   revalidation renews only backup evidence, preserves original timestamps,
+   and rejects stale completions without extending recovery expiry.
 
 ## Review handoffs
 

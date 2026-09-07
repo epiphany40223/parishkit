@@ -72,13 +72,16 @@ each secret read-only only into services that need it; mounting the whole
 credentials directory into an application service is prohibited. In
 particular, token public keys are available to `web`/general workers, while
 token private keys are mounted only into `mail-dispatch` or the explicit
-`token-key-rotation` profile and Google mail-provider credentials only into
+`token-key-rotation` profile, except for initial provisioning by the
+[offline bootstrap profile](#offline-bootstrap-profile), and Google mail-provider credentials only into
 `mail-dispatch`. The scheduler, web, general
 worker, report/export jobs, and ordinary maintenance commands cannot read the
 private token-key path. Images, Compose files, logs, exceptions, backup
 metadata, and support bundles never contain credential values.
 
-Only `config-installer` mounts `<root>/config/stewardship` read-write; other
+Among online services, only `config-installer` mounts
+`<root>/config/stewardship` read-write; the sole initial-provisioning exception
+is the [offline bootstrap profile](#offline-bootstrap-profile). Other
 online services either mount its active manifest/versions read-only for startup
 verification or consume the matching PostgreSQL materialization. Each
 `credential-installer-*` instance mounts a separate target subdirectory read-
@@ -93,6 +96,7 @@ data-backup encryption key as individual read-only mounts. It receives no OAuth,
 ParishSoft, mail, Slack, Django, general-encryption, or token-key secret. The
 backup manifest records credential/key fingerprints and key IDs only. All
 credential files, including every retained data-backup decryption key version,
+and collision-only MAC keys required by RehearsalCodeReservation records,
 are protected by the separately authorized operator secret-escrow process below;
 copying them into an application database, report, or ordinary backup task is
 prohibited.
@@ -172,7 +176,8 @@ Documented first deployment order is:
 
 1. Create operator-owned config/credential/volume locations.
 2. Start PostgreSQL/Valkey and verify health.
-3. Run the pre-migration phase of `pk-stewardship bootstrap` if not restoring;
+3. Run the pre-migration phase of `pk-stewardship bootstrap` through the
+   [offline bootstrap profile](#offline-bootstrap-profile) if not restoring;
    it creates/validates deployment configuration, the minimal initial-Admin
    Stewardship YAML authority, installer handoff keys, Django signing/general-
    encryption keyring, Family-code MAC keyring, and email-link sealed-box
@@ -194,6 +199,137 @@ across releases.
 Rollback instructions distinguish application rollback (only when schema is
 compatible) from database restore. Startup refuses an unsupported newer schema
 or missing credential file and reports a sanitized actionable error.
+
+### Offline bootstrap profile
+
+The `bootstrap` Compose profile is an explicitly operator-invoked, one-shot
+provisioning command, excluded from ordinary service startup and never callable
+from the web UI, scheduler, or task queue. It is the initial-provisioning
+exception to online installer-only write authority, not a general configuration
+repair or credential-rotation interface. Both bootstrap phases run before
+web, workers, scheduler, installers, and proxy start; PostgreSQL and Valkey may
+run for readiness checks, migration, and initial database materialization.
+The deployment startup workflow must enforce mutual exclusion between
+bootstrap and online application services, including concurrent start attempts,
+without granting bootstrap Docker-socket access.
+
+Use a dedicated one-shot service identity with operator-provisioned ownership
+and restrictive file/directory modes. Its write mounts are limited to the
+deployment-config target, the Stewardship-authority directory, and separately
+enumerated credential target subdirectories for initial installer handoff keys,
+Django signing/general-encryption keys, Family-code MAC keys, email-link
+public/private keys, and the metrics bearer credential. Mount existing Google
+OAuth and database credentials individually read-only as needed; these are
+operator-provided inputs, not permission to rewrite unrelated credentials.
+Any startup-interlock storage must likewise be narrowly scoped. Do not mount
+the whole config or credentials tree, broad host paths, campaign files, or a
+Docker socket. Honor configured path overrides and final consumer ownership;
+never relax permissions to accommodate provisioning.
+
+Pre-migration provisioning requires no application tables. After migration,
+bootstrap may import only the initial configuration/Admin marker into the
+empty application database. Matching partial provisioning can be resumed
+idempotently; nonmatching existing configuration/key material or an already
+configured/restored deployment is refused without overwriting it. Remove the
+one-shot container after completion; its write mounts are never inherited by
+online services. Test the rendered mount/identity boundaries, offline startup
+interlock, partial-run recovery, nonmatching-input refusal, and both bootstrap
+phases in local and production Compose configurations.
+
+### Offline Admin-access recovery
+
+`pk-stewardship recover-admin` is a separate operator-only command for loss of
+usable Google Admin access, including account rename or deactivation. Invoke
+it explicitly through an `admin-recovery` one-shot Compose profile with host
+operator authority; it is absent from ordinary startup and cannot be invoked
+by a web route, task queue, or scheduler. It creates no application session,
+password, recovery token, or alternate authentication provider. An operator must
+independently establish the parish's authorization to grant the replacement
+Google email; the command does not claim to verify account ownership offline.
+
+Stop web, all workers, scheduler, online installers, and proxy before recovery.
+Use the same deployment-wide offline/startup interlock as bootstrap, including
+concurrent start exclusion; PostgreSQL/Valkey may remain running. This profile
+runs the existing config-installer implementation with its service identity
+and narrow authority-directory write mount, not a second general-purpose YAML
+writer. Mount only deployment configuration and required database credentials
+read-only plus narrowly scoped interlock storage. Grant no credential-target
+write mounts, whole-directory secrets, provider/token private keys, campaign
+files, or Docker socket. No online service gains this command's operator
+authorization; bootstrap retains its empty-deployment-only behavior.
+
+Require an initialized, supported database and matching active YAML/database
+configuration. An unresolved configuration installation or mismatch must be
+recovered through the existing installer protocol first, never overwritten.
+The command displays deployment/parish identity, current Admin rules, the exact
+normalized target email, and a minimal diff. Require a named operator, reason,
+and explicit confirmation of deployment identity and target email; unattended
+invocation must supply equivalent explicit confirmations, never default to yes.
+The permitted patch only adds Administrator with manual provenance to that
+exact-address rule, creating it if absent. Preserve other roles, rule origins,
+assignments, all existing Admin grants, and all unrelated configuration. Adding
+Admin to an explicit-deny rule is shown as an intentional access grant. No
+domain grants, account rebinding, removal, or general configuration edits are
+accepted; removal of an obsolete Admin is a later normal authenticated action.
+
+Create a tagged operator-recovery ConfigurationChangeRequest and apply a new
+immutable YAML version through the same base-digest, schema-validation,
+prepare/manifest/activation, and crash-recovery protocol as the installer.
+Its authority is the explicit offline operator workflow, not a fabricated
+PortalUser or bypass flag accepted by ordinary configuration APIs. Repeated
+execution/resume of one recovery operation is idempotent and cannot emit
+duplicate grants/events. Preserve prior configuration and audit history.
+
+Matching database activation also revokes all administration-portal sessions
+and pending administrative OAuth/reauthentication state, records a parish-owned
+audit with operator identity/reason, target, operation ID, and before/after
+digests/roles, and creates a persistent unacknowledged security event. Queue
+operational notifications to preexisting Admins and the replacement address
+under normal notification/routing policy; the offline command sends no email
+itself and delivery failure cannot erase the audit or roll back recovery.
+Family sessions, campaign state, submissions, and purge/restore/other admission
+gates remain unchanged. A failed/interrupted activation stays fail-closed and
+resumes by operation ID; never report success until YAML/database digests and
+the session revocation/security event agree.
+
+After removing the one-shot container and restarting services, the replacement
+Admin must complete ordinary Google authentication. The runbook verifies that
+login and reviews the security event before any obsolete access is removed.
+This workflow cannot repair a Google outage, inaccessible database, or missing
+required configuration/credentials; report those blockers without weakening
+authentication or clearing maintenance gates.
+
+### Download capacity and timeouts
+
+Deployment YAML defines a finite guarded-download cap, bounded download pool,
+and separate finite connection budgets for interactive traffic, background
+services, and operator/recovery work. Follow the default cap and admission
+behavior in [campaign read guards](../data/spec.md#campaign-read-guards).
+Download pool capacity may not exceed its admission cap or spill into other
+pools. Budget all processes, replicas, rollout overlap, and auxiliary database
+connections; their combined configured maxima plus PostgreSQL-reserved slots
+must fit the database connection limit. Each non-download class retains
+positive dedicated headroom sized and load-tested for its configured worker
+concurrency and the architecture's reference load. Downloads must also leave
+web execution capacity for interactive requests; limiting database connections
+alone is insufficient if streaming occupies every web worker/thread.
+
+Startup/deployment validation rejects an inconsistent pool, process, database,
+or timeout budget. The admission cap remains deployment-wide during scaling,
+restarts, and rolling upgrades; a per-process semaphore alone is insufficient.
+Expose active downloads, busy rejections, pool utilization, and guard timeouts
+without recording downloaded data.
+
+For the dedicated download connections, set a finite
+`idle_in_transaction_session_timeout` longer than the total download deadline
+but shorter than the purge reader-drain timeout. With the five-minute download
+and six-minute drain defaults, use five minutes 30 seconds. Any applicable
+database transaction/session, application, or proxy timeout must likewise allow
+the declared download lifetime; do not globally disable database hardening for
+other traffic. The application still enforces the hard total response deadline
+and closes the stream/transaction; idle timeouts are only a fallback, not the
+continuous-transfer time limit. Guard-connection loss aborts the response.
+Validate these relationships when overriding any deadline or scaling services.
 
 ## Backup
 
@@ -230,6 +366,11 @@ PurgeRequest that has reached quiescence. The web process never receives backup
 credentials or performs the backup inline; `backup-worker` reads the existing
 credential reference. Purge-triggered backups follow ordinary
 retention and are additionally referenced immutably by the PurgeRequest.
+The same isolated service supports guarded revalidation of the selected backup
+without creating a new backup or resetting retention, as defined by the
+[purge workflow](../admin-portal/spec.md#campaign-purge). Verification failures
+are recorded durably with sanitized diagnostics; no backup credentials or
+decrypted contents are returned to the web process.
 
 ## Restore
 
@@ -359,6 +500,17 @@ Only the dedicated source-compaction service may thin unprotected snapshot
 corpora, under the normative retention and reference guards in the
 [data specification](../data/spec.md#source-snapshot).
 
+Run dedicated derived-fact compaction hourly by default, with a configurable
+positive interval and bounded batches, under the
+[derived fact retention policy](../data/spec.md#derived-fact-retention).
+It removes only eligible superseded generations, respects campaign purge/
+restore gates, and resumes safely after interruption. Record counts, duration,
+last successful completion, and eligible backlog without copying report values;
+surface failures through normal task monitoring. Do not put fact deletion in
+unrestricted generic cache cleanup. This is an explicit exception for disposable
+derived calculations, not a change to source/submission or pinned-report
+retention.
+
 Live campaign data otherwise remains indefinitely until the Admin web purge
 defined by the [Admin specification](../admin-portal/spec.md#campaign-purge).
 
@@ -432,6 +584,54 @@ exhaustive branch-oriented tests.
 
 Required suites include:
 
+- direct-activation catch-up tests at 5,000 Families with many overdue schedules,
+  measuring confirmation/global-lock duration and concurrent Family response
+  latency against architecture targets. Assert a constant-size demand/task
+  insertion rather than per-Family materialization during confirmation. Test
+  bounded batches even for one large coalescing group, atomic checkpoints,
+  repeated activation/lost hints, worker restart, changed schedules/eligibility,
+  competing scheduler/source producers, close/restore/pause races, hold-aware
+  dispatch, and unfinished-demand archive/purge exclusion. Final completion
+  must release only its own hold with no duplicate semantic delivery;
+- Family-form concurrency tests for unrelated versus relevant source promotion,
+  canonical equivalence, household/Member and Ministry-option additions/removals,
+  financial changes, disabled sections, relevant form-definition changes, and
+  another effective Family response. Verify trusted session-bound baseline
+  reconstruction, forged/expired reference denial, source-pin/compaction races,
+  pin transfer on commit, promotion/Submit serialization, current eligibility/
+  campaign checks, and in-memory conflict review preserving actual edits without
+  storing drafts or exposing inaccessible data;
+- offline Admin-recovery tests for sole-account rename/deactivation, an
+  existing explicit-deny target, manual role provenance, and preservation of
+  old grants/unrelated configuration. Verify host-profile-only invocation,
+  narrow installer mounts, startup mutual exclusion, confirmation, stale
+  digests, uninitialized/mismatched configuration refusal, crash/resume
+  idempotency, session/OAuth revocation, durable audit/security notifications,
+  unchanged campaign/maintenance gates, and mandatory normal Google login.
+  No test or command may mint a session or rebind an existing Google account;
+- exhaustive TaskRun/ScheduleOccurrence transition tests using the canonical
+  background tables, including rejection of every unlisted edge and idempotent
+  repeated commands. Check each state against archive, purge quiescence,
+  schedule replacement, and recovery; cover abandoned-owner fencing, unknown
+  external effects, terminal failure versus semantic coverage, concurrent
+  explicit retry deduplication, linked attempts with unchanged occurrence/
+  delivery identity, and immutable prior failure/uncertainty history;
+- rehearsal-reservation tests for atomic issue/reserve rollback, concurrent
+  epoch issuance, duplicate retry, and collision with an earlier epoch's code
+  after credential cleanup and MAC rotation. Verify reservation records contain
+  no Family/epoch links or recoverable codes, collision-only keys never enter
+  authentication lookup, missing keys fail issuance closed, and retirement is
+  blocked until all reservation/backup dependencies are satisfied. Test purge
+  of one versus the last referencing campaign and restore with the required
+  historical collision keys; no test may rekey an HMAC-only reservation by
+  assuming deleted plaintext is still available;
+- role-provenance tests for manual versus seed-created rules, manual/seed/mixed
+  Ministry-leader grants, inherited-domain roles copied into overrides, and
+  source loss/return with zero or remaining active assignments. Verify explicit
+  independent retention, unrelated checkbox/assignment edits, role removal,
+  repeated suggestion refresh, YAML round-trip/activation, and audit history;
+  reject missing/inconsistent origins and prove provenance never replaces
+  Ministry row-scope authorization;
 - purge-reader tests that pause a report between queries and a download between
   chunks, claim purge concurrently, and prove no deletion starts until their
   shared guards release. Verify new readers are denied after claim, first-batch
@@ -440,6 +640,14 @@ Required suites include:
   before the first checkpoint repeat drainage. Cover lazy queries, streaming
   transaction scope, guard-connection loss, multi-campaign lock order, slow
   transfers, cancellation, and post-deletion retry with admission still closed;
+- download-capacity tests across multiple web processes, restart/rollout
+  overlap, and slow clients. Saturate the download limit while running the
+  reference Family workload and background jobs; verify interactive response
+  targets, reserved connection/web execution capacity, prompt retryable busy
+  responses without file bytes, and no pool spillover. Exercise disconnects,
+  timeout/connection loss, stale admission leases, and purge drainage to prove
+  slot recovery never precedes guard/stream closure. Reject conflicting pool
+  and timeout configurations, including overridden deadlines;
 - purge-recovery evidence tests for missing/wrong escrow, unavailable recovery
   private material, missing historical keys, failed backup decryption, manifest
   mismatch, future timestamps, and exact 60-minute expiry. Verify new evidence
@@ -475,6 +683,15 @@ Required suites include:
   fake-clock tests cover burst/sustained debounce, claim/completion races,
   duplicate hints, recovery preserving newer demand, fixed pinned cutoffs and
   priority, and prevention of interactive-pointer regression;
+- fact-compaction tests for many successive generations and both population
+  scopes, hourly scheduling, bounded batches, and crash/retry idempotency.
+  Preserve current/stale-display, pinned, building/recoverable, and actively
+  consumed generations; race cleanup against pointer publication, new pins,
+  reader selection, drift verification, and task claims. Verify export-file
+  expiry does not release retained-parent pins, purge/restore gates block
+  ordinary compaction, removed generations cannot be partially served, and
+  task/audit history plus underlying submissions/protected source inputs are
+  unchanged. After protection ends, eligible daily rows are reclaimed;
 - archive/Return tests for required daily and weekly digests not yet due or
   materialized, explicit audited skips, empty/no-recipient coverage, coalesced
   replacements, failed and unknown deliveries, and new input racing final
@@ -582,6 +799,13 @@ Required suites include:
   without reauthentication or a confirmation dialog while enforcing CSRF,
   optimistic concurrency, current-Admin authorization, last-Administrator
   protection, and complete audit records;
+- autosave browser/installer tests for rapid multi-row/table edits, repeated
+  checkbox changes while applying, and dispatch only after `applied` with its
+  returned digest. Verify queued versus saved indicators, uncertain-outcome
+  reconciliation, same-key retry deduplication, failure/cancellation pauses,
+  genuine multi-tab/Admin conflicts with preserved unsaved intent, removed
+  targets, current-Admin revocation, and page-exit/revisit behavior. Conflicts
+  never silently rebase or bypass provenance, last-Admin, or CSRF guards;
 - limiter tests proving that pre-verification IP rejections contribute once
   without OAuth state allocation, provider calls, raw token retention, or
   duplicate counting, and that post-verification identity-limit rejections

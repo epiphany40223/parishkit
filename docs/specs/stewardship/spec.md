@@ -127,10 +127,10 @@ date interval; it does not change lifecycle state or admit Production
 background work.
 
 1. **Draft**: configuration is editable and Testing mode is mandatory. Creation
-   also requires a null current-campaign pointer and no campaign in `draft`,
-   `scheduled`, `active`, `closed`, `purging`, or `purge_cleanup_failed`, as
-   enforced by the
-   [authoritative database guard](data/spec.md#campaign). The prior campaign
+   must satisfy the complete
+   [authoritative database guard](data/spec.md#campaign), including exclusion
+   of every nonterminal purge request, not just purge lifecycle states.
+   The prior campaign
    must be archived and the Admin must explicitly return the deployment to
    Testing.
 2. **Scheduled**: Production readiness has passed, but the local start date has
@@ -224,9 +224,10 @@ likewise requires readiness validation, fresh Google authentication, explicit
 confirmation, and an audit event before its atomic transition to `active`.
 
 Successor-campaign preparation is intentionally sequential. The administration
-UI disables draft creation while another campaign is draft, scheduled, active,
-closed, purging, or awaiting failed purge cleanup, and the server enforces the
-same rule transactionally. Closing a
+UI and server both enforce the complete
+[draft-creation guard](data/spec.md#campaign), including unfinished purge
+preparation as well as campaign lifecycle restrictions. The server checks it
+transactionally rather than relying on disabled controls. Closing a
 campaign stops Family access and live schedules but leaves it as the sole
 current campaign in Production while reporting and reconciliation finish. The
 Admin must resolve remaining campaign work, archive the campaign, and then use

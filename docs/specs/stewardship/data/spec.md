@@ -43,6 +43,27 @@ validation/errors, candidate digest, installer checkpoints, and state:
 without changing YAML; a crash after YAML activation leaves the application
 fail-closed until the prepared matching database snapshot is activated.
 
+Configuration requests identify their authority as authenticated Admin or the
+explicit [offline operator-recovery workflow](../operations/spec.md#offline-admin-access-recovery).
+The latter stores a named operator, reason, confirmed deployment/target, and
+stable recovery-operation ID rather than fabricating a PortalUser. Enforce
+operation-ID uniqueness and the permitted exact-address Admin-only patch in
+that dedicated service; web/caller-supplied authority fields cannot select it.
+Normal configuration APIs retain current-Admin and CSRF checks. Recovery uses
+the same installer checkpoints and atomically records its required session
+revocation, parish-owned audit, and security-event/notification intents with
+matching database activation.
+
+For the [user-management autosave queue](../admin-portal/spec.md#portal-user-management),
+store a client idempotency key and canonical payload/base-digest fingerprint
+with the request. Enforce uniqueness per actor/key: identical retries return
+the same request/status, while key reuse with a different payload is rejected.
+Status responses include the request's applied-version ID/digest only after
+matching YAML/database activation, plus its authoritative affected values.
+Lookup and retry require current authorization; idempotency is not a bypass of
+role, CSRF, or activation guards. Client intents not yet submitted are not
+durable ConfigurationChangeRequests and cannot be shown as saved.
+
 There is exactly one materialized `Parish` row for each applied configuration
 version containing the display name, main website URL, IANA timezone, valid US
 main phone number, and branding references. Public origin remains solely
@@ -176,6 +197,17 @@ retain all relationships. Exceptional purge is defined by the
 
 ### Schedule revisions and fulfillment
 
+`ActivationCatchUpDemand` is campaign-owned and unique by the activating
+ProductionTransitionRequest. It records activation/due cutoff, relevant input
+version references, linked TaskRun/retry chain, current phase, stable target/
+slot cursors, per-group coalescing checkpoints, counts, completion time, and
+sanitized failure evidence. Completion is independent of the current task's
+terminal state. Its existence without completion supplies the durable
+scheduled-mail preparation hold; no rows need to be allocated per Family in
+the activation transaction. The
+[background workflow](../background-processing/spec.md#activation-catch-up)
+owns batching, claim/dispatch guards, completion, and recovery semantics.
+
 `ScheduleDefinition` gives each initial, reminder, or digest schedule a stable
 logical UUID and campaign/type. Its immutable `ScheduleRevision` rows contain
 the versioned local date/time, template references, and replacement/removal
@@ -249,7 +281,7 @@ load never exposes a partial corpus.
 
 Source compaction uses UTC cutoff instants and never compacts the current
 snapshot or a snapshot protected by a submission baseline/effective version,
-pinned report or digest, reconciliation/publication record, audit reference,
+pinned report or digest, unexpired Family form baseline, reconciliation/publication record, audit reference,
 campaign boundary anchor, restore/delivery hold, or explicit operator hold.
 Those snapshots and their membership/payload rows remain fully reconstructable
 for the lifetime of the protecting record. Among otherwise unprotected
@@ -307,6 +339,45 @@ It stores owner TaskRun, monotonically increasing fencing token, phase,
 acquired/heartbeat/expiry times, and the external-request deadline used for
 safe takeover. Task claims and snapshot promotion record and transactionally
 verify the expected fencing token.
+
+#### Derived fact retention
+
+Superseded, unpinned ready fact generations are disposable derived data, not
+indefinitely retained campaign answers. A dedicated fact-compaction job removes
+their `CampaignDailyFact` rows and unreferenced `CampaignDailyFactSet` records
+in bounded, idempotent batches. A ready generation becomes eligible when a
+newer complete generation replaces it for the same campaign/population scope
+and all protections below have ended; no additional age-based retention is
+required. Preserve existing task/audit history and its generation-key metadata,
+not duplicate calculated daily rows solely for operational history.
+
+Protect the interactive pointer's generation, including a stale generation
+displayed while its replacement builds; every generation/input set pinned by
+a retained export, digest occurrence, or other retained pinned report; building
+or recoverable failed generations and generations needed by queued/retrying
+work; and generations actively read, rendered, or verified. Export-file expiry
+alone does not release a pin whose retained parent metadata still requires
+that generation. Compaction never changes parent retention or discards a pin
+to reclaim space.
+
+Selecting a generation and acquiring its read/use protection must be atomic
+with respect to compaction, as must adding a durable pin, publishing a pointer,
+or claiming build/recovery work. Hold transient protection through every lazy
+query and fact-dependent serialization/rendering operation. The compactor
+rechecks all protections under the same generation/reference guards before
+deleting; if a reference or reader wins, skip that generation. If deletion
+wins, a subsequent selector retries current selection or schedules an exact
+rebuild only when its required inputs remain available. It never substitutes
+another cutoff for a pinned request or exposes a partial generation. A mere
+expired reader heartbeat is not proof that its protection has ended.
+
+This job obeys campaign purge/restore work gates and deletes no submissions,
+source snapshots, provenance, audit records, or protected inputs. Only the
+separate source-compaction policy may reclaim source inputs after their final
+protection ends. Historical inputs that are no longer protected may cease to
+be reconstructable under that existing policy; arbitrary unpinned intermediate
+fact generations are not promised permanent replay. Scheduling and operational
+monitoring are owned by [housekeeping](../operations/spec.md#temporary-retention-and-housekeeping).
 
 ### Family campaign identity
 
@@ -392,9 +463,25 @@ fallback to Production credentials if rehearsal preparation fails.
 
 The mode-disjoint formats and epoch admission rules are defined by
 [Family credential security](../architecture/spec.md#family-credential-security).
-Testing codes are never recycled within a campaign: retain only campaign-scoped,
-versioned HMAC reservations without Family/epoch links after credential cleanup,
-and include them in cross-key collision checks/migrations until campaign purge.
+Testing codes are never recycled within a campaign. A separate
+`RehearsalCodeReservation` table stores campaign UUID, MAC-key ID,
+algorithm/format version, and domain-separated canonical-code HMAC digest.
+It has no Family, Member, credential, or rehearsal-epoch link and no plaintext
+or recoverable code ciphertext. A unique constraint covers
+`(campaign, key ID, algorithm/format version, digest)`; reservation lookup never
+uses FamilyCodeFingerprint's per-Family uniqueness rules.
+
+Issuance reserves the candidate under the active key in the same transaction
+that inserts its RehearsalCredential. Under the campaign generation lock it
+checks the candidate against reservations under every key required by that
+campaign's retained reservations, keeping that key set stable against rotation.
+Collision rejects the candidate and regenerates it; retry of an already-issued
+epoch/Family credential reuses that credential rather than issuing another.
+Reserving at issuance, rather than cleanup, makes exclusion span every epoch
+without a gap. Reservations survive credential cleanup and are removed only
+by campaign purge. Once code ciphertext is deleted, its reservation is not
+backfilled under another key; retain the original key for collision checks
+under the [MAC-key policy](../architecture/spec.md#configuration-and-secrets).
 Rehearsal Family sessions store their epoch and mode. Gate acquisition clears
 the current pointer and invalidates the epoch transactionally; cleanup deletes
 its credential ciphertexts, lookup rows, and sessions in bounded batches while
@@ -421,7 +508,11 @@ the active YAML version uses:
 - `DomainRule`: normalized domain with Staff and/or Ministry-leader roles;
   Administrator is prohibited;
 - `AddressRule`: normalized exact address with any role set, including an empty
-  set that explicitly denies access; and
+  set that explicitly denies access, immutable creation origin (`manual` or
+  `chair-seed`), and originating configuration-request/bootstrap-operation ID;
+- `AddressRoleGrant`: one configured role per AddressRule, with a nonempty
+  origin set drawn from `manual` and `chair-seed` and the originating operation
+  ID for each origin; and
 - `MinistryAssignment`: user/address to Ministry DUID, source (`chair-seed` or
   `manual`), state (`active` or `suspended`), suspension reason/time, and audit
   metadata.
@@ -432,6 +523,34 @@ Source-driven suspension/reactivation and its review task are runtime overlays
 that can remove scope immediately without rewriting YAML; an Admin decision to
 create, restore as manual, or delete configured policy goes through a
 `ConfigurationChangeRequest` and becomes effective on activation.
+
+Rule creation origin and role-grant origins are explicit authoritative YAML
+fields, carried unchanged into each applied database representation. The
+AddressRule role set is exactly the set of its AddressRoleGrant roles; a unique
+rule/role constraint and schema validation prevent contradictory copies. An
+empty exact-address denial rule has no grants. Bootstrap and ordinary manual
+rule creation use `manual`; creating a new rule through an Admin-confirmed
+chair suggestion uses `chair-seed`. Updating an existing rule never changes its
+creation origin or silently reclassifies existing grants.
+
+Only the confirmed chair-suggestion path may add a `chair-seed` grant origin,
+and only for Ministry leader. Pre-existing manual grant origins remain present.
+Other roles copied from a domain rule and explicitly confirmed as part of an
+exact-address override are manual grants, as is an already inherited Ministry-
+leader role preserved by that override. An ordinary explicit role addition or
+the Admin's **Keep role independently** action adds a manual origin without
+discarding seed provenance. Merely leaving a checked role unchanged, editing
+another role/assignment, or refreshing a suggestion adds no manual origin.
+Explicitly removing a configured role removes its complete grant; source
+refresh can neither recreate it nor add origins. Immutable configuration/audit
+history retains removed grants and their provenance.
+
+The source-suppression predicate is exactly: rule creation origin is
+`chair-seed`, the configured Ministry-leader grant has only a `chair-seed`
+origin, and no active Ministry assignment remains. Missing or inconsistent
+provenance blocks configuration activation instead of guessing from role count,
+assignment count, or the current source snapshot. An independently granted role
+does not itself confer Ministry row scope; assignment checks remain mandatory.
 
 An exact address rule replaces, rather than unions with, a matching domain
 rule. When the UI creates an override for a chairperson already inheriting a
@@ -451,10 +570,9 @@ existing `chair-seed`, a promoted snapshot that no longer shows the active
 Member as Chairperson of that active Ministry atomically changes it from
 `active` to `suspended`, records the source evidence, and opens an Admin review
 task. A suspended assignment grants no row scope on the next authorization
-check. Manual assignments are never changed from source data. If the exact
-AddressRule and Ministry-leader role were created solely for seeded assignments,
-the runtime authorization overlay suppresses that Ministry-leader role when no
-active assignment remains; authoritative YAML and its materialized AddressRule
+check. Manual assignments are never changed from source data. When the explicit
+provenance predicate above holds, the runtime authorization overlay suppresses
+that Ministry-leader role; authoritative YAML and its materialized AddressRule
 remain unchanged. Unrelated roles/rules are preserved. If the source
 Chairperson relationship returns before review, the seeded assignment and role
 reactivate and the task closes with audit. Permanently deleting the configured
@@ -466,7 +584,8 @@ Every final click creates an immutable `Submission` version containing:
 
 - campaign, Family DUID, monotonically increasing Family version, and mode
   (`test` or `live`);
-- baseline source snapshot and prior effective submission, if any;
+- reviewed baseline source snapshot, source snapshot used for final validation,
+  form-baseline/projection version, and prior effective submission, if any;
 - submitted UTC time and date derived from the Campaign's immutable timezone;
 - complete normalized answers for all enabled sections;
 - validation/content/schema versions; and
@@ -569,11 +688,18 @@ campaign fields. Unknown placeholders are validation failures, not empty text.
 
 ### Job, outbox, audit, and purge records
 
-`TaskRun` stores task type, optional idempotency key, state, progress phase/
-counts, attempts, timestamps, initiator, heartbeat, summary, and sanitized
-error. A partial unique constraint on `(task type, idempotency key)` applies
-whenever the key is present; retry/recovery claims the existing row rather than
-inserting another task.
+`TaskRun` stores task type, optional execution idempotency key, logical-operation
+identity, retry-root/parent references and retry sequence, state, progress phase/
+counts, append-only attempt/transition history, timestamps, initiator, heartbeat,
+summary, and sanitized error. A partial unique constraint on
+`(task type, idempotency key)` applies whenever the key is present. Automatic
+retry/recovery claims the existing nonterminal row. Explicit authorized retry
+of a terminal failed run allocates a new linked row and derived execution key,
+preserving the logical operation, domain checkpoints, and semantic delivery key.
+Enforce unique retry sequence within a chain and at most one nonterminal run
+per chain under its lock. Retry-command deduplication returns the allocated run
+instead of allocating another. State sets, fencing, and allowed transitions are
+owned by [background processing](../background-processing/spec.md#durable-scheduling-and-task-execution).
 `ProductionTransitionRequest` stores campaign/Admin, state, gate version,
 inventory digest and counts, non-sensitive Testing aggregate reference, cleanup
 TaskRun, batch checkpoints/counts, acknowledgement and reauthentication times,
@@ -617,6 +743,15 @@ applies to every OutboxMessage, including operational messages whose scope is
 the deployment rather than a Campaign. Provider attempts update the one row;
 concurrent producers cannot create duplicate semantic mail.
 
+Terminal outbox outcomes stop automatic scheduling. The sole explicit retry
+exception is a still-applicable `permanent_failure` returning to `pending`
+under the [background retry contract](../background-processing/spec.md#durable-scheduling-and-task-execution).
+Preserve immutable numbered delivery-attempt outcomes and the same outbox row/
+semantic key; `delivered` and `cancelled` cannot be reopened. Coordinate that
+exception atomically with any linked occurrence and TaskRun retry chain, and
+repeat credential/admission checks before creating fresh sealed substitutions.
+The same contract applies to direct receipts without an occurrence.
+
 `AuditEvent` is append-only and stores ownership scope, actor type/ID, action,
 entity, optional campaign, UTC time, request/task correlation, source IP
 metadata, and redacted structured before/after values. `OperationalLog` stores
@@ -629,7 +764,8 @@ exports and mutations remain blocked.
 
 `PurgeRequest` records the selected archived campaign, initiating Admin,
 post-quiescence inventory and completion/expiry times, purge-triggered backup
-task and immutable verified-backup reference, backup completion/expiry times,
+task and immutable verified-backup reference, original backup completion time,
+current backup-verification reference/version and expiry,
 recovery-evidence reference/version and invalidation reason,
 re-authentication time, typed-confirmation digest, estimated counts, gate-
 acquisition/quiescence times, state, batch checkpoints, progress,
@@ -659,6 +795,17 @@ a state machine separate from the associated
   Campaign `purged`; and
 - `cancelled`: an Admin cancelled before a worker claim, leaving the Campaign
   `archived`.
+
+`PurgeBackupVerification` records request, backup reference/manifest digest,
+original snapshot/completion times, associated verification TaskRun, pinned
+request/evidence revision, mutation/quiescence and relevant credential/key
+manifest versions, verification start/completion/expiry times, result, and
+supersession or invalidation metadata. Initial verification and each subsequent
+revalidation append records rather than modifying earlier evidence. Task lease
+and revision guards prevent duplicate or stale completions from renewing the
+current evidence. Backup revalidation does not create a new backup or extend
+its retention; the [purge workflow](../admin-portal/spec.md#campaign-purge)
+owns verification, freshness, and recovery-evidence dependency rules.
 
 `PurgeRecoveryEvidence` is an immutable non-secret attestation record containing
 request, selected backup reference/manifest digest, escrow reference/manifest
@@ -705,14 +852,21 @@ record may continue. This check applies to web requests, schedulers, workers,
 retries, and internal service calls rather than relying on disabled UI alone.
 
 Gate acquisition inventories every already nonterminal campaign task,
-occurrence, outbox row, and export. No new worker may claim queued or retrying
+occurrence, outbox row, export, and unfinished ActivationCatchUpDemand. A
+terminal catch-up TaskRun does not hide its unfinished demand. No new worker may claim queued or retrying
 work after acquisition; safely cancellable records become terminal
-`cancelled`, while already running, provider-submitting, delivery-unknown, or
+`cancelled` for TaskRuns/outbox rows or `skipped` with a purge reason for
+ScheduleOccurrences, under the authoritative background state tables, while
+already running, abandoned, provider-submitting, delivery-unknown, or
 otherwise irreversible work must reach an accurately reconciled terminal state.
 The request records a quiescence time only after none remain. Inventory and
 backup evidence used for confirmation must describe a database snapshot at or
-after that quiescence time. Each expires 60 minutes after its respective
-completion. Ordinary expiration invalidates only that artifact and preserves
+after that quiescence time. Inventory expires 60 minutes after completion;
+backup evidence expires 60 minutes after the latest successful verification
+completion under the [purge workflow](../admin-portal/spec.md#campaign-purge).
+Revalidating the same immutable backup can renew that evidence without renewing
+or invalidating an otherwise current recovery attestation. Ordinary expiration
+invalidates only that artifact and preserves
 the other artifact when it remains current; a later campaign-owned mutation or
 change to quiescence invalidates both. The final confirmation transaction checks
 both stored expirations and the shared mutation/quiescence invalidation version
@@ -765,6 +919,24 @@ Use bounded lock acquisition, a 60-second total interactive-read deadline, and
 a five-minute total download deadline, configurable with finite maxima.
 Database/proxy/application timeouts must enforce these lifetimes; inactivity
 timeouts alone do not bound a slow continuous transfer.
+
+Guarded file downloads use a dedicated bounded connection pool and admission
+limit, defaulting to four simultaneous downloads across the entire deployment,
+not four per process or replica. Acquire capacity before opening a guarded
+transaction or export file; do not queue waiting downloads indefinitely or
+borrow interactive/background connection capacity. A multi-campaign download
+uses one admitted slot and one pinned connection for all its guards. Capacity
+exhaustion returns HTTP 503 with `Retry-After: 5` and an accessible busy/retry
+message before any file bytes are sent. It does not invalidate the export or
+bypass authorization; retries repeat authorization and purge admission checks.
+Release capacity only after the stream and guard transaction close, including
+disconnect, timeout, exception, and worker loss. Coordination across processes
+must not reissue capacity merely because a lease expired while its connection
+or stream is still alive. Downloads never fall back to an unguarded transfer.
+
+The connection budget and timeout relationships are deployment invariants
+defined by [operations](../operations/spec.md#download-capacity-and-timeouts).
+These limits supplement rather than replace the response-lifetime purge guard.
 
 The initial purge claim closes new read admission by committing `running`/
 `purging`, records the `draining_readers` progress phase, and then waits for
@@ -825,11 +997,64 @@ records.
 
 ## Submission concurrency
 
-The Family form receives the current effective submission version and source
-snapshot IDs. Final submission uses compare-and-swap semantics. If another
-session submitted first, the stale submit is rejected without saving; the user
-is told newer answers exist and must reload/review the merged form. Multiple
-read sessions are otherwise allowed.
+The Family form receives the current effective submission version, source
+snapshot ID, and an opaque server-issued `FamilyFormBaseline` reference bound
+to its session, Family, Campaign, and live/test namespace. The baseline records
+those version references, form schema/content/configuration versions, canonical
+dependency-projection version/digest, and expiry bounded by the session's
+absolute deadline. It contains no in-progress answers. It protects the source
+snapshot and other immutable inputs needed to reconstruct the reviewed form
+until replaced, submitted, cancelled, or expired. Baseline creation and source
+pinning are atomic with compaction; housekeeping releases expired pins without
+saving drafts or extending a session.
+
+Final submission compares the effective Family submission version and the
+canonical inputs relevant to this form, not equality of global source-snapshot
+IDs. Build the versioned dependency projection from source values displayed or
+used for prefilling/validation in enabled sections: Family fields, household
+Member identities/composition and relevant Member fields, current Ministry
+memberships and offered Ministry choices/eligibility, and applicable financial
+fund/period/pledge/contribution values. Include relevant membership additions,
+removals, and option availability, not merely IDs of entities present at form
+load. Exclude other Families' values, unrelated source metadata, and data in
+disabled sections that neither affects the form nor its validation. Canonical
+comparisons use the shared typed normalization registry. Tests enumerate these
+dependencies so new form fields cannot omit their concurrency protection.
+Relevant form-definition/schema/configuration changes use the same review path;
+unrelated configuration-version changes are not conflicts. Transfer required
+baseline pins to the immutable Submission atomically on successful submit;
+releasing a form pin cannot remove a submission's retention protection.
+
+The server reconstructs the baseline projection from trusted pinned inputs and
+compares it with the same projection from one current promoted snapshot. A
+client-supplied digest, field list, or snapshot ID is not proof of equivalence.
+If only unrelated inputs changed, accept against current source after complete
+validation while retaining both the reviewed baseline and validation snapshot
+references in the immutable Submission. Never attribute an unseen source
+change to the Family or discard an existing proposal merely because the global
+snapshot advanced. No automatic rebase of changed relevant values is allowed.
+
+If relevant inputs or the effective Family submission version changed, reject
+without saving and return an authorized refreshed baseline for review. Preserve
+unsaved edits only in the tab's existing memory; show updated records and the
+Family's proposed values for affected fields, require resolution of competing
+edits or removed/invalid selections, and then require a new definitive Submit.
+Unedited fields adopt the refreshed baseline; do not replay the whole old form
+as new edits. Never display removed/inaccessible Member detail merely to aid
+comparison. No page reload, server draft, or browser-persistent storage is
+required for this review. Missing/expired or mismatched baseline references
+cannot be accepted; they require a fresh authorized form instead.
+
+Under the shared source-promotion and Family submission locks, repeat the
+effective-version comparison, relevant-source comparison, complete validation,
+and current session/eligibility/campaign/mode/admission checks before commit.
+Use the common lock order and keep this transaction limited to local,
+Family-scoped work; no provider calls or whole-corpus reload occur in Submit.
+A relevant promotion or another Family session's submission racing validation
+must either precede these checks or wait until commit, never slip between check
+and write. Loss of access or campaign closure rejects submission and follows
+the normal session/form cleanup policy, rather than exposing refreshed data.
+Multiple read sessions are otherwise allowed.
 
 Within a successful transaction, the system writes the immutable submission,
 sets it effective, derives proposals/workflows, records audit events, creates an

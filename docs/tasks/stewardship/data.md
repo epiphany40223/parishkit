@@ -15,7 +15,7 @@ Scope and dependencies: [DAT-01 work package](../../plans/stewardship/data.md#da
 - [ ] DAT-01.02 — Implement configuration, parish, and secret-request records.
 - [ ] DAT-01.03 — Enforce YAML-version, singleton, and installer constraints.
 - [ ] DAT-01.04 — Configure durable sessions and audit correlation.
-- [ ] DAT-01.05 — Implement base TaskRun claims and metadata.
+- [ ] DAT-01.05 — Implement TaskRun claims, retry-chain constraints, and attempt history.
 - [ ] DAT-01.06 — Test base constraints, recovery, and privacy.
 
 Evidence: Not started.
@@ -25,8 +25,8 @@ Evidence: Not started.
 Scope and dependencies: [DAT-02 work package](../../plans/stewardship/data.md#dat-02-campaign-lifecycle-and-schedule-schema).
 
 - [ ] DAT-02.01 — Implement Campaign structure and immutable timezone snapshot.
-- [ ] DAT-02.02 — Enforce campaign constraints and implement shared read guards.
-- [ ] DAT-02.03 — Implement lifecycle boundary and transition records.
+- [ ] DAT-02.02 — Enforce campaign constraints, read guards, and bounded download admission.
+- [ ] DAT-02.03 — Implement lifecycle records and durable activation catch-up demands.
 - [ ] DAT-02.04 — Implement schedules, fulfillment, holds, and post-close resolutions.
 - [ ] DAT-02.05 — Test campaign and schedule transition races.
 
@@ -41,7 +41,7 @@ Scope and dependencies: [DAT-03 work package](../../plans/stewardship/data.md#da
 - [ ] DAT-03.03 — Implement atomic source promotion and current indexes.
 - [ ] DAT-03.04 — Implement fenced SourceMutationLease.
 - [ ] DAT-03.05 — Implement compaction metadata and retention anchors.
-- [ ] DAT-03.06 — Implement immutable daily facts and rebuild-demand constraints.
+- [ ] DAT-03.06 — Implement daily facts, rebuild-demand constraints, and compaction guards.
 - [ ] DAT-03.07 — Test staging, promotion, facts, references, and compaction.
 
 Evidence: Not started.
@@ -53,7 +53,7 @@ Scope and dependencies: [DAT-04 work package](../../plans/stewardship/data.md#da
 - [ ] DAT-04.01 — Implement FamilyCampaign state and first-eligibility provenance.
 - [ ] DAT-04.02 — Enforce code-fingerprint and token-digest uniqueness.
 - [ ] DAT-04.03 — Implement atomic Family population and reconciliation.
-- [ ] DAT-04.04 — Implement token generations, restore/rehearsal epochs, activation, and cleanup.
+- [ ] DAT-04.04 — Implement token generations, credential epochs, reservation records, and cleanup.
 - [ ] DAT-04.05 — Test generation, rotation, and reactivation races.
 
 Evidence: Not started.
@@ -65,9 +65,9 @@ Scope and dependencies: [DAT-05 work package](../../plans/stewardship/data.md#da
 - [ ] DAT-05.01 — Implement portal users, login rules, and assignments.
 - [ ] DAT-05.02 — Materialize policy from applied YAML versions.
 - [ ] DAT-05.03 — Enforce rule precedence and last-Administrator guards.
-- [ ] DAT-05.04 — Implement chair seeds and runtime suspension overlays.
+- [ ] DAT-05.04 — Implement provenance-aware chair seeds and runtime suspension overlays.
 - [ ] DAT-05.05 — Index login and Ministry authorization queries.
-- [ ] DAT-05.06 — Test policy activation, source transitions, and autosave races.
+- [ ] DAT-05.06 — Test policy activation, source transitions, and idempotent autosave races.
 
 Evidence: Not started.
 
@@ -112,7 +112,7 @@ Evidence: Not started.
 Scope and dependencies: [DAT-09 work package](../../plans/stewardship/data.md#dat-09-publication-retention-and-purge-schema-behavior).
 
 - [ ] DAT-09.01 — Implement immutable publication plans and entity outcomes.
-- [ ] DAT-09.02 — Implement purge requests, recovery attestations, gates, and checkpoints.
+- [ ] DAT-09.02 — Implement purge requests, backup/recovery evidence, gates, and checkpoints.
 - [ ] DAT-09.03 — Implement source, Testing, and campaign retention services.
 - [ ] DAT-09.04 — Test publication/purge races, fencing, and recovery.
 

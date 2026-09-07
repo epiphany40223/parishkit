@@ -39,7 +39,15 @@ absolute expiry follow the [architecture session policy](../architecture/spec.md
 
 ## Bootstrap and first-Admin wizard
 
-The `pk-stewardship bootstrap` command runs once against an empty deployment.
+Loss of the sole usable Google Admin account is handled only through
+[offline operator recovery](../operations/spec.md#offline-admin-access-recovery),
+not this wizard or a web login bypass. Its additive grant appears in normal
+user management with manual provenance and the persistent recovery security
+event; subsequent role edits retain the ordinary Admin policy.
+
+The `pk-stewardship bootstrap` command runs once against an empty deployment
+through the operator-only [offline bootstrap profile](../operations/spec.md#offline-bootstrap-profile),
+which defines its limited provisioning mounts and startup exclusion.
 It interactively or non-interactively obtains:
 
 - public origin and deployment identifier;
@@ -310,11 +318,25 @@ through the instant before close it moves `draft` directly to `active`; at or
 after close it is rejected without a mode change. Either successful path changes
 global mode to Production, records the readiness result, locks structural
 settings, marks the request activated, and releases the gate atomically. Direct
-activation materializes/catches up every already-due live occurrence under the
-same overdue Family-mail/digest coalescing plan used for service recovery. The
-readiness preview's immediately-due count is the post-coalescing provider-
-message count, with coalesced semantic slots shown separately. Stable
-idempotency/fulfillment rules prevent duplicate catch-up.
+activation also inserts one durable ActivationCatchUpDemand and its idempotent
+TaskRun, recording activation time as the due-work cutoff and the applicable
+schedule/source/readiness versions. It does not enumerate Families, schedules'
+individual occurrences, or outgoing messages under these final locks. The
+background [activation catch-up workflow](../background-processing/spec.md#activation-catch-up)
+materializes and coalesces due work in bounded batches. A scheduled pre-start
+activation leaves due-work creation to ordinary boundary/scheduler processing.
+
+The readiness preview's immediately-due count is computed before confirmation
+using the shared coalescing planner and labeled with its input versions/as-of
+time; coalesced semantic slots are shown separately. Final confirmation validates
+the preview's relevant version guards instead of regenerating its per-Family
+plan while holding global locks. Changed inputs require a refreshed preview.
+Actual execution rechecks current eligibility and reports any resulting count
+differences. The Admin page distinguishes **Campaign active** from **Preparing
+initial campaign mail**, shows durable catch-up progress/failures, and offers
+safe retry. Catch-up failure after activation does not roll back Production or
+silently clear the scheduled-mail preparation hold. Family portal submissions
+remain available under normal campaign rules.
 
 Cleanup or final-transition failure leaves global mode Testing and never creates
 a partially live campaign. The UI states separately that completed cleanup is
@@ -532,6 +554,9 @@ token/schedule activation.
 Archiving cannot occur with a live-delivery pause, held production messages,
 provider-submitting or delivery-unknown messages, nonterminal production
 outbox/schedule occurrences, or nonterminal publication, export, or purge work.
+An unfinished ActivationCatchUpDemand also blocks archive/Return to Testing,
+even when its current TaskRun has exhausted retries or no occurrences have yet
+been materialized.
 
 Archive preparation also inventories every outstanding receipt and required
 daily/weekly digest semantic slot, including obligations whose scheduled due
@@ -607,6 +632,43 @@ active YAML digest to prevent lost updates. A security-policy change is
 effective only when the installer atomically activates its matching normalized
 snapshot, never from an independently edited role row.
 
+Each open user-management page serializes its configuration mutations through
+one in-memory queue shared by both role tables and that page's other YAML-backed
+rule/assignment actions. At most one request from that queue may be nonterminal.
+Further checkbox changes remain interactive but visibly **Queued — not saved**;
+store ordered logical intents (stable target, role, desired checked value), not
+copies of the whole configuration or toggle commands. A queued change to an
+in-flight checkbox does not mutate the submitted request. After that request
+reaches `applied`, adopt its returned applied-version ID/digest and authoritative
+values, then form the next minimal patch from the remaining intent. Do not
+advance on HTTP acceptance, `prepared`, or `yaml_activated`. Show Applied only
+for confirmed values; newer queued intent remains visibly distinct.
+
+Each submitted intent has a client-generated idempotency key bound to its actor
+and immutable payload/base digest. A lost response resumes status lookup or
+retries that same request key; it never creates a second grant, audit event, or
+security notification. Until the outcome is known, pause further dispatch and
+show an uncertain/reconnecting state. Installer failure, cancellation, validation
+failure, or stale-digest conflict also pauses the queue rather than cascading
+later failures or silently retrying a changed payload.
+
+For a genuine conflict, fetch the latest authorized configuration and show the
+current values beside the remaining desired changes. Preserve unsaved intents
+in the page for review; do not automatically rebase them onto another Admin's
+edits. The Admin can discard or select intents to retry as new requests against
+the refreshed digest. Deleted targets and newly invalid choices need explicit
+resolution; retry never recreates a deleted rule implicitly. Changes from
+another tab follow the same conflict path. Current-Admin, CSRF, last-Admin,
+and provenance guards still apply to every request and activation. Lost access
+stops dispatch and clears restricted page data; session expiry requires normal
+login before any retry, not a role-change-specific reauthentication step.
+
+Warn before leaving the page with unsent intents; they are not saved durably
+and are discarded on page teardown. An already accepted request continues
+durably and is reconciled by its request ID/status when the page is revisited;
+do not replay a former browser queue. Inline conflict resolution is exceptional
+error recovery, not a new confirmation dialog for ordinary role changes.
+
 Every role addition, removal, or replacement—including an exact-address
 Administrator grant—uses this autosave interaction. Role changes do not require
 fresh Google authentication or a separate confirmation dialog. This is an
@@ -666,14 +728,24 @@ Admins confirm before applying the resulting YAML configuration request.
 Duplicate emails/Members/Ministries are grouped and ambiguities shown, never
 silently guessed.
 
+The user/assignment UI shows rule and role-grant provenance from the
+[authorization data model](../data/spec.md#administration-user-and-policy),
+including whether a Ministry-leader grant is independently configured or
+subject to chair-seed suppression. It never infers origin from the current
+checkboxes. A **Keep role independently** action for a seeded Ministry-leader
+grant explicitly records a manual origin through the ordinary role-change
+configuration request, with the same no-reauthentication policy and audit.
+It does not create a Ministry assignment or broaden row scope. Unrelated
+autosaves preserve provenance, and a role removal removes all its grant origins.
+
 An assignments editor supports manual additions/removals through the same YAML
 configuration-request path. Losing a current Chairperson role immediately
 suspends a `chair-seed` assignment as derived runtime state during source
 promotion, removes its Ministry row scope on the next request, and creates a
 persistent Admin review task/notification. Existing sessions are not trusted to
-retain cached scope. If no other active assignment remains, the runtime
-authorization overlay suppresses a Ministry-leader role that was added solely
-for seeding without rewriting its applied YAML rule or changing Staff, Admin,
+retain cached scope. The runtime authorization overlay applies the data model's
+explicit rule/grant provenance predicate without rewriting its applied YAML
+rule or changing Staff, Admin,
 or independently configured roles. Permanently removing that configured role
 requires an applied configuration request.
 
@@ -812,7 +884,8 @@ the UI offers only status and safe idempotent retry actions, never cancellation
 or rollback.
 
 Inventory evidence expires 60 minutes after inventory completion, and verified
-backup evidence expires 60 minutes after backup completion. Both must remain
+backup evidence expires 60 minutes after its latest successful verification
+completion; initial backup completion includes its first verification. Both must remain
 valid when the final confirmation transaction commits. Any admitted conflicting
 mutation or change to the quiescence checkpoint invalidates both immediately.
 Expiration preserves completed task history and requires the Admin to refresh
@@ -822,6 +895,35 @@ workflow never silently substitutes an older scheduled backup. A failed backup
 leaves the purge request in `draft`, shows redacted failure detail, and permits
 an idempotent retry without invalidating current inventory merely because the
 backup attempt failed.
+
+Offer **Revalidate selected backup** as an asynchronous action through the same
+isolated backup service, including when that backup's evidence has expired.
+It verifies the same immutable, purge-request-owned off-host backup rather than
+creating a new snapshot. Recheck complete object availability and cryptographic
+integrity against its pinned manifest, not merely object existence. Use only
+the backup service's existing credential/key authority; unavailable required
+keys fail closed rather than expanding worker access.
+
+Pin the request/evidence revision, selected backup reference/manifest digest,
+snapshot instant, mutation/quiescence version, and relevant credential/key
+manifest version when queuing. Recheck them under the shared request/manifest
+guards on completion; a stale, cancelled, superseded, or mismatched run cannot
+renew evidence. Successful verification appends a new evidence record with
+server-recorded verification start/completion and expiry 60 minutes after
+completion. Preserve original backup creation/completion and all prior evidence;
+timestamp editing is not revalidation. Revalidation is only available before
+confirmation while the request owns its preparation gate, and confirmation
+cannot proceed while revalidation is nonterminal.
+
+Revalidating an unchanged backup preserves a still-current recovery attestation
+and its original independent expiry. Failed verification never renews evidence;
+confirmed missing, incomplete, or corrupt backup contents make that backup
+unusable and invalidate dependent recovery evidence. Show sanitized failure
+details and require a new verified backup when integrity cannot be established.
+Revalidation does not reset ordinary backup retention or substitute another
+backup. Thus an off-host recovery check lasting over 60 minutes can be followed
+by revalidation of that same backup without restarting the recovery check,
+provided the recovery attestation remains current through the deletion guards.
 
 Recovery evidence expires 60 minutes after the recorded verification completion,
 not after entry into the web UI. It must remain current at final confirmation

@@ -92,6 +92,10 @@ Source scope: [Phase 4: Production scheduling and delivery](../../plans/stewards
 5. Recheck [ARC-06](architecture.md#arc-06-enforceable-cryptographic-service-boundary), [OPS-01](operations.md#ops-01-development-and-production-compose-topology), and [OPS-02](operations.md#ops-02-durable-runtime-paths-and-least-privilege-secrets) against actual service/queue needs; record M4 evidence.
 6. Keep the master plan's fake/disposable-environment restrictions until G3.
 
+Before enabling ADM-05 direct activation, verify the DAT-02 demand, BG-04
+bounded catch-up, and BG-06/BG-07 preparation-hold integration and load/recovery
+evidence required by the master plan's Phase 4 handoff.
+
 ## Phase 5: Reports and staff workflows
 
 Source scope: [Phase 5: Reports and staff workflows](../../plans/stewardship/overall.md#phase-5-reports-exports-users-and-follow-up).

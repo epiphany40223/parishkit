@@ -55,6 +55,11 @@ campaign UUID/tombstone reference but no report data or campaign-owned foreign
 key. That access audit neither enters nor invalidates the campaign purge
 inventory.
 
+Generated-file downloads also use the deployment-wide bounded admission and
+dedicated pool defined by [campaign read guards](../data/spec.md#campaign-read-guards).
+When capacity is busy, show the retryable response without discarding the
+generated export; a retry performs fresh authorization and purge checks.
+
 CSV is UTF-8 with a header row and CRLF-compatible output. Cells beginning with
 formula-significant characters are neutralized. XLSX uses freeze panes,
 filters, meaningful widths, types, repeated print headings, and no macros. PDF
@@ -196,6 +201,13 @@ publishes. A pinned export or digest waits/retries for its exact generation and
 fails visibly rather than substituting a different cutoff. Recalculation from
 the pinned source/submission inputs must reproduce every stored fact, and a
 verification job detects drift.
+
+Superseded, unpinned calculated generations are automatically compacted under
+[derived fact retention](../data/spec.md#derived-fact-retention). Current,
+pinned, building/recoverable, and actively consumed generations stay protected.
+Report selection, pinning, rendering, and drift verification use that policy's
+atomic reference/read guards; no consumer assumes an unpinned old generation
+will remain available indefinitely.
 
 The UI defaults to Historical as of day and offers a clearly labeled scope
 toggle. Changing scope updates every series together. Hover shows scope, local

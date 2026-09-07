@@ -32,7 +32,7 @@ sanitized on input and output.
 Production Compose contains:
 
 - `web`: Gunicorn-hosted Django application;
-- `config-installer`: the only service with write access to the Stewardship
+- `config-installer`: the only online service with write access to the Stewardship
   configuration-authority directory;
 - target-specific `credential-installer-*` workers, each able to decrypt only
   its own staged replacement and write only its own credential subdirectory;
@@ -48,6 +48,10 @@ Production Compose contains:
 - `valkey`: broker/cache with a durable local volume, though task correctness
   cannot depend on broker persistence; and
 - `proxy`: Caddy on ports 80/443 with durable ACME state.
+
+Initial provisioning uses the separate operator-only, one-shot
+[offline bootstrap profile](../operations/spec.md#offline-bootstrap-profile).
+Its narrowly scoped write exception does not expand online service mounts.
 
 Local Compose uses the same service topology without Caddy/TLS by default,
 bind-mounts the checkout into the Python containers, and enables development
@@ -100,7 +104,8 @@ supported third-party contract.
 
 The package exposes a `pk-stewardship` console entry point and thin executable
 wrapper. Subcommands cover bootstrap, configuration validation, migration,
-health diagnostics, backup, operator-only secret escrow, and restore. Web-
+health diagnostics, backup, operator-only secret escrow, Admin-access recovery,
+and restore. Web-
 serving and worker commands remain container entry points that import package
 code. There is no console campaign purge; purge is intentionally a guarded
 Admin web workflow.
@@ -198,6 +203,17 @@ older keys may be lookup-only during migration. A lookup computes the
 domain-separated HMAC of the canonical candidate under every accepted key and
 matches any corresponding row.
 
+Key usage distinguishes `active` (new fingerprints and authentication),
+`lookup-only` (authentication during migration), and `collision-only`
+(reservation checks, never authentication). Rehearsal reservations use a
+separate domain-separation prefix plus campaign UUID and canonical code; they
+are never queried as login fingerprints. Rehearsal issuance checks its active
+key and every key referenced by that campaign's retained reservations, including
+collision-only keys, using the stable key-set/generation lock protocol below.
+Missing a required reservation key blocks new rehearsal-code issuance with a
+sanitized diagnostic rather than silently weakening non-reuse; it does not
+make that key accepted for login.
+
 MAC-key rotation installs the new key, makes it active, and idempotently
 backfills new-version fingerprint rows by decrypting each retained display code.
 Bulk code generation runs inside its surrounding atomic `READ COMMITTED`
@@ -215,6 +231,18 @@ version row and every retained backup containing old-only rows either remains
 paired with the prior key or has been re-encrypted/migrated. Failure leaves both
 versions accepted and the migration retryable.
 
+Successful authentication-fingerprint migration may move an old key to
+collision-only even while anonymous rehearsal reservations still reference it.
+Those HMAC-only records cannot be rekeyed after their display-code ciphertext
+has been deleted: do not retain/reconstruct plaintext or pretend to migrate a
+digest without it. Retain the key for collision checking until the last
+referencing campaign reservation is purged, potentially indefinitely for an
+unpurged campaign. Only then may it leave the operational keyring; its escrow
+copy remains subject to every retained backup's key requirements. Key inventory,
+backup manifests, rotation status, and retirement checks include collision-only
+dependencies separately from login acceptance. Public code lookup iterates
+only active/lookup-only keys and cannot authenticate using a reservation.
+
 ## Identity and session security
 
 Administration authentication uses Google through django-allauth with OAuth
@@ -223,6 +251,14 @@ accepted. The stable Google `sub` identifies the external account; normalized
 email is re-evaluated against current login rules on every login and privileged
 request. Password, recovery, signup, and non-Google authentication endpoints
 are disabled.
+
+If an external account rename/deactivation leaves no usable Admin login, an
+authorized host operator may use the separate
+[offline Admin-access recovery workflow](../operations/spec.md#offline-admin-access-recovery).
+It repairs an exact-address grant through the configuration authority; it does
+not authenticate anyone, migrate a Google `sub` binding, or add a web recovery
+endpoint. The replacement account must complete ordinary Google login and
+current-rule authorization. First-time bootstrap is not a recovery mechanism.
 
 An exact-address rule matches the verified normalized email without requiring a
 hosted domain. A domain rule matches only when both the email suffix and the
@@ -532,6 +568,11 @@ concurrent Family sessions:
 - long polls, publication, digests, exports, purge, and backups are always
   asynchronous; and
 - interactive traffic remains responsive while all worker categories run.
+
+These targets also apply with the guarded-download admission limit saturated
+by slow transfers. Use the dedicated download pool and reserved database/web
+execution capacity defined by the
+[operations budget](../operations/spec.md#download-capacity-and-timeouts).
 
 The default participation graph meets these targets through immutable
 `CampaignDailyFactSet` materialization keyed by its exact source/submission/

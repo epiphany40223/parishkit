@@ -14,7 +14,7 @@ Scope and dependencies: [RPT-01 work package](../../plans/stewardship/reports.md
 - [ ] RPT-01.01 — Implement persistent per-request campaign selection.
 - [ ] RPT-01.02 — Integrate report authorization and response-lifetime campaign read guards.
 - [ ] RPT-01.03 — Build bounded report filters, sorting, and pagination.
-- [ ] RPT-01.04 — Integrate asynchronous exports and chart downloads.
+- [ ] RPT-01.04 — Integrate asynchronous exports, bounded downloads, and busy/retry UI.
 - [ ] RPT-01.05 — Audit report use without sensitive-value duplication.
 - [ ] RPT-01.06 — Test historical selection, direct access, and revocation.
 
@@ -36,7 +36,7 @@ Evidence: Not started.
 Scope and dependencies: [RPT-03 work package](../../plans/stewardship/reports.md#rpt-03-participation-graph-and-campaign-statistics).
 
 - [ ] RPT-03.01 — Build the interactive participation and pledge chart.
-- [ ] RPT-03.02 — Implement immutable facts, bounded debounce, and pinned priority.
+- [ ] RPT-03.02 — Implement immutable facts, debounce, pinned priority, and retention guards.
 - [ ] RPT-03.03 — Keep historical/current scope and source metadata coherent.
 - [ ] RPT-03.04 — Build campaign statistics cards.
 - [ ] RPT-03.05 — Share facts with tables, images, and digests.

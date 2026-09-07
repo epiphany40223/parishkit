@@ -15,6 +15,8 @@ the end.
    config-installer, target-specific credential installers, general worker,
    backup-worker, mail-dispatch, token-key-rotation profile, scheduler,
    PostgreSQL, Valkey, and Caddy.
+   Include the explicitly invoked one-shot bootstrap profile, excluded from
+   ordinary service startup.
 2. Use one application image with explicit service entry commands, non-root UID,
    signal handling, health checks, and read-only filesystem where practical.
 3. Bind-mount source/templates/static inputs for cross-platform development
@@ -29,12 +31,16 @@ the end.
    required root behavior; define PostgreSQL, Valkey, media, and Caddy durable
    rooted default bind mounts with independent overrides. Test that changing
    PARISHKIT_ROOT relocates every default and generic cleanup excludes stores.
-2. Give only config-installer a narrow read-write Stewardship-authority mount;
+2. Give only the online config-installer a narrow read-write Stewardship-authority mount;
    give each credential installer one target subdirectory/handoff key and each
    consumer only its individual read-only credential.
+   Implement the separately enumerated operator-only provisioning exception
+   from the [offline bootstrap profile](../../specs/stewardship/operations/spec.md#offline-bootstrap-profile).
 3. Prohibit whole-credentials and Docker-socket mounts and enforce token-private/
    mail credentials only in mail-dispatch/token-key-rotation and backup
    credentials only in backup-worker.
+   Keep bootstrap's initial token-key provisioning exception limited to that
+   profile; do not grant it ordinary mail-provider or backup authority.
 4. Configure temporary files/directories, restrictive modes, no unsafe symlink
    traversal, and container replacement persistence.
 5. Add automated mount/identity/topology inspection, cross-target denial, atomic
@@ -59,6 +65,17 @@ the end.
    Compose and deployment documentation. Provision the metrics bearer credential
    alongside required keyrings before web startup; OPS-08 consumes and rotates
    this file rather than owning its initial creation.
+   Implement the offline bootstrap service identity, narrow mounts, and
+   bootstrap/online-start mutual exclusion from the operations specification.
+   Validate the [download capacity and timeout contract](../../specs/stewardship/operations/spec.md#download-capacity-and-timeouts),
+   including deployment-wide pool/process budgets, database and web headroom,
+   rollout overlap, and isolated download-role timeout settings.
+   Implement the separately invoked `recover-admin` profile through the existing
+   config-installer identity and canonical
+   [offline recovery protocol](../../specs/stewardship/operations/spec.md#offline-admin-access-recovery):
+   limited additive grant, explicit operator authority/confirmation, durable
+   versioned activation, session revocation, and security evidence. Do not reuse
+   bootstrap or expose an online recovery API.
 2. Ensure migrations run once through an explicit job before service rollout;
    application containers do not race.
 3. Require a recent successful backup, migration checks, pinned image pull, and
@@ -68,6 +85,9 @@ the end.
 5. Test empty startup, bootstrap YAML import, active-manifest/database mismatch
    recovery/denial, configured restart, migration drift/failure, partial
    rollout, and signal-driven worker recovery.
+   Test bootstrap mount/identity isolation, concurrent online-start refusal,
+   idempotent partial provisioning, and nonmatching configuration/key refusal
+   in development and production Compose.
 
 ### OPS-05: Backup service and purge-triggered backup
 
@@ -79,6 +99,9 @@ the end.
 3. Expose scheduled/operator invocation and the guarded Admin purge task through
    the dedicated backup queue/service without giving web/general workers backup
    credentials.
+   Implement same-backup revalidation and append-only verification evidence
+   under the [purge workflow](../../specs/stewardship/admin-portal/spec.md#campaign-purge),
+   without replacing the backup or resetting retention/recovery expiry.
 4. Build the separate operator-only secret-escrow profile for all credential
    files and versioned data-backup keys, encrypted to recovery material absent
    from the VM; verify matching fingerprints and restore usability.
@@ -89,6 +112,9 @@ the end.
 5. Emit CRITICAL after the specified backup RPO and test partial upload,
    corruption, retry, retention, key rotation/retirement, missing escrow, and
    purge-evidence expiration behavior.
+   Test revalidation against missing/partial/corrupt objects, unavailable keys,
+   stale/retried task completions, concurrent backup or manifest replacement,
+   mutation/quiescence changes, and preservation of prior evidence timestamps.
 
 ### OPS-06: Restore and state-aware release
 
@@ -126,8 +152,15 @@ the end.
    explicit retention periods. Retain plaintext exports for seven days by
    default, require owner-only export directories/files/temporary files from
    creation, and validate configured path ownership and permissions.
+   Expire Family form-baseline metadata/pins under DAT-06's session bounds,
+   preserving any transferred submission pins and never persisting draft answers.
 2. Implement the dedicated source-compaction task using the data specification's
    protected-reference rules and all/daily/monthly retention tiers.
+   Implement the separate hourly derived-fact compactor under
+   [derived fact retention](../../specs/stewardship/data/spec.md#derived-fact-retention),
+   with bounded batches, gate checks, protected-reference rechecks, and
+   task/backlog observability. Integrate DAT-03/RPT-03 guards without expanding
+   the source-compaction service's authority.
 3. Make generic cleanup idempotent, record-scoped, path-safe, and unable to
    delete snapshots, submissions, audit, backups, or broad/unresolved
    directories.
@@ -137,6 +170,9 @@ the end.
    symlink/path, concurrent-download, and retained-data regression tests;
    verify export permissions before and after atomic rename, expiry, and
    overridden storage paths.
+   Add fact-generation accumulation, current/pinned/building/reader protection,
+   pin/publication/claim races, parent-versus-file expiry, and compactor crash/
+   retry tests; prove original campaign data and operational history survive.
 
 ### OPS-08: Observability, health, and operational runbooks
 
@@ -153,6 +189,8 @@ the end.
 5. Write runbooks for deployment, backup/restore, queue outage, database/Valkey,
    failed source refresh, mail ambiguity, stuck transitions, purge recovery,
    TLS, and key rotation.
+   Include the offline Admin-access recovery runbook, verification of ordinary
+   Google login, and subsequent authenticated review of obsolete grants.
 6. Exercise runbooks with failure injection before final release.
 
 ### OPS-09: CI, coverage, browser, acceptance, and release pipeline
@@ -168,6 +206,10 @@ the end.
    redacted smoke tools for real integrations.
 5. Implement every required suite and numbered acceptance scenario, linked to
    DOM-05 traceability.
+   Include saturated slow-download load tests alongside Family submissions,
+   background work, purge drainage, and multi-process restart/rollout races;
+   verify bounded admission, prompt busy responses, safe slot release, and
+   reference-load responsiveness.
 6. Publish only after Review Gate 5 and explicit human release authorization;
    never push a release tag automatically.
 

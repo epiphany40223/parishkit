@@ -65,8 +65,11 @@ session, and returns to `/`.
 
 ## Form state and navigation
 
-One server response supplies a normalized baseline/effective form payload and
-the enabled step definitions. In-progress edits remain in JavaScript memory for
+One server response supplies a normalized baseline/effective form payload,
+the enabled step definitions, and the server-issued baseline reference defined
+by [submission concurrency](../data/spec.md#submission-concurrency).
+Only version/pinning metadata is retained for that baseline, never unsaved
+answers. In-progress edits remain in JavaScript memory for
 that tab only. They are not persisted to PostgreSQL, Valkey, localStorage,
 sessionStorage, cookies, logs, or analytics. Refresh, tab close, logout, or
 session expiry loses edits. The expiry warning states this consequence.
@@ -267,8 +270,15 @@ approximate frequency amount, but never hidden upstream conflicts/internal
 states. The final button is unambiguously labeled Submit to `<Parish name>` and
 is protected against double clicks.
 
-The request includes effective submission/source version IDs. A stale version
-is rejected as specified by [submission concurrency](../data/spec.md#submission-concurrency).
+The request includes effective submission/source version IDs and its bound form-
+baseline reference. An unrelated source promotion does not invalidate the form;
+the server compares relevant form inputs under
+[submission concurrency](../data/spec.md#submission-concurrency). A changed
+effective Family response or relevant source input requires review using a
+refreshed baseline while unsaved edits remain only in tab memory. Clearly
+distinguish updated parish records from proposed answers, preserve unaffected
+edits, and require resolution of invalid/competing choices and a new Submit;
+never silently overwrite refreshed records with unchanged old form values.
 If eligibility/campaign closes before submit, no answers save and an
 appropriate status page appears.
 
@@ -298,8 +308,10 @@ submission.
 
 ## Testing mode
 
-During Testing mode every otherwise eligible Family code/token can use the
-portal during campaign dates. Immediately after successful authentication and
+During Testing mode every otherwise eligible Family may use the portal during
+campaign dates through its current rehearsal-epoch code or token under the
+[credential policy](../architecture/spec.md#family-credential-security).
+Production credentials are not accepted in Testing. Immediately after successful authentication and
 before any household data is displayed, an interstitial states that this is a
 test, answers will be permanently deleted before launch, the response will not
 count, and the Family will need to respond again in Production. The user must

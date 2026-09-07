@@ -255,6 +255,9 @@ Execute in this order:
 6. **BG-10** — operational escalation and safe shutdown behavior.
 7. **ADM-05** — readiness, cleanup status/cancel, Production activation, and
    pre-start withdrawal.
+   Before enabling direct activation, integrate **DAT-02** catch-up demands,
+   **BG-04** bounded materialization/coalescing, and **BG-06/BG-07** preparation-
+   hold enforcement; exercise the activation load/recovery tests at this handoff.
 8. Implement delivery-pause portions of **ADM-06** needed during an active
    campaign.
 9. Recheck **ARC-06**, **OPS-01**, and **OPS-02** with actual queue/task and

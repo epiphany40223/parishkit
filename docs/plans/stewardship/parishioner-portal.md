@@ -92,16 +92,24 @@ The flow is a single guided response, not a general Family dashboard.
    plain text and no rich HTML.
 2. Build a complete review/attestation page grouped by Family, Members,
    Ministries, financial data, and additional information with changed markers.
-3. Perform complete server validation and stale effective-version/source checks
+3. Perform complete server validation and effective-version/relevant-source checks
    at the definitive Submit endpoint; commit through DAT-06 only once.
+   Use its bound baseline and relevant-input projection so unrelated promotions
+   do not invalidate the form. Never trust a client-supplied dependency digest.
 4. On success, enqueue confirmation work, show versioned Thank You content, and
    silently invalidate/logout the Family session.
 5. On failure, retain in-memory answers, return accessible field/summary errors,
    and never create a partial submission/workflow.
+   For relevant-input or concurrent-response conflicts, return a fresh
+   authorized baseline for in-memory review, carry forward only actual edits,
+   and require resolution plus a new Submit without forcing a page reload.
 6. Require the same server-side Testing rehearsal acknowledgement at final
    submission; a banner or client-side flag alone never authorizes the write.
 7. Test double click/retry, network interruption, stale concurrent visit,
    no-change response, all modules, and transaction rollback.
+   Test unrelated/relevant source promotions, canonical-equivalent changes,
+   household/Ministry option additions/removals, baseline expiry/tampering,
+   disabled sections, lost eligibility, and promotion during final validation.
 
 ### FAM-07: Repeat visits and source-change merge
 

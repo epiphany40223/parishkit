@@ -27,6 +27,8 @@ remain below `/admin/` and apply server-side authorization.
 1. Extend `pk-stewardship bootstrap` with empty-deployment checks, public origin,
    initial Admin, Google/Django and all Family-code/email-token keyring
    references, database readiness, proxy configuration, and restore intent.
+   Use OPS-04's operator-only offline bootstrap profile and canonical mount/
+   startup guards; do not expose a web provisioning or repair endpoint.
 2. Implement temporary wizard staging for parish, login rules, integration
    credentials/tests, complete source load, mail/Slack, and first campaign.
 3. Implement correlated TaskRun progress polling with worker-heartbeat checks,
@@ -85,11 +87,17 @@ remain below `/admin/` and apply server-side authorization.
    their sensitive detail in cleanup readiness and final activation checks.
 3. Implement fresh-auth typed final confirmation and the short atomic
    draft-to-scheduled/direct-active transition with commit-time boundary check.
+   Direct activation inserts only the durable catch-up demand/task and version
+   guards; BG-04 materializes overdue work asynchronously. Show active campaign
+   separately from scheduled-mail preparation progress/hold and safe retry.
 4. Implement guarded scheduled-to-draft withdrawal, reason, cancellation
    preview, unknown-delivery blockers, Testing return, readiness invalidation,
    and structural unlock.
 5. Test cleanup interruption/cancel, changing readiness, start/close races,
    direct catch-up, no partial live state, and repeated go-live attempts.
+   Measure final confirmation/lock hold time at the 5,000-Family reference load
+   with many overdue schedule revisions; prove no per-Family occurrence writes
+   occur there and Family submissions remain responsive during catch-up.
 
 ### ADM-06: Restore release, delivery pause, reopen, and archive
 
@@ -126,6 +134,11 @@ remain below `/admin/` and apply server-side authorization.
 1. Build sorted domain/address role tables with YAML-backed autosave,
    Applying/Applied/error status, optimistic active-digest checks, explicit
    deny, disabled domain Admin, and `gmail.com` validation.
+   Implement the canonical per-page logical-intent queue, one nonterminal
+   request at a time, applied-version handoff, and distinct queued/applied
+   indicators. Use idempotent request/status reconciliation for uncertain
+   responses and inline conflict review without automatic stale-payload rebase.
+   Cover page-exit warnings and never replay an unsent queue after reload.
 2. Preserve the selected no-reauth/no-confirmation policy for every role change
    while enforcing CSRF, current-Admin authorization, last-Admin protection,
    and complete before/after audit; an exact-address Administrator grant,
@@ -134,11 +147,18 @@ remain below `/admin/` and apply server-side authorization.
    Administrators.
 3. Build chairperson suggestion review, inherited-role preview, bulk selection,
    confirmed YAML rule/assignment requests, and suspended/source-return review.
+   Display rule/grant provenance and provide the explicit Keep role independently
+   action; preserve origins on unrelated autosaves and remove all grant origins
+   on explicit role removal without implicitly creating Ministry scope.
 4. Build YAML-backed manual Ministry assignments while source synchronization
    changes only the fail-closed runtime suspension overlay.
 5. Test hosted-domain behavior, precedence, concurrent digest changes,
    activation-time revocation, Administrator-grant notification failure/retry/
    acknowledgement, and Ministry row-scope updates.
+   Test rapid edits across rows/tables and repeated toggles of an in-flight
+   checkbox, slow installers, lost acceptance/activation responses, failed
+   requests, other tabs/Admins, removed targets, session expiry/revocation,
+   page teardown, and exact-once request/audit/notification behavior.
 
 ### ADM-08: Manual refresh, follow-up queues, and logs
 
@@ -172,7 +192,9 @@ remain below `/admin/` and apply server-side authorization.
 
 1. Build `/admin/operations/purge/` eligibility selection and durable request
    resume/cancel/status UI; require completed Return to Testing, a null current
-   pointer, and no successor, and explain when the recurring window is closed.
+   pointer, and the canonical
+   [purge eligibility guard](../../specs/stewardship/data/spec.md#job-outbox-audit-and-purge-records).
+   Explain the recurring window without treating archived successors as blockers.
 2. Acquire the campaign work gate, show/cancel/drain conflicting work, reconcile
    external uncertainty, and record quiescence.
 3. Build dry inventory and **Create purge backup** asynchronous action with
@@ -181,6 +203,8 @@ remain below `/admin/` and apply server-side authorization.
    Add structured operator recovery-attestation entry bound to the selected
    backup, escrow/key manifests, and request. Display its separate expiry and
    dependent invalidation without uploading secrets or arbitrary attachments.
+   Add asynchronous **Revalidate selected backup**, preserving the immutable
+   backup and independent recovery expiry under the canonical purge workflow.
 4. Require fresh authentication, exact campaign name and generated phrase, then
    queue the idempotent purge worker after atomic prerequisite recheck.
 5. Expose safe pre-delete rollback, resumable deletion, cleanup retry, terminal
@@ -189,6 +213,9 @@ remain below `/admin/` and apply server-side authorization.
    the first deletion checkpoint; do not invent an additional request state.
 6. Add exhaustive browser/PostgreSQL race tests for every gate/state/pointer/
    successor/expiry/interruption path.
+   Cover off-host recovery checks exceeding backup-evidence lifetime followed
+   by same-backup revalidation, independently expired recovery evidence, and
+   expiry at claim or after reader drain before the first deletion batch.
 
 ## Review handoffs
 

@@ -64,6 +64,8 @@ other subsystem depends.
    Integrate DAT-02's response-lifetime read guards for campaign detail and
    streaming downloads, with explicit connection ownership and hard deadlines
    rather than relying on view-scoped transactions alone.
+   Use its bounded download admission/pool and retryable busy response; retain
+   interactive web execution headroom under OPS-04 deployment validation.
 6. Test malicious headers, hosts, HTML, files, filenames, CSV cells, and error
    paths.
 
@@ -72,6 +74,8 @@ other subsystem depends.
 1. Integrate Google authorization-code flow with state, nonce, PKCE, verified
    email, stable `sub`, and signed hosted-domain claim capture; disable all
    password/signup/recovery routes.
+   Integrate OPS-04's offline Admin-access recovery with normal Google login;
+   no web recovery route, session minting, or Google account rebinding is added.
 2. Implement exact-address-over-domain rule evaluation and role loading through
    the canonical DOM-03 policies.
 3. Store every Admin/Staff/leader session in PostgreSQL with the idle/absolute
@@ -84,6 +88,8 @@ other subsystem depends.
    callbacks, notification thresholds, and fail-closed outage behavior.
 6. Add complete authentication, session-fixation, timeout, revocation, hosted-
    domain, limiter, and denial-response tests.
+   Test sole-account rename/deactivation, post-recovery mandatory Google login,
+   rejected old sessions/OAuth state, and unchanged maintenance admission gates.
 
 ### ARC-05: Family code, token, and Family-session security
 
@@ -97,6 +103,9 @@ other subsystem depends.
    close/rotation/reopen lifecycle. Implement separate mode-disjoint rehearsal
    codes/tokens, epoch-scoped lookup/issuance, and no cross-mode fallback using
    the canonical credential policy and DAT-04 records.
+   Separate active/lookup-only authentication keys from collision-only keys;
+   keep reservation-required keys through campaign purge, enforce cross-key
+   non-reuse, and block retirement or issuance when required material is absent.
    Enforce the restore credential-epoch fence for lookup, issuance, generation
    activation, and dispatch without changing stable manual Family codes.
 3. Configure PostgreSQL Family sessions with the specified idle/absolute

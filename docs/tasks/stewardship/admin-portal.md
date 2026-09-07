@@ -65,7 +65,7 @@ Scope and dependencies: [ADM-05 work package](../../plans/stewardship/admin-port
 
 - [ ] ADM-05.01 — Build go-live readiness and exact impact preview.
 - [ ] ADM-05.02 — Build transition requests, rehearsal invalidation, and cleanup controls.
-- [ ] ADM-05.03 — Build authenticated atomic Production confirmation.
+- [ ] ADM-05.03 — Build atomic Production confirmation with asynchronous catch-up progress.
 - [ ] ADM-05.04 — Build guarded pre-start withdrawal.
 - [ ] ADM-05.05 — Test cleanup, readiness, and campaign-boundary races.
 
@@ -87,11 +87,11 @@ Evidence: Not started.
 
 Scope and dependencies: [ADM-07 work package](../../plans/stewardship/admin-portal.md#adm-07-user-rules-and-ministry-assignments).
 
-- [ ] ADM-07.01 — Build sorted autosaving login-rule tables.
+- [ ] ADM-07.01 — Build login-rule tables with serialized autosave and conflict recovery.
 - [ ] ADM-07.02 — Implement low-friction role edits and high-impact notifications.
-- [ ] ADM-07.03 — Build chair suggestions and inherited-role review.
+- [ ] ADM-07.03 — Build chair suggestions, grant provenance, and inherited-role review.
 - [ ] ADM-07.04 — Build manual assignment and runtime-suspension review.
-- [ ] ADM-07.05 — Test rule precedence, notification, and policy races.
+- [ ] ADM-07.05 — Test rapid autosave, uncertain outcomes, precedence, and policy races.
 
 Evidence: Not started.
 
@@ -125,7 +125,7 @@ Scope and dependencies: [ADM-10 work package](../../plans/stewardship/admin-port
 
 - [ ] ADM-10.01 — Build purge eligibility and durable request UI.
 - [ ] ADM-10.02 — Build campaign quiescence and conflicting-work resolution.
-- [ ] ADM-10.03 — Build inventory, verified backup, and operator recovery-evidence controls.
+- [ ] ADM-10.03 — Build inventory, backup creation/revalidation, and recovery-evidence controls.
 - [ ] ADM-10.04 — Build fresh-authentication and typed purge confirmation.
 - [ ] ADM-10.05 — Build reader-drain status, pre-delete recovery, deletion retry, and terminal UI.
 - [ ] ADM-10.06 — Test every purge state, race, and confirmation boundary.

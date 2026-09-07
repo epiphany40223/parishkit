@@ -38,17 +38,86 @@ schedule fulfillment defined by the
 revision, scheduler restart, or manual retry from creating a second successful
 semantic delivery.
 
-Occurrence outcome is `pending`, `running`, `delivery_unknown`, `succeeded`,
-`skipped`, `coalesced`, or `failed`. `delivery_unknown` pauses automated mail
-handling pending reconciliation. `skipped` and `coalesced` are terminal, include
-a structured reason, and never masquerade as successful delivery; `coalesced`
-also references the replacement occurrence selected for delivery.
+The following tables are the authoritative state/transition contract for
+TaskRun and ScheduleOccurrence. Transitions not listed are rejected; an
+idempotent repeated operation may return the existing state without adding a
+second transition. Each transition records actor/worker, time, reason, attempt,
+and expected row version/lease fencing. Domain-specific admission and safe-point
+rules can restrict a listed transition, never bypass them.
 
-Task state is `queued`, `running`, `retry_wait`, `succeeded`, `failed`,
-`cancelled`, or `abandoned`. Workers heartbeat and record phases/progress.
-Tasks use bounded timeouts and recover an abandoned claim only after its lease
-expires. Cancellation is permitted only at task-defined safe points and never
-pretends an in-flight external write was undone.
+| TaskRun state | Terminal? | Permitted next states and conditions |
+| --- | --- | --- |
+| `queued` | No | `running` on authorized claim; `cancelled` before execution |
+| `running` | No | `succeeded` on verified task completion; `retry_wait` on safely retryable failure; `failed` on permanent failure or exhausted retries; `cancelled` at a verified safe point; `abandoned` after loss of the owning lease |
+| `retry_wait` | No | `running` on authorized claim after retry time; `cancelled` at a safe point |
+| `abandoned` | No | `retry_wait` after fenced recovery proves retry safe; `succeeded` after verified completion; `failed` after verified permanent failure/exhaustion; `cancelled` after proof of safe cancellation |
+| `succeeded` | Yes | None |
+| `failed` | Yes | None; explicit retry creates a linked new TaskRun |
+| `cancelled` | Yes | None; later independently authorized work is a new operation |
+
+Workers heartbeat and record phases/progress. Recovery of `abandoned` work
+requires lease expiry, fencing of the former owner, and task-specific external-
+request deadlines/reconciliation. Lease expiry alone never proves that an
+external write failed or was cancelled. An unresolved effect must remain
+durably represented as blocking work; a task performing only a reconciliation
+handoff may complete once that handoff is durable, but the underlying uncertain
+occurrence/outbox still blocks quiescence. Cancellation never claims to undo
+committed effects or discards resumable domain checkpoints.
+
+Automatic retries and safe abandoned-claim recovery reuse the nonterminal
+TaskRun, appending attempt history and advancing fencing. An explicit permitted
+retry of a terminal `failed` task creates a new linked TaskRun under the same
+logical operation and unchanged domain request/checkpoints. Lock the retry
+chain to allocate a monotonically increasing retry sequence and allow at most
+one nonterminal run in that chain. A repeated retry command returns the same
+allocated run; its derived execution key does not change the stable semantic
+delivery/operation key. Original failed runs remain terminal. Recheck current
+authorization, configuration, schedule revision, domain applicability, and all
+admission gates before retry; a retry button is not a new-work exemption.
+
+| ScheduleOccurrence outcome | Terminal? | Permitted next outcomes and conditions |
+| --- | --- | --- |
+| `pending` | No | `running` on authorized claim; `skipped` when safely inapplicable/cancelled; `coalesced` when atomically assigned a replacement |
+| `running` | No | `pending` for safe retry or durable waiting work; `delivery_unknown` for unresolved provider acceptance; `succeeded` on verified completion; `failed` on definitive failure/exhaustion; `skipped` or `coalesced` only at a verified safe point |
+| `delivery_unknown` | No | `succeeded` on evidence of acceptance; `pending` for a safe retry or explicitly authorized resend; `failed` only after definitive non-acceptance and permanent failure/exhaustion |
+| `succeeded` | Yes | None |
+| `skipped` | Yes | None |
+| `coalesced` | Yes | None |
+| `failed` | Yes for automatic scheduling | `pending` only through an explicit authorized retry of still-applicable work |
+
+Occurrence retry preserves the same unique occurrence/semantic identity and
+appends immutable attempt/transition history rather than reinserting the row
+or erasing failure evidence. A failed-occurrence retry and its new TaskRun are
+created atomically under the occurrence/fulfillment/retry-chain locks. Repeated
+commands cannot create parallel attempts or bypass an already fulfilled slot.
+Outbox retry preserves its one-row-per-semantic-delivery constraint: a still-
+applicable `permanent_failure` may return to `pending` only through that explicit
+authorized retry, appending a new numbered delivery attempt and preserving its
+prior permanent-failure evidence. `delivered` and `cancelled` rows cannot be
+reopened by retry. Recreate any required sealed substitution through the
+ordinary authorized credential path, never resurrect scrubbed ciphertext or
+expired tokens. Unknown-delivery resend uses the separately
+audited numbered-attempt authorization below and preserves the original
+uncertainty; it is never inferred from a timeout or worker crash.
+
+`skipped` and `coalesced` include structured reasons and never count as delivery
+success; `coalesced` references its replacement. Schedule replacement/removal
+keeps old failures recorded and disables retry. Closed-campaign skips are not
+resurrected on reopen. Task success means that task's work completed, not that
+its linked mail was delivered. Aggregate occurrence state must reflect all
+required delivery work; any unresolved acceptance remains `delivery_unknown`.
+
+Archive, purge, schedule replacement, and recovery use these complete sets,
+not ad hoc tests such as state unequal to `running`. Task nonterminal states
+are `queued`, `running`, `retry_wait`, and `abandoned`; occurrence nonterminal
+outcomes are `pending`, `running`, and `delivery_unknown`. Their terminal
+complements do not establish semantic fulfillment: failed/skipped/coalesced
+reporting work must still satisfy the separate post-close coverage policy.
+In particular, a coalesced obligation remains dependent on its replacement's
+resolution. Outbox, publication, export, and purge domain states retain their
+own additional guards. Under a purge gate, safely cancelled TaskRuns/outbox
+rows use `cancelled`, whereas safely cancelled occurrences use `skipped` with
+reason `purge_preparation`; no occurrence `cancelled` state is introduced.
 
 The restore-maintenance gate is also checked at durable task creation and
 worker claim. While it is active, only tasks bearing an allowlisted maintenance
@@ -257,6 +326,61 @@ coalescing. The hold does not satisfy provider-delivery statistics and does not
 block a different future reminder schedule. A resend-authorized hold creates
 one explicitly linked recovery occurrence; normal idempotency and ambiguous-
 acceptance handling apply to that attempt.
+
+### Activation catch-up
+
+Direct draft-to-active Production activation commits one
+`ActivationCatchUpDemand` and one durable task together with the lifecycle/mode
+change; a broker hint is emitted only after commit and is recoverable by the
+ordinary scheduler scan. The demand's unique activation-request key prevents
+repeated confirmation or lost responses from creating another catch-up run.
+Its cutoff is the activation instant, not the worker's eventual start time.
+Reuse the shared missed-work planner, revision-specific occurrence keys, and
+semantic fulfillment constraints; do not introduce a second kind of scheduled
+email or delivery identity.
+
+The general worker enumerates targets/slots through the cutoff with stable
+keyset cursors and bounded transactions, defaulting to at most 100 occurrence
+outcomes per batch. Persist occurrence/outbox/coverage changes and progress
+checkpoints atomically. No batch performs provider calls or holds the global
+activation locks while scanning the corpus. For a Family with many overdue
+schedules, or a digest covering many days, stage the coalescing decision and
+coverage across bounded batches; release no selected message until all of that
+group's covered slots are durable. Interrupted retries resume the same demand
+and checkpoints; explicit failed-task retry uses the canonical linked retry
+chain without resetting the demand or duplicating semantic work.
+
+While the demand is unfinished, all initial/reminder and scheduled Admin-digest
+dispatch for that campaign observes a durable preparation hold, including mail
+materialized by ordinary scheduler scans or source-triggered catch-up. Check
+the hold at claim and immediately before provider submission; it is not a
+client flag or merely missing broker hints. Concurrent producers use the same
+planner, schedule/fulfillment locks, and occurrence keys and cannot dispatch an
+older choice before coalescing completes. Direct submission receipts and
+operational notifications are not held by this preparation hold, but retain
+all their existing pause/restore and other admission checks.
+
+Recheck current schedule revisions/removal markers, semantic coverage, live
+responses, recipient eligibility, campaign dates, and other admission gates
+as each group is processed. A removed/superseded schedule cannot be revived by
+its pinned activation version. Work newly due after the cutoff belongs to the
+ordinary scheduler; it remains held until preparation completes, then follows
+ordinary missed-work/coalescing checks before dispatch rather than sending a
+backlog blindly. If the campaign closes first, remaining Family invitations/
+reminders receive durable skipped outcomes, while required completed-day and
+weekly reporting follows its existing post-close policy.
+
+Completion verifies all cutoff work has durable outcomes/coverage, records
+aggregate counts, and atomically marks the demand complete and releases only
+its preparation hold. Ordinary scheduling recovers dispatch hints afterward;
+other holds remain effective. Failure leaves the demand unfinished, preserves
+checkpoints/hold, and exposes retry with normal task escalation. Archive and
+purge quiescence include the demand independently of TaskRun terminality; an
+empty occurrence table or terminal failed task is not proof of completion.
+Restore preserves the demand and ordinary work remains paused by the restore
+gate until its existing release policy permits recovery. This workflow changes
+direct activation catch-up, not the separate restore-release confirmation or
+live-delivery-pause semantics.
 
 ### Mode routing
 
