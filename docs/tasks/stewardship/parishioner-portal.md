@@ -14,7 +14,7 @@ Scope and dependencies: [FAM-01 work package](../../plans/stewardship/parishione
 - [ ] FAM-01.01 — Build all campaign-availability and code-entry states.
 - [ ] FAM-01.02 — Integrate code/token login and clean session exchange.
 - [ ] FAM-01.03 — Enforce Testing acknowledgement and banners.
-- [ ] FAM-01.04 — Gate every Family route by eligibility and interval.
+- [ ] FAM-01.04 — Gate every Family route by eligibility, interval, mode, and epoch.
 - [ ] FAM-01.05 — Audit Family access and maintain presence metadata.
 - [ ] FAM-01.06 — Test access, Testing, token, and lifecycle denial cases.
 

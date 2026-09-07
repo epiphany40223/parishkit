@@ -289,10 +289,11 @@ Execute in this order:
 3. **RPT-03**, **RPT-04**, **RPT-05**, **RPT-06**, and **RPT-07** participation/
    statistics, additional information, codes/postal outreach, Ministry summary,
    and packet.
-4. Implement the reporting half of **RPT-08**, then **RPT-09** logs/email parity.
+4. Implement the reporting half of **RPT-08**.
 5. **ADM-07** user rules and Ministry assignment/suggestion UI.
 6. **ADM-08** manual refresh, follow-up queues, and log UI.
-7. Wire RPT-04/RPT-06 workflows to ADM-08 services and verify BG-07 parity.
+7. Implement **RPT-09** after ADM-08 provides its log UI; wire RPT-04/RPT-06
+   workflows to ADM-08 services and verify BG-07 parity.
 
 Phase demonstration:
 
@@ -339,19 +340,24 @@ focused review passes.
 ### 6B: Backup, restore, lifecycle completion, and retention
 
 1. **OPS-05** backup, including purge-triggered verified off-host backup.
-2. **OPS-06** restore/maintenance gate/uncertainty holds/state-aware release.
+2. **OPS-06** restore/maintenance gate/uncertainty holds/state-aware release,
+   completing **BG-02**'s shared token-preparation slice for restore/reopen.
 3. Complete **ADM-06** restore release, closed reopen, held-message resolution,
-   archive/unarchive, and post-archive Return to Testing.
+   archive/unarchive, and post-archive Return to Testing; finish **BG-02**'s
+   background token-preparation slice before enabling either release or reopen.
 4. **OPS-07** temporary housekeeping and safe retention.
 
 ### 6C: Exceptional purge
 
 1. Complete PurgeRequest/gate/batch behavior from **DAT-09**.
 2. **ADM-10** guarded web inventory, post-Return-to-Testing/pre-successor
-   eligibility, quiescence, backup freshness, confirmations, status, and retry
+   eligibility, quiescence, backup and operator recovery-evidence freshness,
+   confirmations, status, and retry
    UI.
 3. **BG-11** — implement purge execution/recovery under BG-01 while preserving
-   all state transitions and checkpoints from DAT-09.
+   all state transitions and checkpoints from DAT-09. Integrate the DAT-02
+   read guard already used by report/download consumers; demonstrate reader
+   drainage before the first batch and safe timeout/restart behavior.
 4. Exercise purge only in disposable/restored test environments until Review
    Gate 4 exits.
 

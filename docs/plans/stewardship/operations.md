@@ -27,7 +27,8 @@ the end.
 
 1. Map config, credentials, cache, logs, reports, and run paths through the
    required root behavior; define PostgreSQL, Valkey, media, and Caddy durable
-   volumes.
+   rooted default bind mounts with independent overrides. Test that changing
+   PARISHKIT_ROOT relocates every default and generic cleanup excludes stores.
 2. Give only config-installer a narrow read-write Stewardship-authority mount;
    give each credential installer one target subdirectory/handoff key and each
    consumer only its individual read-only credential.
@@ -55,7 +56,9 @@ the end.
 ### OPS-04: Bootstrap, migrations, startup, and upgrades
 
 1. Integrate bootstrap/config validation/migration/health entry commands with
-   Compose and deployment documentation.
+   Compose and deployment documentation. Provision the metrics bearer credential
+   alongside required keyrings before web startup; OPS-08 consumes and rotates
+   this file rather than owning its initial creation.
 2. Ensure migrations run once through an explicit job before service rollout;
    application containers do not race.
 3. Require a recent successful backup, migration checks, pinned image pull, and
@@ -79,6 +82,10 @@ the end.
 4. Build the separate operator-only secret-escrow profile for all credential
    files and versioned data-backup keys, encrypted to recovery material absent
    from the VM; verify matching fingerprints and restore usability.
+   Add isolated off-host verification tooling and runbook for the exact purge
+   backup/escrow pair, recovery-private-key usability, complete credential/key
+   coverage, and data-backup decryption. Emit only the strict non-secret
+   summary consumed by ADM-10's operator-attestation workflow.
 5. Emit CRITICAL after the specified backup RPO and test partial upload,
    corruption, retry, retention, key rotation/retirement, missing escrow, and
    purge-evidence expiration behavior.
@@ -89,18 +96,28 @@ the end.
    with manifest/digest/version/tenant/credential validation and destructive
    confirmation.
 2. Restore database/media/config, run permitted forward migrations, start in
-   Testing, and atomically set `restore_review_required` before web readiness.
+   Testing, invalidate all restored sessions/OAuth/reauthentication state, and
+   atomically set `restore_review_required` before exposing web routes.
+   Initialize a fresh Family-link credential epoch, clear restored generation/
+   rehearsal pointers, and fence old preparation work including inactive
+   Families' tokens; resume the same epoch only on recovery of this instance.
 3. Configure a restricted maintenance queue/type allowlist and block Family,
    production dispatch, publication, export, and ordinary work fail closed.
+   Route maintenance work to the existing general/mail-dispatch/backup services
+   and their specified restore queues without broadening secret mounts.
 4. Build uncertainty-window inventory and durable holds for potentially missing
    deliveries and newly discovered Families.
 5. Support Admin state-aware release through ADM-06 with atomic hold
    materialization, the Admin spec's deterministic mode/state selection,
    preserved Production/pointer for archived-current, and no partial release.
+   Integrate BG-02 public-key preparation and ADM-06 atomic fresh-generation
+   activation for scheduled/active release without changing manual codes or
+   releasing delivery holds. Reject stale sealed outbox credentials.
 6. Add isolated restore smoke tests for every campaign/purge/pointer state,
    including closed-Production, archived-current versus historical archived,
    ambiguous delivery choice, interruption, wrong tenant, missing key, and
-   release race.
+   release race; reject restored Admin/Staff/leader/Family cookies and verify
+   fresh Google login plus maintenance queue isolation.
 
 ### OPS-07: Housekeeping and retention jobs
 
@@ -127,8 +144,9 @@ the end.
    DEBUG through CRITICAL and privacy-safe context.
 2. Add Prometheus-compatible metrics for HTTP, sessions, queue/task/scheduler/
    outbox, snapshots, database/Valkey, disk, backups, and TLS at the internal
-   bearer-authenticated `/metrics` route; provision/rotate its isolated
-   credential, deny the route at Caddy, and test both boundaries.
+   bearer-authenticated `/metrics` route; consume the OPS-04 bootstrap credential,
+   implement its isolated rotation, deny the route at Caddy, and test both
+   boundaries.
 3. Implement minimal liveness/readiness endpoints plus detailed protected CLI
    diagnostics.
 4. Add deduplicated Admin/Slack alert routing and recovery indicators.

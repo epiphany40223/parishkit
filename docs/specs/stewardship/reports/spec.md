@@ -23,6 +23,13 @@ a Family/Member name, DUID, address, email, phone, code, census value, financial
 value, or other identifying text use a CSRF-protected POST body and never a URL
 or query string. Proxy/application access logs omit request bodies.
 
+Pagination cursors must obey the same non-identifying URL rule: no cursor may
+expose names, DUIDs, contact details, financial values, or other row values.
+Use a bounded numeric offset or an opaque server-side reference scoped to the
+requester's authorized report/filter state. Encoding or signing a plaintext
+sort key does not make it non-identifying. Cursor reuse never bypasses the
+normal report authorization and filter-scope checks.
+
 Every interactive report response containing Family PII, Family codes,
 financial data, or census data sends `Cache-Control: no-store`, including
 details and partial responses.
@@ -37,7 +44,12 @@ The campaign purge gate rejects every new export and any report action that
 would mutate or create campaign-owned records. The UI identifies purge
 preparation as the reason and links Admins to its status; disabling controls is
 not the authorization boundary. Existing read-only report views and completed
-downloads may continue. During the gate, each view writes a parish-owned,
+downloads may continue during preparation, protected for their entire response
+lifetime by the [campaign read guards](../data/spec.md#campaign-read-guards).
+Purge execution closes new admission and drains those readers/downloads before
+any deletion. All data loading, deferred queries, and file streaming use the
+guard; a check performed only when the view starts is insufficient. During the
+gate, each view writes a parish-owned,
 indefinitely retained security audit containing actor, time, action, and the
 campaign UUID/tombstone reference but no report data or campaign-owned foreign
 key. That access audit neither enters nor invalidates the campaign purge

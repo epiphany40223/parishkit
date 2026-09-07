@@ -64,7 +64,7 @@ Evidence: Not started.
 Scope and dependencies: [ADM-05 work package](../../plans/stewardship/admin-portal.md#adm-05-production-transition-and-pre-start-withdrawal).
 
 - [ ] ADM-05.01 — Build go-live readiness and exact impact preview.
-- [ ] ADM-05.02 — Build transition requests and cleanup progress controls.
+- [ ] ADM-05.02 — Build transition requests, rehearsal invalidation, and cleanup controls.
 - [ ] ADM-05.03 — Build authenticated atomic Production confirmation.
 - [ ] ADM-05.04 — Build guarded pre-start withdrawal.
 - [ ] ADM-05.05 — Test cleanup, readiness, and campaign-boundary races.
@@ -75,9 +75,9 @@ Evidence: Not started.
 
 Scope and dependencies: [ADM-06 work package](../../plans/stewardship/admin-portal.md#adm-06-restore-release-delivery-pause-reopen-and-archive).
 
-- [ ] ADM-06.01 — Build state-aware restore inventory and release.
+- [ ] ADM-06.01 — Build state-aware restore inventory, fresh-token preparation, and release.
 - [ ] ADM-06.02 — Build delivery pause, resume, and post-close resolution.
-- [ ] ADM-06.03 — Build guarded closed-campaign reopen.
+- [ ] ADM-06.03 — Build staged token preparation and guarded campaign reopen.
 - [ ] ADM-06.04 — Build archive, unarchive, Return, and obligation resolution.
 - [ ] ADM-06.05 — Test lifecycle races and durable post-close coverage.
 
@@ -125,9 +125,9 @@ Scope and dependencies: [ADM-10 work package](../../plans/stewardship/admin-port
 
 - [ ] ADM-10.01 — Build purge eligibility and durable request UI.
 - [ ] ADM-10.02 — Build campaign quiescence and conflicting-work resolution.
-- [ ] ADM-10.03 — Build inventory and verified purge-backup controls.
+- [ ] ADM-10.03 — Build inventory, verified backup, and operator recovery-evidence controls.
 - [ ] ADM-10.04 — Build fresh-authentication and typed purge confirmation.
-- [ ] ADM-10.05 — Build rollback, deletion retry, and terminal evidence UI.
+- [ ] ADM-10.05 — Build reader-drain status, pre-delete recovery, deletion retry, and terminal UI.
 - [ ] ADM-10.06 — Test every purge state, race, and confirmation boundary.
 
 Evidence: Not started.

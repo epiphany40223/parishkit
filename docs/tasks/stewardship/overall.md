@@ -97,8 +97,8 @@ Source scope: [Phase 4: Production scheduling and delivery](../../plans/stewards
 Source scope: [Phase 5: Reports and staff workflows](../../plans/stewardship/overall.md#phase-5-reports-exports-users-and-follow-up).
 
 1. Finish [BG-08](background-processing.md#bg-08-export-and-graph-workers); implement [RPT-01](reports.md#rpt-01-shared-report-framework-and-campaign-selection) and finish [RPT-02](reports.md#rpt-02-population-and-calculation-library).
-2. Complete [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics), [RPT-04](reports.md#rpt-04-additional-information-workflow-report), [RPT-05](reports.md#rpt-05-family-code-and-postal-outreach-reports), [RPT-06](reports.md#rpt-06-ministry-summary-and-detail), [RPT-07](reports.md#rpt-07-multi-ministry-follow-up-packet), the reporting slice of [RPT-08](reports.md#rpt-08-census-and-financial-reports), then [RPT-09](reports.md#rpt-09-logs-and-daily-email-parity).
-3. [ADM-07](admin-portal.md#adm-07-user-rules-and-ministry-assignments) → [ADM-08](admin-portal.md#adm-08-manual-refresh-follow-up-queues-and-logs); connect [RPT-04](reports.md#rpt-04-additional-information-workflow-report)/[RPT-06](reports.md#rpt-06-ministry-summary-and-detail) follow-up and verify [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests) parity.
+2. Complete [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics), [RPT-04](reports.md#rpt-04-additional-information-workflow-report), [RPT-05](reports.md#rpt-05-family-code-and-postal-outreach-reports), [RPT-06](reports.md#rpt-06-ministry-summary-and-detail), [RPT-07](reports.md#rpt-07-multi-ministry-follow-up-packet), and the reporting slice of [RPT-08](reports.md#rpt-08-census-and-financial-reports).
+3. [ADM-07](admin-portal.md#adm-07-user-rules-and-ministry-assignments) → [ADM-08](admin-portal.md#adm-08-manual-refresh-follow-up-queues-and-logs) → [RPT-09](reports.md#rpt-09-logs-and-daily-email-parity); connect [RPT-04](reports.md#rpt-04-additional-information-workflow-report)/[RPT-06](reports.md#rpt-06-ministry-summary-and-detail) follow-up and verify [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests) parity.
 4. Complete M5 evidence and G3 before Phase 6.
 
 ## Phase 6A: Publication
@@ -114,6 +114,7 @@ Source scope: [Phase 6A: Publication](../../plans/stewardship/overall.md#phase-6
 Source scope: [Phase 6B: Recovery and campaign completion](../../plans/stewardship/overall.md#phase-6-reconciliation-and-post-campaign-operations).
 
 1. [OPS-05](operations.md#ops-05-backup-service-and-purge-triggered-backup) → [OPS-06](operations.md#ops-06-restore-and-state-aware-release) → remaining [ADM-06](admin-portal.md#adm-06-restore-release-delivery-pause-reopen-and-archive) restore/reopen/archive/Return work.
+   Complete [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences)'s shared token-preparation worker before restore release or final reopen.
 2. Complete post-close obligation resolution with [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests); implement [OPS-07](operations.md#ops-07-housekeeping-and-retention-jobs) retention.
 3. Review source-compaction integration against [DAT-03](data.md#dat-03-versioned-parishsoft-source-corpus) and [DAT-09](data.md#dat-09-publication-retention-and-purge-schema-behavior).
 
@@ -143,6 +144,7 @@ Source scope: [Phase 7: Release completion](../../plans/stewardship/overall.md#p
 | [ARC-08](architecture.md#arc-08-performance-accessibility-and-compatibility-baseline) and [FAM-08](parishioner-portal.md#fam-08-responsive-accessibility-privacy-and-browser-completion) | Early performance/accessibility baseline | Full browser and scale evidence in Phase 7 |
 | [RPT-02](reports.md#rpt-02-population-and-calculation-library) and [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics) | Phase 3 calculation subset; Phase 4 digest calculation/materialization | Complete report framework, UI, and matrix in Phase 5 |
 | [BG-08](background-processing.md#bg-08-export-and-graph-workers) | Phase 4 digest rendering/export substrate | Phase 5 complete export workflow |
+| [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) | Phase 4 start/close boundaries | Phase 6 background restore/reopen token preparation |
 | [ADM-06](admin-portal.md#adm-06-restore-release-delivery-pause-reopen-and-archive) and [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests) | Phase 4 delivery pause and scheduled digests | Phase 6 restore, archive, and explicit post-close resolution |
 | [RPT-08](reports.md#rpt-08-census-and-financial-reports) | Phase 5 reporting/financial scope | Phase 6 publication/action integration |
 | [OPS-08](operations.md#ops-08-observability-health-and-operational-runbooks) and [OPS-09](operations.md#ops-09-ci-coverage-browser-acceptance-and-release-pipeline) | Phase 0/1 CI and operational baseline | Complete runbooks, suites, and release readiness in Phase 7 |

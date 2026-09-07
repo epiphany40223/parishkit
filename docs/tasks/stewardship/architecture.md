@@ -42,7 +42,7 @@ Scope and dependencies: [ARC-03 work package](../../plans/stewardship/architectu
 - [ ] ARC-03.02 — Separate public and internal routes.
 - [ ] ARC-03.03 — Implement safe graphic upload and variant processing.
 - [ ] ARC-03.04 — Implement rich-text sanitization and template validation.
-- [ ] ARC-03.05 — Implement safe CSV cells and download headers.
+- [ ] ARC-03.05 — Implement safe CSV cells, download headers, and response-lifetime read guards.
 - [ ] ARC-03.06 — Test malicious requests, content, files, and error paths.
 
 Evidence: Not started.
@@ -65,8 +65,8 @@ Evidence: Not started.
 Scope and dependencies: [ARC-05 work package](../../plans/stewardship/architecture.md#arc-05-family-code-token-and-family-session-security).
 
 - [ ] ARC-05.01 — Implement Family codes, MAC lookup, and collision-safe migration.
-- [ ] ARC-05.02 — Implement sealed email tokens and exchange lifecycle.
-- [ ] ARC-05.03 — Implement separate Family sessions and activity handling.
+- [ ] ARC-05.02 — Implement Production/rehearsal credentials and exchange lifecycles.
+- [ ] ARC-05.03 — Implement mode/epoch-scoped Family sessions and activity handling.
 - [ ] ARC-05.04 — Implement and test distributed Family-code guessing controls.
 - [ ] ARC-05.05 — Enforce Admin/Staff code visibility and leader exclusion.
 - [ ] ARC-05.06 — Test credential, session, outage, and boundary behavior.

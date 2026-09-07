@@ -25,7 +25,7 @@ Evidence: Not started.
 Scope and dependencies: [DAT-02 work package](../../plans/stewardship/data.md#dat-02-campaign-lifecycle-and-schedule-schema).
 
 - [ ] DAT-02.01 — Implement Campaign structure and immutable timezone snapshot.
-- [ ] DAT-02.02 — Enforce campaign, interval, pointer, and module constraints.
+- [ ] DAT-02.02 — Enforce campaign constraints and implement shared read guards.
 - [ ] DAT-02.03 — Implement lifecycle boundary and transition records.
 - [ ] DAT-02.04 — Implement schedules, fulfillment, holds, and post-close resolutions.
 - [ ] DAT-02.05 — Test campaign and schedule transition races.
@@ -53,7 +53,7 @@ Scope and dependencies: [DAT-04 work package](../../plans/stewardship/data.md#da
 - [ ] DAT-04.01 — Implement FamilyCampaign state and first-eligibility provenance.
 - [ ] DAT-04.02 — Enforce code-fingerprint and token-digest uniqueness.
 - [ ] DAT-04.03 — Implement atomic Family population and reconciliation.
-- [ ] DAT-04.04 — Implement token close, destruction, and reissuance metadata.
+- [ ] DAT-04.04 — Implement token generations, restore/rehearsal epochs, activation, and cleanup.
 - [ ] DAT-04.05 — Test generation, rotation, and reactivation races.
 
 Evidence: Not started.
@@ -112,7 +112,7 @@ Evidence: Not started.
 Scope and dependencies: [DAT-09 work package](../../plans/stewardship/data.md#dat-09-publication-retention-and-purge-schema-behavior).
 
 - [ ] DAT-09.01 — Implement immutable publication plans and entity outcomes.
-- [ ] DAT-09.02 — Implement purge requests, gates, and checkpoints.
+- [ ] DAT-09.02 — Implement purge requests, recovery attestations, gates, and checkpoints.
 - [ ] DAT-09.03 — Implement source, Testing, and campaign retention services.
 - [ ] DAT-09.04 — Test publication/purge races, fencing, and recovery.
 

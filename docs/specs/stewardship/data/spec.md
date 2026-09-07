@@ -112,7 +112,11 @@ The campaign-creation service and a transactional database guard permit at most
 one current campaign across `draft`, `scheduled`, `active`, and `closed`.
 Creating a draft also requires global Testing mode, a null current-campaign
 pointer, no campaign in any of those four states, and no campaign in `purging`
-or `purge_cleanup_failed`. Only archived or purged historical campaigns may
+or `purge_cleanup_failed`, and no nonterminal PurgeRequest anywhere in the
+deployment. The check uses the same global lock as purge-request creation;
+it blocks unfinished purge preparation as well as execution. A `succeeded`
+request's permanent tombstone gate does not block successor creation. Only
+archived or purged historical campaigns may
 coexist with a new current draft; archived campaigns remain available for
 historical reporting.
 The only backward transition among these current-campaign states is the
@@ -132,7 +136,10 @@ under the ordinary stable idempotency and fulfillment keys.
 
 The guarded reopen transition moves `closed` directly to `active` only when its
 proposed extended closing instant is after the transaction time. The end-date,
-Campaign/global-mode updates, and new access-token issuance commit atomically;
+Campaign/global-mode updates, and activation of the prepared access-token
+generation commit atomically; token generation/encryption/insertion finishes
+asynchronously before confirmation. The final transaction changes a generation
+pointer rather than rewriting every Family token;
 failure preserves the prior end date and mode. Original start and structural
 settings remain locked.
 
@@ -312,8 +319,9 @@ verify the expected fencing token.
 - encrypted eight-letter display code plus the versioned canonical HMAC lookup
   rows defined by the
   [credential specification](../architecture/spec.md#family-credential-security);
-- versioned encrypted reusable email-link token, its domain-separated SHA-256
-  lookup digest, token generation, destruction, and revocation times;
+- association with generation-scoped email-link token records containing
+  versioned ciphertext, domain-separated SHA-256 lookup digest, destruction,
+  and revocation times;
 - initial/live invitation state;
 - first live submission and current effective submission IDs; and
 - latest session/activity metadata used by the Admin indicator.
@@ -333,6 +341,66 @@ email. A code is never changed during that campaign. Token rotation does not
 change it. A non-null access-token lookup digest is unique within its campaign
 and backed by a database unique index; close-time destruction sets both token
 ciphertext and digest null without weakening retained audit metadata.
+
+`FamilyAccessTokenGeneration` stores Production-token Campaign, initiating operation/Admin,
+TaskRun, deployment Family-link credential epoch, optional restore-instance
+reference, preparation revision, pinned source snapshot and eligibility coverage
+digest/count, proposed-end/configuration version, encryption-key ID,
+checkpoint/progress, completion time, and state (`building`, `ready`, `active`,
+`failed`, `cancelled`, or `superseded`). The Campaign has one nullable active
+generation pointer. Every token belongs to one generation and FamilyCampaign;
+uniqueness permits at most one token per generation/Family, and non-null token
+digests remain unique across the entire Campaign. Initial population also uses
+this representation, so authentication has one generation-selection rule.
+
+Every token-generation admission and activation also checks the deployment's
+current Family-link credential epoch. Restore initializes a new epoch under
+the maintenance gate as specified by
+[operations](../operations/spec.md#restore); all restored active/prepared
+generations remain inadmissible even before asynchronous secret scrubbing
+finishes. Fresh restore preparation uses the new epoch. Population and later
+reactivation generate missing tokens only in a current-epoch generation, never
+reuse a restored token or reactivate an old pointer. Draft readiness likewise
+requires a current-epoch Production generation before going live. All
+credential-bearing OutboxMessages capture the generation/epoch used for their
+sealed substitutions so dispatch can reject stale material independently of
+their delivery state.
+
+A prepared generation grants no access until the Campaign points to it and all
+ordinary campaign/mode/Family admission checks pass. Lookup and mail dispatch
+select only that generation, regardless of whether staged digests are present
+in the database. Readiness freezes a complete coverage manifest; final reopen
+locks/checks its preparation revision, source/configuration/key versions, and
+Campaign state before changing the pointer. Any changed input invalidates
+readiness; no per-Family token generation or bulk row rewrite occurs in the
+confirmation transaction. Failed or cancelled preparation is never selected;
+its ciphertext/digests are scrubbed asynchronously and cannot be resurrected
+by a stale task. Retry uses the same preparation revision/checkpoints only
+while its pinned inputs remain valid; replacement supersedes the old revision.
+
+Rehearsal credentials live separately from Production FamilyCampaign credentials.
+`RehearsalEpoch` stores campaign, random immutable epoch ID, creation/invalidation
+times, and state; the Campaign has at most one current rehearsal pointer.
+`RehearsalCredential` stores epoch/FamilyCampaign, encrypted Testing code and
+versioned HMAC lookup rows, and sealed Testing-token ciphertext plus a
+domain-separated digest. Uniqueness permits one credential set per epoch/Family
+and one matching code/token per epoch. Issuance uses the campaign generation
+lock and checks mode/routing authorization, epoch, eligibility, and all
+admission gates, including the narrowly authorized readiness-test exception
+defined by the credential policy. There is no
+fallback to Production credentials if rehearsal preparation fails.
+
+The mode-disjoint formats and epoch admission rules are defined by
+[Family credential security](../architecture/spec.md#family-credential-security).
+Testing codes are never recycled within a campaign: retain only campaign-scoped,
+versioned HMAC reservations without Family/epoch links after credential cleanup,
+and include them in cross-key collision checks/migrations until campaign purge.
+Rehearsal Family sessions store their epoch and mode. Gate acquisition clears
+the current pointer and invalidates the epoch transactionally; cleanup deletes
+its credential ciphertexts, lookup rows, and sessions in bounded batches while
+retaining only non-sensitive invalidation evidence and code reservations.
+Final activation checks that no rehearsal credential detail remains. A fresh
+epoch never reuses a prior ID or revives a deleted credential record.
 
 `FamilyCodeFingerprint` stores FamilyCampaign, campaign, MAC key ID/algorithm,
 and the canonical digest. Constraints allow at most one row per Family/key and
@@ -521,6 +589,8 @@ and gate release commit together. No transition restores a deleted Testing row.
 `OutboxMessage` stores exact intended/routed recipients, redacted rendered
 content, template version, reason, campaign/Family links, mode, immutable routing
 class (`testing_override`, `production`, or `operational`), delivery attempts,
+credential namespace and rehearsal epoch when credential-bearing,
+nullable delivery-pause hold reference and captured pause version,
 non-null idempotency scope, stable semantic idempotency key, provider-key/
 message-ID fingerprints,
 reconciliation evidence, resolution actor/time, and provider result. Its state
@@ -533,6 +603,14 @@ separately sealed with application-level encryption and a versioned key ID;
 only the dispatch worker may decrypt them. Terminal handling scrubs the sealed
 values. Provider acceptance means sent; bounce processing is outside the first
 release.
+
+The OutboxMessage pause hold records a pause independently of schedule
+membership, including directly created submission receipts. Held messages keep
+their ordinary pending/retry state; the hold is a separate dispatch-admission
+condition. Pause, resume, close resolution, and pre-provider rechecks update
+or release it under the Campaign/outbox locks without overwriting delivery
+outcomes. ScheduleOccurrence holds and related outbox holds are reconciled
+together; a stale dispatch hint cannot bypass either.
 
 The unique `(idempotency scope, mode, semantic idempotency key)` constraint
 applies to every OutboxMessage, including operational messages whose scope is
@@ -552,8 +630,10 @@ exports and mutations remain blocked.
 `PurgeRequest` records the selected archived campaign, initiating Admin,
 post-quiescence inventory and completion/expiry times, purge-triggered backup
 task and immutable verified-backup reference, backup completion/expiry times,
+recovery-evidence reference/version and invalidation reason,
 re-authentication time, typed-confirmation digest, estimated counts, gate-
-acquisition/quiescence times, state, batch checkpoints, progress, and final
+acquisition/quiescence times, state, batch checkpoints, progress,
+reader-drain start/deadline/completion and sanitized timeout evidence, and final
 non-sensitive tombstone. A request in any state other than
 `cancelled` or `failed_pre_delete` owns the durable campaign purge gate. It has
 a state machine separate from the associated
@@ -561,7 +641,7 @@ a state machine separate from the associated
 
 - `draft`: the campaign was selected and inventory/backup checks may be run or
   refreshed;
-- `ready_for_confirmation`: inventory is current, the backup is verified, and
+- `ready_for_confirmation`: inventory and recovery evidence are current, the backup is verified, and
   the irreversible effects have been acknowledged;
 - `queued`: fresh re-authentication and both typed confirmations succeeded and
   the idempotent worker task exists, but no worker has claimed it;
@@ -579,6 +659,16 @@ a state machine separate from the associated
   Campaign `purged`; and
 - `cancelled`: an Admin cancelled before a worker claim, leaving the Campaign
   `archived`.
+
+`PurgeRecoveryEvidence` is an immutable non-secret attestation record containing
+request, selected backup reference/manifest digest, escrow reference/manifest
+digest, exact credential/key fingerprint set, relevant manifest version,
+recovery-key fingerprints, named operator, submitting Admin, verification
+completion/server receipt/expiry timestamps, result, and supersession or
+invalidation metadata. Store no secrets or arbitrary uploaded payload. New
+verification creates a new record rather than rewriting old evidence.
+Validation, expiry, dependencies, and the operator-trust boundary are owned by
+the [purge workflow](../admin-portal/spec.md#campaign-purge).
 
 The permitted request transitions are `draft` to `ready_for_confirmation` or
 `cancelled`; `ready_for_confirmation` back to `draft` when a prerequisite
@@ -628,14 +718,75 @@ change to quiescence invalidates both. The final confirmation transaction checks
 both stored expirations and the shared mutation/quiescence invalidation version
 under the request and Campaign locks.
 
+Recovery evidence is an additional prerequisite with its own expiry and pinned
+backup/credential/escrow manifest references. Initial worker claim and final
+confirmation both check its current version, expiry, and dependencies under
+the same request/manifest guards; a concurrent relevant manifest change cannot
+leave a stale attestation valid. Backup replacement or mutation/quiescence
+invalidation propagates to this dependent evidence. Expiry or invalidation
+returns an unclaimed ready request to `draft`, or causes claim to enter
+`failed_pre_delete`; it never releases a post-deletion gate.
+
+Final confirmation also locks the global current-campaign record and rechecks
+Testing mode, a null current pointer, and no other campaign in any current or
+purge-in-progress state, using the same lock order as draft/request creation.
+
 The gate is released only when the request becomes `cancelled` or
 `failed_pre_delete`, before any deletion has committed. It remains permanent
 through `running`, either post-deletion failure state, and `succeeded`. Worker
 claim rechecks under row locks that the request owns the gate, the Campaign is
-still `archived`, all conflicting work is terminal, inventory and backup
+still `archived`, global mode is Testing, the current pointer is null, no other
+campaign is in a current or purge-in-progress state, all conflicting work is
+terminal, inventory, backup, and recovery
 evidence remain current, and no campaign mutation occurred after their
 snapshot. Failure performs no deletion and atomically enters
 `failed_pre_delete`, releases the gate, and leaves the Campaign `archived`.
+
+### Campaign read guards
+
+Every campaign-detail read, report query, partial response, and generated-file
+download uses the shared campaign read-guard service, including internal
+callers. It acquires a shared PostgreSQL advisory transaction lock keyed by a
+stable, namespaced campaign identifier before querying campaign-owned data or
+opening an export file. After acquiring the guard, it checks current admission
+and authorization using a fresh `READ COMMITTED` query. A `purging`,
+`purge_cleanup_failed`, or `purged` Campaign admits no sensitive reads;
+non-sensitive purge status/tombstone views do not need this guard. Preparation
+alone does not close read admission.
+
+The guard remains held on the same pinned database connection through all
+queries, lazy evaluation, serialization, and response/file streaming. Explicit
+response-lifetime management must cover streaming beyond ordinary Django view
+transaction scope. Exceptions, disconnects, and timeout cancel outstanding work
+and close the response/transaction; loss of the guard connection aborts the
+read without reconnecting or continuing unguarded. Multi-campaign responses
+acquire all guards in stable identifier order before reading any campaign.
+Use bounded lock acquisition, a 60-second total interactive-read deadline, and
+a five-minute total download deadline, configurable with finite maxima.
+Database/proxy/application timeouts must enforce these lifetimes; inactivity
+timeouts alone do not bound a slow continuous transfer.
+
+The initial purge claim closes new read admission by committing `running`/
+`purging`, records the `draining_readers` progress phase, and then waits for
+the matching exclusive advisory guard without holding Campaign/global/request
+row locks. Acquisition proves all previously admitted readers have released
+their shared guards. A mere expired heartbeat, elapsed deadline, or empty
+process list is not proof of drainage. Default drain timeout is six minutes;
+deployment validation requires it to exceed both configured reader lifetimes.
+
+With the exclusive guard held, the worker acquires the ordinary row locks,
+rechecks ownership/fencing, all purge prerequisites and evidence freshness,
+and commits its first deletion batch and checkpoint. It may then release the
+exclusive guard: durable `purging` admission prevents further readers during
+later batches and file cleanup. No deletion may occur before this barrier.
+Timeout or failure before the first deletion uses `failed_pre_delete`, leaves
+all campaign data intact, returns it to `archived`, and permits a new request
+after refreshed prerequisites; the UI identifies the drain failure. A crashed
+or replaced worker with no committed deletion checkpoint must repeat the drain
+barrier. Post-deletion retries retain closed admission and ordinary resumable
+semantics, never reopening reads. Buffered bytes already sent to a client
+cannot be recalled; this guarantee prevents reads of partially deleted data,
+not retention of previously downloaded reports.
 
 ## Effective-value merge
 

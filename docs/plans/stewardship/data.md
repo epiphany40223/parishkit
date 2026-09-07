@@ -44,6 +44,10 @@ validation is never sufficient.
 2. Add transactional guards for one current campaign across draft through
    closed, Testing-only draft creation, interval validity, at-least-one module,
    exact-year financial period, and current-campaign pointer consistency.
+   Implement the shared campaign read-guard primitive, stable lock keys,
+   fresh admission checks, and bounded response-lifetime wrapper before any
+   campaign-detail/report/download consumers; integrate destructive drainage
+   with DAT-09/BG-11 later.
 3. Implement CampaignBoundaryOccurrence and lifecycle/mode transition history.
 4. Implement ScheduleDefinition, immutable revisions, occurrence records,
    semantic fulfillment, replacement/removal markers, restore delivery holds,
@@ -88,7 +92,14 @@ validation is never sufficient.
    set-based cross-key collision filtering, and bounded batch retries without
    changing an existing campaign code.
 4. Add token destruction/reissuance and close/reopen metadata without retaining
-   secret material in audit rows.
+   secret material in audit rows. Implement inactive token-generation rows,
+   preparation revisions/manifests, and the Campaign active-generation pointer
+   so final reopen never rewrites every Family token. Add separate rehearsal
+   epochs/credentials, retired-code HMAC reservations, mode/epoch-scoped
+   sessions, and transactional invalidation plus bounded sensitive cleanup.
+   Bind Production generations and outbox substitutions to the deployment
+   Family-link credential epoch; restore invalidates old generations for all
+   Families, including future reactivations, before fresh preparation.
 5. Test concurrent generation, migration, inactive/reactivated behavior, and
    transactional snapshot promotion effects.
 
@@ -158,9 +169,14 @@ validation is never sufficient.
    execution checkpoints, conflicts, read-after-write verification, and
    immutable outcome records.
 2. Implement PurgeRequest state machine, campaign-wide gate ownership,
-   inventory/backup expirations, batch checkpoints, tombstone, and allowable
+   inventory/backup expirations, immutable recovery attestations with dependency
+   versions/expiry/invalidation, batch checkpoints, tombstone, and allowable
    rollback boundaries; require Testing, a null current pointer, and no
-   successor campaign at request creation.
+   successor campaign at creation, confirmation, and claim. Block draft creation
+   while any purge request is nonterminal, under the same global lock; a
+   completed purge's permanent tombstone gate must not block a successor.
+   Store reader-drain progress/deadlines and integrate the DAT-02 shared guard
+   with exclusive pre-first-batch drainage, timeout, and pre-delete rollback.
 3. Implement retention services for source-snapshot compaction, test cleanup,
    terminal outbox substitution scrubbing, temporary artifacts, protected live
    history, and Admin-approved campaign purge without unsafe cascades.

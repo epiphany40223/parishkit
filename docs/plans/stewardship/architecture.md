@@ -61,6 +61,9 @@ other subsystem depends.
    stored sanitized HTML and generated/edited plain text.
 5. Add CSV formula neutralization and safe download headers for later export
    code.
+   Integrate DAT-02's response-lifetime read guards for campaign detail and
+   streaming downloads, with explicit connection ownership and hard deadlines
+   rather than relying on view-scoped transactions alone.
 6. Test malicious headers, hosts, HTML, files, filenames, CSV cells, and error
    paths.
 
@@ -91,15 +94,22 @@ other subsystem depends.
    bulk promotion.
 2. Implement independent 256-bit link-token generation, campaign-scoped digest
    lookup, sealed-box ciphertext, exchange to a token-free Family session, and
-   close/rotation/reopen lifecycle.
+   close/rotation/reopen lifecycle. Implement separate mode-disjoint rehearsal
+   codes/tokens, epoch-scoped lookup/issuance, and no cross-mode fallback using
+   the canonical credential policy and DAT-04 records.
+   Enforce the restore credential-epoch fence for lookup, issuance, generation
+   activation, and dispatch without changing stable manual Family codes.
 3. Configure PostgreSQL Family sessions with the specified idle/absolute
    expiry, separate cookie namespace, warnings, passive presence, and the
-   explicitly untrusted CSRF-protected activity keepalive.
+   explicitly untrusted CSRF-protected activity keepalive. Check mode/epoch on
+   every Family request so invalidated Testing sessions cannot cross go-live.
 4. Add public code-guessing limiters, distributed detection, uniform timing/
    errors, invalid-token audit fingerprints, and Valkey fail-closed behavior.
    Base distributed detection on total invalid attempts and source-IP count;
    candidate diversity is diagnostic only. Test repeated-dictionary attacks,
    threshold boundaries, and exactly-once accounting for rejected attempts.
+   Apply the shared-network IP allowance and independent code-pair limit;
+   test different Families sharing an IP, threshold enforcement, and expiry.
 5. Preserve the low-sensitivity Admin/Staff manual-code access policy while
    excluding codes/tokens from logs and Ministry-leader scope.
 6. Test entropy/collisions, normalization, key rotation, token replay/rotation,

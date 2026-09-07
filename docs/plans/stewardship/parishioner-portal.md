@@ -21,7 +21,8 @@ The flow is a single guided response, not a general Family dashboard.
    explicit server-recorded rehearsal acknowledgement before household data is
    shown; show the persistent Testing banner throughout the Family flow.
 4. Apply active/registered Family eligibility and exact interval gates on every
-   Family route, not only login.
+   Family route, not only login, together with credential mode/epoch admission
+   and rejection of prior-epoch Testing sessions at keepalive and Submit.
 5. Emit privacy-safe access/session/logout/denial audit and active-Family
    presence metadata.
 6. Test no-current-campaign, guessing limiters, invalid/inactive/deactivated

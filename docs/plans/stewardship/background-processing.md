@@ -14,7 +14,9 @@ PostgreSQL is authoritative; Celery/Valkey only delivers execution hints.
    leases, heartbeats, bounded phases/progress, retries, safe cancellation, and
    abandoned-claim recovery.
 2. Configure one scheduler scan loop and service-specific Celery queues without
-   treating queue routing as authorization.
+   treating queue routing as authorization. Re-emit hints for due unclaimed
+   durable work after broker loss, including existing occurrences/outbox rows,
+   while preserving holds, leases, retry times, and uncertain-delivery handling.
 3. Implement transactional campaign-work admission checks for restore, purge,
    go-live, mode, lifecycle, and delivery-pause gates at both creation and claim.
 4. Add task status/progress APIs consumed by authorized Admin pages.
@@ -23,21 +25,36 @@ PostgreSQL is authoritative; Celery/Valkey only delivers execution hints.
 
 ### BG-02: Campaign boundary occurrences
 
+Deliver start/close behavior in Phase 4; finish item 3's restore/reopen
+preparation worker with OPS-06/ADM-06 in Phase 6. Record that partial scope until
+both are tested.
+
 1. Materialize unique start/close occurrences from resolved UTC boundaries.
 2. Implement locked scheduled-to-active and active-to-closed transactions with
    state/mode/gate rechecks and intended/actual/lag audit.
 3. Replace future close occurrences atomically on end-date edits and make races
-   fall through to the guarded reopen workflow.
+   fall through to the guarded reopen workflow. Implement its resumable
+   background token-preparation task on the general worker with public keys,
+   pinned coverage, batch checkpoints, and stale/cancelled staging cleanup.
+   Reuse it on the restore-general queue with restore-instance/credential-epoch
+   fencing. Support atomic restore activation and dispatch rejection/resealing
+   of stale substitutions only when existing delivery/hold rules authorize it.
 4. Recover overdue boundaries on scheduler restart while portal/mail gates
-   remain independently date-authoritative.
-5. Add exact-boundary, DST, duplicate-scan, outage, and lock-race tests.
+   remain independently date-authoritative. Apply start before close under the
+   same transaction when both are overdue, including restore release; never
+   consume close as inapplicable solely because start has not yet run.
+5. Add exact-boundary, DST, duplicate-scan, outage, and lock-race tests, including
+   delivery of the overdue close hint before start with no visible active gap.
 
 ### BG-03: Production-transition cleanup worker
 
-1. Enforce the go-live gate before old Testing work can mutate state.
+1. Enforce the go-live gate and rehearsal-epoch invalidation before old Testing
+   work can mutate state.
 2. Delete only inventoried test submissions, workflows, sensitive audit, and
    `testing_override` outbox detail plus Testing-only occurrence/fulfillment
-   rows in stable bounded batches with atomic high-water checkpoints.
+   rows plus rehearsal credential/session detail in stable bounded batches with
+   atomic high-water checkpoints; preserve only the specified non-sensitive
+   invalidation evidence and unlinked code reservations.
 3. Verify no sensitive inventoried detail remains before `cleanup_complete`.
 4. Implement retry/cancel semantics that never restore deleted data and never
    change global mode, including a CRITICAL `cleanup_failed` state after
@@ -86,6 +103,9 @@ PostgreSQL is authoritative; Celery/Valkey only delivers execution hints.
    the initial semantic fulfillment slot so only one delivery can succeed.
 3. Render versioned templates with eligible names, low-sensitivity manual code,
    opaque secure link, generic URL, parish/campaign values, and mode banner.
+   Testing substitutions must use only current-epoch rehearsal credentials;
+   persist namespace/epoch, recheck at dispatch, and scrub stale-epoch work
+   without rebinding or falling back to Production credentials.
 4. Persist redacted message/recipient data, seal credential substitutions to the
    token public key, and route provider submission only to `mail-dispatch`.
 5. Implement provider idempotency, accepted/failed/unknown outcomes,
@@ -158,8 +178,14 @@ PostgreSQL is authoritative; Celery/Valkey only delivers execution hints.
 ### BG-11: Exceptional purge worker
 
 1. Execute only a confirmed, current ADM-10 purge request after independently
-   rechecking the campaign work gate, quiescence, inventory, backup evidence,
+   rechecking the campaign work gate, quiescence, inventory, backup and matching
+   recovery-attestation evidence/freshness/dependency versions,
    authentication freshness, and confirmation evidence.
+   Commit closed read admission, expose drain progress, acquire DAT-02's
+   exclusive read guard without holding campaign/global row locks, and recheck
+   prerequisites before the first deletion batch. Timeout leaves all data
+   intact via the existing pre-delete failure path; restart repeats the barrier
+   whenever no deletion checkpoint exists.
 2. Delete the inventoried campaign-owned data in stable, resumable batches with
    durable high-water checkpoints and idempotent retry behavior.
 3. Permit rollback only before the first destructive checkpoint; after deletion

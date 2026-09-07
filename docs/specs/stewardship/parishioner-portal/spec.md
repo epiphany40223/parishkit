@@ -38,7 +38,11 @@ Manual credential generation, canonicalization, and generic denial follow the
 Friendly entry always removes ASCII spaces and hyphens before uppercasing and
 validating exactly eight ASCII letters; digits and other characters remain
 invalid. An entered candidate containing `I`, `L`, or `O` still follows the
-ordinary lookup/denial path. Unknown, inactive, non-Parishioner, closed-campaign,
+ordinary mode-scoped lookup/denial path; a reserved-leading-`I` rehearsal code
+can succeed only in its current Testing epoch. Production and Testing
+credentials are not interchangeable. Every Family request checks the session's
+mode and rehearsal epoch where applicable, including keepalive and Submit.
+Unknown, inactive, non-Parishioner, closed-campaign,
 and revoked codes use the same "This Family code cannot be found or used"
 result and retry link.
 

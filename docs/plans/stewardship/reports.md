@@ -15,10 +15,14 @@ charts, and digest mail; templates do not independently recalculate metrics.
    across filters, pagination, export, and cross-report links.
 2. Implement role/object/column authorization hooks using DOM-03, including
    assigned-Ministry scoping and no leader access to financial/code data.
+   Wrap all campaign reads in DAT-02's shared guard through lazy evaluation,
+   serialization, and response completion; reject closed purge admission.
 3. Create reusable filter/sort/pagination/query-state components with bounded
    page sizes and browser-local timezone selection.
 4. Integrate asynchronous BG-08 CSV/XLSX/PDF/PNG export controls and chart
    download with requester/status visibility.
+   Hold the same guard throughout streaming, with bounded total lifetime and
+   cleanup on disconnect, timeout, and connection loss.
 5. Audit report execution/export without copying viewed sensitive values.
 6. Test stale URLs, archived campaigns, role changes, direct export/download,
    and filter serialization.
@@ -138,6 +142,8 @@ The interactive report and complete package validation finish in Phase 5.
    provenance, zero/missing money, and Ministry-leader denial.
 
 ### RPT-09: Logs and daily email parity
+
+Dependencies: ADM-08 log UI and BG-08 export substrate land before this package.
 
 1. Integrate the Admin-only combined log report specified by ADM-08 with BG-08
    text/JSONL export and UTC/browser-local choices.

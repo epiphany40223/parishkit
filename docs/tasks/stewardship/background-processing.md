@@ -12,7 +12,7 @@ Follow the [execution and completion rules](README.md#execution-and-completion).
 Scope and dependencies: [BG-01 work package](../../plans/stewardship/background-processing.md#bg-01-durable-task-scheduler-lease-and-recovery-substrate).
 
 - [ ] BG-01.01 — Implement durable task and occurrence claims.
-- [ ] BG-01.02 — Configure singleton scheduling and isolated queues.
+- [ ] BG-01.02 — Configure singleton scheduling, lost-hint recovery, and isolated queues.
 - [ ] BG-01.03 — Implement transactional campaign-work admission.
 - [ ] BG-01.04 — Expose authorized task progress and status.
 - [ ] BG-01.05 — Test duplicates, crashes, leases, and shutdown.
@@ -25,8 +25,8 @@ Scope and dependencies: [BG-02 work package](../../plans/stewardship/background-
 
 - [ ] BG-02.01 — Materialize unique campaign boundary occurrences.
 - [ ] BG-02.02 — Implement locked start and close transitions.
-- [ ] BG-02.03 — Replace future close work safely after date edits.
-- [ ] BG-02.04 — Recover overdue boundaries while enforcing exact access gates.
+- [ ] BG-02.03 — Replace future close work and implement shared restore/reopen token preparation.
+- [ ] BG-02.04 — Recover overdue boundaries in order while enforcing exact access gates.
 - [ ] BG-02.05 — Test DST, restart, duplicate, and boundary races.
 
 Evidence: Not started.
@@ -35,8 +35,8 @@ Evidence: Not started.
 
 Scope and dependencies: [BG-03 work package](../../plans/stewardship/background-processing.md#bg-03-production-transition-cleanup-worker).
 
-- [ ] BG-03.01 — Enforce the go-live mutation gate.
-- [ ] BG-03.02 — Delete inventoried Testing detail in resumable batches.
+- [ ] BG-03.01 — Enforce the go-live gate and rehearsal invalidation.
+- [ ] BG-03.02 — Delete inventoried Testing and rehearsal credential detail in resumable batches.
 - [ ] BG-03.03 — Verify cleanup completeness before readiness.
 - [ ] BG-03.04 — Implement safe retry and cancellation semantics.
 - [ ] BG-03.05 — Test interrupted cleanup and concurrent Testing work.
@@ -75,7 +75,7 @@ Scope and dependencies: [BG-06 work package](../../plans/stewardship/background-
 
 - [ ] BG-06.01 — Materialize eligible Family mail slots.
 - [ ] BG-06.02 — Implement deliverability-recovery invitations.
-- [ ] BG-06.03 — Render personalized versioned Family templates.
+- [ ] BG-06.03 — Render personalized templates with mode/epoch-scoped credentials.
 - [ ] BG-06.04 — Seal substitutions for isolated mail dispatch.
 - [ ] BG-06.05 — Implement provider outcomes, reconciliation, and scrubbing.
 - [ ] BG-06.06 — Implement pause holds, close cancellation, and resume.
@@ -135,7 +135,7 @@ Evidence: Not started.
 
 Scope and dependencies: [BG-11 work package](../../plans/stewardship/background-processing.md#bg-11-exceptional-purge-worker).
 
-- [ ] BG-11.01 — Recheck purge ownership and prerequisites at claim.
+- [ ] BG-11.01 — Recheck purge prerequisites and drain readers before the first deletion batch.
 - [ ] BG-11.02 — Delete campaign data in stable checkpointed batches.
 - [ ] BG-11.03 — Enforce rollback limits and resume after deletion starts.
 - [ ] BG-11.04 — Complete file cleanup, tombstone, and credential invalidation.

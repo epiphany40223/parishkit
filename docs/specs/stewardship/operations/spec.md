@@ -47,12 +47,17 @@ still explicitly authorizes release-tag push.
 | `cache/` | Tenant-scoped short-lived ParishSoft/cache artifacts |
 | `logs/` | Optional JSONL/container log exports |
 | `reports/` | Authorized temporary generated exports |
-| `run/` | Locks, bootstrap markers, health/runtime state |
+| `run/` | Locks, bootstrap markers, health/runtime state, isolated persistent service storage |
 
-PostgreSQL data, Valkey state, Caddy ACME state, and uploaded media use named
-durable volumes or explicit operator-selected host paths. Every runtime path is
-overridable by deployment CLI/YAML. Container replacement/restart/upgrade must
-not remove any durable volume.
+PostgreSQL data, Valkey state, Caddy ACME state, and uploaded media default to
+durable host bind mounts at `<root>/run/persistent/postgresql`,
+`<root>/run/persistent/valkey`, `<root>/run/persistent/caddy`, and
+`<root>/run/persistent/media`. The root is resolved before Compose renders, so
+changing `PARISHKIT_ROOT` relocates every default store. Provision these paths
+for their respective service UIDs; generic run/temporary cleanup must never
+traverse `run/persistent`. Each store remains independently overridable by
+deployment CLI/YAML, including explicit opt-in Docker-managed named volumes.
+Container replacement/restart/upgrade must not remove durable storage.
 
 The export root and its subdirectories use owner-only mode `0700`; generated
 exports and their temporary files use owner-only mode `0600` from creation,
@@ -109,6 +114,31 @@ Restore drills verify that an authorized operator can combine a data-backup
 manifest with the matching secret bundle without exposing secret values in
 logs. Normal application services cannot invoke this profile.
 
+### Secret escrow recovery verification
+
+Before approving an exceptional purge, an authorized operator uses an isolated
+off-host recovery environment to retrieve and verify the selected data backup
+and matching escrow bundle. Using independently held recovery private material,
+the operator verifies that the bundle decrypts, contains every credential/key
+version required by the backup manifest, matches their fingerprints, and
+provides the key that successfully decrypts and verifies the selected data
+backup. Merely possessing a recovery public key or uploading an encrypted
+bundle is insufficient. Verification must not connect to production providers
+or write to ParishSoft; this check is not a production restore or release.
+
+The operator-only verification tooling produces a strict, non-secret summary
+of backup/bundle references and manifest digests, required credential/key and
+recovery-key fingerprints, completion time, and pass/fail. It never prints key
+values, decrypted records, or credentials; temporary plaintext follows the
+isolated recovery environment's restrictive storage and cleanup procedure.
+The Admin records successful evidence through the
+[purge workflow](../admin-portal/spec.md#campaign-purge).
+Normal web/worker/backup services receive neither recovery private material nor
+permission to invoke the escrow profile. The application checks manifest
+binding and freshness, while trusting the named operator's attestation of the
+off-host check. The runbook requires reporting lost escrow/recovery access so
+pending evidence can be invalidated before deletion.
+
 ## Production ingress and TLS
 
 Caddy terminates TLS, redirects HTTP to HTTPS, obtains/renews public
@@ -146,7 +176,8 @@ Documented first deployment order is:
    it creates/validates deployment configuration, the minimal initial-Admin
    Stewardship YAML authority, installer handoff keys, Django signing/general-
    encryption keyring, Family-code MAC keyring, and email-link sealed-box
-   public/private keyring without requiring application tables. Provisioning is
+   public/private keyring, and the `/metrics` bearer credential without
+   requiring application tables. Provisioning is
    idempotent, owner-only, and never overwrites a nonmatching existing keyring.
 4. Run `pk-stewardship migrate` as a one-shot container, then let bootstrap
    validate the migrated empty database and import the initial applied YAML
@@ -223,22 +254,45 @@ idempotently; an unexplained mismatch blocks readiness and requires operator
 diagnosis rather than choosing either copy. Restore then validates one parish,
 checks expected ParishSoft organization without mutation, and starts in Testing
 mode with the scheduler, ordinary worker admission, production outbox dispatch,
-and Family mail disabled. Before the web service becomes externally ready,
-restore atomically sets the durable `restore_review_required` gate. That gate
+and Family mail disabled. Before exposing any web route, restore invalidates
+all restored administration and Family sessions, pending OAuth state, and
+cached reauthentication evidence. Fresh Google login is required for Admin,
+Staff, and Ministry leaders; neither a saved cookie nor a previously fresh
+reauthentication timestamp survives restore. In the same fenced initialization
+step, restore sets the durable `restore_review_required` gate, assigns a fresh
+Family-link credential epoch generated after loading the backup, clears all
+restored active-token-generation and rehearsal-epoch pointers, and invalidates
+restored prepared generations. This applies to every Family, including those
+currently ineligible, so later reactivation cannot revive a restored link.
+Restarting recovery resumes that restore instance; performing another restore
+creates a new epoch. The credential epoch is never taken from backup state.
+That gate
 blocks every Family authentication, access-token exchange, form, and submit
 route regardless of campaign dates or Testing behavior; public requests receive
 a neutral parish-branded maintenance page without Family-specific information.
 
-Administration login and the restore-readiness workflow remain available. A
-restricted maintenance worker pool/queue runs while the gate is closed and may
-claim only tenant-validation and read-only full refresh, integration tests,
-mail routed to the configured Testing recipient, restore inventory/hold
-calculation, backup verification, integrity/health diagnostics, operational
-notifications, and explicitly authorized recovery of an interrupted purge.
-It cannot materialize live schedules, dispatch a `production` outbox row,
-publish/write to ParishSoft, generate ordinary campaign exports, or claim other
-restored work. Every task carries a restore-maintenance type checked at durable
-creation and worker claim; routing to the queue alone is not authorization.
+Administration login and the restore-readiness workflow remain available. The
+restricted maintenance pool uses existing services and their unchanged secret
+mounts, not an additional privileged worker. During the gate, the owning
+services claim the following dedicated queues:
+
+| Service | Restore queue | Allowed maintenance work |
+| --- | --- | --- |
+| `worker` | `restore-general` | Tenant validation, read-only full refresh, public-key-only restore token preparation and stale-credential scrubbing, provider-independent integration checks and mail rendering, hold inventory, integrity diagnostics, non-mail operational notifications, and explicitly authorized interrupted-purge recovery |
+| `mail-dispatch` | `restore-mail` | Provider checks, Testing-recipient mail, and operational email using the normal private-key/provider boundary |
+| `backup-worker` | `restore-backup` | Backup verification using only its existing backup credentials/keys |
+
+Queues hold references to the same authoritative TaskRun/outbox records; routing
+does not copy message state or grant access to another service's secrets.
+Provider-dependent integration checks follow their owning service above.
+Configuration/credential installers retain only their existing authorized
+target-specific workflow queues. The scheduler may recover admissible
+maintenance hints but may not materialize live campaign schedules. Services
+must not claim ordinary restored work, dispatch `production` outbox rows,
+write to ParishSoft, or generate ordinary campaign exports while gated. Every
+maintenance task carries a type checked at creation, claim, and external-effect
+boundaries; a queue name alone never authorizes work. On release the existing
+services resume their ordinary queue admission under the same credential mounts.
 
 The gate can be cleared only after applicable readiness passes and a freshly
 authenticated Admin reviews and confirms the proposed state-aware release
@@ -378,12 +432,39 @@ exhaustive branch-oriented tests.
 
 Required suites include:
 
+- purge-reader tests that pause a report between queries and a download between
+  chunks, claim purge concurrently, and prove no deletion starts until their
+  shared guards release. Verify new readers are denied after claim, first-batch
+  prerequisites are rechecked after drainage, stale deadlines never substitute
+  for the exclusive guard, timeouts leave all rows/files intact, and crashes
+  before the first checkpoint repeat drainage. Cover lazy queries, streaming
+  transaction scope, guard-connection loss, multi-campaign lock order, slow
+  transfers, cancellation, and post-deletion retry with admission still closed;
+- purge-recovery evidence tests for missing/wrong escrow, unavailable recovery
+  private material, missing historical keys, failed backup decryption, manifest
+  mismatch, future timestamps, and exact 60-minute expiry. Verify new evidence
+  does not overwrite history, replacing a backup or relevant key reference
+  invalidates dependent evidence, expiry at queued worker claim prevents all
+  deletion, and expiry after committed deletion does not prevent safe resume.
+  Exercise manifest-change/claim races, operator attestation authorization,
+  strict non-secret fields, redacted verification output, and unchanged service
+  secret mounts using synthetic keys/backups only;
 - pure unit tests for validation, normalization, dates/DST including
   midnight-gap/fold campaign boundaries, money, percentages, role precedence,
   state machines, merge/diff, report calculations, and export escaping;
 - scheduler/transaction tests for idempotent campaign-boundary occurrence
   creation, exact interval gating despite state lag, start/close lock races,
   end-date replacement, retry, and overdue recovery after scheduler outage;
+- recovery tests for close-before-start delivery when both boundaries are
+  overdue, atomic ordered restore catch-up, and re-emission of lost broker
+  hints for already-existing due records without redispatching unknown mail;
+- purge/successor exclusion tests covering every nonterminal request state,
+  creation/confirmation/claim races, and permitted successor creation after
+  successful purge despite its retained tombstone gate;
+- report security tests for non-identifying cursors, requester/scope reuse,
+  application-only file serving, and owner-only storage without a proxy mount;
+- outbox tests for paused direct receipts without schedule membership, durable
+  hold/version restoration, resume cancellation, and stale dispatch hints;
 - source-compaction integration tests for every age/anchor tier, each protected-
   reference class, promotion-lease exclusion, a late reference winning under
   row locks, idempotent restart, payload garbage collection only after the last
@@ -399,6 +480,11 @@ Required suites include:
   replacements, failed and unknown deliveries, and new input racing final
   inventory verification; verify scheduler retries, schedule revisions, and
   unarchive/reopen do not resurrect resolved coverage or suppress newer inputs;
+- reopen preparation tests for interrupted batches, idempotent retry,
+  cancellation, changed source/eligibility/configuration/key inputs, stale
+  completion, exact Family coverage, and rejection of inactive generation
+  tokens by lookup/dispatch; measure final confirmation at reference scale and
+  prove it performs no token-generation/encryption/per-Family insertion work;
 - Django request tests for every role/denial/object-scope and CSRF/session
   boundary;
 - authentication tests proving that domain rules require matching verified
@@ -431,6 +517,29 @@ Required suites include:
   either unmet threshold does not trigger; include limiter-rejected attempts
   exactly once, boundary expiry, diagnostic-only candidate diversity, and
   deduplicated WARNING/CRITICAL escalation and recovery;
+- shared-network Family-code tests covering distinct Families behind one IP,
+  successful requests below its failure limit, enforcement at 100 failures per
+  ten minutes, the independent five-failure IP/code-pair limit per 15 minutes,
+  configured overrides, and recovery as each sliding window expires;
+- restore-token tests that take a backup, rotate/revoke a link, restore, and
+  prove every pre-restore link is rejected while fresh links and unchanged
+  manual codes work after active release. Cover scheduled release, crossing
+  close during preparation, ineligible-Family reactivation, draft go-live,
+  repeated restore versus process restart, stale prepared generations, changed
+  manifests, failed/retried preparation, and no partial activation. Verify
+  restored sealed outbox credentials are never sent, authorized resealing
+  preserves delivery identity/history/holds, ambiguous attempts are not resent
+  automatically, and token replacement alone creates no email;
+- rehearsal-credential tests proving Testing email never contains Production
+  codes/tokens; rehearsal code/link login succeeds only in the current Testing
+  epoch with ordinary acknowledgments and date/eligibility gates. Verify
+  mode-disjoint formats, same-code collision prevention across rehearsal epochs,
+  namespace/epoch dispatch checks, no missing-credential fallback, and that
+  credentials captured from delivered Testing messages plus their sessions fail
+  after gate acquisition and Production activation. Cover cancelled cleanup,
+  withdrawal/new rehearsal, future campaigns, stale mail workers, and unchanged
+  Production codes; verify sensitive cleanup, retained unlinked reservations,
+  and HMAC-key migration without old credential revival;
 - reusable-token tests for digest-only exchange, public-key sealing,
   dispatch/rotation-only private-key mounts and decryption, failure to decrypt
   from web/general-worker service profiles, repeat-mail rendering, atomic token

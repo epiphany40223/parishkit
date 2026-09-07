@@ -340,11 +340,44 @@ sessions are separate namespaces; acquiring one never grants the other.
 
 ## Family credential security
 
-Each participating Family receives one eight-character code per campaign. Code
+Each participating Family receives one Production eight-character code per
+campaign. Code
 generation uses `ABCDEFGHJKMNPQRSTUVWXYZ`, excluding visually confusable
 `I`, `L`, and `O`. Codes are case-insensitive, collision checked, stable for
 the campaign, and never recycled within it. A reactivated Family regains its
 original code.
+
+Testing email uses a separate rehearsal credential set, never the Production
+code or token, including explicit readiness-test sends made while global mode
+is Production. Such sends may prepare rehearsal credentials under their
+maintenance/readiness authorization but never make them usable in Production
+or bypass restore, campaign-date, or go-live gates. Safe-sample previews without
+a real eligible Family use clearly labelled non-authenticating placeholders.
+Testing codes are eight letters: reserved leading `I` followed
+by seven random letters from the Production generation alphabet. This disjoint
+format prevents a retained Testing code from matching any Production code,
+including in a later campaign. Testing link tokens use a `test.` discriminator
+followed by an independent 256-bit random payload at the ordinary access route;
+Production tokens never use that discriminator. Both use the same encryption,
+redaction, normalization, abuse controls, and clean-session exchange protections
+as their Production equivalents. Testing lookup is additionally scoped to the
+current campaign and current rehearsal epoch; Production rejects Testing
+credentials without falling back to another namespace. Testing likewise does
+not accept Production credentials. Admin/Staff code reports retain their
+authorized access to the stable Production codes; rehearsal credentials are
+identified separately in Testing mail, not substituted into those reports.
+
+Go-live gate acquisition invalidates the rehearsal epoch and all its Family
+sessions before cleanup begins. Every Family request checks its session's mode
+and epoch; an existing Testing session cannot become a Production session.
+Cleanup destroys rehearsal credentials and sealed message substitutions. A
+cancelled transition, pre-start withdrawal, or later Testing return creates a
+fresh epoch lazily when rehearsal next begins, never reviving old credentials.
+Final Production activation requires the prior epoch to remain invalidated and
+its sensitive credential records to be removed. Stable Production codes and
+Production token generations are not replaced by this cleanup. Storage and
+retired-code reservations follow the
+[data model](../data/spec.md#family-campaign-identity).
 
 The manual code is a low-sensitivity, campaign-scoped access mechanism rather
 than a high-security credential. It is unusable while the campaign is closed,
@@ -367,16 +400,27 @@ the campaign is closed or the Family is ineligible. Explicit rotation atomically
 replaces ciphertext and digest, invalidating every prior email link without
 changing the manual code. Campaign close destroys recoverable token ciphertext
 and digest while retaining non-secret generation/revocation audit metadata; a
-later guarded reopen generates new tokens before new Family mail can be sent.
+later guarded reopen prepares a new inactive token generation asynchronously
+and selects it only at final confirmation, before new Family mail can be sent.
+All Production token lookup and dispatch checks use the Campaign's active generation
+pointer as defined by the [data model](../data/spec.md#family-campaign-identity).
 Temporary Family ineligibility does not destroy the ciphertext, so reactivation
 during the same open campaign can restore the existing link.
+
+Restore is an exception to that reuse: it invalidates every restored link and
+prepared generation before web access resumes. A scheduled/active release
+requires fresh generation preparation and atomic activation under the
+[restore workflow](../admin-portal/spec.md#restore-release). Manual codes remain
+stable; no token rotation implicitly authorizes another email delivery.
 
 Stored uniqueness and submitted lookup use one canonical value: remove ASCII
 spaces and hyphens, convert ASCII letters to uppercase, and require exactly
 eight ASCII `A`-`Z` letters. The HMAC input is that validated canonical value.
-Submitted `I`, `L`, and `O` are valid lookup candidates even though generation
-never emits them; they therefore follow the same constant-behavior not-found
-path as any other nonmatching candidate. Case and friendly delimiters cannot
+Submitted `I`, `L`, and `O` are valid lookup candidates even though Production
+generation never emits them. Only a matching current Testing code may succeed
+in Testing; otherwise these candidates follow the same constant-behavior
+not-found path as any other nonmatching candidate. Case and friendly delimiters
+cannot
 create distinct credentials.
 
 Access-token routes never log token path segments. Successful exchange rotates
@@ -394,7 +438,7 @@ from application logs, operational notifications, and unprivileged reports.
 
 Failed Family-code attempts use Valkey sliding-window limits keyed by source IP
 and by source-IP/code-fingerprint pair. Defaults are five failures per pair per
-15 minutes and ten failures per IP per 10 minutes, followed by `429` responses
+15 minutes and 100 failures per IP per 10 minutes, followed by `429` responses
 with increasing retry intervals. There is no limiter or lock keyed only by a
 code fingerprint: failures from one or more other source addresses cannot
 disable a valid Family credential. A successful request remains usable unless
@@ -404,6 +448,13 @@ or `O`, consumes both applicable failure counters. A server request with the
 wrong length or nonletter input consumes the per-IP counter but has no
 code-fingerprint counter; ordinary browser validation rejects that format
 before submission.
+
+The larger per-IP allowance accommodates different Families sharing parish
+Wi-Fi or another network egress address. Those Families still share the IP
+budget, and reaching it limits valid requests from that address until the
+window permits them again. The smaller pair limit constrains repeated attempts
+against one candidate without consuming the entire shared-network allowance
+after only a few mistakes. Both defaults remain deployment-configurable.
 
 The application also detects a distributed guessing burst when at least 100
 invalid attempts across at least 20 source IPs occur within five minutes.

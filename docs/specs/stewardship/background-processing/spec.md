@@ -13,6 +13,16 @@ per minute and inserts occurrences with unique idempotency keys. Celery/Valkey
 delivers execution hints; workers always claim/check the PostgreSQL record
 before acting.
 
+Each scheduler scan also recovers lost broker hints from PostgreSQL: in bounded
+batches it re-emits hints for due, unclaimed pending/retryable TaskRun,
+occurrence, and outbox work, subject to its retry time, admission gates, and
+owning service queue. Hint publication is retryable even when the durable row
+already exists. Valid leases exclude duplicate claims; expired leases follow
+the ordinary recovery policy. Provider-submitting or delivery-unknown mail
+goes only to reconciliation, never automatic redispatch. Holds remain enforced.
+Broker loss may delay work but cannot strand it because its original insertion
+hint was lost; duplicate hints still refer to the same idempotent durable row.
+
 Ordinary Production campaign occurrences are created and claimed only when
 global mode is Production and lifecycle/date/admission predicates permit them.
 Testing rehearsal work is separately and immutably classified, never satisfies
@@ -108,6 +118,16 @@ time, lag, previous/new state, and correlation ID. Transient failure uses the
 ordinary durable retry/lease policy and emits operational alerts when boundary
 lag exceeds the scheduler-health threshold.
 
+For each Campaign, apply due boundaries in resolved-time order under the same
+Campaign/global locks, irrespective of broker delivery order. If close arrives
+while start is still unapplied, first materialize and apply the overdue start
+and then close in one transaction, with distinct audit/occurrence outcomes.
+An unapplied predecessor is not a reason to mark close no-longer-applicable.
+Failure rolls back the ordered transitions and leaves recovery retryable. When
+both are overdue, the intermediate active state is never externally visible
+and does not dispatch campaign mail outside its interval. Restore release uses
+the same ordered catch-up policy while its maintenance gate remains closed.
+
 An end-date edit transaction replaces a not-yet-running close occurrence with
 one keyed to the new resolved boundary. It races safely under the Campaign lock:
 if closing wins first, changing the date requires the guarded reopen workflow.
@@ -130,6 +150,43 @@ or local-day interval completed while the campaign was active remain eligible
 for their explicit post-close hold/resolution and digest policies. Boundary
 recovery therefore reconciles durable state and side effects without creating
 an access or delivery gap.
+
+### Reopen token preparation
+
+The existing general worker executes the reopen-readiness token task through
+the durable claim/lease machinery. It needs only public token-encryption keys,
+never the mail-dispatch private keys. It pins the preparation inputs, generates
+random tokens, seals them, and inserts generation-scoped records in bounded
+batches with atomic checkpoints. Retry does not replace already prepared
+tokens within the same valid preparation revision.
+
+Completion verifies exact eligible-Family coverage and the pinned inputs before
+marking the generation ready. Progress does not activate tokens or reopen the
+Campaign. A stale/cancelled/superseded task cannot publish readiness or activate
+a generation; failed/cancelled staging is scrubbed by idempotent cleanup. The
+short activation transaction belongs to the
+[Admin reopen workflow](../admin-portal/spec.md#reopen-and-archive), and durable
+generation/invalidation rules belong to the
+[data model](../data/spec.md#family-campaign-identity).
+
+The same preparation service supports restore readiness on `restore-general`,
+using a restore-instance/credential-epoch fence rather than reopening a
+campaign. A superseded restore instance cannot publish or activate its work.
+Its final activation belongs to the
+[restore release workflow](../admin-portal/spec.md#restore-release).
+
+Before submitting any credential-bearing message after restore, dispatch must
+verify that sealed substitutions reference the currently admissible generation
+and credential epoch. Stale material is scrubbed and never sent. Only after the
+ordinary delivery-state, eligibility, schedule, pause, and restore-hold checks
+authorize that same delivery may the worker re-render/reseal its credentials
+from the new active generation. Preserve the outbox identity, semantic key,
+attempt history, and delivery holds; this is not a new mailing. A restored
+`submitting`/`delivery_unknown` outcome must be reconciled under the existing
+uncertainty policy before any resend. If a required current token is unavailable
+or the campaign is closed, follow existing credential-free/closed-mail policy
+or block that rendering; never fall back to a restored token. Readiness tests
+use only the separate rehearsal credentials.
 
 ### Production-transition cleanup
 
@@ -343,10 +400,17 @@ fingerprints. Terminal
 transition to `delivered`, `permanent_failure`, or `cancelled` destroys the
 sealed token/code substitutions while retaining the redacted rendered record.
 In Testing, envelope recipients become the single test address, the subject/
-body prominently say TEST, and intended names/addresses are safely listed. Test
+body prominently say TEST, and intended names/addresses are safely listed.
+All Family credential substitutions, including in confirmation mail, come only
+from the current rehearsal epoch according to
+[Family credential security](../architecture/spec.md#family-credential-security).
+Persist the credential namespace/epoch with the outbox and recheck it at claim
+and immediately before provider submission. Never substitute Production secrets
+into Testing mail or fall back to them when a rehearsal credential is missing.
+Old-epoch work is cancelled and scrubbed, not rebound to a new epoch. Test
 delivery never marks a live occurrence delivered.
 
-For each later Family message, dispatch decrypts the Family's primary reusable
+For each later Production Family message, dispatch decrypts the Family's primary reusable
 token ciphertext into memory, constructs the secure link, and seals that
 message's substitution. Scrubbing a terminal outbox substitution does not
 destroy the primary ciphertext; primary token rotation/closure follows the
@@ -502,8 +566,13 @@ the owner-only directory/file/temporary-file permissions defined by
 [runtime storage](../operations/spec.md#runtime-storage) and the retention policy defined by
 [operations](../operations/spec.md#temporary-retention-and-housekeeping).
 Expired files can be regenerated from retained source/config where permitted.
-Files are never served directly by the proxy without an authorized application
-response or short-lived single-use download grant.
+Files are served only through an authorized application response. A short-lived
+single-use download grant authorizes that application response, never proxy
+file access or an internal-redirect handoff. Caddy has no export-storage mount.
+The application holds the [campaign read guard](../data/spec.md#campaign-read-guards)
+through the complete download response, including streaming, so purge file
+cleanup cannot race an admitted download. Worker deletion admission and
+pre-first-batch drainage use that same service.
 
 ## ParishSoft publication
 

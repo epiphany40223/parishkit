@@ -12,7 +12,7 @@ Follow the [execution and completion rules](README.md#execution-and-completion).
 Scope and dependencies: [RPT-01 work package](../../plans/stewardship/reports.md#rpt-01-shared-report-framework-and-campaign-selection).
 
 - [ ] RPT-01.01 — Implement persistent per-request campaign selection.
-- [ ] RPT-01.02 — Integrate report role, row, and column policies.
+- [ ] RPT-01.02 — Integrate report authorization and response-lifetime campaign read guards.
 - [ ] RPT-01.03 — Build bounded report filters, sorting, and pagination.
 - [ ] RPT-01.04 — Integrate asynchronous exports and chart downloads.
 - [ ] RPT-01.05 — Audit report use without sensitive-value duplication.

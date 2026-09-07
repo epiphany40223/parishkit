@@ -81,6 +81,8 @@ remain below `/admin/` and apply server-side authorization.
    coalescing, and terminal Testing outbox.
 2. Implement ProductionTransitionRequest creation, irreversible acknowledgement,
    campaign go-live gate, progress/retry/cancel UI, and BG-03 batched cleanup.
+   Invalidate rehearsal credentials/sessions at gate acquisition and include
+   their sensitive detail in cleanup readiness and final activation checks.
 3. Implement fresh-auth typed final confirmation and the short atomic
    draft-to-scheduled/direct-active transition with commit-time boundary check.
 4. Implement guarded scheduled-to-draft withdrawal, reason, cancellation
@@ -97,11 +99,17 @@ remain below `/admin/` and apply server-side authorization.
    scheduled, active, closed, or archived campaign; archived-current preserves
    its pointer for later unarchive/Return, and closed/archived releases keep
    Family access and live Family mail disabled.
+   Prepare fresh tokens for scheduled/active release through BG-02, display
+   old-link invalidation/manual-code fallback, and atomically activate the
+   current restore-epoch generation after manifest rechecks. Do not send
+   replacement mail or resolve holds implicitly.
 2. Implement delivery pause/resume with fresh authentication, impact counts,
    pre-provider recheck, held message visibility, coalescing, and post-close
    receipt/digest resolution.
 3. Implement closed-campaign end-date extension/readiness/reopen directly to
-   active, token reissue, future-only schedules, and no replay of skipped work.
+   active, background token-generation preparation/progress/retry/cancel,
+   short pointer activation with pinned-input rechecks, future-only schedules,
+   and no replay of skipped work.
 4. Implement archive eligibility, unarchive-to-closed guards, and the dedicated
    post-archive Return to Testing workflow that clears the current pointer and
    presents the purge-before-successor decision window. Inventory all receipt/
@@ -170,10 +178,15 @@ remain below `/admin/` and apply server-side authorization.
 3. Build dry inventory and **Create purge backup** asynchronous action with
    verified encrypted off-host reference, independent evidence expirations from
    the purge specification, and refresh of only the expired artifact.
+   Add structured operator recovery-attestation entry bound to the selected
+   backup, escrow/key manifests, and request. Display its separate expiry and
+   dependent invalidation without uploading secrets or arbitrary attachments.
 4. Require fresh authentication, exact campaign name and generated phrase, then
    queue the idempotent purge worker after atomic prerequisite recheck.
 5. Expose safe pre-delete rollback, resumable deletion, cleanup retry, terminal
    tombstone, and CRITICAL failure behavior without offering forbidden rollback.
+   Show the existing-reader/download drain phase and timeout recovery before
+   the first deletion checkpoint; do not invent an additional request state.
 6. Add exhaustive browser/PostgreSQL race tests for every gate/state/pointer/
    successor/expiry/interruption path.
 

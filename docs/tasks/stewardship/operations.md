@@ -47,7 +47,7 @@ Evidence: Not started.
 
 Scope and dependencies: [OPS-04 work package](../../plans/stewardship/operations.md#ops-04-bootstrap-migrations-startup-and-upgrades).
 
-- [ ] OPS-04.01 — Integrate bootstrap, migration, and health commands.
+- [ ] OPS-04.01 — Integrate bootstrap, metrics-credential provisioning, migration, and health commands.
 - [ ] OPS-04.02 — Run migrations once before service rollout.
 - [ ] OPS-04.03 — Implement backup-aware image upgrades and readiness checks.
 - [ ] OPS-04.04 — Document schema evolution and recovery procedures.
@@ -62,7 +62,7 @@ Scope and dependencies: [OPS-05 work package](../../plans/stewardship/operations
 - [ ] OPS-05.01 — Implement consistent data/config/media backup manifests.
 - [ ] OPS-05.02 — Encrypt, transfer, verify, and retain complete backups.
 - [ ] OPS-05.03 — Route every backup through the isolated backup worker.
-- [ ] OPS-05.04 — Implement operator-only encrypted secret escrow.
+- [ ] OPS-05.04 — Implement operator-only secret escrow and off-host recovery verification.
 - [ ] OPS-05.05 — Test backup failures, retention, RPO alerts, and restore evidence.
 
 Evidence: Not started.
@@ -72,10 +72,10 @@ Evidence: Not started.
 Scope and dependencies: [OPS-06 work package](../../plans/stewardship/operations.md#ops-06-restore-and-state-aware-release).
 
 - [ ] OPS-06.01 — Implement validated empty-target and disaster-recovery restore.
-- [ ] OPS-06.02 — Restore data and start with maintenance admission gates.
+- [ ] OPS-06.02 — Restore data, invalidate sessions/link generations, and set maintenance gates.
 - [ ] OPS-06.03 — Implement restricted maintenance queues and controls.
 - [ ] OPS-06.04 — Inventory uncertain deliveries and durable holds.
-- [ ] OPS-06.05 — Integrate atomic lifecycle-aware Admin release.
+- [ ] OPS-06.05 — Integrate atomic lifecycle-aware release with fresh link-token activation.
 - [ ] OPS-06.06 — Test every restore state, uncertainty window, and resend case.
 
 Evidence: Not started.

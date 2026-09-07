@@ -200,7 +200,9 @@ a YAML/database digest mismatch and pins the exact applied version it locks.
 
 New draft creation is unavailable if any campaign is draft, scheduled, active,
 closed, `purging`, or `purge_cleanup_failed`. Independently, it is unavailable
-while the global mode is Production. The Admin must finish reconciliation,
+while the global mode is Production or any nonterminal PurgeRequest exists.
+Successfully completed purge tombstones do not block a new draft. The Admin
+must finish reconciliation,
 archive the current campaign, complete the guarded Return to Testing, optionally
 complete an exceptional purge and cleanup, and only then create its successor.
 The server checks all conditions in the draft-creation transaction; stale or
@@ -281,7 +283,12 @@ transaction creates a durable ProductionTransitionRequest, acquires the
 campaign go-live gate, records the inventory/aggregate described below, and
 queues an idempotent cleanup task. The gate rejects new Testing submissions,
 test sends, campaign content/configuration changes, and Testing campaign work;
-existing authenticated pages explain that go-live is in progress. Source
+existing authenticated pages explain that go-live is in progress. The same
+transaction invalidates the rehearsal epoch and its sessions; the cleanup
+inventory includes rehearsal credential detail under the
+[credential lifecycle](../architecture/spec.md#family-credential-security).
+Readiness/final confirmation verify that invalidation and completed credential
+cleanup without changing stable Production Family codes. Source
 refresh and operational notifications may continue.
 
 The worker deletes the recorded Testing corpus in bounded, checkpointed batches
@@ -359,6 +366,25 @@ campaign state and resolved date interval, source and integration evidence,
 delivery-uncertainty inventory, proposed release state, and whether live Family
 access/mail will resume.
 
+Readiness for a resulting `scheduled` or `active` campaign includes fresh
+email-link preparation for every currently eligible Family. Reuse the
+resumable public-key-only preparation service from the
+[reopen workflow](#reopen-and-archive), bound to this restore instance and its
+current source/configuration/key versions. The UI shows progress, retry, and
+the warning that every pre-restore email link will stop working; stable manual
+Family codes are unchanged. Preparation never clears maintenance admission.
+
+Final release rechecks the preparation manifest and restore instance, and
+atomically selects the new generation with the state/mode/hold changes below.
+Stale or incomplete preparation leaves the gate closed. If the commit-time
+result is instead `closed`, no generation is activated and staged secrets are
+scrubbed; a later reopen prepares its own generation. Other non-live resulting
+states do not activate restored tokens. Replacement tokens alone create no
+mail or resend authorization and do not satisfy or release delivery holds.
+Queued credential-bearing mail follows the
+[restore dispatch rule](../background-processing/spec.md#reopen-token-preparation)
+so no restored sealed substitution can reintroduce an old link.
+
 After readiness succeeds, a freshly authenticated Admin confirms the exact
 state-aware result. Under the current-campaign lock, the release transaction
 recomputes boundaries at its commit instant:
@@ -380,6 +406,13 @@ recomputes boundaries at its commit instant:
 - `purging`, `purge_cleanup_failed`, an inconsistent request/Campaign pair, or
   any overlapping-current-campaign invariant blocks release for explicit
   operator recovery.
+
+These are resulting states, not additional lifecycle edges. An overdue
+`scheduled` campaign reaches `closed` by applying its start and close boundaries
+in order within the release transaction, using the shared
+[boundary policy](../background-processing/spec.md#campaign-lifecycle-boundaries).
+Both transitions are audited; the maintenance gate remains closed throughout,
+so the intermediate active state admits no Family access or mail.
 
 Any sole current campaign resulting in `scheduled`, `active`, `closed`, or
 `archived` sets global mode to Production. A `draft` current campaign or no
@@ -453,20 +486,35 @@ and held-message state is resolved.
 ### Reopen and archive
 
 Extending a closed campaign into the future can reopen it only through a
-readiness workflow equivalent to Production transition, excluding test-data
-deletion and the `draft`-to-`scheduled` state change. The proposed end date is
+readiness workflow equivalent to Production transition, excluding the
+`draft`-to-`scheduled` state change. Previously completed Testing cleanup need
+not be repeated, but any remaining or newly created readiness-test artifacts
+undergo the gated cleanup and aggregate process described below. The proposed
+end date is
 staged in that workflow and is committed only by the final reopen transaction;
 it must place the commit instant inside the reopened half-open campaign
 interval. The
 single-current-campaign rule means a successor cannot yet exist; the server
 nevertheless rechecks that no other campaign is `draft`, `scheduled`, `active`,
 or `closed` and reports any inconsistent state rather than surfacing a database-
-constraint error. The UI lists reactivated Family access, regenerated access-
-link-token counts, and each
-explicitly configured future mail occurrence. Fresh authentication and final
-confirmation atomically rechecks the single-current-campaign guard, moves
-`closed` to `active`, applies the proposed end date, preserves or asserts
-Production, issues new Family access-link tokens, and enables Family access.
+constraint error. The UI lists reactivated Family access, prepared access-link
+token counts, and each explicitly configured future mail occurrence.
+
+Reopen readiness queues a resumable background token-preparation task and
+returns a progress page. It prepares a complete inactive generation for the
+pinned eligible Family set using only the token public encryption key. The
+page offers retry/cancel and does not offer final confirmation until preparation
+and the other readiness checks pass. Prepared credentials are never displayed,
+sent in Family mail, or accepted by login while staged.
+
+Fresh authentication and final confirmation atomically recheck the
+single-current-campaign guard, exact preparation/source/configuration/key
+versions, and readiness, move `closed` to `active`, apply the proposed end date,
+preserve or assert Production, select the ready token-generation pointer, and
+enable Family access. Changed inputs reject confirmation and require refreshed
+preparation. The final transaction does no bulk token generation, encryption,
+or per-Family insertion; the generation model and invalidation rules are in
+[Family campaign identity](../data/spec.md#family-campaign-identity).
 
 Reopen readiness also requires every `testing_override` OutboxMessage to be
 terminal and inventories any Testing outbox, occurrence, fulfillment, workflow,
@@ -727,17 +775,34 @@ The workflow has these required stages:
    success verifies and stores the immutable reference to the encrypted
    off-host backup. Its database snapshot must be at or after quiescence;
    partial, local-only, or unverified uploads do not qualify.
-5. Explain irreversible effects and retained tombstone fields.
-6. Obtain fresh Google authentication.
-7. Require the exact campaign name and generated short purge phrase in separate
+5. Record operator recovery verification for that exact backup using the
+   non-secret evidence workflow below. An encrypted upload alone is not proof
+   that the backup can be recovered.
+6. Explain irreversible effects and retained tombstone fields.
+7. Obtain fresh Google authentication.
+8. Require the exact campaign name and generated short purge phrase in separate
    confirmation fields.
-8. Atomically advance the request to `queued` and create one idempotent purge
+9. Atomically advance the request to `queued` and create one idempotent purge
    task.
+
+The recovery-evidence page displays the purge request ID, selected backup
+reference/manifest digest, and required credential/key fingerprints. An
+authorized operator performs the off-host verification defined by
+[secret escrow](../operations/spec.md#secret-escrow-recovery-verification).
+An Admin records its successful result, operator identity, verification
+completion time, escrow bundle reference/manifest digest, recovery-key
+fingerprints, and the exact required credential/key set. The server binds the
+record to this request, selected backup, and current relevant manifest version,
+records the submitting Admin and server receipt time, validates typed fields
+and matches fingerprints, and rejects missing, mismatched, future-dated, or
+already expired evidence. No arbitrary attachment, secret, or decrypted bundle
+is uploaded. This is an accountable operator attestation, not a claim that the
+web application has independently tested off-host decryption.
 
 The UI displays and resumes the request states defined by the
 [data specification](../data/spec.md#job-outbox-audit-and-purge-records).
-Inventory, backup verification, and acknowledgement advance a `draft` request
-to `ready_for_confirmation`; an expired inventory or backup returns it to
+Inventory, backup verification, current recovery evidence, and acknowledgement
+advance a `draft` request to `ready_for_confirmation`; an expired prerequisite returns it to
 `draft` but invalidates only the expired artifact. The UI shows each artifact's
 completion and expiration time and offers the corresponding refresh action. An
 Admin may cancel through `queued` only while an atomic worker claim has not
@@ -758,20 +823,45 @@ leaves the purge request in `draft`, shows redacted failure detail, and permits
 an idempotent retry without invalidating current inventory merely because the
 backup attempt failed.
 
+Recovery evidence expires 60 minutes after the recorded verification completion,
+not after entry into the web UI. It must remain current at final confirmation
+and initial worker claim. Replacing the selected backup, changing a relevant
+credential/key or escrow/recovery reference, reporting lost recovery access,
+or invalidating backup evidence due to a quiescence/mutation change invalidates
+the recovery attestation immediately. The Admin must perform and record a new
+verification for the matching artifacts; merely editing its timestamp cannot
+renew it. Ordinary expiry of inventory, backup, or recovery evidence affects
+only that artifact; refreshing with a different backup invalidates dependent
+recovery evidence. Show all three expirations and preserve their audit history.
+After deletion has committed, evidence expiry does not interrupt the existing
+resumable purge or permit rollback.
+
 While the gate exists, every UI entry point that would create campaign-owned
 work explains that purge preparation has paused the campaign and links Admins
 to its status; direct requests receive the same server-side rejection. This
 includes new exports, publication/reconciliation mutations, workflow-note
 changes, and manual/retry task creation. Existing read-only detail and already-
-generated downloads remain available. Their access is recorded as a parish-
+generated downloads remain available during preparation under the
+[campaign read guards](../data/spec.md#campaign-read-guards). Their access is recorded as a parish-
 owned retained security event with only the campaign UUID/tombstone reference,
 under the [shared report policy](../reports/spec.md#shared-report-behavior), so
 it does not mutate or invalidate campaign-owned purge inventory.
 
-Worker claim first repeats the gate, quiescence, inventory, backup, and
-last-mutation checks under row locks. Any mismatch performs no deletion and
+Final confirmation and worker claim both repeat the global Testing-mode,
+null-current-pointer, no-other-current-campaign, gate, quiescence, inventory,
+backup, recovery-evidence, and last-mutation checks under the shared
+global/Campaign/request locks and relevant manifest-version guard.
+Any mismatch at worker claim performs no deletion and
 enters `failed_pre_delete`; success atomically moves the request to `running`
 and the Campaign to `purging`, making the Campaign inaccessible.
+The UI then shows **Waiting for existing reads/downloads** with elapsed time
+and the configured drain deadline. New reads are denied; already admitted
+readers must finish or be terminated by their bounded request lifetime before
+the first deletion batch. The worker acquires the exclusive read guard and
+rechecks prerequisites after drainage. Timeout performs no deletion and uses
+`failed_pre_delete`; the UI explains that data remains intact and offers a new
+purge request/readiness attempt. Worker recovery repeats this barrier whenever
+no deletion checkpoint exists. No new request lifecycle state is introduced.
 Database-owned rows are then deleted in bounded, resumable, idempotent batches;
 each batch commits separately so a large campaign does not require one
 long-running transaction. Shared/deduplicated source entities remain if
