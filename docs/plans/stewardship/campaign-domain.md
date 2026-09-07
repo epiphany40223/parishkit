@@ -52,8 +52,9 @@ state names independently.
 5. Add exhaustive transition-table, DST, race-precondition, and property-style
    invariant tests.
 
-Dependencies: DOM-01, DAT-01, DAT-02. Concrete transactions are delivered by
-DAT-02, BG-02, and ADM-04 through ADM-06.
+Dependencies: DOM-01 and DAT-01. Item 1 lands before DAT-02's interval
+constraints; items 2 through 5 then integrate with DAT-02. Concrete
+transactions are delivered by DAT-02, BG-02, and ADM-04 through ADM-06.
 
 ### DOM-03: Authorization capability policy
 
@@ -85,7 +86,9 @@ complete.
 5. Add unit tests for formatters and a small accessibility/browser component
    smoke suite before feature pages multiply.
 
-Dependencies: ARC-02 and OPS-09. ADM-03 and FAM-02 consume these components.
+Dependencies: ARC-02 and the Phase 0 baseline portion of OPS-09. ADM-03 and
+FAM-02 consume these components; later OPS-09 browser/release work does not
+block this package.
 
 ### DOM-05: Cross-domain acceptance harness
 

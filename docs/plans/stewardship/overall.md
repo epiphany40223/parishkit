@@ -55,8 +55,8 @@ Execute in this order:
 3. **ARC-02** — integrate shared ParishKit configuration, define the versioned
    Stewardship YAML authority, paths, logging, and startup validation.
 4. **OPS-01** — start the development/production Compose topology with web,
-   config/credential installers, general worker, mail-dispatch, scheduler,
-   PostgreSQL, Valkey, and Caddy.
+   config/credential installers, general worker, backup-worker, mail-dispatch,
+   token-key-rotation, scheduler, PostgreSQL, Valkey, and Caddy.
 5. Start **OPS-09** with fast lint/format/Markdown/unit/migration checks and
    scoped coverage reporting.
 6. Start **DOM-05** with deterministic clock/timezone helpers and an acceptance
@@ -81,12 +81,14 @@ and lifecycle foundations before collecting parish data.
 
 1. **DAT-01** — applied-YAML/change/secret-request, parish, audit, and session
    base records.
-2. **DAT-02** — campaigns, schedules, lifecycle constraints, and boundary
+2. Land **DOM-02** item 1 — the canonical campaign-interval resolver required
+   by database interval constraints.
+3. **DAT-02** — campaigns, schedules, lifecycle constraints, and boundary
    occurrences.
-3. **DOM-02** — interval resolution and lifecycle policies over those records.
-4. **DAT-05** — portal users, login rules, assignments, and constraints.
-5. **DOM-03** — canonical role/capability/object-scope policy.
-6. Begin the database-backed **DOM-05** factories/builders after DAT-01 lands.
+4. Complete **DOM-02** lifecycle policies over those records.
+5. **DAT-05** — portal users, login rules, assignments, and constraints.
+6. **DOM-03** — canonical role/capability/object-scope policy.
+7. Begin the database-backed **DOM-05** factories/builders after DAT-01 lands.
 
 ### 1B: Web and identity security
 

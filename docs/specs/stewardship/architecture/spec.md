@@ -37,10 +37,12 @@ Production Compose contains:
 - target-specific `credential-installer-*` workers, each able to decrypt only
   its own staged replacement and write only its own credential subdirectory;
 - `worker`: general Celery workers for polls, rendering, exports, publication,
-  backup, purge, and cleanup;
-- `mail-dispatch`: a dedicated Celery worker for provider submission and link-
-  token encryption-key rotation, with the private token-key mount unavailable
-  to every other online service;
+  purge, and cleanup;
+- `backup-worker`: a dedicated queue/service with only database/media/config
+  read access, backup-target credentials, and the active data-backup key;
+- `mail-dispatch`: a dedicated Celery worker for provider submission;
+- `token-key-rotation`: an explicitly invoked maintenance profile that alone
+  performs link-token private-key migration/rotation;
 - `scheduler`: exactly one scheduler process that materializes due work;
 - `postgres`: PostgreSQL with a durable volume;
 - `valkey`: broker/cache with a durable local volume, though task correctness
@@ -86,13 +88,10 @@ The human-facing interface consists of:
 - `/admin/...`: every administration page, JSON/HTML partial endpoint, export,
   job detail, and purge workflow.
 
-`/health/live` and `/health/ready` are internal operational interfaces, not
-public interfaces. They listen on the application service network and are not
-routed by Caddy. Compose restart checks use only `/health/live`;
-`/health/ready` is queried by operator diagnostics and alerting, not by an
-ingress controller. Both return only an HTTP status plus the generic body `ok`
-or `unavailable`. Detailed health phase/reason information is available only
-through the operator CLI and protected logs.
+Health and metrics are internal operational interfaces, not public interfaces.
+Their authoritative paths, response disclosure, caller, authentication, and
+ingress behavior are defined only by
+[operations](../operations/spec.md#observability-and-health).
 
 There is no public REST/GraphQL API. Internal browser endpoints use the same
 cookie session, authorization, CSRF, rate limits, and audit policy as their HTML
@@ -156,16 +155,16 @@ safe for identification. They never return an existing secret. Replacement is
 submitted over the authenticated TLS page, immediately sealed to the public
 handoff key for that secret type, and retained only as an expiring ciphertext
 linked to a `SecretReplacementRequest`. The web process does not retain
-plaintext, possess a handoff private key, or have a writable credential mount.
-A target-specific installer sees only its queue, handoff private key, and one
-writable credential subdirectory; it decrypts in memory, validates/tests the
-candidate, atomically replaces the owner-only file, records the safe
-fingerprint, and destroys staged ciphertext. Consumers mount only the resulting
-individual file read-only and acknowledge the new fingerprint before the UI
-reports success. Failure or expiry destroys staging and leaves the old working
-credential installed. No installer mounts the whole credential directory or
-can claim another target's request. Every path defaults below `PARISHKIT_ROOT`
-or `/opt/parishkit` and remains overridable through deployment configuration.
+plaintext or possess a handoff private key. The matching target-specific
+installer decrypts in memory, validates/tests the candidate, atomically replaces
+the owner-only file, records the safe fingerprint, and destroys staged
+ciphertext. Consumers acknowledge the new fingerprint before the UI reports
+success. Failure or expiry destroys staging and leaves the old working
+credential installed. The authoritative mount and cross-target isolation rules
+are defined only by
+[operations](../operations/spec.md#runtime-storage). Every path defaults below
+`PARISHKIT_ROOT` or `/opt/parishkit` and remains overridable through deployment
+configuration.
 
 General application encryption uses a versioned symmetric keyring for manual
 Family codes and other reversible values intentionally stored in PostgreSQL;
@@ -186,12 +185,12 @@ separate versioned public/private sealed-box keyring from a maintained
 cryptographic library. Ciphertexts carry format version and recipient key ID.
 `web` and general workers receive only active public encryption keys; they may
 generate and seal a new random token but cannot recover any retained plaintext.
-Only `mail-dispatch` and an explicitly invoked rotation-service profile receive
-the private decryption-key ring. Rotation first distributes a new public key,
-makes it active for encryption, re-encrypts retained ciphertext in idempotent
-batches inside the private-key service, verifies migration, and retires an old
-private key only after retained backups no longer require it. This keyring is
-independent of the general application and Family-code MAC keyrings.
+Only `mail-dispatch` and the explicitly invoked `token-key-rotation` profile
+receive the private decryption-key ring. Rotation first distributes a new public
+key, makes it active for encryption, re-encrypts retained ciphertext in
+idempotent batches inside `token-key-rotation`, verifies migration, and retires
+an old private key only after retained backups no longer require it. This
+keyring is independent of the general application and Family-code MAC keyrings.
 
 Family-code lookup uses a distinct versioned MAC keyring. Every fingerprint row
 records its MAC algorithm/version and key ID; one key is active for new rows and
@@ -202,14 +201,16 @@ matches any corresponding row.
 MAC-key rotation installs the new key, makes it active, and idempotently
 backfills new-version fingerprint rows by decrypting each retained display code.
 Bulk code generation runs inside its surrounding atomic `READ COMMITTED`
-population/promotion transaction. That transaction holds the accepted MAC-key
-set stable against rotation, computes and inserts a fingerprint row under every
-accepted key, and relies on the unique `(campaign, key ID, digest)` indexes to
-arbitrate concurrent candidates. Each candidate attempt uses a database
-savepoint; a uniqueness conflict rolls back only that candidate's rows and
-retries with fresh randomness, never the complete source promotion. This also
-prevents duplication of a code indexed only under an older accepted key. The
-prior key and rows may be retired only after all online Families have a new-
+population/promotion transaction. It locks the campaign's code-generation row,
+holds the accepted MAC-key set stable against rotation, and generates bounded
+candidate batches in memory. One set-based query rejects any candidate whose
+digest under any accepted key already exists and bulk-inserts every fingerprint
+row for the remaining candidates. The unique `(campaign, key ID, digest)`
+indexes remain a final safety constraint. A batch-level savepoint/retry handles
+an unexpected constraint race; the number of subtransactions is bounded by
+retry rounds, never Families, and accepted existing codes never change. This
+also prevents duplication of a code indexed only under an older accepted key.
+The prior key and rows may be retired only after all online Families have a new-
 version row and every retained backup containing old-only rows either remains
 paired with the prior key or has been re-encrypted/migrated. Failure leaves both
 versions accepted and the migration retryable.
@@ -260,16 +261,18 @@ least 10 source IPs or identity fingerprints within five minutes. Crossing that
 deployment-wide threshold emits one deduplicated WARNING/Admin notification and
 increases progressive backoff; sustained abuse for three windows becomes
 CRITICAL. Local and production deployments exercise the identical application
-limits; stock Caddy provides no authentication rate-limit module.
+limits. The proxy's non-participation in authentication limiting is owned by the
+[production ingress specification](../operations/spec.md#production-ingress-and-tls).
 
 The deployment-wide counter includes callback attempts rejected by either
-specific sliding-window limiter. Such a request contributes only its keyed,
-short-lived source-address fingerprint and, when already safely available, its
-identity fingerprint; it does not allocate OAuth state, parse or retain a raw
-token, call Google, or reach django-allauth. This telemetry increment occurs
-even though the request receives its ordinary `429`, ensuring coordinated
-traffic can cross the aggregate threshold after individual sources have been
-limited. One request contributes only once to the aggregate counter.
+specific sliding-window limiter. A request rejected by a pre-verification IP
+limiter contributes only its keyed, short-lived source-address fingerprint and
+does not allocate OAuth state, parse or retain a raw token, call Google, or
+reach django-allauth. The keyed-identity limiter necessarily runs only after
+provider exchange and signed identity verification; its rejection contributes
+the safe identity and source-address fingerprints but retains no raw callback/
+provider token. Either path increments telemetry despite its ordinary `429`,
+and one request contributes only once to the aggregate counter.
 
 Early middleware also applies a coarse token bucket to every
 `/access/<token>` exchange, before token digest computation or database lookup:
@@ -316,18 +319,20 @@ deadline and remains keyboard and screen-reader operable.
 Authorization changes take effect on the next request and invalidate sessions
 that no longer have any role. Removing the last specific-address Administrator
 or the bootstrap Administrator before another Admin exists is prohibited.
-An immediate exact-address Administrator grant creates the durable dashboard
+An immediate exact-address Administrator grant, creation of any domain rule, or
+addition of Staff to an existing domain rule creates the durable dashboard
 security event and preexisting-Administrator operational notifications defined
-by the Admin portal; notification delivery is not part of the grant transaction
-and cannot erase or delay its audit evidence.
+by the Admin portal. Notification delivery is not part of the activation
+transaction and cannot erase or delay its audit evidence.
 
-The no-reauthentication Administrator-grant policy is an explicit accepted
-product risk favoring low-friction role maintenance. Its controls are detective,
-not preventive: a compromised Admin session can create persistent access before
-notification is acted upon. The durable event, preexisting-Admin notification,
-CSRF/current-role checks, complete audit, and last-Admin guard are the selected
-compensating controls; implementations must not imply they provide the same
-protection as fresh authentication.
+The no-reauthentication role-change policy is an explicit accepted product risk
+favoring low-friction role maintenance. Its controls are detective, not
+preventive: a compromised Admin session can create persistent or domain-wide
+access before notification is acted upon. The durable event and preexisting-
+Admin notification for high-impact expansions, CSRF/current-role checks,
+complete audit, and last-Admin guard are the selected compensating controls;
+implementations must not imply they provide the same protection as fresh
+authentication.
 
 Cookies are `Secure` in production, `HttpOnly`, `SameSite=Lax`, narrowly
 scoped, and rotated at login/privilege transition. Family and administration
@@ -342,17 +347,19 @@ the campaign, and never recycled within it. A reactivated Family regains its
 original code.
 
 The manual code is a low-sensitivity, campaign-scoped access mechanism rather
-than a high-security credential. Its usefulness ends when the campaign closes,
-which limits disclosure impact. It remains encrypted at the application layer
-to avoid accidental exposure from raw storage, while authorized Admin/Staff
-report and export services may decrypt it in bulk. Versioned HMAC fingerprint
-rows support unique lookup without decryption scans. Email links contain an
-independent 256-bit random token. The reusable token is stored in a versioned
-sealed-box ciphertext
+than a high-security credential. It is unusable while the campaign is closed,
+but the same code becomes usable again if that campaign is formally reopened.
+It never grants access to another campaign, and a successor campaign issues a
+new code, limiting disclosure to one Family in one campaign. It remains
+encrypted at the application layer to avoid accidental exposure from raw
+storage, while authorized Admin/Staff report and export services may decrypt it
+in bulk. Versioned HMAC fingerprint rows support unique lookup without
+decryption scans. Email links contain an independent 256-bit random token. The
+reusable token is stored in a versioned sealed-box ciphertext
 envelope alongside an unkeyed SHA-256 lookup digest over a domain-separation
 prefix and the token bytes; its entropy makes a rotatable lookup MAC
-unnecessary. Incoming exchange uses only the digest. Only the mail-dispatch and
-credential-rotation services may decrypt the token ciphertext; Admin pages,
+unnecessary. Incoming exchange uses only the digest. Only `mail-dispatch` and
+`token-key-rotation` may decrypt the token ciphertext; Admin pages,
 reports, exports, logs, and general workers cannot.
 
 Tokens are campaign-bound, reusable until invalidated, and rejected whenever
@@ -399,8 +406,10 @@ code-fingerprint counter; ordinary browser validation rejects that format
 before submission.
 
 The application also detects a distributed guessing burst when at least 100
-invalid attempts, representing at least 100 distinct code fingerprints across
-at least 20 source IPs, occur within five minutes. Crossing that deployment-wide
+invalid attempts across at least 20 source IPs occur within five minutes.
+Distinct candidate-fingerprint count is diagnostic information only, never a
+prerequisite for detection; repeated guesses from a small dictionary count
+toward the same attempt threshold. Crossing that deployment-wide
 threshold emits one deduplicated WARNING/Admin notification, temporarily
 tightens the per-IP limit, and adds progressive delay to unsuccessful responses;
 valid codes continue to succeed. Abuse sustained for three consecutive windows

@@ -96,7 +96,7 @@ external identity-policy service.
 | --- | --- | --- | --- | --- |
 | Configure parish/campaign/integrations | Yes | No | No | No |
 | Manage login rules and Ministry assignments | Yes | No | No | No |
-| View/export Family manual codes | Yes | Yes | No | Own code through login only |
+| View/export Family manual codes | Yes | Yes | No | Own code through login or campaign invitation email |
 | Trigger/view operational background work | Yes | No | No | No |
 | Trigger/view own authorized report exports | Yes | Yes | Assigned Ministries only | No |
 | View all campaign reports | Yes | Yes, except system logs | Assigned-Ministry reports only | No |
@@ -307,7 +307,8 @@ Every source requirement maps to one normative section:
 When requirements conflict, the explicit decisions and definitions in this
 specification set take precedence over the
 [initial narrative](../../reference/stewardship-initial-prompt.md). In
-particular, email links use opaque tokens rather than exposing the manual code;
+particular, email links use opaque tokens rather than embedding the manual code
+in a URL;
 the manual code uses eight letters from a confusable-free alphabet rather than
 six alphanumeric characters to resist credential guessing; campaign history is
 retained; Staff has the named workflow-write exceptions; whole local days

@@ -24,9 +24,10 @@ charts, and digest mail; templates do not independently recalculate metrics.
 ### RPT-02: Population and calculation library
 
 1. Implement effective live/test exclusion, active/inactive population,
-   eligibility/deliverability complements, the ever-eligible historical cohort,
-   first/latest response, immutable campaign-timezone local-day, pledge,
-   comparison, age-at-reference, and Ministry request calculations.
+   eligibility/deliverability complements, the durable first-eligibility-
+   provenance historical cohort, first/latest response, immutable campaign-
+   timezone local-day, pledge, comparison, age-at-reference, and Ministry
+   request calculations.
 2. Define Include inactive control semantics independently from each report's
    base population and ensure denominators/percentages change coherently.
 3. Return typed unavailable/missing values instead of zero when source/mapping
@@ -40,9 +41,13 @@ charts, and digest mail; templates do not independently recalculate metrics.
 1. Implement daily submissions, cumulative Families, and cumulative effective
    pledges on one interactive, titled, labeled, legend-bearing chart.
 2. Materialize immutable complete CampaignDailyFactSet generations for exact
-   source/submission/scope/timezone inputs, with idempotent event-triggered
+   source-generation/submission/scope/timezone inputs, using durable first-
+   eligibility provenance for historical scope, with idempotent event-triggered
    rebuilds, atomic publication, drift verification, and explicit updating/
-   stale-as-of states.
+   stale-as-of states. Implement the per-campaign/scope demand row, five-second
+   quiet window with a 30-second maximum debounce, atomic input freezing, and
+   one pending follow-up during an ordinary build. Give pinned export/digest
+   requests priority with fixed inputs and exact-generation reuse.
 3. Keep current-population and ever-eligible historical scope internally
    consistent and expose source-as-of metadata.
 4. Implement statistics cards for active Families/Members, eligible and
@@ -52,7 +57,10 @@ charts, and digest mail; templates do not independently recalculate metrics.
    PNG/PDF download, and BG-07 digest.
 6. Test repeated responses, source/eligibility changes, failed and concurrent
    rebuilds, local days, missing financial data, pinned parity, stale labeling,
-   and accessible tabular fallback.
+   and accessible tabular fallback. Use a fake clock to test burst coalescing,
+   sustained traffic reaching the maximum debounce, duplicate hints, events
+   racing claims/completion, crash recovery, and fixed-cutoff priority requests
+   that neither chase submissions nor discard newer interactive demand.
 
 ### RPT-04: Additional-information workflow report
 

@@ -33,11 +33,12 @@ provide the Testing rehearsal access described below and follows the Testing
 date-gating rule above; every other resulting state shows its ordinary no-
 campaign, before-start, or ended page.
 
-The manual credential is exactly eight case-insensitive ASCII letters `A`-`Z`.
-Spaces/hyphens may be stripped for friendly entry, but no digits or additional
-characters are accepted. Generated codes omit `I`, `L`, and `O`, but an entered
-candidate containing them is processed normally and receives the same generic
-result if it does not match. Unknown, inactive, non-Parishioner, closed-campaign,
+Manual credential generation, canonicalization, and generic denial follow the
+[Family credential security policy](../architecture/spec.md#family-credential-security).
+Friendly entry always removes ASCII spaces and hyphens before uppercasing and
+validating exactly eight ASCII letters; digits and other characters remain
+invalid. An entered candidate containing `I`, `L`, or `O` still follows the
+ordinary lookup/denial path. Unknown, inactive, non-Parishioner, closed-campaign,
 and revoked codes use the same "This Family code cannot be found or used"
 result and retry link.
 
@@ -86,10 +87,11 @@ Steps are assembled from enabled modules:
 
 1. Welcome and prior-submission status.
 2. Family census, when enabled.
-3. One Member section per current/proposed active Member when census or Ministry
+3. One Member section per current active Member when census or Ministry
    stewardship is enabled; its census and Ministry subsections appear only when
    their respective modules are enabled.
-4. Add proposed Member, when census is enabled.
+4. Add and fully edit proposed Members, when census is enabled, including their
+   enabled census and Ministry subsections.
 5. Financial stewardship, when enabled.
 6. Additional information, when enabled.
 7. Review and final Submit.
@@ -233,10 +235,13 @@ is based on:
 - offertory envelopes; and
 - Other with required text.
 
-Labels substitute parish name/year and use "I" only when the effective Family
-contains exactly one active Member; otherwise they use "We." Proposed Members
-count, while terminal Members do not. With a zero pledge, frequency/share
-methods are optional but allowed to express a non-cash intent.
+Labels substitute parish name/year and use "This household" when the effective
+Family contains zero active Members, "I" for exactly one, and "We" for two or
+more. Proposed Members count, while terminal Members do not. The financial step
+remains available with the same validation when no Members remain; marking all
+Members terminal does not discard or clear the Family's pledge/share answers.
+With a zero pledge, frequency/share methods are optional but allowed to express
+a non-cash intent.
 
 The page does not collect bank/card credentials or initiate a payment.
 

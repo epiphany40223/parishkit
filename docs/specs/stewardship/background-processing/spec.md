@@ -16,8 +16,10 @@ before acting.
 Ordinary Production campaign occurrences are created and claimed only when
 global mode is Production and lifecycle/date/admission predicates permit them.
 Testing rehearsal work is separately and immutably classified, never satisfies
-a Production occurrence, and runs only for the current `draft` campaign during
-its resolved parish-local interval.
+a Production occurrence, and ordinary rehearsal work runs only for the current
+`draft` campaign during its resolved campaign-local interval. Explicit Admin
+page/email previews and the readiness test-recipient send are permitted outside
+that interval; they never create or satisfy a live schedule occurrence.
 
 An occurrence key identifies revision-specific work, for example
 `mail:<campaign>:<schedule-uuid>:<revision>:<target>:<slot>:<mode>`. The stable
@@ -292,15 +294,16 @@ Families. One personalized message is due only when:
 
 - the campaign is open and the global mode matches the occurrence's mode;
 - the Family is currently eligible for mail;
-- it is Email-deliverable, with at least one unsuppressed valid email among
-  active `get_family_heads()` Members;
 - it has no effective live submission for live mail; and
 - that Family/schedule occurrence has not succeeded.
 
-An otherwise qualifying Family with no deliverable head address receives no
-outbox row. Its occurrence is `skipped` with the non-error reason
-`no_deliverable_recipient`; permanent refusals therefore cannot create empty
-recipient messages or systemic-provider failures.
+An occurrence is materialized for every otherwise qualifying Family. At
+execution, an Email-deliverable Family has at least one unsuppressed valid email
+among active `get_family_heads()` Members and may receive an outbox row. A
+Family without one receives no outbox row; its occurrence terminates as
+`skipped` with the non-error reason `no_deliverable_recipient`. Permanent
+refusals therefore cannot create empty-recipient messages or systemic-provider
+failures, while the skipped occurrence preserves reporting and recovery state.
 
 The initial schedule sends once to each qualifying Family. A Family becoming
 active after the initial occurrence receives one catch-up initial invitation
@@ -445,6 +448,39 @@ Changing Admin recipients does not resend past successful digests. An Admin may
 manually generate/send a new report occurrence, visibly labeled manual and
 independently audited.
 
+### Post-close reporting obligations
+
+The scheduler and archive-preparation workflow share a deterministic inventory
+of receipt/digest obligations, derived from accepted live submissions, active
+campaign-local days, applicable schedule definitions/revisions, and weekly
+additional-information/correction coverage. It includes every required daily
+slot through the final active day and the weekly slot needed to cover the
+remaining eligible items/corrections, even when its due time is after close.
+It does not invent an endless series of empty weekly obligations after close.
+Previously coalesced slots are resolved only when their selected replacement
+has completed or has itself been explicitly resolved. A receipt's recorded
+no-deliverable-recipient outcome and a digest's audited empty outcome already
+resolve their respective obligations.
+
+Archive preparation can inspect future obligations without dispatching them
+before their due times. Explicit skip decisions use the durable
+`PostCloseMailResolution` record defined by the
+[data model](../data/spec.md#schedule-revisions-and-fulfillment). Applying a skip
+locks/rechecks the Campaign and affected work, records the covered semantic
+slot and input coverage, marks the occurrence skipped (creating it if absent),
+and cancels only safely cancellable related outbox/tasks in one transaction.
+The reason is `admin_post_close_skip`; it is never counted as delivery success.
+Uncertain or provider-submitting work requires existing reconciliation first.
+
+Scheduler creation, worker claim, schedule replacement, and archive/Return
+checks consult these resolutions, so retries, new revisions, and later
+unarchive/reopen cannot recreate skipped coverage. New submissions or item/
+correction versions outside the recorded coverage remain new obligations; an
+old skip cannot silently cover them. A newly authorized manual digest is a
+distinct, audited request. The final archive/Return recheck uses the same
+Campaign locking protocol as producers and workers, preventing new obligations
+from racing a successful lifecycle transition.
+
 ## Exports and graph rendering
 
 Large CSV/XLSX/PDF/PNG requests create export jobs. The request stores report,
@@ -462,7 +498,8 @@ access to refresh, delivery, publication, purge, backup, or another user's job
 through the export status interface.
 
 Files are written atomically below `<root>/reports`, have opaque names, and use
-the retention policy defined by
+the owner-only directory/file/temporary-file permissions defined by
+[runtime storage](../operations/spec.md#runtime-storage) and the retention policy defined by
 [operations](../operations/spec.md#temporary-retention-and-housekeeping).
 Expired files can be regenerated from retained source/config where permitted.
 Files are never served directly by the proxy without an authorized application

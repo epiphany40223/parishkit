@@ -84,8 +84,9 @@ other subsystem depends.
 
 1. Implement reduced-alphabet eight-letter code generation, canonicalization,
    collision-safe HMAC lookup, general-key encryption, and versioned MAC-key
-   migration services, including a stable accepted-key set and savepoint-scoped
-   retry after unique-index conflicts during bulk promotion.
+   migration services, including a stable accepted-key set, campaign generation
+   lock, set-based collision filtering, and bounded batch-level retry during
+   bulk promotion.
 2. Implement independent 256-bit link-token generation, campaign-scoped digest
    lookup, sealed-box ciphertext, exchange to a token-free Family session, and
    close/rotation/reopen lifecycle.
@@ -94,6 +95,9 @@ other subsystem depends.
    explicitly untrusted CSRF-protected activity keepalive.
 4. Add public code-guessing limiters, distributed detection, uniform timing/
    errors, invalid-token audit fingerprints, and Valkey fail-closed behavior.
+   Base distributed detection on total invalid attempts and source-IP count;
+   candidate diversity is diagnostic only. Test repeated-dictionary attacks,
+   threshold boundaries, and exactly-once accounting for rejected attempts.
 5. Preserve the low-sensitivity Admin/Staff manual-code access policy while
    excluding codes/tokens from logs and Ministry-leader scope.
 6. Test entropy/collisions, normalization, key rotation, token replay/rotation,
@@ -111,9 +115,9 @@ other subsystem depends.
    isolated `credential-installer-*` queues/services; each instance can decrypt
    and write only one credential target and waits for consumer fingerprint
    acknowledgement.
-4. Add a dedicated `mail-dispatch` service/queue and rotation profile; only
-   these service profiles may load token private keys and mail-provider
-   credentials.
+4. Add dedicated `mail-dispatch` and canonical `token-key-rotation` profiles;
+   only mail dispatch loads provider credentials, while both may load token
+   private keys.
 5. Give web/general workers only token public keys; verify at startup that
    private-key paths are absent from their configuration and mounts.
 6. Implement rotation/backfill/verification/retirement workflows and backup-key

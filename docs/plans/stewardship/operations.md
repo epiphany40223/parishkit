@@ -11,7 +11,8 @@ the end.
 
 1. Create base, development, and production Compose definitions for web,
    config-installer, target-specific credential installers, general worker,
-   mail-dispatch, scheduler, PostgreSQL, Valkey, and Caddy.
+   backup-worker, mail-dispatch, token-key-rotation profile, scheduler,
+   PostgreSQL, Valkey, and Caddy.
 2. Use one application image with explicit service entry commands, non-root UID,
    signal handling, health checks, and read-only filesystem where practical.
 3. Bind-mount source/templates/static inputs for cross-platform development
@@ -29,7 +30,8 @@ the end.
    give each credential installer one target subdirectory/handoff key and each
    consumer only its individual read-only credential.
 3. Prohibit whole-credentials and Docker-socket mounts and enforce token-private/
-   mail credentials only in mail-dispatch/rotation.
+   mail credentials only in mail-dispatch/token-key-rotation and backup
+   credentials only in backup-worker.
 4. Configure temporary files/directories, restrictive modes, no unsafe symlink
    traversal, and container replacement persistence.
 5. Add automated mount/identity/topology inspection, cross-target denial, atomic
@@ -70,7 +72,8 @@ the end.
 2. Encrypt before off-host transfer, publish only complete verified manifests,
    enforce target configuration, and apply the specified retention defaults.
 3. Expose scheduled/operator invocation and the guarded Admin purge task through
-   the same service without giving the web process backup credentials.
+   the dedicated backup queue/service without giving web/general workers backup
+   credentials.
 4. Build the separate operator-only secret-escrow profile for all credential
    files and versioned data-backup keys, encrypted to recovery material absent
    from the VM; verify matching fingerprints and restore usability.
@@ -90,17 +93,20 @@ the end.
 4. Build uncertainty-window inventory and durable holds for potentially missing
    deliveries and newly discovered Families.
 5. Support Admin state-aware release through ADM-06 with atomic hold
-   materialization, deterministic mode/state selection, Production for a sole
-   current scheduled/active/closed campaign, and no partial release.
-6. Add isolated restore smoke tests for every campaign/purge state, including
-   closed-Production post-campaign behavior, ambiguous delivery choice,
-   interruption, wrong tenant, missing key, and release race.
+   materialization, the Admin spec's deterministic mode/state selection,
+   preserved Production/pointer for archived-current, and no partial release.
+6. Add isolated restore smoke tests for every campaign/purge/pointer state,
+   including closed-Production, archived-current versus historical archived,
+   ambiguous delivery choice, interruption, wrong tenant, missing key, and
+   release race.
 
 ### OPS-07: Housekeeping and retention jobs
 
 1. Implement temporary export, upload staging, failed wizard staging, old static
    bundle, expired session, worker result, log rotation, and cache cleanup with
-   explicit retention periods.
+   explicit retention periods. Retain plaintext exports for seven days by
+   default, require owner-only export directories/files/temporary files from
+   creation, and validate configured path ownership and permissions.
 2. Implement the dedicated source-compaction task using the data specification's
    protected-reference rules and all/daily/monthly retention tiers.
 3. Make generic cleanup idempotent, record-scoped, path-safe, and unable to
@@ -109,14 +115,18 @@ the end.
 4. Integrate test-data cleanup and exceptional campaign purge only through their
    dedicated gated workflows.
 5. Add age/anchor-boundary, protected-reference, promotion race, restart,
-   symlink/path, concurrent-download, and retained-data regression tests.
+   symlink/path, concurrent-download, and retained-data regression tests;
+   verify export permissions before and after atomic rename, expiry, and
+   overridden storage paths.
 
 ### OPS-08: Observability, health, and operational runbooks
 
 1. Emit structured correlated logs to stdout and durable audit/log tables with
    DEBUG through CRITICAL and privacy-safe context.
-2. Add metrics for HTTP, sessions, queue/task/scheduler/outbox, snapshots,
-   database/Valkey, disk, backups, and TLS.
+2. Add Prometheus-compatible metrics for HTTP, sessions, queue/task/scheduler/
+   outbox, snapshots, database/Valkey, disk, backups, and TLS at the internal
+   bearer-authenticated `/metrics` route; provision/rotate its isolated
+   credential, deny the route at Caddy, and test both boundaries.
 3. Implement minimal liveness/readiness endpoints plus detailed protected CLI
    diagnostics.
 4. Add deduplicated Admin/Slack alert routing and recovery indicators.

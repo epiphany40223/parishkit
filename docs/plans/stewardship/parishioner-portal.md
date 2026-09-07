@@ -9,7 +9,8 @@ The flow is a single guided response, not a general Family dashboard.
 ### FAM-01: Availability, code entry, and secure-link exchange
 
 1. Build `/` campaign-status/code-entry behavior for unconfigured, maintenance,
-   pre-start, active, Testing-draft, closed, and ended states.
+   no-current-campaign, pre-start, active, Testing-draft, closed, and ended
+   states.
 2. Implement manual code authentication and `/access/<token>` digest exchange,
    session rotation, clean redirect, no-referrer/no-store headers, generic
    invalid pages, manual-code retry link, and the Valkey-backed secure-link
@@ -21,9 +22,9 @@ The flow is a single guided response, not a general Family dashboard.
    Family route, not only login.
 5. Emit privacy-safe access/session/logout/denial audit and active-Family
    presence metadata.
-6. Test guessing limiters, invalid/inactive/deactivated Families, token close/
-   rotation, missing/stale Testing acknowledgement, banner persistence, and
-   restore/go-live gates.
+6. Test no-current-campaign, guessing limiters, invalid/inactive/deactivated
+   Families, token close/rotation, missing/stale Testing acknowledgement,
+   banner persistence, and restore/go-live gates.
 
 ### FAM-02: In-memory form engine and navigation
 
@@ -72,12 +73,15 @@ The flow is a single guided response, not a general Family dashboard.
 3. Display prior pledge/current contribution with mapped period/source-as-of,
    collect nonnegative annual pledge and frequency, and calculate per-period
    amount deterministically.
-4. Render configurable stable-ID share options with singular/plural pronouns,
-   parish/year placeholders, multi-select, and conditional Other text.
+4. Render configurable stable-ID share options with the specified zero/one/many
+   Member wording, parish/year placeholders, multi-select, and conditional Other
+   text; preserve the financial step and answers when all Members are terminal.
 5. Show the upcoming period start reminder and Unavailable rather than false
    financial zeroes.
 6. Test disabled modules, long Ministry lists, duplicate/excluded choices,
-   decimal rounding/display, zero pledge, and option-version changes.
+   decimal rounding/display, zero pledge, and option-version changes. Cover
+   zero/one/many Member labels, terminal/proposed Member counting, and navigating
+   back to mark all Members terminal without losing financial answers.
 
 ### FAM-06: Additional information, review, and atomic submit
 

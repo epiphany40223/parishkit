@@ -44,8 +44,10 @@ validation is never sufficient.
    exact-year financial period, and current-campaign pointer consistency.
 3. Implement CampaignBoundaryOccurrence and lifecycle/mode transition history.
 4. Implement ScheduleDefinition, immutable revisions, occurrence records,
-   semantic fulfillment, replacement/removal markers, and restore delivery
-   holds with uniqueness constraints.
+   semantic fulfillment, replacement/removal markers, restore delivery holds,
+   and PostCloseMailResolution coverage/actor/reason records with explicit
+   semantic-resolution and occurrence/outbox/task idempotency uniqueness
+   constraints. Wire later submission/item references with DAT-06/DAT-07.
 5. Add race tests for creation, activation, close, draft timezone/end-date
    edits, Parish-default timezone changes, withdrawal, reopen, archive,
    unarchive, and return to Testing.
@@ -64,7 +66,8 @@ validation is never sufficient.
 5. Add permanent manifest/compaction metadata, protected-reference discovery,
    and deterministic 90-day/all, one-year/daily, and later/monthly anchors.
 6. Add immutable CampaignDailyFactSet/DailyFact generation, completeness,
-   publication-pointer, and pinned-reference constraints.
+   publication-pointer, and pinned-reference constraints, plus the unique
+   per-campaign/scope CampaignFactRebuildDemand row and claim/pending revisions.
 7. Add source watermark/cursor storage, count/digest validation records, and
    integration tests for failed staging, stale-owner denial, atomic promotion,
    deduplication, fact publication, protected references, cutoff boundaries,
@@ -72,14 +75,16 @@ validation is never sufficient.
 
 ### DAT-04: Family campaign identity and credentials
 
-1. Implement FamilyCampaign eligibility/deliverability/status history, campaign
+1. Implement FamilyCampaign eligibility/deliverability/status history,
+   immutable first-eligibility timestamp/source-generation provenance, campaign
    code ciphertext, MAC fingerprint rows, access-token ciphertext/digest, mail
    state, response pointers, and activity metadata.
 2. Add campaign/key-scoped uniqueness and cross-key collision constraints for
    codes and campaign-scoped token-digest uniqueness.
 3. Implement atomic `READ COMMITTED` population/reconciliation services for new,
-   inactive, and reactivated Families, using savepoints to retry only a
-   colliding code candidate without changing an existing campaign code.
+   inactive, and reactivated Families, using a campaign generation lock,
+   set-based cross-key collision filtering, and bounded batch retries without
+   changing an existing campaign code.
 4. Add token destruction/reissuance and close/reopen metadata without retaining
    secret material in audit rows.
 5. Test concurrent generation, migration, inactive/reactivated behavior, and
@@ -106,7 +111,7 @@ validation is never sufficient.
    proposed Members, Ministry choices, financial answers/share options, and
    additional information.
 2. Store baseline snapshot/prior response, schema/content versions, mode,
-   parish-local submission date, and monotonic Family version.
+   campaign-local submission date, and monotonic Family version.
 3. Implement atomic final-submit service that validates the complete payload,
    rejects stale versions, creates derived proposals/workflows, and advances
    only the correct test/live effective pointer.
@@ -122,7 +127,7 @@ validation is never sufficient.
    content versions, and email template versions.
 2. Extend the DAT-01 TaskRun substrate and implement OutboxMessage, sealed
    substitution metadata, AuditEvent, OperationalLog, and appropriate ownership/
-   correlation indexes.
+   correlation indexes plus task/outbox semantic uniqueness constraints.
 3. Implement ProductionTransitionRequest, delivery-pause holds, export records,
    publication plan/attempt records, and stable idempotency keys.
 4. Enforce immutable/append-only behavior and terminal-state credential

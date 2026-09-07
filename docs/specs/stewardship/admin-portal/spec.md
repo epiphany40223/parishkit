@@ -45,7 +45,8 @@ It interactively or non-interactively obtains:
 - public origin and deployment identifier;
 - initial Admin email;
 - Google OAuth client ID and client-secret file;
-- Django signing/encryption secret files;
+- Django signing/general-encryption, Family-code MAC, and email-link sealed-box
+  keyring files;
 - database readiness and optional restore intent; and
 - enough proxy/trust configuration for the Google callback.
 
@@ -370,16 +371,21 @@ recomputes boundaries at its commit instant:
   reconciliation, publication, and operational/digest routing retain their
   ordinary post-campaign semantics, but Family access and live Family mail stay
   disabled;
-- `archived` and `purged` campaigns remain in those states and do not resume
-  Family access or live mail; and
+- an `archived` campaign that is still the current-campaign pointer remains
+  `archived` in Production with the pointer intact, preserving its guarded
+  unarchive eligibility and requiring the separate Return to Testing workflow
+  before successor creation;
+- historical `archived` and `purged` campaigns remain in those states and do
+  not resume Family access or live mail; and
 - `purging`, `purge_cleanup_failed`, an inconsistent request/Campaign pair, or
   any overlapping-current-campaign invariant blocks release for explicit
   operator recovery.
 
-Any sole current campaign resulting in `scheduled`, `active`, or `closed` sets
-global mode to Production. A `draft` current campaign, an archived or purged
-historical campaign, or no current campaign releases into Testing. There is no
-supported `closed`-current-campaign/Testing combination. In the same transaction
+Any sole current campaign resulting in `scheduled`, `active`, `closed`, or
+`archived` sets global mode to Production. A `draft` current campaign or no
+current campaign releases into Testing; historical archived/purged campaigns
+do not select mode. There is no supported current `closed`/`archived` Campaign
+in Testing. In the same transaction
 the system recomputes/materializes delivery holds, including holds for newly
 visible Families whose initial invitation became due during restore, removes
 segregated maintenance-test detail under the Testing cleanup policy, records
@@ -391,6 +397,12 @@ Production release instead checks the integrations and permissions needed for
 its enabled reconciliation, publication, report, and digest work. Database,
 schema, credential-reference, tenant, integrity, and uncertainty-inventory
 checks apply to every release.
+
+The restore preview identifies an archived-current-pointer backup as a distinct
+case and explains that release does not perform Return to Testing. After
+release, the Admin may still unarchive to `closed` or invoke the separately
+reauthenticated Return workflow; restore never chooses between those lifecycle
+actions implicitly.
 
 Restore readiness displays the backup snapshot/release uncertainty window and
 counts by campaign, schedule type, local due date, and hold state. Searchable
@@ -472,8 +484,34 @@ token/schedule activation.
 Archiving cannot occur with a live-delivery pause, held production messages,
 provider-submitting or delivery-unknown messages, nonterminal production
 outbox/schedule occurrences, or nonterminal publication, export, or purge work.
-An
-Admin may return a Campaign from `archived` to `closed` only while it remains
+
+Archive preparation also inventories every outstanding receipt and required
+daily/weekly digest semantic slot, including obligations whose scheduled due
+time has not arrived and whose occurrence has not been materialized. It uses
+the shared inventory defined by
+[post-close reporting obligations](../background-processing/spec.md#post-close-reporting-obligations).
+The UI shows the covered event/date range, due time, delivery state, and any
+replacement covering a coalesced slot. Each obligation must be successfully
+completed (including an audited empty/no-recipient outcome) or explicitly
+resolved before archive. A failed delivery is not silently treated as resolved.
+
+An Admin may select outstanding obligations to skip, review their exact
+coverage, enter a reason, and confirm. This creates durable semantic skip
+resolutions and safely cancels associated cancellable work; absent occurrences
+are recorded as skipped without sending mail. Provider-submitting and
+delivery-unknown messages must first follow their existing reconciliation
+workflow and cannot be bypassed by this action. The UI distinguishes deliberate
+skips from delivery success. Archive does not implicitly send early, skip, or
+cancel reporting obligations.
+
+The final archive transaction recomputes the inventory and verifies resolutions
+under the Campaign and affected schedule/occurrence/outbox locks used by work
+admission. Changed definitions, newly covered information/corrections, or a
+worker claim invalidate a stale preview and require review of the new inventory.
+Return to Testing rechecks this same inventory as part of archive quiescence;
+the absence of materialized jobs alone never establishes readiness.
+
+An Admin may return a Campaign from `archived` to `closed` only while it remains
 exactly `archived`, remains the global current-campaign pointer, has no other
 campaign in `draft`, `scheduled`, `active`, or `closed`, has no active purge
 gate as defined by the
@@ -530,17 +568,25 @@ actor's current login rule and role, enforces the last-Administrator guard, and
 records the actor, target, before/after roles, timestamp, and request correlation
 in the audit log.
 
-Adding Administrator to an address is effective immediately upon configuration
-activation and also creates, in that activation transaction, a durable
-unacknowledged security event and independently queues an operational email to
-every Administrator who existed immediately before the grant. The
-event names the actor, target address, time, and before/after roles without
-including session or provider credentials. It remains prominent on every Admin
-dashboard until an existing Admin acknowledges it; when another Admin existed
-at grant time, acknowledgement by the granting actor alone does not clear the
-event for those other recipients. Delivery failure does not roll back or hide
-the grant: it follows durable operational retry/escalation, while the dashboard
-event remains visible. Acknowledgements and notification outcomes are audited.
+The following high-impact expansions take effect immediately upon configuration
+activation and also create, in that activation transaction, a durable
+unacknowledged security event and independently queue an operational email to
+every Administrator who existed immediately before activation:
+
+- adding Administrator to an exact-address rule;
+- creating any domain rule; and
+- adding Staff to an existing domain rule.
+
+Adding Ministry leader to an existing domain rule and ordinary exact-address
+Staff/Ministry-leader grants retain the normal audit controls without this
+security alert. The event names the actor, target address/domain, time, rule
+creation or role expansion, and before/after roles without including session or
+provider credentials. It remains prominent on every Admin dashboard until an
+existing Admin acknowledges it; when another Admin existed at activation,
+acknowledgement by the granting actor alone does not clear the event for those
+other recipients. Delivery failure does not roll back or hide the expansion: it
+follows durable operational retry/escalation, while the dashboard event remains
+visible. Acknowledgements and notification outcomes are audited.
 
 Domain rows expose Staff and Ministry-leader columns. Administrator is visibly
 disabled. Creating `gmail.com` fails client and server validation. Address rows
@@ -577,9 +623,11 @@ configuration-request path. Losing a current Chairperson role immediately
 suspends a `chair-seed` assignment as derived runtime state during source
 promotion, removes its Ministry row scope on the next request, and creates a
 persistent Admin review task/notification. Existing sessions are not trusted to
-retain cached scope. If no other active assignment remains, a Ministry-leader
-role that was auto-added solely for seeding is removed without changing Staff,
-Admin, or independently configured roles.
+retain cached scope. If no other active assignment remains, the runtime
+authorization overlay suppresses a Ministry-leader role that was added solely
+for seeding without rewriting its applied YAML rule or changing Staff, Admin,
+or independently configured roles. Permanently removing that configured role
+requires an applied configuration request.
 
 The suspended list shows prior Member/Ministry/source evidence, suspension
 time, current source state, affected user/session, and role effects. An Admin

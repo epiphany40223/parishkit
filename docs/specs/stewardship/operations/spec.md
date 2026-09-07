@@ -15,8 +15,9 @@ changes reload without rebuilding the application image.
 
 Production Compose references immutable GHCR image tags/digests, never a host
 checkout. It includes web, general worker, dedicated mail-dispatch worker,
-scheduler, configuration installer, target-specific credential installers,
-PostgreSQL, Valkey, and Caddy services from the
+scheduler, dedicated backup worker, configuration installer, target-specific
+credential installers, the explicit token-key-rotation profile, PostgreSQL,
+Valkey, and Caddy services from the
 [architecture](../architecture/spec.md#technology-and-component-model). Only
 Caddy publishes host ports. PostgreSQL/Valkey are on an internal network;
 workers/scheduler have no inbound public ports. Development Compose preserves
@@ -53,12 +54,21 @@ durable volumes or explicit operator-selected host paths. Every runtime path is
 overridable by deployment CLI/YAML. Container replacement/restart/upgrade must
 not remove any durable volume.
 
+The export root and its subdirectories use owner-only mode `0700`; generated
+exports and their temporary files use owner-only mode `0600` from creation,
+including before atomic rename. Export generation, authorized download, and
+cleanup services use the owning application UID for these mounts. Provisioning
+and startup validate ownership/modes on configured export paths. The proxy has
+no export-storage mount. These rules also apply to overridden paths and
+development storage; no intermediate export file may use permissive defaults.
+
 Credential files/directories use the shared restrictive modes. Compose mounts
 each secret read-only only into services that need it; mounting the whole
 credentials directory into an application service is prohibited. In
 particular, token public keys are available to `web`/general workers, while
-token private keys and Google mail-provider credentials are mounted only into
-`mail-dispatch` or the explicit rotation profile. The scheduler, web, general
+token private keys are mounted only into `mail-dispatch` or the explicit
+`token-key-rotation` profile and Google mail-provider credentials only into
+`mail-dispatch`. The scheduler, web, general
 worker, report/export jobs, and ordinary maintenance commands cannot read the
 private token-key path. Images, Compose files, logs, exceptions, backup
 metadata, and support bundles never contain credential values.
@@ -82,6 +92,12 @@ are protected by the separately authorized operator secret-escrow process below;
 copying them into an application database, report, or ordinary backup task is
 prohibited.
 
+Scheduled, operator-requested, and purge-triggered application backups are
+claimed only by `backup-worker` through its dedicated queue. The web and general
+worker may create an authorized durable backup TaskRun but never receive target
+credentials or the data-backup key. The backup worker cannot claim source,
+mail, publication, export, purge, or configuration-installer tasks.
+
 `pk-stewardship backup-secrets` runs only in an explicit operator profile with
 the credential files mounted read-only and no application database access. It
 creates a versioned manifest and encrypted secret bundle at a distinct off-host
@@ -102,9 +118,10 @@ VM and inbound ports 80/443. Caddy's data/config volumes persist account and
 certificate state across upgrades.
 
 Caddy has explicit highest-priority matchers that return the ordinary public
-not-found response for `/health/live` and `/health/ready` before the catch-all
-application reverse proxy. Container health checks call the application service
-directly over the internal Compose network.
+not-found response for `/health/live`, `/health/ready`, and `/metrics` before
+the catch-all application reverse proxy. Container health checks and authorized
+metrics clients call the application service directly over the internal Compose
+network.
 
 The application trusts forwarded scheme/client information only from the
 single configured proxy hop. Caddy access logs redact `/access/<token>` path
@@ -127,8 +144,10 @@ Documented first deployment order is:
 2. Start PostgreSQL/Valkey and verify health.
 3. Run the pre-migration phase of `pk-stewardship bootstrap` if not restoring;
    it creates/validates deployment configuration, the minimal initial-Admin
-   Stewardship YAML authority, installer handoff keys, and signing/encryption
-   secret files without requiring application tables.
+   Stewardship YAML authority, installer handoff keys, Django signing/general-
+   encryption keyring, Family-code MAC keyring, and email-link sealed-box
+   public/private keyring without requiring application tables. Provisioning is
+   idempotent, owner-only, and never overwrites a nonmatching existing keyring.
 4. Run `pk-stewardship migrate` as a one-shot container, then let bootstrap
    validate the migrated empty database and import the initial applied YAML
    snapshot/Admin marker.
@@ -177,8 +196,8 @@ never appear as successful backup references.
 
 The purge web action can enqueue this service only for an Admin-owned
 PurgeRequest that has reached quiescence. The web process never receives backup
-credentials or performs the backup inline; the authorized worker reads the
-existing credential reference. Purge-triggered backups follow ordinary
+credentials or performs the backup inline; `backup-worker` reads the existing
+credential reference. Purge-triggered backups follow ordinary
 retention and are additionally referenced immutably by the PurgeRequest.
 
 ## Restore
@@ -224,15 +243,13 @@ creation and worker claim; routing to the queue alone is not authorization.
 The gate can be cleared only after applicable readiness passes and a freshly
 authenticated Admin reviews and confirms the proposed state-aware release
 defined by the
-[Admin workflow](../admin-portal/spec.md#restore-release). A release that yields
-a sole current `scheduled`, `active`, or `closed` campaign enters Production;
-`closed` admits only its ordinary post-campaign work and does not enable Family
-access or live Family mail. A `draft`, archived/purged history, or no current
-campaign releases into Testing. Clearing the gate, reconciling lifecycle state,
-selecting mode, materializing holds, and enabling the corresponding work
-admission are one audited transaction. Failed or abandoned review leaves the
-restore gate, Family access, and live delivery disabled while restricted
-maintenance work remains available.
+[Admin workflow](../admin-portal/spec.md#restore-release), which is the sole
+authority for every current-pointer/lifecycle-to-mode mapping, including the
+archived-current-pointer case and all blocked states. Clearing the gate,
+reconciling lifecycle state, selecting mode, materializing holds, and enabling
+the corresponding work admission are one audited transaction. Failed or
+abandoned review leaves the restore gate, Family access, and live delivery
+disabled while restricted maintenance work remains available.
 
 Restore review calculates a delivery-uncertainty window from the backup's
 database-snapshot instant through the eventual mail-release instant. It creates
@@ -267,6 +284,16 @@ readiness.
 Generated export files expire after seven days by default; their metadata
 remains. This is the normative retention policy used by the
 [export worker](../background-processing/spec.md#exports-and-graph-rendering).
+Exports, including Family-code and mail-merge exports, are intentionally stored
+without application-layer encryption during this interval. Plaintext exposure
+to the owning application account and privileged host operators is an accepted
+product risk; the low-sensitivity classification of campaign codes does not
+make the accompanying parishioner information public. Owner-only storage under
+[runtime storage](#runtime-storage), authenticated downloads, and expiration
+are the selected controls. Export encryption or a shorter code-specific
+retention period is not required. This exception does not change encrypted
+backup or database-field encryption requirements.
+
 ParishSoft HTTP cache follows configured freshness and bounded size. Upload
 staging, failed wizard staging, old static bundles, expired sessions, worker
 results, and rotated operational logs have documented cleanup jobs.
@@ -311,9 +338,20 @@ The two HTTP health routes are internal-only and return no phase or reason
 detail. `pk-stewardship health` provides detailed operator diagnostics on the VM
 without creating a public endpoint.
 
-No health/metrics endpoint exposes parish names, Family/Member data, emails,
-tokens, campaign content, or credentials. Production metrics endpoints are
-internal/authenticated.
+The application exposes Prometheus-compatible metrics only at `/metrics` on its
+internal Compose interface. The route requires an `Authorization: Bearer`
+credential, compares it in constant time, and returns the ordinary not-found
+response when authentication fails. Bootstrap generates the random credential
+as an owner-only file; Compose mounts that individual file read-only only into
+`web` and an explicitly authorized metrics client. Rotation atomically replaces
+the credential through its target-specific credential installer, and clients
+must acknowledge the new safe fingerprint before the old value is retired.
+Neither the credential nor its hash appears in URLs, logs, metrics, support
+bundles, or the database.
+
+No health or metrics endpoint exposes parish names, Family/Member data, emails,
+tokens, campaign content, or credentials. Caddy never proxies any of these three
+internal paths, even when a caller supplies a valid metrics credential.
 
 ## Automated tests
 
@@ -346,6 +384,21 @@ Required suites include:
 - scheduler/transaction tests for idempotent campaign-boundary occurrence
   creation, exact interval gating despite state lag, start/close lock races,
   end-date replacement, retry, and overdue recovery after scheduler outage;
+- source-compaction integration tests for every age/anchor tier, each protected-
+  reference class, promotion-lease exclusion, a late reference winning under
+  row locks, idempotent restart, payload garbage collection only after the last
+  reference, and coherent reconstruction of every retained snapshot;
+- participation-fact integration tests for idempotent rebuild hints, interrupted
+  generation invisibility, exact-input atomic publication, pinned generation/
+  source protection, deterministic recalculation, and drift detection;
+  fake-clock tests cover burst/sustained debounce, claim/completion races,
+  duplicate hints, recovery preserving newer demand, fixed pinned cutoffs and
+  priority, and prevention of interactive-pointer regression;
+- archive/Return tests for required daily and weekly digests not yet due or
+  materialized, explicit audited skips, empty/no-recipient coverage, coalesced
+  replacements, failed and unknown deliveries, and new input racing final
+  inventory verification; verify scheduler retries, schedule revisions, and
+  unarchive/reopen do not resurrect resolved coverage or suppress newer inputs;
 - Django request tests for every role/denial/object-scope and CSRF/session
   boundary;
 - authentication tests proving that domain rules require matching verified
@@ -373,6 +426,11 @@ Required suites include:
   expiry/destruction, cross-target claim denial, consumer fingerprint
   acknowledgement, absence of plaintext from storage/logs, and atomic secret
   replacement rollback;
+- distributed Family-code detector tests proving that 100 invalid attempts
+  from 20 IPs within five minutes trigger even when candidates repeat, while
+  either unmet threshold does not trigger; include limiter-rejected attempts
+  exactly once, boundary expiry, diagnostic-only candidate diversity, and
+  deduplicated WARNING/CRITICAL escalation and recovery;
 - reusable-token tests for digest-only exchange, public-key sealing,
   dispatch/rotation-only private-key mounts and decryption, failure to decrypt
   from web/general-worker service profiles, repeat-mail rendering, atomic token
@@ -415,9 +473,11 @@ Required suites include:
   without reauthentication or a confirmation dialog while enforcing CSRF,
   optimistic concurrency, current-Admin authorization, last-Administrator
   protection, and complete audit records;
-- limiter tests proving that rejected Admin callback attempts contribute once
-  to distributed-abuse telemetry without OAuth state allocation, provider
-  calls, raw token retention, or duplicate counting;
+- limiter tests proving that pre-verification IP rejections contribute once
+  without OAuth state allocation, provider calls, raw token retention, or
+  duplicate counting, and that post-verification identity-limit rejections
+  contribute once after signed identity validation without retaining raw
+  callback/provider tokens;
 - accessibility automation plus keyboard/screen-reader-oriented manual checks;
 - CSV/XLSX/PDF/PNG structure/content tests without committing generated reports;
 - backup/restore manifest and isolated restore smoke tests, including
@@ -425,8 +485,10 @@ Required suites include:
   hold creation, catch-up suppression, assumed-delivered accounting, and
   duplicate-aware authorized resend; and
 - Compose startup, health, migration, bind-mount reload, and production image
-  smoke tests, including proof that internal health succeeds while Caddy does
-  not proxy either health path.
+  smoke tests, including proof that both internal health routes succeed, an
+  authenticated internal `/metrics` request succeeds, missing/invalid metrics
+  credentials fail without disclosure, and Caddy does not proxy any of the
+  three internal paths even with a valid metrics credential.
 
 ## Acceptance scenarios
 
@@ -436,10 +498,11 @@ At minimum, end-to-end tests demonstrate:
    deployment startup with Family access gated, restricted maintenance refresh/
    test-send/hold work while ordinary work remains blocked, and atomic Admin-
    approved release of restored `draft`, future `scheduled`, current `active`,
-   expired-to-`closed`, and already `closed`/`archived` campaigns. Both closed
-   cases remain Production without Family/live-Family-mail access; draft,
-   archived, purged, and no-current cases release to Testing. Interrupted purge
-   state blocks release pending explicit recovery.
+   expired-to-`closed`, already `closed`, archived-current-pointer, historical
+   archived, purged, and no-current cases. The results exactly match the Admin
+   restore mapping: in particular, archived-current preserves its pointer and
+   Production until separate Return to Testing, while interrupted purge state
+   blocks release pending explicit recovery.
    First-Admin setup additionally proves that correlated source-load polling
    renews idle only with a current worker heartbeat, never renews the two-hour
    watchdog or absolute expiry, stops renewing when the page/task ends, and
@@ -451,11 +514,14 @@ At minimum, end-to-end tests demonstrate:
    installer interruption is recoverable without partial configuration, and
    sealed credential replacement cannot be claimed by the wrong target.
 2. Google allow/deny, exact-address override, last-Admin guard, immediate role
-   revocation after applied-YAML activation, immediate Administrator grant upon
-   activation with durable dashboard event and preexisting-Admin notification/
-   retry, assigned-Ministry scoping, immediate runtime suspension after a
-   seeded Chairperson relationship disappears, auto-role cleanup, YAML-backed
-   manual restoration, and source-return reactivation.
+   revocation after applied-YAML activation, and immediate high-impact expansion
+   upon activation with durable dashboard event and preexisting-Admin
+   notification/retry for exact-address Administrator grants, all new domain
+   rules, and Staff additions to existing domain rules; assigned-Ministry
+   scoping, immediate runtime suspension after a
+   seeded Chairperson relationship disappears, runtime suppression without YAML
+   mutation, configuration-request role removal, YAML-backed manual restoration,
+   and source-return reactivation.
 3. Testing email rerouting, mandatory Family-facing test acknowledgments,
    segregated test submission, blocked transition with in-flight test delivery,
    aggregate creation, go-live admission gating, resumable bounded cleanup of
@@ -470,7 +536,10 @@ At minimum, end-to-end tests demonstrate:
    timezone changes do not alter its boundaries, schedules, digests, or
    historical report buckets.
 4. Full/delta refresh success, interrupted/invalid load retaining prior truth,
-   new/inactive/reactivated Family behavior, and non-overlap/manual coalescing.
+   new/inactive/reactivated Family behavior, and non-overlap/manual coalescing;
+   compaction at every retention boundary preserves every protected reference,
+   retains deterministic anchors, remains idempotent after interruption, and
+   reconstructs each uncompacted snapshot exactly.
 5. No-change Family submission, every census field, proposed/terminal Member,
    Ministry request, zero/positive pledge, additional information, repeat
    submission, and stale concurrent submit.
@@ -479,7 +548,8 @@ At minimum, end-to-end tests demonstrate:
    manual resolution.
 7. Every report's access, counts/percentages, inactive/test exclusion, privacy
    columns, filters, consistent historical/current participation-chart scopes,
-   chart parity, and CSV/XLSX/PDF/PNG output.
+   atomic/pinned CampaignDailyFactSet generation and drift verification, chart
+   parity, and CSV/XLSX/PDF/PNG output.
 8. Missed initial/reminder/digest occurrence, per-Family and daily-digest
    recovery coalescing, worker/broker restart, systemic email failure,
    deduplicated CRITICAL notification, active-campaign delivery pause with

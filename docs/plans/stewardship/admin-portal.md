@@ -23,8 +23,8 @@ remain below `/admin/` and apply server-side authorization.
 ### ADM-02: Bootstrap command and transactional setup wizard
 
 1. Extend `pk-stewardship bootstrap` with empty-deployment checks, public origin,
-   initial Admin, Google/Django secret references, database readiness, proxy
-   configuration, and restore intent.
+   initial Admin, Google/Django and all Family-code/email-token keyring
+   references, database readiness, proxy configuration, and restore intent.
 2. Implement temporary wizard staging for parish, login rules, integration
    credentials/tests, complete source load, mail/Slack, and first campaign.
 3. Implement correlated TaskRun progress polling with worker-heartbeat checks,
@@ -91,8 +91,10 @@ remain below `/admin/` and apply server-side authorization.
 
 1. Build restore-state inventory and maintenance-only controls, delivery-
    uncertainty holds, assumed-delivered/resend resolutions, and atomic state-
-   aware release confirmation, preserving Production for a sole current closed
-   campaign while keeping Family access and live Family mail disabled.
+   aware release confirmation, preserving Production for a sole current
+   scheduled, active, closed, or archived campaign; archived-current preserves
+   its pointer for later unarchive/Return, and closed/archived releases keep
+   Family access and live Family mail disabled.
 2. Implement delivery pause/resume with fresh authentication, impact counts,
    pre-provider recheck, held message visibility, coalescing, and post-close
    receipt/digest resolution.
@@ -100,9 +102,14 @@ remain below `/admin/` and apply server-side authorization.
    active, token reissue, future-only schedules, and no replay of skipped work.
 4. Implement archive eligibility, unarchive-to-closed guards, and the dedicated
    post-archive Return to Testing workflow that clears the current pointer and
-   presents the purge-before-successor decision window.
+   presents the purge-before-successor decision window. Inventory all receipt/
+   digest obligations, including unmaterialized future slots, and provide
+   explicit reasoned skip resolutions with coverage preview and safe work
+   cancellation. Recheck the shared inventory transactionally at archive/Return.
 5. Test restore/pause/reopen/archive races, held messages, inconsistent state,
-   successor denial, and audit/reauthentication.
+   successor denial, and audit/reauthentication; include final-day/weekly mail
+   not yet due, failed/unknown delivery, stale coverage, and durable skips across
+   scheduler retries, schedule revisions, and unarchive/reopen.
 
 ### ADM-07: User rules and Ministry assignments
 
@@ -111,8 +118,10 @@ remain below `/admin/` and apply server-side authorization.
    deny, disabled domain Admin, and `gmail.com` validation.
 2. Preserve the selected no-reauth/no-confirmation policy for every role change
    while enforcing CSRF, current-Admin authorization, last-Admin protection,
-   and complete before/after audit; an Administrator grant additionally creates
-   a persistent security event and notifies all preexisting Administrators.
+   and complete before/after audit; an exact-address Administrator grant,
+   creation of any domain rule, or addition of Staff to an existing domain rule
+   additionally creates a persistent security event and notifies all preexisting
+   Administrators.
 3. Build chairperson suggestion review, inherited-role preview, bulk selection,
    confirmed YAML rule/assignment requests, and suspended/source-return review.
 4. Build YAML-backed manual Ministry assignments while source synchronization

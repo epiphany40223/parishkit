@@ -108,19 +108,23 @@ The graph shows:
 - line on a dollar axis, when financial is enabled: effective annual pledge
   total at each day end.
 
-For **Historical as of day**, each bar, cumulative count and denominator, and
-pledge total uses the last promoted `SourceSnapshot` at or before the resolved
-end instant of that local day. The scoped cohort includes every Family shown by
-any promoted snapshot as Portal-eligible at or before that instant. For each
-Family, response values come from its latest live submission version committed
-at or before that instant, rather than from whichever version is effective
-today. The numerator includes cohort Families whose first live submission was
-accepted while eligible on or before that instant. If no snapshot exists by
-that boundary, the point is unavailable rather than inferred from a later
-snapshot. A Family that participated while eligible remains in the historical
-series after becoming inactive. For **Current population**, every point is
-recomputed using the current Portal-eligible Family set; a currently ineligible
-Family is excluded from every series.
+For **Historical as of day**, the source cutoff is the last promoted source
+generation at or before the resolved end instant of that local day, selected
+from permanent manifest generation/promotion metadata even if that snapshot's
+membership was later compacted. The cohort comes from durable `FamilyCampaign`
+first-eligibility provenance: it includes a
+Family only when its immutable first Portal-eligible generation is at or before
+that source cutoff and its first-eligibility timestamp is at or before the day
+boundary. It does not reconstruct a union from retained intermediate snapshot
+memberships. For each Family, response values come from its latest live
+submission version committed at or before that instant, rather than from
+whichever version is effective today. The numerator includes cohort Families
+whose first live submission was accepted while eligible on or before that
+instant. If no source generation exists by that boundary, the point is
+unavailable rather than inferred from a later snapshot. A Family remains in the
+historical cohort after becoming inactive. For **Current population**, every
+point is recomputed using the current Portal-eligible Family set; a currently
+ineligible Family is excluded from every series.
 
 ### Participation fact materialization
 
@@ -130,19 +134,47 @@ The graph is served from immutable, versioned `CampaignDailyFactSet` and
 separate
 per-day live aggregation on each request. The materializer calls the same
 calculation library used for validation and creates a complete fact set for an
-exact campaign, scope, promoted-source snapshot, effective-submission cutoff,
-and campaign-timezone version. It atomically publishes that generation only
+exact campaign, scope, promoted-source generation cutoff, effective-submission
+cutoff, and campaign-timezone version. Historical scope reads immutable first-
+eligibility provenance through that generation; current scope reads the exact
+cutoff snapshot population. It atomically publishes that generation only
 after every expected date validates; UI, accessible table, PNG/PDF, and digest
 consumers never combine rows from different input generations.
 
 A successful source promotion, live submission, qualifying eligibility change,
 or approved rebuild request transactionally creates an idempotent rebuild hint.
+Hints advance one durable rebuild-demand row per campaign/population scope;
+they are not separate requests for every intermediate submission cutoff. The
+first pending event starts a debounce window. Each new event advances the
+requested source/submission watermarks and sets the due instant to the earlier
+of five seconds after the latest event or 30 seconds after the first pending
+event. With a healthy available worker, ordinary builds become eligible at that
+instant; queue outages or an existing build can delay actual execution and are
+reported through queue lag and the report's **Updating** state.
+
+At claim time, the worker atomically freezes the latest requested inputs into
+an immutable fact-set key and consumes that pending window. Only one ordinary
+build runs per campaign/scope. Events during it accumulate in one new pending
+window, retaining their original first-event deadline, so completion schedules
+at most one follow-up build without losing newer demand. Duplicate delivery of
+a hint does not advance watermarks or reset timers. Failed/interrupted work
+retains its frozen inputs and is recoverable without clearing newer demand.
+
 The worker rebuilds only affected dates where that is provably equivalent and
 otherwise rebuilds the complete small campaign series. Historical-scope changes
 normally affect the current campaign-local date and later dates; a new current-
-population source snapshot can affect every displayed date. Duplicate hints
-coalesce under the exact input key. Failed or interrupted generations remain
-unpublished and retryable.
+population source snapshot can affect every displayed date. Exact-input
+uniqueness still deduplicates builds after inputs are frozen. Failed or
+interrupted generations remain unpublished and retryable. Publishing an older
+pinned or recovered generation never moves the interactive pointer backward.
+
+Exports pin their inputs when requested; digests pin theirs when the occurrence
+first records its report inputs, using its stored as-of boundary. These requests
+bypass ordinary debounce and receive priority exact-generation work. They reuse
+an existing ready/building generation with the same key and never chase later
+submissions, including on retry. Pinning protects the required input records
+before the build starts. Priority affects claim order, not preemption of a
+running build, and an exact request never consumes newer interactive demand.
 
 If the exact current input generation is not ready, the interactive report
 shows the last complete generation only when it is conspicuously labeled with
@@ -208,13 +240,18 @@ The server rechecks the report role and campaign scope on each request and uses
 
 The manual code is intentionally a low-sensitivity, campaign-bound access
 mechanism. Admin and Staff already hold broader parish-data access, and the code
-cannot be used after campaign close. This classification does not make it
-public: report access and exports remain authenticated, codes are excluded from
-logs, and the public Family login retains its guessing protections.
+is unusable while closed but may become usable again if that same campaign is
+formally reopened; it never carries into a successor campaign. This
+classification does not make it public: report access and exports remain
+authenticated, codes are excluded from logs, and the public Family login
+retains its guessing protections.
 
 CSV, XLSX, and PDF exports include the same columns, including the manual code.
 They use the standard asynchronous, short-lived, requester-authorized export
-pipeline. Interactive report execution and exports are audited at report,
+pipeline, including its explicitly accepted plaintext storage and owner-only
+permissions under the
+[export retention policy](../operations/spec.md#temporary-retention-and-housekeeping).
+Interactive report execution and exports are audited at report,
 campaign, actor, filter, and row-count granularity without copying codes into
 the audit payload. Exact-code-search audit records omit the raw filter and store
 only a keyed fingerprint when correlation is operationally necessary.

@@ -105,7 +105,10 @@ PostgreSQL is authoritative; Celery/Valkey only delivers execution hints.
 3. Implement weekly actionable additional-information digest plus correction
    section for previously mailed superseded/withdrawn items.
 4. Apply Testing/production routing, delivery-pause holds, campaign-close rules,
-   and archive prerequisites.
+   and archive prerequisites. Implement the shared post-close obligation
+   inventory and durable semantic skip-resolution handling used by ADM-06,
+   including future/unmaterialized daily and final weekly coverage. Make
+   creation/claim/revision checks honor skips without covering newer inputs.
 5. Test local-day boundaries, fact-build delay/failure, empty/no-recipient
    behavior, missed/coalesced digests, pinned chart parity, corrections, and
    repeat-safe delivery.

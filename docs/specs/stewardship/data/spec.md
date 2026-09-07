@@ -174,6 +174,18 @@ logical UUID and campaign/type. Its immutable `ScheduleRevision` rows contain
 the versioned local date/time, template references, and replacement/removal
 metadata; exactly one revision is current unless the definition was removed.
 
+`ScheduleOccurrence` stores campaign, schedule definition/revision, immutable
+mode/routing class, semantic target and slot, resolved UTC due instant,
+occurrence key, outcome, attempts/lease/heartbeat, TaskRun and OutboxMessage
+references, structured terminal reason, pause-hold reference/version, and any
+selected replacement occurrence. Outcome is `pending`, `running`,
+`delivery_unknown`, `succeeded`, `skipped`, `coalesced`, or `failed`, with the
+terminal and reconciliation meanings defined by
+[background processing](../background-processing/spec.md#durable-scheduling-and-task-execution).
+The occurrence key is unique. That database constraint, rather than scheduler
+timing alone, makes insertion/recovery idempotent and prevents two revisions or
+workers from creating the same revision-specific work.
+
 `ScheduleFulfillment` records that a semantic slot is covered independently of
 revision. Its disposition is `delivered` or `coalesced`. Its unique key combines
 schedule UUID, mode, semantic recipient or audience, and occurrence slot (for
@@ -185,6 +197,17 @@ never makes a recipient whose slot is already covered in that mode eligible for
 the same logical schedule again. Schedule replacement and removal follow the
 atomic cancellation policy in the
 [background-processing specification](../background-processing/spec.md#schedule-replacement-and-removal).
+
+`PostCloseMailResolution` stores Campaign, immutable mode, semantic obligation
+key (receipt submission identity or digest schedule UUID/slot), exact covered
+submission/item/correction versions or daily range, resolving Admin, UTC time,
+required reason, and linked skipped occurrence/cancelled work. Its unique key
+combines campaign, mode, obligation key, and coverage digest, making repeated
+confirmation idempotent without covering later inputs. It is a durable explicit
+skip, separate from delivered/coalesced `ScheduleFulfillment`; it survives
+schedule revision and archive/unarchive until campaign purge. See
+[post-close reporting obligations](../background-processing/spec.md#post-close-reporting-obligations)
+for transactional application and admission checks.
 
 `RestoreDeliveryHold` records restore identifier, campaign/schedule semantic
 key, target/slot, backup-snapshot and release-window instants, discovery source,
@@ -231,8 +254,12 @@ promoted snapshots, the system retains:
 - after one year, the latest promoted snapshot in each UTC calendar month
   indefinitely.
 
-Compaction keeps every manifest but may remove membership rows for redundant
-unprotected snapshots, marking those manifests compacted. It then removes a
+Compaction keeps every manifest, including its immutable source generation and
+promotion UTC instant used as a historical fact cutoff watermark, but may remove
+membership rows for redundant unprotected snapshots and mark those manifests
+compacted. Historical cohort reconstruction uses durable first-eligibility
+provenance rather than those removed membership rows, so UTC day/month anchor
+selection cannot change campaign-local denominators. Compaction removes a
 payload version only when no retained reconstructable snapshot or other
 protected record references it. Anchor selection is deterministic, and a late
 protection reference wins over cleanup under row locks. Cleanup is idempotent,
@@ -241,17 +268,31 @@ source promotion owns the mutation lease.
 
 ### Campaign daily report facts
 
+`CampaignFactRebuildDemand` has a unique `(campaign, population scope)` key and
+stores requested source/submission watermarks, pending first/last-event and due
+UTC instants, pending revision, and the claimed generation/TaskRun reference.
+Event transactions atomically advance this row; claims freeze a coherent input
+tuple and consume only the claimed pending revision under its row lock. Events
+after a claim create a new pending revision independently of the running one.
+Completion/recovery cannot clear that newer revision. The debounce, priority,
+and exact-input request behavior is authoritative in
+[participation fact materialization](../reports/spec.md#participation-fact-materialization).
+
 `CampaignDailyFactSet` records one immutable, complete graph-calculation
-generation for a Campaign, population scope, source-snapshot cutoff,
+generation for a Campaign, population scope, promoted-source generation cutoff,
 submission-version cutoff, and campaign-timezone version. Its state is
 `building`, `ready`, or `failed`; at most one generation for an exact input key
 may become ready. Child `CampaignDailyFact` rows hold one campaign-local date's
 first-response count, cumulative response count, cohort denominator, percentage
 inputs, effective pledge total/availability, and source-as-of metadata. A fact-
 set pointer changes only after all expected dates validate and commit, so
-readers never combine generations. Facts are derived, rebuildable data; pinned
-digests/reports protect the precise ready generation and its source inputs from
-compaction until their parent retention ends.
+readers never combine generations. For historical scope, the source cutoff
+selects durable `FamilyCampaign` first-eligibility provenance rather than
+requiring every earlier SourceSnapshot membership set. For current scope, it
+selects the exact current population from that promoted snapshot. Facts are
+derived, rebuildable data; pinned digests/reports protect the precise ready
+generation and any reconstructable source input it uses from compaction until
+their parent retention ends.
 
 `SourceMutationLease` is the singleton durable exclusion record defined by
 [background processing](../background-processing/spec.md#parishsoft-refresh).
@@ -266,7 +307,8 @@ verify the expected fencing token.
 
 - portal eligibility, syntactic email eligibility, current email deliverability
   and its reason, and active status;
-- first/last eligible timestamps and status reason;
+- immutable first Portal-eligible UTC timestamp and promoted-source generation,
+  plus last eligibility-change timestamp and current status reason;
 - encrypted eight-letter display code plus the versioned canonical HMAC lookup
   rows defined by the
   [credential specification](../architecture/spec.md#family-credential-security);
@@ -275,6 +317,15 @@ verify the expected fencing token.
 - initial/live invitation state;
 - first live submission and current effective submission IDs; and
 - latest session/activity metadata used by the Admin indicator.
+
+The first-eligibility timestamp/generation pair is set atomically when source
+promotion first makes the Family Portal-eligible in the Campaign and is never
+rewritten by later inactivation, reactivation, source compaction, or refresh.
+Historical fact reconstruction includes the Family only when this generation
+is at or before the fact set's source cutoff and the timestamp is at or before
+the resolved campaign-local day boundary. `FamilyCampaign` is retained with its
+Campaign until purge, so this cohort provenance does not protect every
+intermediate SourceSnapshot from compaction.
 
 Codes are generated for every newly active registered Family during initial
 campaign population or snapshot promotion, even if the Family lacks eligible
@@ -287,9 +338,10 @@ ciphertext and digest null without weakening retained audit metadata.
 and the canonical digest. Constraints allow at most one row per Family/key and
 one digest per campaign/key. Generation and migration use the cross-key
 collision protocol defined by the credential specification. Bulk population
-uses the surrounding `READ COMMITTED` transaction and savepoint-scoped retries,
-so all Family identities promote atomically while a rare unique-index conflict
-retries only one random candidate. No view performs decryption scans.
+uses the surrounding `READ COMMITTED` transaction, campaign generation lock,
+set-based collision query, and bounded batch-level retry, so all Family
+identities promote atomically without creating one subtransaction per Family.
+No view performs decryption scans.
 
 ### Administration user and policy
 
@@ -333,9 +385,12 @@ Member as Chairperson of that active Ministry atomically changes it from
 task. A suspended assignment grants no row scope on the next authorization
 check. Manual assignments are never changed from source data. If the exact
 AddressRule and Ministry-leader role were created solely for seeded assignments,
-the role is removed when no active assignment remains; unrelated roles/rules
-are preserved. If the source Chairperson relationship returns before review,
-the seeded assignment reactivates and the task closes with audit.
+the runtime authorization overlay suppresses that Ministry-leader role when no
+active assignment remains; authoritative YAML and its materialized AddressRule
+remain unchanged. Unrelated roles/rules are preserved. If the source
+Chairperson relationship returns before review, the seeded assignment and role
+reactivate and the task closes with audit. Permanently deleting the configured
+assignment/role requires an Admin-applied `ConfigurationChangeRequest`.
 
 ### Submission
 
@@ -344,7 +399,7 @@ Every final click creates an immutable `Submission` version containing:
 - campaign, Family DUID, monotonically increasing Family version, and mode
   (`test` or `live`);
 - baseline source snapshot and prior effective submission, if any;
-- submitted UTC time and derived parish-local date;
+- submitted UTC time and date derived from the Campaign's immutable timezone;
 - complete normalized answers for all enabled sections;
 - validation/content/schema versions; and
 - request/session correlation without storing credentials.
@@ -446,8 +501,11 @@ campaign fields. Unknown placeholders are validation failures, not empty text.
 
 ### Job, outbox, audit, and purge records
 
-`TaskRun` stores task type, idempotency key, state, progress phase/counts,
-attempts, timestamps, initiator, heartbeat, summary, and sanitized error.
+`TaskRun` stores task type, optional idempotency key, state, progress phase/
+counts, attempts, timestamps, initiator, heartbeat, summary, and sanitized
+error. A partial unique constraint on `(task type, idempotency key)` applies
+whenever the key is present; retry/recovery claims the existing row rather than
+inserting another task.
 `ProductionTransitionRequest` stores campaign/Admin, state, gate version,
 inventory digest and counts, non-sensitive Testing aggregate reference, cleanup
 TaskRun, batch checkpoints/counts, acknowledgement and reauthentication times,
@@ -463,7 +521,8 @@ and gate release commit together. No transition restores a deleted Testing row.
 `OutboxMessage` stores exact intended/routed recipients, redacted rendered
 content, template version, reason, campaign/Family links, mode, immutable routing
 class (`testing_override`, `production`, or `operational`), delivery attempts,
-stable semantic idempotency key, provider-key/message-ID fingerprints,
+non-null idempotency scope, stable semantic idempotency key, provider-key/
+message-ID fingerprints,
 reconciliation evidence, resolution actor/time, and provider result. Its state
 is `pending`, `submitting`, `retry_wait`, `delivery_unknown`, `delivered`,
 `permanent_failure`, or `cancelled`; only the final three are terminal.
@@ -474,6 +533,11 @@ separately sealed with application-level encryption and a versioned key ID;
 only the dispatch worker may decrypt them. Terminal handling scrubs the sealed
 values. Provider acceptance means sent; bounce processing is outside the first
 release.
+
+The unique `(idempotency scope, mode, semantic idempotency key)` constraint
+applies to every OutboxMessage, including operational messages whose scope is
+the deployment rather than a Campaign. Provider attempts update the one row;
+concurrent producers cannot create duplicate semantic mail.
 
 `AuditEvent` is append-only and stores ownership scope, actor type/ID, action,
 entity, optional campaign, UTC time, request/task correlation, source IP
@@ -519,7 +583,8 @@ a state machine separate from the associated
 The permitted request transitions are `draft` to `ready_for_confirmation` or
 `cancelled`; `ready_for_confirmation` back to `draft` when a prerequisite
 expires, or to `queued`/`cancelled`; and `queued` to `running` or, through an
-atomic claim cancellation, `cancelled`. An initial `running` attempt may enter
+atomic claim cancellation, `cancelled`, or to `failed_pre_delete` when the
+atomic worker-claim prerequisite recheck fails. An initial `running` attempt may enter
 `failed_pre_delete` only while its durable checkpoint proves no deletion batch
 has committed; any `running` attempt may enter `deletion_failed`,
 `cleanup_failed`, or `succeeded` as appropriate. `deletion_failed` returns to
@@ -616,11 +681,13 @@ is told newer answers exist and must reload/review the merged form. Multiple
 read sessions are otherwise allowed.
 
 Within a successful transaction, the system writes the immutable submission,
-sets it effective, derives proposals/workflows, records audit events, updates
-participation facts, and either inserts the confirmation-email outbox row or,
-when no deliverable eligible-head address exists, records the non-error audit
-action `submission_receipt_skipped` with reason
+sets it effective, derives proposals/workflows, records audit events, creates an
+idempotent participation-fact rebuild hint, and either inserts the confirmation-
+email outbox row or, when no deliverable eligible-head address exists, records
+the non-error audit action `submission_receipt_skipped` with reason
 `no_deliverable_recipient`. Either all commit or none do.
+Only the asynchronous materializer may validate and atomically publish a new
+immutable `CampaignDailyFactSet`; submission never mutates published facts.
 
 ## ParishSoft refresh reconciliation
 
