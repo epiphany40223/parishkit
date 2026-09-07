@@ -6,6 +6,11 @@ that another Codex can implement. Begin with the
 milestones, and mandatory review gates. Each subsystem plan expands the work
 package IDs used there.
 
+Coordinate delivery with the [top-level task plan](../../tasks/stewardship/overall.md).
+Track work in the [per-spec task checklists](../../tasks/stewardship/README.md)
+and [milestone/review checklist](../../tasks/stewardship/milestones.md). Each task
+ID maps to a numbered item in these plans; checklists do not redefine scope.
+
 | Plan | Normative specification | Responsibility |
 | --- | --- | --- |
 | [Campaign domain](campaign-domain.md) | [Root stewardship spec](../../specs/stewardship/spec.md) | Cross-cutting lifecycle, roles, terminology, and presentation contracts |

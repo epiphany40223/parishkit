@@ -9,6 +9,10 @@ The normative specifications decide behavior. Subsystem plans decide how to
 break that behavior into work. This master plan decides when the work may begin
 and when it is safe to advance.
 
+Execution tracking: [top-level task plan](../../tasks/stewardship/overall.md),
+[per-spec checklists](../../tasks/stewardship/README.md), and
+[demonstration/review evidence](../../tasks/stewardship/milestones.md).
+
 ## Implementation principles
 
 1. Build in small, signed, reviewable commits and topic-branch pull requests;
@@ -242,7 +246,12 @@ Execute in this order:
    job substrate needed by digest/report consumers.
 4. **BG-06** — Family mail rendering, sealed substitutions, dedicated dispatch,
    provider outcomes, pause holds, and reconciliation.
-5. **BG-07** — submission confirmation and daily/weekly digests.
+5. Before **BG-07**, complete its required **RPT-02** calculation services and
+   the **RPT-03** immutable fact-materialization service (item 2, with its
+   service-level tests from item 6). Then implement **BG-07** submission
+   confirmation and daily/weekly digests against that service. The interactive
+   RPT-03 report UI and full report validation remain in Phase 5; leave that
+   package partially complete until then.
 6. **BG-10** — operational escalation and safe shutdown behavior.
 7. **ADM-05** — readiness, cleanup status/cancel, Production activation, and
    pre-start withdrawal.

@@ -1,5 +1,7 @@
 # Architecture implementation plan
 
+Task status: [Architecture checklist](../../tasks/stewardship/architecture.md).
+
 This plan implements the
 [Stewardship architecture specification](../../specs/stewardship/architecture/spec.md).
 It establishes the executable skeleton and security boundaries on which every

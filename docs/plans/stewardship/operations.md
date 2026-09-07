@@ -1,5 +1,7 @@
 # Operations and quality implementation plan
 
+Task status: [Operations and quality checklist](../../tasks/stewardship/operations.md).
+
 This plan implements the
 [operations and quality specification](../../specs/stewardship/operations/spec.md).
 Operational behavior is developed alongside application phases, not deferred to

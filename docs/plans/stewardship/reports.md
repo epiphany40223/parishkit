@@ -1,5 +1,7 @@
 # Reports and exports implementation plan
 
+Task status: [Reports and exports checklist](../../tasks/stewardship/reports.md).
+
 This plan implements the
 [reports and exports specification](../../specs/stewardship/reports/spec.md).
 Report calculations live in tested query/services shared by HTML, exports,
@@ -37,6 +39,10 @@ charts, and digest mail; templates do not independently recalculate metrics.
    default changes that must not rebucket campaign history.
 
 ### RPT-03: Participation graph and campaign statistics
+
+Delivery sequencing: the fact-materialization service in item 2 and its
+service-level tests from item 6 land before BG-07 consumes them in Phase 4.
+The interactive report and complete package validation finish in Phase 5.
 
 1. Implement daily submissions, cumulative Families, and cumulative effective
    pledges on one interactive, titled, labeled, legend-bearing chart.

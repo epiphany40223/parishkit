@@ -1,5 +1,7 @@
 # Administration portal implementation plan
 
+Task status: [Administration portal checklist](../../tasks/stewardship/admin-portal.md).
+
 This plan implements the
 [administration portal specification](../../specs/stewardship/admin-portal/spec.md).
 All routes, partial endpoints, job status, exports, and destructive workflows

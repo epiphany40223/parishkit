@@ -1,5 +1,7 @@
 # Data and reconciliation implementation plan
 
+Task status: [Data and reconciliation checklist](../../tasks/stewardship/data.md).
+
 This plan implements the
 [data and reconciliation specification](../../specs/stewardship/data/spec.md).
 Migrations and transactional invariants are first-class deliverables; view-only

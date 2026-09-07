@@ -1,5 +1,7 @@
 # Parishioner portal implementation plan
 
+Task status: [Parishioner portal checklist](../../tasks/stewardship/parishioner-portal.md).
+
 This plan implements the mobile-first
 [Parishioner portal specification](../../specs/stewardship/parishioner-portal/spec.md).
 The flow is a single guided response, not a general Family dashboard.

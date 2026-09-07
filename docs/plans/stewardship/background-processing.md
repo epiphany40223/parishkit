@@ -1,5 +1,7 @@
 # Background-processing implementation plan
 
+Task status: [Background processing checklist](../../tasks/stewardship/background-processing.md).
+
 This plan implements the
 [background-processing specification](../../specs/stewardship/background-processing/spec.md).
 PostgreSQL is authoritative; Celery/Valkey only delivers execution hints.

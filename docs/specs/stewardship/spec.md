@@ -41,6 +41,9 @@ versioned proposal overlay until upstream data reflects them.
 
 ## Specification map
 
+Implementation tracking: [plans](../../plans/stewardship/README.md) and
+[per-spec task lists](../../tasks/stewardship/README.md).
+
 - [Architecture](architecture/spec.md): components, technology, security,
   deployment, configuration, and nonfunctional requirements.
 - [Data and reconciliation](data/spec.md): durable records, snapshots, campaign

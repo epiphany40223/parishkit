@@ -1,5 +1,7 @@
 # Campaign-domain implementation plan
 
+Task status: [Campaign domain checklist](../../tasks/stewardship/campaign-domain.md).
+
 This plan implements the cross-cutting contracts in the
 [root stewardship specification](../../specs/stewardship/spec.md). Subsystem
 plans own their concrete models and views; this plan owns shared terminology,
