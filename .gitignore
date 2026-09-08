@@ -29,6 +29,7 @@ htmlcov/
 logs/
 cache/
 reports/
+!src/parishkit/stewardship/reports/
 /run/
 *.pid
 *.lock

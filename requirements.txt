@@ -1,4 +1,7 @@
 # Convenience install for local development and CI.
 #
-# pyproject.toml is the source of truth for dependency versions and groups.
--e .[dev,google,slack]
+# pyproject.toml owns supported ranges; this lock pins tested inputs.
+# Install requirements/stewardship-build.txt first, then install this file with
+# --no-build-isolation. See docs/development/stewardship.md#checkout-installation.
+-c requirements/stewardship.txt
+-e .[dev,google,slack,stewardship]
