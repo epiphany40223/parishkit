@@ -1,0 +1,87 @@
+# Structural scaffold only. Production service entry points still refuse to
+# start. Do not use for deployment until the Phase 1 startup gate is complete.
+x-production: &production
+  image: ghcr.io/${STEWARDSHIP_GHCR_REPOSITORY:?Set owner/repository}/parishkit@sha256:${STEWARDSHIP_IMAGE_SHA256:?Set immutable application image digest}
+
+services:
+  web:
+    <<: *production
+  worker:
+    <<: *production
+  scheduler:
+    <<: *production
+  config-installer:
+    <<: *production
+  backup-worker:
+    <<: *production
+  mail-dispatch:
+    <<: *production
+  token-key-rotation:
+    <<: *production
+  bootstrap:
+    <<: *production
+  migration:
+    <<: *production
+  credential-installer-django-signing:
+    <<: *production
+  credential-installer-general-encryption:
+    <<: *production
+  credential-installer-family-code-mac:
+    <<: *production
+  credential-installer-token-public:
+    <<: *production
+  credential-installer-token-private:
+    <<: *production
+  credential-installer-google-oauth:
+    <<: *production
+  credential-installer-google-workspace:
+    <<: *production
+  credential-installer-parishsoft:
+    <<: *production
+  credential-installer-slack:
+    <<: *production
+  credential-installer-backup-target:
+    <<: *production
+  credential-installer-backup-data:
+    <<: *production
+  credential-installer-metrics:
+    <<: *production
+  postgres:
+    volumes:
+      - type: bind
+        source: ${STEWARDSHIP_PRODUCTION_POSTGRES_PASSWORD_FILE:?Set the production DB password file}
+        target: /run/secrets/postgres-password
+        read_only: true
+        bind:
+          create_host_path: false
+  caddy:
+    image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    # Hardening is unfinished: see OPS-03 items 1/5 in
+    # docs/plans/stewardship/operations.md. Keep excluded until those controls
+    # and runtime tests, plus OPS-04 startup validation, are complete.
+    profiles: [pending-ingress]
+    environment:
+      STEWARDSHIP_HOSTNAME: ${STEWARDSHIP_HOSTNAME:?Set public DNS hostname}
+    ports: ["80:80", "443:443"]
+    networks: [backend, ingress]
+    volumes:
+      - type: bind
+        source: ${STEWARDSHIP_CADDY_CONFIG_FILE:?Set the operator Caddyfile path}
+        target: /etc/caddy/Caddyfile
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${STEWARDSHIP_CADDY_PATH:-${PARISHKIT_ROOT:-/opt/parishkit}/run/persistent/caddy}/data
+        target: /data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${STEWARDSHIP_CADDY_PATH:-${PARISHKIT_ROOT:-/opt/parishkit}/run/persistent/caddy}/config
+        target: /config
+        bind:
+          create_host_path: false
+    restart: "no"
+
+networks:
+  ingress: {}

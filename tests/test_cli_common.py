@@ -1,9 +1,52 @@
 import argparse
+from pathlib import Path
 
 import pytest
 
-from parishkit import cli
+from parishkit import cli, cli_arguments
 from parishkit.config import ConfigError
+
+
+def test_common_argument_helper_remains_available_from_legacy_cli():
+    """Existing imports retain the same helper and single-source default values."""
+    assert cli.add_common_arguments is cli_arguments.add_common_arguments
+    assert cli.DEFAULT_PS_CACHE_LIMIT == cli_arguments.DEFAULT_PS_CACHE_LIMIT == "14m"
+    assert (
+        cli.DEFAULT_SLACK_LOG_LEVEL
+        == cli_arguments.DEFAULT_SLACK_LOG_LEVEL
+        == "CRITICAL"
+    )
+
+
+@pytest.mark.parametrize("selection", ["all", "config", "none"])
+def test_common_parser_option_selection(selection):
+    """Narrow parsers advertise only consumed options; the default stays full."""
+    parser = cli.parser_with_common_options("test", common_options=selection)
+    defaults = vars(parser.parse_args([]))
+    if selection == "none":
+        assert defaults == {}
+        assert "--config" not in parser.format_help()
+    else:
+        assert parser.parse_args(["--config", "example.yaml"]).config == Path(
+            "example.yaml"
+        )
+        if selection == "config":
+            assert defaults == {"config": None}
+        else:
+            original = cli.parser_with_common_options("test")
+            assert defaults == vars(original.parse_args([]))
+            assert parser.parse_args(["--dry-run"]).dry_run is True
+    if selection != "all":
+        assert "--dry-run" not in parser.format_help()
+        with pytest.raises(SystemExit) as exc:
+            parser.parse_args(["--dry-run"])
+        assert exc.value.code == 2
+
+
+def test_unknown_common_option_set_is_rejected():
+    """A caller typo cannot silently choose an unintended option surface."""
+    with pytest.raises(ValueError, match="unknown common option set"):
+        cli.parser_with_common_options("test", common_options="typo")
 
 
 def test_common_options_defaults():

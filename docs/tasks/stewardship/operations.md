@@ -11,13 +11,39 @@ Follow the [execution and completion rules](README.md#execution-and-completion).
 
 Scope and dependencies: [OPS-01 work package](../../plans/stewardship/operations.md#ops-01-development-and-production-compose-topology).
 
-- [ ] OPS-01.01 — Create development and production Compose definitions.
+- [x] OPS-01.01 — Create development and production Compose definitions.
 - [ ] OPS-01.02 — Build one non-root image with explicit service commands.
-- [ ] OPS-01.03 — Implement cross-platform bind-mounted development reload.
-- [ ] OPS-01.04 — Restrict service ports to the intended networks.
-- [ ] OPS-01.05 — Test and document Compose startup.
+- [x] OPS-01.03 — Implement cross-platform bind-mounted development reload.
+- [x] OPS-01.04 — Restrict service ports to the intended networks.
+- [x] OPS-01.05 — Test and document Compose startup.
 
-Evidence: Not started.
+Evidence: Phase 0 Compose scaffold commit `72f31f3` on
+`pr/stewardship-implementation`. See the
+[Compose guide](../../development/stewardship-compose.md),
+[`deploy/stewardship`](../../../deploy/stewardship/),
+[`test_services.py`](../../../tests/stewardship/test_services.py), and
+[`test_compose.py`](../../../tests/stewardship/test_compose.py).
+The counts below describe that historical implementation run. Subsequent
+corrections and current host/image/Compose validation are recorded in the
+[M0 review evidence](milestones.md#phase-0-skeleton).
+September 7, 2026: application image built on macOS/arm64 with Docker 29.7.2 and
+Compose 5.3.1. Host and in-image baseline each passed 570 tests (3 explicitly
+opt-in Docker checks skipped). The separately enabled Compose suite passed
+5 tests, including both rendered overlays, real source reload, localhost/internal
+route checks, no token-bearing access logs, non-root web execution, synthetic
+PostgreSQL/Valkey persistence across replacement, production startup refusal,
+and graceful web stop/restart. Ruff and Markdown checks passed. Both architecture
+manifests are pinned; native Windows/Linux-host and amd64 execution are not yet
+claimed and will receive CI/runtime evidence in OPS-09.
+
+OPS-01.02 is partial: one non-root image provides the working development web
+entry point, init/signal handling, read-only root, and local liveness probe.
+Reserved worker/installer/operator identities have no credential/data mounts
+and explicitly refuse startup; they do not pretend to process work or pass
+health checks. Their concrete commands/mounts/readiness arrive with the owning
+ARC-06, background, and OPS-02/04 packages. Production remains fail-closed.
+OPS-02 still owns CLI/YAML-to-Compose path integration, full provisioning, and
+mount/queue isolation. No review gate, deployment, or release is claimed.
 
 ## OPS-02: Durable runtime paths and least-privilege secrets
 
@@ -35,11 +61,11 @@ Evidence: Not started.
 
 Scope and dependencies: [OPS-03 work package](../../plans/stewardship/operations.md#ops-03-production-ingress-tls-and-network-security).
 
-- [ ] OPS-03.01 — Configure persistent Caddy TLS and trusted forwarding.
+- [ ] OPS-03.01 — Configure persistent Caddy TLS, trusted forwarding, and ingress hardening prerequisites.
 - [ ] OPS-03.02 — Redact credentials from access logs.
 - [ ] OPS-03.03 — Deny internal health and metrics paths at public ingress.
 - [ ] OPS-03.04 — Document DNS, firewall, OAuth, and certificate recovery.
-- [ ] OPS-03.05 — Validate Caddy and test network and route boundaries.
+- [ ] OPS-03.05 — Validate Caddy hardening, writable-state limits, and network/route boundaries before enabling ingress.
 
 Evidence: Not started.
 
@@ -110,10 +136,30 @@ Evidence: Not started.
 Scope and dependencies: [OPS-09 work package](../../plans/stewardship/operations.md#ops-09-ci-coverage-browser-acceptance-and-release-pipeline).
 
 - [ ] OPS-09.01 — Build repository lint, test, migration, and frontend CI.
-- [ ] OPS-09.02 — Enforce separate scoped line and branch coverage floors.
+- [x] OPS-09.02 — Enforce separate scoped line and branch coverage floors.
 - [ ] OPS-09.03 — Build integration, browser, Compose, and image validation jobs.
 - [ ] OPS-09.04 — Provide credential-free CI and human-run smoke tools.
 - [ ] OPS-09.05 — Complete required suites, saturated-download load tests, and acceptance traceability.
 - [ ] OPS-09.06 — Publish release artifacts only after the authorized final gate.
 
-Evidence: Not started.
+Evidence: Initial Phase 0 coverage/CI commit `8557a78` on
+`pr/stewardship-implementation`. The mandatory package plus exact shared CLI/config/path modules
+are declared in [`coverage-stewardship.toml`](../../../coverage-stewardship.toml).
+The [coverage runner](../../../src/parishkit/stewardship/quality.py) derives its
+pytest-cov source arguments from the validated manifest and rejects incomplete
+or non-branch reports before evaluating independent floors. The initial 33
+regression tests included invalid-manifest categories and either-floor failures;
+subsequent corrections, expanded coverage, and current validation are recorded
+in the [M0 review evidence](milestones.md#phase-0-skeleton).
+September 7, 2026: the complete host runner passed 603 tests (3 opt-in Docker
+checks skipped), with 96.91% lines and 95.22% branches. Migration drift reported
+no changes. Ruff and Markdown checks passed.
+
+OPS-09.01 is partial: required lint/format/Markdown, manifest-derived coverage,
+and scaffold migration drift are in CI; database-backed migration and frontend
+checks follow their implementation. OPS-09.03 now defines a Linux CI image-build
+and isolated Compose smoke job; remote execution is not yet claimed. The earlier
+macOS/arm64 smoke evidence remains under OPS-01. Browser/accessibility, full
+database integrations, multi-architecture release/SBOM/scanning/provenance, all
+acceptance/load suites, and real-provider human-run smoke tools remain open.
+All current tests are fake-backed. No image or release tag is published.

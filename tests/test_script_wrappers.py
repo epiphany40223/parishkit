@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 WRAPPERS = {
+    "pk-stewardship": ("pk-stewardship.py", "parishkit.stewardship.cli", "main"),
     "pk-cron-runner": ("pk-cron-runner.py", "parishkit.cli", "run_main"),
     "pk-query-ps-memfam": (
         "pk-query-ps-memfam.py",

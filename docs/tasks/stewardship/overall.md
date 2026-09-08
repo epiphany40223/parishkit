@@ -8,15 +8,19 @@ Use [milestones](milestones.md) for demonstration and review status.
 
 ## How to select the next work
 
-1. Find the earliest incomplete phase whose preceding review gate has passed.
+1. Find the earliest incomplete phase whose preceding review gate has passed and
+   whose preceding phase PR has merged. Follow the controlling plan's
+   [automated phase delivery cycle](../../plans/stewardship/overall.md#automated-phase-delivery-cycle)
+   for branch creation, delegated decisions, review rounds, CI, and merge approval.
 2. Follow the ordered package links below; within a package, inspect its full
    plan item, task evidence, and dependencies before selecting work.
 3. Deliver a bounded increment, verify it, and update only its owning task list.
    Record partial scope when a package spans phases; do not mark a whole package
    done because its first consumer works.
-4. Complete the phase demonstration. At a formal gate, stop feature work, run
-   two independent reviews, correct findings, rerun validation and review, and
-   record the required approval before proceeding.
+4. Complete the phase demonstration and required review/fix rounds, then create
+   or update its PR and correct CI failures. At a formal gate, also validate and
+   review the complete integrated gate scope. Stop for human merge approval with
+   the applicable gate evidence before proceeding to the next phase.
 5. On handoff, record active phase, completed task IDs, implementation SHA,
    validation evidence, remaining scope, and the next dependency-ready task.
 
@@ -30,6 +34,22 @@ source scope so exceptions and demonstrations are not redefined here.
 
 Source scope: [Phase 0: Skeleton](../../plans/stewardship/overall.md#phase-0-reproducible-project-skeleton).
 
+Execution checkpoint (September 8, 2026): the human approved the ARC-02 phase
+split now recorded in the controlling plan. See its
+[partial completion evidence](architecture.md#arc-02-shared-cli-configuration-paths-and-app-startup).
+ARC-01 and DOM-01 evidence is recorded in their owning checklists. The
+[OPS-01 scaffold](operations.md#ops-01-development-and-production-compose-topology)
+now passes local Compose demonstrations and host/image baseline parity. Reserved
+services still refuse startup pending their owning implementation packages.
+Phase 0 [OPS-09 CI/coverage](operations.md#ops-09-ci-coverage-browser-acceptance-and-release-pipeline)
+and [DOM-05 clock/traceability](campaign-domain.md#dom-05-cross-domain-acceptance-harness)
+are implemented for their admitted scope. Eight M0 review/fix rounds and
+post-correction validation are complete; see the latest
+[milestone evidence](milestones.md#phase-0-skeleton). Finish PR/CI handoff and
+obtain human merge approval before foundation work. No later phase or review
+gate is released. Do not wait for
+Phase 1's database-backed ARC-02 integration or mark that work complete early.
+
 1. [ARC-01](architecture.md#arc-01-dependency-decisions-and-package-skeleton) → [DOM-01](campaign-domain.md#dom-01-domain-vocabulary-and-decision-records) → [ARC-02](architecture.md#arc-02-shared-cli-configuration-paths-and-app-startup) → [OPS-01](operations.md#ops-01-development-and-production-compose-topology).
 2. Start [OPS-09](operations.md#ops-09-ci-coverage-browser-acceptance-and-release-pipeline) baseline CI/coverage and [DOM-05](campaign-domain.md#dom-05-cross-domain-acceptance-harness) clock/traceability work.
 3. Complete M0 evidence and the scaffold correction pass before Phase 1.
@@ -37,6 +57,10 @@ Source scope: [Phase 0: Skeleton](../../plans/stewardship/overall.md#phase-0-rep
 ## Phase 1A: Schema and policy
 
 Source scope: [Phase 1A: Schema and policy](../../plans/stewardship/overall.md#phase-1-secure-foundation-and-durable-domain).
+
+Integrate ARC-02's concrete materializer and database-backed digest/mode checks
+with DAT-01. Complete its production prerequisite and recovery verification in
+Phase 1C, following the controlling plan; all existing review gates remain.
 
 1. [DAT-01](data.md#dat-01-storage-conventions-and-base-records) → [DOM-02](campaign-domain.md#dom-02-campaign-interval-and-lifecycle-policy).01 interval resolver → [DAT-02](data.md#dat-02-campaign-lifecycle-and-schedule-schema) → remaining [DOM-02](campaign-domain.md#dom-02-campaign-interval-and-lifecycle-policy) policy.
 2. [DAT-05](data.md#dat-05-portal-users-and-authorization-policy-records) → [DOM-03](campaign-domain.md#dom-03-authorization-capability-policy); start database-backed [DOM-05](campaign-domain.md#dom-05-cross-domain-acceptance-harness) factories after [DAT-01](data.md#dat-01-storage-conventions-and-base-records).

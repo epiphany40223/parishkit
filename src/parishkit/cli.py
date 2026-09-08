@@ -1,18 +1,27 @@
-"""Shared command-line helpers for ParishKit tools."""
+"""Shared command-line helpers for ParishKit tools.
+
+Argument registration is re-exported from ``parishkit.cli_arguments``. Consumers
+that need only parser flags can import that module without loading providers.
+"""
 
 from __future__ import annotations
 
 import argparse
 import logging
-import os
 import re
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from importlib.metadata import version
 from pathlib import Path
+from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from parishkit.cli_arguments import (
+    DEFAULT_PS_CACHE_LIMIT,
+    DEFAULT_SLACK_LOG_LEVEL,
+    add_common_arguments,
+)
 from parishkit.config import (
     ConfigData,
     ConfigError,
@@ -23,13 +32,8 @@ from parishkit.constant_contact import CCAPIError
 from parishkit.google.auth import GoogleAPIError
 from parishkit.logging import parse_log_level
 from parishkit.parishsoft import ParishSoftAPIError
+from parishkit.paths import runtime_root as _default_root
 from parishkit.retry import RetryError
-
-
-def _default_root() -> Path:
-    """Return the runtime root implied by the current environment."""
-    return Path(os.environ.get("PARISHKIT_ROOT", "/opt/parishkit")).expanduser()
-
 
 OPT_ROOT = _default_root()
 DEFAULT_CONFIG_DIR = OPT_ROOT / "config"
@@ -40,8 +44,6 @@ DEFAULT_REPORTS_DIR = OPT_ROOT / "reports"
 DEFAULT_RUN_DIR = OPT_ROOT / "run"
 DEFAULT_PS_API_KEY_FILE = DEFAULT_CREDENTIALS_DIR / "parishsoft-api-key.txt"
 DEFAULT_PS_CACHE_DIR = DEFAULT_CACHE_DIR / "parishsoft"
-DEFAULT_PS_CACHE_LIMIT = "14m"
-DEFAULT_SLACK_LOG_LEVEL = "CRITICAL"
 DEFAULT_TIMEZONE = "America/Kentucky/Louisville"
 _CACHE_LIMIT_PATTERN = re.compile(r"^[1-9][0-9]*[smhd]$")
 
@@ -191,73 +193,20 @@ def validate_timezone(value: str, *, name: str = "common.timezone") -> str:
     return value
 
 
-def add_common_arguments(parser: argparse.ArgumentParser) -> None:
-    """Register the CLI flags shared by every ParishKit tool.
-
-    The tri-state flags default to ``None`` (via BooleanOptionalAction) so that
-    :func:`resolve_common_options` can tell "not specified on the command line"
-    apart from an explicit true/false and fall back to config in that case.
-    """
-    parser.add_argument("--config", type=Path, help="YAML configuration file")
-    parser.add_argument(
-        "--dry-run",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="avoid external writes",
-    )
-    parser.add_argument(
-        "--verbose",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="enable verbose logging",
-    )
-    parser.add_argument(
-        "--debug",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="enable debug logging",
-    )
-    parser.add_argument("--log-file", type=Path, help="write logs to this file")
-    parser.add_argument(
-        "--log-dir",
-        type=Path,
-        help="write default logs under this dir",
-    )
-    parser.add_argument("--slack-token-file", type=Path, help="Slack token file")
-    parser.add_argument(
-        "--slack-channel",
-        help="Slack channel for critical notifications",
-    )
-    parser.add_argument(
-        "--slack-log-level",
-        default=None,
-        help=f"Slack logging threshold (default: {DEFAULT_SLACK_LOG_LEVEL})",
-    )
-    parser.add_argument(
-        "--ps-api-key-file",
-        type=Path,
-        help="ParishSoft API key file",
-    )
-    parser.add_argument("--ps-cache-dir", type=Path, help="ParishSoft cache directory")
-    parser.add_argument(
-        "--ps-cache-limit",
-        default=None,
-        help=f"ParishSoft cache age limit (default: {DEFAULT_PS_CACHE_LIMIT})",
-    )
-
-
 def parser_with_common_options(
     prog: str,
     *,
     description: str | None = None,
+    common_options: Literal["all", "config", "none"] = "all",
 ) -> argparse.ArgumentParser:
     """Build an ArgumentParser pre-populated with the common flags.
 
     Convenience wrapper so each tool can create its parser and add only its
-    own tool-specific arguments.
+    own tool-specific arguments. Narrow consumers can select only ``config``
+    or ``none``; existing callers keep the complete shared flag set.
     """
     parser = argparse.ArgumentParser(prog=prog, description=description)
-    add_common_arguments(parser)
+    add_common_arguments(parser, options=common_options)
     return parser
 
 

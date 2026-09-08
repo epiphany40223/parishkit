@@ -11,6 +11,7 @@ EXPECTED_ENTRYPOINTS = {
     "pk-create-ps-ministry-rosters": "parishkit.cli:create_ministry_rosters_main",
     "pk-sync-ps-to-ggroup": "parishkit.cli:sync_google_group_main",
     "pk-sync-ps-to-cc": "parishkit.cli:sync_ps_to_cc_main",
+    "pk-stewardship": "parishkit.stewardship.cli:main",
 }
 
 

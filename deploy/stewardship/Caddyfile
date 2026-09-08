@@ -1,0 +1,9 @@
+{$STEWARDSHIP_HOSTNAME} {
+	# No access logging until OPS-03's tested token/query redaction is installed.
+	# Ordering is explicit, ahead of the catch-all application proxy.
+	route {
+		@internal path /health/live /health/ready /metrics
+		respond @internal 404
+		reverse_proxy web:8000
+	}
+}

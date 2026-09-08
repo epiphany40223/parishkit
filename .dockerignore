@@ -1,0 +1,17 @@
+# Default-deny build context; root and Dockerfile-specific copies must match.
+# Never put credentials in allowlisted package source or build inputs.
+**
+!pyproject.toml
+!README.md
+!requirements/stewardship.txt
+!requirements/stewardship-build.txt
+!.dockerignore
+!deploy/stewardship/Dockerfile
+!deploy/stewardship/Dockerfile.dockerignore
+!src/**/*.py
+!src/**/*.html
+!src/**/*.css
+!src/**/*.js
+!src/**/*.svg
+!src/**/*.png
+!src/**/*.ico
