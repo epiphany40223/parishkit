@@ -1,0 +1,196 @@
+name: parishkit-stewardship
+
+x-application: &application
+  image: ${STEWARDSHIP_IMAGE:-parishkit-stewardship:development}
+  user: "10001:10001"
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs: ["/tmp:rw,nosuid,nodev,noexec,mode=1777"]
+  environment:
+    PYTHONDONTWRITEBYTECODE: "1"
+    PYTHONUNBUFFERED: "1"
+  networks: [backend]
+  restart: "no"
+  stop_grace_period: 30s
+
+# Unimplemented identities have no credential, authority, or data mounts. They
+# refuse startup, even if this profile is explicitly requested. OPS-02/ARC-06
+# will add narrow mounts only alongside enforceable process/queue boundaries.
+x-pending: &pending
+  <<: *application
+  profiles: [pending]
+  healthcheck:
+    disable: true
+
+services:
+  web:
+    <<: *application
+    command: [service, --profile, production, --service-role, web]
+    healthcheck:
+      test: [CMD, pk-stewardship, healthcheck]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+      start_period: 10s
+
+  worker:
+    <<: *pending
+    command: [service, --profile, production, --service-role, worker]
+  scheduler:
+    <<: *pending
+    command: [service, --profile, production, --service-role, scheduler]
+  config-installer:
+    <<: *pending
+    user: "10002:10002"
+    command: [service, --profile, production, --service-role, config-installer]
+  backup-worker:
+    <<: *pending
+    user: "10003:10003"
+    command: [service, --profile, production, --service-role, backup-worker]
+  mail-dispatch:
+    <<: *pending
+    user: "10004:10004"
+    command: [service, --profile, production, --service-role, mail-dispatch]
+  token-key-rotation:
+    <<: *pending
+    profiles: [token-key-rotation]
+    user: "10005:10005"
+    command: [service, --profile, production, --service-role, token-key-rotation]
+  bootstrap:
+    <<: *pending
+    profiles: [bootstrap]
+    user: "10006:10006"
+    command: [service, --profile, production, --service-role, bootstrap]
+  migration:
+    <<: *pending
+    profiles: [migration]
+    command: [service, --profile, production, --service-role, migration]
+
+  credential-installer-django-signing:
+    <<: *pending
+    user: "10100:10100"
+    command: [service, --profile, production, --service-role, credential-installer]
+    environment:
+      PARISHKIT_STEWARDSHIP_CREDENTIAL_TARGET: django_signing
+  credential-installer-general-encryption:
+    <<: *pending
+    user: "10101:10101"
+    command: [service, --profile, production, --service-role, credential-installer]
+    environment:
+      PARISHKIT_STEWARDSHIP_CREDENTIAL_TARGET: general_encryption
+  credential-installer-family-code-mac:
+    <<: *pending
+    user: "10102:10102"
+    command: [service, --profile, production, --service-role, credential-installer]
+    environment:
+      PARISHKIT_STEWARDSHIP_CREDENTIAL_TARGET: family_code_mac
+  credential-installer-token-public:
+    <<: *pending
+    user: "10103:10103"
+    command: [service, --profile, production, --service-role, credential-installer]
+    environment:
+      PARISHKIT_STEWARDSHIP_CREDENTIAL_TARGET: token_public
+  credential-installer-token-private:
+    <<: *pending
+    user: "10104:10104"
+    command: [service, --profile, production, --service-role, credential-installer]
+    environment:
+      PARISHKIT_STEWARDSHIP_CREDENTIAL_TARGET: token_private
+  credential-installer-google-oauth:
+    <<: *pending
+    user: "10105:10105"
+    command: [service, --profile, production, --service-role, credential-installer]
+    environment:
+      PARISHKIT_STEWARDSHIP_CREDENTIAL_TARGET: google_oauth
+  credential-installer-google-workspace:
+    <<: *pending
+    user: "10106:10106"
+    command: [service, --profile, production, --service-role, credential-installer]
+    environment:
+      PARISHKIT_STEWARDSHIP_CREDENTIAL_TARGET: google_workspace
+  credential-installer-parishsoft:
+    <<: *pending
+    user: "10107:10107"
+    command: [service, --profile, production, --service-role, credential-installer]
+    environment:
+      PARISHKIT_STEWARDSHIP_CREDENTIAL_TARGET: parishsoft
+  credential-installer-slack:
+    <<: *pending
+    user: "10108:10108"
+    command: [service, --profile, production, --service-role, credential-installer]
+    environment:
+      PARISHKIT_STEWARDSHIP_CREDENTIAL_TARGET: slack
+  credential-installer-backup-target:
+    <<: *pending
+    user: "10109:10109"
+    command: [service, --profile, production, --service-role, credential-installer]
+    environment:
+      PARISHKIT_STEWARDSHIP_CREDENTIAL_TARGET: backup_target
+  credential-installer-backup-data:
+    <<: *pending
+    user: "10110:10110"
+    command: [service, --profile, production, --service-role, credential-installer]
+    environment:
+      PARISHKIT_STEWARDSHIP_CREDENTIAL_TARGET: backup_data
+  credential-installer-metrics:
+    <<: *pending
+    user: "10111:10111"
+    command: [service, --profile, production, --service-role, credential-installer]
+    environment:
+      PARISHKIT_STEWARDSHIP_CREDENTIAL_TARGET: metrics
+
+  postgres:
+    # Phase 0 uses the vendor entrypoint's ownership/privilege-drop behavior.
+    # OPS-02 owns infrastructure capability/UID hardening before Gate 1;
+    # no production application or parish data is admitted by this scaffold.
+    image: postgres:18.6-trixie@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+    environment:
+      POSTGRES_USER: stewardship
+      POSTGRES_DB: stewardship
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password
+    volumes:
+      - type: bind
+        source: ${STEWARDSHIP_POSTGRES_PATH:-${PARISHKIT_ROOT:-/opt/parishkit}/run/persistent/postgresql}
+        target: /var/lib/postgresql
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${STEWARDSHIP_POSTGRES_PASSWORD_FILE:-${PARISHKIT_ROOT:-/opt/parishkit}/credentials/development-postgres-password}
+        target: /run/secrets/postgres-password
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [backend]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U stewardship -d stewardship"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    stop_grace_period: 30s
+
+  valkey:
+    # Infrastructure capability/UID hardening is owned by OPS-02 before Gate 1,
+    # including validation of the vendor entrypoint's volume initialization.
+    image: valkey/valkey:9.1.2@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
+    # No application broker clients exist yet. Keep protected mode enabled;
+    # authenticated role-specific access/queues arrive with ARC-06 and OPS-02.
+    command: [valkey-server, --appendonly, "yes", --protected-mode, "yes"]
+    volumes:
+      - type: bind
+        source: ${STEWARDSHIP_VALKEY_PATH:-${PARISHKIT_ROOT:-/opt/parishkit}/run/persistent/valkey}
+        target: /data
+        bind:
+          create_host_path: false
+    networks: [backend]
+    healthcheck:
+      test: [CMD, valkey-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    stop_grace_period: 30s
+
+networks:
+  backend:
+    internal: true

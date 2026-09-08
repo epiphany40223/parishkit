@@ -25,8 +25,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install -r requirements.txt
-          python -m pip install build
+          python -m pip install -r requirements/stewardship-build.txt
+          python -m pip install --no-build-isolation -r requirements.txt
 
       - name: Validate release tag
         run: |
@@ -45,11 +45,16 @@ jobs:
       - name: Markdown lint
         run: python -m pymarkdown --config .pymarkdown.json scan $(git ls-files '*.md')
 
-      - name: Pytest
-        run: python -m pytest
+      - name: Scoped line and branch coverage
+        run: python -m parishkit.stewardship.quality --report "$RUNNER_TEMP/stewardship-coverage.json"
+
+      - name: Migration drift
+        env:
+          DJANGO_SETTINGS_MODULE: parishkit.stewardship.settings.test
+        run: python -m django makemigrations --check --dry-run
 
       - name: Build artifacts
-        run: python -m build
+        run: python -m build --no-isolation
 
       - name: Generate release notes
         run: |

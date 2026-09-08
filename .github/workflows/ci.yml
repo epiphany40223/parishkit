@@ -22,7 +22,9 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: python -m pip install -r requirements.txt
+        run: |
+          python -m pip install -r requirements/stewardship-build.txt
+          python -m pip install --no-build-isolation -r requirements.txt
 
       - name: Ruff check
         run: python -m ruff check .
@@ -33,5 +35,36 @@ jobs:
       - name: Markdown lint
         run: python -m pymarkdown --config .pymarkdown.json scan $(git ls-files '*.md')
 
-      - name: Pytest
-        run: python -m pytest
+      - name: Scoped line and branch coverage
+        run: python -m parishkit.stewardship.quality --report "$RUNNER_TEMP/stewardship-coverage.json"
+
+      - name: Migration drift
+        env:
+          DJANGO_SETTINGS_MODULE: parishkit.stewardship.settings.test
+        run: python -m django makemigrations --check --dry-run
+
+  stewardship-compose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements/stewardship-build.txt
+          python -m pip install --no-build-isolation -r requirements.txt
+
+      - name: Build development application image
+        run: docker compose -f deploy/stewardship/compose.yaml -f deploy/stewardship/compose.development.yaml build web
+
+      - name: Validate topology, in-image tests, reload, and persistence
+        env:
+          PARISHKIT_RUN_COMPOSE_TESTS: "1"
+          PARISHKIT_RUN_COMPOSE_SMOKE: "1"
+        run: python -m pytest tests/stewardship/test_compose.py -q -s
