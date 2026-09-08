@@ -1,0 +1,8 @@
+# The stewardship package is always included by the validator, not optional.
+schema_version = 1
+shared_modules = [
+  "src/parishkit/cli.py",
+  "src/parishkit/cli_arguments.py",
+  "src/parishkit/config.py",
+  "src/parishkit/paths.py",
+]
