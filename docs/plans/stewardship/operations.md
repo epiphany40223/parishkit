@@ -50,6 +50,18 @@ the end.
 
 1. Configure stock Caddy HTTPS, HTTP redirect, Let's Encrypt issuance/renewal,
    static/media policy, request/body/time limits, and one trusted proxy hop.
+   Before enabling the `pending-ingress` profile, implement explicit non-root
+   execution, a read-only root filesystem, dropped capabilities,
+   `no-new-privileges`, and init/signal handling. Select and document the minimum
+   privilege needed for port binding rather than retaining default capabilities.
+   Coordinate with OPS-02 on ownership and narrowly writable persistent
+   `/data`/`/config` mounts and any required temporary storage; certificate
+   state must remain writable and survive replacement.
+   Give Caddy a network path to the web service without direct connectivity to
+   PostgreSQL or Valkey, while retaining the egress required for certificate
+   operations. The current root/default-capability, writable-root, shared-backend
+   scaffold is not production-ready. Keep ingress disabled until these controls
+   and item 5's validation are complete, along with OPS-04 startup prerequisites.
 2. Redact access-token path segments and cookie/query secrets in access logs.
 3. Add highest-priority Caddy matchers that explicitly return not-found for
    `/health/live` and `/health/ready` before the catch-all proxy while keeping
@@ -58,6 +70,12 @@ the end.
    recovery.
 5. Add Caddy config validation and container tests for external/internal route
    behavior.
+   Inspect effective runtime UID, capabilities, root-filesystem restrictions,
+   no-new-privileges, and init behavior. Test permitted state writes, prohibited
+   writes outside those mounts, certificate-state persistence, web reachability,
+   and denial of direct database/broker connectivity. Include Linux-host
+   ownership/port-binding evidence. Passing template adaptation alone does not
+   satisfy these hardening or ingress-enable prerequisites.
 
 ### OPS-04: Bootstrap, migrations, startup, and upgrades
 

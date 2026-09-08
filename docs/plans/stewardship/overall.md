@@ -34,6 +34,10 @@ Execution tracking: [top-level task plan](../../tasks/stewardship/overall.md),
 
 ## Phase and gate summary
 
+Every phase follows the [automated phase delivery cycle](#automated-phase-delivery-cycle),
+including a human-approved PR merge before the next phase. The formal gates
+below add integrated checks; they do not replace each phase's review cycle.
+
 | Phase | Integrated outcome | Mandatory pause |
 | --- | --- | --- |
 | 0 | Reproducible skeleton, plan traceability, and fast CI | No formal gate; inspect scaffold before foundations |
@@ -44,6 +48,65 @@ Execution tracking: [top-level task plan](../../tasks/stewardship/overall.md),
 | 5 | Reports, exports, user/Ministry management, and follow-up | Review Gate 3: async/RBAC/reporting |
 | 6 | Publication, restore, close/archive/reopen, backup, and purge | Review Gate 4: external/destructive workflows |
 | 7 | Full acceptance, scale, accessibility, runbooks, and release artifacts | Review Gate 5: release readiness |
+
+## Automated phase delivery cycle
+
+Human-approved workflow, September 8, 2026:
+
+1. After the preceding phase's PR is merged and its applicable gate is released,
+   fetch `origin` and create a new `pr/stewardship-phase-N` topic branch from the
+   current tip of `origin/main`. Do not branch the next phase from an unmerged
+   implementation branch. Preserve existing work; Phase 0 continues on its
+   already established `pr/stewardship-implementation` branch.
+2. Implement all dependency-ready work admitted to that phase, including new
+   tests, documentation, and task evidence. Packages spanning phases retain
+   their documented scope split. Run repository and phase-specific checks and
+   correct failures until all required checks pass.
+3. Complete at least three independent review-and-fix rounds per phase, normally
+   using `local-review` followed by `local-review-triage`. A round comprises a
+   completed dual-source review, evidence-based disposition of its findings,
+   applicable fixes/regression tests, and passing post-fix validation. Existing
+   completed Phase 0 rounds count; a failed or degraded review is not a completed
+   round. A round finding no actionable issues still counts.
+4. Fix every accepted Medium, High, and Critical finding. Push back on or discard
+   inaccurate, duplicate, already-handled, or out-of-phase findings only with
+   concrete evidence and a recorded rationale; use an existing later-phase owner
+   for intentionally deferred scope. Do not discard a real in-scope defect just
+   to satisfy the exit criterion. Routine technical choices are delegated to
+   the implementing agent, including triage decisions with multiple reasonable
+   approaches when the specifications establish the intended behavior.
+5. Exit the loop only after at least three completed rounds, no validated High
+   or Critical finding in the final round, no unresolved accepted Medium-or-
+   higher findings, and passing validation. Fixes and their regression tests
+   are part of that round; corrections alone do not require another round or
+   a finding-free final review. Record raw
+   reviewer severities as well as any evidence-backed rejected findings; never
+   treat an incomplete review as a clean round.
+6. Use one PR per phase by default. Split a large phase into smaller coherent,
+   independently testable PRs when needed; each PR follows the same review/fix
+   cycle, and the formal gate still reviews the complete integrated scope since
+   the previous gate, including already merged changes. Create each subsequent
+   branch from refreshed `origin/main` after its predecessor merges.
+7. Once local validation and the review loop pass, push and create the PR against
+   `origin/main` (or update the existing phase PR). Watch CI for the current head,
+   fix failures, rerun affected checks, and push corrections until required CI
+   passes. Material CI fixes return to independent review without resetting the
+   already completed round count. Record phase/task scope, reviewed SHA, round
+   evidence, findings/dispositions, validation, and any permitted Low deferrals
+   in the PR handoff and owning task evidence.
+8. Stop for explicit human approval before merging. Do not enable auto-merge or
+   merge merely because CI passes. At a formal gate, present its required
+   evidence with this same approval request; no extra routine approval stop is
+   needed earlier in the development cycle. Record gate approval when granted,
+   merge only as authorized, then begin the next phase from updated `origin/main`.
+
+Autonomously investigate failures, implement specification-consistent fixes,
+commit with sign-off, push backups, run reviews, and correct CI. Ask during the
+cycle only when proceeding genuinely needs new authority or a product/security
+decision not resolved by the specifications. Permission denials, protected
+workflows, unavailable credentials, real external writes, destructive operations,
+deployment, and release retain their existing authorization boundaries. This
+workflow does not grant blanket permission bypasses or waive gate-specific tests.
 
 ## Phase 0: Reproducible project skeleton
 
@@ -57,7 +120,12 @@ Execute in this order:
 2. **DOM-01** — establish domain vocabulary and decision records in that
    package skeleton.
 3. **ARC-02** — integrate shared ParishKit configuration, define the versioned
-   Stewardship YAML authority, paths, logging, and startup validation.
+   Stewardship YAML authority and materializer interfaces, paths, logging, and
+   fail-closed scaffold settings. Exercise configuration contracts with fake
+   materializers. Defer concrete database-backed activation/startup checks to
+   DAT-01 integration in Phase 1; complete credential/mount/service checks with
+   ARC-06 and OPS-02/OPS-04 before Gate 1. Leave tasks with that remaining scope
+   unchecked; this phase split does not waive their verification.
 4. **OPS-01** — start the development/production Compose topology with web,
    config/credential installers, general worker, backup-worker, mail-dispatch,
    token-key-rotation, scheduler, PostgreSQL, Valkey, and Caddy.
@@ -84,7 +152,9 @@ and lifecycle foundations before collecting parish data.
 ### 1A: Base data and lifecycle
 
 1. **DAT-01** — applied-YAML/change/secret-request, parish, audit, and session
-   base records.
+   base records. Integrate ARC-02's concrete configuration materializer and
+   database-backed digest/mode checks against these records; do not create
+   substitute tables during Phase 0.
 2. Land **DOM-02** item 1 — the canonical campaign-interval resolver required
    by database interval constraints.
 3. **DAT-02** — campaigns, schedules, lifecycle constraints, and boundary
@@ -113,6 +183,10 @@ and lifecycle foundations before collecting parish data.
 1. **OPS-02** — durable paths/volumes and least-privilege mounts.
 2. **OPS-03** — ingress/TLS/proxy/logging boundary.
 3. **OPS-04** — migrations/startup/upgrade mechanics.
+   Complete ARC-02's production startup integration and PostgreSQL-backed
+   failure/recovery tests using DAT-01 records, ARC-06 installer boundaries,
+   and OPS-02 mounts. Production must not become runnable through placeholder
+   validators or an unconditional readiness result.
 4. Establish the baseline portions of **OPS-08** for logs, health, and metrics.
 
 Phase demonstration:
@@ -441,15 +515,19 @@ Every formal gate uses this sequence:
    If that skill is unavailable, stop for the human to provision it or approve
    an equivalent independent dual-review procedure before continuing.
 4. Triage all validated findings, preferably through the installed
-   `$local-review-triage` skill. Apply single-answer corrections automatically;
-   obtain human decisions for product/security tradeoffs one finding at a time.
+   `$local-review-triage` skill. Apply the delegated decision policy in the
+   [phase delivery cycle](#automated-phase-delivery-cycle); reserve human
+   questions for unresolved product/security decisions or new authority.
 5. Add regression tests with every correction, run narrow tests while fixing,
    then rerun the full gate validation.
-6. Repeat the independent review, preferably with `$local-review`, on the
-   corrected diff. Repeat triage/review when material corrections introduce new
-   behavior.
+6. Repeat independent review and correction under the phase delivery cycle's
+   minimum-round and exit criteria. At a gate, review all integrated work since
+   the previous gate even when earlier phase PRs have already merged; a diff
+   against current `origin/main` alone may omit that scope. Preserve the gate
+   baseline and evidence alongside the current phase's reviewed SHA.
 7. Gate exit requires no unresolved validated Critical, High, or Medium finding
-   and explicit human approval of the evidence. A Low
+   and explicit human approval of the evidence, requested with PR merge
+   approval rather than as an additional routine mid-cycle stop. A Low
    finding may be deferred only with a written rationale, owner, and target
    phase; correctness/security/data-loss issues are never deferred merely to
    preserve schedule.

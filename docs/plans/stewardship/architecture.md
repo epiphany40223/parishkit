@@ -47,6 +47,16 @@ other subsystem depends.
    configuration precedence, invalid startup, path overrides, and secret
    redaction.
 
+Phase split: Phase 0 establishes the shared helpers, typed deployment input,
+versioned-authority/materializer contracts, logging, and safe scaffold rejection.
+Use fake-backed contract tests there, not shadow database tables. Concrete
+database materialization and digest/mode checks integrate with DAT-01 in Phase 1;
+credential/mount/service startup integration and PostgreSQL-backed recovery tests
+complete with ARC-06 and OPS-02/OPS-04 before Gate 1. Keep partially delivered
+tasks unchecked. Product-specific configuration validators remain owned by their
+ADM packages; the Phase 1 startup path must safely support the unconfigured setup
+phase without treating absent product validation as completed configuration.
+
 ### ARC-03: Django web foundation and security middleware
 
 1. Configure secure production cookies, CSRF, host/origin checks, clickjacking,
