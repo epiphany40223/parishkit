@@ -14,11 +14,34 @@ Scope and dependencies: [DAT-01 work package](../../plans/stewardship/data.md#da
 - [ ] DAT-01.01 — Implement durable record and ownership conventions.
 - [ ] DAT-01.02 — Implement configuration, parish, and secret-request records.
 - [ ] DAT-01.03 — Enforce YAML-version, singleton, and installer constraints.
-- [ ] DAT-01.04 — Configure durable sessions and audit correlation.
+- [x] DAT-01.04 — Configure durable sessions and audit correlation.
 - [ ] DAT-01.05 — Implement TaskRun claims, retry-chain constraints, and attempt history.
 - [ ] DAT-01.06 — Test base constraints, recovery, and privacy.
 
-Evidence: Not started.
+Evidence: Phase 1 storage increment, September 8, 2026. `storage.py` defines
+UUID/UTC/actor/correlation records, row-lock plus expected-version mutation,
+and immutable ORM helpers. The parish-owned AuditEvent envelope has a reversible
+PostgreSQL append-only trigger and soft UUID subject/actor references, so session
+deletion cannot cascade into history. PortalSession is expiring metadata over
+Django's database-backed sessions, not a new authentication implementation.
+It retains no raw credential in audit; ARC-04 owns login, revocation, cleanup,
+and security policy, while ARC-07 owns validated event-specific payloads.
+
+Storage verification covers UTC/queryset validation, SQL constraints/raw mutation
+denial, session reconnect
+durability, migration reversal/reapplication, transactional rollback, and two
+independent concurrent connections with exactly one successful version update.
+See the [database test guide](../../guides/stewardship-database-tests.md) for
+repeatable commands and CI isolation. DAT-01.02/.03/.05 remain unimplemented;
+DAT-01.01 remains partial until DAT-01.02 integrates explicit Parish ownership
+with versioned Parish materializations; the current audit table has only
+deployment-level ownership and no campaign cascade.
+DAT-01.06 is partial pending their constraints/recovery/privacy scenarios.
+DAT-01.04's PostgreSQL-backed session configuration is delivered and verified
+solely in the disposable database test profile. Non-test PostgreSQL connection
+and startup integration remain ARC-02/OPS-04 prerequisites; production still
+refuses startup. Review-specific test counts and CI evidence are tracked in the
+[Phase 1 milestone](milestones.md#phase-1-secure-foundation).
 
 ## DAT-02: Campaign lifecycle and schedule schema
 

@@ -30,6 +30,11 @@ _correlation: ContextVar[UUID | None] = ContextVar(
 )
 
 
+def current_correlation() -> UUID:
+    """Reuse the bound request/task ID; create an ID for an unscoped operation."""
+    return _correlation.get() or uuid4()
+
+
 @contextmanager
 def correlation(identifier: UUID | None = None):
     """Bind an internal correlation UUID, restoring the caller's scope on exit."""

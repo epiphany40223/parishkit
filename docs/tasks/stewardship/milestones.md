@@ -16,7 +16,7 @@ Scope: [Phase 0](../../plans/stewardship/overall.md#phase-0-reproducible-project
 - [x] M0.01 — Demonstrate local bind-mount reload, routes, and internal health.
 - [x] M0.02 — Run the same baseline tests on the host and in the image.
 - [x] M0.03 — Demonstrate safe startup rejection for incomplete production settings.
-- [ ] M0.04 — Review and correct the scaffold before foundation work.
+- [x] M0.04 — Review and correct the scaffold before foundation work.
 
 Evidence: September 7, 2026, macOS/arm64 host and Linux/arm64 image. The
 [OPS-01 evidence](operations.md#ops-01-development-and-production-compose-topology)
@@ -754,7 +754,101 @@ Scope: [Phase 1](../../plans/stewardship/overall.md#phase-1-secure-foundation-an
 - [ ] M1.04 — Verify service mounts, configuration activation, and restart durability.
 - [ ] M1.05 — Complete Gate 1 before beginning Phase 2.
 
-Evidence: Not started.
+Phase 0 handoff: human-approved [PR #8](https://github.com/epiphany40223/parishkit/pull/8)
+merged on September 8, 2026, at 18:48:21 UTC. Its final head `259863b` passed
+validation, Compose, and DCO in CI run `34264954252`; merge commit `509245d`
+is the base of this phase. The preceding M0 entries are historical evidence,
+including their then-open merge condition; that condition is now satisfied.
+
+Evidence: Phase 1 has started with the bounded DAT-01.01/.04 storage increment
+described in the [owning checklist](data.md#dat-01-storage-conventions-and-base-records).
+This is not the complete M1 demonstration. No G1 or Phase 2 release is claimed.
+
+First storage-increment review: September 8, 2026, reviewed SHA `99b715d`,
+base `509245d`, session `20260908-150154-92d717`. The permission preflight
+and both reviewers completed successfully; no failed reviewers or verdict
+mismatches. Finalize reported REQUEST_CHANGES: one High and ten Medium findings
+from 23 raw, with 12 Low findings below cutoff. Routine decisions used the
+delegated phase workflow, not an additional product-approval stop.
+
+| Finding | Disposition and evidence |
+| --- | --- |
+| C1 (High) | Fixed: the PostgreSQL CI command explicitly selects its profile and requires database verification; pytest fails wrong-profile, missing-selection, or skipped required tests. Real subprocess regressions cover profile failure, skip failure, and successful execution. |
+| C2 | Fixed: field/domain validation remains inside the locked transaction, while PostgreSQL owns uniqueness/CHECK validation; a query-count regression excludes redundant constraint SELECTs. |
+| C3 | Fixed: actor/correlation UUID types are checked before acquiring a lock or invoking the callback. The claim that Django skips all non-editable fields was inaccurate; this is early explicit validation, not a repair of missing full_clean coverage. |
+| C4 | Fixed: every SQL session update must advance the version, preserve identity/creation, and receive a server write timestamp. Tests cover bypass rejection and invalidation of old optimistic tokens. |
+| C5 | Fixed: malformed expected versions raise ValueError; StaleRecordError denotes only a real concurrent change. |
+| C6 | Documented and tested: standalone clearsessions aborts on protected metadata. ARC-04.03 explicitly owns ordered cleanup before authentication is enabled. |
+| C7 | Fixed: record defaults reuse the existing request/task correlation scope, with fresh UUIDs only for unscoped operations. |
+| C8 | Fixed: explicitly offset ISO strings round-trip through Django serialization; naive, invalid, and implicit-date inputs still fail without value disclosure. |
+| C9 | Corrected tracking: DAT-01.01 remains partial until explicit Parish ownership is integrated with DAT-01.02; deployment-level ownership is not presented as that integration. |
+| X1 | Duplicate of C7; the shared scope accessor resolves both reports. |
+| X2 | Fixed: PostgreSQL rejects activity at/after expiry and revocation before authentication, including queryset bypass attempts. |
+
+Post-correction validation: 980 host/image baseline passes, 39 explicit opt-in
+skips, exact parity across 1,019 collected IDs, 27 required PostgreSQL tests,
+and all 30 opt-in Compose checks passed. Ruff, formatting, tracked Markdown,
+migration drift, and whitespace checks passed. Scoped baseline coverage is
+93.75% lines / 94.51% branches; database tests separately exercise the SQL paths.
+Coverage artifact: `/tmp/stewardship-phase1-evidence.OKnATz/round1-coverage.json`.
+One review/fix round is complete; two more are required before this increment's
+PR handoff. The first round's High finding is fixed, not reclassified.
+
+Second storage-increment review: September 8, 2026, reviewed SHA `37f39e8`,
+base `509245d`, session `20260908-160609-17a9f0`. The permission preflight and
+both reviewers completed normally. Finalize reported COMMENT: eight Medium
+findings from 21 raw, 13 Low findings below cutoff, and no High/Critical findings,
+failed reviewers, verdict mismatches, or degradations.
+
+| Finding | Disposition and evidence |
+| --- | --- |
+| C1 | Already labeled historical (the sentence began with initial); removed duplicated counts anyway and linked the owning milestone's round-specific evidence to prevent drift. |
+| C2 | Fixed: a frozen reusable migration builder generates equivalent table-local guards; a PostgreSQL test requires an enabled row-level guard for every concrete MutableRecord model. Table-local function lifetimes avoid cross-app reverse-migration dependencies. |
+| C3 | Fixed: new default creation/initial-write timestamps now use PostgreSQL statement-time defaults, matching later updates. A clock-skew regression sets the application clock to 2100 and verifies database-generated instants. Explicit historical timestamps remain possible for controlled imports; counters, not wall clocks, establish mutation order. |
+| C4 | Fixed: principal, Django session binding, and authentication instant cannot change through the service or SQL. Rebinding requires a new attribution record. |
+| C5 | Fixed: structurally forbidden history/binding changes raise StorageInvariantError, distinct from user-field ValidationError. |
+| C6 | Clarified the delivered boundary explicitly: DAT-01.04 PostgreSQL session configuration is verified solely in the disposable profile; non-test connection/startup integration still belongs to ARC-02/OPS-04, and production remains disabled. |
+| X1 | Fixed: mutate_record binds the supplied operation correlation around its transaction/callback and restores the outer context on success and rollback; dependent audit records share the operation ID. |
+| X2 | Fixed: inserts and version-advancing updates reject activity after revocation, with PostgreSQL regressions for both paths. |
+
+Post-correction validation: 988 host/image baseline passes, 48 explicit opt-in
+skips, exact parity across 1,036 collected IDs, 36 required PostgreSQL tests,
+and all 30 Compose checks passed. Ruff, formatting, tracked Markdown, migration
+drift, and whitespace checks passed. Scoped baseline coverage is 93.05% lines /
+94.54% branches. Coverage artifact:
+`/tmp/stewardship-phase1-evidence.OKnATz/round2-coverage.json`.
+Two rounds are complete; the third remains required before PR handoff.
+
+Third storage-increment review: September 8, 2026, reviewed SHA `0979f39`,
+base `509245d`, session `20260908-162435-21dd84`. The permission preflight and
+both reviewers completed normally. Finalize reported COMMENT: five Claude-only
+Medium findings from 12 raw, seven Low findings below cutoff, no High/Critical
+findings, and no failed reviewers, verdict mismatches, or degradations. Codex
+returned no findings; its telemetry's parsed=false means zero accepted findings
+in this pika version, not a failed reviewer. Finalize performs artifact cleanup;
+the finalized result and manifest remain the durable review evidence.
+
+| Finding | Disposition and evidence |
+| --- | --- |
+| C1 | Fixed: the all-model PostgreSQL test reads installed function definitions and compares every model-declared immutable/write-once column plus the version-advance predicate, preventing Python-only guard drift. |
+| C2 | Fixed: immutable_guard_v1 supplies reusable table-local append-only guards; every concrete ImmutableRecord table must have an enabled BEFORE UPDATE OR DELETE row trigger. |
+| C3 | Fixed: both SQL guard families raise SQLSTATE 23514/IntegrityError; raw audit mutation and migration-reapplication tests assert the specific exception type. |
+| C4 | Fixed: optional audit subject IDs allow blank values in model validation; a subject-less deployment event passes full_clean and persists without a fabricated subject. |
+| C5 | Fixed: session revocation is write-once once non-null. Both ORM mutation and version-advancing SQL reject clearing or moving the cutoff; unchanged revoked metadata remains writable without reviving access. |
+
+Final local validation: 989 host/image baseline passes, 52 explicit opt-in
+skips, exact parity across 1,041 collected IDs, 40 required PostgreSQL tests,
+and all 30 Compose checks passed. Ruff, formatting, tracked Markdown, migration
+drift, and whitespace checks passed. Scoped baseline coverage is 92.72% lines /
+94.54% branches. Coverage artifact:
+`/tmp/stewardship-phase1-evidence.OKnATz/round3-coverage.json`.
+
+Three review/fix rounds are complete, every accepted Medium-or-higher finding
+is resolved, and the final round had no High/Critical findings. Corrections and
+their passing regressions belong to that round under the controlling delivery
+cycle. This bounded increment is ready for PR/CI handoff and human merge
+approval. Phase 1 and Gate 1 remain incomplete; no production startup, merge,
+deployment, release, or real-provider operation is authorized by this evidence.
 
 ## Gate 1: Foundation and security
 
