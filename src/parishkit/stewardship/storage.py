@@ -11,14 +11,19 @@ from uuid import UUID, uuid4
 
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
+from django.db.models.functions import Now
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from .observability import current_correlation
+from .observability import correlation, current_correlation
 
 
 class StaleRecordError(Exception):
     """An expected version no longer describes the locked durable record."""
+
+
+class StorageInvariantError(RuntimeError):
+    """A programming error attempted a structurally forbidden history mutation."""
 
 
 class UTCDateTimeField(models.DateTimeField):
@@ -46,7 +51,7 @@ class DurableRecord(models.Model):
     """Opaque identity, UTC creation time, and non-secret historical attribution."""
 
     id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
-    created_at = UTCDateTimeField(default=timezone.now, editable=False)
+    created_at = UTCDateTimeField(db_default=Now(), editable=False)
     actor_id = models.UUIDField(null=True, blank=True, editable=False)
     correlation_id = models.UUIDField(
         default=current_correlation, editable=False, db_index=True
@@ -63,7 +68,8 @@ class MutableRecord(DurableRecord):
     must recheck authorization and workflow admission inside its transaction.
     """
 
-    updated_at = UTCDateTimeField(default=timezone.now, editable=False)
+    immutable_fields = ("id", "created_at")
+    updated_at = UTCDateTimeField(db_default=Now(), editable=False)
     version = models.PositiveBigIntegerField(default=1, editable=False)
 
     class Meta:
@@ -81,11 +87,11 @@ class ImmutableQuerySet(models.QuerySet):
 
     def update(self, **kwargs):
         """Reject bulk rewrites, including bulk_update's underlying UPDATE."""
-        raise ValidationError("Historical records cannot be updated.")
+        raise StorageInvariantError("Historical records cannot be updated.")
 
     def delete(self):
         """Require an explicitly designed retention service, never generic delete."""
-        raise ValidationError("Historical records cannot be deleted.")
+        raise StorageInvariantError("Historical records cannot be deleted.")
 
 
 class ImmutableRecord(DurableRecord):
@@ -99,13 +105,13 @@ class ImmutableRecord(DurableRecord):
     def save(self, *args, **kwargs):
         """INSERT only, including for an explicitly supplied existing UUID."""
         if not self._state.adding or kwargs.get("force_update"):
-            raise ValidationError("Historical records cannot be updated.")
+            raise StorageInvariantError("Historical records cannot be updated.")
         kwargs["force_insert"] = True
         return super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
         """Historical row deletion is not an ordinary model operation."""
-        raise ValidationError("Historical records cannot be deleted.")
+        raise StorageInvariantError("Historical records cannot be deleted.")
 
 
 def mutate_record(
@@ -126,16 +132,15 @@ def mutate_record(
         raise TypeError("Actor and correlation identifiers must be UUIDs.")
     if not issubclass(model, MutableRecord):
         raise TypeError("Mutation requires a mutable durable record.")
-    with transaction.atomic():
+    with correlation(correlation_id), transaction.atomic():
         record = model.objects.select_for_update().get(pk=identifier)
         if record.version != expected_version:
             raise StaleRecordError("The record changed; reload before retrying.")
-        identity, created_at = record.pk, record.created_at
+        frozen = {name: getattr(record, name) for name in record.immutable_fields}
         change(record)
-        if record.pk != identity or record.created_at != created_at:
-            raise ValidationError("Record identity and creation time are immutable.")
+        if any(getattr(record, name) != value for name, value in frozen.items()):
+            raise StorageInvariantError("Record identity and bindings are immutable.")
         record.version = expected_version + 1
-        record.updated_at = timezone.now()
         record.actor_id = actor_id
         record.correlation_id = correlation_id
         # Keep field/domain validation, but let SQL enforce uniqueness and CHECKs

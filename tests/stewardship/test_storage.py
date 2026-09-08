@@ -10,6 +10,7 @@ from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.observability import correlation, current_correlation
 from parishkit.stewardship.storage import (
+    StorageInvariantError,
     UTCDateTimeField,
     mutate_record,
 )
@@ -106,11 +107,16 @@ def test_immutable_orm_guards_without_database_access():
     """Accidental ordinary and bulk mutations fail before generating SQL."""
     row = AuditEvent(event_type="test_event")
     row._state.adding = False
-    with pytest.raises(ValidationError, match="updated"):
+    with pytest.raises(StorageInvariantError, match="updated"):
         row.save()
-    with pytest.raises(ValidationError, match="deleted"):
+    with pytest.raises(StorageInvariantError, match="deleted"):
         row.delete()
-    with pytest.raises(ValidationError, match="updated"):
+    with pytest.raises(StorageInvariantError, match="updated"):
         AuditEvent.objects.all().update(event_type="changed")
-    with pytest.raises(ValidationError, match="deleted"):
+    with pytest.raises(StorageInvariantError, match="deleted"):
         AuditEvent.objects.all().delete()
+
+
+def test_storage_invariants_are_not_form_validation_errors():
+    """Programming errors must not be mistaken for user-correctable input."""
+    assert not issubclass(StorageInvariantError, ValidationError)

@@ -794,6 +794,31 @@ Coverage artifact: `/tmp/stewardship-phase1-evidence.OKnATz/round1-coverage.json
 One review/fix round is complete; two more are required before this increment's
 PR handoff. The first round's High finding is fixed, not reclassified.
 
+Second storage-increment review: September 8, 2026, reviewed SHA `37f39e8`,
+base `509245d`, session `20260908-160609-17a9f0`. The permission preflight and
+both reviewers completed normally. Finalize reported COMMENT: eight Medium
+findings from 21 raw, 13 Low findings below cutoff, and no High/Critical findings,
+failed reviewers, verdict mismatches, or degradations.
+
+| Finding | Disposition and evidence |
+| --- | --- |
+| C1 | Already labeled historical (the sentence began with initial); removed duplicated counts anyway and linked the owning milestone's round-specific evidence to prevent drift. |
+| C2 | Fixed: a frozen reusable migration builder generates equivalent table-local guards; a PostgreSQL test requires an enabled row-level guard for every concrete MutableRecord model. Table-local function lifetimes avoid cross-app reverse-migration dependencies. |
+| C3 | Fixed: new default creation/initial-write timestamps now use PostgreSQL statement-time defaults, matching later updates. A clock-skew regression sets the application clock to 2100 and verifies database-generated instants. Explicit historical timestamps remain possible for controlled imports; counters, not wall clocks, establish mutation order. |
+| C4 | Fixed: principal, Django session binding, and authentication instant cannot change through the service or SQL. Rebinding requires a new attribution record. |
+| C5 | Fixed: structurally forbidden history/binding changes raise StorageInvariantError, distinct from user-field ValidationError. |
+| C6 | Clarified the delivered boundary explicitly: DAT-01.04 PostgreSQL session configuration is verified solely in the disposable profile; non-test connection/startup integration still belongs to ARC-02/OPS-04, and production remains disabled. |
+| X1 | Fixed: mutate_record binds the supplied operation correlation around its transaction/callback and restores the outer context on success and rollback; dependent audit records share the operation ID. |
+| X2 | Fixed: inserts and version-advancing updates reject activity after revocation, with PostgreSQL regressions for both paths. |
+
+Post-correction validation: 988 host/image baseline passes, 48 explicit opt-in
+skips, exact parity across 1,036 collected IDs, 36 required PostgreSQL tests,
+and all 30 Compose checks passed. Ruff, formatting, tracked Markdown, migration
+drift, and whitespace checks passed. Scoped baseline coverage is 93.05% lines /
+94.54% branches. Coverage artifact:
+`/tmp/stewardship-phase1-evidence.OKnATz/round2-coverage.json`.
+Two rounds are complete; the third remains required before PR handoff.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).

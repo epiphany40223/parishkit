@@ -73,6 +73,16 @@ API. Do not make external calls inside callbacks. Session expiry/revocation,
 event-specific payload validation, configuration activation, and task claims
 retain their existing package owners and are not enabled by these primitives.
 
+New concrete MutableRecord tables must install the frozen `mutable_guard_v1`
+migration builder (with any additional immutable binding columns). A PostgreSQL
+test checks that every concrete subclass has its enabled row-level guard.
+Each table owns its generated function/trigger lifetime, so reversing one model
+does not remove another model's protection. Change future guard semantics via a
+new version and an explicit migration. Existing-row creation/write timestamps
+are not rewritten; new default timestamps come from PostgreSQL's statement clock.
+Explicit historical timestamps remain possible for controlled import/migration
+code. The optimistic counter, not wall-clock monotonicity, orders mutations.
+
 Every mutable session UPDATE must advance `version` by exactly one; a database
 trigger rejects writes that leave the optimistic token unchanged and stamps
 `updated_at` from PostgreSQL. Prefer `mutate_record`, which also checks the
@@ -80,6 +90,13 @@ caller's expected version and returns the refreshed write time. Initial record
 correlation defaults reuse the current request/task scope; unscoped creation
 starts a new correlation. Datetime fields accept aware datetime objects and
 explicit-offset ISO strings, but never infer missing timezones.
+
+The mutation helper binds its supplied correlation while running the callback,
+so dependent audit records use the same operation ID even without an outer
+request scope. It restores any outer scope on success and failure. Forbidden
+history/identity mutations raise StorageInvariantError, not user-field
+ValidationError. PortalSession's principal, session key, and authentication
+instant are immutable bindings; a new login creates a new attribution record.
 
 Do not schedule Django's standalone `clearsessions` against protected
 PortalSession rows: one protected expired session aborts that entire sweep.

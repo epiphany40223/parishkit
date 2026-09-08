@@ -27,8 +27,8 @@ Django's database-backed sessions, not a new authentication implementation.
 It retains no raw credential in audit; ARC-04 owns login, revocation, cleanup,
 and security policy, while ARC-07 owns validated event-specific payloads.
 
-The initial 12 pure storage tests and 19 PostgreSQL tests passed, including
-UTC/queryset validation, SQL constraints/raw mutation denial, session reconnect
+Storage verification covers UTC/queryset validation, SQL constraints/raw mutation
+denial, session reconnect
 durability, migration reversal/reapplication, transactional rollback, and two
 independent concurrent connections with exactly one successful version update.
 See the [database test guide](../../guides/stewardship-database-tests.md) for
@@ -37,8 +37,10 @@ DAT-01.01 remains partial until DAT-01.02 integrates explicit Parish ownership
 with versioned Parish materializations; the current audit table has only
 deployment-level ownership and no campaign cascade.
 DAT-01.06 is partial pending their constraints/recovery/privacy scenarios.
-ARC-02 materializer and production checks are not declared complete by this
-increment. Review/CI evidence is tracked in the
+DAT-01.04's PostgreSQL-backed session configuration is delivered and verified
+solely in the disposable database test profile. Non-test PostgreSQL connection
+and startup integration remain ARC-02/OPS-04 prerequisites; production still
+refuses startup. Review-specific test counts and CI evidence are tracked in the
 [Phase 1 milestone](milestones.md#phase-1-secure-foundation).
 
 ## DAT-02: Campaign lifecycle and schedule schema

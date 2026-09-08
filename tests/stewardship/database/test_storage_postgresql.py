@@ -6,6 +6,7 @@ from threading import Barrier
 from uuid import UUID, uuid4
 
 import pytest
+from django.apps import apps
 from django.contrib.sessions.backends.db import SessionStore
 from django.contrib.sessions.models import Session
 from django.core import serializers
@@ -25,7 +26,13 @@ from django.test.utils import CaptureQueriesContext
 
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.audit.models import AuditEvent
-from parishkit.stewardship.storage import StaleRecordError, mutate_record
+from parishkit.stewardship.observability import correlation, current_correlation
+from parishkit.stewardship.storage import (
+    MutableRecord,
+    StaleRecordError,
+    StorageInvariantError,
+    mutate_record,
+)
 
 
 @pytest.fixture
@@ -231,7 +238,7 @@ def test_mutation_rollback_and_stale_version(portal_session):
 )
 def test_mutation_preserves_identity_and_creation(portal_session, field, value):
     """Callbacks cannot swap the row being locked or rewrite creation history."""
-    with pytest.raises(ValidationError, match="immutable"):
+    with pytest.raises(StorageInvariantError, match="immutable"):
         mutate_record(
             PortalSession,
             portal_session.pk,
@@ -354,3 +361,136 @@ def test_concurrent_mutations_have_one_winner(portal_session):
     assert sorted(results) == ["stale", "written"]
     portal_session.refresh_from_db()
     assert portal_session.version == 2
+
+
+def test_all_concrete_mutable_records_have_enabled_guard(db):
+    """New model subclasses cannot silently omit the migration-side contract."""
+    models = [model for model in apps.get_models() if issubclass(model, MutableRecord)]
+    assert models
+    with connection.cursor() as cursor:
+        for model in models:
+            table = model._meta.db_table
+            cursor.execute(
+                "SELECT p.proname, t.tgtype FROM pg_trigger t "
+                "JOIN pg_proc p ON p.oid = t.tgfoid "
+                "WHERE t.tgrelid = %s::regclass AND t.tgname = %s "
+                "AND t.tgenabled = 'O' AND NOT t.tgisinternal",
+                [table, f"{table}_mutable_guard_v1"],
+            )
+            # BEFORE UPDATE FOR EACH ROW; statement triggers do not protect rows.
+            assert cursor.fetchone() == (f"{table}_mutable_v1", 19), table
+
+
+def test_insert_and_update_use_database_clock(portal_session, monkeypatch):
+    """Application clock skew cannot stamp the default creation/write instants."""
+    key = portal_session.session_id
+    portal_session.delete()
+    monkeypatch.setattr(
+        "django.utils.timezone.now", lambda: datetime(2100, 1, 1, tzinfo=UTC)
+    )
+    record = PortalSession.objects.create(
+        session_id=key,
+        principal_id=uuid4(),
+        authenticated_at=datetime(2026, 1, 1, tzinfo=UTC),
+        last_activity_at=datetime(2026, 1, 1, tzinfo=UTC),
+        expires_at=datetime(2026, 1, 2, tzinfo=UTC),
+    )
+    event = AuditEvent.objects.create(event_type="server_clock")
+    assert record.created_at == record.updated_at
+    assert record.created_at.year < 2100
+    assert event.created_at.year < 2100
+    changed = mutate_record(
+        PortalSession,
+        record.pk,
+        expected_version=1,
+        actor_id=None,
+        correlation_id=uuid4(),
+        change=lambda record: None,
+    )
+    assert record.created_at <= changed.updated_at < datetime(2100, 1, 1, tzinfo=UTC)
+
+
+@pytest.mark.parametrize("field", ["principal_id", "session_id", "authenticated_at"])
+def test_session_bindings_are_immutable_in_service_and_sql(portal_session, field):
+    """The same attribution UUID cannot be rebound to a new login identity."""
+    value = {
+        "principal_id": uuid4(),
+        "session_id": "synthetic-new-session",
+        "authenticated_at": portal_session.authenticated_at - timedelta(minutes=1),
+    }[field]
+    with pytest.raises(StorageInvariantError):
+        mutate_record(
+            PortalSession,
+            portal_session.pk,
+            expected_version=1,
+            actor_id=None,
+            correlation_id=uuid4(),
+            change=lambda record: setattr(record, field, value),
+        )
+    with pytest.raises(IntegrityError, match="immutable"), transaction.atomic():
+        PortalSession.objects.filter(pk=portal_session.pk).update(
+            **{field: value, "version": F("version") + 1}
+        )
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_mutation_callback_inherits_and_restores_correlation(portal_session, fail):
+    """Dependent audit events share the operation; nested context never leaks."""
+    operation = uuid4()
+
+    def callback(record):
+        """Create dependent history using the operation's ordinary default."""
+        event = AuditEvent.objects.create(event_type="dependent", subject_id=record.pk)
+        assert event.correlation_id == operation
+        if fail:
+            raise ValidationError("synthetic rollback")
+
+    with correlation() as outer:
+        if fail:
+            with pytest.raises(ValidationError):
+                mutate_record(
+                    PortalSession,
+                    portal_session.pk,
+                    expected_version=1,
+                    actor_id=None,
+                    correlation_id=operation,
+                    change=callback,
+                )
+        else:
+            result = mutate_record(
+                PortalSession,
+                portal_session.pk,
+                expected_version=1,
+                actor_id=None,
+                correlation_id=operation,
+                change=callback,
+            )
+            assert result.correlation_id == operation
+        assert current_correlation() == outer
+    assert AuditEvent.objects.filter(event_type="dependent").count() == int(not fail)
+
+
+@pytest.mark.parametrize("insert", [True, False])
+def test_activity_after_revocation_is_rejected(portal_session, insert):
+    """The chronology contract holds for both initial rows and later updates."""
+    values = {
+        "last_activity_at": portal_session.authenticated_at + timedelta(minutes=2),
+        "revoked_at": portal_session.authenticated_at + timedelta(minutes=1),
+    }
+    if insert:
+        key = portal_session.session_id
+        portal_session.delete()
+        with pytest.raises(IntegrityError), transaction.atomic():
+            PortalSession.objects.create(
+                session_id=key,
+                principal_id=uuid4(),
+                authenticated_at=datetime(2026, 9, 8, 12, tzinfo=UTC),
+                expires_at=datetime(2026, 9, 8, 13, tzinfo=UTC),
+                **values,
+            )
+    else:
+        with pytest.raises(IntegrityError), transaction.atomic():
+            PortalSession.objects.filter(pk=portal_session.pk).update(
+                **values,
+                version=F("version") + 1,
+            )

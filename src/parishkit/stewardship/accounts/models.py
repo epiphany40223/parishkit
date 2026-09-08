@@ -14,6 +14,12 @@ class PortalSession(MutableRecord):
     keep only this record's opaque UUID, never the Django session key.
     """
 
+    immutable_fields = MutableRecord.immutable_fields + (
+        "principal_id",
+        "session_id",
+        "authenticated_at",
+    )
+
     session = models.OneToOneField(
         "sessions.Session", on_delete=models.PROTECT, related_name="stewardship_portal"
     )
@@ -48,5 +54,10 @@ class PortalSession(MutableRecord):
                 condition=models.Q(revoked_at__isnull=True)
                 | models.Q(revoked_at__gte=models.F("authenticated_at")),
                 name="portal_session_revoked_after_auth",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(revoked_at__isnull=True)
+                | models.Q(revoked_at__gte=models.F("last_activity_at")),
+                name="portal_session_no_activity_after_revoke",
             ),
         ]
