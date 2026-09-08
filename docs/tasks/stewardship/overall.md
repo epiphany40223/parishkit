@@ -60,7 +60,7 @@ Source scope: [Phase 1A: Schema and policy](../../plans/stewardship/overall.md#p
 
 Execution checkpoint (September 8, 2026): `pr/stewardship-phase-1` starts at
 merged `origin/main` SHA `509245d`. Under the controlling plan's smaller-PR
-option, the first increment delivers DAT-01.01 and DAT-01.04: durable storage
+option, the first increment delivers part of DAT-01.01 and all of DAT-01.04: storage
 conventions, base audit/session records, and real PostgreSQL verification.
 Configuration materialization, installer requests, TaskRun chains, and all
 other Phase 1 work remain pending. Each increment gets the full three-round

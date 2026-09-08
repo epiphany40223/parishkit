@@ -94,6 +94,12 @@ Scope and dependencies: [ARC-04 work package](../../plans/stewardship/architectu
 - [ ] ARC-04.05 — Implement OAuth limiting and distributed-abuse telemetry.
 - [ ] ARC-04.06 — Test authentication, session security, and denial boundaries.
 
+Foundation handoff: PortalSession protects its Django Session parent. Plain
+`clearsessions` aborts the whole sweep when an expired session has protected
+metadata. ARC-04.03 must provide ordered revoke/metadata/session cleanup before
+login is enabled; see the executable PostgreSQL regression and
+[database guide](../../guides/stewardship-database-tests.md#foundation-boundaries).
+
 Evidence: Not started.
 
 ## ARC-05: Family code, token, and Family-session security

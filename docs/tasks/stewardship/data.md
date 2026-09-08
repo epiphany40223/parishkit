@@ -11,7 +11,7 @@ Follow the [execution and completion rules](README.md#execution-and-completion).
 
 Scope and dependencies: [DAT-01 work package](../../plans/stewardship/data.md#dat-01-storage-conventions-and-base-records).
 
-- [x] DAT-01.01 — Implement durable record and ownership conventions.
+- [ ] DAT-01.01 — Implement durable record and ownership conventions.
 - [ ] DAT-01.02 — Implement configuration, parish, and secret-request records.
 - [ ] DAT-01.03 — Enforce YAML-version, singleton, and installer constraints.
 - [x] DAT-01.04 — Configure durable sessions and audit correlation.
@@ -27,12 +27,15 @@ Django's database-backed sessions, not a new authentication implementation.
 It retains no raw credential in audit; ARC-04 owns login, revocation, cleanup,
 and security policy, while ARC-07 owns validated event-specific payloads.
 
-Twelve pure storage tests and 19 disposable PostgreSQL tests pass, including
+The initial 12 pure storage tests and 19 PostgreSQL tests passed, including
 UTC/queryset validation, SQL constraints/raw mutation denial, session reconnect
 durability, migration reversal/reapplication, transactional rollback, and two
 independent concurrent connections with exactly one successful version update.
 See the [database test guide](../../guides/stewardship-database-tests.md) for
 repeatable commands and CI isolation. DAT-01.02/.03/.05 remain unimplemented;
+DAT-01.01 remains partial until DAT-01.02 integrates explicit Parish ownership
+with versioned Parish materializations; the current audit table has only
+deployment-level ownership and no campaign cascade.
 DAT-01.06 is partial pending their constraints/recovery/privacy scenarios.
 ARC-02 materializer and production checks are not declared complete by this
 increment. Review/CI evidence is tracked in the

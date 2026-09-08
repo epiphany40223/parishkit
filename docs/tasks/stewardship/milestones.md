@@ -764,6 +764,36 @@ Evidence: Phase 1 has started with the bounded DAT-01.01/.04 storage increment
 described in the [owning checklist](data.md#dat-01-storage-conventions-and-base-records).
 This is not the complete M1 demonstration. No G1 or Phase 2 release is claimed.
 
+First storage-increment review: September 8, 2026, reviewed SHA `99b715d`,
+base `509245d`, session `20260908-150154-92d717`. The permission preflight
+and both reviewers completed successfully; no failed reviewers or verdict
+mismatches. Finalize reported REQUEST_CHANGES: one High and ten Medium findings
+from 23 raw, with 12 Low findings below cutoff. Routine decisions used the
+delegated phase workflow, not an additional product-approval stop.
+
+| Finding | Disposition and evidence |
+| --- | --- |
+| C1 (High) | Fixed: the PostgreSQL CI command explicitly selects its profile and requires database verification; pytest fails wrong-profile, missing-selection, or skipped required tests. Real subprocess regressions cover profile failure, skip failure, and successful execution. |
+| C2 | Fixed: field/domain validation remains inside the locked transaction, while PostgreSQL owns uniqueness/CHECK validation; a query-count regression excludes redundant constraint SELECTs. |
+| C3 | Fixed: actor/correlation UUID types are checked before acquiring a lock or invoking the callback. The claim that Django skips all non-editable fields was inaccurate; this is early explicit validation, not a repair of missing full_clean coverage. |
+| C4 | Fixed: every SQL session update must advance the version, preserve identity/creation, and receive a server write timestamp. Tests cover bypass rejection and invalidation of old optimistic tokens. |
+| C5 | Fixed: malformed expected versions raise ValueError; StaleRecordError denotes only a real concurrent change. |
+| C6 | Documented and tested: standalone clearsessions aborts on protected metadata. ARC-04.03 explicitly owns ordered cleanup before authentication is enabled. |
+| C7 | Fixed: record defaults reuse the existing request/task correlation scope, with fresh UUIDs only for unscoped operations. |
+| C8 | Fixed: explicitly offset ISO strings round-trip through Django serialization; naive, invalid, and implicit-date inputs still fail without value disclosure. |
+| C9 | Corrected tracking: DAT-01.01 remains partial until explicit Parish ownership is integrated with DAT-01.02; deployment-level ownership is not presented as that integration. |
+| X1 | Duplicate of C7; the shared scope accessor resolves both reports. |
+| X2 | Fixed: PostgreSQL rejects activity at/after expiry and revocation before authentication, including queryset bypass attempts. |
+
+Post-correction validation: 980 host/image baseline passes, 39 explicit opt-in
+skips, exact parity across 1,019 collected IDs, 27 required PostgreSQL tests,
+and all 30 opt-in Compose checks passed. Ruff, formatting, tracked Markdown,
+migration drift, and whitespace checks passed. Scoped baseline coverage is
+93.75% lines / 94.51% branches; database tests separately exercise the SQL paths.
+Coverage artifact: `/tmp/stewardship-phase1-evidence.OKnATz/round1-coverage.json`.
+One review/fix round is complete; two more are required before this increment's
+PR handoff. The first round's High finding is fixed, not reclassified.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).

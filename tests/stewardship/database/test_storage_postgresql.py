@@ -8,7 +8,9 @@ from uuid import UUID, uuid4
 import pytest
 from django.contrib.sessions.backends.db import SessionStore
 from django.contrib.sessions.models import Session
+from django.core import serializers
 from django.core.exceptions import ValidationError
+from django.core.management import call_command
 from django.db import (
     DatabaseError,
     IntegrityError,
@@ -17,7 +19,9 @@ from django.db import (
     transaction,
 )
 from django.db.migrations.executor import MigrationExecutor
+from django.db.models import F
 from django.db.models.deletion import ProtectedError
+from django.test.utils import CaptureQueriesContext
 
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.audit.models import AuditEvent
@@ -70,7 +74,9 @@ def test_timezone_roundtrip_and_naive_bulk_denial(portal_session):
     """SQL persists the instant, and the custom field also guards queryset writes."""
     offset = timezone(timedelta(hours=-4))
     aware = datetime(2026, 9, 8, 8, 15, tzinfo=offset)
-    PortalSession.objects.filter(pk=portal_session.pk).update(last_activity_at=aware)
+    PortalSession.objects.filter(pk=portal_session.pk).update(
+        last_activity_at=aware, version=F("version") + 1
+    )
     portal_session.refresh_from_db()
     assert portal_session.last_activity_at == datetime(2026, 9, 8, 12, 15, tzinfo=UTC)
     with pytest.raises(ValidationError):
@@ -90,7 +96,93 @@ def test_timezone_roundtrip_and_naive_bulk_denial(portal_session):
 def test_session_constraints_cannot_be_bypassed_by_update(portal_session, field, value):
     """Database checks apply even when model validation is skipped."""
     with pytest.raises(IntegrityError), transaction.atomic():
-        PortalSession.objects.filter(pk=portal_session.pk).update(**{field: value})
+        PortalSession.objects.filter(pk=portal_session.pk).update(
+            **{"version": F("version") + 1, field: value}
+        )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("last_activity_at", datetime(2026, 9, 8, 13, tzinfo=UTC)),
+        ("revoked_at", datetime(2026, 9, 8, 11, tzinfo=UTC)),
+    ],
+)
+def test_remaining_chronology_checks_at_database(portal_session, field, value):
+    """Activity cannot reach expiry and revocation cannot precede login."""
+    with pytest.raises(IntegrityError), transaction.atomic():
+        PortalSession.objects.filter(pk=portal_session.pk).update(
+            **{field: value, "version": F("version") + 1}
+        )
+
+
+def test_queryset_update_requires_version_advance(portal_session):
+    """Ordinary updates cannot leave an optimistic token silently valid."""
+    with pytest.raises(IntegrityError, match="advance"), transaction.atomic():
+        PortalSession.objects.filter(pk=portal_session.pk).update(
+            last_activity_at=portal_session.last_activity_at + timedelta(minutes=1)
+        )
+    previous = portal_session.updated_at
+    PortalSession.objects.filter(pk=portal_session.pk).update(version=F("version") + 1)
+    portal_session.refresh_from_db()
+    assert portal_session.updated_at > previous
+    with pytest.raises(StaleRecordError):
+        mutate_record(
+            PortalSession,
+            portal_session.pk,
+            expected_version=1,
+            actor_id=None,
+            correlation_id=uuid4(),
+            change=lambda record: None,
+        )
+
+
+@pytest.mark.parametrize(
+    "column,value", [("id", uuid4()), ("created_at", datetime(2020, 1, 1, tzinfo=UTC))]
+)
+def test_mutable_identity_guard_at_database(portal_session, column, value):
+    """Identity preservation applies to raw SQL as well as the service."""
+    with pytest.raises(IntegrityError, match="immutable"), transaction.atomic():
+        PortalSession.objects.filter(pk=portal_session.pk).update(
+            **{column: value, "version": F("version") + 1}
+        )
+
+
+def test_mutation_does_not_prequery_database_checks(portal_session):
+    """Lock only long enough for field/FK validation and the guarded UPDATE."""
+    with CaptureQueriesContext(connection) as captured:
+        result = mutate_record(
+            PortalSession,
+            portal_session.pk,
+            expected_version=1,
+            actor_id=None,
+            correlation_id=uuid4(),
+            change=lambda record: None,
+        )
+    # Locked read, ForeignKey field validation, then refreshed server write time.
+    assert len([query for query in captured if query["sql"].startswith("SELECT")]) == 3
+    portal_session.refresh_from_db()
+    assert result.updated_at == portal_session.updated_at
+
+
+def test_django_deserialization_accepts_aware_timestamps(portal_session):
+    """The field supports real Django JSON serialization, not only hand parsing."""
+    payload = serializers.serialize("json", [portal_session])
+    restored = next(serializers.deserialize("json", payload)).object
+    assert restored.authenticated_at == portal_session.authenticated_at
+
+
+def test_standard_session_sweep_requires_ordered_metadata_cleanup(portal_session):
+    """Make ARC-04's cleanup prerequisite executable before login is enabled."""
+    Session.objects.filter(pk=portal_session.session_id).update(
+        expire_date=datetime(2000, 1, 1, tzinfo=UTC)
+    )
+    with pytest.raises(ProtectedError):
+        call_command("clearsessions")
+    assert Session.objects.filter(pk=portal_session.session_id).exists()
+    portal_session.delete()
+    call_command("clearsessions")
+    assert not Session.objects.filter(pk=portal_session.session_id).exists()
 
 
 def test_mutation_rollback_and_stale_version(portal_session):

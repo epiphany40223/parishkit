@@ -7,11 +7,14 @@ foreign keys in their owning models, not generic cascading relationships here.
 """
 
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
+
+from .observability import current_correlation
 
 
 class StaleRecordError(Exception):
@@ -22,9 +25,14 @@ class UTCDateTimeField(models.DateTimeField):
     """Reject naive writes instead of Django's implicit default-zone conversion."""
 
     def to_python(self, value):
-        """Require typed aware instants even during model validation."""
+        """Accept aware instants/ISO timestamps without inferring missing zones."""
         if value is None:
             return None
+        if isinstance(value, str):
+            try:
+                value = parse_datetime(value)
+            except ValueError:
+                value = None
         if not isinstance(value, datetime) or timezone.is_naive(value):
             raise ValidationError("A timezone-aware instant is required.")
         return value.astimezone(UTC)
@@ -40,7 +48,9 @@ class DurableRecord(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
     created_at = UTCDateTimeField(default=timezone.now, editable=False)
     actor_id = models.UUIDField(null=True, blank=True, editable=False)
-    correlation_id = models.UUIDField(default=uuid4, editable=False, db_index=True)
+    correlation_id = models.UUIDField(
+        default=current_correlation, editable=False, db_index=True
+    )
 
     class Meta:
         abstract = True
@@ -109,7 +119,11 @@ def mutate_record(
     Database/queue/provider side effects must not escape this transaction.
     """
     if type(expected_version) is not int or expected_version < 1:
-        raise StaleRecordError("A positive expected record version is required.")
+        raise ValueError("A positive expected record version is required.")
+    if not isinstance(correlation_id, UUID) or (
+        actor_id is not None and not isinstance(actor_id, UUID)
+    ):
+        raise TypeError("Actor and correlation identifiers must be UUIDs.")
     if not issubclass(model, MutableRecord):
         raise TypeError("Mutation requires a mutable durable record.")
     with transaction.atomic():
@@ -124,6 +138,10 @@ def mutate_record(
         record.updated_at = timezone.now()
         record.actor_id = actor_id
         record.correlation_id = correlation_id
-        record.full_clean()
+        # Keep field/domain validation, but let SQL enforce uniqueness and CHECKs
+        # without issuing one validation SELECT for every database constraint.
+        record.full_clean(validate_unique=False, validate_constraints=False)
         record.save()
+        # Concrete mutable tables install a trigger that owns the write instant.
+        record.refresh_from_db(fields=["updated_at"])
         return record

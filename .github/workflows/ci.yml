@@ -95,4 +95,7 @@ jobs:
           python -m pip install -r requirements/stewardship-build.txt
           python -m pip install --no-build-isolation -r requirements.txt
       - name: PostgreSQL constraints, migrations, and concurrency
-        run: python -m pytest tests/stewardship/database -q
+        run: >-
+          python -m pytest tests/stewardship/database -q
+          --ds=parishkit.stewardship.settings.database_test
+          --require-postgresql-tests

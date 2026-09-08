@@ -40,4 +40,13 @@ class PortalSession(MutableRecord):
                 condition=models.Q(last_activity_at__gte=models.F("authenticated_at")),
                 name="portal_session_activity_after_auth",
             ),
+            models.CheckConstraint(
+                condition=models.Q(last_activity_at__lt=models.F("expires_at")),
+                name="portal_session_activity_before_expiry",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(revoked_at__isnull=True)
+                | models.Q(revoked_at__gte=models.F("authenticated_at")),
+                name="portal_session_revoked_after_auth",
+            ),
         ]

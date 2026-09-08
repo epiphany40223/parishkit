@@ -6,9 +6,10 @@ from uuid import uuid4
 import pytest
 from django.core.exceptions import ValidationError
 
+from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.audit.models import AuditEvent
+from parishkit.stewardship.observability import correlation, current_correlation
 from parishkit.stewardship.storage import (
-    StaleRecordError,
     UTCDateTimeField,
     mutate_record,
 )
@@ -34,10 +35,50 @@ def test_instants_normalize_aware_values_and_preserve_nullable_fields():
     ) == datetime(2026, 1, 1, tzinfo=UTC)
 
 
+@pytest.mark.parametrize("value", ["2026-09-08T12:00:00Z", "2026-09-08T08:00:00-04:00"])
+def test_aware_iso_strings_are_supported(value):
+    """Django deserialization retains explicit offsets without guessing a zone."""
+    assert UTCDateTimeField().to_python(value) == datetime(2026, 9, 8, 12, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    "value", ["2026-09-08T12:00:00", "2026-99-99T12:00:00Z", "private"]
+)
+def test_invalid_and_naive_iso_values_are_rejected_without_echo(value):
+    """Rejected strings do not leak into validation diagnostics."""
+    with pytest.raises(ValidationError) as error:
+        UTCDateTimeField().to_python(value)
+    assert value not in str(error.value)
+
+
+def test_default_correlation_reuses_the_current_operation():
+    """Implicit durable IDs match logs inside a scope, with safe unscoped IDs."""
+    assert current_correlation() != current_correlation()
+    with correlation() as operation:
+        assert AuditEvent(event_type="test").correlation_id == operation
+        assert PortalSession().correlation_id == operation
+
+
+@pytest.mark.parametrize(
+    "actor,correlation_id", [("private", uuid4()), (None, None), (None, "private")]
+)
+def test_bad_attribution_rejected_before_database_or_callback(actor, correlation_id):
+    """Type validation happens before executing any domain callback."""
+    with pytest.raises(TypeError, match="identifiers must be UUIDs"):
+        mutate_record(
+            PortalSession,
+            uuid4(),
+            expected_version=1,
+            actor_id=actor,
+            correlation_id=correlation_id,
+            change=lambda record: None,
+        )
+
+
 @pytest.mark.parametrize("version", [None, True, 0, -1, "1"])
 def test_mutation_rejects_invalid_expected_version_before_database(version):
     """Malformed concurrency tokens cannot become unguarded writes."""
-    with pytest.raises(StaleRecordError):
+    with pytest.raises(ValueError):
         mutate_record(
             AuditEvent,
             uuid4(),
