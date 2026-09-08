@@ -858,8 +858,36 @@ on September 8, 2026, at 21:53:20 UTC, merge `0e4f1c0`. Its final head
 condition is now historical. The configuration-preparation branch starts at
 that merge and delivers the partial DAT-01 scope recorded in the
 [owning checklist](data.md#dat-01-storage-conventions-and-base-records).
-Review rounds and final validation for this increment are still pending.
 This does not release M1/G1 or enable production startup.
+
+Preparation round 1: reviewed `84c88f4` against `0e4f1c0`, session
+`20260908-180455-a30ec6`. Both reviewers and the permission preflight completed
+normally; no failed reviewers, mismatches, or degradations. Finalize returned
+COMMENT: four Medium findings from 15 raw, 11 Low below cutoff, no High/Critical.
+
+| Finding | Disposition and evidence |
+| --- | --- |
+| C1 | Fixed: PostgreSQL cases cover absent, empty, and deliberately unsorted multi-integration inputs, asserting canonical UUID-text ordering matches stored UUID ordering and exact normalized digests. |
+| C2 | Fixed: database checks constrain nonempty parish identity fields, US phone syntax, HTTP(S) website prefix, and supported validation evidence. Specific-constraint INSERT tests exclude unrelated uniqueness failures. Semantic URL and pinned-application IANA validation remain in the strict parser rather than a drifting database catalog. |
+| X1 | Fixed: iterative whole-ancestry verification rejects an incomplete predecessor even below a self-consistent child/grandchild. A visited-ID guard rejects cycles without imposing a fixed limit on legitimate history; this linear internal verification is not a per-request readiness API. |
+| X2 | Fixed: every verified ancestor must retain the same parish record ID, including on the existing-candidate retry path. Forged internally consistent changed-owner children fail preparation and cannot be extended. |
+
+An independently observed validation issue was also fixed: a random UUID in a
+pytest parameter label made host/image collection IDs differ. The uppercase
+UUID test now uses a deterministic synthetic value. One subsequent local
+Compose run hit a temporary PostgreSQL bind-mount ownership failure; a fresh
+disposable-project rerun passed all 30 checks without changing mounts, runtime
+permissions, or existing data.
+
+Post-correction validation: 1,028 host/image baseline passes, 85 explicit opt-in
+skips, exact parity across 1,113 collected IDs; 73 required PostgreSQL tests
+(112 with the 39 pure schema tests); all 30 Compose checks passed. Ruff, format,
+tracked Markdown, migration drift, Django system checks, and whitespace passed.
+Scoped baseline coverage: 89.86% lines / 90.29% branches, artifact
+`/tmp/stewardship-configuration-evidence.lLYSIF/round1-corrected-coverage.json`.
+The focused pure/PostgreSQL suite separately passed 72 tests with 100% lines and
+branches over the three new configuration modules. Round 1 is complete; two
+more independent review/fix rounds remain before PR handoff.
 
 ## Gate 1: Foundation and security
 

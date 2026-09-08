@@ -74,6 +74,21 @@ def _stored_projections(snapshot):
     }
 
 
+def _history(snapshot):
+    """Walk immutable ancestry iteratively, rejecting cycles without recursion.
+
+    No fixed depth limit may strand legitimate long-lived autosave history. This
+    storage verification is linear in history, not a per-request readiness API.
+    """
+    seen = set()
+    while snapshot is not None:
+        if snapshot.pk in seen:
+            raise ConfigError("Configuration history contains a cycle.")
+        seen.add(snapshot.pk)
+        yield snapshot
+        snapshot = snapshot.predecessor
+
+
 def is_prepared(digest):
     """Revalidate canonical bytes and every projection; absence is not readiness.
 
@@ -84,19 +99,24 @@ def is_prepared(digest):
     if snapshot is None:
         return False
     try:
-        version = parse_version(
-            snapshot.canonical_document, validate_sections=validate_sections
-        )
-        predecessor = snapshot.predecessor.digest if snapshot.predecessor_id else None
-        return (
-            version.version_id == snapshot.pk
-            and version.digest == digest
-            and version.predecessor_digest == predecessor
-            and snapshot.schema_version == 1
-            and snapshot.validation_schema == VALIDATION_SCHEMA
-            and _digest(_normalized(version.document())) == snapshot.normalized_digest
-            and _digest(_stored_projections(snapshot)) == snapshot.normalized_digest
-        )
+        parish_id = snapshot.parish.record_id
+        for entry in _history(snapshot):
+            version = parse_version(
+                entry.canonical_document, validate_sections=validate_sections
+            )
+            predecessor = entry.predecessor.digest if entry.predecessor_id else None
+            if not (
+                version.version_id == entry.pk
+                and version.digest == entry.digest
+                and version.predecessor_digest == predecessor
+                and entry.schema_version == 1
+                and entry.validation_schema == VALIDATION_SCHEMA
+                and entry.parish.record_id == parish_id
+                and _digest(_normalized(version.document())) == entry.normalized_digest
+                and _digest(_stored_projections(entry)) == entry.normalized_digest
+            ):
+                return False
+        return True
     except (ConfigError, Parish.DoesNotExist):
         return False
 

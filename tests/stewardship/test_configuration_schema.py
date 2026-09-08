@@ -64,7 +64,9 @@ def test_parish_rejects_invalid_or_unknown_fields(field, value):
     assert "unknown_private_key" not in str(error.value)
 
 
-@pytest.mark.parametrize("value", ["not-uuid", str(uuid4()).upper(), 12])
+@pytest.mark.parametrize(
+    "value", ["not-uuid", "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", 12]
+)
 def test_branding_requires_canonical_opaque_references(value):
     """Unvalidated paths or implicit identifier encodings cannot reach projections."""
     document = configuration_document()
@@ -144,3 +146,19 @@ def test_storage_attribution_rejects_invalid_types_before_io(
     """A caller cannot reach a transaction using malformed authority metadata."""
     with pytest.raises(TypeError):
         prepare_snapshot(version, actor_id=actor, correlation_id=correlation)
+
+
+def test_history_walk_rejects_cycles_without_a_recursion_limit():
+    """Even malformed imported graphs terminate; long legitimate chains work."""
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts.configuration_snapshots import _history
+
+    head = SimpleNamespace(pk=uuid4(), predecessor=None)
+    head.predecessor = head
+    with pytest.raises(ConfigError, match="cycle"):
+        list(_history(head))
+    head = None
+    for _ in range(1100):
+        head = SimpleNamespace(pk=uuid4(), predecessor=head)
+    assert len(list(_history(head))) == 1100

@@ -27,8 +27,11 @@ audit ownership remains deployment-level until its activation integration lands.
 
 `is_prepared` reparses the stored canonical document, checks version identity,
 digest, predecessor, validation-schema identity, and normalized digest, then
-reconstructs actual projections and checks their digest too. A missing or
-mismatched projection is not prepared. Database availability errors propagate
+reconstructs actual projections and checks their digest too. It iteratively
+verifies the entire predecessor chain and stable parish identity, rejecting
+cycles without a recursion limit. Verification cost is linear in retained
+history; this internal preparation predicate is not a per-request readiness API.
+A missing or mismatched ancestor/projection is not prepared. Database availability errors propagate
 for the owning readiness boundary to fail closed. Preparation is never evidence
 that the YAML manifest and database active pointer agree.
 

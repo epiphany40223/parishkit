@@ -44,6 +44,10 @@ class AppliedConfigurationVersion(ImmutableRecord):
                 condition=models.Q(schema_version=1), name="configuration_schema_v1"
             ),
             models.CheckConstraint(
+                condition=models.Q(validation_schema="parish-integrations-v1"),
+                name="configuration_validation_schema",
+            ),
+            models.CheckConstraint(
                 condition=models.Q(digest__regex=r"^[0-9a-f]{64}$")
                 & models.Q(normalized_digest__regex=r"^[0-9a-f]{64}$"),
                 name="configuration_valid_digests",
@@ -78,6 +82,23 @@ class Parish(ImmutableRecord):
 
     class Meta:
         db_table = "stewardship_parish"
+        # Simple structural checks complement strict service validation. IANA
+        # membership uses the pinned application tzdata, not a drifting server
+        # timezone catalog; URL semantics likewise remain in the strict schema.
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(name="") & ~models.Q(timezone=""),
+                name="parish_nonempty_identity",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(phone__regex=r"^\+1[2-9][0-9]{2}[2-9][0-9]{6}$"),
+                name="parish_us_phone",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(website__iregex=r"^https?://"),
+                name="parish_website_scheme",
+            ),
+        ]
 
 
 class AppliedIntegration(ImmutableRecord):

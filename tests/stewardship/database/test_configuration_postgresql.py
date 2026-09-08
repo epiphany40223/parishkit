@@ -26,6 +26,152 @@ def prepare(version):
     return prepare_snapshot(version, actor_id=uuid4(), correlation_id=uuid4())
 
 
+def insert_unchecked(version, *, predecessor=None, include_parish=True):
+    """Deliberately bypass the service to test forged-but-self-consistent history."""
+    from parishkit.stewardship.accounts.configuration_snapshots import (
+        _digest,
+        _normalized,
+    )
+
+    document = version.document()
+    snapshot = AppliedConfigurationVersion.objects.create(
+        id=version.version_id,
+        digest=version.digest,
+        schema_version=1,
+        predecessor=predecessor,
+        canonical_document=document,
+        normalized_digest=_digest(_normalized(document)),
+        validation_schema="parish-integrations-v1",
+    )
+    parish = document["sections"]["parish"][0]
+    values = parish["values"]
+    if include_parish:
+        Parish.objects.create(
+            configuration=snapshot,
+            record_id=parish["id"],
+            name=values["name"],
+            website=values["website"],
+            timezone=values["timezone"],
+            phone=values["phone"],
+            large_logo_id=values["branding"]["large"],
+            menu_logo_id=values["branding"]["menu"],
+            icon_logo_id=values["branding"]["icon"],
+            favicon_id=values["branding"]["favicon"],
+        )
+    for row in document["sections"].get("integrations", []):
+        AppliedIntegration.objects.create(
+            configuration=snapshot,
+            record_id=row["id"],
+            **row["values"],
+        )
+    return snapshot
+
+
+@pytest.mark.parametrize("defect", ["incomplete_ancestor", "different_parish"])
+def test_forged_successor_cannot_extend_invalid_history(db, defect):
+    """Matching local hashes cannot hide an invalid parent or replaced owner."""
+    root = configuration_version()
+    parent = insert_unchecked(root, include_parish=defect != "incomplete_ancestor")
+    document = successor_document(root)
+    if defect == "different_parish":
+        document["sections"]["parish"][0]["id"] = str(uuid4())
+    child = configuration_version(document)
+    child_row = insert_unchecked(child, predecessor=parent)
+    grandchild = configuration_version(successor_document(child))
+    insert_unchecked(grandchild, predecessor=child_row)
+    assert not is_prepared(child.digest)
+    assert not is_prepared(grandchild.digest)
+    with pytest.raises(ConfigError, match="immutable"):
+        prepare(child)
+    with pytest.raises(ConfigError, match="predecessor"):
+        prepare(configuration_version(successor_document(grandchild)))
+
+
+@pytest.mark.parametrize("integrations", ["absent", "empty", "multiple"])
+def test_normalization_matches_zero_and_multiple_integration_rows(db, integrations):
+    """Canonical UUID text order must match PostgreSQL ordering for every list."""
+    document = configuration_version().document()
+    if integrations == "absent":
+        del document["sections"]["integrations"]
+    elif integrations == "empty":
+        document["sections"]["integrations"] = []
+    else:
+        document["sections"]["integrations"] = [
+            {
+                "id": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+                "values": {
+                    "kind": "slack",
+                    "settings": {"channel_id": "C123"},
+                    "credential_fingerprint": None,
+                },
+            },
+            {
+                "id": "00000000-0000-0000-0000-000000000001",
+                "values": {
+                    "kind": "google_workspace",
+                    "settings": {"delegated_email": "a@example.org"},
+                    "credential_fingerprint": "b" * 64,
+                },
+            },
+            *document["sections"]["integrations"],
+        ]
+    version = configuration_version(document)
+    snapshot = prepare(version)
+    assert is_prepared(version.digest)
+    assert snapshot.integrations.count() == (3 if integrations == "multiple" else 0)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("name", ""),
+        ("timezone", ""),
+        ("phone", "2025550123"),
+        ("website", "file:///tmp/a"),
+    ],
+)
+def test_parish_shape_constraints_apply_to_raw_inserts(db, field, value):
+    """Basic database shape checks remain active even without the strict parser."""
+    version = configuration_version()
+    snapshot = prepare(version)
+    row = snapshot.parish
+    values = {
+        item.attname: getattr(row, item.attname)
+        for item in Parish._meta.fields
+        if item.name != "id"
+    }
+    values[field] = value
+    candidate = insert_unchecked(
+        configuration_version(successor_document(version)),
+        predecessor=snapshot,
+        include_parish=False,
+    )
+    values["configuration_id"] = candidate.pk
+    constraint = {
+        "name": "parish_nonempty_identity",
+        "timezone": "parish_nonempty_identity",
+        "phone": "parish_us_phone",
+        "website": "parish_website_scheme",
+    }[field]
+    with pytest.raises(IntegrityError, match=constraint), transaction.atomic():
+        Parish.objects.create(**values)
+
+
+def test_database_rejects_unknown_validation_evidence(db):
+    """The evidence discriminator cannot falsely claim an unsupported validator."""
+    with (
+        pytest.raises(IntegrityError, match="configuration_validation_schema"),
+        transaction.atomic(),
+    ):
+        AppliedConfigurationVersion.objects.create(
+            digest="a" * 64,
+            normalized_digest="b" * 64,
+            schema_version=1,
+            canonical_document={},
+            validation_schema="unknown",
+        )
+
+
 def test_prepare_exact_projection_and_idempotent_retry(db):
     """A retry preserves all row identities, timestamps and original attribution."""
     version = configuration_version()
@@ -143,7 +289,6 @@ def test_database_enforces_single_root(db):
         "missing_parish",
         "invalid_document",
         "normalized_digest",
-        "validation_schema",
         "version_id",
         "projection_values",
     ],
@@ -169,18 +314,18 @@ def test_incomplete_or_mismatched_rows_are_never_prepared(db, defect):
         values["canonical_document"] = {"private_key": "synthetic-private"}
     elif defect == "normalized_digest":
         values["normalized_digest"] = "a" * 64
-    elif defect == "validation_schema":
-        values["validation_schema"] = "unsupported"
     elif defect == "version_id":
         values["id"] = uuid4()
     snapshot = AppliedConfigurationVersion.objects.create(**values)
-    if defect == "projection_values":
+    if defect != "missing_parish":
         parish = document["sections"]["parish"][0]
         branding = parish["values"]["branding"]
         Parish.objects.create(
             configuration=snapshot,
             record_id=parish["id"],
-            name="Wrong projection",
+            name="Wrong projection"
+            if defect == "projection_values"
+            else parish["values"]["name"],
             website=parish["values"]["website"],
             timezone=parish["values"]["timezone"],
             phone=parish["values"]["phone"],
@@ -189,6 +334,12 @@ def test_incomplete_or_mismatched_rows_are_never_prepared(db, defect):
             icon_logo_id=branding["icon"],
             favicon_id=branding["favicon"],
         )
+        for row in document["sections"]["integrations"]:
+            AppliedIntegration.objects.create(
+                configuration=snapshot,
+                record_id=row["id"],
+                **row["values"],
+            )
     assert not is_prepared(version.digest)
     with pytest.raises(
         ConfigError, match="root" if defect == "version_id" else "immutable"
