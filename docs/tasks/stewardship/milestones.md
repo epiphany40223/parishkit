@@ -16,7 +16,7 @@ Scope: [Phase 0](../../plans/stewardship/overall.md#phase-0-reproducible-project
 - [x] M0.01 — Demonstrate local bind-mount reload, routes, and internal health.
 - [x] M0.02 — Run the same baseline tests on the host and in the image.
 - [x] M0.03 — Demonstrate safe startup rejection for incomplete production settings.
-- [ ] M0.04 — Review and correct the scaffold before foundation work.
+- [x] M0.04 — Review and correct the scaffold before foundation work.
 
 Evidence: September 7, 2026, macOS/arm64 host and Linux/arm64 image. The
 [OPS-01 evidence](operations.md#ops-01-development-and-production-compose-topology)
@@ -754,7 +754,15 @@ Scope: [Phase 1](../../plans/stewardship/overall.md#phase-1-secure-foundation-an
 - [ ] M1.04 — Verify service mounts, configuration activation, and restart durability.
 - [ ] M1.05 — Complete Gate 1 before beginning Phase 2.
 
-Evidence: Not started.
+Phase 0 handoff: human-approved [PR #8](https://github.com/epiphany40223/parishkit/pull/8)
+merged on September 8, 2026, at 18:48:21 UTC. Its final head `259863b` passed
+validation, Compose, and DCO in CI run `34264954252`; merge commit `509245d`
+is the base of this phase. The preceding M0 entries are historical evidence,
+including their then-open merge condition; that condition is now satisfied.
+
+Evidence: Phase 1 has started with the bounded DAT-01.01/.04 storage increment
+described in the [owning checklist](data.md#dat-01-storage-conventions-and-base-records).
+This is not the complete M1 demonstration. No G1 or Phase 2 release is claimed.
 
 ## Gate 1: Foundation and security
 

@@ -11,14 +11,32 @@ Follow the [execution and completion rules](README.md#execution-and-completion).
 
 Scope and dependencies: [DAT-01 work package](../../plans/stewardship/data.md#dat-01-storage-conventions-and-base-records).
 
-- [ ] DAT-01.01 — Implement durable record and ownership conventions.
+- [x] DAT-01.01 — Implement durable record and ownership conventions.
 - [ ] DAT-01.02 — Implement configuration, parish, and secret-request records.
 - [ ] DAT-01.03 — Enforce YAML-version, singleton, and installer constraints.
-- [ ] DAT-01.04 — Configure durable sessions and audit correlation.
+- [x] DAT-01.04 — Configure durable sessions and audit correlation.
 - [ ] DAT-01.05 — Implement TaskRun claims, retry-chain constraints, and attempt history.
 - [ ] DAT-01.06 — Test base constraints, recovery, and privacy.
 
-Evidence: Not started.
+Evidence: Phase 1 storage increment, September 8, 2026. `storage.py` defines
+UUID/UTC/actor/correlation records, row-lock plus expected-version mutation,
+and immutable ORM helpers. The parish-owned AuditEvent envelope has a reversible
+PostgreSQL append-only trigger and soft UUID subject/actor references, so session
+deletion cannot cascade into history. PortalSession is expiring metadata over
+Django's database-backed sessions, not a new authentication implementation.
+It retains no raw credential in audit; ARC-04 owns login, revocation, cleanup,
+and security policy, while ARC-07 owns validated event-specific payloads.
+
+Twelve pure storage tests and 19 disposable PostgreSQL tests pass, including
+UTC/queryset validation, SQL constraints/raw mutation denial, session reconnect
+durability, migration reversal/reapplication, transactional rollback, and two
+independent concurrent connections with exactly one successful version update.
+See the [database test guide](../../guides/stewardship-database-tests.md) for
+repeatable commands and CI isolation. DAT-01.02/.03/.05 remain unimplemented;
+DAT-01.06 is partial pending their constraints/recovery/privacy scenarios.
+ARC-02 materializer and production checks are not declared complete by this
+increment. Review/CI evidence is tracked in the
+[Phase 1 milestone](milestones.md#phase-1-secure-foundation).
 
 ## DAT-02: Campaign lifecycle and schedule schema
 

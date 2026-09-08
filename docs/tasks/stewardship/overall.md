@@ -45,9 +45,9 @@ Phase 0 [OPS-09 CI/coverage](operations.md#ops-09-ci-coverage-browser-acceptance
 and [DOM-05 clock/traceability](campaign-domain.md#dom-05-cross-domain-acceptance-harness)
 are implemented for their admitted scope. Eight M0 review/fix rounds and
 post-correction validation are complete; see the latest
-[milestone evidence](milestones.md#phase-0-skeleton). Finish PR/CI handoff and
-obtain human merge approval before foundation work. No later phase or review
-gate is released. Do not wait for
+[milestone evidence](milestones.md#phase-0-skeleton). PR #8 merged through the
+human-approved queue on September 8, 2026, with all CI checks passing; M0 is
+complete and Phase 1 is authorized. No formal review gate is released. Do not wait for
 Phase 1's database-backed ARC-02 integration or mark that work complete early.
 
 1. [ARC-01](architecture.md#arc-01-dependency-decisions-and-package-skeleton) → [DOM-01](campaign-domain.md#dom-01-domain-vocabulary-and-decision-records) → [ARC-02](architecture.md#arc-02-shared-cli-configuration-paths-and-app-startup) → [OPS-01](operations.md#ops-01-development-and-production-compose-topology).
@@ -57,6 +57,15 @@ Phase 1's database-backed ARC-02 integration or mark that work complete early.
 ## Phase 1A: Schema and policy
 
 Source scope: [Phase 1A: Schema and policy](../../plans/stewardship/overall.md#phase-1-secure-foundation-and-durable-domain).
+
+Execution checkpoint (September 8, 2026): `pr/stewardship-phase-1` starts at
+merged `origin/main` SHA `509245d`. Under the controlling plan's smaller-PR
+option, the first increment delivers DAT-01.01 and DAT-01.04: durable storage
+conventions, base audit/session records, and real PostgreSQL verification.
+Configuration materialization, installer requests, TaskRun chains, and all
+other Phase 1 work remain pending. Each increment gets the full three-round
+review/fix cycle and human merge approval; Gate 1 still reviews the integrated
+foundation before Phase 2. The next task after this increment is DAT-01.02.
 
 Integrate ARC-02's concrete materializer and database-backed digest/mode checks
 with DAT-01. Complete its production prerequisite and recovery verification in
