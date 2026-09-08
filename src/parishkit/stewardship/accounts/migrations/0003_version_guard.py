@@ -11,5 +11,6 @@ class Migration(migrations.Migration):
         mutable_guard_v1(
             "stewardship_portal_session",
             frozen_fields=("principal_id", "session_id", "authenticated_at"),
+            write_once_fields=("revoked_at",),
         )
     ]

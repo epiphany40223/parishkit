@@ -19,6 +19,7 @@ class PortalSession(MutableRecord):
         "session_id",
         "authenticated_at",
     )
+    write_once_fields = ("revoked_at",)
 
     session = models.OneToOneField(
         "sessions.Session", on_delete=models.PROTECT, related_name="stewardship_portal"

@@ -7,25 +7,9 @@ least-privilege runtime role installation is owned by OPS-02/OPS-04.
 
 from django.db import migrations
 
+from parishkit.stewardship.storage_migrations import immutable_guard_v1
+
 
 class Migration(migrations.Migration):
     dependencies = [("stewardship_audit", "0001_initial")]
-    operations = [
-        migrations.RunSQL(
-            sql="""
-                CREATE FUNCTION stewardship_reject_audit_mutation()
-                RETURNS trigger LANGUAGE plpgsql AS $$
-                BEGIN
-                    RAISE EXCEPTION 'Historical audit records are append-only';
-                END;
-                $$;
-                CREATE TRIGGER stewardship_audit_append_only
-                BEFORE UPDATE OR DELETE ON stewardship_audit_event
-                FOR EACH ROW EXECUTE FUNCTION stewardship_reject_audit_mutation();
-            """,
-            reverse_sql="""
-                DROP TRIGGER stewardship_audit_append_only ON stewardship_audit_event;
-                DROP FUNCTION stewardship_reject_audit_mutation();
-            """,
-        )
-    ]
+    operations = [immutable_guard_v1("stewardship_audit_event")]

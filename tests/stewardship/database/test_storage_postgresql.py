@@ -13,7 +13,6 @@ from django.core import serializers
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.db import (
-    DatabaseError,
     IntegrityError,
     connection,
     connections,
@@ -28,6 +27,7 @@ from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.observability import correlation, current_correlation
 from parishkit.stewardship.storage import (
+    ImmutableRecord,
     MutableRecord,
     StaleRecordError,
     StorageInvariantError,
@@ -260,7 +260,7 @@ def test_audit_database_trigger_blocks_raw_sql(db, statement):
     """Using a cursor cannot bypass append-only ORM guards."""
     event = AuditEvent.objects.create(event_type="audit_created")
     with (
-        pytest.raises(DatabaseError, match="append-only"),
+        pytest.raises(IntegrityError, match="append-only"),
         transaction.atomic(),
         connection.cursor() as cursor,
     ):
@@ -326,7 +326,7 @@ def test_migrations_reverse_and_reapply():
         MigrationExecutor(connection).migrate(leaves)
     event = AuditEvent.objects.create(event_type="after_migration")
     with (
-        pytest.raises(DatabaseError, match="append-only"),
+        pytest.raises(IntegrityError, match="append-only"),
         connection.cursor() as cursor,
     ):
         cursor.execute("DELETE FROM stewardship_audit_event WHERE id = %s", [event.pk])
@@ -371,14 +371,99 @@ def test_all_concrete_mutable_records_have_enabled_guard(db):
         for model in models:
             table = model._meta.db_table
             cursor.execute(
-                "SELECT p.proname, t.tgtype FROM pg_trigger t "
+                "SELECT p.proname, t.tgtype, pg_get_functiondef(p.oid) "
+                "FROM pg_trigger t "
                 "JOIN pg_proc p ON p.oid = t.tgfoid "
                 "WHERE t.tgrelid = %s::regclass AND t.tgname = %s "
                 "AND t.tgenabled = 'O' AND NOT t.tgisinternal",
                 [table, f"{table}_mutable_guard_v1"],
             )
             # BEFORE UPDATE FOR EACH ROW; statement triggers do not protect rows.
-            assert cursor.fetchone() == (f"{table}_mutable_v1", 19), table
+            row = cursor.fetchone()
+            assert row is not None, table
+            assert row[:2] == (f"{table}_mutable_v1", 19), table
+            definition = row[2]
+            for name in model.immutable_fields:
+                column = model._meta.get_field(name).column
+                assert f'NEW."{column}" IS DISTINCT FROM OLD."{column}"' in definition
+            for name in model.write_once_fields:
+                column = model._meta.get_field(name).column
+                assert (
+                    f'(OLD."{column}" IS NOT NULL AND NEW."{column}" '
+                    f'IS DISTINCT FROM OLD."{column}")'
+                ) in definition
+            assert "NEW.version IS DISTINCT FROM OLD.version + 1" in definition
+
+
+def test_all_concrete_immutable_records_have_enabled_guard(db):
+    """Inherited ORM protection must always have its SQL counterpart."""
+    models = [
+        model for model in apps.get_models() if issubclass(model, ImmutableRecord)
+    ]
+    assert models
+    with connection.cursor() as cursor:
+        for model in models:
+            table = model._meta.db_table
+            cursor.execute(
+                "SELECT p.proname, t.tgtype, pg_get_functiondef(p.oid) "
+                "FROM pg_trigger t "
+                "JOIN pg_proc p ON p.oid = t.tgfoid "
+                "WHERE t.tgrelid = %s::regclass AND t.tgname = %s "
+                "AND t.tgenabled = 'O' AND NOT t.tgisinternal",
+                [table, f"{table}_immutable_guard_v1"],
+            )
+            row = cursor.fetchone()
+            assert row is not None, table
+            assert row[:2] == (f"{table}_immutable_v1", 27), table
+            assert "USING ERRCODE = '23514'" in row[2]
+
+
+def test_subjectless_audit_event_passes_full_validation(db):
+    """Deployment-wide events need no artificial subject or actor UUID."""
+    event = AuditEvent(event_type="deployment_event")
+    event.full_clean()
+    event.save()
+    event.refresh_from_db()
+    assert event.subject_id is None
+
+
+@pytest.mark.parametrize(
+    "replacement", [None, datetime(2026, 9, 8, 12, 30, tzinfo=UTC)]
+)
+def test_session_revocation_cannot_be_reversed(portal_session, replacement):
+    """A revoked session can never regain validity by clearing/moving its cutoff."""
+    revoked = portal_session.authenticated_at + timedelta(minutes=1)
+    mutate_record(
+        PortalSession,
+        portal_session.pk,
+        expected_version=1,
+        actor_id=None,
+        correlation_id=uuid4(),
+        change=lambda record: setattr(record, "revoked_at", revoked),
+    )
+    with pytest.raises(StorageInvariantError):
+        mutate_record(
+            PortalSession,
+            portal_session.pk,
+            expected_version=2,
+            actor_id=None,
+            correlation_id=uuid4(),
+            change=lambda record: setattr(record, "revoked_at", replacement),
+        )
+    with pytest.raises(IntegrityError, match="immutable"), transaction.atomic():
+        PortalSession.objects.filter(pk=portal_session.pk).update(
+            revoked_at=replacement,
+            version=F("version") + 1,
+        )
+    unchanged = mutate_record(
+        PortalSession,
+        portal_session.pk,
+        expected_version=2,
+        actor_id=None,
+        correlation_id=uuid4(),
+        change=lambda record: None,
+    )
+    assert unchanged.revoked_at == revoked
 
 
 def test_insert_and_update_use_database_clock(portal_session, monkeypatch):

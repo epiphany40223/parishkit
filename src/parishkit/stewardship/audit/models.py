@@ -14,7 +14,7 @@ class AuditEvent(ImmutableRecord):
     """Permanent event identity and soft historical subject/actor references."""
 
     event_type = models.CharField(max_length=64)
-    subject_id = models.UUIDField(null=True)
+    subject_id = models.UUIDField(null=True, blank=True)
 
     class Meta:
         db_table = "stewardship_audit_event"

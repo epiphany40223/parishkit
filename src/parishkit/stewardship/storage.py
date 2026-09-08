@@ -69,6 +69,7 @@ class MutableRecord(DurableRecord):
     """
 
     immutable_fields = ("id", "created_at")
+    write_once_fields = ()
     updated_at = UTCDateTimeField(db_default=Now(), editable=False)
     version = models.PositiveBigIntegerField(default=1, editable=False)
 
@@ -137,6 +138,11 @@ def mutate_record(
         if record.version != expected_version:
             raise StaleRecordError("The record changed; reload before retrying.")
         frozen = {name: getattr(record, name) for name in record.immutable_fields}
+        frozen.update(
+            (name, getattr(record, name))
+            for name in record.write_once_fields
+            if getattr(record, name) is not None
+        )
         change(record)
         if any(getattr(record, name) != value for name, value in frozen.items()):
             raise StorageInvariantError("Record identity and bindings are immutable.")

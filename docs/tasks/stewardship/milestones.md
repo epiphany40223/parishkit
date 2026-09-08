@@ -819,6 +819,37 @@ drift, and whitespace checks passed. Scoped baseline coverage is 93.05% lines /
 `/tmp/stewardship-phase1-evidence.OKnATz/round2-coverage.json`.
 Two rounds are complete; the third remains required before PR handoff.
 
+Third storage-increment review: September 8, 2026, reviewed SHA `0979f39`,
+base `509245d`, session `20260908-162435-21dd84`. The permission preflight and
+both reviewers completed normally. Finalize reported COMMENT: five Claude-only
+Medium findings from 12 raw, seven Low findings below cutoff, no High/Critical
+findings, and no failed reviewers, verdict mismatches, or degradations. Codex
+returned no findings; its telemetry's parsed=false means zero accepted findings
+in this pika version, not a failed reviewer. Finalize performs artifact cleanup;
+the finalized result and manifest remain the durable review evidence.
+
+| Finding | Disposition and evidence |
+| --- | --- |
+| C1 | Fixed: the all-model PostgreSQL test reads installed function definitions and compares every model-declared immutable/write-once column plus the version-advance predicate, preventing Python-only guard drift. |
+| C2 | Fixed: immutable_guard_v1 supplies reusable table-local append-only guards; every concrete ImmutableRecord table must have an enabled BEFORE UPDATE OR DELETE row trigger. |
+| C3 | Fixed: both SQL guard families raise SQLSTATE 23514/IntegrityError; raw audit mutation and migration-reapplication tests assert the specific exception type. |
+| C4 | Fixed: optional audit subject IDs allow blank values in model validation; a subject-less deployment event passes full_clean and persists without a fabricated subject. |
+| C5 | Fixed: session revocation is write-once once non-null. Both ORM mutation and version-advancing SQL reject clearing or moving the cutoff; unchanged revoked metadata remains writable without reviving access. |
+
+Final local validation: 989 host/image baseline passes, 52 explicit opt-in
+skips, exact parity across 1,041 collected IDs, 40 required PostgreSQL tests,
+and all 30 Compose checks passed. Ruff, formatting, tracked Markdown, migration
+drift, and whitespace checks passed. Scoped baseline coverage is 92.72% lines /
+94.54% branches. Coverage artifact:
+`/tmp/stewardship-phase1-evidence.OKnATz/round3-coverage.json`.
+
+Three review/fix rounds are complete, every accepted Medium-or-higher finding
+is resolved, and the final round had no High/Critical findings. Corrections and
+their passing regressions belong to that round under the controlling delivery
+cycle. This bounded increment is ready for PR/CI handoff and human merge
+approval. Phase 1 and Gate 1 remain incomplete; no production startup, merge,
+deployment, release, or real-provider operation is authorized by this evidence.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).

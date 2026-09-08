@@ -21,13 +21,19 @@ def _identifier(value):
     return value
 
 
-def mutable_guard_v1(table, *, frozen_fields=()):
+def mutable_guard_v1(table, *, frozen_fields=(), write_once_fields=()):
     """Build reversible, table-independent version and immutable-field guards."""
     table = _identifier(table)
     fields = tuple(dict.fromkeys(("id", "created_at", *frozen_fields)))
-    predicate = " OR ".join(
+    predicates = [
         f'NEW."{_identifier(name)}" IS DISTINCT FROM OLD."{name}"' for name in fields
+    ]
+    predicates.extend(
+        f'(OLD."{_identifier(name)}" IS NOT NULL AND '
+        f'NEW."{name}" IS DISTINCT FROM OLD."{name}")'
+        for name in write_once_fields
     )
+    predicate = " OR ".join(predicates)
     function = f"{table}_mutable_v1"
     trigger = f"{table}_mutable_guard_v1"
     return migrations.RunSQL(
@@ -49,6 +55,36 @@ def mutable_guard_v1(table, *, frozen_fields=()):
             $$;
             CREATE TRIGGER "{trigger}"
             BEFORE UPDATE ON "{table}"
+            FOR EACH ROW EXECUTE FUNCTION "{function}"();
+        """,
+        reverse_sql=f"""
+            DROP TRIGGER "{trigger}" ON "{table}";
+            DROP FUNCTION "{function}"();
+        """,
+    )
+
+
+def immutable_guard_v1(table):
+    """Build an append-only guard with the same SQLSTATE as mutable invariants.
+
+    TRUNCATE/schema-owner privileges belong only to migrations and disposable
+    tests, not runtime roles. Exceptional retention needs its own explicit
+    reviewed migration/service rather than silently disabling this guard.
+    """
+    table = _identifier(table)
+    function = f"{table}_immutable_v1"
+    trigger = f"{table}_immutable_guard_v1"
+    return migrations.RunSQL(
+        sql=f"""
+            CREATE FUNCTION "{function}"()
+            RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                RAISE EXCEPTION 'Historical records are append-only'
+                    USING ERRCODE = '23514';
+            END;
+            $$;
+            CREATE TRIGGER "{trigger}"
+            BEFORE UPDATE OR DELETE ON "{table}"
             FOR EACH ROW EXECUTE FUNCTION "{function}"();
         """,
         reverse_sql=f"""
