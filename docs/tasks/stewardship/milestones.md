@@ -850,6 +850,17 @@ cycle. This bounded increment is ready for PR/CI handoff and human merge
 approval. Phase 1 and Gate 1 remain incomplete; no production startup, merge,
 deployment, release, or real-provider operation is authorized by this evidence.
 
+### Configuration-preparation increment
+
+The human merged [PR #9](https://github.com/epiphany40223/parishkit/pull/9)
+on September 8, 2026, at 21:53:20 UTC, merge `0e4f1c0`. Its final head
+`ab9d92d` passed all CI checks in run `34276341522`; the preceding open-merge
+condition is now historical. The configuration-preparation branch starts at
+that merge and delivers the partial DAT-01 scope recorded in the
+[owning checklist](data.md#dat-01-storage-conventions-and-base-records).
+Review rounds and final validation for this increment are still pending.
+This does not release M1/G1 or enable production startup.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).

@@ -1,0 +1,181 @@
+"""Database preparation of strict non-secret configuration snapshots.
+
+Internal storage only, not an authorized web API or a complete Materializer.
+There is deliberately no activate method: DAT-01's request/runtime records and
+ARC-02/ARC-06 must install their atomic activation/audit effects first. Prepared
+rows alone neither make the application ready nor grant anyone access.
+"""
+
+import hashlib
+import json
+from uuid import UUID
+
+from django.db import connection, transaction
+
+from parishkit.config import ConfigError
+from parishkit.stewardship.observability import correlation
+
+from .authority import ConfigurationVersion, parse_version
+from .configuration_models import (
+    AppliedConfigurationVersion,
+    AppliedIntegration,
+    Parish,
+)
+from .configuration_schema import VALIDATION_SCHEMA, validate_sections
+
+
+def _normalized(document):
+    """Extract just the projections, retaining deterministic authoritative IDs."""
+    sections = document["sections"]
+    return {name: sections.get(name, []) for name in ("parish", "integrations")}
+
+
+def _digest(value):
+    """Digest the exact normalized values independently of envelope metadata."""
+    return hashlib.sha256(
+        json.dumps(
+            value, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _stored_projections(snapshot):
+    """Reconstruct YAML-shaped records from the actual persisted projection rows."""
+    parish = snapshot.parish
+    return {
+        "parish": [
+            {
+                "id": str(parish.record_id),
+                "values": {
+                    "name": parish.name,
+                    "website": parish.website,
+                    "timezone": parish.timezone,
+                    "phone": parish.phone,
+                    "branding": {
+                        "large": str(parish.large_logo_id),
+                        "menu": str(parish.menu_logo_id),
+                        "icon": str(parish.icon_logo_id),
+                        "favicon": str(parish.favicon_id),
+                    },
+                },
+            }
+        ],
+        "integrations": [
+            {
+                "id": str(row.record_id),
+                "values": {
+                    "kind": row.kind,
+                    "settings": row.settings,
+                    "credential_fingerprint": row.credential_fingerprint,
+                },
+            }
+            for row in snapshot.integrations.order_by("record_id")
+        ],
+    }
+
+
+def is_prepared(digest):
+    """Revalidate canonical bytes and every projection; absence is not readiness.
+
+    Database availability errors propagate to the caller's fail-closed readiness
+    boundary. Malformed stored content returns False without exposing its values.
+    """
+    snapshot = AppliedConfigurationVersion.objects.filter(digest=digest).first()
+    if snapshot is None:
+        return False
+    try:
+        version = parse_version(
+            snapshot.canonical_document, validate_sections=validate_sections
+        )
+        predecessor = snapshot.predecessor.digest if snapshot.predecessor_id else None
+        return (
+            version.version_id == snapshot.pk
+            and version.digest == digest
+            and version.predecessor_digest == predecessor
+            and snapshot.schema_version == 1
+            and snapshot.validation_schema == VALIDATION_SCHEMA
+            and _digest(_normalized(version.document())) == snapshot.normalized_digest
+            and _digest(_stored_projections(snapshot)) == snapshot.normalized_digest
+        )
+    except (ConfigError, Parish.DoesNotExist):
+        return False
+
+
+def prepare_snapshot(version, *, actor_id, correlation_id):
+    """Prepare one candidate atomically and idempotently on PostgreSQL.
+
+    All cooperating preparations serialize on a dedicated transaction advisory
+    lock, including first insertion. This is not the session-level installer lock
+    across file activation. It enforces one root and stable parish identity while
+    allowing competing candidates from an existing predecessor; the future
+    installer must still reject a stale base before changing the active manifest.
+    """
+    if not isinstance(version, ConfigurationVersion):
+        raise TypeError("An explicit configuration version is required.")
+    if not isinstance(correlation_id, UUID) or (
+        actor_id is not None and not isinstance(actor_id, UUID)
+    ):
+        raise TypeError("Actor and correlation identifiers must be UUIDs.")
+    validated = parse_version(version.document(), validate_sections=validate_sections)
+    if validated != version:
+        raise ConfigError("Configuration metadata does not match its document.")
+    document = version.document()
+    with correlation(correlation_id), transaction.atomic():
+        with connection.cursor() as cursor:
+            # Stable, internal namespace; never derive this key from user input.
+            cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [736210, 1])
+        existing = AppliedConfigurationVersion.objects.filter(
+            pk=version.version_id
+        ).first()
+        if existing is not None:
+            if existing.digest != version.digest or not is_prepared(version.digest):
+                raise ConfigError("Cannot replace an immutable configuration snapshot.")
+            return existing
+        predecessor = None
+        if version.predecessor_digest is not None:
+            predecessor = AppliedConfigurationVersion.objects.filter(
+                digest=version.predecessor_digest
+            ).first()
+            if predecessor is None or not is_prepared(predecessor.digest):
+                raise ConfigError("Configuration predecessor is not fully prepared.")
+        elif AppliedConfigurationVersion.objects.exists():
+            raise ConfigError("A configuration root already exists.")
+        parish_record = document["sections"]["parish"][0]
+        if (
+            predecessor is not None
+            and str(predecessor.parish.record_id) != parish_record["id"]
+        ):
+            raise ConfigError("A configuration cannot replace the parish identity.")
+        attribution = {"actor_id": actor_id, "correlation_id": correlation_id}
+        snapshot = AppliedConfigurationVersion.objects.create(
+            id=version.version_id,
+            digest=version.digest,
+            schema_version=1,
+            predecessor=predecessor,
+            canonical_document=document,
+            normalized_digest=_digest(_normalized(document)),
+            validation_schema=VALIDATION_SCHEMA,
+            **attribution,
+        )
+        values = parish_record["values"]
+        Parish.objects.create(
+            configuration=snapshot,
+            record_id=parish_record["id"],
+            name=values["name"],
+            website=values["website"],
+            timezone=values["timezone"],
+            phone=values["phone"],
+            large_logo_id=values["branding"]["large"],
+            menu_logo_id=values["branding"]["menu"],
+            icon_logo_id=values["branding"]["icon"],
+            favicon_id=values["branding"]["favicon"],
+            **attribution,
+        )
+        for record in document["sections"].get("integrations", []):
+            AppliedIntegration.objects.create(
+                configuration=snapshot,
+                record_id=record["id"],
+                **record["values"],
+                **attribution,
+            )
+        return snapshot
