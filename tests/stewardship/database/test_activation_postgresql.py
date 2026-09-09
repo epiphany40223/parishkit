@@ -435,18 +435,22 @@ def test_downgrade_with_history_preserves_guards_and_migration_marker(
     if activated_request:
         install(store, stage(root, actor))
     before = SystemConfiguration.objects.get().active_configuration_id
-    with pytest.raises(IntegrityError, match="prevents this schema downgrade"):
-        MigrationExecutor(connection).migrate(
-            [
-                ("stewardship_accounts", "0010_request_intake_guards"),
-            ]
-        )
-    assert MigrationRecorder.Migration.objects.filter(
-        app="stewardship_accounts", name="0013_activation_guards"
-    ).exists()
-    assert SystemConfiguration.objects.get().active_configuration_id == before
-    with pytest.raises(IntegrityError), transaction.atomic():
-        SystemConfiguration.objects.update(version=F("version") + 1)
+    leaves = MigrationExecutor(connection).loader.graph.leaf_nodes()
+    try:
+        with pytest.raises(IntegrityError, match="prevents this schema downgrade"):
+            MigrationExecutor(connection).migrate(
+                [("stewardship_accounts", "0010_request_intake_guards")]
+            )
+        assert MigrationRecorder.Migration.objects.filter(
+            app="stewardship_accounts", name="0013_activation_guards"
+        ).exists()
+        assert SystemConfiguration.objects.get().active_configuration_id == before
+        with pytest.raises(IntegrityError), transaction.atomic():
+            SystemConfiguration.objects.update(version=F("version") + 1)
+    finally:
+        # Newer independent migrations may reverse before 0013 refuses. Restore
+        # the whole graph so this historical test cannot strand subsequent tests.
+        MigrationExecutor(connection).migrate(leaves)
 
 
 def test_request_activation_status_and_historical_retry(initialized):

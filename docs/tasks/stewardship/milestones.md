@@ -1129,6 +1129,96 @@ head and CI results. This does not release Gate 1 or complete Phase 1; the next
 dependency-ready scope remains DAT-01 runtime/secret records and installer
 integration, followed by TaskRun chains.
 
+### Secret-request storage increment
+
+The human merged PR #12 at `a241205` on September 9, 2026, after all four CI
+checks passed at implementation head `00577dc`. Branch
+`pr/stewardship-secret-requests` starts from that refreshed `origin/main` tip.
+Scope is the [secret-request storage boundary](../../guides/stewardship-secret-requests.md),
+not operational credential replacement. DAT-01 and M1/G1 remain partial.
+Validation and the required three independent review/fix rounds follow below.
+
+Initial validation passed 1,079 baseline tests (221 explicit opt-in skips),
+209 required PostgreSQL tests including 37 new staging/cleanup cases, and all
+30 Compose checks. Host/image baseline parity covered 1,300 collected IDs.
+Combined coverage is 98.08% lines / 96.21% branches. Ruff, formatting, tracked
+Markdown, both migration-drift profiles and diff whitespace checks passed.
+An initial full-suite run exposed historical downgrade-test schema leakage;
+restoring the whole migration graph in its finally block corrected it before
+independent review. No secret files or provider credentials were used.
+
+Round 1: Pika `20260909-105953-2d814c` reviewed `cef011e` against `a241205`.
+Both reviewers completed without failure, mismatch, or degradation. Raw findings:
+three Medium, seven Low, no High/Critical. Delegated triage accepted both distinct
+issues; two reports described the same attribution issue:
+
+| Finding | Disposition |
+| --- | --- |
+| Claude C1: Migration assertions run after restoration | Fixed: assert marker, retained data and active guards before finally restores the graph in both tests |
+| Claude C2 / Codex X1: SQL permits fabricated human expiry/cleanup attribution | Fixed together: require null actor on system transitions; test expiry and both terminal outcomes through raw SQL |
+
+Low findings remain below the mandatory correction floor. Post-fix validation
+and subsequent independent rounds follow.
+
+Round 1 post-fix validation passed: 1,079 baseline tests (224 opt-in skips),
+212 required PostgreSQL tests, all 30 Compose checks, and exact host/image
+parity across 1,303 collected IDs. Coverage remains 98.08% lines / 96.21%
+branches; Ruff, formatting, Markdown, both migration-drift profiles and diff
+whitespace checks passed. Round 1 is complete; no gate is released.
+
+Round 2: Pika `20260909-111100-d5115f` reviewed `96660c8` against `a241205`.
+Both reviewers completed without failure, mismatch, or degradation. Raw findings:
+two Medium, eight Low, no High/Critical. Both Medium findings were Claude-only
+and accepted through delegated triage:
+
+| Finding | Disposition |
+| --- | --- |
+| C1: Missing cross-reason cleanup tests | Fixed: test both sequential orders, terminal retries and an independent-connection cancellation/expiry race with durable attribution |
+| C2: Safe receipts omit the winning cleanup reason | Fixed: include the closed reason enum and verify status/retry consistency without exposing staging references |
+
+Low findings remain below the mandatory correction floor. Post-fix validation
+and the third independent round follow.
+
+Round 2 post-fix validation passed: 1,079 baseline tests (227 opt-in skips),
+215 required PostgreSQL tests, all 30 Compose checks, and host/image parity
+across 1,306 collected IDs. Coverage is 98.08% lines / 96.21% branches.
+Ruff, formatting, tracked Markdown, both migration-drift profiles and diff
+whitespace checks passed. Round 2 is complete; no gate is released.
+
+Round 3: Pika `20260909-112510-f0ac17` reviewed `78f8769` against `a241205`.
+Both reviewers completed without failure, mismatch, or degradation. Codex's
+prompt required the full branch diff and listed all 11 files despite the smaller
+auxiliary tier-filtered diff. Raw findings: two Medium, 10 Low, no High/Critical.
+Both Medium findings were Claude-only and accepted through delegated triage:
+
+| Finding | Disposition |
+| --- | --- |
+| C1: Django timestamp validation escapes the service error contract | Fixed: normalize malformed/naive/missing timestamps to safe ConfigError; test both timestamp fields |
+| C2: Distant expiry can reserve a target indefinitely | Fixed: service and SQL enforce a 24-hour ceiling, with DB-owned intake timestamps and exact-boundary/forged-time tests |
+
+Low findings remain below the mandatory correction floor. Final post-fix
+validation follows; the third round has no High/Critical findings.
+
+Final post-fix validation passed 1,079 baseline tests (236 explicit opt-in skips),
+all 224 PostgreSQL tests including 52 secret-request cases, and all 30 Compose
+checks. The rebuilt image passed the same baseline with host/image parity across
+1,315 collected IDs. Coverage is 98.09% lines / 96.23% branches, measured in
+external `final.json` under the secret-request validation directory. Ruff,
+formatting, tracked Markdown, both test-profile migration-drift checks and diff
+whitespace passed. One final Compose attempt failed at PostgreSQL startup with
+a Docker Desktop bind-mount wrong-ownership diagnostic (29 checks passed);
+rerunning unchanged in a fresh disposable project passed all 30. No permission
+changes, source changes, or retained-data repairs were needed for that retry.
+
+All three rounds are complete. Seven accepted Medium reports described six
+distinct issues, all fixed; no accepted Medium+ issue remains. The last round
+had no High/Critical findings, satisfying the automated cycle's local exit
+criteria. Proceed to PR/CI handoff and human merge approval; the PR records its
+exact final head and CI results. No service, provider, deployment, release or
+merge is enabled by this evidence. DAT-01 and Phase 1/Gate 1 remain partial.
+Next dependency-ready work is explicit Parish audit ownership; remaining
+runtime/installer integration and TaskRun chains retain their owning plan scope.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).
