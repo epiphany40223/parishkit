@@ -13,7 +13,6 @@ recorded; installation rejects stale bases without implicit rebasing.
 """
 
 import hashlib
-import json
 import re
 from dataclasses import dataclass, field
 from uuid import UUID, uuid4
@@ -41,11 +40,26 @@ class RequestStatus:
     failure_code: str = ""
     applied_version_id: UUID | None = None
     applied_digest: str | None = None
-    _affected: bytes | None = field(default=None, repr=False)
+    _affected_targets: tuple[tuple[str, str], ...] = field(default=(), repr=False)
 
     def affected_values(self):
-        """Copy authoritative affected records, absent before Applied."""
-        return None if self._affected is None else json.loads(self._affected)
+        """Load values lazily; state-only reads never revalidate full projections."""
+        if self.applied_digest is None:
+            return None
+        _, version = intake_base(self.applied_digest)
+        records = {
+            (section, record["id"]): record["values"]
+            for section, entries in version.document()["sections"].items()
+            for record in entries
+        }
+        return [
+            {
+                "section": section,
+                "id": identifier,
+                "values": records.get((section, identifier)),
+            }
+            for section, identifier in self._affected_targets
+        ]
 
 
 def _identities(*values):
@@ -65,34 +79,27 @@ def _status(request):
     checkpoint = request.checkpoints.order_by("-sequence").first()
     if checkpoint is None:
         raise ConfigError("Configuration request has no durable checkpoint.")
-    applied_id = applied_digest = affected = None
+    applied_id = applied_digest = None
+    affected = ()
     if checkpoint.state == "applied":
         from .runtime_models import ConfigurationActivation
 
-        activation = ConfigurationActivation.objects.filter(request=request).first()
+        activation = (
+            ConfigurationActivation.objects.filter(request=request)
+            .values("configuration_id", "configuration__digest")
+            .first()
+        )
         if (
             activation is None
-            or activation.configuration_id != request.candidate_version_id
+            or activation["configuration_id"] != request.candidate_version_id
+            or activation["configuration__digest"] != request.candidate_digest
         ):
             raise ConfigError("Configuration request has no matching activation.")
-        snapshot, version = intake_base(request.candidate_digest)
-        applied_id, applied_digest = snapshot.pk, snapshot.digest
-        records = {
-            (section, record["id"]): record["values"]
-            for section, entries in version.document()["sections"].items()
-            for record in entries
-        }
-        affected = json.dumps(
-            [
-                {
-                    "section": item["section"],
-                    "id": item["id"],
-                    "values": records.get((item["section"], item["id"])),
-                }
-                for item in request.patch
-            ],
-            sort_keys=True,
-        ).encode("utf-8")
+        applied_id, applied_digest = (
+            activation["configuration_id"],
+            request.candidate_digest,
+        )
+        affected = tuple((item["section"], item["id"]) for item in request.patch)
     return RequestStatus(
         request.pk,
         checkpoint.state,

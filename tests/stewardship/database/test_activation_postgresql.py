@@ -2,6 +2,7 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
+from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
@@ -12,6 +13,7 @@ from django.db.models import F
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts import configuration_installation as installer
+from parishkit.stewardship.accounts import configuration_requests as requests
 from parishkit.stewardship.accounts.authority import AuthorityStore
 from parishkit.stewardship.accounts.configuration_models import (
     AppliedConfigurationVersion,
@@ -225,8 +227,9 @@ def test_corrupt_active_base_is_resumable_after_repair(initialized):
     store, root, actor = initialized
     receipt = stage(root, actor)
     # Simulate storage corruption using the disposable migration-owner role;
-    # never provide this guard bypass through a runtime/operational API.
-    with connection.cursor() as cursor:
+    # never provide this guard bypass through a runtime/operational API. DDL and
+    # mutation roll back together if any statement fails; cleanup cannot leak.
+    with transaction.atomic(durable=True), connection.cursor() as cursor:
         cursor.execute(
             "ALTER TABLE stewardship_parish DISABLE TRIGGER "
             "stewardship_parish_immutable_guard_v1"
@@ -247,7 +250,7 @@ def test_corrupt_active_base_is_resumable_after_repair(initialized):
             == "staged"
         )
     finally:
-        with connection.cursor() as cursor:
+        with transaction.atomic(durable=True), connection.cursor() as cursor:
             cursor.execute(
                 "ALTER TABLE stewardship_parish DISABLE TRIGGER "
                 "stewardship_parish_immutable_guard_v1"
@@ -264,6 +267,163 @@ def test_corrupt_active_base_is_resumable_after_repair(initialized):
                 "stewardship_parish_immutable_guard_v1"
             )
     assert install(store, receipt).state == "applied"
+
+
+def test_unknown_installer_request_has_uniform_lookup_error(tmp_path):
+    """An unknown UUID has the same safe missing-request contract as status lookup."""
+    with pytest.raises(LookupError, match="Configuration request is unavailable"):
+        installer.install_request(
+            AuthorityStore(tmp_path, validate_sections),
+            request_id=uuid4(),
+            correlation_id=uuid4(),
+        )
+
+
+@pytest.mark.parametrize(
+    "state,code",
+    [("failed", ""), ("failed", "private-value"), ("validating", "invalid_candidate")],
+)
+def test_failure_code_check_rejects_direct_inserts(initialized, state, code):
+    """Assert the named CHECK, not a coincidental transition-trigger rejection."""
+    _, root, actor = initialized
+    receipt = stage(root, actor)
+    sequence = 2
+    if state == "failed":
+        ConfigurationRequestCheckpoint.objects.create(
+            request_id=receipt.request_id,
+            sequence=2,
+            state="validating",
+            actor_id=actor,
+        )
+        sequence = 3
+    with (
+        pytest.raises(IntegrityError, match="config_checkpoint_failure_code"),
+        transaction.atomic(),
+    ):
+        ConfigurationRequestCheckpoint.objects.create(
+            request_id=receipt.request_id,
+            sequence=sequence,
+            state=state,
+            failure_code=code,
+            actor_id=actor,
+        )
+
+
+def test_installer_state_check_is_independent_of_transition_trigger(initialized):
+    """Controlled DDL isolation proves the CHECK itself; rollback restores the guard."""
+    _, root, actor = initialized
+    receipt = stage(root, actor)
+    with (
+        pytest.raises(IntegrityError, match="config_checkpoint_installer_states"),
+        transaction.atomic(),
+    ):
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "ALTER TABLE stewardship_config_checkpoint DISABLE TRIGGER "
+                "stewardship_request_checkpoint_v2"
+            )
+        ConfigurationRequestCheckpoint.objects.create(
+            request_id=receipt.request_id,
+            sequence=2,
+            state="unknown",
+            actor_id=actor,
+        )
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT tgenabled FROM pg_trigger WHERE tgname = %s",
+            ["stewardship_request_checkpoint_v2"],
+        )
+        assert cursor.fetchone()[0] == "O"
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ConfigError("synthetic domain"),
+        OSError("synthetic file"),
+        IntegrityError("synthetic database"),
+    ],
+)
+def test_unlock_failure_preserves_original_body_error(error):
+    """Failure classification survives simultaneous workflow and cleanup errors."""
+    with pytest.raises(type(error)) as caught, installation_lock():
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [736212, 1])
+        raise error
+    assert caught.value is error
+    assert connection.connection is None
+    with installation_lock() as guard:
+        guard.check()
+
+
+def test_state_only_receipt_is_lazy_and_does_not_verify_projections(
+    initialized, monkeypatch
+):
+    """Historical state remains cheap; explicit detail access alone validates values."""
+    store, root, actor = initialized
+    receipt = install(store, stage(root, actor))
+    probe = Mock(side_effect=ConfigError("synthetic projection damage"))
+    monkeypatch.setattr(requests, "intake_base", probe)
+    status = request_status(request_id=receipt.request_id, actor_id=actor)
+    assert status == receipt
+    assert install(store, receipt) == receipt
+    probe.assert_not_called()
+    with pytest.raises(ConfigError, match="projection damage"):
+        status.affected_values()
+    probe.assert_called_once_with(receipt.applied_digest)
+
+
+@pytest.mark.parametrize("changed", [False, True])
+def test_coherence_reads_document_once_and_detects_manifest_change(
+    initialized, monkeypatch, changed
+):
+    """The second atomic reference read detects changes without parsing YAML again."""
+    store, root, _ = initialized
+    read = Mock(wraps=store.read_version)
+    reference = (root.version_id, root.digest)
+    monkeypatch.setattr(store, "read_version", read)
+    monkeypatch.setattr(
+        store,
+        "manifest_reference",
+        Mock(side_effect=[reference, (uuid4(), "a" * 64) if changed else reference]),
+    )
+    if changed:
+        with pytest.raises(ConfigError, match="recovery"):
+            installer.coherent_configuration(store)
+    else:
+        assert (
+            installer.coherent_configuration(store).active_configuration_id
+            == root.version_id
+        )
+    read.assert_called_once_with(root.version_id)
+
+
+def test_failed_corruption_probe_rolls_back_guard_ddl(initialized):
+    """A failing synthetic UPDATE cannot leave immutability disabled for later tests."""
+    _, root, _ = initialized
+    with (
+        pytest.raises(IntegrityError),
+        transaction.atomic(durable=True),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(
+            "ALTER TABLE stewardship_parish DISABLE TRIGGER "
+            "stewardship_parish_immutable_guard_v1"
+        )
+        cursor.execute(
+            "UPDATE stewardship_parish SET name = NULL WHERE configuration_id = %s",
+            [root.version_id],
+        )
+        cursor.execute(
+            "ALTER TABLE stewardship_parish ENABLE TRIGGER "
+            "stewardship_parish_immutable_guard_v1"
+        )
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT tgenabled FROM pg_trigger WHERE tgname = %s",
+            ["stewardship_parish_immutable_guard_v1"],
+        )
+        assert cursor.fetchone()[0] == "O"
 
 
 @pytest.mark.parametrize("activated_request", [False, True])

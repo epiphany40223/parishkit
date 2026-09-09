@@ -32,6 +32,8 @@ indefinitely. A changed/closed connection or cross-thread invocation fails close
 cleanup unlocks the original connection, never a newly connected substitute.
 Failed unlock discards Django's stale connection handle when it still owns that
 handle, allowing a later delivery to reconnect; it never closes a replacement.
+If workflow and cleanup both fail, cleanup still discards the failed handle but
+the original workflow exception remains the caller's classifiable failure.
 Transaction-pooling proxies are incompatible with this session-lock protocol.
 
 `install_request` reuses the retained patch builder, base, candidate identity, and
@@ -58,8 +60,14 @@ Receipts contain applied-version identity/digest and authoritative affected
 records only after activation. Removed records have null values. Returned values
 are copies; modifying them cannot rewrite a receipt. A historical Applied receipt
 continues to describe its own version after later saves. It is not evidence of
-current application readiness. `coherent_configuration` performs a bounded
-selected-snapshot/projection check with two manifest reads; callers performing
+current application readiness. State/identity reads use activation metadata only;
+the explicit `affected_values()` accessor lazily verifies and loads the immutable
+snapshot's values. Projection damage cannot erase the historical Applied fact,
+but detailed values still fail closed if they cannot be verified.
+`coherent_configuration` performs a bounded selected-snapshot/projection check
+with two small manifest-reference reads and only one YAML document read. It does
+not cache verified projections across calls, preserving corruption detection.
+Callers performing
 mutations still require their own serialization and fresh admission guards.
 
 ## Remaining integration boundaries

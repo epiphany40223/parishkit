@@ -55,25 +55,38 @@ def installation_lock():
     raw = connection.connection
     guard = InstallerLock(raw)
     _scope.lock = guard
+    body_failed = False
     try:
         yield guard
+    except BaseException:
+        body_failed = True
+        raise
     finally:
         _scope.lock = None
-        # Never reconnect to unlock: that would leave the original lock behind.
-        if not raw.closed:
-            try:
-                with raw.cursor() as cursor:
-                    cursor.execute("SELECT pg_advisory_unlock(%s, %s)", INSTALLER_LOCK)
-                    if not cursor.fetchone()[0]:
-                        raise StorageInvariantError(
-                            "The configuration installer lock was lost."
-                        )
-            except BaseException:
-                if connection.connection is raw:
-                    connection.close()
-                else:
-                    raw.close()
+        try:
+            _release(raw)
+        except BaseException:
+            # Preserve the body's classifiable failure even if cleanup also fails.
+            if not body_failed:
                 raise
-        elif connection.connection is raw:
-            # A direct driver close must not strand Django on a dead handle.
+
+
+def _release(raw):
+    """Unlock the original session, discarding a failed handle without reconnecting."""
+    if raw.closed:
+        if connection.connection is raw:
             connection.close()
+        return
+    try:
+        with raw.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_unlock(%s, %s)", INSTALLER_LOCK)
+            if not cursor.fetchone()[0]:
+                raise StorageInvariantError(
+                    "The configuration installer lock was lost."
+                )
+    except BaseException:
+        if connection.connection is raw:
+            connection.close()
+        else:
+            raw.close()
+        raise

@@ -74,9 +74,12 @@ review/fix rounds and final CI; see its
 [dispositions and validation](milestones.md#configuration-preparation-increment).
 The request-intake increment's three-round review/fix cycle is recorded in the
 [milestone evidence](milestones.md#configuration-request-intake-increment).
-PR #11 merged after all four CI checks passed. The activation increment requires
-its own three-round review/fix cycle, passing CI, and human merge approval; it
-does not release the incomplete Phase 1.
+PR #11 merged after all four CI checks passed. The activation increment completed
+three independent review/fix rounds, all accepted Medium+ corrections, and full
+local validation; see its
+[final evidence](milestones.md#configuration-activation-increment).
+It is ready for PR/CI handoff and human merge approval, not release of the
+incomplete Phase 1. Its PR records the exact final head and CI results.
 
 Integrate ARC-02's concrete materializer and database-backed digest/mode checks
 with DAT-01. Complete its production prerequisite and recovery verification in

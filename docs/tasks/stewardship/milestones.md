@@ -1095,6 +1095,40 @@ Round 2 post-fix validation passed: 1,079 baseline tests (172 opt-in skips),
 1,251 collected IDs. Combined coverage is 97.89% lines / 95.76% branches.
 Ruff, formatting, tracked Markdown, and migration drift also passed.
 
+Round 3: Pika `20260909-095324-d04391` reviewed `c822f94` against `f939b65`.
+Pika split Claude into two file shards; their union and the independent Codex
+full-diff review completed without failure, mismatch, or degradation. Raw totals:
+six Medium, 18 Low, no High/Critical. All six validated findings were Claude-only
+and accepted through delegated triage:
+
+| Finding | Correction |
+| --- | --- |
+| C1: Unknown installer request leaks ORM lookup type | Match the subsystem's safe LookupError contract |
+| C2: Failure/state CHECKs lack isolated negative tests | Assert named constraints against direct inserts, independently of transition triggers |
+| C3: Unlock failure masks workflow failure | Discard the failed connection while preserving the original exception; test all three error classes |
+| C4: State reads eagerly validate full applied projections | Keep state/identity metadata reads lightweight; load verified affected values explicitly and lazily |
+| C5: Coherence rereads/parses the full YAML document | Recheck only the small atomic manifest reference; test single document read and concurrent reference change |
+| C6: Corruption-test DDL can leave a disabled guard | Wrap disable/mutate/enable in a transaction; test failed mutation rolls back DDL |
+
+Focused post-fix validation passed all 226 PostgreSQL/authority tests. Eighteen
+Low findings remain below the mandatory correction floor.
+
+Final post-correction validation passed: 1,079 baseline tests (184 opt-in skips),
+all 172 required PostgreSQL tests, and all 30 Compose checks. The rebuilt image
+passed the same baseline with exact host/image parity across 1,263 collected IDs.
+Combined coverage is 97.96% lines / 95.99% branches; evidence is retained outside
+the checkout in `final-confirmed.json` under the activation validation directory.
+Ruff, formatting, tracked Markdown, both test-profile migration drift checks, and
+diff whitespace checks passed. All test data and provider inputs were synthetic.
+
+All three review/fix rounds are complete, with 14 accepted Medium findings fixed
+and no unresolved accepted Medium-or-higher findings. The final round had no
+High/Critical findings. The automated cycle's local exit criteria are satisfied;
+proceed to PR/CI handoff and human merge approval. The PR records its exact final
+head and CI results. This does not release Gate 1 or complete Phase 1; the next
+dependency-ready scope remains DAT-01 runtime/secret records and installer
+integration, followed by TaskRun chains.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).

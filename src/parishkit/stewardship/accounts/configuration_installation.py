@@ -210,9 +210,13 @@ def install_request(store, *, request_id, correlation_id):
     of discarding it. No arbitrary exception text enters checkpoints or audit.
     """
     _identities(request_id, correlation_id)
-    request = ConfigurationChangeRequest.objects.select_related("base").get(
-        pk=request_id
+    request = (
+        ConfigurationChangeRequest.objects.select_related("base")
+        .filter(pk=request_id)
+        .first()
     )
+    if request is None:
+        raise LookupError("Configuration request is unavailable.")
     materializer = DatabaseMaterializer(
         store, actor_id=request.actor_id, correlation_id=correlation_id, request=request
     )
@@ -285,7 +289,7 @@ def coherent_configuration(store):
     guard; a successful point-in-time read is not a reusable readiness token.
     """
     selected = store.active()
-    runtime = SystemConfiguration.objects.select_related("active_configuration").first()
+    runtime = SystemConfiguration.objects.first()
     if (
         selected is None
         or runtime is None
@@ -296,7 +300,7 @@ def coherent_configuration(store):
     if (
         snapshot.pk != runtime.active_configuration_id
         or version != selected
-        or store.active() != selected
+        or store.manifest_reference() != (selected.version_id, selected.digest)
     ):
         raise ConfigError("Configuration is incomplete or requires recovery.")
     return runtime
