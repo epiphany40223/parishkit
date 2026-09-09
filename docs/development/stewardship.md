@@ -5,10 +5,11 @@ For local container commands and runtime limitations, see the
 
 ## Scoped coverage gate
 
-Run the complete baseline with the same independent line/branch gates as CI:
+Start the [disposable PostgreSQL server](../guides/stewardship-database-tests.md),
+then run the baseline and database suite with the same line/branch gates as CI:
 
 ```sh
-python -m parishkit.stewardship.quality --report /absolute/temporary/path/coverage.json
+python -m parishkit.stewardship.quality --postgresql --report /absolute/temporary/path/coverage.json
 ```
 
 The report's parent must exist, and its path must be new and outside the checkout.
@@ -20,6 +21,9 @@ Raw coverage data is retained in a fresh `stewardship-coverage-*` directory besi
 the JSON report. The child process ignores ambient `PYTEST_*`, `COVERAGE_*`, and
 `COV_CORE_*` controls and uses that new raw-data destination, so shell settings
 cannot silently deselect tests or overwrite an existing coverage database.
+The runner explicitly selects the dummy-database baseline profile, then appends
+the required PostgreSQL suite with its fixed disposable profile. A failed or
+skipped required database run cannot pass using an earlier baseline report.
 The runner always measures the complete stewardship package plus the exact
 shared modules in `coverage-stewardship.toml`, derives pytest-cov targets from
 that manifest, and independently requires at least 80% lines and 80% branches.
@@ -29,7 +33,7 @@ Unrelated tool coverage and blended percentages cannot mask either failure.
 Add every materially extended shared module to the manifest in the same change.
 
 CI also checks migration drift and runs the opt-in Compose suite on a Linux
-runner. This is baseline coverage/Compose enforcement, not completion of future
+runner. This is baseline/database coverage and Compose enforcement, not completion of future
 browser, transaction, acceptance, load, or release validation.
 
 This is implementation evidence for
@@ -157,12 +161,13 @@ development server only to loopback; it is not a public deployment. Internal
 route ingress isolation is delivered by ARC-03/OPS-01.
 
 No profile uses SQLite or sends mail. Pure/HTTP tests require no database;
-database tests will use PostgreSQL 18. Production settings intentionally refuse
+database tests use disposable PostgreSQL 18. Production settings intentionally refuse
 startup until ARC-02's deployment checks are available. This refusal is not a
 substitute for the remaining configuration, cryptographic, and admission work.
 
 The eight Django app labels use the `stewardship_` prefix. Treat these labels as
-stable before adding migrations. No app currently defines models or migrations.
+stable when adding migrations. Foundational account/configuration and audit
+models now have PostgreSQL migrations.
 The package's [decision index](../../src/parishkit/stewardship/DECISIONS.md)
 records the canonical domain vocabulary and persisted compatibility boundaries.
 

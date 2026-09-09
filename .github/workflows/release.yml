@@ -8,6 +8,17 @@ on:
 jobs:
   validate-build:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.6-trixie@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+        env:
+          POSTGRES_USER: stewardship_tests
+          POSTGRES_DB: stewardship_tests
+          POSTGRES_PASSWORD: disposable-test-only
+        ports: ["55432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U stewardship_tests"
+          --health-interval 2s --health-timeout 5s --health-retries 30
     permissions:
       contents: read
     steps:
@@ -46,7 +57,7 @@ jobs:
         run: python -m pymarkdown --config .pymarkdown.json scan $(git ls-files '*.md')
 
       - name: Scoped line and branch coverage
-        run: python -m parishkit.stewardship.quality --report "$RUNNER_TEMP/stewardship-coverage.json"
+        run: python -m parishkit.stewardship.quality --postgresql --report "$RUNNER_TEMP/stewardship-coverage.json"
 
       - name: Migration drift
         env:

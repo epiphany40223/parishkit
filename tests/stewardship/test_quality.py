@@ -184,6 +184,49 @@ def test_quality_runner_independent_floors(
     assert run.call_args.kwargs["cwd"] == repository
 
 
+@pytest.mark.parametrize(
+    "baseline_status,database_status,expected_calls", [(0, 0, 2), (1, 0, 1), (0, 5, 2)]
+)
+def test_postgresql_measurement_appends_required_tests(
+    repository, monkeypatch, baseline_status, database_status, expected_calls
+):
+    """A passing baseline cannot hide a failing/empty/skipped database gate."""
+    report = repository.parent / "combined.json"
+    calls = []
+
+    def measure(arguments, **kwargs):
+        """Emit baseline then combined evidence into the exclusively reserved report."""
+        calls.append((arguments, kwargs))
+        report.write_text(json.dumps(report_data(quality.load_scope(repository))))
+        return subprocess.CompletedProcess(
+            [], baseline_status if len(calls) == 1 else database_status
+        )
+
+    monkeypatch.setenv("DJANGO_SETTINGS_MODULE", "untrusted.ambient.profile")
+    monkeypatch.setattr(quality.subprocess, "run", measure)
+    result = quality.main(
+        [
+            "--repository-root",
+            str(repository),
+            "--report",
+            str(report),
+            "--postgresql",
+        ]
+    )
+    assert result == (baseline_status or database_status)
+    assert len(calls) == expected_calls
+    assert "--ds=parishkit.stewardship.settings.test" in calls[0][0]
+    assert "--cov-append" not in calls[0][0]
+    if expected_calls == 2:
+        assert "--ds=parishkit.stewardship.settings.database_test" in calls[1][0]
+        assert "--require-postgresql-tests" in calls[1][0]
+        assert calls[1][0][-1] == "tests/stewardship/database"
+        assert "--cov-append" in calls[1][0]
+        assert (
+            calls[0][1]["env"]["COVERAGE_FILE"] == calls[1][1]["env"]["COVERAGE_FILE"]
+        )
+
+
 def test_failed_pytest_returns_status_without_reading_report(repository, monkeypatch):
     """Test failure returns immediately instead of evaluating incomplete output."""
     report = repository.parent / "report.json"

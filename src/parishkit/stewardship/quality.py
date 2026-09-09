@@ -120,7 +120,7 @@ def coverage_percentages(
 
 
 def main(argv=None) -> int:
-    """Run the full baseline with manifest-derived sources, then enforce floors."""
+    """Measure the full baseline and optional disposable PostgreSQL integration."""
     parser = StewardshipArgumentParser(
         "python -m parishkit.stewardship.quality",
         description="Run credential-free tests with stewardship coverage gates",
@@ -131,6 +131,11 @@ def main(argv=None) -> int:
     )
     parser.add_argument("--repository-root", type=Path, default=Path.cwd())
     parser.add_argument("--report", type=Path, help="required coverage report path")
+    parser.add_argument(
+        "--postgresql",
+        action="store_true",
+        help="Include required disposable PostgreSQL tests in the same coverage gate",
+    )
     args = parser.parse_args(argv)
     if args.report is None:
         parser.usage_error("--report is required")
@@ -175,22 +180,39 @@ def main(argv=None) -> int:
             if not name.startswith(("PYTEST_", "COVERAGE_", "COV_CORE_"))
         }
         environment["COVERAGE_FILE"] = str(data_directory / ".coverage")
+        arguments = [
+            sys.executable,
+            "-m",
+            "pytest",
+            "--cov-branch",
+            *(f"--cov={module}" for module in scope.modules),
+            f"--cov-report=json:{report}",
+            "--cov-report=term",
+            "-p",
+            "no:cacheprovider",
+        ]
         result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pytest",
-                "--cov-branch",
-                *(f"--cov={module}" for module in scope.modules),
-                f"--cov-report=json:{report}",
-                "--cov-report=term",
-                "-p",
-                "no:cacheprovider",
-            ],
+            [*arguments, "--ds=parishkit.stewardship.settings.test"],
             cwd=root,
             env=environment,
             check=False,
         )
+        if result.returncode == 0 and args.postgresql:
+            # One fresh coverage database accumulates both suites. The explicit
+            # profile and no-skip gate reject absent/misconfigured DB evidence;
+            # a failed second suite can never fall back to the baseline report.
+            result = subprocess.run(
+                [
+                    *arguments,
+                    "--cov-append",
+                    "--ds=parishkit.stewardship.settings.database_test",
+                    "--require-postgresql-tests",
+                    "tests/stewardship/database",
+                ],
+                cwd=root,
+                env=environment,
+                check=False,
+            )
     except OSError:
         print("ERROR: could not launch coverage tests", file=sys.stderr)
         return 2
