@@ -1,0 +1,479 @@
+"""Real PostgreSQL/file activation, interruption recovery, and exclusion."""
+
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
+from uuid import uuid4
+
+import pytest
+from django.db import IntegrityError, connection, connections, transaction
+from django.db.models import F
+
+from parishkit.config import ConfigError
+from parishkit.stewardship.accounts import configuration_installation as installer
+from parishkit.stewardship.accounts.authority import AuthorityStore
+from parishkit.stewardship.accounts.configuration_models import (
+    AppliedConfigurationVersion,
+)
+from parishkit.stewardship.accounts.configuration_requests import (
+    cancel_request,
+    record_request,
+    request_status,
+)
+from parishkit.stewardship.accounts.configuration_schema import (
+    SchemaEnvironmentError,
+    validate_sections,
+)
+from parishkit.stewardship.accounts.installation_lock import (
+    ConfigurationBusy,
+    installation_lock,
+)
+from parishkit.stewardship.accounts.request_models import (
+    ConfigurationChangeRequest,
+    ConfigurationRequestCheckpoint,
+)
+from parishkit.stewardship.accounts.runtime_models import (
+    ConfigurationActivation,
+    SystemConfiguration,
+)
+from parishkit.stewardship.audit.models import AuditEvent
+from parishkit.stewardship.storage import StorageInvariantError
+
+from ..configuration_factory import configuration_version, successor_document
+from ..test_request_patch import parish_patch
+
+pytestmark = pytest.mark.django_db(transaction=True)
+
+
+@pytest.fixture
+def initialized(tmp_path):
+    """Use synthetic configuration and disposable files, never mounted parish data."""
+    store, root = AuthorityStore(tmp_path, validate_sections), configuration_version()
+    actor = uuid4()
+    installer.prepare_initial_configuration(
+        store,
+        root,
+        testing_recipient="testing@example.org",
+        actor_id=actor,
+        correlation_id=uuid4(),
+    )
+    return store, root, actor
+
+
+def stage(root, actor, name="New parish name"):
+    """Construct a fresh actor-scoped durable request against the chosen root."""
+    return record_request(
+        base_digest=root.digest,
+        patch=parish_patch(root, name=name),
+        actor_id=actor,
+        request_key=uuid4(),
+        correlation_id=uuid4(),
+    )
+
+
+def install(store, receipt):
+    """Give each installer delivery fresh correlation but retain request identity."""
+    return installer.install_request(
+        store, request_id=receipt.request_id, correlation_id=uuid4()
+    )
+
+
+def test_initialization_is_testing_durable_and_idempotent(initialized):
+    """Root initialization commits one immutable activation, never Production."""
+    store, root, actor = initialized
+    runtime = installer.coherent_configuration(store)
+    assert runtime.mode == "testing"
+    assert runtime.version == 2
+    assert not runtime.restore_review_required
+    assert runtime.testing_recipient == "testing@example.org"
+    assert runtime.active_configuration_id == root.version_id
+    activation = ConfigurationActivation.objects.get()
+    assert activation.configuration_id == root.version_id
+    assert activation.request_id is None
+    installer.prepare_initial_configuration(
+        store,
+        root,
+        testing_recipient="testing@example.org",
+        actor_id=actor,
+        correlation_id=uuid4(),
+    )
+    connections.close_all()
+    assert installer.coherent_configuration(store).version == 2
+    assert ConfigurationActivation.objects.count() == AuditEvent.objects.count() == 1
+    assert "testing@example.org" not in root.yaml_text()
+
+
+@pytest.mark.parametrize(
+    "recipient", [None, "", "private invalid", "a\r\nb@example.org", "a" * 255]
+)
+def test_invalid_recipient_has_no_runtime_side_effects(tmp_path, recipient):
+    """Validation excludes raw input from errors and commits nothing on failure."""
+    with pytest.raises(ConfigError, match="Testing recipient") as error:
+        installer.prepare_initial_configuration(
+            AuthorityStore(tmp_path, validate_sections),
+            configuration_version(),
+            testing_recipient=recipient,
+            actor_id=uuid4(),
+            correlation_id=uuid4(),
+        )
+    assert "private" not in str(error.value)
+    assert not SystemConfiguration.objects.exists()
+    assert not list(tmp_path.iterdir())
+
+
+def test_changed_initialization_cannot_overwrite_runtime(initialized):
+    """Neither another recipient nor a requestless successor is a bootstrap retry."""
+    store, root, actor = initialized
+    for version, recipient in (
+        (root, "other@example.org"),
+        (configuration_version(), "testing@example.org"),
+        (configuration_version(successor_document(root)), "testing@example.org"),
+    ):
+        with pytest.raises(ConfigError):
+            installer.prepare_initial_configuration(
+                store,
+                version,
+                testing_recipient=recipient,
+                actor_id=actor,
+                correlation_id=uuid4(),
+            )
+    assert (
+        installer.coherent_configuration(store).active_configuration_id
+        == root.version_id
+    )
+
+
+def test_request_activation_status_and_historical_retry(initialized):
+    """Only committed Applied returns values; repeat delivery adds no events."""
+    store, root, actor = initialized
+    receipt = stage(root, actor)
+    assert receipt.applied_digest is receipt.affected_values() is None
+    applied = install(store, receipt)
+    assert applied.state == "applied"
+    assert applied.sequence == 5
+    assert applied.applied_digest == receipt.candidate_digest
+    assert applied.applied_version_id == receipt.candidate_version_id
+    values = applied.affected_values()
+    assert values[0]["values"]["name"] == "New parish name"
+    values[0]["values"]["name"] = "cannot mutate receipt"
+    assert applied.affected_values()[0]["values"]["name"] == "New parish name"
+    activation = ConfigurationActivation.objects.get(request_id=receipt.request_id)
+    event = AuditEvent.objects.get(subject_id=activation.pk)
+    assert event.actor_id == actor
+    assert event.correlation_id == activation.correlation_id
+    assert list(
+        ConfigurationRequestCheckpoint.objects.filter(request_id=receipt.request_id)
+        .order_by("sequence")
+        .values_list("state", flat=True)
+    ) == [
+        "staged",
+        "validating",
+        "prepared",
+        "yaml_activated",
+        "applied",
+    ]
+    count = AuditEvent.objects.count()
+    assert install(store, receipt) == applied
+    connections.close_all()
+    assert request_status(request_id=receipt.request_id, actor_id=actor) == applied
+    assert AuditEvent.objects.count() == count
+    successor = stage(store.active(), actor, name="Later name")
+    install(store, successor)
+    assert install(store, receipt) == applied  # historical, not current readiness
+
+
+def test_stale_base_fails_without_writing_candidate_file(initialized):
+    """Competing intents never silently rebase or overwrite the winning authority."""
+    store, root, actor = initialized
+    first, stale = stage(root, actor), stage(root, actor, "Stale name")
+    install(store, first)
+    failed = install(store, stale)
+    assert (failed.state, failed.failure_code) == ("failed", "stale_base")
+    assert failed.applied_digest is None
+    assert not (store.root / f"{stale.candidate_version_id}.yaml").exists()
+    assert install(store, stale) == failed
+    assert store.active().digest == first.candidate_digest
+
+
+def test_cancelled_request_never_installs(initialized):
+    """Cancellation remains terminal even when delivery was already queued."""
+    store, root, actor = initialized
+    receipt = stage(root, actor)
+    cancelled = cancel_request(
+        request_id=receipt.request_id,
+        actor_id=actor,
+        expected_sequence=1,
+        correlation_id=uuid4(),
+    )
+    assert install(store, receipt) == cancelled
+    assert store.active() == root
+
+
+@pytest.mark.parametrize(
+    "boundary",
+    ["file", "snapshot", "prepared", "selected", "yaml_checkpoint", "activated"],
+)
+def test_each_durable_boundary_recovers_exactly_once(
+    initialized, monkeypatch, boundary
+):
+    """An interrupted delivery may leave mismatch, but never reports partial Applied."""
+    store, root, actor = initialized
+    receipt = stage(root, actor)
+
+    def crash_after(original):
+        """Raise after a real durable effect, simulating lost acknowledgement."""
+
+        def interrupted(*args, **kwargs):
+            original(*args, **kwargs)
+            raise OSError("synthetic interruption")
+
+        return interrupted
+
+    with monkeypatch.context() as patch:
+        if boundary == "file":
+            patch.setattr(store, "write_version", crash_after(store.write_version))
+        elif boundary == "snapshot":
+            patch.setattr(
+                installer, "prepare_snapshot", crash_after(installer.prepare_snapshot)
+            )
+        elif boundary == "selected":
+            patch.setattr(store, "select", crash_after(store.select))
+        elif boundary == "activated":
+            patch.setattr(
+                installer.DatabaseMaterializer,
+                "activate",
+                crash_after(installer.DatabaseMaterializer.activate),
+            )
+        else:
+            original = installer.DatabaseMaterializer.checkpoint
+            target = "prepared" if boundary == "prepared" else "yaml_activated"
+
+            def interrupted(self, state, **kwargs):
+                """Interrupt just the requested append-only checkpoint."""
+                original(self, state, **kwargs)
+                if state == target:
+                    raise OSError("synthetic interruption")
+
+            patch.setattr(installer.DatabaseMaterializer, "checkpoint", interrupted)
+        with pytest.raises(OSError, match="synthetic"):
+            install(store, receipt)
+    before = request_status(request_id=receipt.request_id, actor_id=actor)
+    if boundary in {"selected", "yaml_checkpoint"}:
+        with pytest.raises(ConfigError, match="recovery"):
+            installer.coherent_configuration(store)
+        assert before.applied_digest is None
+    connections.close_all()
+    applied = install(store, receipt)
+    assert applied.state == "applied"
+    assert (
+        installer.coherent_configuration(store).active_configuration_id
+        == receipt.candidate_version_id
+    )
+    assert (
+        ConfigurationActivation.objects.filter(request_id=receipt.request_id).count()
+        == 1
+    )
+    assert AuditEvent.objects.filter(subject_id=receipt.request_id).count() == 5
+
+
+def test_activation_audit_failure_rolls_back_pointer_and_applied(initialized):
+    """The SQL trigger's event failure rolls back every activation effect together."""
+    store, root, actor = initialized
+    receipt = stage(root, actor)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "ALTER TABLE stewardship_audit_event ADD CONSTRAINT no_activation_audit "
+            "CHECK (event_type <> 'configuration_activated') NOT VALID"
+        )
+    try:
+        with pytest.raises(IntegrityError, match="no_activation_audit"):
+            install(store, receipt)
+        assert (
+            SystemConfiguration.objects.get().active_configuration_id == root.version_id
+        )
+        assert (
+            request_status(request_id=receipt.request_id, actor_id=actor).state
+            == "yaml_activated"
+        )
+        assert not ConfigurationActivation.objects.filter(
+            request_id=receipt.request_id
+        ).exists()
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "ALTER TABLE stewardship_audit_event "
+                "DROP CONSTRAINT no_activation_audit"
+            )
+    assert install(store, receipt).state == "applied"
+
+
+def test_unrelated_request_cannot_recover_selected_candidate(initialized, monkeypatch):
+    """A mismatch pins recovery to its own request; no competing selection can occur."""
+    store, root, actor = initialized
+    first, other = stage(root, actor), stage(root, actor, "Other")
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            installer.DatabaseMaterializer,
+            "activate",
+            lambda *args: (_ for _ in ()).throw(OSError()),
+        )
+        with pytest.raises(OSError):
+            install(store, first)
+    with pytest.raises(ConfigError, match="Another"):
+        install(store, other)
+    assert store.active().digest == first.candidate_digest
+    assert install(store, first).state == "applied"
+    assert install(store, other).failure_code == "stale_base"
+
+
+def test_schema_environment_outage_is_retryable_not_invalid_candidate(
+    initialized, monkeypatch
+):
+    """Installation problems are not recorded as bad user input or leaked in audit."""
+    store, root, actor = initialized
+    receipt = stage(root, actor)
+
+    def unavailable(*args):
+        """Simulate missing packaged schema data without altering retained records."""
+        raise SchemaEnvironmentError("synthetic unavailable catalog")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(installer, "intake_base", unavailable)
+        with pytest.raises(SchemaEnvironmentError):
+            install(store, receipt)
+    assert (
+        request_status(request_id=receipt.request_id, actor_id=actor).state
+        == "validating"
+    )
+    assert install(store, receipt).state == "applied"
+
+
+def test_invalid_retained_candidate_fails_without_private_error(initialized):
+    """Even a direct malformed request INSERT cannot bypass reconstruction checks."""
+    store, root, actor = initialized
+    request = ConfigurationChangeRequest.objects.create(
+        actor_id=actor,
+        request_key=uuid4(),
+        request_schema="parish-integrations-patch-v1",
+        base_id=root.version_id,
+        patch=parish_patch(root, name="private input"),
+        payload_fingerprint="b" * 64,
+        candidate_version_id=uuid4(),
+        candidate_digest="c" * 64,
+    )
+    failed = installer.install_request(
+        store, request_id=request.pk, correlation_id=uuid4()
+    )
+    assert failed.failure_code == "invalid_candidate"
+    assert "private input" not in repr(failed)
+    assert store.active() == root
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"mode": "production"},
+        {"testing_recipient": "replacement@example.org"},
+        {"restore_review_required": True},
+        {"active_configuration_id": None},
+        {},
+    ],
+)
+def test_runtime_cannot_be_mutated_without_owning_workflow(initialized, changes):
+    """Version advancement alone never authorizes runtime/pointer changes."""
+    with pytest.raises(IntegrityError), transaction.atomic():
+        SystemConfiguration.objects.update(version=F("version") + 1, **changes)
+
+
+def test_runtime_singleton_and_delete_guards(initialized):
+    """Raw-style ORM operations cannot duplicate/remove initialized runtime."""
+    with pytest.raises(IntegrityError), transaction.atomic():
+        SystemConfiguration.objects.create(testing_recipient="testing@example.org")
+    with pytest.raises(IntegrityError), transaction.atomic():
+        SystemConfiguration.objects.all().delete()
+
+
+def test_forged_activation_and_checkpoint_are_rejected(initialized):
+    """Neither direct checkpoint INSERT nor a requestless successor implies Applied."""
+    store, root, actor = initialized
+    receipt = stage(root, actor)
+    for state in ("prepared", "yaml_activated", "applied"):
+        with pytest.raises(IntegrityError), transaction.atomic():
+            ConfigurationRequestCheckpoint.objects.create(
+                request_id=receipt.request_id,
+                sequence=2,
+                state=state,
+                actor_id=actor,
+            )
+    successor = configuration_version(successor_document(root))
+    installer.prepare_snapshot(successor, actor_id=actor, correlation_id=uuid4())
+    with pytest.raises(IntegrityError), transaction.atomic():
+        ConfigurationActivation.objects.create(
+            configuration_id=successor.version_id,
+            predecessor_id=root.version_id,
+            sequence=2,
+            actor_id=actor,
+        )
+    assert store.active() == root
+
+
+def test_lock_blocks_other_connections_and_releases_after_error():
+    """The deployment-wide claim spans transactions, but cannot leak after an error."""
+    entered, release = Event(), Event()
+
+    def owner():
+        """Use a truly independent connection and retain its lock until signaled."""
+        connections.close_all()
+        try:
+            with installation_lock() as guard:
+                with transaction.atomic(durable=True):
+                    guard.check()
+                entered.set()
+                assert release.wait(10)
+        finally:
+            connections.close_all()
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(owner)
+        try:
+            assert entered.wait(10)
+            with pytest.raises(ConfigurationBusy), installation_lock():
+                pytest.fail("competing installer entered")
+        finally:
+            release.set()
+        future.result(timeout=10)
+    with pytest.raises(OSError), installation_lock():
+        raise OSError("synthetic")
+    with installation_lock() as guard:
+        guard.check()
+
+
+def test_lost_connection_and_nested_transactions_fail_closed():
+    """A reconnect must not silently replace the session owning serialization."""
+    with (
+        transaction.atomic(),
+        pytest.raises(StorageInvariantError),
+        installation_lock(),
+    ):
+        pytest.fail("nested transaction accepted")
+    with installation_lock() as guard:
+        with pytest.raises(StorageInvariantError), installation_lock():
+            pytest.fail("independent nested claim accepted")
+        connection.close()
+        connection.ensure_connection()
+        with pytest.raises(StorageInvariantError, match="lost"):
+            guard.check()
+    with pytest.raises(StorageInvariantError, match="lost"):
+        guard.check()
+
+
+def test_unlocked_materializer_and_unconfigured_coherence_fail_closed(tmp_path):
+    """Neither a prepared row nor constructing a materializer implies readiness."""
+    store = AuthorityStore(tmp_path, validate_sections)
+    materializer = installer.DatabaseMaterializer(
+        store, actor_id=uuid4(), correlation_id=uuid4()
+    )
+    with pytest.raises(StorageInvariantError):
+        materializer.active_digest()
+    with pytest.raises(ConfigError):
+        installer.coherent_configuration(store)
+    assert not AppliedConfigurationVersion.objects.exists()

@@ -1,9 +1,4 @@
-"""Immutable submitted intents and append-only intake checkpoints.
-
-Installer checkpoints will extend this admitted state machine in a later
-migration. There is deliberately no way to represent Applied before the actual
-YAML/database activation service and its atomic effects are implemented.
-"""
+"""Immutable submitted intents and append-only installer checkpoints."""
 
 from django.db import models
 
@@ -53,6 +48,7 @@ class ConfigurationRequestCheckpoint(ImmutableRecord):
     )
     sequence = models.PositiveIntegerField()
     state = models.CharField(max_length=16)
+    failure_code = models.CharField(max_length=32, default="", db_default="")
 
     class Meta:
         db_table = "stewardship_config_checkpoint"
@@ -64,7 +60,27 @@ class ConfigurationRequestCheckpoint(ImmutableRecord):
                 condition=models.Q(sequence__gte=1), name="config_checkpoint_positive"
             ),
             models.CheckConstraint(
-                condition=models.Q(state__in=["staged", "cancelled"]),
-                name="config_checkpoint_intake_states",
+                condition=models.Q(
+                    state__in=[
+                        "staged",
+                        "validating",
+                        "prepared",
+                        "yaml_activated",
+                        "applied",
+                        "failed",
+                        "cancelled",
+                    ]
+                ),
+                name="config_checkpoint_installer_states",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        state="failed",
+                        failure_code__in=["stale_base", "invalid_candidate"],
+                    )
+                    | (~models.Q(state="failed") & models.Q(failure_code=""))
+                ),
+                name="config_checkpoint_failure_code",
             ),
         ]

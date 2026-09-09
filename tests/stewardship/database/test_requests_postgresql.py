@@ -45,7 +45,8 @@ def test_retry_cancel_and_status_preserve_intent_and_attribution(intake):
     """Receipts are never Applied, cancellation is durable and retries emit no audit."""
     first = record_request(**intake)
     assert (first.state, first.sequence) == ("staged", 1)
-    assert not hasattr(first, "applied_digest")
+    assert first.applied_digest is None
+    assert first.affected_values() is None
     retry = record_request(**{**intake, "correlation_id": uuid4()})
     assert retry == first
     assert (

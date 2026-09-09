@@ -58,13 +58,13 @@ Phase 1's database-backed ARC-02 integration or mark that work complete early.
 
 Source scope: [Phase 1A: Schema and policy](../../plans/stewardship/overall.md#phase-1-secure-foundation-and-durable-domain).
 
-Execution checkpoint (September 9, 2026 UTC): the human merged configuration
-preparation as PR #10, merge `c4366cd`, after the storage foundation in PR #9.
-The branch `pr/stewardship-configuration-requests` starts at refreshed `origin/main`.
-It continues DAT-01.02/.03 with immutable request intake, actor-scoped retry keys,
-versioned patch validation, and durable cancellation/status/audit checkpoints.
-Remaining request/runtime records and complete installer
-activation remain the next dependency-ready DAT-01.02/.03 work, followed by
+Execution checkpoint (September 9, 2026 UTC): the human merged request intake
+as PR #11, merge `f939b65`, after configuration preparation and storage foundation.
+The branch `pr/stewardship-configuration-activation` starts at refreshed `origin/main`.
+It continues DAT-01.02/.03 with runtime/activation records, a concrete PostgreSQL
+Materializer, ordinary request installation, and crash recovery.
+Remaining runtime/secret records and installer integration
+remain dependency-ready DAT-01.02/.03 work, followed by
 TaskRun chains. No whole partially delivered task is checked off. Each increment
 gets the full three-round review/fix cycle and human merge approval; Gate 1 still
 reviews the integrated foundation before Phase 2.
@@ -74,8 +74,9 @@ review/fix rounds and final CI; see its
 [dispositions and validation](milestones.md#configuration-preparation-increment).
 The request-intake increment's three-round review/fix cycle is recorded in the
 [milestone evidence](milestones.md#configuration-request-intake-increment).
-Its PR/CI handoff still requires human merge approval; it does not release the
-incomplete Phase 1. Resume remaining installer/runtime/secret work after merge.
+PR #11 merged after all four CI checks passed. The activation increment requires
+its own three-round review/fix cycle, passing CI, and human merge approval; it
+does not release the incomplete Phase 1.
 
 Integrate ARC-02's concrete materializer and database-backed digest/mode checks
 with DAT-01. Complete its production prerequisite and recovery verification in

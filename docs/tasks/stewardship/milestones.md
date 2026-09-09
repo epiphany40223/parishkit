@@ -1038,6 +1038,24 @@ checks, and whitespace passed. The increment is ready for PR/CI handoff and huma
 merge approval; runtime/installer/secret and complete request-state work remains
 the next dependency-ready DAT-01.02/.03 scope.
 
+PR #11 merged by human approval at 11:11:33 UTC on September 9, 2026, as
+`f939b65647c0ee6932db005e53118758ae3d58fe`. All four CI checks for `bbe7970`
+passed before merge ([run 34310477305](https://github.com/epiphany40223/parishkit/actions/runs/34310477305)).
+
+### Configuration-activation increment
+
+Branch `pr/stewardship-configuration-activation` starts from PR #11's refreshed
+`origin/main` merge. The [activation guide](../../guides/stewardship-configuration-activation.md)
+defines delivered scope and remaining integration. DAT-01.02/.03/.06 and all M1/G1
+checks remain partial; no production service or external provider write is enabled.
+
+Initial validation: 1,079 baseline tests passed with 159 explicit opt-in skips;
+all 147 PostgreSQL tests passed, including 30 new activation/recovery cases.
+The combined baseline/database coverage gate preserves complete scope and separate
+80% floors: 97.83% lines and 95.69% branches. Ruff, formatting, Markdown, and both
+test-profile migration drift checks passed. Review rounds and final Compose/CI
+evidence follow below; this is not yet a review-gate release.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).
