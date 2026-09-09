@@ -320,3 +320,25 @@ def test_recovery_new_rule_creation_matches_grant_origin():
             candidate_id=uuid4(),
             request_schema="operator-recovery-patch-v1",
         )
+
+
+@pytest.mark.parametrize("ministry", [True, False, 123.0, "123", [], {}, 0, -1, 2**63])
+@pytest.mark.parametrize(
+    "capability",
+    [
+        Capability.MINISTRY_REPORT,
+        Capability.MINISTRY_FOLLOWUP,
+        Capability.REPORT_EXPORT,
+    ],
+)
+def test_ministry_scope_rejects_noncanonical_identifiers(ministry, capability):
+    """Python bool/float equality is not proof of a canonical Ministry DUID."""
+    leader = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({1, 123}))
+    assert not allows(leader, capability, ministry_id=ministry)
+    assert report_columns(leader, ("member_name",), ministry_id=ministry) == ()
+
+
+def test_principal_scope_cannot_exceed_persisted_duid_range():
+    """In-memory principal scopes obey the same bigint range as stored assignments."""
+    with pytest.raises(ValueError):
+        Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({2**63}))

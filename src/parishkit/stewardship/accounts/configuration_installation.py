@@ -1,9 +1,10 @@
-"""Internal PostgreSQL materializer and resumable parish-profile installer.
+"""Internal PostgreSQL materializer and resumable configuration/policy installer.
 
 No service, route, or command exposes this implementation. Actor UUIDs are
 attribution, not authorization. Online Admin admission, credential evidence,
 offline bootstrap/recovery interlocks, and service grants/mounts remain required
-before exposure. This schema cannot change roles, secrets, campaigns, or mode.
+before exposure. Versioned policy is supported internally; operational secret,
+campaign and mode changes are not. Request IDs are references, never credentials.
 """
 
 import re

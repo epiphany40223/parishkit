@@ -54,7 +54,8 @@ class Principal:
         ):
             raise TypeError("Invalid principal identity or scopes.")
         if self.roles - {"administrator", "staff", "ministry_leader"} or any(
-            type(item) is not int or item < 1 for item in self.ministries
+            type(item) is not int or not 1 <= item <= 2**63 - 1
+            for item in self.ministries
         ):
             raise ValueError("Invalid principal roles or ministry scope.")
         if self.family_id is not None and (
@@ -145,6 +146,8 @@ def allows(principal, capability, *, ministry_id=None, family_id=None):
         }
     return (
         "ministry_leader" in principal.roles
+        and type(ministry_id) is int
+        and 1 <= ministry_id <= 2**63 - 1
         and ministry_id in principal.ministries
         and capability
         in {

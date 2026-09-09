@@ -104,8 +104,15 @@ def test_additive_recovery_is_attributed_revoking_and_idempotent(tmp_path):
     assert recover_admin(store, **kwargs) == result
     portal.refresh_from_db()
     assert portal.version == 2
+    checkpoints = list(
+        request.checkpoints.order_by("sequence").values_list("id", "state")
+    )
     with pytest.raises(ConfigError, match="offline"):
         install_request(store, request_id=request.pk, correlation_id=uuid4())
+    assert (
+        list(request.checkpoints.order_by("sequence").values_list("id", "state"))
+        == checkpoints
+    )
 
 
 @pytest.mark.parametrize(

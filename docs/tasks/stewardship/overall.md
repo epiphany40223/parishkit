@@ -81,8 +81,10 @@ DOM-02 interval prerequisite. See the
 This substantial policy state-machine batch precedes the separate campaign/
 lifecycle/schedule state-machine batch; it does not complete Phase 1A. Remaining
 DAT-01 secret/runtime integration stays explicitly open. Continue with DAT-02
-and remaining DOM-02 after this PR's human-approved merge. Review and validation
-status will be recorded in the milestone evidence before PR handoff.
+and remaining DOM-02 after this PR's human-approved merge. The three full-branch
+review/fix rounds and final local validation are complete; see the
+[batch evidence](milestones.md#authorization-and-recovery-batch).
+Human PR merge approval and passing PR CI are required before the next batch.
 
 The merged configuration-preparation increment completed three dual-model
 review/fix rounds and final CI; see its

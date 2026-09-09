@@ -1454,6 +1454,34 @@ Post-round-2 coverage passed 1,399 baseline and 362 PostgreSQL tests, with 97.74
 scoped lines and 94.51% branches. Ruff and Markdown passed. Round 3 and final
 image/CI validation remain required before PR handoff.
 
+Round 3: session `20260909-180150-c7745e` reviewed the complete branch at
+`096353b`, with the same two-source/sharded roster and successful exact-path
+permission preflight. All reviewers completed; no degradation, failed agents
+or verdict mismatch. Four Medium findings, no High/Critical. The canonical
+Ministry-scope finding was fixed with exact integer/range checks and bool,
+float, string, container and out-of-range regression cases. Three were rejected:
+
+- The online-installer recovery-denial test already exists in
+  `test_additive_recovery_is_attributed_revoking_and_idempotent`; its checkpoint
+  preservation assertion was made explicit as well.
+- Removing an exact denial does not add Admin, create a domain, or add Staff
+  to a domain. The specification deliberately limits high-impact notifications
+  to those three categories; the existing ordinary audit and denial-epoch
+  effects are appropriate, without inventing a fourth notification category.
+- Request UUIDs were never authorization credentials. The installer is an
+  unexposed internal primitive; ARC-04/ADM-07/service admission remains mandatory
+  before any operational caller, regardless of UUID randomness. A separate
+  random handle is not a substitute for that boundary.
+
+All three independent review/fix rounds are complete. Accepted Medium findings
+have been corrected. Final local validation passed 1,427 baseline tests and
+362 PostgreSQL tests, with 97.77% scoped line and 94.62% branch coverage. All
+30 opt-in Compose checks passed, including the freshly rebuilt image's 1,427
+baseline tests. Ruff check/format, Markdown, migration drift and Docker build
+passed. No real provider credentials or parish data were used. PR CI checks and
+human approval remain merge requirements; this satisfies the batch review cycle,
+not the incomplete Phase 1A or G1.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).
