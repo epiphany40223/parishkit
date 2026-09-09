@@ -889,6 +889,26 @@ The focused pure/PostgreSQL suite separately passed 72 tests with 100% lines and
 branches over the three new configuration modules. Round 1 is complete; two
 more independent review/fix rounds remain before PR handoff.
 
+Preparation round 2: reviewed `7713230` against `0e4f1c0`, session
+`20260908-182452-5337ca`. Both reviewers and permission preflight completed
+normally; no failures, mismatches, or degradations. Finalize returned COMMENT:
+four Medium findings from 21 raw, 17 Low below cutoff, no High/Critical.
+
+| Finding | Disposition and evidence |
+| --- | --- |
+| C1 | Fixed the serialization/round-trip amplification: recursive lineage loading and projection prefetches use three queries independent of depth; all full parsing/verification runs before the global preparation lock. Tests at depths 1 and 40 assert query counts and observe the real lock acquisition. Full ancestry validation remains linear CPU/memory rather than trusting unverified stored prefixes; it is not a per-request readiness API. Deterministic two-connection and injected-writer races verify bounded exact-candidate rechecks under the lock. |
+| C2 | Fixed: timezone validation uses the pinned wheel's leaf-name catalog, never the host TZPATH. A host-only valid zone is rejected while bundled zones remain valid after replacing the host lookup path. No process-global timezone policy is changed in production code. |
+| C3 | Fixed with the same catalog boundary: region directories/unknown names never become filesystem paths. OSError, corrupt resources, and a missing package produce safe ConfigError diagnostics. Tests prove directory-like input and resource locations are not disclosed. |
+| X1 | Fixed: integration kind/record-ID mappings remain stable over the full verified lineage, including removal/re-addition. Changed IDs and historical ID reuse fail both new preparation and forged-existing-candidate retry; re-addition with the original ID succeeds. |
+
+Post-correction validation: 1,038 host/image baseline passes, 94 explicit opt-in
+skips, exact parity across 1,132 collected IDs; 82 required PostgreSQL tests
+(131 with 49 pure schema tests); all 30 Compose checks passed. Ruff, format,
+migration drift, tracked Markdown, and whitespace checks passed. Scoped baseline
+coverage: 88.39% lines / 86.57% branches, artifact
+`/tmp/stewardship-configuration-evidence.lLYSIF/round2-corrected-coverage.json`.
+Two review/fix rounds are complete; a third remains required before PR handoff.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).

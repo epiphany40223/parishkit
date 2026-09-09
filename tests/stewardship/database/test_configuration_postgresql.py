@@ -395,11 +395,17 @@ def test_concurrent_first_preparation(same_candidate):
     candidates = [first, first if same_candidate else configuration_version()]
     barrier = Barrier(2, timeout=10)
 
+    def synchronize_claim(execute, sql, params, many, context):
+        """Both connections finish preflight before either can claim the lock."""
+        if "pg_advisory_xact_lock" in sql:
+            barrier.wait()
+        return execute(sql, params, many, context)
+
     def write(version):
         """Acquire separate connections and release them even on stale-root denial."""
         try:
-            barrier.wait()
-            return str(prepare(version).pk)
+            with connection.execute_wrapper(synchronize_claim):
+                return str(prepare(version).pk)
         except ConfigError:
             return "rejected"
         finally:
@@ -421,3 +427,128 @@ def test_prepared_snapshot_survives_connection_restart():
     connection.close()
     assert is_prepared(version.digest)
     assert prepare(version).pk == version.version_id
+
+
+@pytest.mark.parametrize("defect", ["metadata", "missing_parish", "extra_projection"])
+def test_raced_candidate_is_rechecked_inside_lock(db, defect):
+    """A row appearing after preflight still needs exact canonical/projection data."""
+    version = configuration_version()
+
+    def inject_before_lock(execute, sql, params, many, context):
+        """Model an uncooperative direct writer at the precise claim boundary."""
+        if "pg_advisory_xact_lock" in sql:
+            document = version.document()
+            if defect == "metadata":
+                document["sections"]["parish"][0]["values"]["name"] = "Changed"
+            row = insert_unchecked(
+                configuration_version(document),
+                include_parish=defect != "missing_parish",
+            )
+            if defect == "extra_projection":
+                AppliedIntegration.objects.create(
+                    configuration=row,
+                    record_id=uuid4(),
+                    kind="slack",
+                    settings={"channel_id": "C123"},
+                    credential_fingerprint=None,
+                )
+        return execute(sql, params, many, context)
+
+    with connection.execute_wrapper(inject_before_lock), pytest.raises(ConfigError):
+        prepare(version)
+    assert not AppliedConfigurationVersion.objects.exists()
+
+
+@pytest.mark.parametrize(
+    "change", ["replace_id", "reuse_for_other_kind", "remove_then_replace"]
+)
+def test_integration_identity_survives_all_versions(db, change):
+    """A logical integration retains its ID; a retired ID cannot name another kind."""
+    root = configuration_version()
+    parent = prepare(root)
+    base = root
+    if change != "replace_id":
+        removed = successor_document(root)
+        removed["sections"]["integrations"] = []
+        base = configuration_version(removed)
+        parent = prepare(base)
+    document = successor_document(base)
+    row = root.document()["sections"]["integrations"][0]
+    if change == "reuse_for_other_kind":
+        row["values"] = {
+            "kind": "slack",
+            "settings": {"channel_id": "C123"},
+            "credential_fingerprint": None,
+        }
+    else:
+        row["id"] = str(uuid4())
+    document["sections"]["integrations"] = [row]
+    candidate = configuration_version(document)
+    with pytest.raises(ConfigError, match="predecessor"):
+        prepare(candidate)
+    insert_unchecked(candidate, predecessor=parent)
+    assert not is_prepared(candidate.digest)
+    with pytest.raises(ConfigError, match="immutable"):
+        prepare(candidate)
+
+
+def test_integration_readdition_with_same_identity_is_allowed(db):
+    """Removing optional configuration does not retire the logical integration."""
+    root = configuration_version()
+    prepare(root)
+    document = successor_document(root)
+    document["sections"]["integrations"] = []
+    removed = configuration_version(document)
+    prepare(removed)
+    restored = successor_document(removed)
+    restored["sections"]["integrations"] = root.document()["sections"]["integrations"]
+    version = configuration_version(restored)
+    prepare(version)
+    assert is_prepared(version.digest)
+
+
+@pytest.mark.parametrize("depth", [1, 40])
+def test_history_reads_are_batched_before_global_lock(db, monkeypatch, depth):
+    """History size changes neither round trips nor parsing inside the write lock."""
+    from django.test.utils import CaptureQueriesContext
+
+    from parishkit.stewardship.accounts import configuration_snapshots as snapshots
+
+    version = configuration_version()
+    parent = insert_unchecked(version)
+    for _ in range(depth - 1):
+        version = configuration_version(successor_document(version))
+        parent = insert_unchecked(version, predecessor=parent)
+    with CaptureQueriesContext(connection) as captured:
+        assert is_prepared(version.digest)
+    assert len(captured) == 3
+
+    lock_seen = False
+    original_parse = snapshots.parse_version
+
+    def parse_before_lock(*args, **kwargs):
+        """Full canonical/schema revalidation must not extend the critical section."""
+        assert not lock_seen
+        return original_parse(*args, **kwargs)
+
+    def track_lock(execute, sql, params, many, context):
+        """Observe the real PostgreSQL advisory lock, not a mocked lock helper."""
+        nonlocal lock_seen
+        if "pg_advisory_xact_lock" in sql:
+            lock_seen = True
+        return execute(sql, params, many, context)
+
+    candidate = configuration_version(successor_document(version))
+    monkeypatch.setattr(snapshots, "parse_version", parse_before_lock)
+    with (
+        connection.execute_wrapper(track_lock),
+        CaptureQueriesContext(connection) as captured,
+    ):
+        prepare(candidate)
+    assert lock_seen
+    lock_index = next(
+        index
+        for index, query in enumerate(captured)
+        if "pg_advisory_xact_lock" in query["sql"]
+    )
+    assert not any("RECURSIVE" in query["sql"] for query in list(captured)[lock_index:])

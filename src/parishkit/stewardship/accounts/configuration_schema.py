@@ -7,9 +7,10 @@ bypass this boundary when persisting canonical documents.
 """
 
 import re
+from functools import cache
+from importlib.resources import files
 from urllib.parse import urlsplit
 from uuid import UUID
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.core.exceptions import ValidationError
 from django.core.validators import EmailValidator, URLValidator
@@ -26,6 +27,15 @@ INTEGRATION_FIELDS = {
     "slack": {"channel_id": "text"},
     "backup": {"target": "url"},
 }
+
+
+@cache
+def _timezone_names():
+    """Use only the pinned wheel's leaf catalog, never host TZPATH or user paths."""
+    try:
+        return frozenset(files("tzdata").joinpath("zones").read_text().splitlines())
+    except (OSError, UnicodeError, ModuleNotFoundError):
+        raise ConfigError("The application timezone catalog is unavailable.") from None
 
 
 def _invalid():
@@ -84,9 +94,7 @@ def validate_sections(document):
     _text(parish["name"])
     _typed(parish["website"], "url")
     _text(parish["timezone"])
-    try:
-        ZoneInfo(parish["timezone"])
-    except (ZoneInfoNotFoundError, ValueError):
+    if parish["timezone"] not in _timezone_names():
         _invalid()
     if (
         type(parish["phone"]) is not str

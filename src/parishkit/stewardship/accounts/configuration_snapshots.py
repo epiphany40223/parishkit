@@ -11,6 +11,7 @@ import json
 from uuid import UUID
 
 from django.db import connection, transaction
+from django.db.models import prefetch_related_objects
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.observability import correlation
@@ -69,7 +70,9 @@ def _stored_projections(snapshot):
                     "credential_fingerprint": row.credential_fingerprint,
                 },
             }
-            for row in snapshot.integrations.order_by("record_id")
+            for row in sorted(
+                snapshot.integrations.all(), key=lambda item: str(item.record_id)
+            )
         ],
     }
 
@@ -89,17 +92,61 @@ def _history(snapshot):
         snapshot = snapshot.predecessor
 
 
-def is_prepared(digest):
-    """Revalidate canonical bytes and every projection; absence is not readiness.
+def _load_history(digest):
+    """Load an entire immutable lineage in three queries, independent of depth.
 
-    Database availability errors propagate to the caller's fail-closed readiness
-    boundary. Malformed stored content returns False without exposing its values.
+    UNION deduplicates identity pairs, so even a forged cycle terminates in SQL;
+    the Python verifier then explicitly rejects it. Projection prefetches avoid
+    per-version round trips. Only internal SQL identifiers are interpolated.
     """
-    snapshot = AppliedConfigurationVersion.objects.filter(digest=digest).first()
+    table = connection.ops.quote_name(AppliedConfigurationVersion._meta.db_table)
+    rows = list(
+        AppliedConfigurationVersion.objects.raw(
+            f"""WITH RECURSIVE chain(id, predecessor_id) AS (
+            SELECT id, predecessor_id FROM {table} WHERE digest = %s
+            UNION
+            SELECT parent.id, parent.predecessor_id FROM {table} parent
+            JOIN chain child ON parent.id = child.predecessor_id
+        ) SELECT entry.* FROM {table} entry JOIN chain USING (id)""",
+            [digest],
+        )
+    )
+    if not rows:
+        return None
+    by_id = {row.pk: row for row in rows}
+    for row in rows:
+        if row.predecessor_id is not None and row.predecessor_id not in by_id:
+            return None
+        # Populate the ordinary FK cache without lazy per-ancestor SELECTs.
+        row.predecessor = by_id.get(row.predecessor_id)
+    prefetch_related_objects(rows, "parish", "integrations")
+    return next(row for row in rows if row.digest == digest)
+
+
+def _remember_integrations(document, by_kind, by_id):
+    """Reject identity replacement/reuse, including after removal and re-addition."""
+    for record in document["sections"].get("integrations", []):
+        kind, identifier = record["values"]["kind"], record["id"]
+        if (
+            by_kind.setdefault(kind, identifier) != identifier
+            or by_id.setdefault(identifier, kind) != kind
+        ):
+            raise ConfigError(
+                "Integration identities must remain stable across history."
+            )
+
+
+def _verify_history(snapshot, candidate=None):
+    """Verify loaded rows without further I/O, optionally admitting a successor."""
     if snapshot is None:
         return False
     try:
-        parish_id = snapshot.parish.record_id
+        parish_id = str(snapshot.parish.record_id)
+        by_kind, by_id = {}, {}
+        if candidate is not None:
+            if candidate["sections"]["parish"][0]["id"] != parish_id:
+                return False
+            _remember_integrations(candidate, by_kind, by_id)
         for entry in _history(snapshot):
             version = parse_version(
                 entry.canonical_document, validate_sections=validate_sections
@@ -111,14 +158,24 @@ def is_prepared(digest):
                 and version.predecessor_digest == predecessor
                 and entry.schema_version == 1
                 and entry.validation_schema == VALIDATION_SCHEMA
-                and entry.parish.record_id == parish_id
+                and str(entry.parish.record_id) == parish_id
                 and _digest(_normalized(version.document())) == entry.normalized_digest
                 and _digest(_stored_projections(entry)) == entry.normalized_digest
             ):
                 return False
+            _remember_integrations(version.document(), by_kind, by_id)
         return True
     except (ConfigError, Parish.DoesNotExist):
         return False
+
+
+def is_prepared(digest):
+    """Revalidate canonical bytes and every projection; absence is not readiness.
+
+    Database availability errors propagate to the caller's fail-closed readiness
+    boundary. Malformed stored content returns False without exposing its values.
+    """
+    return _verify_history(_load_history(digest))
 
 
 def prepare_snapshot(version, *, actor_id, correlation_id):
@@ -140,6 +197,21 @@ def prepare_snapshot(version, *, actor_id, correlation_id):
     if validated != version:
         raise ConfigError("Configuration metadata does not match its document.")
     document = version.document()
+    # Verification is intentionally outside the global preparation lock. History
+    # is immutable; cooperating writers only append complete new versions. The
+    # lock protects the bounded publication step, not history-length parsing.
+    existing = AppliedConfigurationVersion.objects.filter(pk=version.version_id).first()
+    if existing is not None:
+        if existing.digest != version.digest or not is_prepared(version.digest):
+            raise ConfigError("Cannot replace an immutable configuration snapshot.")
+        return existing
+    predecessor = None
+    if version.predecessor_digest is not None:
+        predecessor = _load_history(version.predecessor_digest)
+        if not _verify_history(predecessor, candidate=document):
+            raise ConfigError(
+                "Configuration predecessor or stable parish identity is invalid."
+            )
     with correlation(correlation_id), transaction.atomic():
         with connection.cursor() as cursor:
             # Stable, internal namespace; never derive this key from user input.
@@ -148,24 +220,25 @@ def prepare_snapshot(version, *, actor_id, correlation_id):
             pk=version.version_id
         ).first()
         if existing is not None:
-            if existing.digest != version.digest or not is_prepared(version.digest):
+            # A concurrent exact preparation may have won after our preflight.
+            # Compare its complete local data to our already-verified candidate;
+            # do not redo the ancestry walk while holding the global lock.
+            if (
+                existing.digest != version.digest
+                or existing.canonical_document != document
+                or existing.predecessor_id != (predecessor.pk if predecessor else None)
+                or existing.normalized_digest != _digest(_normalized(document))
+            ):
                 raise ConfigError("Cannot replace an immutable configuration snapshot.")
+            try:
+                if _digest(_stored_projections(existing)) != existing.normalized_digest:
+                    raise ConfigError("Configuration projections are incomplete.")
+            except Parish.DoesNotExist:
+                raise ConfigError("Configuration projections are incomplete.") from None
             return existing
-        predecessor = None
-        if version.predecessor_digest is not None:
-            predecessor = AppliedConfigurationVersion.objects.filter(
-                digest=version.predecessor_digest
-            ).first()
-            if predecessor is None or not is_prepared(predecessor.digest):
-                raise ConfigError("Configuration predecessor is not fully prepared.")
-        elif AppliedConfigurationVersion.objects.exists():
+        if predecessor is None and AppliedConfigurationVersion.objects.exists():
             raise ConfigError("A configuration root already exists.")
         parish_record = document["sections"]["parish"][0]
-        if (
-            predecessor is not None
-            and str(predecessor.parish.record_id) != parish_record["id"]
-        ):
-            raise ConfigError("A configuration cannot replace the parish identity.")
         attribution = {"actor_id": actor_id, "correlation_id": correlation_id}
         snapshot = AppliedConfigurationVersion.objects.create(
             id=version.version_id,

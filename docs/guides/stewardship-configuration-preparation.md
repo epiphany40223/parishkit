@@ -28,9 +28,17 @@ audit ownership remains deployment-level until its activation integration lands.
 `is_prepared` reparses the stored canonical document, checks version identity,
 digest, predecessor, validation-schema identity, and normalized digest, then
 reconstructs actual projections and checks their digest too. It iteratively
-verifies the entire predecessor chain and stable parish identity, rejecting
-cycles without a recursion limit. Verification cost is linear in retained
-history; this internal preparation predicate is not a per-request readiness API.
+verifies the entire predecessor chain and stable parish/integration identities,
+rejecting cycles without a recursion limit. A recursive query plus projection
+prefetches loads the history in three database queries; canonical record-ID
+sorting in memory preserves the normalized digest. Full verification and parsing
+run before the global preparation lock. Under the lock, a concurrent exact
+candidate is rechecked against the already-validated document and local
+projections. Cooperating writers only append complete immutable versions.
+Verification CPU/memory cost remains linear in retained history; this internal
+preparation predicate is not a per-request readiness API or a trusted cache.
+Keeping full ancestry verification preserves corruption detection rather than
+assuming an arbitrary stored predecessor was previously validated.
 A missing or mismatched ancestor/projection is not prepared. Database availability errors propagate
 for the owning readiness boundary to fail closed. Preparation is never evidence
 that the YAML manifest and database active pointer agree.
@@ -44,12 +52,15 @@ The executable synthetic examples are in
 [configuration_factory.py](../../tests/stewardship/configuration_factory.py).
 
 - Exactly one Parish: name, HTTP(S) website without embedded credentials, query,
-  or fragment; IANA timezone; canonical US phone; and opaque UUID references for
+  or fragment; timezone from the pinned tzdata wheel's leaf catalog (independent
+  of host TZPATH); canonical US phone; and opaque UUID references for
   all four already-normalized branding variants.
 - Optional integration records: expected ParishSoft organization, Google OAuth
   client ID, Workspace delegated email, sender/reply-to emails, Slack channel,
   or a non-credential HTTP(S) backup target. Each kind has an exact settings
   allowlist and an optional lowercase SHA-256 credential fingerprint.
+  An integration kind retains its record ID across the entire predecessor chain,
+  including removal/re-addition; historical IDs cannot be reused for other kinds.
 - Unknown fields and nonempty later-owned sections are rejected. Empty later
   sections can be retained without implying implemented behavior. Branding
   upload decoding/resource validation and provider-specific credential testing

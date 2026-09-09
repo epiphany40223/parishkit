@@ -162,3 +162,56 @@ def test_history_walk_rejects_cycles_without_a_recursion_limit():
     for _ in range(1100):
         head = SimpleNamespace(pk=uuid4(), predecessor=head)
     assert len(list(_history(head))) == 1100
+
+
+@pytest.mark.parametrize(
+    "zone", ["America", "Europe", "Etc", "US", "posix", "private-zone"]
+)
+def test_nonleaf_timezone_rejected_without_path_disclosure(zone):
+    """User input is only looked up in a leaf-name set, never opened as a path."""
+    document = configuration_document()
+    document["sections"]["parish"][0]["values"]["timezone"] = zone
+    with pytest.raises(ConfigError) as error:
+        configuration_version(document)
+    assert zone not in str(error.value)
+
+
+def test_timezone_validation_ignores_host_only_catalog(tmp_path):
+    """An OS-installed zone outside the pinned application catalog stays invalid."""
+    import zoneinfo
+    from importlib.resources import files
+
+    (tmp_path / "HostOnly").write_bytes(
+        files("tzdata.zoneinfo").joinpath("UTC").read_bytes()
+    )
+    old_path = zoneinfo.TZPATH
+    try:
+        zoneinfo.reset_tzpath([str(tmp_path)])
+        assert zoneinfo.ZoneInfo.no_cache("HostOnly").key == "HostOnly"
+        document = configuration_document()
+        document["sections"]["parish"][0]["values"]["timezone"] = "HostOnly"
+        with pytest.raises(ConfigError):
+            configuration_version(document)
+        # The normal bundled leaf remains valid even with the OS path replaced.
+        configuration_version()
+    finally:
+        zoneinfo.reset_tzpath(old_path)
+
+
+@pytest.mark.parametrize("failure", [OSError, UnicodeError, ModuleNotFoundError])
+def test_timezone_catalog_failure_is_safe(monkeypatch, failure):
+    """Broken installations fail closed without exposing resource paths."""
+    from parishkit.stewardship.accounts import configuration_schema as schema
+
+    def fail(package):
+        """Simulate unreadable/corrupt/missing installed resources, not input files."""
+        raise failure("private-resource-location")
+
+    schema._timezone_names.cache_clear()
+    monkeypatch.setattr(schema, "files", fail)
+    try:
+        with pytest.raises(ConfigError, match="catalog is unavailable") as error:
+            configuration_version()
+        assert "private-resource-location" not in str(error.value)
+    finally:
+        schema._timezone_names.cache_clear()
