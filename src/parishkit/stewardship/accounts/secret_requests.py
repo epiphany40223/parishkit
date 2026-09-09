@@ -27,6 +27,7 @@ class SecretRequestStatus:
     request_id: UUID
     state: str
     version: int
+    cleanup_reason: str
 
 
 def _identifiers(*values):
@@ -69,7 +70,9 @@ def _now():
 
 def _receipt(record):
     """Copy state; the receipt is not proof of installed or tested credentials."""
-    return SecretRequestStatus(record.pk, record.state, record.version)
+    return SecretRequestStatus(
+        record.pk, record.state, record.version, record.cleanup_reason
+    )
 
 
 def _get(identifier, **scope):

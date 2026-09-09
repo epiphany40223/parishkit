@@ -70,7 +70,8 @@ def test_roundtrip_cancel_cleanup_and_idempotent_history(intent):
     """Cleanup is durable, exactly-once in DB, and precedes target reuse."""
     staged = stage_secret_request(**intent)
     assert (staged.state, staged.version) == ("staged", 1)
-    assert set(asdict(staged)) == {"request_id", "state", "version"}
+    assert set(asdict(staged)) == {"request_id", "state", "version", "cleanup_reason"}
+    assert staged.cleanup_reason == ""
     assert stage_secret_request(**{**intent, "correlation_id": uuid4()}) == staged
     pending = cancel(intent)
     assert (pending.state, pending.version) == ("cleanup_pending", 2)
@@ -458,3 +459,79 @@ def test_sql_denies_fabricated_human_cleanup_attribution(intent, transition):
     assert (
         SecretRequestCheckpoint.objects.count() == AuditEvent.objects.count() == before
     )
+
+
+@pytest.mark.parametrize("first_reason", ["cancelled", "expired"])
+def test_first_cleanup_reason_survives_opposite_request_and_terminal_retry(
+    intent, first_reason
+):
+    """A losing caller sees the winning reason without changing durable attribution."""
+    seed_expired(intent)
+
+    def expire():
+        """Both reasons are admissible for this aged synthetic request."""
+        return expire_secret_request(
+            request_id=intent["request_id"],
+            target=intent["target"],
+            correlation_id=uuid4(),
+        )
+
+    actions = {"cancelled": lambda: cancel(intent), "expired": expire}
+    second_reason = "expired" if first_reason == "cancelled" else "cancelled"
+    winning = actions[first_reason]()
+    assert actions[second_reason]() == winning
+    assert winning.cleanup_reason == first_reason
+    record = SecretReplacementRequest.objects.get()
+    assert record.cleanup_reason == first_reason
+    expected_actor = intent["actor_id"] if first_reason == "cancelled" else None
+    assert record.actor_id == expected_actor
+    assert (
+        AuditEvent.objects.get(event_type="secret_request_cleanup_pending").actor_id
+        == expected_actor
+    )
+    terminal = clean(intent, lambda reference: None)
+    assert terminal.state == terminal.cleanup_reason == first_reason
+    assert actions[second_reason]() == terminal
+    assert (
+        secret_request_status(
+            request_id=intent["request_id"], actor_id=intent["actor_id"]
+        )
+        == terminal
+    )
+    assert (
+        AuditEvent.objects.get(event_type="secret_request_" + first_reason).actor_id
+        is None
+    )
+    assert SecretRequestCheckpoint.objects.count() == AuditEvent.objects.count() == 3
+
+
+def test_concurrent_cancel_and_expiry_preserve_winning_reason(intent):
+    """Independent writers observe one cleanup reason and one attributed event."""
+    seed_expired(intent)
+    barrier = Barrier(2)
+
+    def worker(expiry):
+        """Race the two admissible transitions through independent connections."""
+        connections.close_all()
+        try:
+            barrier.wait(timeout=10)
+            if expiry:
+                return expire_secret_request(
+                    request_id=intent["request_id"],
+                    target=intent["target"],
+                    correlation_id=uuid4(),
+                )
+            return cancel(intent)
+        finally:
+            connections.close_all()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(worker, [False, True]))
+    assert outcomes[0] == outcomes[1]
+    winner = outcomes[0].cleanup_reason
+    assert winner in {"cancelled", "expired"}
+    assert AuditEvent.objects.get(
+        event_type="secret_request_cleanup_pending"
+    ).actor_id == (intent["actor_id"] if winner == "cancelled" else None)
+    assert clean(intent, lambda reference: None).state == winner
+    assert SecretRequestCheckpoint.objects.count() == AuditEvent.objects.count() == 3

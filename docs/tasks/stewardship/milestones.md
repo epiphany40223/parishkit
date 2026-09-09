@@ -1166,6 +1166,25 @@ parity across 1,303 collected IDs. Coverage remains 98.08% lines / 96.21%
 branches; Ruff, formatting, Markdown, both migration-drift profiles and diff
 whitespace checks passed. Round 1 is complete; no gate is released.
 
+Round 2: Pika `20260909-111100-d5115f` reviewed `96660c8` against `a241205`.
+Both reviewers completed without failure, mismatch, or degradation. Raw findings:
+two Medium, eight Low, no High/Critical. Both Medium findings were Claude-only
+and accepted through delegated triage:
+
+| Finding | Disposition |
+| --- | --- |
+| C1: Missing cross-reason cleanup tests | Fixed: test both sequential orders, terminal retries and an independent-connection cancellation/expiry race with durable attribution |
+| C2: Safe receipts omit the winning cleanup reason | Fixed: include the closed reason enum and verify status/retry consistency without exposing staging references |
+
+Low findings remain below the mandatory correction floor. Post-fix validation
+and the third independent round follow.
+
+Round 2 post-fix validation passed: 1,079 baseline tests (227 opt-in skips),
+215 required PostgreSQL tests, all 30 Compose checks, and host/image parity
+across 1,306 collected IDs. Coverage is 98.08% lines / 96.21% branches.
+Ruff, formatting, tracked Markdown, both migration-drift profiles and diff
+whitespace checks passed. Round 2 is complete; no gate is released.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).

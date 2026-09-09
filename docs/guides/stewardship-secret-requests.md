@@ -19,7 +19,9 @@ later request from reusing the object identity of a historical request.
 The request UUID binds the exact original intent. Identical retries return the
 current receipt without creating history, including after expiry or cancellation.
 Changed intent under an existing UUID is rejected. Actor-scoped status returns
-only request UUID, state and version; unknown and out-of-scope IDs are unavailable.
+only request UUID, state, version and winning cleanup reason (empty before cleanup);
+unknown and out-of-scope IDs are unavailable. The closed reason enum distinguishes
+a successful cancellation request from a request whose expiry already won.
 These actor identifiers are attribution, not proof of current authentication.
 
 A PostgreSQL partial unique constraint reserves each target while its request
