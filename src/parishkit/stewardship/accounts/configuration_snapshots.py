@@ -15,6 +15,7 @@ from django.db.models import prefetch_related_objects
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.observability import correlation
+from parishkit.stewardship.storage import StorageInvariantError
 
 from .authority import ConfigurationVersion, parse_version
 from .configuration_models import (
@@ -22,7 +23,7 @@ from .configuration_models import (
     AppliedIntegration,
     Parish,
 )
-from .configuration_schema import VALIDATION_SCHEMA, validate_sections
+from .configuration_schema import VALIDATION_SCHEMA, validate_sections, validator_for
 
 
 def _normalized(document):
@@ -149,7 +150,8 @@ def _verify_history(snapshot, candidate=None):
             _remember_integrations(candidate, by_kind, by_id)
         for entry in _history(snapshot):
             version = parse_version(
-                entry.canonical_document, validate_sections=validate_sections
+                entry.canonical_document,
+                validate_sections=validator_for(entry.validation_schema),
             )
             predecessor = entry.predecessor.digest if entry.predecessor_id else None
             if not (
@@ -157,7 +159,6 @@ def _verify_history(snapshot, candidate=None):
                 and version.digest == entry.digest
                 and version.predecessor_digest == predecessor
                 and entry.schema_version == 1
-                and entry.validation_schema == VALIDATION_SCHEMA
                 and str(entry.parish.record_id) == parish_id
                 and _digest(_normalized(version.document())) == entry.normalized_digest
                 and _digest(_stored_projections(entry)) == entry.normalized_digest
@@ -196,6 +197,8 @@ def prepare_snapshot(version, *, actor_id, correlation_id):
     validated = parse_version(version.document(), validate_sections=validate_sections)
     if validated != version:
         raise ConfigError("Configuration metadata does not match its document.")
+    if connection.in_atomic_block or not connection.get_autocommit():
+        raise StorageInvariantError("Snapshot preparation must own its transaction.")
     document = version.document()
     # Verification is intentionally outside the global preparation lock. History
     # is immutable; cooperating writers only append complete new versions. The
@@ -212,7 +215,7 @@ def prepare_snapshot(version, *, actor_id, correlation_id):
             raise ConfigError(
                 "Configuration predecessor or stable parish identity is invalid."
             )
-    with correlation(correlation_id), transaction.atomic():
+    with correlation(correlation_id), transaction.atomic(durable=True):
         with connection.cursor() as cursor:
             # Stable, internal namespace; never derive this key from user input.
             cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [736210, 1])

@@ -44,7 +44,7 @@ class AppliedConfigurationVersion(ImmutableRecord):
                 condition=models.Q(schema_version=1), name="configuration_schema_v1"
             ),
             models.CheckConstraint(
-                condition=models.Q(validation_schema="parish-integrations-v1"),
+                condition=models.Q(validation_schema__in=["parish-integrations-v1"]),
                 name="configuration_validation_schema",
             ),
             models.CheckConstraint(
@@ -83,7 +83,7 @@ class Parish(ImmutableRecord):
     class Meta:
         db_table = "stewardship_parish"
         # Simple structural checks complement strict service validation. IANA
-        # membership uses the pinned application tzdata, not a drifting server
+        # membership uses frozen application schema data, not a drifting server
         # timezone catalog; URL semantics likewise remain in the strict schema.
         constraints = [
             models.CheckConstraint(

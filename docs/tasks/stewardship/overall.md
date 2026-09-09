@@ -68,6 +68,11 @@ TaskRun chains. No whole partially delivered task is checked off. Each increment
 gets the full three-round review/fix cycle and human merge approval; Gate 1 still
 reviews the integrated foundation before Phase 2.
 
+The configuration-preparation increment has completed three dual-model review/fix
+rounds; see its [dispositions and validation](milestones.md#configuration-preparation-increment).
+It is being handed off for human PR merge approval, not released as a completed
+Phase 1. Resume the remaining request/runtime work only after that handoff.
+
 Integrate ARC-02's concrete materializer and database-backed digest/mode checks
 with DAT-01. Complete its production prerequisite and recovery verification in
 Phase 1C, following the controlling plan; all existing review gates remain.

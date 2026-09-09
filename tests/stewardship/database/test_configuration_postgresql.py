@@ -20,6 +20,10 @@ from parishkit.stewardship.accounts.configuration_snapshots import (
 
 from ..configuration_factory import configuration_version, successor_document
 
+# Preparation owns and commits its transaction; wrapping tests in savepoints
+# would hide its durability/lock-lifetime contract.
+pytestmark = pytest.mark.django_db(transaction=True)
+
 
 def prepare(version):
     """Supply fresh synthetic caller attribution without enabling authentication."""
@@ -552,3 +556,81 @@ def test_history_reads_are_batched_before_global_lock(db, monkeypatch, depth):
         if "pg_advisory_xact_lock" in query["sql"]
     )
     assert not any("RECURSIVE" in query["sql"] for query in list(captured)[lock_index:])
+
+
+def test_preparation_requires_an_owned_transaction(db):
+    """No caller transaction may extend the lock or roll back a returned result."""
+    from parishkit.stewardship.storage import StorageInvariantError
+
+    version = configuration_version()
+    with (
+        transaction.atomic(),
+        pytest.raises(StorageInvariantError, match="own its transaction"),
+    ):
+        prepare(version)
+    connection.set_autocommit(False)
+    try:
+        with pytest.raises(StorageInvariantError, match="own its transaction"):
+            prepare(version)
+    finally:
+        connection.rollback()
+        connection.set_autocommit(True)
+    assert not AppliedConfigurationVersion.objects.exists()
+    prepare(version)
+
+    def independent_reader():
+        """A new connection sees committed data and can immediately claim the lock."""
+        try:
+            assert AppliedConfigurationVersion.objects.filter(
+                pk=version.version_id
+            ).exists()
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_try_advisory_xact_lock(%s, %s)", [736210, 1])
+                return cursor.fetchone()[0]
+        finally:
+            connections.close_all()
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        assert pool.submit(independent_reader).result(timeout=10)
+
+
+def test_history_dispatches_its_stored_validator(db, monkeypatch):
+    """A stricter current validator cannot retroactively reinterpret v1 history."""
+    from parishkit.stewardship.accounts import configuration_schema as schema
+
+    version = configuration_version()
+    prepare(version)
+
+    def reject_new_input(document):
+        """Represent a future schema with different input requirements."""
+        raise ConfigError("Synthetic newer-schema rejection")
+
+    monkeypatch.setattr(
+        schema, "VALIDATORS", {**schema.VALIDATORS, "future-v2": reject_new_input}
+    )
+    monkeypatch.setattr(schema, "VALIDATION_SCHEMA", "future-v2")
+    with pytest.raises(ConfigError, match="newer-schema"):
+        schema.validate_sections(version.document())
+    assert is_prepared(version.digest)
+
+
+def test_catalog_outage_is_not_mislabeled_as_corrupt_history(db, monkeypatch):
+    """Installation failures propagate distinctly from a content mismatch."""
+    from parishkit.stewardship.accounts import configuration_schema as schema
+
+    version = configuration_version()
+    prepare(version)
+
+    def unavailable(package):
+        """Simulate an unreadable installed schema asset."""
+        raise OSError("private-installation-path")
+
+    schema._timezone_names.cache_clear()
+    monkeypatch.setattr(schema, "files", unavailable)
+    try:
+        with pytest.raises(schema.SchemaEnvironmentError, match="catalog"):
+            is_prepared(version.digest)
+        with pytest.raises(schema.SchemaEnvironmentError, match="catalog"):
+            prepare(version)
+    finally:
+        schema._timezone_names.cache_clear()

@@ -17,6 +17,11 @@ record ID fails. Transaction-level PostgreSQL advisory lock `(736210, 1)`
 serializes cooperating preparations, including the first insertion; a partial
 unique database constraint independently prevents two roots.
 
+Preparation must own its outermost transaction: callers with an active atomic
+block or disabled autocommit receive `StorageInvariantError`. A durable atomic
+block commits new rows and releases the advisory lock before returning. Future
+installer integration must preserve this boundary, not wrap it in a savepoint.
+
 Every projection protects its configuration version with a foreign key; there
 is exactly one Parish per successfully prepared version and one integration per
 kind/record ID within that version. Versioned profile primary keys identify
@@ -39,8 +44,10 @@ Verification CPU/memory cost remains linear in retained history; this internal
 preparation predicate is not a per-request readiness API or a trusted cache.
 Keeping full ancestry verification preserves corruption detection rather than
 assuming an arbitrary stored predecessor was previously validated.
-A missing or mismatched ancestor/projection is not prepared. Database availability errors propagate
-for the owning readiness boundary to fail closed. Preparation is never evidence
+A missing or mismatched ancestor/projection is not prepared. Database availability
+errors and `SchemaEnvironmentError` propagate for the owning readiness boundary
+to fail closed. The latter denotes unavailable/corrupt installed schema data,
+not invalid user input or corrupt stored history. Preparation is never evidence
 that the YAML manifest and database active pointer agree.
 
 ## Supported schema subset
@@ -48,12 +55,23 @@ that the YAML manifest and database active pointer agree.
 The envelope remains schema version 1. Preparation validation evidence is named
 `parish-integrations-v1`. Preserve this historical schema's meaning when later
 packages add validators; never silently reinterpret existing prepared documents.
+Historical rows dispatch through `validator_for` using their stored discriminator;
+new candidates use the current validator. Add a separate validator and a database
+migration admitting its name for a future schema, retaining historical functions,
+helpers, and schema data unchanged.
+
+Version 1's timezone names are frozen in the package's `timezone_names_v1.txt`,
+copied from the tzdata 2026.3 catalog. The loader verifies SHA-256
+`5027e610a10d1983d286e21fa1fb718f0d34704446cb37f707e81707bb3c1244`.
+Dependency or host timezone updates cannot alter this schema's accepted names;
+this asset does not freeze timezone transition rules used by runtime clocks.
+The wheel-build regression verifies inclusion of the exact asset.
 The executable synthetic examples are in
 [configuration_factory.py](../../tests/stewardship/configuration_factory.py).
 
 - Exactly one Parish: name, HTTP(S) website without embedded credentials, query,
-  or fragment; timezone from the pinned tzdata wheel's leaf catalog (independent
-  of host TZPATH); canonical US phone; and opaque UUID references for
+  or fragment; timezone from the frozen application schema catalog (independent
+  of installed tzdata and host TZPATH); canonical US phone; and opaque UUID references for
   all four already-normalized branding variants.
 - Optional integration records: expected ParishSoft organization, Google OAuth
   client ID, Workspace delegated email, sender/reply-to emails, Slack channel,

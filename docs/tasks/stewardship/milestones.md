@@ -909,6 +909,43 @@ coverage: 88.39% lines / 86.57% branches, artifact
 `/tmp/stewardship-configuration-evidence.lLYSIF/round2-corrected-coverage.json`.
 Two review/fix rounds are complete; a third remains required before PR handoff.
 
+Preparation round 3: reviewed `b1a8f8c` against `0e4f1c0`, session
+`20260908-213954-c73bd5`. Both reviewers and permission preflight completed
+normally; no failures, mismatches, or degradations. Finalize returned COMMENT:
+five Medium findings from 20 raw, 15 Low below cutoff, no High/Critical.
+
+| Finding | Disposition and evidence |
+| --- | --- |
+| C1 | Fixed: preparation rejects nested transactions and disabled autocommit, then owns a durable atomic block. An independent connection verifies committed visibility and immediate advisory-lock release after return. PostgreSQL tests use real transactions rather than enclosing test savepoints. |
+| C2 | Fixed: unavailable or corrupt installed schema data raises a distinct, safely worded SchemaEnvironmentError. Both preparation and historical verification propagate it instead of misclassifying the history as invalid. |
+| C3 | Fixed: historical validation dispatches using each row's stored discriminator. A registry and explicit database known-name constraint permit later schema migrations without reinterpreting old rows. A regression changes the current validator while retaining successful historical verification. |
+| C4 | Fixed: version 1 owns a frozen, hash-checked timezone-name asset rather than consulting an upgradable dependency. Tests cover dependency drift, asset corruption, and inclusion of the exact catalog in a built wheel. |
+| X1 | Duplicate of C4; resolved by the same frozen-schema catalog and regression tests. |
+
+The three required dual-model review/fix rounds are complete, with no accepted
+unresolved Medium-or-higher findings and no High/Critical in the final round.
+Below-cutoff Low findings remain in the review artifacts. Corrections and their
+validation belong to the round that found them under the approved loop policy;
+this is not a claim of an independent APPROVED verdict on the corrected head.
+Human PR merge approval and the full integrated Gate 1 remain required.
+
+Post-round-3 validation: 1,042 host/image baseline passes, 97 explicit opt-in
+skips (85 PostgreSQL and 12 Docker), exact parity across 1,139 collected IDs;
+138 required PostgreSQL plus pure schema tests passed. The focused coverage
+suite passed 98 tests over the three configuration modules: 234/235 statements
+and 87/88 branches covered. Whole stewardship baseline coverage is 88.19% lines
+and 86.24% branches. Artifacts are `round3-coverage.json` and
+`round3-database-coverage.json` under the same local evidence directory above.
+All 30 Compose checks passed against rebuilt image
+`sha256:e9dd180e3746cf62e862e3053f02c005f871ba31d23e2b142e8420b25aaf6f47`.
+The first run repeated the intermittent local PostgreSQL bind-mount ownership
+error; a fresh disposable-project rerun passed without permission or data changes.
+The initial wheel test exposed missing pinned build tools in the local venv;
+installing the existing build requirements fixed it, with no dependency change.
+Ruff, formatting, tracked Markdown, both profiles' migration drift, Django system
+checks, and whitespace checks passed. This increment is ready for PR/CI handoff;
+it does not activate configuration or close any partially delivered DAT-01 task.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).

@@ -210,8 +210,88 @@ def test_timezone_catalog_failure_is_safe(monkeypatch, failure):
     schema._timezone_names.cache_clear()
     monkeypatch.setattr(schema, "files", fail)
     try:
-        with pytest.raises(ConfigError, match="catalog is unavailable") as error:
+        with pytest.raises(
+            schema.SchemaEnvironmentError, match="catalog is unavailable"
+        ) as error:
             configuration_version()
         assert "private-resource-location" not in str(error.value)
     finally:
         schema._timezone_names.cache_clear()
+
+
+def test_frozen_catalog_ignores_changed_dependency(monkeypatch):
+    """Changing the installed tzdata catalog cannot change the v1 accepted set."""
+    from parishkit.stewardship.accounts import configuration_schema as schema
+
+    original = schema.files
+    requests = []
+
+    def only_application_data(package):
+        """A missing or changed dependency must never be consulted for membership."""
+        requests.append(package)
+        if package == "tzdata":
+            raise ModuleNotFoundError("Synthetic upgraded dependency")
+        return original(package)
+
+    schema._timezone_names.cache_clear()
+    monkeypatch.setattr(schema, "files", only_application_data)
+    try:
+        configuration_version()
+        assert requests == [schema.__package__]
+    finally:
+        schema._timezone_names.cache_clear()
+
+
+def test_frozen_catalog_digest_rejects_asset_drift(tmp_path, monkeypatch):
+    """A damaged or silently regenerated schema asset is an installation error."""
+    from parishkit.stewardship.accounts import configuration_schema as schema
+
+    (tmp_path / "timezone_names_v1.txt").write_text("Synthetic/NewZone\n")
+    monkeypatch.setattr(schema, "files", lambda package: tmp_path)
+    schema._timezone_names.cache_clear()
+    try:
+        with pytest.raises(schema.SchemaEnvironmentError):
+            configuration_version()
+    finally:
+        schema._timezone_names.cache_clear()
+
+
+def test_unknown_schema_never_selects_current_validator():
+    """Unknown stored discriminators are rejected, not silently upgraded."""
+    from parishkit.stewardship.accounts.configuration_schema import validator_for
+
+    with pytest.raises(ConfigError, match="Unsupported"):
+        validator_for("private-unknown-schema")
+
+
+def test_wheel_includes_frozen_schema_catalog(tmp_path):
+    """Normal credential-free package builds retain the exact application asset."""
+    import hashlib
+    import subprocess
+    import sys
+    from pathlib import Path
+    from zipfile import ZipFile
+
+    from parishkit.stewardship.accounts.configuration_schema import (
+        _TIMEZONE_NAMES_SHA256,
+    )
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "build",
+            "--wheel",
+            "--no-isolation",
+            "--outdir",
+            str(tmp_path),
+        ],
+        cwd=Path(__file__).resolve().parents[2],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    with ZipFile(next(tmp_path.glob("*.whl"))) as wheel:
+        payload = wheel.read("parishkit/stewardship/accounts/timezone_names_v1.txt")
+    assert hashlib.sha256(payload).hexdigest() == _TIMEZONE_NAMES_SHA256
