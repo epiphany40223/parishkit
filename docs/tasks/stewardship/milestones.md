@@ -1077,6 +1077,24 @@ Round 1 post-fix validation passed: 1,079 baseline tests (167 opt-in skips),
 parity over 1,246 collected IDs. Combined coverage: 97.70% lines / 95.55%
 branches. Ruff, formatting, tracked Markdown, and migration drift passed.
 
+Round 2: Pika `20260909-093630-fea2be` reviewed `a91c418` against `f939b65`.
+Both reviewers completed without failure, mismatch, or degradation. Raw findings:
+three Medium, 18 Low, no High/Critical. All Medium findings were accepted:
+
+| Source | Finding | Correction |
+| --- | --- | --- |
+| Claude C1 | Unlock failure strands Django on a closed raw connection | Close through the owning wrapper; preserve replacements; test retries and direct driver close |
+| Claude C2 | Unavailable deployment claims staged requests too early | Run read-only preflight before claiming; recheck cancellation after preflight |
+| Codex X1 | Direct runtime INSERT bypasses atomic initialization invariant | Deferred database constraint requires root activation before commit |
+
+The Low findings remain below the mandatory correction cutoff. Post-fix full
+validation and the independent third round follow; no gate is released here.
+
+Round 2 post-fix validation passed: 1,079 baseline tests (172 opt-in skips),
+160 required PostgreSQL tests, all 30 Compose checks, and host/image parity over
+1,251 collected IDs. Combined coverage is 97.89% lines / 95.76% branches.
+Ruff, formatting, tracked Markdown, and migration drift also passed.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).

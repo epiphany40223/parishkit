@@ -69,5 +69,11 @@ def installation_lock():
                             "The configuration installer lock was lost."
                         )
             except BaseException:
-                raw.close()
+                if connection.connection is raw:
+                    connection.close()
+                else:
+                    raw.close()
                 raise
+        elif connection.connection is raw:
+            # A direct driver close must not strand Django on a dead handle.
+            connection.close()

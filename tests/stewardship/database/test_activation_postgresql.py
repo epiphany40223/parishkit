@@ -208,8 +208,7 @@ def test_prebootstrap_materializer_contract_and_request_remain_resumable(tmp_pat
     with pytest.raises(ConfigError, match="not initialized"):
         install(store, receipt)
     assert (
-        request_status(request_id=receipt.request_id, actor_id=actor).state
-        == "validating"
+        request_status(request_id=receipt.request_id, actor_id=actor).state == "staged"
     )
     installer.prepare_initial_configuration(
         store,
@@ -245,7 +244,7 @@ def test_corrupt_active_base_is_resumable_after_repair(initialized):
             install(store, receipt)
         assert (
             request_status(request_id=receipt.request_id, actor_id=actor).state
-            == "validating"
+            == "staged"
         )
     finally:
         with connection.cursor() as cursor:
@@ -469,8 +468,14 @@ def test_unrelated_request_cannot_recover_selected_candidate(initialized, monkey
     with pytest.raises(ConfigError, match="Another"):
         install(store, other)
     assert store.active().digest == first.candidate_digest
+    cancelled = cancel_request(
+        request_id=other.request_id,
+        actor_id=actor,
+        expected_sequence=1,
+        correlation_id=uuid4(),
+    )
     assert install(store, first).state == "applied"
-    assert install(store, other).failure_code == "stale_base"
+    assert install(store, other) == cancelled
 
 
 def test_schema_environment_outage_is_retryable_not_invalid_candidate(
@@ -489,8 +494,7 @@ def test_schema_environment_outage_is_retryable_not_invalid_candidate(
         with pytest.raises(SchemaEnvironmentError):
             install(store, receipt)
     assert (
-        request_status(request_id=receipt.request_id, actor_id=actor).state
-        == "validating"
+        request_status(request_id=receipt.request_id, actor_id=actor).state == "staged"
     )
     assert install(store, receipt).state == "applied"
 
@@ -538,6 +542,54 @@ def test_runtime_singleton_and_delete_guards(initialized):
         SystemConfiguration.objects.create(testing_recipient="testing@example.org")
     with pytest.raises(IntegrityError), transaction.atomic():
         SystemConfiguration.objects.all().delete()
+
+
+@pytest.mark.parametrize("atomic", [False, True])
+def test_standalone_runtime_cannot_commit_without_activation(atomic):
+    """Even direct SQL-style insertion cannot freeze an unactivated recipient."""
+    with pytest.raises(IntegrityError, match="atomic root activation"):
+        if atomic:
+            with transaction.atomic(durable=True):
+                SystemConfiguration.objects.create(testing_recipient="test@example.org")
+                assert SystemConfiguration.objects.exists()
+        else:
+            SystemConfiguration.objects.create(testing_recipient="test@example.org")
+    assert not SystemConfiguration.objects.exists()
+
+
+@pytest.mark.parametrize("replace_wrapper", [False, True])
+def test_failed_unlock_discards_only_owning_connection(replace_wrapper):
+    """Unlock failure permits retry and never closes an already-replaced connection."""
+    replacement = None
+    with (
+        pytest.raises(StorageInvariantError, match="lost"),
+        installation_lock() as guard,
+    ):
+        raw = guard.raw
+        with raw.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [736212, 1])
+        if replace_wrapper:
+            connection.connection = None
+            connection.ensure_connection()
+            replacement = connection.connection
+    assert raw.closed
+    if replacement is not None:
+        assert connection.connection is replacement and not replacement.closed
+    else:
+        assert connection.connection is None
+    with installation_lock() as guard:
+        guard.check()
+
+
+def test_direct_driver_close_does_not_strand_wrapper():
+    """A lost raw socket is discarded even without an unlock statement to fail."""
+    with installation_lock() as guard:
+        guard.raw.close()
+        with pytest.raises(StorageInvariantError, match="lost"):
+            guard.check()
+    assert connection.connection is None
+    with installation_lock() as guard:
+        guard.check()
 
 
 def test_forged_activation_and_checkpoint_are_rejected(initialized):

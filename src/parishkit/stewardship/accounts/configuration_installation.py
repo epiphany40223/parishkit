@@ -203,11 +203,11 @@ def prepare_initial_configuration(
 
 
 def install_request(store, *, request_id, correlation_id):
-    """Resume one durable intent; stale/invalid candidates fail before YAML changes.
+    """Resume an intent without claiming work that cannot yet be admitted.
 
-    Operational I/O/DB/schema-environment failures propagate and leave a resumable
-    checkpoint. Never store arbitrary exception text or mark a post-selection
-    interruption failed: matching prepared authority must be recovered instead.
+    Operational preflight errors leave staged requests cancellable. Once YAML
+    has been selected, recovery completes the exact prepared candidate instead
+    of discarding it. No arbitrary exception text enters checkpoints or audit.
     """
     _identities(request_id, correlation_id)
     request = ConfigurationChangeRequest.objects.select_related("base").get(
@@ -220,8 +220,42 @@ def install_request(store, *, request_id, correlation_id):
         current = _status(request)
         if current.state in {"cancelled", "failed", "applied"}:
             return current
+        selected = store.active()
+        active_digest = materializer.active_digest()
+        if active_digest is None:
+            raise ConfigError("Runtime configuration is not initialized.")
+        yaml_digest = selected.digest if selected else None
+        if yaml_digest != active_digest:
+            if yaml_digest != request.candidate_digest:
+                raise ConfigError("Another configuration requires recovery first.")
+            recover_active(store, materializer)
+            return _status(request)
+
+        failure_code = ""
+        intent = None
+        if active_digest != request.base.digest:
+            failure_code = "stale_base"
+        else:
+            # Active-base damage is deployment state, not invalid user intent.
+            # Schema-environment failures likewise propagate before claiming.
+            _, base = intake_base(request.base.digest)
+            try:
+                intent = build_candidate(
+                    base,
+                    request.patch,
+                    candidate_id=request.candidate_version_id,
+                    request_schema=request.request_schema,
+                )
+                if (
+                    intent.candidate.digest != request.candidate_digest
+                    or intent.payload_fingerprint != request.payload_fingerprint
+                ):
+                    raise ConfigError("Configuration request metadata is inconsistent.")
+            except ConfigError:
+                failure_code = "invalid_candidate"
+
         if current.state == "staged":
-            # Serialize with cancellation before doing any filesystem work.
+            # Recheck cancellation under the row lock after read-only preflight.
             with transaction.atomic(durable=True):
                 locked = ConfigurationChangeRequest.objects.select_for_update().get(
                     pk=request.pk
@@ -236,36 +270,8 @@ def install_request(store, *, request_id, correlation_id):
                     actor_id=request.actor_id,
                     correlation_id=correlation_id,
                 )
-        selected = store.active()
-        active_digest = materializer.active_digest()
-        if active_digest is None:
-            raise ConfigError("Runtime configuration is not initialized.")
-        yaml_digest = selected.digest if selected else None
-        if yaml_digest != active_digest:
-            if yaml_digest != request.candidate_digest:
-                raise ConfigError("Another configuration requires recovery first.")
-            recover_active(store, materializer)
-            return _status(request)
-        if active_digest != request.base.digest:
-            materializer.checkpoint("failed", failure_code="stale_base")
-            return _status(request)
-        # A corrupt active base is deployment state, not invalid user intent.
-        # Keep the request resumable after verified operational repair.
-        _, base = intake_base(request.base.digest)
-        try:
-            intent = build_candidate(
-                base,
-                request.patch,
-                candidate_id=request.candidate_version_id,
-                request_schema=request.request_schema,
-            )
-            if (
-                intent.candidate.digest != request.candidate_digest
-                or intent.payload_fingerprint != request.payload_fingerprint
-            ):
-                raise ConfigError("Configuration request metadata is inconsistent.")
-        except ConfigError:
-            materializer.checkpoint("failed", failure_code="invalid_candidate")
+        if failure_code:
+            materializer.checkpoint("failed", failure_code=failure_code)
             return _status(request)
         apply_version(store, materializer, intent.candidate)
         return _status(request)

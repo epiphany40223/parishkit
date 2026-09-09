@@ -124,6 +124,27 @@ class Migration(migrations.Migration):
     BEFORE INSERT OR UPDATE OR DELETE ON stewardship_system_configuration
     FOR EACH ROW EXECUTE FUNCTION stewardship_runtime_guard_v1();
 
+    CREATE FUNCTION stewardship_runtime_activation_required_v1()
+    RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM stewardship_system_configuration runtime
+            CROSS JOIN stewardship_config_activation activation
+            WHERE runtime.id = NEW.id
+              AND runtime.active_configuration_id IS NOT NULL
+              AND activation.sequence = 1
+        ) THEN
+            RAISE EXCEPTION 'Runtime creation requires atomic root activation'
+                USING ERRCODE = '23514';
+        END IF;
+        RETURN NULL;
+    END;
+    $$;
+    CREATE CONSTRAINT TRIGGER stewardship_runtime_activation_required_v1
+    AFTER INSERT ON stewardship_system_configuration
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION stewardship_runtime_activation_required_v1();
+
     CREATE FUNCTION stewardship_activation_guard_v1()
     RETURNS trigger LANGUAGE plpgsql AS $$
     DECLARE
@@ -216,6 +237,9 @@ class Migration(migrations.Migration):
     DROP FUNCTION stewardship_activation_guard_v1();
     DROP TRIGGER stewardship_runtime_guard_v1 ON stewardship_system_configuration;
     DROP FUNCTION stewardship_runtime_guard_v1();
+    DROP TRIGGER stewardship_runtime_activation_required_v1
+        ON stewardship_system_configuration;
+    DROP FUNCTION stewardship_runtime_activation_required_v1();
     DROP TRIGGER stewardship_request_checkpoint_v2 ON stewardship_config_checkpoint;
     DROP FUNCTION stewardship_request_checkpoint_v2();
     CREATE TRIGGER stewardship_request_checkpoint_v1

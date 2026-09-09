@@ -17,6 +17,8 @@ PostgreSQL commits the pointer, request's Applied checkpoint, and value-free aud
 events together; failure of any effect rolls back all of them. Historical
 configuration rows remain immutable. The runtime record cannot be deleted or
 rewritten through a generic version-advancing update.
+A deferred PostgreSQL constraint also rejects standalone runtime creation at
+transaction commit unless root activation completed in that transaction.
 Downgrade remains possible for empty/intake-only databases. Migration 0013
 refuses reversal before removing any protection if activation or post-intake
 checkpoint history exists; it never silently erases or downgrades that history.
@@ -28,6 +30,8 @@ durable transactions. It never nests snapshot preparation inside an outer
 transaction. A competing installer gets a retryable busy error instead of waiting
 indefinitely. A changed/closed connection or cross-thread invocation fails closed;
 cleanup unlocks the original connection, never a newly connected substitute.
+Failed unlock discards Django's stale connection handle when it still owns that
+handle, allowing a later delivery to reconnect; it never closes a replacement.
 Transaction-pooling proxies are incompatible with this session-lock protocol.
 
 `install_request` reuses the retained patch builder, base, candidate identity, and
@@ -40,6 +44,9 @@ checkpoint. Once YAML is selected, failure cannot discard that candidate: exact
 prepared-version recovery must complete first. Another request cannot repair or
 overwrite that mismatch. No implicit rebase, backward activation, or skipped
 predecessor is allowed.
+Initialization, coherence, base verification, and candidate/schema preflight
+precede the staged claim. A blocked first attempt therefore stays staged and
+cancellable; cancellation is rechecked under the request row lock after preflight.
 
 Snapshot commit precedes its prepared checkpoint. A crash in between is safe:
 retry verifies the immutable snapshot and appends the missing checkpoint. Likewise,
