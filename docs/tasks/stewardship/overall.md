@@ -14,9 +14,11 @@ Use [milestones](milestones.md) for demonstration and review status.
    for branch creation, delegated decisions, review rounds, CI, and merge approval.
 2. Follow the ordered package links below; within a package, inspect its full
    plan item, task evidence, and dependencies before selecting work.
-3. Deliver a bounded increment, verify it, and update only its owning task list.
+3. Deliver a coherent phase/subphase batch, verify it, and update its owning task lists.
    Record partial scope when a package spans phases; do not mark a whole package
-   done because its first consumer works.
+   done because its first consumer works. Continue through dependency-ready tasks
+   within the batch without routine approval stops. Individual storage records,
+   migrations and helpers are internal checkpoints, not default PR boundaries.
 4. Complete the phase demonstration and required review/fix rounds, then create
    or update its PR and correct CI failures. At a formal gate, also validate and
    review the complete integrated gate scope. Stop for human merge approval with
@@ -58,16 +60,19 @@ Phase 1's database-backed ARC-02 integration or mark that work complete early.
 
 Source scope: [Phase 1A: Schema and policy](../../plans/stewardship/overall.md#phase-1-secure-foundation-and-durable-domain).
 
-Execution checkpoint (September 9, 2026 UTC): the human merged audit ownership
-as PR #15, merge `2483d08`, after the earlier foundation increments.
-The branch `pr/stewardship-taskrun-storage` starts at that refreshed `origin/main`.
-It delivers DAT-01.05's base TaskRun claim and retry-chain storage, independent
-of BG-01's later operational scheduler/worker/admission integration. Remaining
-DAT-01.02/.03/.06 configuration/runtime and recovery integration stays open.
-Remaining runtime/secret installation and recovery integration retains
-its DAT-01/Phase 1 ownership. No whole partially delivered task is checked off. Each increment
-gets the full three-round review/fix cycle and human merge approval; Gate 1 still
-reviews the integrated foundation before Phase 2.
+Execution checkpoint (September 9, 2026 UTC): the human merged TaskRun storage
+as PR #16, merge `e5706c8a745d4cd33198918eb006180485be50b9`, after all four CI
+checks passed at `4bf013ce69cf9420350accae9247a0d250665627`.
+Branch `pr/stewardship-phase-1a` starts at that refreshed `origin/main`.
+The human approved larger coherent delivery batches rather than further
+single-component foundation PRs. The next batch targets the remaining
+dependency-ready Phase 1A schema, lifecycle and authorization foundation in the
+ordered packages below. Complete remaining DAT-01 prerequisites before their
+consumers; retain explicit later integration ownership instead of claiming
+unimplemented runtime/secret/recovery behavior is complete. Internal commits and
+tests do not need routine approval. The complete batch gets three review/fix
+rounds and human PR merge approval; Gate 1 still reviews the integrated foundation
+before Phase 2.
 
 The merged configuration-preparation increment completed three dual-model
 review/fix rounds and final CI; see its
@@ -85,9 +90,9 @@ all accepted Medium+ corrections and passing local validation; see its
 PR #13 merged with all four checks passing. The audit-ownership increment has
 completed three independent dual-model review/fix rounds and final local
 validation; see its [evidence](milestones.md#audit-ownership-increment).
-PR #15 merged with all four checks passing. The TaskRun increment has completed
-three independent dual-model review/fix rounds and final local validation,
-with its own PR/CI handoff and human merge approval still required; see its
+PR #15 merged with all four checks passing. The TaskRun increment completed
+three independent dual-model review/fix rounds, final local validation and CI,
+and merged as PR #16; see its
 [evidence](milestones.md#taskrun-storage-increment). None of these increments
 releases the incomplete Phase 1 or Gate 1.
 

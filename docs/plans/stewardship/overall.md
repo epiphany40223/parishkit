@@ -51,7 +51,8 @@ below add integrated checks; they do not replace each phase's review cycle.
 
 ## Automated phase delivery cycle
 
-Human-approved workflow, September 8, 2026:
+Human-approved workflow, September 8, 2026, with larger delivery batches and
+continued delegated execution confirmed September 9, 2026:
 
 1. After the preceding phase's PR is merged and its applicable gate is released,
    fetch `origin` and create a new `pr/stewardship-phase-N` topic branch from the
@@ -82,11 +83,16 @@ Human-approved workflow, September 8, 2026:
    a finding-free final review. Record raw
    reviewer severities as well as any evidence-backed rejected findings; never
    treat an incomplete review as a clean round.
-6. Use one PR per phase by default. Split a large phase into smaller coherent,
-   independently testable PRs when needed; each PR follows the same review/fix
-   cycle, and the formal gate still reviews the complete integrated scope since
-   the previous gate, including already merged changes. Create each subsequent
-   branch from refreshed `origin/main` after its predecessor merges.
+6. Use one PR per named phase or subphase by default. Group dependency-ready
+   schema, policy, services, integration and tests into a coherent demonstrable
+   outcome. Do not routinely end a PR at an individual model, migration, helper
+   or checklist item. Use logical commits and internal test checkpoints within
+   the batch; these do not require human approval or a separate three-round
+   review loop. Split only when a substantive independently testable outcome or
+   reviewability boundary justifies it, and record why. Each resulting PR follows
+   the full review/fix cycle. Formal gates still review the complete integrated
+   scope since the previous gate, including already merged changes. Create each
+   subsequent branch from refreshed `origin/main` after its predecessor merges.
 7. Once local validation and the review loop pass, push and create the PR against
    `origin/main` (or update the existing phase PR). Watch CI for the current head,
    fix failures, rerun affected checks, and push corrections until required CI
