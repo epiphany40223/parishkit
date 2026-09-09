@@ -12,12 +12,17 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from uuid import UUID
 
+from django.core.exceptions import ValidationError
 from django.db import connection, transaction
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.storage import StorageInvariantError, UTCDateTimeField
 
-from .secret_models import SECRET_TARGETS, SecretReplacementRequest
+from .secret_models import (
+    MAX_STAGING_LIFETIME,
+    SECRET_TARGETS,
+    SecretReplacementRequest,
+)
 
 
 @dataclass(frozen=True)
@@ -96,19 +101,22 @@ def stage_secret_request(
 ):
     """Record a trusted, already sealed staging reference with exact retry identity.
 
-    Fresh Google authentication and bounded staging lifetime are admission policies
-    owned by ARC-04/ARC-06; this storage layer enforces timestamp ordering only.
+    ARC-04/ARC-06 own fresh authentication and may choose a shorter staging TTL;
+    this storage layer enforces ordering and a hard 24-hour lifetime ceiling.
     An identical retry returns the original state, including after expiry/cleanup.
     """
     _identifiers(request_id, staging_reference, actor_id, correlation_id)
     _target(target)
     field = UTCDateTimeField()
-    reauthenticated_at, expires_at = (
-        field.to_python(reauthenticated_at),
-        field.to_python(expires_at),
-    )
+    try:
+        reauthenticated_at, expires_at = (
+            field.to_python(reauthenticated_at),
+            field.to_python(expires_at),
+        )
+    except ValidationError:
+        raise ConfigError("Valid secret request timestamps are required.") from None
     if reauthenticated_at is None or expires_at is None:
-        raise ConfigError("Secret request timestamps are required.")
+        raise ConfigError("Valid secret request timestamps are required.")
     if expected_fingerprint is not None and (
         type(expected_fingerprint) is not str
         or re.fullmatch(r"[0-9a-f]{64}", expected_fingerprint) is None
@@ -131,6 +139,8 @@ def stage_secret_request(
         now = _now()
         if reauthenticated_at > now or expires_at <= now:
             raise ConfigError("Invalid secret request interval.")
+        if expires_at - now > MAX_STAGING_LIFETIME:
+            raise ConfigError("Secret staging lifetime cannot exceed 24 hours.")
         if SecretReplacementRequest.objects.filter(
             target=target, state__in=["staged", "cleanup_pending"]
         ).exists():

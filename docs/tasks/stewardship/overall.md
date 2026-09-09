@@ -63,9 +63,9 @@ activation as PR #12, merge `a241205`, after the earlier foundation increments.
 The branch `pr/stewardship-secret-requests` starts at refreshed `origin/main`.
 It continues DAT-01.02/.03 with secret-request metadata, target reservation,
 durable cancellation/expiry history and retryable staging-cleanup acknowledgement.
-Remaining runtime/secret records and installer integration
-remain dependency-ready DAT-01.02/.03 work, followed by
-TaskRun chains. No whole partially delivered task is checked off. Each increment
+The next dependency-ready task is DAT-01.01's explicit Parish audit ownership.
+Remaining runtime/secret installation integration and TaskRun chains retain
+their DAT-01/Phase 1 ownership. No whole partially delivered task is checked off. Each increment
 gets the full three-round review/fix cycle and human merge approval; Gate 1 still
 reviews the integrated foundation before Phase 2.
 
@@ -79,8 +79,11 @@ three independent review/fix rounds, all accepted Medium+ corrections, and full
 local validation; see its
 [final evidence](milestones.md#configuration-activation-increment).
 PR #12 merged with all four checks passing. The secret-request increment gets
-its own three-round review/fix cycle and human-approved PR. Neither increment
-releases the incomplete Phase 1 or Gate 1.
+its own human-approved PR after three completed independent review/fix rounds,
+all accepted Medium+ corrections and passing local validation; see its
+[final evidence](milestones.md#secret-request-storage-increment).
+It is ready for PR/CI handoff. The PR records the exact final head and CI results;
+neither increment releases the incomplete Phase 1 or Gate 1.
 
 Integrate ARC-02's concrete materializer and database-backed digest/mode checks
 with DAT-01. Complete its production prerequisite and recovery verification in

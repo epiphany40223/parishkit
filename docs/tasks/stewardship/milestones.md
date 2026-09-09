@@ -1185,6 +1185,40 @@ across 1,306 collected IDs. Coverage is 98.08% lines / 96.21% branches.
 Ruff, formatting, tracked Markdown, both migration-drift profiles and diff
 whitespace checks passed. Round 2 is complete; no gate is released.
 
+Round 3: Pika `20260909-112510-f0ac17` reviewed `78f8769` against `a241205`.
+Both reviewers completed without failure, mismatch, or degradation. Codex's
+prompt required the full branch diff and listed all 11 files despite the smaller
+auxiliary tier-filtered diff. Raw findings: two Medium, 10 Low, no High/Critical.
+Both Medium findings were Claude-only and accepted through delegated triage:
+
+| Finding | Disposition |
+| --- | --- |
+| C1: Django timestamp validation escapes the service error contract | Fixed: normalize malformed/naive/missing timestamps to safe ConfigError; test both timestamp fields |
+| C2: Distant expiry can reserve a target indefinitely | Fixed: service and SQL enforce a 24-hour ceiling, with DB-owned intake timestamps and exact-boundary/forged-time tests |
+
+Low findings remain below the mandatory correction floor. Final post-fix
+validation follows; the third round has no High/Critical findings.
+
+Final post-fix validation passed 1,079 baseline tests (236 explicit opt-in skips),
+all 224 PostgreSQL tests including 52 secret-request cases, and all 30 Compose
+checks. The rebuilt image passed the same baseline with host/image parity across
+1,315 collected IDs. Coverage is 98.09% lines / 96.23% branches, measured in
+external `final.json` under the secret-request validation directory. Ruff,
+formatting, tracked Markdown, both test-profile migration-drift checks and diff
+whitespace passed. One final Compose attempt failed at PostgreSQL startup with
+a Docker Desktop bind-mount wrong-ownership diagnostic (29 checks passed);
+rerunning unchanged in a fresh disposable project passed all 30. No permission
+changes, source changes, or retained-data repairs were needed for that retry.
+
+All three rounds are complete. Seven accepted Medium reports described six
+distinct issues, all fixed; no accepted Medium+ issue remains. The last round
+had no High/Critical findings, satisfying the automated cycle's local exit
+criteria. Proceed to PR/CI handoff and human merge approval; the PR records its
+exact final head and CI results. No service, provider, deployment, release or
+merge is enabled by this evidence. DAT-01 and Phase 1/Gate 1 remain partial.
+Next dependency-ready work is explicit Parish audit ownership; remaining
+runtime/installer integration and TaskRun chains retain their owning plan scope.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).

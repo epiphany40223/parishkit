@@ -34,6 +34,9 @@ class Migration(migrations.Migration):
                         RAISE EXCEPTION 'Secret request history cannot be deleted'
                             USING ERRCODE = '23514';
                     ELSIF TG_OP = 'INSERT' THEN
+                        -- Caller timestamps cannot move the lifetime ceiling.
+                        NEW.created_at := statement_timestamp();
+                        NEW.updated_at := NEW.created_at;
                         IF NEW.state <> 'staged' OR NEW.version <> 1
                            OR NEW.actor_id IS DISTINCT FROM NEW.requested_by_id
                            OR NEW.expires_at <= statement_timestamp() THEN

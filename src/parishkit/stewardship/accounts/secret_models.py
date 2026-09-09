@@ -5,6 +5,8 @@ accept its bytes, a file path, arbitrary errors, or a credential value. A later
 ARC-06 service supplies encryption, authenticated target identity and installation.
 """
 
+from datetime import timedelta
+
 from django.db import models
 
 from parishkit.stewardship.storage import (
@@ -29,6 +31,7 @@ SECRET_TARGETS = (
     "metrics",
 )
 SECRET_STATES = ("staged", "cleanup_pending", "cancelled", "expired")
+MAX_STAGING_LIFETIME = timedelta(hours=24)
 
 
 class SecretReplacementRequest(MutableRecord):
@@ -77,6 +80,12 @@ class SecretReplacementRequest(MutableRecord):
                 condition=models.Q(reauthenticated_at__lte=models.F("created_at"))
                 & models.Q(expires_at__gt=models.F("created_at")),
                 name="secret_valid_interval",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    expires_at__lte=models.F("created_at") + MAX_STAGING_LIFETIME
+                ),
+                name="secret_max_staging_lifetime",
             ),
             models.CheckConstraint(
                 condition=models.Q(expected_fingerprint__isnull=True)

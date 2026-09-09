@@ -29,6 +29,11 @@ is `staged` or `cleanup_pending`. A short deployment-wide advisory transaction
 lock serializes metadata commands across absent request/target races. SQL guards
 also enforce immutable bindings, version increments, UTC interval ordering,
 state transitions, and append-only checkpoints/audit in the same transaction.
+The database owns intake creation/update timestamps and caps expiry at 24 hours
+after intake; caller-supplied future creation times cannot bypass that ceiling.
+The service validates the same ceiling before writing. Later admission policy
+may choose a shorter lifetime. Invalid timestamps use a safe `ConfigError`, not
+an exposed Django validation exception.
 Failure of any audit insertion rolls back the state change. Generic deletes and
 terminal rewrites are forbidden. Migration 0015 refuses populated downgrade
 before removing guards; empty-schema reversal/reapplication remains supported.
@@ -59,7 +64,7 @@ store again. No installer can claim any request in this increment.
 ## Remaining integration
 
 ARC-04/ADM-03 own current Admin, CSRF, and fresh Google reauthentication checks.
-ARC-06/OPS-02 own target-key sealing, bounded staging lifetimes, orphan cleanup,
+ARC-06/OPS-02 own target-key sealing, shorter operational TTL policy, orphan cleanup,
 target-isolated storage/queues/mounts/permissions, and service identity grants.
 DAT-01/ARC-06 still need validated/tested/installed checkpoints, expected-prior
 fingerprint comparison against the actual file, atomic replacement/recovery,

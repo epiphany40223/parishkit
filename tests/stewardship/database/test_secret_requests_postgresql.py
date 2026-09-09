@@ -2,14 +2,14 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
-from datetime import timedelta
+from datetime import datetime, timedelta
 from threading import Barrier
 from uuid import uuid4
 
 import pytest
-from django.core.exceptions import ValidationError
 from django.db import IntegrityError, connection, connections, transaction
 from django.db.models import F
+from django.db.models.functions import Now
 from django.utils import timezone
 
 from parishkit.config import ConfigError
@@ -157,7 +157,7 @@ def test_identity_reuse_with_changed_intent_rejected(intent, field, value):
 )
 def test_invalid_intake_is_atomic_and_sanitized(intent, field, value):
     """Typed metadata validation never persists or echoes submitted private text."""
-    with pytest.raises((ConfigError, TypeError, ValidationError)) as error:
+    with pytest.raises((ConfigError, TypeError)) as error:
         stage_secret_request(**{**intent, field: value})
     assert "private-credential" not in str(error.value)
     assert not SecretReplacementRequest.objects.exists()
@@ -535,3 +535,52 @@ def test_concurrent_cancel_and_expiry_preserve_winning_reason(intent):
     ).actor_id == (intent["actor_id"] if winner == "cancelled" else None)
     assert clean(intent, lambda reference: None).state == winner
     assert SecretRequestCheckpoint.objects.count() == AuditEvent.objects.count() == 3
+
+
+@pytest.mark.parametrize("value", [None, "private-invalid-date", datetime(2026, 1, 1)])
+@pytest.mark.parametrize("field", ["reauthenticated_at", "expires_at"])
+def test_timestamp_errors_use_safe_configuration_contract(intent, field, value):
+    """Naive, absent and invalid timestamps share one safe exception class."""
+    with pytest.raises(ConfigError, match="Valid secret request timestamps") as error:
+        stage_secret_request(**{**intent, field: value})
+    assert "private-invalid-date" not in str(error.value)
+    assert error.value.__cause__ is None
+    assert not SecretReplacementRequest.objects.exists()
+
+
+def test_intake_rejects_excessive_staging_lifetime(intent):
+    """An accidentally distant expiry cannot reserve a target for years."""
+    with pytest.raises(ConfigError, match="cannot exceed 24 hours"):
+        stage_secret_request(
+            **{**intent, "expires_at": timezone.now() + timedelta(days=2)}
+        )
+    assert not SecretReplacementRequest.objects.exists()
+    assert not AuditEvent.objects.exists()
+
+
+@pytest.mark.parametrize("excess", [timedelta(0), timedelta(microseconds=1)])
+def test_sql_lifetime_ceiling_and_forged_creation_timestamp(intent, excess):
+    """Exactly 24 hours is admitted; even one extra microsecond cannot pass SQL."""
+    values = dict(
+        actor_id=intent["actor_id"],
+        requested_by_id=intent["actor_id"],
+        target=intent["target"],
+        staging_reference=intent["staging_reference"],
+        reauthenticated_at=intent["reauthenticated_at"],
+        created_at=Now() + timedelta(days=10),
+        updated_at=Now() + timedelta(days=10),
+        expires_at=Now() + timedelta(days=1) + excess,
+    )
+    if excess:
+        with pytest.raises(IntegrityError) as error, transaction.atomic():
+            SecretReplacementRequest.objects.create(**values)
+        assert (
+            error.value.__cause__.diag.constraint_name == "secret_max_staging_lifetime"
+        )
+        assert not AuditEvent.objects.exists()
+    else:
+        record = SecretReplacementRequest.objects.create(**values)
+        record.refresh_from_db()
+        assert record.expires_at - record.created_at == timedelta(hours=24)
+        assert record.created_at == record.updated_at
+        assert record.checkpoints.get().created_at == record.created_at
