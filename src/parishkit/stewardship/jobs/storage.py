@@ -7,6 +7,7 @@ supplies real admission/reconciliation and queue consumers in its later phase.
 None exists here; callers must not infer permission from a UUID, fence or action.
 """
 
+import hashlib
 import re
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from uuid import UUID, uuid4
 
 from django.db import connection, transaction
 
+from parishkit.stewardship.observability import correlation
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
 from .models import TaskRun
@@ -62,20 +64,27 @@ def _admit(callback, action, status):
 
 
 @contextmanager
-def _locked(root_id=None):
+def _locked(correlation_id, *, root_id=None, enqueue_key=None):
     """Keep root claims short; callers can compose domain updates in an outer tx.
 
-    Root inserts have no row to lock: a transaction advisory lock serializes only
-    enqueue identity allocation. Existing chains serialize independently on roots.
+    Keyed root inserts have no row to lock: a key-scoped advisory lock serializes
+    their allocation. Unkeyed inserts need no lock; existing chains lock roots.
     External side effects must never occur while this transaction is held.
     """
     if connection.vendor != "postgresql":
         raise StorageInvariantError("Task storage requires PostgreSQL.")
-    with transaction.atomic():
-        if root_id is None:
+    with correlation(correlation_id), transaction.atomic():
+        if enqueue_key is not None:
+            # Hash collisions only serialize unrelated allocations; the database
+            # unique constraint, not this shortened hash, identifies executions.
+            lock_key = int.from_bytes(
+                hashlib.sha256(enqueue_key.encode()).digest()[:4], signed=True
+            )
             with connection.cursor() as cursor:
-                cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [736214, 1])
-        else:
+                cursor.execute(
+                    "SELECT pg_advisory_xact_lock(%s, %s)", [736214, lock_key]
+                )
+        if root_id is not None:
             TaskRun.objects.select_for_update().get(pk=root_id)
         yield
 
@@ -110,7 +119,12 @@ def enqueue(
     for value in (domain_request_id, actor_id, idempotency_key):
         _uuid(value, optional=True)
     _uuid(correlation_id)
-    with _locked():
+    with _locked(
+        correlation_id,
+        enqueue_key=None
+        if idempotency_key is None
+        else f"{task_type}:{idempotency_key}",
+    ):
         existing = None
         if idempotency_key is not None:
             existing = (
@@ -119,12 +133,12 @@ def enqueue(
                 .first()
             )
         if existing is not None:
-            _admit(admit, "enqueue", _status(existing))
             if (
                 existing.domain_request_id != domain_request_id
                 or existing.initiated_by_id != actor_id
             ):
                 raise ValueError("Task execution key is already bound.")
+            _admit(admit, "enqueue", _status(existing))
             return _status(existing)
         identifier = uuid4()
         run = TaskRun(
@@ -147,7 +161,7 @@ def retry_failed(*, run_id, command_id, actor_id, correlation_id, admit):
     for value in (run_id, command_id, actor_id, correlation_id):
         _uuid(value)
     original = TaskRun.objects.get(pk=run_id)
-    with _locked(original.root_id):
+    with _locked(correlation_id, root_id=original.root_id):
         original.refresh_from_db()
         _admit(admit, "explicit_retry", _status(original))
         existing = TaskRun.objects.filter(
@@ -244,7 +258,7 @@ def change_run(
     elif progress is not None:
         raise ValueError("Unexpected task progress.")
     original = TaskRun.objects.get(pk=run_id)
-    with _locked(original.root_id):
+    with _locked(correlation_id, root_id=original.root_id):
         run = TaskRun.objects.select_for_update().get(pk=run_id)
         _admit(admit, action, _status(run))
         if run.version != expected_version:
@@ -264,6 +278,7 @@ def change_run(
             run.worker_id = actor_id
             run.fence += 1
             run.attempt += 1
+            run.progress_current = run.progress_total = 0
         elif action == "lease_expired":
             if actor_id is not None:
                 raise ValueError("Lease expiry has no fabricated worker actor.")

@@ -1312,8 +1312,28 @@ retry-command deduplication and atomic immutable attempt/audit history. BG-01
 operational execution and domain-specific admission/reconciliation are not
 enabled. DAT-01.02/.03/.06 and full Phase 1/Gate 1 remain incomplete.
 
-Implementation validation and three independent dual-model review/fix rounds are
-in progress; this checkpoint is not review or merge approval.
+Initial validation passed: 1,104 baseline tests, 305 PostgreSQL tests (including
+49 TaskRun cases), 30 Compose cases, exact host/image collection parity of
+1,421 IDs, and combined coverage of 98.16% lines / 96.28% branches. Ruff,
+formatting, tracked Markdown, whitespace and both migration-drift profiles passed.
+The external quality report is
+`/tmp/stewardship-taskrun-validation.ez5fm9/initial.json`.
+
+Review round 1 (`20260909-144123-d222c1`) examined
+`788b5b7da9105cf1460c5a8559bf7b92c71bff14` with both vendor reviewers completing
+without degradation or verdict mismatch. All eight validated findings were Medium
+and accepted: key-scoped enqueue locking (with no lock for unkeyed allocations),
+raw SQL delete-guard coverage, empty migration reversal/reapply coverage,
+per-attempt progress reset, persisted heartbeat renewal evidence, composed-write
+correlation propagation, non-racy negative timing checks and binding validation
+before a replay admission callback. The corrected focused PostgreSQL suite passes
+58 cases. Renewal is asserted by its actual deadline extension, not a short
+wall-clock race. Below-cutoff findings are not accepted pending work.
+
+Round-1 post-fix quality validation passes 1,104 baseline and 314 PostgreSQL tests
+with 98.17% line / 96.29% branch coverage (`round1.json` alongside the initial
+report). Ruff, formatting, Markdown, whitespace and migration drift also pass.
+Review rounds 2–3 remain in progress; this checkpoint is not review or merge approval.
 
 ## Gate 1: Foundation and security
 

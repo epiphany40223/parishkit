@@ -42,12 +42,14 @@ The callback receives an immutable TaskStatus and must raise on failed current
 authorization, configuration, lifecycle, restore/purge or task-specific safety
 checks. It runs under the transaction/root lock and must not perform network,
 filesystem or provider side effects. It may compose related database writes;
-any exception rolls those back with task state/history.
+any exception rolls those back with task state/history. The supplied correlation
+UUID also binds the observability context for composed database writes.
 
 For a prospective enqueue the callback sees the generated operation/type/request
 identity before insertion. Existing runs serialize independently under their root
-row lock. Enqueue allocation uses one short deployment-level transaction advisory
-lock to handle absent-key races. Database uniqueness remains the final arbiter
+row lock. Keyed enqueue allocation uses a task-type/key-scoped transaction advisory
+lock to handle absent-key races; unkeyed allocation needs no advisory lock.
+Database uniqueness remains the final arbiter
 for direct SQL callers. No untrusted operational caller or permissive production
 callback is wired by this increment.
 
@@ -62,7 +64,8 @@ mail delivery or fulfillment.
 All timing uses PostgreSQL's clock. Internal claim/heartbeat durations are bounded
 to 1–300 seconds and retry waits to 1–86,400 seconds; BG-01 will select defaults
 and renew leases for long jobs. Progress is a monotonic bounded `(current, total)`
-pair. These records accept no task argument payload, free-form summary/error,
+pair within each attempt; each claim resets both counters to zero while retaining
+prior progress in immutable events. These records accept no task argument payload, free-form summary/error,
 credential, URL, submitted value or provider response. Coded actions provide
 initial outcome/reason information; BG-01/DAT-07 own registered task-specific
 phases, sanitized summaries/errors and operational status presentation.

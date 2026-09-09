@@ -160,7 +160,12 @@ class Migration(migrations.Migration):
             RAISE EXCEPTION 'Task retry time is bound to retry transitions'
                 USING ERRCODE = '23514';
         END IF;
-        IF NEW.action = 'progress' THEN
+        IF NEW.action = 'claim' THEN
+            IF NEW.progress_current <> 0 OR NEW.progress_total <> 0 THEN
+                RAISE EXCEPTION 'Task claims must reset attempt progress'
+                    USING ERRCODE = '23514';
+            END IF;
+        ELSIF NEW.action = 'progress' THEN
             IF NEW.progress_current < OLD.progress_current
                OR NEW.progress_total < OLD.progress_total THEN
                 RAISE EXCEPTION 'Task progress cannot move backwards'

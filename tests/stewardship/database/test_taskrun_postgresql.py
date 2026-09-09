@@ -14,6 +14,7 @@ from django.db import IntegrityError, connection, connections, transaction
 from django.db.migrations.executor import MigrationExecutor
 from django.db.migrations.recorder import MigrationRecorder
 from django.db.models import F
+from django.db.models.deletion import ProtectedError
 
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.jobs.models import TaskRun, TaskRunEvent
@@ -137,6 +138,9 @@ def test_enqueue_key_is_exact_and_callback_runs_on_replay():
     assert new(**args) == first and calls == ["enqueue", "enqueue"]
     with pytest.raises(ValueError, match="already bound"):
         new(**(args | {"domain_request_id": uuid4()}))
+    with pytest.raises(ValueError, match="already bound"):
+        new(**(args | {"actor_id": uuid4()}))
+    assert calls == ["enqueue", "enqueue"]
     assert TaskRun.objects.count() == TaskRunEvent.objects.count() == 1
     with pytest.raises(FrozenInstanceError):
         first.state = "succeeded"
@@ -155,8 +159,6 @@ def test_running_outcomes_and_terminal_immutability(action):
                 version=F("version") + 1, action="claim", state="running"
             )
     else:
-        with pytest.raises(IntegrityError, match="timing"), transaction.atomic():
-            act(result, "claim")
         with connection.cursor() as cursor:
             cursor.execute("SELECT pg_sleep(1.05)")
         claimed = act(result, "claim")
@@ -179,8 +181,6 @@ def test_running_outcomes_and_terminal_immutability(action):
 def test_abandonment_requires_expiry_and_verified_recovery(action, target):
     """Lease loss remains nonterminal until the trusted domain verifier resolves it."""
     status = act(new(), "claim", lease_seconds=1)
-    with pytest.raises(IntegrityError, match="timing"), transaction.atomic():
-        act(status, "lease_expired")
     abandoned = expire(status)
     assert abandoned.state == "abandoned" and abandoned.fence == status.fence + 1
     with pytest.raises(IntegrityError, match="transition"), transaction.atomic():
@@ -426,8 +426,127 @@ def test_raw_writes_cannot_forge_chain_or_history():
         connection.cursor() as cursor,
     ):
         cursor.execute("DELETE FROM stewardship_task_event")
-    with pytest.raises(IntegrityError), transaction.atomic():
+    with pytest.raises(ProtectedError), transaction.atomic():
         TaskRun.objects.all().delete()
+    with (
+        pytest.raises(IntegrityError, match="Task history cannot be deleted"),
+        transaction.atomic(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(
+            "DELETE FROM stewardship_task_run WHERE id = %s", [status.run_id]
+        )
+
+
+def test_future_deadlines_cannot_be_skipped():
+    """Negative timing checks have a wide margin, independent of expiry tests."""
+    status = act(new(), "claim", lease_seconds=300)
+    with pytest.raises(IntegrityError, match="timing"), transaction.atomic():
+        act(status, "lease_expired")
+    waiting = act(status, "retryable_failure", retry_seconds=86400)
+    with pytest.raises(IntegrityError, match="timing"), transaction.atomic():
+        act(waiting, "claim")
+
+
+def test_heartbeat_renews_deadline():
+    """Persisted deadlines prove renewal without racing a one-second live lease."""
+    status = act(new(), "claim", lease_seconds=60)
+    original = TaskRun.objects.get(pk=status.run_id).lease_expires_at
+    renewed = act(status, "heartbeat", lease_seconds=300)
+    run = TaskRun.objects.get(pk=status.run_id)
+    assert (run.lease_expires_at - original).total_seconds() >= 240
+    assert (
+        run.events.get(version=renewed.version).lease_expires_at == run.lease_expires_at
+    )
+    assert act(renewed, "complete").state == "succeeded"
+
+
+def test_retry_claim_resets_attempt_progress():
+    """A fresh attempt can honestly report less work than its failed predecessor."""
+    status = act(act(new(), "claim"), "progress", progress=(500, 1000))
+    status = act(status, "retryable_failure")
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_sleep(1.05)")
+    claimed = act(status, "claim")
+    event = TaskRunEvent.objects.get(run_id=claimed.run_id, version=claimed.version)
+    assert (event.progress_current, event.progress_total) == (0, 0)
+    progressed = act(claimed, "progress", progress=(10, 100))
+    with pytest.raises(IntegrityError, match="backwards"), transaction.atomic():
+        act(progressed, "progress", progress=(9, 100))
+    assert TaskRunEvent.objects.filter(
+        run_id=claimed.run_id, attempt=1, progress_current=500
+    ).exists()
+
+
+@pytest.mark.parametrize("keyed", [False, True])
+def test_unrelated_enqueues_do_not_share_an_allocation_lock(keyed):
+    """Both callbacks must run concurrently even inside caller-owned transactions."""
+    barrier = Barrier(2)
+
+    def admitted(action, status):
+        """A global enqueue lock would prevent the other callback from arriving."""
+        barrier.wait(timeout=10)
+
+    def perform(index):
+        """Each independent connection retains its locks through the outer commit."""
+        connections.close_all()
+        try:
+            with transaction.atomic():
+                return new(
+                    idempotency_key=uuid4() if keyed else None, admit=admitted
+                ).run_id
+        finally:
+            connections.close_all()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(perform, range(2)))
+    assert len(set(results)) == TaskRun.objects.count() == 2
+
+
+@pytest.mark.parametrize("action", ["enqueue", "claim", "explicit_retry"])
+def test_composed_domain_writes_share_task_correlation(action):
+    """Admission-created records inherit the supplied task correlation context."""
+    status = new()
+    if action == "explicit_retry":
+        status = act(act(status, "claim"), "permanent_failure")
+    identifier = uuid4()
+
+    def admitted(operation, receipt):
+        """The owning service need not repeat correlation IDs on each record."""
+        AuditEvent.objects.create(event_type="synthetic_composed_write")
+
+    kwargs = dict(admit=admitted, correlation_id=identifier)
+    if action == "enqueue":
+        result = new(**kwargs)
+    elif action == "explicit_retry":
+        result = retry(status, **kwargs)
+    else:
+        result = act(status, action, **kwargs)
+    assert (
+        AuditEvent.objects.get(event_type="synthetic_composed_write").correlation_id
+        == identifier
+    )
+    assert TaskRun.objects.get(pk=result.run_id).correlation_id == identifier
+
+
+def test_empty_migrations_roundtrip_restores_guards():
+    """The documented empty downgrade/reapply restores the actual SQL protection."""
+    leaves = MigrationExecutor(connection).loader.graph.leaf_nodes()
+    try:
+        MigrationExecutor(connection).migrate([("stewardship_jobs", None)])
+        assert "stewardship_task_run" not in connection.introspection.table_names()
+    finally:
+        MigrationExecutor(connection).migrate(leaves)
+    identifier = uuid4()
+    with pytest.raises(IntegrityError), transaction.atomic():
+        TaskRun.objects.create(
+            id=identifier,
+            root_id=identifier,
+            task_type="storage_probe",
+            state="succeeded",
+        )
+    status = act(new(), "claim")
+    assert TaskRunEvent.objects.filter(run_id=status.run_id).count() == 2
 
 
 @pytest.mark.parametrize(
