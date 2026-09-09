@@ -74,6 +74,9 @@ def test_durable_sessions_and_safe_audit_references(portal_session):
         "correlation_id",
         "event_type",
         "subject_id",
+        "ownership_scope",
+        "parish",
+        "campaign_reference",
     }
 
 

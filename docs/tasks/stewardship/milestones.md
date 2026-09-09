@@ -1219,6 +1219,25 @@ merge is enabled by this evidence. DAT-01 and Phase 1/Gate 1 remain partial.
 Next dependency-ready work is explicit Parish audit ownership; remaining
 runtime/installer integration and TaskRun chains retain their owning plan scope.
 
+### Audit-ownership increment
+
+The human merged PR #13 on September 9, 2026, after all four CI checks passed
+at implementation head `7407982af34af560c6472c69a3489fad2149a441`.
+The [successful CI run](https://github.com/epiphany40223/parishkit/actions/runs/34371683609)
+and [merged PR](https://github.com/epiphany40223/parishkit/pull/13) record that handoff.
+Branch `pr/stewardship-audit-ownership` starts at refreshed `origin/main`,
+`fe900b7e0e63a4f091bf05e2d4399b4fc465b7b6`.
+
+Scope: complete DAT-01.01's explicit Parish audit ownership using immutable
+profiles, safe soft campaign references, transactional insertion guards and
+non-rewriting legacy migration. See the
+[integration boundary](../../guides/stewardship-audit-ownership.md).
+DAT-01.02/.03/.05/.06 remain open for their remaining scope. The next ready task
+is TaskRun claim/retry-chain storage. Full Phase 1 and Gate 1 remain incomplete.
+
+Validation and three independent dual-model review/fix rounds are in progress;
+this checkpoint is not review approval or permission to merge.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).

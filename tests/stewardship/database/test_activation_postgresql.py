@@ -427,8 +427,9 @@ def test_failed_corruption_probe_rolls_back_guard_ddl(initialized):
 
 
 @pytest.mark.parametrize("activated_request", [False, True])
+@pytest.mark.parametrize("direct_preflight", [False, True])
 def test_downgrade_with_history_preserves_guards_and_migration_marker(
-    initialized, activated_request
+    initialized, activated_request, direct_preflight
 ):
     """Reject before removing protections, including bootstrap-only history."""
     store, root, actor = initialized
@@ -438,9 +439,18 @@ def test_downgrade_with_history_preserves_guards_and_migration_marker(
     leaves = MigrationExecutor(connection).loader.graph.leaf_nodes()
     try:
         with pytest.raises(IntegrityError, match="prevents this schema downgrade"):
-            MigrationExecutor(connection).migrate(
-                [("stewardship_accounts", "0010_request_intake_guards")]
-            )
+            if direct_preflight:
+                # A newer dependent migration can refuse first. Also exercise
+                # 0013's own frozen preflight so that coverage is not masked.
+                migration = MigrationExecutor(connection).loader.disk_migrations[
+                    ("stewardship_accounts", "0013_activation_guards")
+                ]
+                with transaction.atomic(), connection.cursor() as cursor:
+                    cursor.execute(migration.operations[-1].reverse_sql)
+            else:
+                MigrationExecutor(connection).migrate(
+                    [("stewardship_accounts", "0010_request_intake_guards")]
+                )
         assert MigrationRecorder.Migration.objects.filter(
             app="stewardship_accounts", name="0013_activation_guards"
         ).exists()

@@ -11,7 +11,7 @@ Follow the [execution and completion rules](README.md#execution-and-completion).
 
 Scope and dependencies: [DAT-01 work package](../../plans/stewardship/data.md#dat-01-storage-conventions-and-base-records).
 
-- [ ] DAT-01.01 — Implement durable record and ownership conventions.
+- [x] DAT-01.01 — Implement durable record and ownership conventions.
 - [ ] DAT-01.02 — Implement configuration, parish, and secret-request records.
 - [ ] DAT-01.03 — Enforce YAML-version, singleton, and installer constraints.
 - [x] DAT-01.04 — Configure durable sessions and audit correlation.
@@ -33,9 +33,8 @@ durability, migration reversal/reapplication, transactional rollback, and two
 independent concurrent connections with exactly one successful version update.
 See the [database test guide](../../guides/stewardship-database-tests.md) for
 repeatable commands and CI isolation. DAT-01.05 remains unimplemented;
-DAT-01.01 remains partial until DAT-01.02 integrates explicit Parish ownership
-with versioned Parish materializations; the current audit table has only
-deployment-level ownership and no campaign cascade.
+DAT-01.01's explicit ownership integration is delivered by the sixth increment
+below; the original storage increment had deployment-level ownership only.
 DAT-01.06 is partial pending their constraints/recovery/privacy scenarios.
 DAT-01.04's PostgreSQL-backed session configuration is delivered and verified
 solely in the disposable database test profile. Non-test PostgreSQL connection
@@ -48,8 +47,8 @@ AppliedConfigurationVersion, Parish, and AppliedIntegration records, strict
 non-secret schema validation, atomic/idempotent PostgreSQL preparation,
 singleton-root constraints, and exact stored-projection verification. The
 [preparation boundary guide](../../guides/stewardship-configuration-preparation.md)
-defines the supported subset and integration handoff. DAT-01.01/.02/.03/.06
-remain unchecked: active-version/runtime state, request idempotency/status,
+defines the supported subset and integration handoff. At that checkpoint,
+DAT-01.01/.02/.03/.06 remained incomplete: active-version/runtime state, request idempotency/status,
 operator recovery, secret replacement, complete materializer/installer effects,
 and historical audit ownership integration are not implemented by preparation.
 Schema constraints, rollback, migration reversal, mismatches, reconnect
@@ -81,6 +80,17 @@ checkpoints and audit, and retryable external-staging cleanup acknowledgement.
 See the [secret-request storage boundary](../../guides/stewardship-secret-requests.md).
 The payload store, sealing and installer identity are not implemented or exposed;
 installation/consumer acknowledgement and the remaining DAT-01 work remain open.
+
+Sixth increment: DAT-01.01 now integrates explicit Parish audit ownership with
+immutable configuration profiles, retaining deployment ownership for pre-upgrade
+history and context-free pre-bootstrap events. Database insertion guards cover
+all current emitters, reject conflicting attribution, and preserve plain campaign
+UUIDs without deletion cascades. See the
+[ownership boundary](../../guides/stewardship-audit-ownership.md).
+PostgreSQL tests cover profile changes, concurrent activation, legacy upgrade,
+refused populated downgrade, raw writes and rollback. DAT-01.02/.03/.05/.06 remain
+open for their remaining work; this does not enable the future ARC-07 payload
+services, production startup, or Gate 1. TaskRun chains are the next ready task.
 
 ## DAT-02: Campaign lifecycle and schedule schema
 

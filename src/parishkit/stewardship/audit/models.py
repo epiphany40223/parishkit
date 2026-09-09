@@ -15,6 +15,17 @@ class AuditEvent(ImmutableRecord):
 
     event_type = models.CharField(max_length=64)
     subject_id = models.UUIDField(null=True, blank=True)
+    ownership_scope = models.CharField(max_length=16, db_default="deployment")
+    parish = models.ForeignKey(
+        "stewardship_accounts.Parish",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        db_default=None,
+        related_name="audit_events",
+    )
+    # Deliberately not a Campaign FK: retained parish history survives purge.
+    campaign_reference = models.UUIDField(null=True, blank=True, db_index=True)
 
     class Meta:
         db_table = "stewardship_audit_event"
@@ -25,5 +36,14 @@ class AuditEvent(ImmutableRecord):
             models.CheckConstraint(
                 condition=models.Q(event_type__regex=r"^[a-z][a-z0-9_]{0,63}$"),
                 name="audit_event_type_identifier",
-            )
+            ),
+            models.CheckConstraint(
+                condition=models.Q(ownership_scope="parish", parish__isnull=False)
+                | models.Q(
+                    ownership_scope="deployment",
+                    parish__isnull=True,
+                    campaign_reference__isnull=True,
+                ),
+                name="audit_ownership_shape",
+            ),
         ]
