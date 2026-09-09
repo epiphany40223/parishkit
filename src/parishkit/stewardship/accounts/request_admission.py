@@ -102,18 +102,23 @@ def _check_policy_additions(base_id, patch):
         return
     identities = {}
     _remember_policy({"sections": {"login_rules": additions}}, identities)
+    quote, meta = connection.ops.quote_name, AppliedConfigurationVersion._meta
+    table = quote(meta.db_table)
+    pk, predecessor, document = (
+        quote(meta.get_field(field).column)
+        for field in ("id", "predecessor", "canonical_document")
+    )
     with connection.cursor() as cursor:
         cursor.execute(
-            """
-            WITH RECURSIVE chain(id, predecessor_id, document) AS (
-                SELECT id, predecessor_id, canonical_document
-                FROM stewardship_configuration_version WHERE id = %s
+            f"""
+            WITH RECURSIVE chain(id, predecessor_id) AS (
+                SELECT {pk}, {predecessor}
+                FROM {table} WHERE {pk} = %s
                 UNION
-                SELECT p.id, p.predecessor_id, p.canonical_document
-                FROM stewardship_configuration_version p JOIN chain c
-                ON p.id = c.predecessor_id
-            ) SELECT record FROM chain,
-              jsonb_array_elements(document->'sections'->'login_rules') record
+                SELECT p.{pk}, p.{predecessor}
+                FROM {table} p JOIN chain c ON p.{pk} = c.predecessor_id
+            ) SELECT record FROM chain JOIN {table} p ON p.{pk} = chain.id,
+              jsonb_array_elements(p.{document}->'sections'->'login_rules') record
               WHERE record->>'id' = ANY(%s)
             """,
             [base_id, [item["id"] for item in additions]],

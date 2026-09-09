@@ -189,6 +189,7 @@ def _build_recovery_candidate(base, patch, *, candidate_id):
             new["roles"] != ["administrator"]
             or new["creation_origin"] != "manual"
             or set(new["grants"]["administrator"]) != {"manual"}
+            or new["creation_operation"] != new["grants"]["administrator"].get("manual")
         ):
             _invalid()
     else:

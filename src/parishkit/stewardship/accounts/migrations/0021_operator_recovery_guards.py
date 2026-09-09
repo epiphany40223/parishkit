@@ -37,6 +37,8 @@ BEGIN
        OR operation ->> 'section' IS DISTINCT FROM 'login_rules'
        OR operation ->> 'operation' NOT IN ('add', 'update')
        OR target IS DISTINCT FROM NEW.recovery_target
+       OR (operation ->> 'operation' = 'add' AND operation -> 'values'
+           ->> 'creation_operation' IS DISTINCT FROM NEW.request_key::text)
        OR operation -> 'values' -> 'grants' -> 'administrator'
           IS DISTINCT FROM jsonb_build_object('manual', NEW.request_key::text) THEN
         RAISE EXCEPTION 'Invalid offline recovery attribution'

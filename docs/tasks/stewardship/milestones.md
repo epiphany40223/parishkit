@@ -1428,7 +1428,31 @@ Initial complete validation passed 1,386 baseline tests, 336 PostgreSQL tests an
 was 97.57% lines and 93.79% branches. Ruff, Markdown, migration drift and Docker
 build passed. Round-1 correction PostgreSQL validation passed 340 tests; complete
 post-correction coverage and remaining review rounds are in progress. These
-intermediate counts are not final PR or CI evidence.
+intermediate counts are not final PR or CI evidence. Complete round-1 corrections
+at `bc46d4d` passed 1,394 baseline and 340 PostgreSQL tests, with 97.60% scoped
+lines and 93.93% branches, followed by a fresh image and 30 passing Compose checks.
+
+Round 2: session `20260909-174131-9affa5`, again complete-branch Codex plus two
+Claude shards, passed exact-path permission preflight and finalized without
+degradation, failed agents or mismatches. Thirteen Medium findings, no High or
+Critical. Twelve addressed: model-derived SQL identifiers; confirmed-target replay
+tests; malformed recovery input/already-Admin tests; safe uninitialized-runtime
+diagnostics; installer-side ancestry failure tests; manual-Admin update and missing
+grant tests; explicit failed-receipt semantics; normalized confirmation; bound
+recovery creation provenance; invalid optional hosted-domain handling; denial epochs
+for restored manual scope/origins; and same-patch address replacement rejection.
+The deployment binding already has SQL/immutability enforcement and an early
+runtime mismatch test; tests do not disable those guards merely to mutate history.
+The proposed cross-request cache was declined: no measured performance failure
+justifies weakening current manifest/projection corruption detection without an
+invalidation contract. ARC-04 performance work may revisit it with evidence.
+Deleting an override in one operation and explicitly creating a later override
+is not silently rewriting the provenance of an existing rule; the new guard
+specifically rejects same-patch identity replacement.
+
+Post-round-2 coverage passed 1,399 baseline and 362 PostgreSQL tests, with 97.74%
+scoped lines and 94.51% branches. Ruff and Markdown passed. Round 3 and final
+image/CI validation remain required before PR handoff.
 
 ## Gate 1: Foundation and security
 

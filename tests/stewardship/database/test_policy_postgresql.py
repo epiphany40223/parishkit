@@ -382,3 +382,130 @@ def test_retired_policy_id_rebinding_is_rejected_at_intake(tmp_path):
             request_key=uuid4(),
             correlation_id=uuid4(),
         )
+
+
+def test_installer_rechecks_policy_ancestry_and_records_terminal_failure(
+    tmp_path, monkeypatch
+):
+    """A request inserted through a defective intake still cannot wedge installation."""
+    from parishkit.stewardship.accounts import configuration_requests
+
+    retired = domain()
+    store, version, actor = initialized(tmp_path, [address(), retired])
+    change(
+        store,
+        version,
+        actor,
+        [{"operation": "remove", "section": "login_rules", "id": retired["id"]}],
+    )
+    retired["values"]["domain"] = "different.org"
+    with monkeypatch.context() as patcher:
+        patcher.setattr(
+            configuration_requests, "check_historical_additions", lambda *args: None
+        )
+        receipt = record_request(
+            base_digest=store.active().digest,
+            patch=[{"operation": "add", "section": "login_rules", **retired}],
+            actor_id=actor,
+            request_key=uuid4(),
+            correlation_id=uuid4(),
+        )
+    before = store.active().digest
+    result = install_request(
+        store, request_id=receipt.request_id, correlation_id=uuid4()
+    )
+    assert result.state == "failed" and result.failure_code == "invalid_candidate"
+    assert store.active().digest == before
+
+
+def test_manual_admin_update_binds_new_origin_only(tmp_path):
+    """Admin additions cite the actual request without changing existing origins."""
+    member = address("staff@example.org", ("staff",))
+    store, version, actor = initialized(tmp_path, [address(), member])
+    key = uuid4()
+    values = {
+        "roles": ["administrator", "staff"],
+        "grants": member["values"]["grants"]
+        | {"administrator": {"manual": str(uuid4())}},
+    }
+    patch = [
+        {
+            "operation": "update",
+            "section": "login_rules",
+            "id": member["id"],
+            "values": values,
+        }
+    ]
+    kwargs = dict(
+        base_digest=version.digest,
+        patch=patch,
+        actor_id=actor,
+        request_key=key,
+        correlation_id=uuid4(),
+    )
+    with pytest.raises(ConfigError):
+        record_request(**kwargs)
+    values["grants"]["administrator"]["manual"] = str(policy_operation_id(actor, key))
+    receipt = record_request(**kwargs)
+    assert receipt.request_id == policy_operation_id(actor, key)
+    assert (
+        install_request(
+            store, request_id=receipt.request_id, correlation_id=uuid4()
+        ).state
+        == "applied"
+    )
+
+
+def test_missing_grant_projection_cannot_commit(tmp_path, monkeypatch):
+    """Matching rule counts do not compensate for an absent per-role origin row."""
+    from parishkit.stewardship.accounts.policy_models import AddressRoleGrant
+
+    monkeypatch.setattr(AddressRoleGrant.objects, "bulk_create", lambda records: [])
+    with pytest.raises(IntegrityError, match="grant provenance is incomplete"):
+        initialized(tmp_path)
+    assert not AppliedConfigurationVersion.objects.exists()
+
+
+@pytest.mark.parametrize("restoration", ["assignment", "independent_role"])
+def test_unsuppressing_seeded_login_advances_denial_epoch(tmp_path, restoration):
+    """Unchanged role arrays can still become effective through scope or provenance."""
+    leader = address("leader@example.org", ("ministry_leader",), seeded=True)
+    store, version, actor = initialized(tmp_path, [address(), leader])
+    identity = user("leader@example.org")
+    assert not current_principal(store, identity.pk).roles
+    before = PolicyEpoch.objects.count()
+    if restoration == "assignment":
+        change(
+            store,
+            version,
+            actor,
+            [{"operation": "add", "section": "login_rules", **assignment()}],
+        )
+    else:
+        key = uuid4()
+        grants = {
+            "ministry_leader": leader["values"]["grants"]["ministry_leader"]
+            | {"manual": str(policy_operation_id(actor, key))}
+        }
+        receipt = record_request(
+            base_digest=version.digest,
+            patch=[
+                {
+                    "operation": "update",
+                    "section": "login_rules",
+                    "id": leader["id"],
+                    "values": {"grants": grants},
+                }
+            ],
+            actor_id=actor,
+            request_key=key,
+            correlation_id=uuid4(),
+        )
+        assert (
+            install_request(
+                store, request_id=receipt.request_id, correlation_id=uuid4()
+            ).state
+            == "applied"
+        )
+    assert "ministry_leader" in current_principal(store, identity.pk).roles
+    assert PolicyEpoch.objects.count() == before + 1

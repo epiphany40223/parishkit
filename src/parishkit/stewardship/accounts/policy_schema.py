@@ -149,11 +149,21 @@ def validate_policy_records(records):
 def validate_policy_change(before, after):
     """Ordinary edits preserve origins and cannot manufacture chair-seed authority."""
     old = {record["id"]: record["values"] for record in before}
+    old_addresses = {
+        record["values"]["email"]: record["id"]
+        for record in before
+        if record["values"]["kind"] == "address"
+    }
     if before and not after:
         invalid_policy()
     for record in after:
         values, previous = record["values"], old.get(record["id"])
         kind = values["kind"]
+        if (
+            kind == "address"
+            and old_addresses.get(values["email"], record["id"]) != record["id"]
+        ):
+            invalid_policy()
         if previous is not None:
             if previous["kind"] != kind:
                 invalid_policy()

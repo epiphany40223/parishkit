@@ -94,6 +94,11 @@ def recover_admin(
     Interlock acquisition is repeated even for a completed replay. Metadata is
     checked before returning an existing operation, and unresolved unrelated
     YAML/DB disagreement is never overwritten. No provider call is made here.
+
+    Only state='applied' is success. A failed/cancelled receipt is terminal and
+    requires diagnosis and a newly confirmed operation ID; replay preserves
+    that receipt, never silently retries a different intent. OPS-04 must inspect
+    state and failure_code before reporting recovery success.
     """
     if any(
         not isinstance(value, UUID)
@@ -105,13 +110,19 @@ def recover_admin(
     _text(operator_name, 254)
     _text(reason, 1024)
     email = normalized_email(target_email)
-    if confirmed_email != email or not callable(offline_interlock):
-        raise ConfigError(
-            "Offline interlock and exact target confirmation are required."
-        )
+    if normalized_email(confirmed_email) != email:
+        raise ConfigError("Recovery target confirmation does not match.")
+    if not callable(offline_interlock):
+        raise ConfigError("An offline interlock is required.")
     _own_transaction()
     with offline_interlock():
-        runtime = SystemConfiguration.objects.get()
+        try:
+            runtime = SystemConfiguration.objects.get()
+        except (
+            SystemConfiguration.DoesNotExist,
+            SystemConfiguration.MultipleObjectsReturned,
+        ):
+            raise ConfigError("Recovery requires one initialized deployment.") from None
         if runtime.pk != deployment_id:
             raise ConfigError("The confirmed deployment does not match.")
         request = ConfigurationChangeRequest.objects.filter(

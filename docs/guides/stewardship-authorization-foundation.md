@@ -57,6 +57,14 @@ the replacement in its security-notification intent. The ordinary installer
 entry point refuses recovery requests. Replays still acquire the interlock and
 verify bound intent and YAML/database coherence.
 
+Provenance refers to the configuration request UUID for ordinary Admin edits
+and to the globally unique operator operation ID (`request_key`) for offline
+recovery. Both references resolve to immutable request metadata; neither is a
+portal identity. Recovery creation and grant origins must agree with that
+operator operation. Only a receipt whose state is `applied` is success. A
+terminal failed/cancelled operation remains terminal on replay; the operator
+must diagnose it and confirm a new operation ID, not silently reuse the intent.
+
 ARC-04 must consume the revocation generation for pending OAuth state and enforce
 session revocation on every request. There are no operational OAuth states yet.
 OPS-04 must supply the real offline interlock and operator UI before exposing

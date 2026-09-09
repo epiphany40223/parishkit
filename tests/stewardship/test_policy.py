@@ -288,3 +288,35 @@ def test_empty_policy_retains_legacy_schema(include_empty):
     if include_empty:
         document["sections"]["login_rules"] = []
     assert schema_for(document) == "parish-integrations-v1"
+
+
+@pytest.mark.parametrize("hosted", ["bad_domain", "example.org.", "éxample.org"])
+def test_bad_optional_hosted_claim_cannot_override_exact_rule(hosted):
+    """Bad hosted-domain evidence grants nothing and cannot erase exact grants."""
+    assert resolve_roles("admin@example.org", hosted, [address()])[0] == {
+        "administrator",
+        "staff",
+        "ministry_leader",
+    }
+    assert not resolve_roles("other@example.org", hosted, [domain()])[0]
+
+
+def test_same_patch_cannot_recreate_address_to_reclassify_provenance():
+    """Replacing the record UUID is still an update to the same address override."""
+    original = address("leader@example.org", ("ministry_leader",), seeded=True)
+    replacement = address("leader@example.org", ("ministry_leader",))
+    with pytest.raises(ConfigError):
+        validate_policy_change([address(), original], [address(), replacement])
+
+
+def test_recovery_new_rule_creation_matches_grant_origin():
+    """A valid UUID is insufficient when the creation and recovery operation differ."""
+    rule = address()
+    rule["values"]["creation_operation"] = str(uuid4())
+    with pytest.raises(ConfigError):
+        build_candidate(
+            configuration_version(),
+            [{"operation": "add", "section": "login_rules", **rule}],
+            candidate_id=uuid4(),
+            request_schema="operator-recovery-patch-v1",
+        )

@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from uuid import UUID
 
+from parishkit.config import ConfigError
+
 from .policy_schema import normalized_domain, normalized_email
 
 
@@ -65,7 +67,12 @@ def resolve_roles(email, hosted_domain, records, active_seeded=frozenset()):
     """Exact address replaces domain rules; seeded scope fails closed on suspension."""
     email = normalized_email(email)
     domain = email.rsplit("@", 1)[1]
-    hosted = None if hosted_domain is None else normalized_domain(hosted_domain)
+    try:
+        hosted = None if hosted_domain is None else normalized_domain(hosted_domain)
+    except ConfigError:
+        # Bad optional hosted-domain evidence grants no domain authority; it
+        # must not override an otherwise valid exact-address decision.
+        hosted = None
     assignments = [
         record
         for record in records

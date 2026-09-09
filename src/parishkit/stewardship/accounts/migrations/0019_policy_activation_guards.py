@@ -84,6 +84,32 @@ BEGIN
                           WHERE current.configuration_id = NEW.configuration_id
                             AND current.email = previous_rule.email)
     );
+    -- New manual scope or an independent manual Minister origin may unsuppress
+    -- a seeded login without changing any configured role-name array.
+    expanded := expanded OR EXISTS (
+        SELECT 1 FROM public.stewardship_ministry_assignment assignment
+        WHERE assignment.configuration_id = NEW.configuration_id
+          AND assignment.source = 'manual'
+          AND NOT EXISTS (
+              SELECT 1 FROM public.stewardship_ministry_assignment previous_assignment
+              WHERE previous_assignment.configuration_id = NEW.predecessor_id
+                AND previous_assignment.email = assignment.email
+                AND previous_assignment.ministry_duid = assignment.ministry_duid
+                AND previous_assignment.source = 'manual')
+    ) OR EXISTS (
+        SELECT 1 FROM public.stewardship_address_rule rule
+        JOIN public.stewardship_address_grant grant_row ON grant_row.rule_id = rule.id
+        WHERE rule.configuration_id = NEW.configuration_id
+          AND grant_row.role = 'ministry_leader' AND grant_row.origins ? 'manual'
+          AND NOT EXISTS (
+              SELECT 1 FROM public.stewardship_address_rule previous_rule
+              JOIN public.stewardship_address_grant previous_grant
+                ON previous_grant.rule_id = previous_rule.id
+              WHERE previous_rule.configuration_id = NEW.predecessor_id
+                AND previous_rule.email = rule.email
+                AND previous_grant.role = 'ministry_leader'
+                AND previous_grant.origins ? 'manual')
+    );
     IF expanded THEN
         INSERT INTO public.stewardship_policy_epoch
             (id, created_at, actor_id, correlation_id, activation_id, sequence)
