@@ -37,7 +37,12 @@ class DatabaseMaterializer:
         self, store, *, actor_id, correlation_id, request=None, testing_recipient=None
     ):
         """Bind one request, or an initial recipient committed only at activation."""
-        _identities(actor_id, correlation_id)
+        if request is not None and request.authority == "operator_recovery":
+            _identities(correlation_id)
+            if actor_id is not None or request.actor_id is not None:
+                raise ConfigError("Offline recovery cannot impersonate a portal actor.")
+        else:
+            _identities(actor_id, correlation_id)
         self.store, self.actor_id, self.correlation_id = store, actor_id, correlation_id
         self.request = request
         self.testing_recipient = testing_recipient
@@ -217,6 +222,13 @@ def install_request(store, *, request_id, correlation_id):
     )
     if request is None:
         raise LookupError("Configuration request is unavailable.")
+    if request.authority != "admin":
+        raise ConfigError("Operator recovery requires the offline workflow.")
+    return _install_request(store, request=request, correlation_id=correlation_id)
+
+
+def _install_request(store, *, request, correlation_id):
+    """Shared checkpoint engine after its distinct online/offline authority boundary."""
     materializer = DatabaseMaterializer(
         store, actor_id=request.actor_id, correlation_id=correlation_id, request=request
     )

@@ -24,7 +24,12 @@ from parishkit.stewardship.storage import StaleRecordError, StorageInvariantErro
 
 from .request_admission import check_historical_additions, intake_base
 from .request_models import ConfigurationChangeRequest, ConfigurationRequestCheckpoint
-from .request_patch import REQUEST_SCHEMA, build_candidate
+from .request_patch import (
+    POLICY_REQUEST_SCHEMA,
+    REQUEST_SCHEMA,
+    build_candidate,
+    default_schema,
+)
 
 
 @dataclass(frozen=True)
@@ -156,7 +161,14 @@ def record_request(*, base_digest, patch, actor_id, request_key, correlation_id)
             .filter(actor_id=actor_id, request_key=request_key)
             .first()
         )
-        schema = existing.request_schema if existing is not None else REQUEST_SCHEMA
+        selected_schema = default_schema(version, patch)
+        schema = (
+            existing.request_schema
+            if existing is not None
+            else POLICY_REQUEST_SCHEMA
+            if selected_schema == POLICY_REQUEST_SCHEMA
+            else REQUEST_SCHEMA
+        )
         intent = build_candidate(
             version, patch, candidate_id=uuid4(), request_schema=schema
         )

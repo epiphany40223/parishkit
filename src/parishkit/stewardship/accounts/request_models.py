@@ -15,19 +15,55 @@ class ConfigurationChangeRequest(ImmutableRecord):
     payload_fingerprint = models.CharField(max_length=64)
     candidate_version_id = models.UUIDField(unique=True)
     candidate_digest = models.CharField(max_length=64, unique=True)
+    authority = models.CharField(max_length=24, default="admin", db_default="admin")
+    operator_name = models.CharField(max_length=254, null=True)
+    operator_reason = models.CharField(max_length=1024, null=True)
+    confirmed_deployment_id = models.UUIDField(null=True)
+    recovery_target = models.EmailField(null=True)
 
     class Meta:
         db_table = "stewardship_config_request"
         constraints = [
             models.CheckConstraint(
-                condition=models.Q(request_schema__in=["parish-integrations-patch-v1"]),
+                condition=models.Q(
+                    request_schema__in=[
+                        "parish-integrations-patch-v1",
+                        "foundation-policy-patch-v2",
+                        "operator-recovery-patch-v1",
+                    ]
+                ),
                 name="config_request_schema",
             ),
             models.UniqueConstraint(
                 fields=["actor_id", "request_key"], name="config_request_actor_key"
             ),
             models.CheckConstraint(
-                condition=models.Q(actor_id__isnull=False), name="config_request_actor"
+                condition=(
+                    models.Q(
+                        authority="admin",
+                        actor_id__isnull=False,
+                        operator_name__isnull=True,
+                        operator_reason__isnull=True,
+                        confirmed_deployment_id__isnull=True,
+                        recovery_target__isnull=True,
+                    )
+                    & ~models.Q(request_schema="operator-recovery-patch-v1")
+                    | models.Q(
+                        authority="operator_recovery",
+                        actor_id__isnull=True,
+                        operator_name__isnull=False,
+                        operator_reason__isnull=False,
+                        confirmed_deployment_id__isnull=False,
+                        recovery_target__isnull=False,
+                        request_schema="operator-recovery-patch-v1",
+                    )
+                ),
+                name="config_request_actor",
+            ),
+            models.UniqueConstraint(
+                fields=["request_key"],
+                condition=models.Q(authority="operator_recovery"),
+                name="operator_recovery_operation",
             ),
             models.CheckConstraint(
                 condition=models.Q(payload_fingerprint__regex=r"^[0-9a-f]{64}$"),

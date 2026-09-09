@@ -155,7 +155,28 @@ def _validate_v1_sections(document):
 # A historical row chooses its validator, not the currently emitted schema.
 # Add future validators and a migration admitting their names; retain old
 # functions and their schema data unchanged while historical versions exist.
-VALIDATORS = MappingProxyType({"parish-integrations-v1": _validate_v1_sections})
+def _validate_v2_sections(document):
+    """Extend the frozen parish schema with explicitly versioned login policy."""
+    from .policy_schema import validate_policy_records
+
+    policy = document["sections"].get("login_rules", [])
+    base = document | {
+        "sections": {
+            key: value
+            for key, value in document["sections"].items()
+            if key != "login_rules"
+        }
+    }
+    _validate_v1_sections(base)
+    validate_policy_records(policy)
+
+
+VALIDATORS = MappingProxyType(
+    {
+        "parish-integrations-v1": _validate_v1_sections,
+        "foundation-policy-v2": _validate_v2_sections,
+    }
+)
 
 
 def validator_for(schema):
@@ -168,4 +189,13 @@ def validator_for(schema):
 
 def validate_sections(document):
     """Validate a newly prepared document using the current emitted schema."""
-    validator_for(VALIDATION_SCHEMA)(document)
+    validator_for(schema_for(document))(document)
+
+
+def schema_for(document):
+    """Keep legacy documents on their retained schema until new policy is present."""
+    return (
+        "foundation-policy-v2"
+        if document["sections"].get("login_rules")
+        else VALIDATION_SCHEMA
+    )

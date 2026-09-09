@@ -74,6 +74,16 @@ tests do not need routine approval. The complete batch gets three review/fix
 rounds and human PR merge approval; Gate 1 still reviews the integrated foundation
 before Phase 2.
 
+Current batch checkpoint: versioned authorization, provenance, installer security
+effects and offline-recovery records/services are implemented together with the
+DOM-02 interval prerequisite. See the
+[integration boundary and batch rationale](../../guides/stewardship-authorization-foundation.md).
+This substantial policy state-machine batch precedes the separate campaign/
+lifecycle/schedule state-machine batch; it does not complete Phase 1A. Remaining
+DAT-01 secret/runtime integration stays explicitly open. Continue with DAT-02
+and remaining DOM-02 after this PR's human-approved merge. Review and validation
+status will be recorded in the milestone evidence before PR handoff.
+
 The merged configuration-preparation increment completed three dual-model
 review/fix rounds and final CI; see its
 [dispositions and validation](milestones.md#configuration-preparation-increment).
