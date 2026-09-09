@@ -265,7 +265,6 @@ def change_run(
     original = TaskRun.objects.get(pk=run_id)
     with _locked(correlation_id, root_id=original.root_id):
         run = TaskRun.objects.select_for_update().get(pk=run_id)
-        _admit(admit, action, _status(run))
         if run.version != expected_version:
             raise StaleRecordError("The task changed; reload before retrying.")
         if run.state == "running" and action != "lease_expired":
@@ -277,6 +276,7 @@ def change_run(
                 raise StaleRecordError("The task claim is no longer owned.")
         elif fence is not None:
             raise ValueError("Unexpected task fencing token.")
+        _admit(admit, action, _status(run))
         if action == "claim":
             run.worker_id = actor_id
             run.fence += 1

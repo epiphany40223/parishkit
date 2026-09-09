@@ -1299,7 +1299,8 @@ under the controlling automated delivery cycle. This does not release Gate 1.
 
 ### TaskRun storage increment
 
-The human merged [PR #15](https://github.com/epiphany40223/parishkit/pull/15)
+The human merged the prerequisite audit-ownership increment,
+[PR #15](https://github.com/epiphany40223/parishkit/pull/15),
 on September 9, 2026, after all four checks passed at
 `5bffbb3707f72064911ce4612cf9645f4bd73cf3`; see the
 [successful CI run](https://github.com/epiphany40223/parishkit/actions/runs/34378791266).
@@ -1356,8 +1357,48 @@ PostgreSQL cases and 27 pure validation cases.
 Round-2 post-fix quality validation passes 1,106 baseline and 317 PostgreSQL tests,
 with 98.20% line / 96.44% branch coverage (`round2.json` alongside the initial
 report). Ruff, formatting, Markdown, whitespace and both migration-drift profiles
-also pass. Review round 3 remains in progress; this checkpoint is not review or
-merge approval.
+also pass. Docker also passes 30 Compose checks, 1,106 container baseline tests
+and host/image parity of 1,435 IDs.
+
+Review round 3 (`20260909-151444-6b986a`) examined
+`984de8ec9bda09096ea780adbb51facd664a8b6a`. Both reviewers completed without
+degradation or mismatch. Raw severities were five Medium and sixteen Low,
+with no High/Critical findings; all five Medium findings received dispositions:
+
+- Accepted the admission-order correction: stale versions, fences and worker
+  identities now fail before callbacks. Regression coverage proves no callback
+  invocation on any of those bindings.
+- Clarified that PR #15 is the prerequisite audit-ownership merge, not TaskRun
+  merge approval. The original paragraph already described branching from that
+  merge, but now names the predecessor explicitly.
+- Clarified chain-local retry-command identity, matching the root/command lookup
+  and unique constraint. A regression proves separate chains independently admit
+  the same UUID and each deduplicates its own repeat.
+- Rejected duplicating the canonical SQL state graph to support an incomplete
+  migration graph: jobs `0001` alone is not a supported runtime. The populated
+  downgrade refuses before removing `0002`, as the existing regression proves;
+  empty reapply reinstalls guards. The guide explicitly requires all migrations.
+  ARC-04/OPS-02 retain startup/readiness enforcement before operational callers.
+- Rejected the claim that task audits are permanently deployment-owned. The
+  required audit `0006` INSERT trigger resolves the active Parish projection for
+  generic `task_*` events. New configured/unconfigured regressions prove both
+  ownership paths. Campaign links remain BG-01/DAT-07 scope, now explicit in the
+  guide. No duplicate ownership mechanism or historical backfill was added.
+
+All accepted Medium+ corrections are implemented. Final validation passes:
+1,106 baseline tests; 320 PostgreSQL tests, including 64 TaskRun cases; 30 Compose
+checks; 1,106 containerized baseline tests; and exact host/image collection parity
+of 1,438 IDs. Combined scoped coverage is 98.20% lines / 96.44% branches, with
+`final.json` alongside the preceding external quality reports. Ruff, formatting,
+tracked Markdown, whitespace and both migration-drift profiles pass. All tests
+use synthetic identities and disposable storage, without provider credentials.
+
+Three complete independent review/fix rounds satisfy this increment's automated
+delivery exit criterion. The last round had no High/Critical findings; no accepted
+Medium+ findings remain unresolved. Routine corrections and their regression
+tests belong to the same round, per the controlling delivery cycle. The PR/CI
+handoff will carry the final pushed SHA and check results. Human merge approval
+is still required; neither Phase 1 nor Gate 1 is released.
 
 ## Gate 1: Foundation and security
 

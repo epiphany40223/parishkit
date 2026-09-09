@@ -19,8 +19,10 @@ An explicit retry targets the latest failed run, creates a new linked run under
 the root lock, and uses `retry:<root UUID>:<sequence>` as its execution key.
 The sequence increases monotonically, the domain-request UUID and task type
 remain unchanged, and a partial unique constraint admits at most one nonterminal
-run per chain. Retry-command UUIDs are permanently bound to a parent and initiating
-actor; exact repeated commands return the allocated run's current state.
+run per chain. Retry-command UUIDs are chain-local: within a root they are
+permanently bound to a parent and initiating actor. Exact repeated root/command
+pairs return the allocated run's current state; the same command UUID in another
+root represents a separate operation and still requires fresh admission.
 Fresh retry admission receives the failed parent with action `explicit_retry`;
 bound replays receive the allocated run with `explicit_retry_replay`, so current
 permission checks do not consume another allocation budget. Both replay bindings
@@ -37,6 +39,10 @@ a safe AuditEvent in the same transaction as each task write. SQL and ORM guards
 reject rewritten event history; direct event INSERTs must match the task and its
 next history version. New functions use trusted schema resolution and explicit
 public audit targets, including when callers create temporary shadow tables.
+The existing audit ownership INSERT trigger attributes new task events to the
+active immutable Parish projection, or to deployment scope before activation.
+Campaign references remain unset until BG-01/DAT-07 add task/domain integration;
+that absence does not make configured task audit events deployment-owned.
 
 ## Internal API boundary
 
@@ -64,6 +70,7 @@ for direct SQL callers. No untrusted operational caller or permissive production
 callback is wired by this increment.
 
 Worker mutations require the expected row version, owner UUID and current fence.
+These bindings are checked before invoking admission on the locked status.
 Claims increment attempt and fencing values; heartbeat renews a live lease.
 Lease expiry permits only abandonment and advances the fence to invalidate the
 old claim. Abandoned work stays nonterminal until the owning callback proves a
@@ -85,6 +92,10 @@ phases, sanitized summaries/errors and operational status presentation.
 
 The jobs schema and guards use separate ordered migrations, matching existing
 storage conventions. Empty databases can reverse and reapply both migrations.
+Using these primitives requires the complete migration graph, including jobs
+`0002` and audit `0006`; a schema paused at jobs `0001` is not a supported runtime.
+Deployment migration/readiness enforcement belongs to ARC-04/OPS-02, before any
+operational caller can be enabled. Python does not duplicate the SQL state graph.
 Once any task history exists, guard reversal refuses before removing protection
 or its migration marker. Downgrades are not a retention mechanism; future
 reviewed purge/retention services own any required historical deletion.

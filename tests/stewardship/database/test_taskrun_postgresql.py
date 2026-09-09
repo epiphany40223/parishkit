@@ -16,10 +16,18 @@ from django.db.migrations.recorder import MigrationRecorder
 from django.db.models import F
 from django.db.models.deletion import ProtectedError
 
+from parishkit.stewardship.accounts.authority import AuthorityStore
+from parishkit.stewardship.accounts.configuration_installation import (
+    prepare_initial_configuration,
+)
+from parishkit.stewardship.accounts.configuration_models import Parish
+from parishkit.stewardship.accounts.configuration_schema import validate_sections
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.jobs.models import TaskRun, TaskRunEvent
 from parishkit.stewardship.jobs.storage import change_run, enqueue, retry_failed
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
+
+from ..configuration_factory import configuration_version
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -635,8 +643,41 @@ def test_raw_identity_edits_are_blocked(values):
 def test_stale_worker_tokens_are_rejected(kwargs):
     """Expected version, worker identity and fence all bind worker mutations."""
     status = act(new(), "claim")
+    calls = []
     with pytest.raises(StaleRecordError):
-        act(status, "complete", **kwargs)
+        act(status, "complete", admit=lambda *args: calls.append(args), **kwargs)
+    assert calls == []
+
+
+def test_retry_command_identity_is_chain_local():
+    """Separate logical operations do not accidentally share command allocation."""
+    parents = [act(act(new(), "claim"), "permanent_failure") for _ in range(2)]
+    command, actor = uuid4(), uuid4()
+    children = [retry(parent, command_id=command, actor_id=actor) for parent in parents]
+    assert children[0].root_id != children[1].root_id
+    for parent, child in zip(parents, children, strict=True):
+        assert retry(parent, command_id=command, actor_id=actor) == child
+
+
+@pytest.mark.parametrize("configured", [False, True])
+def test_task_audit_ownership_uses_existing_insert_guard(configured, tmp_path):
+    """SQL-emitted task audits inherit actual parish ownership after activation."""
+    if configured:
+        prepare_initial_configuration(
+            AuthorityStore(tmp_path, validate_sections),
+            configuration_version(),
+            testing_recipient="test@example.org",
+            actor_id=uuid4(),
+            correlation_id=uuid4(),
+        )
+    status = act(new(), "claim")
+    events = AuditEvent.objects.filter(subject_id=status.run_id)
+    assert events.count() == 2
+    expected = (
+        ("parish", Parish.objects.get().pk) if configured else ("deployment", None)
+    )
+    assert set(events.values_list("ownership_scope", "parish_id")) == {expected}
+    assert set(events.values_list("campaign_reference", flat=True)) == {None}
 
 
 def test_populated_downgrade_refuses_before_guard_removal():
