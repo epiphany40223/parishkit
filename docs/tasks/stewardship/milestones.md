@@ -996,6 +996,48 @@ above. All 30 Compose checks passed with rebuilt image
 Ruff, formatting, Markdown, migration drift, and whitespace passed. One review/fix
 round is complete; two more are required before PR handoff.
 
+Request intake round 2 reviewed `e77f6b6` against `c4366cd`, session
+`20260908-235055-f9d60d`. Both reviewers and the permission preflight completed
+normally; no failures, mismatches, or degradation. Finalize returned APPROVE
+at the Medium cutoff: zero Medium/High/Critical, 13 raw Low findings below cutoff.
+No corrections were required. The unchanged code retained the preceding full
+validation and passed all 203 combined checks again before the next round.
+Codex's zero-finding success is not a parse failure: pika's telemetry sets its
+`parsed` convenience flag to `accepted > 0`, independently of structured-result
+failure/degradation classification. Its full-branch prompt includes all added
+files even though the auxiliary diff is tier-filtered.
+
+Request intake round 3 independently reviewed the same `e77f6b6` against
+`c4366cd`, session `20260909-000229-b5a898`. Both reviewers and the permission
+preflight completed normally; no failures, mismatches, or degradation. Finalize
+returned COMMENT: one Medium finding from 13 raw, 12 Low below cutoff, no
+High/Critical. C1 was fixed: the historical-identity SQL now derives quoted
+table, primary-key, predecessor, integration-FK, kind, and record-ID identifiers
+from model metadata. A real PostgreSQL transactional rename test uses table/FK
+names containing spaces and proves the guard still accepts the original binding
+and rejects replacement. Disposable DDL is rolled back and metadata restored.
+
+The three required review/fix rounds are complete with corrected validation
+passing; every accepted Medium-or-higher issue is resolved, and the final
+round had no High/Critical. Corrections and their regression validation belong
+to the finding's round under the approved loop policy, not an independent
+APPROVED verdict on the later corrected head. Low findings remain below the
+requested cutoff in the review artifacts. Full integrated G1 and human PR merge
+approval remain required; no incomplete DAT-01 task is checked off.
+
+Final corrected validation: 1,076 host/image baseline passes, 129 explicit opt-in
+skips (117 PostgreSQL, 12 Docker), exact parity across 1,205 collected IDs;
+204 combined schema/PostgreSQL tests passed. The focused request suite passed
+66 tests with 220/222 statements and 76/78 branches covered across four modules.
+Whole stewardship baseline coverage is 84.43% lines / 81.01% branches. Reports
+are `round3-coverage.json` and `round3-database-coverage.json` under the same local
+evidence directory. All 30 Compose checks passed with rebuilt image
+`sha256:aea1b16b76181829372e1dc46d9dd5a6c3a0b05742b2af97496e1ec0f02373ad`.
+Ruff, formatting, tracked Markdown, both profiles' migration drift, Django system
+checks, and whitespace passed. The increment is ready for PR/CI handoff and human
+merge approval; runtime/installer/secret and complete request-state work remains
+the next dependency-ready DAT-01.02/.03 scope.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).

@@ -72,8 +72,10 @@ reviews the integrated foundation before Phase 2.
 The merged configuration-preparation increment completed three dual-model
 review/fix rounds and final CI; see its
 [dispositions and validation](milestones.md#configuration-preparation-increment).
-The request-intake increment requires its own full cycle and human PR merge
-approval; it does not release the incomplete Phase 1.
+The request-intake increment's three-round review/fix cycle is recorded in the
+[milestone evidence](milestones.md#configuration-request-intake-increment).
+Its PR/CI handoff still requires human merge approval; it does not release the
+incomplete Phase 1. Resume remaining installer/runtime/secret work after merge.
 
 Integrate ARC-02's concrete materializer and database-backed digest/mode checks
 with DAT-01. Complete its production prerequisite and recovery verification in

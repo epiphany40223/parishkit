@@ -4,7 +4,7 @@ from django.db import connection
 
 from parishkit.config import ConfigError
 
-from .configuration_models import AppliedConfigurationVersion
+from .configuration_models import AppliedConfigurationVersion, AppliedIntegration
 from .configuration_snapshots import verified_snapshot_version
 
 
@@ -47,24 +47,37 @@ def check_historical_additions(base_id, patch):
     ]
     if not additions:
         return
+    # Only model-owned identifiers are interpolated; every submitted value is
+    # still a bound parameter. Keep table/FK renames in sync with migrations.
+    quote = connection.ops.quote_name
+    versions, integrations = AppliedConfigurationVersion._meta, AppliedIntegration._meta
+    version_table, integration_table = (
+        quote(versions.db_table),
+        quote(integrations.db_table),
+    )
+    version_pk = quote(versions.pk.column)
+    predecessor_column = quote(versions.get_field("predecessor").column)
+    configuration_column = quote(integrations.get_field("configuration").column)
+    kind_column = quote(integrations.get_field("kind").column)
+    record_column = quote(integrations.get_field("record_id").column)
     predicates, parameters = [], [base_id]
     for item in additions:
         kind, identifier = item["values"]["kind"], item["id"]
         predicates.append(
-            "((i.kind = %s AND i.record_id <> %s) OR "
-            "(i.record_id = %s AND i.kind <> %s))"
+            f"((i.{kind_column} = %s AND i.{record_column} <> %s) OR "
+            f"(i.{record_column} = %s AND i.{kind_column} <> %s))"
         )
         parameters.extend([kind, identifier, identifier, kind])
     with connection.cursor() as cursor:
         cursor.execute(
-            """WITH RECURSIVE chain(id, predecessor_id) AS (
-                SELECT id, predecessor_id FROM stewardship_configuration_version
-                WHERE id = %s
+            f"""WITH RECURSIVE chain(id, predecessor_id) AS (
+                SELECT {version_pk}, {predecessor_column} FROM {version_table}
+                WHERE {version_pk} = %s
                 UNION
-                SELECT p.id, p.predecessor_id FROM stewardship_configuration_version p
-                JOIN chain c ON p.id = c.predecessor_id
-            ) SELECT 1 FROM chain c JOIN stewardship_applied_integration i
-              ON i.configuration_id = c.id WHERE """
+                SELECT p.{version_pk}, p.{predecessor_column} FROM {version_table} p
+                JOIN chain c ON p.{version_pk} = c.predecessor_id
+            ) SELECT 1 FROM chain c JOIN {integration_table} i
+              ON i.{configuration_column} = c.id WHERE """
             + " OR ".join(predicates)
             + " LIMIT 1",
             parameters,

@@ -532,3 +532,58 @@ def test_concurrent_winner_selects_stored_schema_before_validation(intake, monke
     assert receipt.request_id == winner[0]
     assert ConfigurationChangeRequest.objects.count() == 1
     assert AuditEvent.objects.count() == 1
+
+
+def test_historical_binding_query_uses_quoted_model_identifiers(intake, monkeypatch):
+    """Real temporary table/FK renames prove metadata drives the raw SQL guard."""
+    from parishkit.stewardship.accounts.configuration_models import (
+        AppliedConfigurationVersion,
+        AppliedIntegration,
+    )
+    from parishkit.stewardship.accounts.request_admission import (
+        check_historical_additions,
+    )
+
+    base = AppliedConfigurationVersion.objects.get()
+    integration = AppliedIntegration.objects.get()
+    patch = [
+        {
+            "section": "integrations",
+            "operation": "add",
+            "id": str(uuid4()),
+            "values": {"kind": integration.kind},
+        }
+    ]
+    quote = connection.ops.quote_name
+    with (
+        transaction.atomic(),
+        monkeypatch.context() as changed,
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(
+            f'ALTER TABLE {quote(base._meta.db_table)} RENAME TO "history versions"'
+        )
+        cursor.execute(
+            f"ALTER TABLE {quote(integration._meta.db_table)} "
+            'RENAME TO "history integrations"'
+        )
+        cursor.execute(
+            'ALTER TABLE "history integrations" '
+            'RENAME COLUMN configuration_id TO "snapshot link"'
+        )
+        changed.setattr(
+            AppliedConfigurationVersion._meta, "db_table", "history versions"
+        )
+        changed.setattr(AppliedIntegration._meta, "db_table", "history integrations")
+        changed.setattr(
+            AppliedIntegration._meta.get_field("configuration"),
+            "column",
+            "snapshot link",
+        )
+        with pytest.raises(ConfigError, match="identities"):
+            check_historical_additions(base.pk, patch)
+        patch[0]["id"] = str(integration.record_id)
+        check_historical_additions(base.pk, patch)
+        # Roll back only these disposable DDL changes; model metadata restores
+        # when the monkeypatch context exits, before pytest's ordinary flush.
+        transaction.set_rollback(True)
