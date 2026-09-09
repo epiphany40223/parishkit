@@ -75,6 +75,13 @@ campaign/restore state, offline recovery, authorization/service integration,
 credential evidence, and remaining recovery/privacy verification. This does not
 enable production or release Gate 1.
 
+Fifth increment: secret-request storage adds immutable intent bindings,
+target reservation, actor-scoped receipts, expiry/cancellation, append-only
+checkpoints and audit, and retryable external-staging cleanup acknowledgement.
+See the [secret-request storage boundary](../../guides/stewardship-secret-requests.md).
+The payload store, sealing and installer identity are not implemented or exposed;
+installation/consumer acknowledgement and the remaining DAT-01 work remain open.
+
 ## DAT-02: Campaign lifecycle and schedule schema
 
 Scope and dependencies: [DAT-02 work package](../../plans/stewardship/data.md#dat-02-campaign-lifecycle-and-schedule-schema).

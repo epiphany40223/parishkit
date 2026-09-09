@@ -16,6 +16,10 @@ from .request_models import (  # noqa: F401
     ConfigurationRequestCheckpoint,
 )
 from .runtime_models import ConfigurationActivation, SystemConfiguration  # noqa: F401
+from .secret_models import (  # noqa: F401
+    SecretReplacementRequest,
+    SecretRequestCheckpoint,
+)
 
 
 class PortalSession(MutableRecord):

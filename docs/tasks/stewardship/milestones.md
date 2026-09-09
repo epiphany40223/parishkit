@@ -1129,6 +1129,24 @@ head and CI results. This does not release Gate 1 or complete Phase 1; the next
 dependency-ready scope remains DAT-01 runtime/secret records and installer
 integration, followed by TaskRun chains.
 
+### Secret-request storage increment
+
+The human merged PR #12 at `a241205` on September 9, 2026, after all four CI
+checks passed at implementation head `00577dc`. Branch
+`pr/stewardship-secret-requests` starts from that refreshed `origin/main` tip.
+Scope is the [secret-request storage boundary](../../guides/stewardship-secret-requests.md),
+not operational credential replacement. DAT-01 and M1/G1 remain partial.
+Validation and the required three independent review/fix rounds follow below.
+
+Initial validation passed 1,079 baseline tests (221 explicit opt-in skips),
+209 required PostgreSQL tests including 37 new staging/cleanup cases, and all
+30 Compose checks. Host/image baseline parity covered 1,300 collected IDs.
+Combined coverage is 98.08% lines / 96.21% branches. Ruff, formatting, tracked
+Markdown, both migration-drift profiles and diff whitespace checks passed.
+An initial full-suite run exposed historical downgrade-test schema leakage;
+restoring the whole migration graph in its finally block corrected it before
+independent review. No secret files or provider credentials were used.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).
