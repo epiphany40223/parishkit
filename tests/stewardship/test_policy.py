@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.accounts.configuration_schema import schema_for
 from parishkit.stewardship.accounts.policy import (
     Capability,
     Principal,
@@ -136,6 +137,7 @@ def test_report_column_privacy():
     assert report_columns(Principal(uuid4(), frozenset({"staff"})), columns) == columns
     assert not allows(minister, "ministry_report", ministry_id=123)
     assert not allows(None, Capability.CONFIGURE)
+    assert report_columns(None, columns) == ()
 
 
 @pytest.mark.parametrize(
@@ -252,4 +254,37 @@ def test_seeded_configuration_requires_explicit_schema_provenance():
         address("leader@example.org", ("ministry_leader",), seeded=True),
         assignment(seeded=True),
     ]
-    configuration_version(document)
+    version = configuration_version(document)
+    assert schema_for(version.document()) == "foundation-policy-v2"
+    for record in document["sections"]["login_rules"][1:]:
+        with pytest.raises(ConfigError):
+            build_candidate(
+                configuration_version(),
+                [{"operation": "add", "section": "login_rules", **record}],
+                candidate_id=uuid4(),
+            )
+
+
+@pytest.mark.parametrize(
+    "section",
+    ["campaigns", "content", "schedules", "share_options", "ministries", "funds"],
+)
+def test_policy_schema_does_not_admit_later_sections(section):
+    """Delegated v1 validation must still reject other nonempty sections."""
+    document = configuration_document()
+    document["sections"]["login_rules"] = [address()]
+    document["sections"][section] = [
+        {"id": str(uuid4()), "values": {"name": "Unsupported"}}
+    ]
+    with pytest.raises(ConfigError):
+        configuration_version(document)
+
+
+@pytest.mark.parametrize("include_empty", [False, True])
+def test_empty_policy_retains_legacy_schema(include_empty):
+    """Absent and explicitly empty rules preserve the original stored discriminator."""
+    document = configuration_document()
+    document["sections"].pop("login_rules", None)
+    if include_empty:
+        document["sections"]["login_rules"] = []
+    assert schema_for(document) == "parish-integrations-v1"

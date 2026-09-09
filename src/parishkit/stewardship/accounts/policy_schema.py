@@ -184,3 +184,30 @@ def validate_policy_change(before, after):
                     for origin, operation in prior.items()
                 ):
                     invalid_policy()
+
+
+def validate_manual_operation(before, after, operation_id):
+    """Bind newly introduced manual provenance to the immutable request identity."""
+    expected = str(operation_id)
+    old = {record["id"]: record["values"] for record in before}
+    for record in after:
+        values, prior = record["values"], old.get(record["id"])
+        if (
+            values["kind"] == "assignment"
+            and prior is None
+            and values["source"] == "manual"
+            and values["operation_id"] != expected
+        ):
+            invalid_policy()
+        if values["kind"] != "address":
+            continue
+        if prior is None and values["creation_operation"] != expected:
+            invalid_policy()
+        for role, origins in values["grants"].items():
+            previous = prior["grants"].get(role, {}) if prior else {}
+            if (
+                "manual" in origins
+                and "manual" not in previous
+                and origins["manual"] != expected
+            ):
+                invalid_policy()

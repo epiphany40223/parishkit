@@ -18,6 +18,9 @@ projection equality and deferred completeness. Historical v1 snapshots and
 request parsers retain their original discriminators and retry behavior.
 
 Ordinary policy requests use the existing serialized installer. Exact-email
+manual provenance refers to the request UUID returned by
+`policy_operation_id(actor_id, request_key)`; new provenance is checked at both
+intake and installer validation. Existing origins remain unchanged. Exact-email
 overrides, including explicit denial, replace hosted-domain roles. Seed-only
 Ministry scope needs an active source overlay; missing or suspended overlays
 fail closed. Manual origins and assignments remain independent. The installer

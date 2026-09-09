@@ -262,6 +262,17 @@ def _install_request(store, *, request, correlation_id):
                     candidate_id=request.candidate_version_id,
                     request_schema=request.request_schema,
                 )
+                if request.request_schema == "foundation-policy-patch-v2":
+                    from .policy_schema import validate_manual_operation
+
+                    validate_manual_operation(
+                        base.document()["sections"].get("login_rules", []),
+                        intent.candidate.document()["sections"].get("login_rules", []),
+                        request.pk,
+                    )
+                from .request_admission import check_historical_additions
+
+                check_historical_additions(request.base_id, request.patch)
                 if (
                     intent.candidate.digest != request.candidate_digest
                     or intent.payload_fingerprint != request.payload_fingerprint
@@ -315,4 +326,7 @@ def coherent_configuration(store):
         or store.manifest_reference() != (selected.version_id, selected.digest)
     ):
         raise ConfigError("Configuration is incomplete or requires recovery.")
+    # Reuse the exact projection instance just verified, including its prefetch
+    # cache. Downstream policy reads must not reload the same immutable corpus.
+    runtime.active_configuration = snapshot
     return runtime

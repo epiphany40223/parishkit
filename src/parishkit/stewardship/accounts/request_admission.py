@@ -40,6 +40,7 @@ def check_historical_additions(base_id, patch):
     every canonical document. Full ancestry validation remains mandatory when
     the installer prepares the candidate; this is not a readiness certificate.
     """
+    _check_policy_additions(base_id, patch)
     additions = [
         item
         for item in patch
@@ -86,3 +87,41 @@ def check_historical_additions(base_id, patch):
             raise ConfigError(
                 "Integration identities must remain stable across history."
             )
+
+
+def _check_policy_additions(base_id, patch):
+    """Compare only added policy IDs against retained ancestry, before claiming work."""
+    from .configuration_snapshots import _remember_policy
+
+    additions = [
+        item
+        for item in patch
+        if item["section"] == "login_rules" and item["operation"] == "add"
+    ]
+    if not additions:
+        return
+    identities = {}
+    _remember_policy({"sections": {"login_rules": additions}}, identities)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            WITH RECURSIVE chain(id, predecessor_id, document) AS (
+                SELECT id, predecessor_id, canonical_document
+                FROM stewardship_configuration_version WHERE id = %s
+                UNION
+                SELECT p.id, p.predecessor_id, p.canonical_document
+                FROM stewardship_configuration_version p JOIN chain c
+                ON p.id = c.predecessor_id
+            ) SELECT record FROM chain,
+              jsonb_array_elements(document->'sections'->'login_rules') record
+              WHERE record->>'id' = ANY(%s)
+            """,
+            [base_id, [item["id"] for item in additions]],
+        )
+        import json
+
+        records = [
+            json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            for row in cursor.fetchall()
+        ]
+    _remember_policy({"sections": {"login_rules": records}}, identities)

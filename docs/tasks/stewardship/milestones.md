@@ -1400,6 +1400,36 @@ tests belong to the same round, per the controlling delivery cycle. The PR/CI
 handoff will carry the final pushed SHA and check results. Human merge approval
 is still required; neither Phase 1 nor Gate 1 is released.
 
+### Authorization and recovery batch
+
+Branch `pr/stewardship-phase-1a` starts from PR #16 merge
+`e5706c8a745d4cd33198918eb006180485be50b9`. Implementation `3206aa8` groups
+versioned policy, provenance, capability/column decisions, security effects,
+offline-recovery records/protocol and the DST interval prerequisite. See the
+[integration boundary and batch rationale](../../guides/stewardship-authorization-foundation.md).
+This does not release Phase 1A or Gate 1; operational identity, recovery commands,
+campaign lifecycle/schedules, secret integration and later consumers remain open.
+
+Round 1: Pika session `20260909-172302-7d3155` reviewed the complete branch against
+the merge base, using Codex and two Pika-generated Claude file shards. Exact-path
+Claude permission preflight passed. All reviewers completed and finalization
+reported no failed agents, mismatches or degradation: 10 Medium, no High/Critical.
+Nine findings were corrected: request-bound manual provenance; clock-skew-tolerant
+session revocation; explicit seed rejection tests; invalid-principal column denial;
+v2 unsupported-section/legacy-dispatch tests; reuse of verified policy projections;
+retired-ID intake and installer preflight; normalized seeded lookup; explicit
+first-policy alert-recipient coverage. The proposed single-day campaign change was
+rejected because the user's original requirement explicitly requires the end date
+to be after the start date. Empty prior-Admin recipients on a historical pre-policy
+upgrade are deliberate, not invented Admin authority for the Testing recipient.
+
+Initial complete validation passed 1,386 baseline tests, 336 PostgreSQL tests and
+30 opt-in Compose tests, including built-image test parity. Stewardship coverage
+was 97.57% lines and 93.79% branches. Ruff, Markdown, migration drift and Docker
+build passed. Round-1 correction PostgreSQL validation passed 340 tests; complete
+post-correction coverage and remaining review rounds are in progress. These
+intermediate counts are not final PR or CI evidence.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).

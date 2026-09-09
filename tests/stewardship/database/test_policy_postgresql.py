@@ -6,6 +6,7 @@ import pytest
 from django.db import IntegrityError, connection, transaction
 from django.db.migrations.executor import MigrationExecutor
 from django.db.models import F
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from parishkit.config import ConfigError
@@ -17,7 +18,10 @@ from parishkit.stewardship.accounts.configuration_installation import (
 from parishkit.stewardship.accounts.configuration_models import (
     AppliedConfigurationVersion,
 )
-from parishkit.stewardship.accounts.configuration_requests import record_request
+from parishkit.stewardship.accounts.configuration_requests import (
+    policy_operation_id,
+    record_request,
+)
 from parishkit.stewardship.accounts.configuration_schema import validate_sections
 from parishkit.stewardship.accounts.configuration_snapshots import (
     is_prepared,
@@ -69,17 +73,34 @@ def user(email, hosted=None):
 
 def change(store, version, actor, patch):
     """Record and install one exact-base intent, retaining its durable receipt."""
+    key = uuid4()
+    bind_operations(patch, policy_operation_id(actor, key))
     receipt = record_request(
         base_digest=version.digest,
         patch=patch,
         actor_id=actor,
-        request_key=uuid4(),
+        request_key=key,
         correlation_id=uuid4(),
     )
     result = install_request(
         store, request_id=receipt.request_id, correlation_id=uuid4()
     )
     return result
+
+
+def bind_operations(patch, operation_id):
+    """Make valid new manual test records refer to their actual request identity."""
+    for operation in patch:
+        if operation["section"] != "login_rules" or operation["operation"] != "add":
+            continue
+        values = operation["values"]
+        if values["kind"] == "address":
+            values["creation_operation"] = str(operation_id)
+            for origins in values["grants"].values():
+                if "manual" in origins:
+                    origins["manual"] = str(operation_id)
+        elif values["kind"] == "assignment":
+            values["operation_id"] = str(operation_id)
 
 
 def test_prepared_policy_is_exact_and_immutable(tmp_path):
@@ -110,7 +131,11 @@ def test_domain_and_exact_policy_take_effect_on_next_lookup(tmp_path):
     """A newly applied exact denial supersedes previously usable domain policy."""
     store, version, actor = initialized(tmp_path, [address(), domain()])
     member = user("member@example.org", "example.org")
-    assert allows(current_principal(store, member.pk), Capability.FAMILY_CODES)
+    with CaptureQueriesContext(connection) as queries:
+        assert allows(current_principal(store, member.pk), Capability.FAMILY_CODES)
+    assert (
+        sum('FROM "stewardship_address_rule"' in query["sql"] for query in queries) == 1
+    )
     denial = address("member@example.org", ())
     result = change(
         store,
@@ -195,11 +220,14 @@ def test_policy_notification_failure_rolls_back_activation(tmp_path):
     """A failed durable intent cannot leave expanded authority silently active."""
     store, version, actor = initialized(tmp_path)
     addition = address("next@example.org")
+    key = uuid4()
+    patch = [{"operation": "add", "section": "login_rules", **addition}]
+    bind_operations(patch, policy_operation_id(actor, key))
     receipt = record_request(
         base_digest=version.digest,
-        patch=[{"operation": "add", "section": "login_rules", **addition}],
+        patch=patch,
         actor_id=actor,
-        request_key=uuid4(),
+        request_key=key,
         correlation_id=uuid4(),
     )
     with connection.cursor() as cursor:
@@ -290,7 +318,67 @@ def test_legacy_preparation_can_introduce_policy(tmp_path):
         store, old, actor, [{"operation": "add", "section": "login_rules", **rule}]
     )
     assert is_prepared(old.digest) and is_prepared(result.applied_digest)
+    # Pre-policy historical fixtures have no prior Admin recipients. Preserve
+    # that fact rather than treating the Testing routing address as an Admin.
+    event = PolicySecurityEvent.objects.get(target="admin@example.org")
+    assert event.recipients == [] and event.kind == "administrator_granted"
     assert (
         prepare_snapshot(old, actor_id=actor, correlation_id=uuid4()).validation_schema
         == "parish-integrations-v1"
     )
+
+
+def test_mixed_case_seed_lookup_uses_same_normalized_identity(tmp_path):
+    """Google email case cannot make the overlay query disagree with policy matching."""
+    seed = assignment(seeded=True)
+    store, _, _ = initialized(
+        tmp_path,
+        [
+            address(),
+            address("leader@example.org", ("ministry_leader",), seeded=True),
+            seed,
+        ],
+    )
+    leader = user("Leader@Example.org")
+    AssignmentOverlay.objects.create(
+        assignment_record_id=UUID(seed["id"]),
+        active=True,
+        source_snapshot_id=uuid4(),
+        reason="chair_present",
+    )
+    assert current_principal(store, leader.pk).ministries == {123}
+
+
+def test_manual_provenance_must_identify_its_request(tmp_path):
+    """A syntactically valid arbitrary UUID cannot impersonate an originating intent."""
+    store, version, actor = initialized(tmp_path)
+    for rule in (address("next@example.org"), assignment()):
+        with pytest.raises(ConfigError):
+            record_request(
+                base_digest=version.digest,
+                patch=[{"operation": "add", "section": "login_rules", **rule}],
+                actor_id=actor,
+                request_key=uuid4(),
+                correlation_id=uuid4(),
+            )
+
+
+def test_retired_policy_id_rebinding_is_rejected_at_intake(tmp_path):
+    """Invalid ancestry cannot leave an uncancellable validating request."""
+    retired = domain()
+    store, version, actor = initialized(tmp_path, [address(), retired])
+    result = change(
+        store,
+        version,
+        actor,
+        [{"operation": "remove", "section": "login_rules", "id": retired["id"]}],
+    )
+    retired["values"]["domain"] = "different.org"
+    with pytest.raises(ConfigError, match="identities"):
+        record_request(
+            base_digest=result.applied_digest,
+            patch=[{"operation": "add", "section": "login_rules", **retired}],
+            actor_id=actor,
+            request_key=uuid4(),
+            correlation_id=uuid4(),
+        )

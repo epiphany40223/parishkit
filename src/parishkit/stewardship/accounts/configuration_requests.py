@@ -15,7 +15,7 @@ recorded; installation rejects stale bases without implicit rebasing.
 import hashlib
 import re
 from dataclasses import dataclass, field
-from uuid import UUID, uuid4
+from uuid import UUID, uuid4, uuid5
 
 from django.db import connection, transaction
 
@@ -30,6 +30,12 @@ from .request_patch import (
     build_candidate,
     default_schema,
 )
+
+
+def policy_operation_id(actor_id, request_key):
+    """Derive the request UUID for clients to bind manual provenance before intake."""
+    _identities(actor_id, request_key)
+    return uuid5(actor_id, str(request_key))
 
 
 @dataclass(frozen=True)
@@ -172,12 +178,24 @@ def record_request(*, base_digest, patch, actor_id, request_key, correlation_id)
         intent = build_candidate(
             version, patch, candidate_id=uuid4(), request_schema=schema
         )
+        identifier = (
+            existing.pk if existing else policy_operation_id(actor_id, request_key)
+        )
+        if schema == POLICY_REQUEST_SCHEMA:
+            from .policy_schema import validate_manual_operation
+
+            validate_manual_operation(
+                version.document()["sections"].get("login_rules", []),
+                intent.candidate.document()["sections"].get("login_rules", []),
+                identifier,
+            )
         if existing is not None:
             if existing.payload_fingerprint != intent.payload_fingerprint:
                 raise ConfigError("Request key is already bound to another intent.")
             return _status(existing)
         check_historical_additions(base.pk, intent.patch())
         request = ConfigurationChangeRequest.objects.create(
+            id=identifier,
             base=base,
             patch=intent.patch(),
             actor_id=actor_id,

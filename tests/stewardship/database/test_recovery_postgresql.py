@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from django.contrib.sessions.backends.db import SessionStore
 from django.db import IntegrityError, connection
+from django.db.models import F
 from django.utils import timezone
 
 from parishkit.config import ConfigError
@@ -174,3 +175,16 @@ def test_recovery_must_acquire_interlock_even_for_replay(tmp_path):
 
     with pytest.raises(ConfigError, match="running"):
         recover_admin(store, **(kwargs | {"offline_interlock": unavailable}))
+
+
+def test_future_dated_activity_cannot_block_recovery(tmp_path):
+    """Clock skew in session activity cannot defeat emergency revocation."""
+    store, _, _ = initialized(tmp_path)
+    portal = session()
+    future = timezone.now() + timedelta(minutes=30)
+    PortalSession.objects.filter(pk=portal.pk).update(
+        last_activity_at=future, version=F("version") + 1
+    )
+    assert recover_admin(store, **arguments()).state == "applied"
+    portal.refresh_from_db()
+    assert portal.revoked_at >= future

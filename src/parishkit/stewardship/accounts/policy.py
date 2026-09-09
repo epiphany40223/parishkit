@@ -150,6 +150,8 @@ def allows(principal, capability, *, ministry_id=None, family_id=None):
 
 def report_columns(principal, requested, *, ministry_id=None):
     """Ministry-only exports cannot leak financial fields or Family manual codes."""
+    if not isinstance(principal, Principal):
+        return ()
     if "administrator" in principal.roles or "staff" in principal.roles:
         return tuple(requested)
     if not allows(principal, Capability.MINISTRY_REPORT, ministry_id=ministry_id):
@@ -177,16 +179,25 @@ def current_principal(store, user_id):
     """Reload verified YAML-backed policy and source overlays on every request."""
     from .configuration_installation import coherent_configuration
     from .policy_models import AssignmentOverlay, MinistryAssignment, PortalUser
-    from .policy_projections import stored_policy
 
     if not isinstance(user_id, UUID):
         raise TypeError("An opaque user identity is required.")
     runtime = coherent_configuration(store)
     user = PortalUser.objects.get(pk=user_id, disabled=False)
-    records = stored_policy(runtime.active_configuration)
+    email = normalized_email(user.email)
+    # Coherence already verified this exact canonical document against every
+    # normalized projection. Filter once, without a second corpus materialization.
+    records = [
+        record
+        for record in runtime.active_configuration.canonical_document["sections"].get(
+            "login_rules", []
+        )
+        if record["values"].get("email") == email
+        or record["values"].get("domain") == email.rsplit("@", 1)[1]
+    ]
     seeded = MinistryAssignment.objects.filter(
         configuration=runtime.active_configuration,
-        email=user.email,
+        email=email,
         source="chair-seed",
     ).values_list("record_id", flat=True)
     # A missing promoted-source overlay is not proof of a current Chairperson.
@@ -196,7 +207,7 @@ def current_principal(store, user_id):
         ).values_list("assignment_record_id", flat=True)
     )
     roles, ministries = resolve_roles(
-        user.email,
+        email,
         user.hosted_domain,
         records,
         frozenset(str(identifier) for identifier in active),

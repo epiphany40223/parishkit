@@ -62,7 +62,8 @@ BEGIN
         (id, created_at, actor_id, correlation_id, activation_id)
     VALUES (gen_random_uuid(), NEW.created_at, NULL, NEW.correlation_id, NEW.id);
     UPDATE public.stewardship_portal_session
-    SET revoked_at = statement_timestamp(), version = version + 1,
+    SET revoked_at = GREATEST(statement_timestamp(), last_activity_at),
+        version = version + 1,
         actor_id = NULL, correlation_id = NEW.correlation_id
     WHERE revoked_at IS NULL;
     INSERT INTO public.stewardship_audit_event
