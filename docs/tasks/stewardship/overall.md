@@ -58,12 +58,12 @@ Phase 1's database-backed ARC-02 integration or mark that work complete early.
 
 Source scope: [Phase 1A: Schema and policy](../../plans/stewardship/overall.md#phase-1-secure-foundation-and-durable-domain).
 
-Execution checkpoint (September 9, 2026 UTC): the human merged configuration
-activation as PR #12, merge `a241205`, after the earlier foundation increments.
-The branch `pr/stewardship-secret-requests` starts at refreshed `origin/main`.
-It continues DAT-01.02/.03 with secret-request metadata, target reservation,
-durable cancellation/expiry history and retryable staging-cleanup acknowledgement.
-The next dependency-ready task is DAT-01.01's explicit Parish audit ownership.
+Execution checkpoint (September 9, 2026 UTC): the human merged secret-request
+storage as PR #13, merge `fe900b7`, after the earlier foundation increments.
+The branch `pr/stewardship-audit-ownership` starts at that refreshed `origin/main`.
+It completes DAT-01.01's explicit Parish audit ownership with immutable profiles
+and migration/rollback verification. The next dependency-ready task is DAT-01.05's
+TaskRun claim and retry-chain storage.
 Remaining runtime/secret installation integration and TaskRun chains retain
 their DAT-01/Phase 1 ownership. No whole partially delivered task is checked off. Each increment
 gets the full three-round review/fix cycle and human merge approval; Gate 1 still
@@ -82,8 +82,11 @@ PR #12 merged with all four checks passing. The secret-request increment gets
 its own human-approved PR after three completed independent review/fix rounds,
 all accepted Medium+ corrections and passing local validation; see its
 [final evidence](milestones.md#secret-request-storage-increment).
-It is ready for PR/CI handoff. The PR records the exact final head and CI results;
-neither increment releases the incomplete Phase 1 or Gate 1.
+PR #13 merged with all four checks passing. The audit-ownership increment has
+completed three independent dual-model review/fix rounds and final local
+validation; see its [evidence](milestones.md#audit-ownership-increment).
+Its PR/CI handoff still requires human merge approval. None of these increments
+releases the incomplete Phase 1 or Gate 1.
 
 Integrate ARC-02's concrete materializer and database-backed digest/mode checks
 with DAT-01. Complete its production prerequisite and recovery verification in

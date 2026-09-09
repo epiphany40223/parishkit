@@ -1219,6 +1219,84 @@ merge is enabled by this evidence. DAT-01 and Phase 1/Gate 1 remain partial.
 Next dependency-ready work is explicit Parish audit ownership; remaining
 runtime/installer integration and TaskRun chains retain their owning plan scope.
 
+### Audit-ownership increment
+
+The human merged PR #13 on September 9, 2026, after all four CI checks passed
+at implementation head `7407982af34af560c6472c69a3489fad2149a441`.
+The [successful CI run](https://github.com/epiphany40223/parishkit/actions/runs/34371683609)
+and [merged PR](https://github.com/epiphany40223/parishkit/pull/13) record that handoff.
+Branch `pr/stewardship-audit-ownership` starts at refreshed `origin/main`,
+`fe900b7e0e63a4f091bf05e2d4399b4fc465b7b6`.
+
+Scope: complete DAT-01.01's explicit Parish audit ownership using immutable
+profiles, safe soft campaign references, transactional insertion guards and
+non-rewriting legacy migration. See the
+[integration boundary](../../guides/stewardship-audit-ownership.md).
+DAT-01.02/.03/.05/.06 remain open for their remaining scope. The next ready task
+is TaskRun claim/retry-chain storage. Full Phase 1 and Gate 1 remain incomplete.
+
+Initial validation: 1,079 baseline tests passed (248 PostgreSQL and 12 opt-in
+Compose cases skipped by design); all 248 PostgreSQL tests and all 30 opt-in
+Compose checks passed. Host/image collection parity covers 1,339 test IDs.
+Combined scoped coverage is 98.10% lines / 96.23% branches, recorded outside the
+repository at `/tmp/stewardship-audit-validation.Q4u5Ol/initial.json`.
+Ruff, formatting, tracked Markdown and both migration-drift checks passed.
+
+Review round 1: Pika session `20260909-120356-63b599`, reviewed implementation
+`4bc51f70a7a763c1179b1d7fecefa12ba6556d62`, completed both independent reviewers
+without failed/degraded sources, mismatch or salvage. Three Medium findings,
+no High/Critical findings; all three accepted under delegated triage:
+
+| Finding | Disposition |
+| --- | --- |
+| Deployment-only downgrade/reapply branch lacked direct coverage | Added a populated round-trip test preserving old fields and exercising the restored trigger |
+| Ownership migration depended on unrelated secret schema | Narrowed dependency to accounts 0013; added configured/unconfigured secret-downgrade refusal tests proving ownership survives |
+| Corruption fixture disabled broader guards without restoration evidence | Narrowed to the immutable Parish guard, used a durable transaction and asserted enabled state after rollback |
+
+Round-1 post-correction validation: 1,079 baseline and 251 PostgreSQL tests
+passed, plus all 30 rebuilt Compose checks with parity over 1,342 collected IDs.
+Scoped coverage remains 98.10% lines / 96.23% branches in the external
+`round1.json` report. Markdown, Ruff and migration drift checks passed.
+
+Review round 2: Pika session `20260909-121747-406594`, reviewed implementation
+`33a4163f418761d1de9126e5c8ea7f105a4666e4`, completed both independent reviewers
+without failure/degradation, mismatch or salvage. Two validated Medium findings
+(one agreed by both reviewers), no High/Critical; both accepted:
+
+| Finding | Disposition |
+| --- | --- |
+| Legacy deployment-owned history allowed a partially committed broad downgrade before an older accounts guard refused | Preflight now locks/checks retained activation, installer checkpoint and optional secret history before ownership removal; added legacy configured/secret regression cases and the minimum dependency graph case |
+| Caller search path could shadow attribution tables | Fixed the function search path to catalog/public/temporary-last; tested shadows of all four context tables without changing unrelated legacy guards |
+
+Round-2 post-correction validation: 1,079 baseline and 255 PostgreSQL tests
+passed, plus all 30 rebuilt Compose checks with parity over 1,346 collected IDs.
+Scoped coverage remains 98.10% lines / 96.23% branches in `round2.json` in the
+external validation directory. Ruff, Markdown and both migration checks passed.
+
+Review round 3: Pika session `20260909-123354-2a76ad`, reviewed implementation
+`662177d2e94c17de4fb08de69fde1262d4e2c7ca`, completed both independent reviewers
+without failure/degradation, mismatch or salvage. Two validated Medium findings,
+no High/Critical:
+
+| Finding | Disposition |
+| --- | --- |
+| The installer-checkpoint downgrade clause lacked a case where it alone blocks reversal | Accepted and added a legacy-upgrade validating-checkpoint case with no activation or secret history |
+| Older SQL emitters can target a temporary shadow audit table before the new guard runs | Auto-skipped as pre-existing: unchanged unqualified INSERTs and caller-path functions are present in base accounts 0010/0013/0015. Explicitly tracked with required emitter regression tests in OPS-02 before runtime-role grants/Gate 1; ownership guide now states this boundary |
+
+Six distinct accepted Medium findings across three complete rounds have been
+corrected; one pre-existing finding has an evidence-backed disposition and an
+explicit prerequisite owner. No High/Critical findings were reported in any
+round. Final post-correction validation passed: 1,079 baseline tests (256
+PostgreSQL and 12 opt-in cases skipped by design), all 256 PostgreSQL tests,
+and all 30 Compose checks. Host/image collection parity covers 1,347 test IDs.
+Combined scoped coverage remains 98.10% lines / 96.23% branches in the external
+`final.json` report. Ruff, formatting, tracked Markdown, whitespace and both
+migration-drift checks passed. No real provider credentials or parish data were
+used. The PR records its exact final head and CI results; human merge approval
+remains required, and no auto-merge, production startup or release is enabled.
+The final-round Medium test correction does not itself require a fourth round
+under the controlling automated delivery cycle. This does not release Gate 1.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).

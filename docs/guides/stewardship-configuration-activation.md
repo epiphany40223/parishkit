@@ -94,8 +94,9 @@ and credential evidence before activation becomes an operational capability.
 
 DAT-01/DAT-02/DOM-02 still own full runtime campaign/mode/history and restore
 metadata/guards. The restore flag is not editable here and this primitive cannot
-release a restore. Explicit Parish audit ownership remains to be integrated;
-current safe audit envelopes retain deployment ownership. Secret replacement and
+release a restore. Explicit Parish audit ownership is now integrated through the
+[ownership foundation](stewardship-audit-ownership.md); legacy events retain
+deployment ownership. Secret replacement and
 offline Admin recovery retain their original owners and cannot be selected with a
 caller-supplied bypass flag. Production settings continue to reject startup.
 
