@@ -48,8 +48,10 @@ that lock; the complete history is never verified under it.
 `ConfigurationRequestCheckpoint` is append-only: its latest sequence is the
 state, without a second mutable status field. PostgreSQL atomically inserts the
 initial `staged` checkpoint and a value-free audit event with each request. A
-second checkpoint can only cancel staged intake. Database guards lock the
-request, enforce sequence/actor/time consistency, reject all other transitions,
+second intake checkpoint can cancel staged intake. The subsequent
+[activation increment](stewardship-configuration-activation.md) also admits the
+installer's validating/prepared/YAML/applied/failure path. Database guards lock the
+request, enforce sequence/actor/time consistency, reject unsupported transitions,
 and insert the matching audit in the same transaction. Raw UPDATE/DELETE cannot
 rewrite requests or checkpoints. Audit INSERT failure rolls back the operation.
 
@@ -63,8 +65,9 @@ cancellation cannot duplicate checkpoint/audit history.
 
 Status lookup and cancellation require the submitting actor UUID, concealing
 both other actors' and absent requests with the same unavailable error. Receipts
-identify the candidate explicitly and never contain applied-version fields or
-claim that configuration changed. No request values enter audit/error text.
+identify the candidate explicitly. Applied fields remain null until the separate
+activation workflow commits; historical Applied values do not certify current
+readiness. No request values enter audit/error text.
 
 ## Required integration before exposure
 
@@ -82,11 +85,11 @@ Activation/readiness must validate fingerprint evidence against installed
 credential files and consumer acknowledgement; a null fingerprint on an added
 integration neither deletes a credential file nor attests to its absence.
 
-DAT-01/ARC-02/ARC-06 must extend the checkpoint constraints/guards with validating,
-prepared, YAML-activated, applied, and failure states and their associated durable
-evidence. Matching YAML/database activation, applied-version status/affected
-values, runtime Testing state, active pointer, session/security effects, and crash
-recovery remain unimplemented. Merely recording an intent cannot release startup.
+The [activation boundary](stewardship-configuration-activation.md) documents the
+implemented installer checkpoints, matching YAML/database activation, historical
+applied receipts, and Testing runtime. Session/security effects, full runtime
+state, credential validation, and operational service integration remain pending.
+Merely recording an intent cannot release startup.
 SecretReplacementRequest and target-sealed handoff remain DAT-01/ARC-06 work.
 Offline recovery remains OPS-04/DAT-05: no fabricated PortalUser or caller-supplied
 operator bypass is accepted by intake. Login-rule, campaign, schedule, and content

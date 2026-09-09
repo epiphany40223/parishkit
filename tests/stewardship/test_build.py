@@ -179,7 +179,8 @@ def test_release_requires_ci_quality_gates_before_build(step_name):
     release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
     expected = next(
         step
-        for step in ci["jobs"]["validate"]["steps"]
+        for job in ci["jobs"].values()
+        for step in job["steps"]
         if step.get("name") == step_name
     )
     steps = release["jobs"]["validate-build"]["steps"]
@@ -246,7 +247,8 @@ def test_readme_documents_ci_validation_commands(step_name):
     definition = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
     step = next(
         step
-        for step in definition["jobs"]["validate"]["steps"]
+        for job in definition["jobs"].values()
+        for step in job["steps"]
         if step.get("name") == step_name
     )
     command = step["run"].replace(

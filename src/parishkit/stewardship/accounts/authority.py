@@ -231,8 +231,8 @@ class AuthorityStore:
             raise ConfigError("configuration version identity mismatch")
         return version
 
-    def active(self) -> ConfigurationVersion | None:
-        """Read the atomic manifest once, then verify its immutable document hash."""
+    def manifest_reference(self) -> tuple[UUID, str] | None:
+        """Read and validate the small manifest without reloading its document."""
         path = self.root / "active.yaml"
         try:
             if not stat.S_ISDIR(self.root.stat().st_mode):
@@ -252,8 +252,20 @@ class AuthorityStore:
                 or manifest["schema_version"] != SCHEMA_VERSION
             ):
                 raise ConfigError("invalid active manifest schema")
-            version = self.read_version(UUID(_uuid(manifest["version_id"])))
-            if version.digest != _digest(manifest["digest"]):
+            return UUID(_uuid(manifest["version_id"])), _digest(manifest["digest"])
+        except (ConfigError, OSError, UnicodeError):
+            raise ConfigError(
+                "active configuration manifest is unreadable or invalid"
+            ) from None
+
+    def active(self) -> ConfigurationVersion | None:
+        """Read the atomic reference once and verify its immutable document hash."""
+        reference = self.manifest_reference()
+        if reference is None:
+            return None
+        try:
+            version = self.read_version(reference[0])
+            if version.digest != reference[1]:
                 raise ConfigError("active manifest digest mismatch")
         except (ConfigError, OSError, UnicodeError):
             raise ConfigError(

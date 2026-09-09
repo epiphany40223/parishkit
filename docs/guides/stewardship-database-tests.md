@@ -10,6 +10,20 @@ backend and reports the database tests as explicit skips. The separate
 `stewardship-postgresql` CI job must pass; a skipped baseline is not PostgreSQL
 verification. Do not substitute SQLite for constraint or concurrency evidence.
 
+The coverage gate runs the baseline and then the required PostgreSQL suite into
+one fresh coverage database, measuring the same complete scope and separate 80%
+line/branch floors. After starting the disposable server below, run:
+
+```sh
+python -m parishkit.stewardship.quality --postgresql \
+  --report /tmp/stewardship-combined-coverage.json
+```
+
+Choose a new report path each time; existing files are never overwritten. Without
+`--postgresql`, the runner measures only baseline coverage and may fail the floors
+as database-backed functionality grows. CI's PostgreSQL job owns the combined
+coverage gate; the baseline and Compose jobs retain their independent tests.
+
 ## Local disposable server
 
 Use an unused container name and loopback port. If the chosen name or port is

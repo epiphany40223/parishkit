@@ -1038,6 +1038,97 @@ checks, and whitespace passed. The increment is ready for PR/CI handoff and huma
 merge approval; runtime/installer/secret and complete request-state work remains
 the next dependency-ready DAT-01.02/.03 scope.
 
+PR #11 merged by human approval at 11:11:33 UTC on September 9, 2026, as
+`f939b65647c0ee6932db005e53118758ae3d58fe`. All four CI checks for `bbe7970`
+passed before merge ([run 34310477305](https://github.com/epiphany40223/parishkit/actions/runs/34310477305)).
+
+### Configuration-activation increment
+
+Branch `pr/stewardship-configuration-activation` starts from PR #11's refreshed
+`origin/main` merge. The [activation guide](../../guides/stewardship-configuration-activation.md)
+defines delivered scope and remaining integration. DAT-01.02/.03/.06 and all M1/G1
+checks remain partial; no production service or external provider write is enabled.
+
+Initial validation: 1,079 baseline tests passed with 159 explicit opt-in skips;
+all 147 PostgreSQL tests passed, including 30 new activation/recovery cases.
+The combined baseline/database coverage gate preserves complete scope and separate
+80% floors: 97.83% lines and 95.69% branches. Ruff, formatting, Markdown, and both
+test-profile migration drift checks passed. Review rounds and final Compose/CI
+evidence follow below; this is not yet a review-gate release.
+
+Round 1: Pika `20260909-092104-842763` reviewed `98d7cd7` against `f939b65`.
+Both vendors completed without failure, mismatch, or degradation. Raw severities:
+five Medium, 16 Low, no High/Critical. All five validated Medium findings were
+accepted through delegated local-review-triage:
+
+| Source | Finding | Correction |
+| --- | --- | --- |
+| Claude C1 | Pre-bootstrap `.get()` violates nullable digest contract | Return null; request initialization failure stays resumable |
+| Claude C2 | Email validator admits values rejected by SQL | Apply the SQL shape restriction before any write; test localhost and quoted whitespace |
+| Claude C3 | Interrupted setup freezes recipient prematurely | Commit runtime creation/recipient with root activation; test file/selection interruptions |
+| Claude C4 | Active-base corruption terminally fails valid intent | Propagate base verification outside candidate-error classification; test repair/retry |
+| Codex X1 | Partial downgrade removes guards before old-state constraint fails | Reverse preflight locks/checks retained history before any removal; test populated downgrade refusal |
+
+All 38 focused activation PostgreSQL tests pass after these corrections. The
+16 below-cutoff Low findings are outside the mandatory Medium+ correction set.
+
+Round 1 post-fix validation passed: 1,079 baseline tests (167 opt-in skips),
+155 required PostgreSQL tests, all 30 Compose checks, and exact host/image
+parity over 1,246 collected IDs. Combined coverage: 97.70% lines / 95.55%
+branches. Ruff, formatting, tracked Markdown, and migration drift passed.
+
+Round 2: Pika `20260909-093630-fea2be` reviewed `a91c418` against `f939b65`.
+Both reviewers completed without failure, mismatch, or degradation. Raw findings:
+three Medium, 18 Low, no High/Critical. All Medium findings were accepted:
+
+| Source | Finding | Correction |
+| --- | --- | --- |
+| Claude C1 | Unlock failure strands Django on a closed raw connection | Close through the owning wrapper; preserve replacements; test retries and direct driver close |
+| Claude C2 | Unavailable deployment claims staged requests too early | Run read-only preflight before claiming; recheck cancellation after preflight |
+| Codex X1 | Direct runtime INSERT bypasses atomic initialization invariant | Deferred database constraint requires root activation before commit |
+
+The Low findings remain below the mandatory correction cutoff. Post-fix full
+validation and the independent third round follow; no gate is released here.
+
+Round 2 post-fix validation passed: 1,079 baseline tests (172 opt-in skips),
+160 required PostgreSQL tests, all 30 Compose checks, and host/image parity over
+1,251 collected IDs. Combined coverage is 97.89% lines / 95.76% branches.
+Ruff, formatting, tracked Markdown, and migration drift also passed.
+
+Round 3: Pika `20260909-095324-d04391` reviewed `c822f94` against `f939b65`.
+Pika split Claude into two file shards; their union and the independent Codex
+full-diff review completed without failure, mismatch, or degradation. Raw totals:
+six Medium, 18 Low, no High/Critical. All six validated findings were Claude-only
+and accepted through delegated triage:
+
+| Finding | Correction |
+| --- | --- |
+| C1: Unknown installer request leaks ORM lookup type | Match the subsystem's safe LookupError contract |
+| C2: Failure/state CHECKs lack isolated negative tests | Assert named constraints against direct inserts, independently of transition triggers |
+| C3: Unlock failure masks workflow failure | Discard the failed connection while preserving the original exception; test all three error classes |
+| C4: State reads eagerly validate full applied projections | Keep state/identity metadata reads lightweight; load verified affected values explicitly and lazily |
+| C5: Coherence rereads/parses the full YAML document | Recheck only the small atomic manifest reference; test single document read and concurrent reference change |
+| C6: Corruption-test DDL can leave a disabled guard | Wrap disable/mutate/enable in a transaction; test failed mutation rolls back DDL |
+
+Focused post-fix validation passed all 226 PostgreSQL/authority tests. Eighteen
+Low findings remain below the mandatory correction floor.
+
+Final post-correction validation passed: 1,079 baseline tests (184 opt-in skips),
+all 172 required PostgreSQL tests, and all 30 Compose checks. The rebuilt image
+passed the same baseline with exact host/image parity across 1,263 collected IDs.
+Combined coverage is 97.96% lines / 95.99% branches; evidence is retained outside
+the checkout in `final-confirmed.json` under the activation validation directory.
+Ruff, formatting, tracked Markdown, both test-profile migration drift checks, and
+diff whitespace checks passed. All test data and provider inputs were synthetic.
+
+All three review/fix rounds are complete, with 14 accepted Medium findings fixed
+and no unresolved accepted Medium-or-higher findings. The final round had no
+High/Critical findings. The automated cycle's local exit criteria are satisfied;
+proceed to PR/CI handoff and human merge approval. The PR records its exact final
+head and CI results. This does not release Gate 1 or complete Phase 1; the next
+dependency-ready scope remains DAT-01 runtime/secret records and installer
+integration, followed by TaskRun chains.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).

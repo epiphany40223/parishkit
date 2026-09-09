@@ -95,15 +95,14 @@ separation remains an OPS-02/OPS-04 prerequisite before deployment.
 
 ## Next integration steps
 
-DAT-01.02/.03 must add configuration and secret requests, runtime Testing-default
-state, the active pointer/activation history, authorized idempotency/status, and
-operator-recovery attribution. ARC-02/ARC-06 must implement the complete
-Materializer protocol with an installer lock held across file selection and
-atomic activation effects. The preparation lock is transaction-scoped and must
-not be mistaken for that cross-checkpoint lock. Competing prepared successor
-candidates are permitted; the installer must still reject stale bases before
-switching the manifest. No readiness function, route, CLI or worker currently
-activates these snapshots or consumes them as runtime configuration.
+The [request intake](stewardship-configuration-requests.md) and
+[internal activation](stewardship-configuration-activation.md) increments add
+ordinary request checkpoints, Testing runtime, active pointer/history, and a
+concrete PostgreSQL Materializer. The preparation lock remains transaction-scoped
+and must not be mistaken for the cross-checkpoint installer lock. Competing
+prepared successors are permitted; installation rejects stale bases. Secret
+replacement, operator recovery, complete runtime state, and authorization/service
+integration remain required before any route, CLI, or worker exposes these APIs.
 
 Run the [disposable PostgreSQL suite](stewardship-database-tests.md) for
 constraints, corruption rejection, races, rollback, restart, and migration

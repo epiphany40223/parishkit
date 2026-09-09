@@ -65,5 +65,9 @@ def test_ci_explicitly_requires_postgresql_verification():
         step.get("run", "")
         for step in workflow["jobs"]["stewardship-postgresql"]["steps"]
     )
-    assert "--require-postgresql-tests" in commands
-    assert "--ds=parishkit.stewardship.settings.database_test" in commands
+    assert "parishkit.stewardship.quality --postgresql" in commands
+    release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
+    assert (
+        release["jobs"]["validate-build"]["services"]
+        == workflow["jobs"]["stewardship-postgresql"]["services"]
+    )

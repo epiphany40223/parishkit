@@ -66,6 +66,15 @@ DAT-01.02/.03 remain partial: current-Admin/CSRF admission, installer activation
 failure checkpoints, active/runtime state, secret requests, operator recovery,
 and applied-version status effects are not implemented by this storage increment.
 
+Fourth increment: internal activation adds the singleton Testing runtime,
+protected active pointer, immutable activation ledger, complete ordinary request
+checkpoints, historical applied receipts/affected values, and the PostgreSQL
+Materializer. See the [activation boundary](../../guides/stewardship-configuration-activation.md).
+DAT-01.02/.03/.06 remain partial pending secret requests, full runtime mode/
+campaign/restore state, offline recovery, authorization/service integration,
+credential evidence, and remaining recovery/privacy verification. This does not
+enable production or release Gate 1.
+
 ## DAT-02: Campaign lifecycle and schedule schema
 
 Scope and dependencies: [DAT-02 work package](../../plans/stewardship/data.md#dat-02-campaign-lifecycle-and-schedule-schema).

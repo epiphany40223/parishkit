@@ -6,15 +6,15 @@ admission on every call, including lookup and retry. Actor equality here prevent
 cross-actor key/status collisions; a UUID is attribution, never proof of Admin
 authority. Offline recovery has no caller-supplied bypass and is not admitted.
 
-Only intake/cancellation is implemented. Requests never write authority files,
-prepare candidates, change active configuration, or claim Applied. Historical
-prepared bases can be recorded; the installer must reject a stale active base
-before manifest selection. No implicit rebase occurs in this layer.
+Intake/cancellation never writes authority files or changes active configuration.
+The separate installer advances checkpoints; Applied receipts describe immutable
+activation history, not current readiness. Historical prepared bases can be
+recorded; installation rejects stale bases without implicit rebasing.
 """
 
 import hashlib
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from uuid import UUID, uuid4
 
 from django.db import connection, transaction
@@ -29,7 +29,7 @@ from .request_patch import REQUEST_SCHEMA, build_candidate
 
 @dataclass(frozen=True)
 class RequestStatus:
-    """Safe intake receipt; candidate identity is never an applied-version claim."""
+    """Committed receipt; only an activation supplies applied identity and values."""
 
     request_id: UUID
     state: str
@@ -37,6 +37,29 @@ class RequestStatus:
     base_digest: str
     candidate_version_id: UUID
     candidate_digest: str
+    failure_code: str = ""
+    applied_version_id: UUID | None = None
+    applied_digest: str | None = None
+    _affected_targets: tuple[tuple[str, str], ...] = field(default=(), repr=False)
+
+    def affected_values(self):
+        """Load values lazily; state-only reads never revalidate full projections."""
+        if self.applied_digest is None:
+            return None
+        _, version = intake_base(self.applied_digest)
+        records = {
+            (section, record["id"]): record["values"]
+            for section, entries in version.document()["sections"].items()
+            for record in entries
+        }
+        return [
+            {
+                "section": section,
+                "id": identifier,
+                "values": records.get((section, identifier)),
+            }
+            for section, identifier in self._affected_targets
+        ]
 
 
 def _identities(*values):
@@ -56,6 +79,27 @@ def _status(request):
     checkpoint = request.checkpoints.order_by("-sequence").first()
     if checkpoint is None:
         raise ConfigError("Configuration request has no durable checkpoint.")
+    applied_id = applied_digest = None
+    affected = ()
+    if checkpoint.state == "applied":
+        from .runtime_models import ConfigurationActivation
+
+        activation = (
+            ConfigurationActivation.objects.filter(request=request)
+            .values("configuration_id", "configuration__digest")
+            .first()
+        )
+        if (
+            activation is None
+            or activation["configuration_id"] != request.candidate_version_id
+            or activation["configuration__digest"] != request.candidate_digest
+        ):
+            raise ConfigError("Configuration request has no matching activation.")
+        applied_id, applied_digest = (
+            activation["configuration_id"],
+            request.candidate_digest,
+        )
+        affected = tuple((item["section"], item["id"]) for item in request.patch)
     return RequestStatus(
         request.pk,
         checkpoint.state,
@@ -63,6 +107,10 @@ def _status(request):
         request.base.digest,
         request.candidate_version_id,
         request.candidate_digest,
+        checkpoint.failure_code,
+        applied_id,
+        applied_digest,
+        affected,
     )
 
 
