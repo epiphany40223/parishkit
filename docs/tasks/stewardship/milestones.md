@@ -946,6 +946,98 @@ Ruff, formatting, tracked Markdown, both profiles' migration drift, Django syste
 checks, and whitespace checks passed. This increment is ready for PR/CI handoff;
 it does not activate configuration or close any partially delivered DAT-01 task.
 
+The human merged [PR #10](https://github.com/epiphany40223/parishkit/pull/10)
+at 03:16:48 UTC on September 9, 2026, merge `c4366cd`, final head `8901bf8`.
+[CI run 34306442600](https://github.com/epiphany40223/parishkit/actions/runs/34306442600)
+completed successfully at 03:17:56 UTC, including the Docker check that was still
+running at merge time. All three jobs and DCO passed. This records the human's
+merge, not an agent merge or deployment.
+
+### Configuration-request intake increment
+
+Branch `pr/stewardship-configuration-requests` starts at refreshed `origin/main`
+merge `c4366cd`. The [owning DAT-01 checklist](data.md#dat-01-storage-conventions-and-base-records)
+and [intake guide](../../guides/stewardship-configuration-requests.md) define the
+partial delivery and next installer/runtime/secret work. No installer, Admin
+authorization, Applied response, or production startup is enabled. Review rounds
+and PR handoff remain pending for this increment; M1 and G1 remain incomplete.
+
+Initial validation: 1,070 host/image baseline passes, 118 explicit opt-in skips,
+exact collection parity across 1,188 IDs; 106 required PostgreSQL tests plus 28
+pure patch tests passed. The focused 49-test request suite covers 182/184
+statements and 58/60 branches over the three new modules. Whole stewardship
+baseline coverage is 85.93% lines / 82.66% branches. All 30 Compose checks passed
+with image `sha256:3210e10338e9720645a7eb7ab069d78257077f98c6142f8d8dfc17b0eb4c10d2`.
+Ruff, format, Markdown, migration drift, and whitespace passed. Local artifacts
+are `initial-corrected-coverage.json` and `initial-database-coverage.json` under
+`/tmp/stewardship-request-evidence.DwDSa0` (not committed runtime output).
+
+Request intake round 1 reviewed `364ac2d` against `c4366cd`, session
+`20260908-233350-a8bd3b`. Permission preflight and both reviewers completed
+normally, without failures, mismatches, or degradation. Finalize returned COMMENT:
+seven Medium findings from 21 raw, 14 Low below cutoff, no High/Critical.
+
+| Finding | Disposition and evidence |
+| --- | --- |
+| C1 | Fixed: intake verifies only its selected canonical snapshot/projections and direct predecessor digest; full preparation still verifies all ancestry. Empty/malformed containers fail before queries. Tests at depths 1 and 40 prove constant canonical parsing and bounded query counts for intake/retry. Integration additions use only a UUID-link/historical-binding query, not historical JSON hydration. |
+| C2 | Fixed: privileged disposable-data corruption tests remove or alter a base projection and verify rejection without request, checkpoint, or audit rows. |
+| C3 | Fixed: updates cannot contain kind; additions check historical kind/ID mappings. Tests reject retired-ID reuse, kind replacement, and remove/add identity replacement while allowing the original binding's re-addition. |
+| C4 | Fixed: updates cannot contain credential fingerprints, and additions require null. Only the future target-specific secret workflow can establish replacement evidence; activation's file/consumer verification obligation is explicit. |
+| X1 | Duplicate of C3; resolved by the same stable-identity checks and regressions. |
+| X2 | Fixed: choose the request schema and validate its patch after acquiring the per-key lock. An independent-connection regression commits a v1 winner after local preflight and proves its format wins over the loser's stricter current builder. |
+| X3 | Duplicate of C4; resolved by the same credential-evidence restriction and tests. |
+
+Post-round-1 validation: 1,076 host/image baseline passes, 128 explicit opt-in
+skips, exact parity across 1,204 IDs; 203 combined tests (116 required PostgreSQL,
+34 patch, 53 configuration-schema) passed. Whole stewardship coverage is 84.78%
+lines / 81.01% branches, artifact `round1-coverage.json` in the evidence directory
+above. All 30 Compose checks passed with rebuilt image
+`sha256:89c82dbd14b3e0927886251c393ed7934c44d50ab275b365fd659426dacce7ab`.
+Ruff, formatting, Markdown, migration drift, and whitespace passed. One review/fix
+round is complete; two more are required before PR handoff.
+
+Request intake round 2 reviewed `e77f6b6` against `c4366cd`, session
+`20260908-235055-f9d60d`. Both reviewers and the permission preflight completed
+normally; no failures, mismatches, or degradation. Finalize returned APPROVE
+at the Medium cutoff: zero Medium/High/Critical, 13 raw Low findings below cutoff.
+No corrections were required. The unchanged code retained the preceding full
+validation and passed all 203 combined checks again before the next round.
+Codex's zero-finding success is not a parse failure: pika's telemetry sets its
+`parsed` convenience flag to `accepted > 0`, independently of structured-result
+failure/degradation classification. Its full-branch prompt includes all added
+files even though the auxiliary diff is tier-filtered.
+
+Request intake round 3 independently reviewed the same `e77f6b6` against
+`c4366cd`, session `20260909-000229-b5a898`. Both reviewers and the permission
+preflight completed normally; no failures, mismatches, or degradation. Finalize
+returned COMMENT: one Medium finding from 13 raw, 12 Low below cutoff, no
+High/Critical. C1 was fixed: the historical-identity SQL now derives quoted
+table, primary-key, predecessor, integration-FK, kind, and record-ID identifiers
+from model metadata. A real PostgreSQL transactional rename test uses table/FK
+names containing spaces and proves the guard still accepts the original binding
+and rejects replacement. Disposable DDL is rolled back and metadata restored.
+
+The three required review/fix rounds are complete with corrected validation
+passing; every accepted Medium-or-higher issue is resolved, and the final
+round had no High/Critical. Corrections and their regression validation belong
+to the finding's round under the approved loop policy, not an independent
+APPROVED verdict on the later corrected head. Low findings remain below the
+requested cutoff in the review artifacts. Full integrated G1 and human PR merge
+approval remain required; no incomplete DAT-01 task is checked off.
+
+Final corrected validation: 1,076 host/image baseline passes, 129 explicit opt-in
+skips (117 PostgreSQL, 12 Docker), exact parity across 1,205 collected IDs;
+204 combined schema/PostgreSQL tests passed. The focused request suite passed
+66 tests with 220/222 statements and 76/78 branches covered across four modules.
+Whole stewardship baseline coverage is 84.43% lines / 81.01% branches. Reports
+are `round3-coverage.json` and `round3-database-coverage.json` under the same local
+evidence directory. All 30 Compose checks passed with rebuilt image
+`sha256:aea1b16b76181829372e1dc46d9dd5a6c3a0b05742b2af97496e1ec0f02373ad`.
+Ruff, formatting, tracked Markdown, both profiles' migration drift, Django system
+checks, and whitespace passed. The increment is ready for PR/CI handoff and human
+merge approval; runtime/installer/secret and complete request-state work remains
+the next dependency-ready DAT-01.02/.03 scope.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).

@@ -137,6 +137,33 @@ def _remember_integrations(document, by_kind, by_id):
             )
 
 
+def verified_snapshot_version(snapshot, *, predecessor_digest):
+    """Verify one canonical snapshot and its actual projections, not its ancestry.
+
+    Intake uses this bounded check, while preparation still verifies every
+    ancestor through _verify_history. Callers load the predecessor's digest only
+    and may prefetch the two projections; no hidden recursive reads occur here.
+    Installation/database errors propagate distinctly from invalid content.
+    """
+    try:
+        version = parse_version(
+            snapshot.canonical_document,
+            validate_sections=validator_for(snapshot.validation_schema),
+        )
+        if (
+            version.version_id == snapshot.pk
+            and version.digest == snapshot.digest
+            and version.predecessor_digest == predecessor_digest
+            and snapshot.schema_version == 1
+            and _digest(_normalized(version.document())) == snapshot.normalized_digest
+            and _digest(_stored_projections(snapshot)) == snapshot.normalized_digest
+        ):
+            return version
+    except Parish.DoesNotExist:
+        pass
+    raise ConfigError("Configuration snapshot is incomplete or invalid.")
+
+
 def _verify_history(snapshot, candidate=None):
     """Verify loaded rows without further I/O, optionally admitting a successor."""
     if snapshot is None:
@@ -149,20 +176,9 @@ def _verify_history(snapshot, candidate=None):
                 return False
             _remember_integrations(candidate, by_kind, by_id)
         for entry in _history(snapshot):
-            version = parse_version(
-                entry.canonical_document,
-                validate_sections=validator_for(entry.validation_schema),
-            )
             predecessor = entry.predecessor.digest if entry.predecessor_id else None
-            if not (
-                version.version_id == entry.pk
-                and version.digest == entry.digest
-                and version.predecessor_digest == predecessor
-                and entry.schema_version == 1
-                and str(entry.parish.record_id) == parish_id
-                and _digest(_normalized(version.document())) == entry.normalized_digest
-                and _digest(_stored_projections(entry)) == entry.normalized_digest
-            ):
+            version = verified_snapshot_version(entry, predecessor_digest=predecessor)
+            if str(entry.parish.record_id) != parish_id:
                 return False
             _remember_integrations(version.document(), by_kind, by_id)
         return True

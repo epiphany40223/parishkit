@@ -56,6 +56,16 @@ Schema constraints, rollback, migration reversal, mismatches, reconnect
 durability, and independent-connection preparation races are verified in the
 PostgreSQL suite; review-specific results belong to the milestone evidence.
 
+Third increment: immutable configuration request intents now bind actor-scoped
+keys to canonical patch/base fingerprints and fixed candidate identities.
+Versioned patch builders preserve retry semantics; append-only intake/cancellation
+checkpoints and safe audits commit together under PostgreSQL guards. Tests cover
+retries, independent-connection races, rollback, status ownership, and raw-SQL
+constraints. See the [intake integration boundary](../../guides/stewardship-configuration-requests.md).
+DAT-01.02/.03 remain partial: current-Admin/CSRF admission, installer activation/
+failure checkpoints, active/runtime state, secret requests, operator recovery,
+and applied-version status effects are not implemented by this storage increment.
+
 ## DAT-02: Campaign lifecycle and schedule schema
 
 Scope and dependencies: [DAT-02 work package](../../plans/stewardship/data.md#dat-02-campaign-lifecycle-and-schedule-schema).

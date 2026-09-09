@@ -11,6 +11,10 @@ from .configuration_models import (  # noqa: F401
     AppliedIntegration,
     Parish,
 )
+from .request_models import (  # noqa: F401
+    ConfigurationChangeRequest,
+    ConfigurationRequestCheckpoint,
+)
 
 
 class PortalSession(MutableRecord):
