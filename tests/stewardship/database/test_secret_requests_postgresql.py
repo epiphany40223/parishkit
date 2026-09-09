@@ -237,8 +237,8 @@ def test_post_delete_database_failure_retries_idempotent_removal(intent):
     assert AuditEvent.objects.count() == 3
 
 
-def test_expiry_cleanup_uses_database_deadline(intent):
-    """Seed an aged fixture without sleeps, then exercise normal expiry guards."""
+def seed_expired(intent):
+    """Seed an aged fixture without sleeps, restoring the guard transactionally."""
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(
             "ALTER TABLE stewardship_secret_request "
@@ -260,6 +260,11 @@ def test_expiry_cleanup_uses_database_deadline(intent):
             "ALTER TABLE stewardship_secret_request "
             "ENABLE TRIGGER stewardship_secret_state_v1"
         )
+
+
+def test_expiry_cleanup_uses_database_deadline(intent):
+    """Expiry and acknowledgement use system attribution and the DB deadline."""
+    seed_expired(intent)
     kwargs = dict(
         request_id=intent["request_id"], target=intent["target"], correlation_id=uuid4()
     )
@@ -411,11 +416,45 @@ def test_populated_downgrade_preserves_guards_and_history(intent):
             MigrationExecutor(connection).migrate(
                 [("stewardship_accounts", "0014_secret_request_records")]
             )
+        assert MigrationRecorder.Migration.objects.filter(
+            app="stewardship_accounts", name="0015_secret_request_guards"
+        ).exists()
+        assert (
+            SecretRequestCheckpoint.objects.count() == AuditEvent.objects.count() == 1
+        )
+        with pytest.raises(IntegrityError), transaction.atomic():
+            SecretReplacementRequest.objects.update(state="expired", version=2)
     finally:
         MigrationExecutor(connection).migrate(leaves)
-    assert MigrationRecorder.Migration.objects.filter(
-        app="stewardship_accounts", name="0015_secret_request_guards"
-    ).exists()
-    assert SecretRequestCheckpoint.objects.count() == AuditEvent.objects.count() == 1
-    with pytest.raises(IntegrityError), transaction.atomic():
-        SecretReplacementRequest.objects.update(state="expired", version=2)
+
+
+@pytest.mark.parametrize("transition", ["expiry", "cancelled", "expired"])
+def test_sql_denies_fabricated_human_cleanup_attribution(intent, transition):
+    """Expiry and both terminal outcomes cannot forge immutable human audit."""
+    if transition == "cancelled":
+        stage_secret_request(**intent)
+        cancel(intent)
+    else:
+        seed_expired(intent)
+        if transition == "expired":
+            expire_secret_request(
+                request_id=intent["request_id"],
+                target=intent["target"],
+                correlation_id=uuid4(),
+            )
+    before = SecretRequestCheckpoint.objects.count()
+    state = "cleanup_pending" if transition == "expiry" else transition
+    reason = "expired" if transition == "expiry" else transition
+    with (
+        pytest.raises(IntegrityError, match="system attribution"),
+        transaction.atomic(),
+    ):
+        SecretReplacementRequest.objects.update(
+            version=F("version") + 1,
+            state=state,
+            cleanup_reason=reason,
+            actor_id=uuid4(),
+        )
+    assert (
+        SecretRequestCheckpoint.objects.count() == AuditEvent.objects.count() == before
+    )

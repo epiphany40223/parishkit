@@ -1147,6 +1147,25 @@ An initial full-suite run exposed historical downgrade-test schema leakage;
 restoring the whole migration graph in its finally block corrected it before
 independent review. No secret files or provider credentials were used.
 
+Round 1: Pika `20260909-105953-2d814c` reviewed `cef011e` against `a241205`.
+Both reviewers completed without failure, mismatch, or degradation. Raw findings:
+three Medium, seven Low, no High/Critical. Delegated triage accepted both distinct
+issues; two reports described the same attribution issue:
+
+| Finding | Disposition |
+| --- | --- |
+| Claude C1: Migration assertions run after restoration | Fixed: assert marker, retained data and active guards before finally restores the graph in both tests |
+| Claude C2 / Codex X1: SQL permits fabricated human expiry/cleanup attribution | Fixed together: require null actor on system transitions; test expiry and both terminal outcomes through raw SQL |
+
+Low findings remain below the mandatory correction floor. Post-fix validation
+and subsequent independent rounds follow.
+
+Round 1 post-fix validation passed: 1,079 baseline tests (224 opt-in skips),
+212 required PostgreSQL tests, all 30 Compose checks, and exact host/image
+parity across 1,303 collected IDs. Coverage remains 98.08% lines / 96.21%
+branches; Ruff, formatting, Markdown, both migration-drift profiles and diff
+whitespace checks passed. Round 1 is complete; no gate is released.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).

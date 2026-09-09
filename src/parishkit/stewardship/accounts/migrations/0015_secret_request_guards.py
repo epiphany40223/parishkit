@@ -42,6 +42,11 @@ class Migration(migrations.Migration):
                         END IF;
                     ELSIF OLD.state = 'staged' AND NEW.state = 'cleanup_pending' THEN
                         IF NEW.cleanup_reason = 'expired'
+                           AND NEW.actor_id IS NOT NULL THEN
+                            RAISE EXCEPTION 'Expiry requires system attribution'
+                                USING ERRCODE = '23514';
+                        END IF;
+                        IF NEW.cleanup_reason = 'expired'
                            AND OLD.expires_at > statement_timestamp() THEN
                             RAISE EXCEPTION 'Secret request is not expired'
                                 USING ERRCODE = '23514';
@@ -54,6 +59,10 @@ class Migration(migrations.Migration):
                     ELSIF OLD.state = 'cleanup_pending'
                           AND NEW.state = OLD.cleanup_reason
                           AND NEW.cleanup_reason = OLD.cleanup_reason THEN
+                        IF NEW.actor_id IS NOT NULL THEN
+                            RAISE EXCEPTION 'Cleanup requires system attribution'
+                                USING ERRCODE = '23514';
+                        END IF;
                         NEW.scrubbed_at := statement_timestamp();
                     ELSE
                         RAISE EXCEPTION 'Invalid secret request transition'
