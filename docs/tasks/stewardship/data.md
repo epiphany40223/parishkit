@@ -15,7 +15,7 @@ Scope and dependencies: [DAT-01 work package](../../plans/stewardship/data.md#da
 - [ ] DAT-01.02 — Implement configuration, parish, and secret-request records.
 - [ ] DAT-01.03 — Enforce YAML-version, singleton, and installer constraints.
 - [x] DAT-01.04 — Configure durable sessions and audit correlation.
-- [ ] DAT-01.05 — Implement TaskRun claims, retry-chain constraints, and attempt history.
+- [x] DAT-01.05 — Implement TaskRun claims, retry-chain constraints, and attempt history.
 - [ ] DAT-01.06 — Test base constraints, recovery, and privacy.
 
 Evidence: Phase 1 storage increment, September 8, 2026. `storage.py` defines
@@ -32,7 +32,7 @@ denial, session reconnect
 durability, migration reversal/reapplication, transactional rollback, and two
 independent concurrent connections with exactly one successful version update.
 See the [database test guide](../../guides/stewardship-database-tests.md) for
-repeatable commands and CI isolation. DAT-01.05 remains unimplemented;
+repeatable commands and CI isolation. DAT-01.05 is delivered by the seventh increment;
 DAT-01.01's explicit ownership integration is delivered by the sixth increment
 below; the original storage increment had deployment-level ownership only.
 DAT-01.06 is partial pending their constraints/recovery/privacy scenarios.
@@ -91,6 +91,19 @@ PostgreSQL tests cover profile changes, concurrent activation, legacy upgrade,
 refused populated downgrade, raw writes and rollback. DAT-01.02/.03/.05/.06 remain
 open for their remaining work; this does not enable the future ARC-07 payload
 services, production startup, or Gate 1. TaskRun chains are the next ready task.
+
+Seventh increment: DAT-01.05 adds self-rooted logical task operations, optional
+execution keys, protected retry parents and deduplicated retry commands, live
+lease/heartbeat/fencing metadata, per-attempt monotonic progress and immutable per-version
+attempt/transition evidence. PostgreSQL guards enforce canonical state edges,
+terminality, chain uniqueness, immutable intent and atomic history/audit writes.
+Internal transaction primitives require explicit domain admission callbacks;
+they expose no operational queue, worker or provider action. See the
+[storage boundary](../../guides/stewardship-taskrun-storage.md).
+Tests cover raw writes, genuine expiry, stale owners, independent-connection
+claim/retry races, rollback, privacy and migrations. BG-01 still owns actual
+scheduling, service identity/admission, task-specific phases/retry budgets and
+reconciliation. DAT-01.02/.03/.06 retain their remaining integration work.
 
 ## DAT-02: Campaign lifecycle and schedule schema
 

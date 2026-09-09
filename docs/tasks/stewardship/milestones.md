@@ -1297,6 +1297,109 @@ remains required, and no auto-merge, production startup or release is enabled.
 The final-round Medium test correction does not itself require a fourth round
 under the controlling automated delivery cycle. This does not release Gate 1.
 
+### TaskRun storage increment
+
+The human merged the prerequisite audit-ownership increment,
+[PR #15](https://github.com/epiphany40223/parishkit/pull/15),
+on September 9, 2026, after all four checks passed at
+`5bffbb3707f72064911ce4612cf9645f4bd73cf3`; see the
+[successful CI run](https://github.com/epiphany40223/parishkit/actions/runs/34378791266).
+Branch `pr/stewardship-taskrun-storage` starts at refreshed `origin/main`,
+`2483d0864897f135ba4a72bd956d4f6c8b2b8f72`.
+
+Scope is DAT-01.05's [base TaskRun storage](../../guides/stewardship-taskrun-storage.md):
+claims/fencing, canonical transitions, logical retry-chain identity, explicit
+retry-command deduplication and atomic immutable attempt/audit history. BG-01
+operational execution and domain-specific admission/reconciliation are not
+enabled. DAT-01.02/.03/.06 and full Phase 1/Gate 1 remain incomplete.
+
+Initial validation passed: 1,104 baseline tests, 305 PostgreSQL tests (including
+49 TaskRun cases), 30 Compose cases, exact host/image collection parity of
+1,421 IDs, and combined coverage of 98.16% lines / 96.28% branches. Ruff,
+formatting, tracked Markdown, whitespace and both migration-drift profiles passed.
+The external quality report is
+`/tmp/stewardship-taskrun-validation.ez5fm9/initial.json`.
+
+Review round 1 (`20260909-144123-d222c1`) examined
+`788b5b7da9105cf1460c5a8559bf7b92c71bff14` with both vendor reviewers completing
+without degradation or verdict mismatch. All eight validated findings were Medium
+and accepted: key-scoped enqueue locking (with no lock for unkeyed allocations),
+raw SQL delete-guard coverage, empty migration reversal/reapply coverage,
+per-attempt progress reset, persisted heartbeat renewal evidence, composed-write
+correlation propagation, non-racy negative timing checks and binding validation
+before a replay admission callback. The corrected focused PostgreSQL suite passes
+58 cases. Renewal is asserted by its actual deadline extension, not a short
+wall-clock race. Below-cutoff findings are not accepted pending work.
+
+Round-1 post-fix quality validation passes 1,104 baseline and 314 PostgreSQL tests
+with 98.17% line / 96.29% branch coverage (`round1.json` alongside the initial
+report). Ruff, formatting, Markdown, whitespace and migration drift also pass.
+Round-1 post-fix Docker checks also pass: 30 Compose cases, 1,104 containerized
+baseline tests and exact host/image collection parity of 1,430 IDs.
+
+Review round 2 (`20260909-145945-9227be`) examined
+`f328a8ca74ff634b6cf33f45399be013e8db55ba`; both vendor reviews completed without
+degradation or verdict mismatch. Six validated findings were Medium, with no
+High/Critical findings. Accepted corrections move action-specific actor validation
+before database access, compute deadlines in the UPDATE statement's clock,
+expose immutable prior-worker/parent/retry-position metadata, and validate retry
+bindings before callbacks. Both reviewers reported that last issue; its one fix
+also distinguishes bound replay admission from fresh retry-budget allocation.
+
+The remaining finding claimed SQL rejection aborts the caller's entire outer
+transaction. Rejected: `_locked` already wraps every mutation/callback in its own
+`transaction.atomic()` savepoint. New coverage catches an SQL rejection outside
+the primitive, commits surrounding domain writes and proves the rejected callback
+write rolled back. The guide clarifies the low-level exception/savepoint contract
+without duplicating canonical SQL transition logic. Focused suites pass 61
+PostgreSQL cases and 27 pure validation cases.
+
+Round-2 post-fix quality validation passes 1,106 baseline and 317 PostgreSQL tests,
+with 98.20% line / 96.44% branch coverage (`round2.json` alongside the initial
+report). Ruff, formatting, Markdown, whitespace and both migration-drift profiles
+also pass. Docker also passes 30 Compose checks, 1,106 container baseline tests
+and host/image parity of 1,435 IDs.
+
+Review round 3 (`20260909-151444-6b986a`) examined
+`984de8ec9bda09096ea780adbb51facd664a8b6a`. Both reviewers completed without
+degradation or mismatch. Raw severities were five Medium and sixteen Low,
+with no High/Critical findings; all five Medium findings received dispositions:
+
+- Accepted the admission-order correction: stale versions, fences and worker
+  identities now fail before callbacks. Regression coverage proves no callback
+  invocation on any of those bindings.
+- Clarified that PR #15 is the prerequisite audit-ownership merge, not TaskRun
+  merge approval. The original paragraph already described branching from that
+  merge, but now names the predecessor explicitly.
+- Clarified chain-local retry-command identity, matching the root/command lookup
+  and unique constraint. A regression proves separate chains independently admit
+  the same UUID and each deduplicates its own repeat.
+- Rejected duplicating the canonical SQL state graph to support an incomplete
+  migration graph: jobs `0001` alone is not a supported runtime. The populated
+  downgrade refuses before removing `0002`, as the existing regression proves;
+  empty reapply reinstalls guards. The guide explicitly requires all migrations.
+  ARC-04/OPS-02 retain startup/readiness enforcement before operational callers.
+- Rejected the claim that task audits are permanently deployment-owned. The
+  required audit `0006` INSERT trigger resolves the active Parish projection for
+  generic `task_*` events. New configured/unconfigured regressions prove both
+  ownership paths. Campaign links remain BG-01/DAT-07 scope, now explicit in the
+  guide. No duplicate ownership mechanism or historical backfill was added.
+
+All accepted Medium+ corrections are implemented. Final validation passes:
+1,106 baseline tests; 320 PostgreSQL tests, including 64 TaskRun cases; 30 Compose
+checks; 1,106 containerized baseline tests; and exact host/image collection parity
+of 1,438 IDs. Combined scoped coverage is 98.20% lines / 96.44% branches, with
+`final.json` alongside the preceding external quality reports. Ruff, formatting,
+tracked Markdown, whitespace and both migration-drift profiles pass. All tests
+use synthetic identities and disposable storage, without provider credentials.
+
+Three complete independent review/fix rounds satisfy this increment's automated
+delivery exit criterion. The last round had no High/Critical findings; no accepted
+Medium+ findings remain unresolved. Routine corrections and their regression
+tests belong to the same round, per the controlling delivery cycle. The PR/CI
+handoff will carry the final pushed SHA and check results. Human merge approval
+is still required; neither Phase 1 nor Gate 1 is released.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).
