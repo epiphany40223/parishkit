@@ -4,6 +4,14 @@ from django.db import models
 
 from parishkit.stewardship.storage import MutableRecord, UTCDateTimeField
 
+# Django discovers these models through this module; keep session and immutable
+# configuration contracts in separate source files for maintainability.
+from .configuration_models import (  # noqa: F401
+    AppliedConfigurationVersion,
+    AppliedIntegration,
+    Parish,
+)
+
 
 class PortalSession(MutableRecord):
     """Server-side session metadata without storing credential values in audit.

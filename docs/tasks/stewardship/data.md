@@ -32,7 +32,7 @@ denial, session reconnect
 durability, migration reversal/reapplication, transactional rollback, and two
 independent concurrent connections with exactly one successful version update.
 See the [database test guide](../../guides/stewardship-database-tests.md) for
-repeatable commands and CI isolation. DAT-01.02/.03/.05 remain unimplemented;
+repeatable commands and CI isolation. DAT-01.05 remains unimplemented;
 DAT-01.01 remains partial until DAT-01.02 integrates explicit Parish ownership
 with versioned Parish materializations; the current audit table has only
 deployment-level ownership and no campaign cascade.
@@ -42,6 +42,19 @@ solely in the disposable database test profile. Non-test PostgreSQL connection
 and startup integration remain ARC-02/OPS-04 prerequisites; production still
 refuses startup. Review-specific test counts and CI evidence are tracked in the
 [Phase 1 milestone](milestones.md#phase-1-secure-foundation).
+
+Second increment: DAT-01.02/.03 preparation portions now include immutable
+AppliedConfigurationVersion, Parish, and AppliedIntegration records, strict
+non-secret schema validation, atomic/idempotent PostgreSQL preparation,
+singleton-root constraints, and exact stored-projection verification. The
+[preparation boundary guide](../../guides/stewardship-configuration-preparation.md)
+defines the supported subset and integration handoff. DAT-01.01/.02/.03/.06
+remain unchecked: active-version/runtime state, request idempotency/status,
+operator recovery, secret replacement, complete materializer/installer effects,
+and historical audit ownership integration are not implemented by preparation.
+Schema constraints, rollback, migration reversal, mismatches, reconnect
+durability, and independent-connection preparation races are verified in the
+PostgreSQL suite; review-specific results belong to the milestone evidence.
 
 ## DAT-02: Campaign lifecycle and schedule schema
 

@@ -58,14 +58,20 @@ Phase 1's database-backed ARC-02 integration or mark that work complete early.
 
 Source scope: [Phase 1A: Schema and policy](../../plans/stewardship/overall.md#phase-1-secure-foundation-and-durable-domain).
 
-Execution checkpoint (September 8, 2026): `pr/stewardship-phase-1` starts at
-merged `origin/main` SHA `509245d`. Under the controlling plan's smaller-PR
-option, the first increment delivers part of DAT-01.01 and all of DAT-01.04: storage
-conventions, base audit/session records, and real PostgreSQL verification.
-Configuration materialization, installer requests, TaskRun chains, and all
-other Phase 1 work remain pending. Each increment gets the full three-round
-review/fix cycle and human merge approval; Gate 1 still reviews the integrated
-foundation before Phase 2. The next task after this increment is DAT-01.02.
+Execution checkpoint (September 8, 2026): the human merged the first storage
+increment as PR #9, merge `0e4f1c0`. The next branch,
+`pr/stewardship-configuration-records`, starts at that refreshed `origin/main`.
+It continues DAT-01.02 with strict canonical snapshot preparation and immutable
+Parish/integration projections. Request/runtime records and complete installer
+activation remain the next dependency-ready DAT-01.02/.03 work, followed by
+TaskRun chains. No whole partially delivered task is checked off. Each increment
+gets the full three-round review/fix cycle and human merge approval; Gate 1 still
+reviews the integrated foundation before Phase 2.
+
+The configuration-preparation increment has completed three dual-model review/fix
+rounds; see its [dispositions and validation](milestones.md#configuration-preparation-increment).
+It is being handed off for human PR merge approval, not released as a completed
+Phase 1. Resume the remaining request/runtime work only after that handoff.
 
 Integrate ARC-02's concrete materializer and database-backed digest/mode checks
 with DAT-01. Complete its production prerequisite and recovery verification in

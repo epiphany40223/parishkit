@@ -850,6 +850,102 @@ cycle. This bounded increment is ready for PR/CI handoff and human merge
 approval. Phase 1 and Gate 1 remain incomplete; no production startup, merge,
 deployment, release, or real-provider operation is authorized by this evidence.
 
+### Configuration-preparation increment
+
+The human merged [PR #9](https://github.com/epiphany40223/parishkit/pull/9)
+on September 8, 2026, at 21:53:20 UTC, merge `0e4f1c0`. Its final head
+`ab9d92d` passed all CI checks in run `34276341522`; the preceding open-merge
+condition is now historical. The configuration-preparation branch starts at
+that merge and delivers the partial DAT-01 scope recorded in the
+[owning checklist](data.md#dat-01-storage-conventions-and-base-records).
+This does not release M1/G1 or enable production startup.
+
+Preparation round 1: reviewed `84c88f4` against `0e4f1c0`, session
+`20260908-180455-a30ec6`. Both reviewers and the permission preflight completed
+normally; no failed reviewers, mismatches, or degradations. Finalize returned
+COMMENT: four Medium findings from 15 raw, 11 Low below cutoff, no High/Critical.
+
+| Finding | Disposition and evidence |
+| --- | --- |
+| C1 | Fixed: PostgreSQL cases cover absent, empty, and deliberately unsorted multi-integration inputs, asserting canonical UUID-text ordering matches stored UUID ordering and exact normalized digests. |
+| C2 | Fixed: database checks constrain nonempty parish identity fields, US phone syntax, HTTP(S) website prefix, and supported validation evidence. Specific-constraint INSERT tests exclude unrelated uniqueness failures. Semantic URL and pinned-application IANA validation remain in the strict parser rather than a drifting database catalog. |
+| X1 | Fixed: iterative whole-ancestry verification rejects an incomplete predecessor even below a self-consistent child/grandchild. A visited-ID guard rejects cycles without imposing a fixed limit on legitimate history; this linear internal verification is not a per-request readiness API. |
+| X2 | Fixed: every verified ancestor must retain the same parish record ID, including on the existing-candidate retry path. Forged internally consistent changed-owner children fail preparation and cannot be extended. |
+
+An independently observed validation issue was also fixed: a random UUID in a
+pytest parameter label made host/image collection IDs differ. The uppercase
+UUID test now uses a deterministic synthetic value. One subsequent local
+Compose run hit a temporary PostgreSQL bind-mount ownership failure; a fresh
+disposable-project rerun passed all 30 checks without changing mounts, runtime
+permissions, or existing data.
+
+Post-correction validation: 1,028 host/image baseline passes, 85 explicit opt-in
+skips, exact parity across 1,113 collected IDs; 73 required PostgreSQL tests
+(112 with the 39 pure schema tests); all 30 Compose checks passed. Ruff, format,
+tracked Markdown, migration drift, Django system checks, and whitespace passed.
+Scoped baseline coverage: 89.86% lines / 90.29% branches, artifact
+`/tmp/stewardship-configuration-evidence.lLYSIF/round1-corrected-coverage.json`.
+The focused pure/PostgreSQL suite separately passed 72 tests with 100% lines and
+branches over the three new configuration modules. Round 1 is complete; two
+more independent review/fix rounds remain before PR handoff.
+
+Preparation round 2: reviewed `7713230` against `0e4f1c0`, session
+`20260908-182452-5337ca`. Both reviewers and permission preflight completed
+normally; no failures, mismatches, or degradations. Finalize returned COMMENT:
+four Medium findings from 21 raw, 17 Low below cutoff, no High/Critical.
+
+| Finding | Disposition and evidence |
+| --- | --- |
+| C1 | Fixed the serialization/round-trip amplification: recursive lineage loading and projection prefetches use three queries independent of depth; all full parsing/verification runs before the global preparation lock. Tests at depths 1 and 40 assert query counts and observe the real lock acquisition. Full ancestry validation remains linear CPU/memory rather than trusting unverified stored prefixes; it is not a per-request readiness API. Deterministic two-connection and injected-writer races verify bounded exact-candidate rechecks under the lock. |
+| C2 | Fixed: timezone validation uses the pinned wheel's leaf-name catalog, never the host TZPATH. A host-only valid zone is rejected while bundled zones remain valid after replacing the host lookup path. No process-global timezone policy is changed in production code. |
+| C3 | Fixed with the same catalog boundary: region directories/unknown names never become filesystem paths. OSError, corrupt resources, and a missing package produce safe ConfigError diagnostics. Tests prove directory-like input and resource locations are not disclosed. |
+| X1 | Fixed: integration kind/record-ID mappings remain stable over the full verified lineage, including removal/re-addition. Changed IDs and historical ID reuse fail both new preparation and forged-existing-candidate retry; re-addition with the original ID succeeds. |
+
+Post-correction validation: 1,038 host/image baseline passes, 94 explicit opt-in
+skips, exact parity across 1,132 collected IDs; 82 required PostgreSQL tests
+(131 with 49 pure schema tests); all 30 Compose checks passed. Ruff, format,
+migration drift, tracked Markdown, and whitespace checks passed. Scoped baseline
+coverage: 88.39% lines / 86.57% branches, artifact
+`/tmp/stewardship-configuration-evidence.lLYSIF/round2-corrected-coverage.json`.
+Two review/fix rounds are complete; a third remains required before PR handoff.
+
+Preparation round 3: reviewed `b1a8f8c` against `0e4f1c0`, session
+`20260908-213954-c73bd5`. Both reviewers and permission preflight completed
+normally; no failures, mismatches, or degradations. Finalize returned COMMENT:
+five Medium findings from 20 raw, 15 Low below cutoff, no High/Critical.
+
+| Finding | Disposition and evidence |
+| --- | --- |
+| C1 | Fixed: preparation rejects nested transactions and disabled autocommit, then owns a durable atomic block. An independent connection verifies committed visibility and immediate advisory-lock release after return. PostgreSQL tests use real transactions rather than enclosing test savepoints. |
+| C2 | Fixed: unavailable or corrupt installed schema data raises a distinct, safely worded SchemaEnvironmentError. Both preparation and historical verification propagate it instead of misclassifying the history as invalid. |
+| C3 | Fixed: historical validation dispatches using each row's stored discriminator. A registry and explicit database known-name constraint permit later schema migrations without reinterpreting old rows. A regression changes the current validator while retaining successful historical verification. |
+| C4 | Fixed: version 1 owns a frozen, hash-checked timezone-name asset rather than consulting an upgradable dependency. Tests cover dependency drift, asset corruption, and inclusion of the exact catalog in a built wheel. |
+| X1 | Duplicate of C4; resolved by the same frozen-schema catalog and regression tests. |
+
+The three required dual-model review/fix rounds are complete, with no accepted
+unresolved Medium-or-higher findings and no High/Critical in the final round.
+Below-cutoff Low findings remain in the review artifacts. Corrections and their
+validation belong to the round that found them under the approved loop policy;
+this is not a claim of an independent APPROVED verdict on the corrected head.
+Human PR merge approval and the full integrated Gate 1 remain required.
+
+Post-round-3 validation: 1,042 host/image baseline passes, 97 explicit opt-in
+skips (85 PostgreSQL and 12 Docker), exact parity across 1,139 collected IDs;
+138 required PostgreSQL plus pure schema tests passed. The focused coverage
+suite passed 98 tests over the three configuration modules: 234/235 statements
+and 87/88 branches covered. Whole stewardship baseline coverage is 88.19% lines
+and 86.24% branches. Artifacts are `round3-coverage.json` and
+`round3-database-coverage.json` under the same local evidence directory above.
+All 30 Compose checks passed against rebuilt image
+`sha256:e9dd180e3746cf62e862e3053f02c005f871ba31d23e2b142e8420b25aaf6f47`.
+The first run repeated the intermittent local PostgreSQL bind-mount ownership
+error; a fresh disposable-project rerun passed without permission or data changes.
+The initial wheel test exposed missing pinned build tools in the local venv;
+installing the existing build requirements fixed it, with no dependency change.
+Ruff, formatting, tracked Markdown, both profiles' migration drift, Django system
+checks, and whitespace checks passed. This increment is ready for PR/CI handoff;
+it does not activate configuration or close any partially delivered DAT-01 task.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).
