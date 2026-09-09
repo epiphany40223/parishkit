@@ -46,6 +46,12 @@ search path to trusted catalog/application schemas with temporary tables last;
 caller search-path changes cannot substitute a shadow runtime/profile table.
 Custom application schemas and runtime database-role grants remain OPS-04/OPS-02
 integration work, not a supported configuration of this foundation.
+This protects attribution after an INSERT reaches the real audit table. Earlier
+checkpoint/activation/secret SQL emitters still use unqualified audit targets;
+their pre-existing search-path exposure is tracked as a
+[required OPS-02 integration check](../tasks/stewardship/operations.md#ops-02-durable-runtime-paths-and-least-privilege-secrets)
+before runtime roles or production are enabled. This is not a claim of end-to-end
+protection against arbitrary SQL sessions that can create shadow tables.
 
 ## Historical retention and migrations
 

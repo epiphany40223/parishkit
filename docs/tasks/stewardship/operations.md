@@ -57,6 +57,17 @@ Scope and dependencies: [OPS-02 work package](../../plans/stewardship/operations
 
 Evidence: Not started.
 
+Before granting runtime database access or releasing Gate 1, harden existing SQL
+checkpoint/activation/secret emitters and their helper guards against caller
+search-path shadowing. Audit-ownership review round 3 identified unchanged
+unqualified audit INSERT targets in accounts migrations 0010, 0013 and 0015.
+Use forward migrations with fixed trusted paths/schema-qualified targets, respect
+optional migration ordering, restrict schema creation/temporary-object privileges
+as appropriate, and test each real emitter with a temporary shadow audit table.
+The new audit insertion guard protects attribution only once an INSERT reaches
+the real table; it does not resolve those pre-existing emitter paths. See the
+[scope and review disposition](milestones.md#audit-ownership-increment).
+
 ## OPS-03: Production ingress, TLS, and network security
 
 Scope and dependencies: [OPS-03 work package](../../plans/stewardship/operations.md#ops-03-production-ingress-tls-and-network-security).

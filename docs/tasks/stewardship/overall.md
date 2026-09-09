@@ -82,9 +82,10 @@ PR #12 merged with all four checks passing. The secret-request increment gets
 its own human-approved PR after three completed independent review/fix rounds,
 all accepted Medium+ corrections and passing local validation; see its
 [final evidence](milestones.md#secret-request-storage-increment).
-PR #13 merged with all four checks passing. The audit-ownership increment gets
-its own three-round review/fix cycle and human-approved PR; see its
-[evidence](milestones.md#audit-ownership-increment). None of these increments
+PR #13 merged with all four checks passing. The audit-ownership increment has
+completed three independent dual-model review/fix rounds and final local
+validation; see its [evidence](milestones.md#audit-ownership-increment).
+Its PR/CI handoff still requires human merge approval. None of these increments
 releases the incomplete Phase 1 or Gate 1.
 
 Integrate ARC-02's concrete materializer and database-backed digest/mode checks

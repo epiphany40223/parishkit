@@ -17,6 +17,7 @@ from parishkit.stewardship.accounts.authority import AuthorityStore
 from parishkit.stewardship.accounts.configuration_models import Parish
 from parishkit.stewardship.accounts.configuration_requests import record_request
 from parishkit.stewardship.accounts.configuration_schema import validate_sections
+from parishkit.stewardship.accounts.request_models import ConfigurationRequestCheckpoint
 from parishkit.stewardship.accounts.runtime_models import ConfigurationActivation
 from parishkit.stewardship.accounts.secret_requests import stage_secret_request
 from parishkit.stewardship.audit.models import AuditEvent
@@ -382,7 +383,7 @@ def test_legacy_upgrade_preserves_original_rows_without_guessing(tmp_path):
         MigrationExecutor(connection).migrate(leaves)
 
 
-@pytest.mark.parametrize("history", ["activation", "secret"])
+@pytest.mark.parametrize("history", ["activation", "secret", "checkpoint"])
 def test_broad_downgrade_preserves_upgraded_legacy_ownership(tmp_path, history):
     """An older accounts guard must not strand an already-reversed audit schema."""
     executor = MigrationExecutor(connection)
@@ -391,6 +392,23 @@ def test_broad_downgrade_preserves_upgraded_legacy_ownership(tmp_path, history):
         executor.migrate([PREVIOUS])
         if history == "activation":
             initialize(tmp_path)
+        elif history == "checkpoint":
+            root, actor = configuration_version(), uuid4()
+            installer.prepare_snapshot(root, actor_id=actor, correlation_id=uuid4())
+            request = record_request(
+                base_digest=root.digest,
+                patch=parish_patch(root, name="Next Parish"),
+                actor_id=actor,
+                request_key=uuid4(),
+                correlation_id=uuid4(),
+            )
+            ConfigurationRequestCheckpoint.objects.create(
+                request_id=request.request_id,
+                actor_id=actor,
+                state="validating",
+                sequence=2,
+            )
+            assert not ConfigurationActivation.objects.exists()
         else:
             stage_secret_request(
                 request_id=uuid4(),

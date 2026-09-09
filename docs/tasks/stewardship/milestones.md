@@ -1268,8 +1268,34 @@ without failure/degradation, mismatch or salvage. Two validated Medium findings
 | Legacy deployment-owned history allowed a partially committed broad downgrade before an older accounts guard refused | Preflight now locks/checks retained activation, installer checkpoint and optional secret history before ownership removal; added legacy configured/secret regression cases and the minimum dependency graph case |
 | Caller search path could shadow attribution tables | Fixed the function search path to catalog/public/temporary-last; tested shadows of all four context tables without changing unrelated legacy guards |
 
-Post-correction validation and review round 3 remain pending. This checkpoint
-is not review approval or permission to merge.
+Round-2 post-correction validation: 1,079 baseline and 255 PostgreSQL tests
+passed, plus all 30 rebuilt Compose checks with parity over 1,346 collected IDs.
+Scoped coverage remains 98.10% lines / 96.23% branches in `round2.json` in the
+external validation directory. Ruff, Markdown and both migration checks passed.
+
+Review round 3: Pika session `20260909-123354-2a76ad`, reviewed implementation
+`662177d2e94c17de4fb08de69fde1262d4e2c7ca`, completed both independent reviewers
+without failure/degradation, mismatch or salvage. Two validated Medium findings,
+no High/Critical:
+
+| Finding | Disposition |
+| --- | --- |
+| The installer-checkpoint downgrade clause lacked a case where it alone blocks reversal | Accepted and added a legacy-upgrade validating-checkpoint case with no activation or secret history |
+| Older SQL emitters can target a temporary shadow audit table before the new guard runs | Auto-skipped as pre-existing: unchanged unqualified INSERTs and caller-path functions are present in base accounts 0010/0013/0015. Explicitly tracked with required emitter regression tests in OPS-02 before runtime-role grants/Gate 1; ownership guide now states this boundary |
+
+Six distinct accepted Medium findings across three complete rounds have been
+corrected; one pre-existing finding has an evidence-backed disposition and an
+explicit prerequisite owner. No High/Critical findings were reported in any
+round. Final post-correction validation passed: 1,079 baseline tests (256
+PostgreSQL and 12 opt-in cases skipped by design), all 256 PostgreSQL tests,
+and all 30 Compose checks. Host/image collection parity covers 1,347 test IDs.
+Combined scoped coverage remains 98.10% lines / 96.23% branches in the external
+`final.json` report. Ruff, formatting, tracked Markdown, whitespace and both
+migration-drift checks passed. No real provider credentials or parish data were
+used. The PR records its exact final head and CI results; human merge approval
+remains required, and no auto-merge, production startup or release is enabled.
+The final-round Medium test correction does not itself require a fourth round
+under the controlling automated delivery cycle. This does not release Gate 1.
 
 ## Gate 1: Foundation and security
 
