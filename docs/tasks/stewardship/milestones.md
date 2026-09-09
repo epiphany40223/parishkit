@@ -1297,6 +1297,24 @@ remains required, and no auto-merge, production startup or release is enabled.
 The final-round Medium test correction does not itself require a fourth round
 under the controlling automated delivery cycle. This does not release Gate 1.
 
+### TaskRun storage increment
+
+The human merged [PR #15](https://github.com/epiphany40223/parishkit/pull/15)
+on September 9, 2026, after all four checks passed at
+`5bffbb3707f72064911ce4612cf9645f4bd73cf3`; see the
+[successful CI run](https://github.com/epiphany40223/parishkit/actions/runs/34378791266).
+Branch `pr/stewardship-taskrun-storage` starts at refreshed `origin/main`,
+`2483d0864897f135ba4a72bd956d4f6c8b2b8f72`.
+
+Scope is DAT-01.05's [base TaskRun storage](../../guides/stewardship-taskrun-storage.md):
+claims/fencing, canonical transitions, logical retry-chain identity, explicit
+retry-command deduplication and atomic immutable attempt/audit history. BG-01
+operational execution and domain-specific admission/reconciliation are not
+enabled. DAT-01.02/.03/.06 and full Phase 1/Gate 1 remain incomplete.
+
+Implementation validation and three independent dual-model review/fix rounds are
+in progress; this checkpoint is not review or merge approval.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).
