@@ -59,7 +59,8 @@ class Migration(migrations.Migration):
         migrations.RunSQL(
             sql="""
     CREATE FUNCTION stewardship_audit_ownership_v1()
-    RETURNS trigger LANGUAGE plpgsql AS $$
+    RETURNS trigger LANGUAGE plpgsql
+    SET search_path = pg_catalog, public, pg_temp AS $$
     DECLARE
         configuration uuid;
         owner uuid;
@@ -112,13 +113,30 @@ class Migration(migrations.Migration):
     FOR EACH ROW EXECUTE FUNCTION stewardship_audit_ownership_v1();
             """,
             reverse_sql="""
-    LOCK TABLE stewardship_audit_event IN ACCESS EXCLUSIVE MODE;
+    LOCK TABLE public.stewardship_config_activation,
+        public.stewardship_config_checkpoint, public.stewardship_audit_event
+        IN ACCESS EXCLUSIVE MODE;
     DO $$
     BEGIN
-        IF EXISTS (SELECT 1 FROM stewardship_audit_event
-                   WHERE ownership_scope = 'parish') THEN
+        -- A reverse plan is NOT one transaction. Refuse here if an older
+        -- accounts migration would refuse later, including legacy events
+        -- which intentionally retained deployment ownership on upgrade.
+        IF EXISTS (SELECT 1 FROM public.stewardship_audit_event
+                   WHERE ownership_scope = 'parish')
+           OR EXISTS (SELECT 1 FROM public.stewardship_config_activation)
+           OR EXISTS (SELECT 1 FROM public.stewardship_config_checkpoint
+                      WHERE state NOT IN ('staged', 'cancelled')) THEN
             RAISE EXCEPTION 'Parish audit history prevents this schema downgrade'
                 USING ERRCODE = '23514';
+        END IF;
+        -- Secret storage is an independent later migration, not a dependency.
+        -- Its table can legitimately be absent on a partially applied graph.
+        IF to_regclass('public.stewardship_secret_request') IS NOT NULL THEN
+            LOCK TABLE public.stewardship_secret_request IN ACCESS EXCLUSIVE MODE;
+            IF EXISTS (SELECT 1 FROM public.stewardship_secret_request) THEN
+                RAISE EXCEPTION 'Secret history prevents this audit schema downgrade'
+                    USING ERRCODE = '23514';
+            END IF;
         END IF;
     END;
     $$;

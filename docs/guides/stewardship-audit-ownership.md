@@ -41,6 +41,11 @@ The field database defaults let existing SQL checkpoint emitters omit these new
 columns. Django's INSERT RETURNING returns trigger-derived ownership to both
 ordinary and bulk ORM callers without a manual refresh. There is no arbitrary
 payload, credential, URL, source value, or error-message field in this envelope.
+The supported database schema is `public`. The attribution function fixes its
+search path to trusted catalog/application schemas with temporary tables last;
+caller search-path changes cannot substitute a shadow runtime/profile table.
+Custom application schemas and runtime database-role grants remain OPS-04/OPS-02
+integration work, not a supported configuration of this foundation.
 
 ## Historical retention and migrations
 
@@ -55,11 +60,16 @@ trigger atomically. Previously persisted rows keep their original values and
 receive explicit deployment ownership via column defaults. It does not UPDATE
 append-only history or guess historical attribution from today's configuration.
 
-An empty or deployment-only history can reverse/reapply this migration. Once
-Parish-owned history exists, reversal refuses before removing the trigger,
-columns, or migration marker. This protects ownership evidence from accidental
-schema downgrade. Forward corrections, not destructive history rewriting, are
-the recovery path. No operator command or UI for bypassing this guard is added.
+Empty or deployment-only bootstrap history can reverse/reapply this migration
+when no retained activation, installer checkpoint or secret-request history would
+block a dependent accounts downgrade. Otherwise reversal refuses before removing
+the trigger, columns or migration marker, including on an upgraded legacy
+deployment whose old audit events are still deployment-owned. Django reverses
+each migration in its own transaction; checking those older populated-history
+blockers here prevents a later refusal from stranding the ownership schema.
+The optional secret table is inspected only if present. Forward corrections,
+not destructive history rewriting, are the recovery path. No operator command
+or UI for bypassing this guard is added.
 
 ## Verification and remaining boundaries
 

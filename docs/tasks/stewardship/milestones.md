@@ -1253,7 +1253,22 @@ no High/Critical findings; all three accepted under delegated triage:
 | Ownership migration depended on unrelated secret schema | Narrowed dependency to accounts 0013; added configured/unconfigured secret-downgrade refusal tests proving ownership survives |
 | Corruption fixture disabled broader guards without restoration evidence | Narrowed to the immutable Parish guard, used a durable transaction and asserted enabled state after rollback |
 
-Post-correction validation and review rounds 2/3 remain pending. This checkpoint
+Round-1 post-correction validation: 1,079 baseline and 251 PostgreSQL tests
+passed, plus all 30 rebuilt Compose checks with parity over 1,342 collected IDs.
+Scoped coverage remains 98.10% lines / 96.23% branches in the external
+`round1.json` report. Markdown, Ruff and migration drift checks passed.
+
+Review round 2: Pika session `20260909-121747-406594`, reviewed implementation
+`33a4163f418761d1de9126e5c8ea7f105a4666e4`, completed both independent reviewers
+without failure/degradation, mismatch or salvage. Two validated Medium findings
+(one agreed by both reviewers), no High/Critical; both accepted:
+
+| Finding | Disposition |
+| --- | --- |
+| Legacy deployment-owned history allowed a partially committed broad downgrade before an older accounts guard refused | Preflight now locks/checks retained activation, installer checkpoint and optional secret history before ownership removal; added legacy configured/secret regression cases and the minimum dependency graph case |
+| Caller search path could shadow attribution tables | Fixed the function search path to catalog/public/temporary-last; tested shadows of all four context tables without changing unrelated legacy guards |
+
+Post-correction validation and review round 3 remain pending. This checkpoint
 is not review approval or permission to merge.
 
 ## Gate 1: Foundation and security

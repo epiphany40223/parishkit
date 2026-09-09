@@ -160,6 +160,45 @@ def test_raw_insert_defaults_and_matching_explicit_owner(initialized):
     assert event.parish_id == parish.pk
 
 
+def test_search_path_cannot_shadow_attribution_tables(initialized):
+    """Temporary relation names cannot select a false deployment/profile context."""
+    _, root, actor = initialized
+    parish = Parish.objects.get()
+    activation = ConfigurationActivation.objects.get()
+    request = record_request(
+        base_digest=root.digest,
+        patch=parish_patch(root, name="Next Parish"),
+        actor_id=actor,
+        request_key=uuid4(),
+        correlation_id=uuid4(),
+    )
+    with transaction.atomic(durable=True), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL search_path = pg_temp, public")
+        cursor.execute(
+            "CREATE TEMP TABLE stewardship_system_configuration "
+            "(active_configuration_id uuid) ON COMMIT DROP"
+        )
+        cursor.execute(
+            "CREATE TEMP TABLE stewardship_parish "
+            "(id uuid, configuration_id uuid) ON COMMIT DROP"
+        )
+        cursor.execute(
+            "CREATE TEMP TABLE stewardship_config_activation "
+            "(id uuid, configuration_id uuid) ON COMMIT DROP"
+        )
+        cursor.execute(
+            "CREATE TEMP TABLE stewardship_config_request "
+            "(id uuid, base_id uuid) ON COMMIT DROP"
+        )
+        for event_type, subject in (
+            ("shadow_check", None),
+            ("configuration_activated", activation.pk),
+            ("config_request_staged", request.request_id),
+        ):
+            event = AuditEvent.objects.create(event_type=event_type, subject_id=subject)
+            assert event.ownership_scope == "parish" and event.parish_id == parish.pk
+
+
 @pytest.mark.parametrize("configured", [False, True])
 @pytest.mark.parametrize(
     "event_type", ["config_request_staged", "configuration_activated"]
@@ -339,6 +378,72 @@ def test_legacy_upgrade_preserves_original_rows_without_guessing(tmp_path):
         assert after["ownership_scope"] == "deployment" and after["parish_id"] is None
         new = AuditEvent.objects.create(event_type="after_upgrade")
         assert new.parish.configuration_id == root.version_id
+    finally:
+        MigrationExecutor(connection).migrate(leaves)
+
+
+@pytest.mark.parametrize("history", ["activation", "secret"])
+def test_broad_downgrade_preserves_upgraded_legacy_ownership(tmp_path, history):
+    """An older accounts guard must not strand an already-reversed audit schema."""
+    executor = MigrationExecutor(connection)
+    leaves = executor.loader.graph.leaf_nodes()
+    try:
+        executor.migrate([PREVIOUS])
+        if history == "activation":
+            initialize(tmp_path)
+        else:
+            stage_secret_request(
+                request_id=uuid4(),
+                target="parishsoft",
+                staging_reference=uuid4(),
+                actor_id=uuid4(),
+                reauthenticated_at=timezone.now() - timedelta(minutes=1),
+                expires_at=timezone.now() + timedelta(minutes=10),
+                expected_fingerprint=None,
+                correlation_id=uuid4(),
+            )
+        MigrationExecutor(connection).migrate(leaves)
+        before = list(AuditEvent.objects.order_by("id").values())
+        assert all(row["ownership_scope"] == "deployment" for row in before)
+        with pytest.raises(IntegrityError, match="history prevents"):
+            MigrationExecutor(connection).migrate(
+                [("stewardship_accounts", "0010_request_intake_guards")]
+            )
+        assert MigrationRecorder.Migration.objects.filter(
+            app=CURRENT[0], name=CURRENT[1]
+        ).exists()
+        assert list(AuditEvent.objects.order_by("id").values()) == before
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT tgenabled FROM pg_trigger WHERE tgname = %s",
+                ["stewardship_audit_ownership_v1"],
+            )
+            assert cursor.fetchone()[0] == "O"
+        event = AuditEvent.objects.create(event_type="after_refusal")
+        assert event.ownership_scope == (
+            "parish" if history == "activation" else "deployment"
+        )
+    finally:
+        MigrationExecutor(connection).migrate(leaves)
+
+
+def test_reverse_without_optional_secret_schema():
+    """The minimum supported dependency graph has no secret table to inspect."""
+    leaves = MigrationExecutor(connection).loader.graph.leaf_nodes()
+    try:
+        MigrationExecutor(connection).migrate(
+            [("stewardship_accounts", "0013_activation_guards")]
+        )
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT to_regclass('public.stewardship_secret_request')")
+            assert cursor.fetchone()[0] is None
+        assert MigrationRecorder.Migration.objects.filter(
+            app=CURRENT[0], name=CURRENT[1]
+        ).exists()
+        MigrationExecutor(connection).migrate([PREVIOUS])
+        assert not MigrationRecorder.Migration.objects.filter(
+            app=CURRENT[0], name=CURRENT[1]
+        ).exists()
     finally:
         MigrationExecutor(connection).migrate(leaves)
 
