@@ -235,12 +235,15 @@ def test_missing_projection_fails_closed_and_rolls_back(initialized):
     before = AuditEvent.objects.count()
     with (
         pytest.raises(IntegrityError, match="projection is missing"),
-        transaction.atomic(),
+        transaction.atomic(durable=True),
         connection.cursor() as cursor,
     ):
         # Corruption is synthetic and transaction-local: failure restores the
         # row and every trigger before subsequent tests use this database.
-        cursor.execute("ALTER TABLE stewardship_parish DISABLE TRIGGER USER")
+        cursor.execute(
+            "ALTER TABLE stewardship_parish DISABLE TRIGGER "
+            "stewardship_parish_immutable_guard_v1"
+        )
         cursor.execute(
             "DELETE FROM stewardship_parish WHERE configuration_id = %s",
             [root.version_id],
@@ -248,6 +251,75 @@ def test_missing_projection_fails_closed_and_rolls_back(initialized):
         AuditEvent.objects.create(event_type="damaged_projection")
     assert Parish.objects.get(configuration_id=root.version_id)
     assert AuditEvent.objects.count() == before
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT tgenabled FROM pg_trigger WHERE tgrelid = "
+            "'stewardship_parish'::regclass AND tgname = %s",
+            ["stewardship_parish_immutable_guard_v1"],
+        )
+        assert cursor.fetchone()[0] == "O"
+
+
+def test_deployment_history_survives_downgrade_roundtrip(tmp_path):
+    """Nonempty deployment history can reverse without losing original values."""
+    event = AuditEvent.objects.create(event_type="bootstrap_check")
+    before = AuditEvent.objects.values().get(pk=event.pk)
+    executor = MigrationExecutor(connection)
+    leaves = executor.loader.graph.leaf_nodes()
+    try:
+        executor.migrate([PREVIOUS])
+        old_model = executor.loader.project_state([PREVIOUS]).apps.get_model(
+            "stewardship_audit", "AuditEvent"
+        )
+        older = old_model.objects.values().get(pk=event.pk)
+        assert older == {key: before[key] for key in older}
+        assert "ownership_scope" not in older
+        MigrationExecutor(connection).migrate(leaves)
+        assert AuditEvent.objects.values().get(pk=event.pk) == before
+        _, root, _ = initialize(tmp_path)
+        assert AuditEvent.objects.get(pk=event.pk).ownership_scope == "deployment"
+        assert (
+            AuditEvent.objects.create(
+                event_type="restored_guard"
+            ).parish.configuration_id
+            == root.version_id
+        )
+    finally:
+        MigrationExecutor(connection).migrate(leaves)
+
+
+@pytest.mark.parametrize("configured", [False, True])
+def test_secret_downgrade_cannot_remove_audit_ownership(tmp_path, configured):
+    """An unrelated secret-schema refusal leaves audit columns and guard intact."""
+    if configured:
+        initialize(tmp_path)
+    stage_secret_request(
+        request_id=uuid4(),
+        target="parishsoft",
+        staging_reference=uuid4(),
+        actor_id=uuid4(),
+        reauthenticated_at=timezone.now() - timedelta(minutes=1),
+        expires_at=timezone.now() + timedelta(minutes=10),
+        expected_fingerprint=None,
+        correlation_id=uuid4(),
+    )
+    before = list(AuditEvent.objects.order_by("id").values())
+    leaves = MigrationExecutor(connection).loader.graph.leaf_nodes()
+    try:
+        with pytest.raises(
+            IntegrityError, match="Secret request history prevents downgrade"
+        ):
+            MigrationExecutor(connection).migrate(
+                [("stewardship_accounts", "0014_secret_request_records")]
+            )
+        assert MigrationRecorder.Migration.objects.filter(
+            app=CURRENT[0], name=CURRENT[1]
+        ).exists()
+        assert list(AuditEvent.objects.order_by("id").values()) == before
+        new = AuditEvent.objects.create(event_type="secret_downgrade_refused")
+        assert new.ownership_scope == ("parish" if configured else "deployment")
+    finally:
+        MigrationExecutor(connection).migrate(leaves)
 
 
 def test_legacy_upgrade_preserves_original_rows_without_guessing(tmp_path):

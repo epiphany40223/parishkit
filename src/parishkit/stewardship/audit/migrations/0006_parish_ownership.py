@@ -12,7 +12,9 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("stewardship_accounts", "0015_secret_request_guards"),
+        # No dependency on secret-request tables: keep unrelated secret schema
+        # downgrade attempts from removing this independent ownership guard.
+        ("stewardship_accounts", "0013_activation_guards"),
         ("stewardship_audit", "0005_alter_auditevent_subject_id"),
     ]
 

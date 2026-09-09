@@ -1235,8 +1235,26 @@ non-rewriting legacy migration. See the
 DAT-01.02/.03/.05/.06 remain open for their remaining scope. The next ready task
 is TaskRun claim/retry-chain storage. Full Phase 1 and Gate 1 remain incomplete.
 
-Validation and three independent dual-model review/fix rounds are in progress;
-this checkpoint is not review approval or permission to merge.
+Initial validation: 1,079 baseline tests passed (248 PostgreSQL and 12 opt-in
+Compose cases skipped by design); all 248 PostgreSQL tests and all 30 opt-in
+Compose checks passed. Host/image collection parity covers 1,339 test IDs.
+Combined scoped coverage is 98.10% lines / 96.23% branches, recorded outside the
+repository at `/tmp/stewardship-audit-validation.Q4u5Ol/initial.json`.
+Ruff, formatting, tracked Markdown and both migration-drift checks passed.
+
+Review round 1: Pika session `20260909-120356-63b599`, reviewed implementation
+`4bc51f70a7a763c1179b1d7fecefa12ba6556d62`, completed both independent reviewers
+without failed/degraded sources, mismatch or salvage. Three Medium findings,
+no High/Critical findings; all three accepted under delegated triage:
+
+| Finding | Disposition |
+| --- | --- |
+| Deployment-only downgrade/reapply branch lacked direct coverage | Added a populated round-trip test preserving old fields and exercising the restored trigger |
+| Ownership migration depended on unrelated secret schema | Narrowed dependency to accounts 0013; added configured/unconfigured secret-downgrade refusal tests proving ownership survives |
+| Corruption fixture disabled broader guards without restoration evidence | Narrowed to the immutable Parish guard, used a durable transaction and asserted enabled state after rollback |
+
+Post-correction validation and review rounds 2/3 remain pending. This checkpoint
+is not review approval or permission to merge.
 
 ## Gate 1: Foundation and security
 
