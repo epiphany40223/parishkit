@@ -1,7 +1,12 @@
 name: CI
 
+# Run the same validation on pull requests, on merge-queue groups, and on
+# pushes to main. The merge_group trigger is required for the merge queue:
+# without it no checks run on the temporary queue branches, so the queue
+# cannot fail a queued pull request.
 on:
   pull_request:
+  merge_group:
   push:
     branches: [main]
 

@@ -496,10 +496,12 @@ from **smoke tests** (human-run, credential-dependent, never in CI).
   double quotes, LF endings, target py312. Markdown is linted with
   `pymarkdown`; MD013 line length is disabled because this repo intentionally
   uses GitHub tables and one-line paragraphs in issue/PR-oriented prose.
-- **CI** (`.github/workflows/ci.yml`) on push-to-main and PRs runs, on Python
-  3.12: `ruff check`, `ruff format --check`, `pymarkdown --config
-  .pymarkdown.json scan`, `pytest`. PRs also enforce **DCO sign-off** through
-  the repository DCO app.
+- **CI** (`.github/workflows/ci.yml`) on push-to-main, PRs, and merge-queue
+  groups runs, on Python 3.12: `ruff check`, `ruff format --check`,
+  `pymarkdown --config .pymarkdown.json scan`, `pytest`. The CI jobs are
+  required status checks on `main`, so the merge queue runs them against the
+  merged result and ejects a queued PR that fails. PRs also enforce **DCO
+  sign-off** through the repository DCO app.
 - **Local validation must match CI** exactly:
   `python -m ruff check .` · `python -m ruff format --check .` ·
   `python -m pymarkdown --config .pymarkdown.json scan $(git ls-files '*.md')` ·
