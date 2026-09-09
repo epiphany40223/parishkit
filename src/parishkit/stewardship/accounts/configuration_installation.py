@@ -6,6 +6,7 @@ offline bootstrap/recovery interlocks, and service grants/mounts remain required
 before exposure. This schema cannot change roles, secrets, campaigns, or mode.
 """
 
+import re
 from contextlib import contextmanager
 
 from django.core.exceptions import ValidationError
@@ -32,10 +33,14 @@ class DatabaseMaterializer:
     Nested use of this same instance shares its lock, never a second SQL claim.
     """
 
-    def __init__(self, store, *, actor_id, correlation_id, request=None):
+    def __init__(
+        self, store, *, actor_id, correlation_id, request=None, testing_recipient=None
+    ):
+        """Bind one request, or an initial recipient committed only at activation."""
         _identities(actor_id, correlation_id)
         self.store, self.actor_id, self.correlation_id = store, actor_id, correlation_id
         self.request = request
+        self.testing_recipient = testing_recipient
         self._guard = None
 
     @contextmanager
@@ -63,7 +68,7 @@ class DatabaseMaterializer:
         self._check()
         digest = SystemConfiguration.objects.values_list(
             "active_configuration__digest", flat=True
-        ).get()
+        ).first()
         self._check()
         return digest
 
@@ -137,7 +142,15 @@ class DatabaseMaterializer:
         self.checkpoint("yaml_activated")
         self._check()
         with transaction.atomic(durable=True):
-            runtime = SystemConfiguration.objects.select_for_update().get()
+            runtime = SystemConfiguration.objects.select_for_update().first()
+            if runtime is None:
+                if self.request is not None or self.testing_recipient is None:
+                    raise ConfigError("Runtime configuration is not initialized.")
+                runtime = SystemConfiguration.objects.create(
+                    testing_recipient=self.testing_recipient,
+                    actor_id=self.actor_id,
+                    correlation_id=self.correlation_id,
+                )
             ConfigurationActivation.objects.create(
                 configuration_id=selected.version_id,
                 predecessor_id=runtime.active_configuration_id,
@@ -159,7 +172,11 @@ def prepare_initial_configuration(
     Matching interrupted initialization is retryable; a configured deployment
     cannot use this primitive to replace its recipient or initial authority.
     """
-    if type(testing_recipient) is not str or len(testing_recipient) > 254:
+    if (
+        type(testing_recipient) is not str
+        or len(testing_recipient) > 254
+        or re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", testing_recipient) is None
+    ):
         raise ConfigError("A valid Testing recipient is required.")
     try:
         validate_email(testing_recipient)
@@ -168,21 +185,17 @@ def prepare_initial_configuration(
     if version.predecessor_digest is not None:
         raise ConfigError("Initialization requires a root configuration.")
     materializer = DatabaseMaterializer(
-        store, actor_id=actor_id, correlation_id=correlation_id
+        store,
+        actor_id=actor_id,
+        correlation_id=correlation_id,
+        testing_recipient=testing_recipient,
     )
     with materializer.lock():
-        with transaction.atomic(durable=True):
-            runtime = SystemConfiguration.objects.first()
-            if runtime is None:
-                runtime = SystemConfiguration.objects.create(
-                    testing_recipient=testing_recipient,
-                    actor_id=actor_id,
-                    correlation_id=correlation_id,
-                )
-            if runtime.testing_recipient != testing_recipient:
-                raise ConfigError(
-                    "Existing runtime configuration does not match initialization."
-                )
+        runtime = SystemConfiguration.objects.first()
+        if runtime is not None and runtime.testing_recipient != testing_recipient:
+            raise ConfigError(
+                "Existing runtime configuration does not match initialization."
+            )
         selected = store.active()
         if selected is not None and selected.digest == version.digest:
             recover_active(store, materializer)
@@ -225,6 +238,8 @@ def install_request(store, *, request_id, correlation_id):
                 )
         selected = store.active()
         active_digest = materializer.active_digest()
+        if active_digest is None:
+            raise ConfigError("Runtime configuration is not initialized.")
         yaml_digest = selected.digest if selected else None
         if yaml_digest != active_digest:
             if yaml_digest != request.candidate_digest:
@@ -234,8 +249,10 @@ def install_request(store, *, request_id, correlation_id):
         if active_digest != request.base.digest:
             materializer.checkpoint("failed", failure_code="stale_base")
             return _status(request)
+        # A corrupt active base is deployment state, not invalid user intent.
+        # Keep the request resumable after verified operational repair.
+        _, base = intake_base(request.base.digest)
         try:
-            _, base = intake_base(request.base.digest)
             intent = build_candidate(
                 base,
                 request.patch,

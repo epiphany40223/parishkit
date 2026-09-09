@@ -17,6 +17,9 @@ PostgreSQL commits the pointer, request's Applied checkpoint, and value-free aud
 events together; failure of any effect rolls back all of them. Historical
 configuration rows remain immutable. The runtime record cannot be deleted or
 rewritten through a generic version-advancing update.
+Downgrade remains possible for empty/intake-only databases. Migration 0013
+refuses reversal before removing any protection if activation or post-intake
+checkpoint history exists; it never silently erases or downgrades that history.
 
 `DatabaseMaterializer` implements the existing `apply_version`/`recover_active`
 contract. `installation_lock` pins a direct PostgreSQL connection while a
@@ -31,7 +34,8 @@ Transaction-pooling proxies are incompatible with this session-lock protocol.
 fingerprint. Its append-only checkpoints are staged, validating, prepared,
 yaml_activated, and applied. Cancellation is allowed only from staged. Stale-base
 and invalid-candidate failures have fixed safe codes, never arbitrary exception
-text. Operational file/database/schema-environment failures retain a resumable
+text. Operational file/database/schema-environment and active-base verification
+failures retain a resumable
 checkpoint. Once YAML is selected, failure cannot discard that candidate: exact
 prepared-version recovery must complete first. Another request cannot repair or
 overwrite that mismatch. No implicit rebase, backward activation, or skipped
@@ -57,6 +61,13 @@ mutations still require their own serialization and fresh admission guards.
 with disposable files. It is not the OPS-04 bootstrap command or its offline
 interlock, and cannot apply requestless successors. Matching initialization can
 resume; a changed recipient or root cannot overwrite an initialized deployment.
+Runtime creation and its recipient commit with root activation, not before file
+work. An interrupted initial attempt therefore does not permanently freeze an
+uncommitted recipient; the exact prepared root can resume with corrected runtime
+input. Once activation commits, recipient changes require the future authorized
+runtime configuration workflow. Validation applies both the email validator and
+the database's shape restriction before any write. A pre-bootstrap digest is
+null, and request installation before initialization fails resumably.
 The complete Admin wizard and initial login-rule schema remain later work.
 
 Actor UUIDs are attribution, never authenticated Admin authority. Current role,

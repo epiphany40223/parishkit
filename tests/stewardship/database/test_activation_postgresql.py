@@ -6,6 +6,8 @@ from uuid import uuid4
 
 import pytest
 from django.db import IntegrityError, connection, connections, transaction
+from django.db.migrations.executor import MigrationExecutor
+from django.db.migrations.recorder import MigrationRecorder
 from django.db.models import F
 
 from parishkit.config import ConfigError
@@ -103,7 +105,16 @@ def test_initialization_is_testing_durable_and_idempotent(initialized):
 
 
 @pytest.mark.parametrize(
-    "recipient", [None, "", "private invalid", "a\r\nb@example.org", "a" * 255]
+    "recipient",
+    [
+        None,
+        "",
+        "private invalid",
+        "a\r\nb@example.org",
+        "a" * 255,
+        "admin@localhost",
+        '"a b"@example.org',
+    ],
 )
 def test_invalid_recipient_has_no_runtime_side_effects(tmp_path, recipient):
     """Validation excludes raw input from errors and commits nothing on failure."""
@@ -140,6 +151,143 @@ def test_changed_initialization_cannot_overwrite_runtime(initialized):
         installer.coherent_configuration(store).active_configuration_id
         == root.version_id
     )
+
+
+@pytest.mark.parametrize("boundary", ["write_version", "select"])
+def test_initial_interruption_does_not_freeze_runtime_recipient(
+    tmp_path, monkeypatch, boundary
+):
+    """Runtime creation belongs to activation, not a prematurely committed setup row."""
+    store, root = AuthorityStore(tmp_path, validate_sections), configuration_version()
+    original = getattr(store, boundary)
+
+    def interrupted(*args):
+        """Leave the actual file effect durable before losing its acknowledgement."""
+        original(*args)
+        raise OSError("synthetic interruption")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(store, boundary, interrupted)
+        with pytest.raises(OSError):
+            installer.prepare_initial_configuration(
+                store,
+                root,
+                testing_recipient="mistyped@example.org",
+                actor_id=uuid4(),
+                correlation_id=uuid4(),
+            )
+    assert not SystemConfiguration.objects.exists()
+    connections.close_all()
+    installer.prepare_initial_configuration(
+        store,
+        root,
+        testing_recipient="correct@example.org",
+        actor_id=uuid4(),
+        correlation_id=uuid4(),
+    )
+    assert (
+        installer.coherent_configuration(store).testing_recipient
+        == "correct@example.org"
+    )
+
+
+def test_prebootstrap_materializer_contract_and_request_remain_resumable(tmp_path):
+    """Prepared-only storage must not cause an ORM error or terminal request failure."""
+    store, root, actor = (
+        AuthorityStore(tmp_path, validate_sections),
+        configuration_version(),
+        uuid4(),
+    )
+    installer.prepare_snapshot(root, actor_id=actor, correlation_id=uuid4())
+    receipt = stage(root, actor)
+    materializer = installer.DatabaseMaterializer(
+        store, actor_id=actor, correlation_id=uuid4()
+    )
+    with materializer.lock():
+        assert materializer.active_digest() is None
+    with pytest.raises(ConfigError, match="not initialized"):
+        install(store, receipt)
+    assert (
+        request_status(request_id=receipt.request_id, actor_id=actor).state
+        == "validating"
+    )
+    installer.prepare_initial_configuration(
+        store,
+        root,
+        testing_recipient="testing@example.org",
+        actor_id=actor,
+        correlation_id=uuid4(),
+    )
+    assert install(store, receipt).state == "applied"
+
+
+def test_corrupt_active_base_is_resumable_after_repair(initialized):
+    """A damaged projection is not invalid intent; privileged repair enables retry."""
+    store, root, actor = initialized
+    receipt = stage(root, actor)
+    # Simulate storage corruption using the disposable migration-owner role;
+    # never provide this guard bypass through a runtime/operational API.
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "ALTER TABLE stewardship_parish DISABLE TRIGGER "
+            "stewardship_parish_immutable_guard_v1"
+        )
+        cursor.execute(
+            "UPDATE stewardship_parish SET name = %s WHERE configuration_id = %s",
+            ["corrupt", root.version_id],
+        )
+        cursor.execute(
+            "ALTER TABLE stewardship_parish ENABLE TRIGGER "
+            "stewardship_parish_immutable_guard_v1"
+        )
+    try:
+        with pytest.raises(ConfigError, match="complete prepared"):
+            install(store, receipt)
+        assert (
+            request_status(request_id=receipt.request_id, actor_id=actor).state
+            == "validating"
+        )
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "ALTER TABLE stewardship_parish DISABLE TRIGGER "
+                "stewardship_parish_immutable_guard_v1"
+            )
+            cursor.execute(
+                "UPDATE stewardship_parish SET name = %s WHERE configuration_id = %s",
+                [
+                    root.document()["sections"]["parish"][0]["values"]["name"],
+                    root.version_id,
+                ],
+            )
+            cursor.execute(
+                "ALTER TABLE stewardship_parish ENABLE TRIGGER "
+                "stewardship_parish_immutable_guard_v1"
+            )
+    assert install(store, receipt).state == "applied"
+
+
+@pytest.mark.parametrize("activated_request", [False, True])
+def test_downgrade_with_history_preserves_guards_and_migration_marker(
+    initialized, activated_request
+):
+    """Reject before removing protections, including bootstrap-only history."""
+    store, root, actor = initialized
+    if activated_request:
+        install(store, stage(root, actor))
+    before = SystemConfiguration.objects.get().active_configuration_id
+    with pytest.raises(IntegrityError, match="prevents this schema downgrade"):
+        MigrationExecutor(connection).migrate(
+            [
+                ("stewardship_accounts", "0010_request_intake_guards"),
+            ]
+        )
+    assert MigrationRecorder.Migration.objects.filter(
+        app="stewardship_accounts", name="0013_activation_guards"
+    ).exists()
+    assert SystemConfiguration.objects.get().active_configuration_id == before
+    with pytest.raises(IntegrityError), transaction.atomic():
+        SystemConfiguration.objects.update(version=F("version") + 1)
 
 
 def test_request_activation_status_and_historical_retry(initialized):

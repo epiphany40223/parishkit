@@ -198,6 +198,18 @@ class Migration(migrations.Migration):
     FOR EACH ROW EXECUTE FUNCTION stewardship_activation_effects_v1();
             """,
             reverse_sql="""
+    LOCK TABLE stewardship_config_checkpoint, stewardship_config_activation
+        IN ACCESS EXCLUSIVE MODE;
+    DO $$
+    BEGIN
+        IF EXISTS (SELECT 1 FROM stewardship_config_activation)
+           OR EXISTS (SELECT 1 FROM stewardship_config_checkpoint
+                      WHERE state NOT IN ('staged', 'cancelled')) THEN
+            RAISE EXCEPTION 'Activation history prevents this schema downgrade'
+                USING ERRCODE = '23514';
+        END IF;
+    END;
+    $$;
     DROP TRIGGER stewardship_activation_effects_v1 ON stewardship_config_activation;
     DROP FUNCTION stewardship_activation_effects_v1();
     DROP TRIGGER stewardship_activation_guard_v1 ON stewardship_config_activation;

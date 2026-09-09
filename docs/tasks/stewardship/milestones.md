@@ -1056,6 +1056,27 @@ The combined baseline/database coverage gate preserves complete scope and separa
 test-profile migration drift checks passed. Review rounds and final Compose/CI
 evidence follow below; this is not yet a review-gate release.
 
+Round 1: Pika `20260909-092104-842763` reviewed `98d7cd7` against `f939b65`.
+Both vendors completed without failure, mismatch, or degradation. Raw severities:
+five Medium, 16 Low, no High/Critical. All five validated Medium findings were
+accepted through delegated local-review-triage:
+
+| Source | Finding | Correction |
+| --- | --- | --- |
+| Claude C1 | Pre-bootstrap `.get()` violates nullable digest contract | Return null; request initialization failure stays resumable |
+| Claude C2 | Email validator admits values rejected by SQL | Apply the SQL shape restriction before any write; test localhost and quoted whitespace |
+| Claude C3 | Interrupted setup freezes recipient prematurely | Commit runtime creation/recipient with root activation; test file/selection interruptions |
+| Claude C4 | Active-base corruption terminally fails valid intent | Propagate base verification outside candidate-error classification; test repair/retry |
+| Codex X1 | Partial downgrade removes guards before old-state constraint fails | Reverse preflight locks/checks retained history before any removal; test populated downgrade refusal |
+
+All 38 focused activation PostgreSQL tests pass after these corrections. The
+16 below-cutoff Low findings are outside the mandatory Medium+ correction set.
+
+Round 1 post-fix validation passed: 1,079 baseline tests (167 opt-in skips),
+155 required PostgreSQL tests, all 30 Compose checks, and exact host/image
+parity over 1,246 collected IDs. Combined coverage: 97.70% lines / 95.55%
+branches. Ruff, formatting, tracked Markdown, and migration drift passed.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).
