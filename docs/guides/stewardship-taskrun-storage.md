@@ -21,6 +21,11 @@ The sequence increases monotonically, the domain-request UUID and task type
 remain unchanged, and a partial unique constraint admits at most one nonterminal
 run per chain. Retry-command UUIDs are permanently bound to a parent and initiating
 actor; exact repeated commands return the allocated run's current state.
+Fresh retry admission receives the failed parent with action `explicit_retry`;
+bound replays receive the allocated run with `explicit_retry_replay`, so current
+permission checks do not consume another allocation budget. Both replay bindings
+are checked before admission. The immutable status exposes the previous worker,
+parent and retry sequence for owning-service safety and budget checks.
 Failed originals are never reopened. Automatic retries instead reuse their run
 and increment the attempt number on the next claim.
 
@@ -44,6 +49,11 @@ checks. It runs under the transaction/root lock and must not perform network,
 filesystem or provider side effects. It may compose related database writes;
 any exception rolls those back with task state/history. The supplied correlation
 UUID also binds the observability context for composed database writes.
+Each primitive supplies its own savepoint inside an outer transaction. Callers
+may catch a rejection outside the primitive and continue composing work; task
+and callback writes from the rejected operation are rolled back. SQL transition
+violations raise `IntegrityError`; this low-level API does not promise stable SQL
+message text or replace the owning service's user-facing error mapping.
 
 For a prospective enqueue the callback sees the generated operation/type/request
 identity before insertion. Existing runs serialize independently under their root
@@ -61,7 +71,8 @@ safe retry, completion, failure or cancellation. Expiry is never evidence that
 an external operation failed, and generic task success never implies semantic
 mail delivery or fulfillment.
 
-All timing uses PostgreSQL's clock. Internal claim/heartbeat durations are bounded
+All deadlines use the same PostgreSQL statement clock as their guard validation.
+Internal claim/heartbeat durations are bounded
 to 1–300 seconds and retry waits to 1–86,400 seconds; BG-01 will select defaults
 and renew leases for long jobs. Progress is a monotonic bounded `(current, total)`
 pair within each attempt; each claim resets both counters to zero while retaining

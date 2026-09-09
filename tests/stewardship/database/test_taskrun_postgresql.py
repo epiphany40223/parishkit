@@ -478,6 +478,69 @@ def test_retry_claim_resets_attempt_progress():
     ).exists()
 
 
+def test_retry_replay_checks_binding_before_admission():
+    """A replay checks current policy without posing as a fresh budget allocation."""
+    parent = act(act(new(), "claim"), "permanent_failure")
+    command, actor, calls = uuid4(), uuid4(), []
+    kwargs = dict(
+        command_id=command,
+        actor_id=actor,
+        admit=lambda action, status: calls.append((action, status)),
+    )
+    child = retry(parent, **kwargs)
+    assert retry(parent, **kwargs) == child
+    assert calls == [("explicit_retry", parent), ("explicit_retry_replay", child)]
+    assert child.parent_id == parent.run_id and child.retry_sequence == 1
+    for target, changes in ((parent, {"actor_id": uuid4()}), (child, {})):
+        with pytest.raises(ValueError, match="already bound"):
+            retry(target, **(kwargs | changes))
+    assert len(calls) == 2
+    with pytest.raises(PermissionError):
+        retry(parent, **(kwargs | {"admit": deny_replay}))
+
+
+def deny_replay(action, status):
+    """Synthetic revoked permission must still deny correctly bound retries."""
+    assert action == "explicit_retry_replay"
+    raise PermissionError("Synthetic revoked permission")
+
+
+def test_statement_clock_owns_full_lease_and_retry_interval():
+    """Minimum intervals are measured from the write, not an earlier clock read."""
+    status = act(new(), "claim", lease_seconds=1)
+    run = TaskRun.objects.get(pk=status.run_id)
+    assert (run.lease_expires_at - run.updated_at).total_seconds() == 1
+    assert status.worker_id == run.worker_id
+    # Use a separate comfortably live claim for the retry transition so this
+    # assertion never depends on catching the preceding one-second lease.
+    waiting = act(act(new(), "claim"), "retryable_failure", retry_seconds=1)
+    run = TaskRun.objects.get(pk=waiting.run_id)
+    assert (run.not_before - run.updated_at).total_seconds() == 1
+
+
+def test_rejected_transition_preserves_caller_transaction():
+    """The helper's own savepoint isolates a SQL failure and callback effects."""
+    status = new()
+
+    def admitted(action, receipt):
+        """This admission write belongs to the rejected operation, not its caller."""
+        AuditEvent.objects.create(event_type="synthetic_rejected_callback")
+
+    with transaction.atomic():
+        AuditEvent.objects.create(event_type="synthetic_outer_before")
+        with pytest.raises(IntegrityError):
+            act(status, "complete", admit=admitted)
+        AuditEvent.objects.create(event_type="synthetic_outer_after")
+        assert not connection.needs_rollback
+    assert (
+        AuditEvent.objects.filter(event_type__startswith="synthetic_outer").count() == 2
+    )
+    assert not AuditEvent.objects.filter(
+        event_type="synthetic_rejected_callback"
+    ).exists()
+    assert TaskRun.objects.get(pk=status.run_id).version == 1
+
+
 @pytest.mark.parametrize("keyed", [False, True])
 def test_unrelated_enqueues_do_not_share_an_allocation_lock(keyed):
     """Both callbacks must run concurrently even inside caller-owned transactions."""

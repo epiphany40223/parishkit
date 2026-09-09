@@ -41,6 +41,8 @@ def test_invalid_enqueue_never_reaches_database(changes):
         {"action": []},
         {"expected_version": True},
         {"expected_version": 0},
+        {"actor_id": None},
+        {"action": "lease_expired", "lease_seconds": None},
         {"actor_id": "private value"},
         {"lease_seconds": 0},
         {"lease_seconds": 301},

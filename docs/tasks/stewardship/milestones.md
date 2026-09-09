@@ -1333,7 +1333,31 @@ wall-clock race. Below-cutoff findings are not accepted pending work.
 Round-1 post-fix quality validation passes 1,104 baseline and 314 PostgreSQL tests
 with 98.17% line / 96.29% branch coverage (`round1.json` alongside the initial
 report). Ruff, formatting, Markdown, whitespace and migration drift also pass.
-Review rounds 2–3 remain in progress; this checkpoint is not review or merge approval.
+Round-1 post-fix Docker checks also pass: 30 Compose cases, 1,104 containerized
+baseline tests and exact host/image collection parity of 1,430 IDs.
+
+Review round 2 (`20260909-145945-9227be`) examined
+`f328a8ca74ff634b6cf33f45399be013e8db55ba`; both vendor reviews completed without
+degradation or verdict mismatch. Six validated findings were Medium, with no
+High/Critical findings. Accepted corrections move action-specific actor validation
+before database access, compute deadlines in the UPDATE statement's clock,
+expose immutable prior-worker/parent/retry-position metadata, and validate retry
+bindings before callbacks. Both reviewers reported that last issue; its one fix
+also distinguishes bound replay admission from fresh retry-budget allocation.
+
+The remaining finding claimed SQL rejection aborts the caller's entire outer
+transaction. Rejected: `_locked` already wraps every mutation/callback in its own
+`transaction.atomic()` savepoint. New coverage catches an SQL rejection outside
+the primitive, commits surrounding domain writes and proves the rejected callback
+write rolled back. The guide clarifies the low-level exception/savepoint contract
+without duplicating canonical SQL transition logic. Focused suites pass 61
+PostgreSQL cases and 27 pure validation cases.
+
+Round-2 post-fix quality validation passes 1,106 baseline and 317 PostgreSQL tests,
+with 98.20% line / 96.44% branch coverage (`round2.json` alongside the initial
+report). Ruff, formatting, Markdown, whitespace and both migration-drift profiles
+also pass. Review round 3 remains in progress; this checkpoint is not review or
+merge approval.
 
 ## Gate 1: Foundation and security
 

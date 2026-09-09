@@ -15,6 +15,7 @@ from datetime import timedelta
 from uuid import UUID, uuid4
 
 from django.db import connection, transaction
+from django.db.models.functions import Now
 
 from parishkit.stewardship.observability import correlation
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
@@ -34,6 +35,9 @@ class TaskStatus:
     version: int
     attempt: int
     fence: int
+    worker_id: UUID | None
+    parent_id: UUID | None
+    retry_sequence: int
 
 
 def _status(run):
@@ -47,6 +51,9 @@ def _status(run):
         run.version,
         run.attempt,
         run.fence,
+        run.worker_id,
+        run.parent_id,
+        run.retry_sequence,
     )
 
 
@@ -87,13 +94,6 @@ def _locked(correlation_id, *, root_id=None, enqueue_key=None):
         if root_id is not None:
             TaskRun.objects.select_for_update().get(pk=root_id)
         yield
-
-
-def _now():
-    """Use the database's clock for scheduling and lease comparisons."""
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT statement_timestamp()")
-        return cursor.fetchone()[0]
 
 
 def enqueue(
@@ -163,13 +163,13 @@ def retry_failed(*, run_id, command_id, actor_id, correlation_id, admit):
     original = TaskRun.objects.get(pk=run_id)
     with _locked(correlation_id, root_id=original.root_id):
         original.refresh_from_db()
-        _admit(admit, "explicit_retry", _status(original))
         existing = TaskRun.objects.filter(
             root_id=original.root_id, retry_command_id=command_id
         ).first()
         if existing is not None:
             if existing.parent_id != run_id or existing.initiated_by_id != actor_id:
                 raise ValueError("Task retry command is already bound.")
+            _admit(admit, "explicit_retry_replay", _status(existing))
             return _status(existing)
         latest = (
             TaskRun.objects.filter(root_id=original.root_id)
@@ -178,6 +178,7 @@ def retry_failed(*, run_id, command_id, actor_id, correlation_id, admit):
         )
         if latest.pk != run_id or original.state != "failed":
             raise StorageInvariantError("Only the latest failed run can be retried.")
+        _admit(admit, "explicit_retry", _status(original))
         run = TaskRun(
             root_id=original.root_id,
             parent_id=run_id,
@@ -234,6 +235,10 @@ def change_run(
     }
     if type(action) is not str or action not in actions:
         raise ValueError("Unknown task action.")
+    if action == "claim":
+        _uuid(actor_id)
+    elif action == "lease_expired" and actor_id is not None:
+        raise ValueError("Lease expiry has no fabricated worker actor.")
     if type(expected_version) is not int or expected_version < 1:
         raise ValueError("A positive task version is required.")
     for value, needed, maximum in (
@@ -272,24 +277,22 @@ def change_run(
                 raise StaleRecordError("The task claim is no longer owned.")
         elif fence is not None:
             raise ValueError("Unexpected task fencing token.")
-        now = _now()
         if action == "claim":
-            _uuid(actor_id)
             run.worker_id = actor_id
             run.fence += 1
             run.attempt += 1
             run.progress_current = run.progress_total = 0
         elif action == "lease_expired":
-            if actor_id is not None:
-                raise ValueError("Lease expiry has no fabricated worker actor.")
             run.fence += 1
         if action in ("claim", "heartbeat"):
-            run.heartbeat_at = now
-            run.lease_expires_at = now + timedelta(seconds=lease_seconds)
+            # Expressions share the UPDATE statement's clock with the SQL guard;
+            # a separate clock-read round trip could consume the whole lease.
+            run.heartbeat_at = Now()
+            run.lease_expires_at = Now() + timedelta(seconds=lease_seconds)
         elif actions[action] != "running":
             run.lease_expires_at = None
         if retry_seconds is not None:
-            run.not_before = now + timedelta(seconds=retry_seconds)
+            run.not_before = Now() + timedelta(seconds=retry_seconds)
         if progress is not None:
             run.progress_current, run.progress_total = progress
         run.state, run.action = actions[action], action
