@@ -946,6 +946,32 @@ Ruff, formatting, tracked Markdown, both profiles' migration drift, Django syste
 checks, and whitespace checks passed. This increment is ready for PR/CI handoff;
 it does not activate configuration or close any partially delivered DAT-01 task.
 
+The human merged [PR #10](https://github.com/epiphany40223/parishkit/pull/10)
+at 03:16:48 UTC on September 9, 2026, merge `c4366cd`, final head `8901bf8`.
+[CI run 34306442600](https://github.com/epiphany40223/parishkit/actions/runs/34306442600)
+completed successfully at 03:17:56 UTC, including the Docker check that was still
+running at merge time. All three jobs and DCO passed. This records the human's
+merge, not an agent merge or deployment.
+
+### Configuration-request intake increment
+
+Branch `pr/stewardship-configuration-requests` starts at refreshed `origin/main`
+merge `c4366cd`. The [owning DAT-01 checklist](data.md#dat-01-storage-conventions-and-base-records)
+and [intake guide](../../guides/stewardship-configuration-requests.md) define the
+partial delivery and next installer/runtime/secret work. No installer, Admin
+authorization, Applied response, or production startup is enabled. Review rounds
+and PR handoff remain pending for this increment; M1 and G1 remain incomplete.
+
+Initial validation: 1,070 host/image baseline passes, 118 explicit opt-in skips,
+exact collection parity across 1,188 IDs; 106 required PostgreSQL tests plus 28
+pure patch tests passed. The focused 49-test request suite covers 182/184
+statements and 58/60 branches over the three new modules. Whole stewardship
+baseline coverage is 85.93% lines / 82.66% branches. All 30 Compose checks passed
+with image `sha256:3210e10338e9720645a7eb7ab069d78257077f98c6142f8d8dfc17b0eb4c10d2`.
+Ruff, format, Markdown, migration drift, and whitespace passed. Local artifacts
+are `initial-corrected-coverage.json` and `initial-database-coverage.json` under
+`/tmp/stewardship-request-evidence.DwDSa0` (not committed runtime output).
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).
