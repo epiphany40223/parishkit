@@ -972,6 +972,30 @@ Ruff, format, Markdown, migration drift, and whitespace passed. Local artifacts
 are `initial-corrected-coverage.json` and `initial-database-coverage.json` under
 `/tmp/stewardship-request-evidence.DwDSa0` (not committed runtime output).
 
+Request intake round 1 reviewed `364ac2d` against `c4366cd`, session
+`20260908-233350-a8bd3b`. Permission preflight and both reviewers completed
+normally, without failures, mismatches, or degradation. Finalize returned COMMENT:
+seven Medium findings from 21 raw, 14 Low below cutoff, no High/Critical.
+
+| Finding | Disposition and evidence |
+| --- | --- |
+| C1 | Fixed: intake verifies only its selected canonical snapshot/projections and direct predecessor digest; full preparation still verifies all ancestry. Empty/malformed containers fail before queries. Tests at depths 1 and 40 prove constant canonical parsing and bounded query counts for intake/retry. Integration additions use only a UUID-link/historical-binding query, not historical JSON hydration. |
+| C2 | Fixed: privileged disposable-data corruption tests remove or alter a base projection and verify rejection without request, checkpoint, or audit rows. |
+| C3 | Fixed: updates cannot contain kind; additions check historical kind/ID mappings. Tests reject retired-ID reuse, kind replacement, and remove/add identity replacement while allowing the original binding's re-addition. |
+| C4 | Fixed: updates cannot contain credential fingerprints, and additions require null. Only the future target-specific secret workflow can establish replacement evidence; activation's file/consumer verification obligation is explicit. |
+| X1 | Duplicate of C3; resolved by the same stable-identity checks and regressions. |
+| X2 | Fixed: choose the request schema and validate its patch after acquiring the per-key lock. An independent-connection regression commits a v1 winner after local preflight and proves its format wins over the loser's stricter current builder. |
+| X3 | Duplicate of C4; resolved by the same credential-evidence restriction and tests. |
+
+Post-round-1 validation: 1,076 host/image baseline passes, 128 explicit opt-in
+skips, exact parity across 1,204 IDs; 203 combined tests (116 required PostgreSQL,
+34 patch, 53 configuration-schema) passed. Whole stewardship coverage is 84.78%
+lines / 81.01% branches, artifact `round1-coverage.json` in the evidence directory
+above. All 30 Compose checks passed with rebuilt image
+`sha256:89c82dbd14b3e0927886251c393ed7934c44d50ab275b365fd659426dacce7ab`.
+Ruff, formatting, Markdown, migration drift, and whitespace passed. One review/fix
+round is complete; two more are required before PR handoff.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).

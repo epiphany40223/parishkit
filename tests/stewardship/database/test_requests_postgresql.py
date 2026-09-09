@@ -347,3 +347,188 @@ def test_request_constraints_reject_forged_direct_inserts(intake):
     assert ConfigurationChangeRequest.objects.count() == 1
     assert ConfigurationRequestCheckpoint.objects.count() == 1
     assert AuditEvent.objects.count() == 1
+
+
+@pytest.mark.parametrize("damage", ["missing", "changed"])
+def test_incomplete_base_projection_cannot_accept_intake(intake, damage):
+    """Privileged synthetic corruption is rejected before any intent or audit write."""
+    with connection.cursor() as cursor:
+        cursor.execute("ALTER TABLE stewardship_parish DISABLE TRIGGER USER")
+        try:
+            cursor.execute(
+                "DELETE FROM stewardship_parish"
+                if damage == "missing"
+                else "UPDATE stewardship_parish SET name = 'Corrupt'"
+            )
+        finally:
+            cursor.execute("ALTER TABLE stewardship_parish ENABLE TRIGGER USER")
+    with pytest.raises(ConfigError, match="complete prepared"):
+        record_request(**intake)
+    assert not ConfigurationChangeRequest.objects.exists()
+    assert not ConfigurationRequestCheckpoint.objects.exists()
+    assert not AuditEvent.objects.exists()
+
+
+@pytest.mark.parametrize("depth", [1, 40])
+def test_intake_and_retry_do_not_reload_canonical_ancestry(depth, monkeypatch):
+    """Parish autosave reads one snapshot even with a long retained history."""
+    from django.test.utils import CaptureQueriesContext
+
+    from parishkit.stewardship.accounts import configuration_snapshots, request_patch
+
+    version = configuration_version()
+    for _ in range(depth):
+        prepare_snapshot(version, actor_id=uuid4(), correlation_id=uuid4())
+        if _ < depth - 1:
+            version = configuration_version(successor_document(version))
+    parsed = []
+    original = configuration_snapshots.parse_version
+
+    def observe(document, **kwargs):
+        """Count actual canonical parsing, not just SQL round trips."""
+        parsed.append(document["version_id"])
+        return original(document, **kwargs)
+
+    monkeypatch.setattr(configuration_snapshots, "parse_version", observe)
+    monkeypatch.setattr(request_patch, "parse_version", observe)
+    arguments = {
+        "base_digest": version.digest,
+        "patch": parish_patch(version, name="New"),
+        "actor_id": uuid4(),
+        "request_key": uuid4(),
+        "correlation_id": uuid4(),
+    }
+    for _ in range(2):
+        parsed.clear()
+        with CaptureQueriesContext(connection) as queries:
+            record_request(**arguments)
+        assert len(parsed) == 3
+        assert parsed[:2] == [str(version.version_id)] * 2
+        assert not any("RECURSIVE" in item["sql"] for item in queries)
+        assert len(queries) <= 9
+
+
+def test_bad_patch_shape_performs_no_database_work(intake, django_assert_num_queries):
+    """Reject empty/malformed containers before reading any configuration document."""
+    with django_assert_num_queries(0), pytest.raises(ConfigError):
+        record_request(**{**intake, "patch": []})
+
+
+@pytest.mark.parametrize("reuse", ["kind", "id", "original"])
+def test_retired_integration_identity_admission(reuse):
+    """Only the original kind/ID binding may be re-added after a historical removal."""
+    version = configuration_version()
+    original = version.document()["sections"]["integrations"][0]
+    prepare_snapshot(version, actor_id=uuid4(), correlation_id=uuid4())
+    removed = successor_document(version)
+    removed["sections"]["integrations"] = []
+    base = configuration_version(removed)
+    prepare_snapshot(base, actor_id=uuid4(), correlation_id=uuid4())
+    values = {**original["values"], "credential_fingerprint": None}
+    identifier = original["id"]
+    if reuse == "kind":
+        identifier = str(uuid4())
+    if reuse == "id":
+        values = {
+            "kind": "slack",
+            "settings": {"channel_id": "example"},
+            "credential_fingerprint": None,
+        }
+    patch = [
+        {
+            "section": "integrations",
+            "operation": "add",
+            "id": identifier,
+            "values": values,
+        }
+    ]
+    arguments = {
+        "base_digest": base.digest,
+        "patch": patch,
+        "actor_id": uuid4(),
+        "request_key": uuid4(),
+        "correlation_id": uuid4(),
+    }
+    if reuse == "original":
+        assert record_request(**arguments).state == "staged"
+    else:
+        with pytest.raises(ConfigError, match="identities"):
+            record_request(**arguments)
+        assert not ConfigurationChangeRequest.objects.exists()
+
+
+def test_remove_add_cannot_replace_current_integration_id(intake):
+    """A disjoint remove/add pair is not an escape from stable historical bindings."""
+    from parishkit.stewardship.accounts.configuration_models import AppliedIntegration
+
+    integration = AppliedIntegration.objects.get()
+    patch = [
+        {
+            "section": "integrations",
+            "operation": "remove",
+            "id": str(integration.record_id),
+        },
+        {
+            "section": "integrations",
+            "operation": "add",
+            "id": str(uuid4()),
+            "values": {
+                "kind": integration.kind,
+                "settings": integration.settings,
+                "credential_fingerprint": None,
+            },
+        },
+    ]
+    with pytest.raises(ConfigError, match="identities"):
+        record_request(**{**intake, "patch": patch})
+
+
+def test_concurrent_winner_selects_stored_schema_before_validation(intake, monkeypatch):
+    """A committed old-schema winner beats a stricter new process before key claim."""
+    from parishkit.stewardship.accounts import configuration_requests, request_patch
+    from parishkit.stewardship.accounts.request_admission import intake_base
+
+    base, version = intake_base(intake["base_digest"])
+    intent = request_patch.build_candidate(
+        version, intake["patch"], candidate_id=uuid4()
+    )
+
+    def old_process():
+        """Model a separate process that already validated the v1 intent."""
+        try:
+            return ConfigurationChangeRequest.objects.create(
+                base_id=base.pk,
+                actor_id=intake["actor_id"],
+                request_key=intake["request_key"],
+                correlation_id=uuid4(),
+                request_schema="parish-integrations-patch-v1",
+                patch=intent.patch(),
+                payload_fingerprint=intent.payload_fingerprint,
+                candidate_version_id=intent.candidate.version_id,
+                candidate_digest=intent.candidate.digest,
+            ).pk
+        finally:
+            connections.close_all()
+
+    def reject_new(*args, **kwargs):
+        """This schema must not run once the old process has won the immutable key."""
+        pytest.fail("The retry used the loser's current schema")
+
+    monkeypatch.setattr(configuration_requests, "REQUEST_SCHEMA", "future-v2")
+    monkeypatch.setattr(
+        request_patch, "BUILDERS", {**request_patch.BUILDERS, "future-v2": reject_new}
+    )
+    winner = []
+
+    def interleave(execute, sql, params, many, context):
+        """Commit the competing process after local preflight, before the key lock."""
+        if "pg_advisory_xact_lock" in sql:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                winner.append(pool.submit(old_process).result(timeout=10))
+        return execute(sql, params, many, context)
+
+    with connection.execute_wrapper(interleave):
+        receipt = record_request(**intake)
+    assert receipt.request_id == winner[0]
+    assert ConfigurationChangeRequest.objects.count() == 1
+    assert AuditEvent.objects.count() == 1

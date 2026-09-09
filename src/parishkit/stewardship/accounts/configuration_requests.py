@@ -22,10 +22,7 @@ from django.db import connection, transaction
 from parishkit.config import ConfigError
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
-from .authority import parse_version
-from .configuration_models import AppliedConfigurationVersion
-from .configuration_schema import validator_for
-from .configuration_snapshots import is_prepared
+from .request_admission import check_historical_additions, intake_base
 from .request_models import ConfigurationChangeRequest, ConfigurationRequestCheckpoint
 from .request_patch import REQUEST_SCHEMA, build_candidate
 
@@ -83,9 +80,10 @@ def _checkpoint(request, *, sequence, state, actor_id, correlation_id):
 def record_request(*, base_digest, patch, actor_id, request_key, correlation_id):
     """Persist one validated intent; identical actor/key retries return its state.
 
-    Validation happens outside the per-key transaction lock. The unique actor/key
-    constraint independently prevents duplicate records. No current-authority or
-    role policy is inferred from a prepared base or from possession of a key.
+    The base check is bounded to one snapshot, not an entire canonical lineage.
+    Schema selection and patch validation occur under the per-key lock so a
+    concurrent winner always determines the frozen retry format. No current-
+    authority or role policy is inferred from a prepared base or a key.
     """
     _identities(actor_id, request_key, correlation_id)
     _own_transaction()
@@ -94,21 +92,9 @@ def record_request(*, base_digest, patch, actor_id, request_key, correlation_id)
         or re.fullmatch(r"[0-9a-f]{64}", base_digest) is None
     ):
         raise ConfigError("A valid base configuration digest is required.")
-    base = AppliedConfigurationVersion.objects.filter(digest=base_digest).first()
-    if base is None or not is_prepared(base_digest):
-        raise ConfigError("A complete prepared base configuration is required.")
-    # Use the same canonical envelope serializer as preparation, not a second
-    # digest implementation that can drift with JSON presentation.
-    version = parse_version(
-        base.canonical_document, validate_sections=validator_for(base.validation_schema)
-    )
-    previous = ConfigurationChangeRequest.objects.filter(
-        actor_id=actor_id, request_key=request_key
-    ).first()
-    schema = previous.request_schema if previous is not None else REQUEST_SCHEMA
-    intent = build_candidate(
-        version, patch, candidate_id=uuid4(), request_schema=schema
-    )
+    if type(patch) is not list or not 1 <= len(patch) <= 100:
+        raise ConfigError("Invalid or unsupported configuration patch.")
+    base, version = intake_base(base_digest)
     key = int.from_bytes(
         hashlib.sha256(actor_id.bytes + request_key.bytes).digest()[:4],
         "big",
@@ -122,10 +108,15 @@ def record_request(*, base_digest, patch, actor_id, request_key, correlation_id)
             .filter(actor_id=actor_id, request_key=request_key)
             .first()
         )
+        schema = existing.request_schema if existing is not None else REQUEST_SCHEMA
+        intent = build_candidate(
+            version, patch, candidate_id=uuid4(), request_schema=schema
+        )
         if existing is not None:
             if existing.payload_fingerprint != intent.payload_fingerprint:
                 raise ConfigError("Request key is already bound to another intent.")
             return _status(existing)
+        check_historical_additions(base.pk, intent.patch())
         request = ConfigurationChangeRequest.objects.create(
             base=base,
             patch=intent.patch(),

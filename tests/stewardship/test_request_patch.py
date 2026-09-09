@@ -177,3 +177,56 @@ def test_unknown_request_schema_is_not_silently_upgraded():
             candidate_id=uuid4(),
             request_schema="private-unknown-schema",
         )
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {
+            "kind": "email",
+            "settings": {"sender": "x@example.org", "reply_to": "x@example.org"},
+        },
+        {"kind": "parishsoft"},
+        {"credential_fingerprint": "b" * 64},
+        {"credential_fingerprint": "a" * 64},
+        {"credential_fingerprint": None},
+    ],
+)
+def test_integration_identity_and_secret_evidence_are_not_patchable(values):
+    """Ordinary updates cannot rebind a target or manufacture credential evidence."""
+    base = configuration_version()
+    identifier = base.document()["sections"]["integrations"][0]["id"]
+    with pytest.raises(ConfigError):
+        build_candidate(
+            base,
+            [
+                {
+                    "section": "integrations",
+                    "id": identifier,
+                    "operation": "update",
+                    "values": values,
+                }
+            ],
+            candidate_id=uuid4(),
+        )
+
+
+def test_new_integration_cannot_claim_an_installed_credential():
+    """Only the target credential workflow may later establish its fingerprint."""
+    with pytest.raises(ConfigError):
+        build_candidate(
+            configuration_version(),
+            [
+                {
+                    "section": "integrations",
+                    "id": str(uuid4()),
+                    "operation": "add",
+                    "values": {
+                        "kind": "slack",
+                        "settings": {"channel_id": "example"},
+                        "credential_fingerprint": "a" * 64,
+                    },
+                }
+            ],
+            candidate_id=uuid4(),
+        )

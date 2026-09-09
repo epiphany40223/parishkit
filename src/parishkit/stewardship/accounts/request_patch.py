@@ -95,6 +95,14 @@ def _build_v1_candidate(base, patch, *, candidate_id):
             values = operation["values"]
             if type(values) is not dict or not values:
                 _invalid()
+            if section == "integrations":
+                if action == "add":
+                    if values.get("credential_fingerprint") is not None:
+                        _invalid()
+                elif "kind" in values or "credential_fingerprint" in values:
+                    # These are identity/installer evidence, not Admin-editable
+                    # settings. Even resubmitting an unchanged value is refused.
+                    _invalid()
             if action == "add":
                 records.append({"id": identifier, "values": values})
             else:
