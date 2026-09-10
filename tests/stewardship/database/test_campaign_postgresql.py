@@ -893,3 +893,110 @@ def test_timezone_rule_drift_fails_closed_without_rewriting_history(
         patch.setattr(projections, "campaign_values", drift)
         assert not is_prepared(result.applied_digest)
     assert is_prepared(result.applied_digest)
+
+
+@pytest.mark.parametrize("local", ["2026-01-15T12:00:00", "2026-07-15T12:00:00"])
+def test_database_timezone_catalog_resolves_every_frozen_name(local):
+    """All names, including omitted aliases and ambiguous abbreviations, agree."""
+    from parishkit.stewardship.campaigns.intervals import resolve_local
+    from parishkit.stewardship.schema_primitives import timezone_names
+
+    wall = datetime.fromisoformat(local)
+    names = sorted(timezone_names())
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT zone, stewardship_resolve_local_v1(%s, zone) "
+            "FROM unnest(%s::text[]) zone",
+            [wall, names],
+        )
+        actual = dict(cursor.fetchall())
+    assert actual == {name: resolve_local(wall, name) for name in names}
+
+
+@pytest.mark.parametrize("confirmed", [False, True])
+def test_raw_financial_overlap_requires_confirmation(tmp_path, confirmed):
+    """Valid year length does not imply consent to overlap the campaign interval."""
+    _, root, _ = initialized(tmp_path)
+    row = campaign(
+        modules=["financial"],
+        financial=financial(
+            start="2026-01-01",
+            end="2026-12-31",
+            overlap_confirmed=confirmed,
+        ),
+    )
+    if confirmed:
+        with transaction.atomic():
+            raw_campaign_snapshot(root, row, [])
+    else:
+        with (
+            pytest.raises(IntegrityError, match="overlap requires confirmation"),
+            transaction.atomic(),
+        ):
+            raw_campaign_snapshot(root, row, [])
+
+
+@pytest.mark.parametrize("affected", ["campaign", "schedule"])
+def test_database_rule_drift_invalidates_retained_lineage(tmp_path, affected):
+    """SQL-only drift must fail verification, even when Python rules are unchanged."""
+    from django.test.utils import CaptureQueriesContext
+
+    store, root, actor = initialized(tmp_path)
+    first, row, mail = add_draft(store, root, actor)
+    version = configuration_version(
+        AppliedConfigurationVersion.objects.get(
+            pk=first.applied_version_id
+        ).canonical_document
+    )
+    result = change(
+        store,
+        version,
+        actor,
+        [
+            {
+                "operation": "update",
+                "section": "campaigns",
+                "id": row["id"],
+                "values": {"end_date": "2026-11-01"},
+            },
+            {
+                "operation": "update",
+                "section": "schedules",
+                "id": mail["id"],
+                "values": {"time": "10:00:00"},
+            },
+        ],
+    )
+    assert is_prepared(result.applied_digest)
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT pg_get_functiondef("
+            "'stewardship_resolve_local_v1(timestamp,text)'::regprocedure)"
+        )
+        original = cursor.fetchone()[0]
+        cursor.execute(
+            original.replace(
+                "stewardship_resolve_local_v1", "stewardship_test_original_resolver", 1
+            )
+        )
+        condition = (
+            "wall = timestamp '2026-11-01 00:00:00'"
+            if affected == "campaign"
+            else "wall::time = time '09:00:00'"
+        )
+        cursor.execute(
+            "CREATE OR REPLACE FUNCTION stewardship_resolve_local_v1"
+            "(wall timestamp, zone text) RETURNS timestamptz LANGUAGE sql "
+            "STABLE STRICT AS $$ "
+            "SELECT stewardship_test_original_resolver(wall, zone) + "
+            f"CASE WHEN {condition} THEN interval '1 hour' ELSE interval '0' END $$"
+        )
+        # Only the older projection differs; the whole lineage must still fail.
+        with CaptureQueriesContext(connection) as queries:
+            assert not is_prepared(result.applied_digest)
+        assert sum("SELECT NOT EXISTS" in query["sql"] for query in queries) == 1
+        cursor.execute(original)
+        cursor.execute(
+            "DROP FUNCTION stewardship_test_original_resolver(timestamp,text)"
+        )
+    assert is_prepared(result.applied_digest)

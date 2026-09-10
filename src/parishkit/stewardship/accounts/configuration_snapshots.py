@@ -113,7 +113,7 @@ def _history(snapshot):
 
 
 def _load_history(digest):
-    """Load an entire immutable lineage in three queries, independent of depth.
+    """Load an immutable lineage with bounded query count, independent of depth.
 
     UNION deduplicates identity pairs, so even a forged cycle terminates in SQL;
     the Python verifier then explicitly rejects it. Projection prefetches avoid
@@ -151,11 +151,19 @@ def _load_history(digest):
         "addressrule_set__grants",
         "ministryassignment_set",
     )
+    campaign_rows = [
+        row for row in rows if row.validation_schema == "campaign-foundation-v3"
+    ]
     prefetch_related_objects(
-        [row for row in rows if row.validation_schema == "campaign-foundation-v3"],
+        campaign_rows,
         "campaign_configurations",
         "schedule_revisions",
     )
+    if campaign_rows:
+        from parishkit.stewardship.campaigns.projections import sql_boundaries_match
+
+        if not sql_boundaries_match([row.pk for row in campaign_rows]):
+            return None
     return next(row for row in rows if row.digest == digest)
 
 

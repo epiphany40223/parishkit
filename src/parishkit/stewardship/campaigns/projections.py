@@ -4,6 +4,44 @@ from .configuration import campaign_values, schedule_values
 from .models import CampaignConfiguration, ScheduleRevision
 
 
+def sql_boundaries_match(configuration_ids):
+    """Recheck retained UTC projections against current database timezone rules.
+
+    One set-based query verifies the loaded lineage, rather than adding a query
+    per historical snapshot. Database/environment failures propagate separately
+    from a resolved-boundary mismatch. No stored dates or rules are rewritten.
+    """
+    from django.db import connection
+
+    if not configuration_ids:
+        return True
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """SELECT NOT EXISTS (
+                SELECT 1 FROM stewardship_campaign_configuration c
+                WHERE c.configuration_id = ANY(%s)
+                  AND (c.starts_at IS DISTINCT FROM stewardship_resolve_local_v1(
+                        c.start_date::timestamp, c.timezone)
+                    OR c.ends_at IS DISTINCT FROM stewardship_resolve_local_v1(
+                        (c.end_date + 1)::timestamp, c.timezone))
+            ) AND NOT EXISTS (
+                SELECT 1 FROM stewardship_schedule_revision s
+                JOIN stewardship_campaign_configuration c
+                  ON c.configuration_id = s.configuration_id
+                 AND c.record_id = s.campaign_id
+                WHERE s.configuration_id = ANY(%s)
+                  AND s.due_at IS DISTINCT FROM CASE
+                    WHEN s.kind IN ('initial', 'reminder') THEN
+                      stewardship_resolve_local_v1(
+                        (s.values->>'date')::date + (s.values->>'time')::time,
+                        c.timezone)
+                    ELSE NULL END
+            )""",
+            [configuration_ids, configuration_ids],
+        )
+        return cursor.fetchone()[0]
+
+
 def prepare_campaigns(snapshot, document, attribution):
     """Persist only validated configuration; preparation never creates a current
     draft.
