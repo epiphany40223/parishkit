@@ -1,0 +1,95 @@
+# Stewardship credential installer protocol
+
+This Phase 1B implementation extends the historical
+[secret-request storage increment](stewardship-secret-requests.md) with the
+[architecture's replacement contract](../specs/stewardship/architecture/spec.md#configuration-and-secrets).
+It is not a production launch or an Admin credential-editor completion claim.
+The [Phase 1B checkpoint](stewardship-phase-1b.md) tracks remaining scope and reviews.
+
+## Queue and file ownership
+
+The PostgreSQL request/staging tables are the target-specific queue. Broker task
+bodies do not contain candidate credentials or ciphertext. A request and its
+target-key-sealed staging row commit atomically; identical retries compare the
+safe candidate fingerprint, not randomized encryption bytes. Request UUIDs,
+staging references and terminal metadata cannot be rebound to later requests.
+
+The web database role can insert sealed staging and read only its non-secret
+metadata columns. It cannot select ciphertext or advance installation states.
+Row-level security limits an installer to its own target. The installer admission
+check requires the actual login and effective SQL role to match exactly, rejects
+superuser/bypass/role-membership/schema-create authority, and rejects grants on
+unrelated tables. Audit attribution uses only the active configuration UUID and
+Parish identity columns; the installer cannot read campaign answers, configuration
+contents or audit payloads. Production provisioning of these grants remains
+OPS-02/OPS-04 work; tests create and remove their own disposable restricted roles.
+
+`CredentialInstaller.from_configuration` validates real kernel mounts and SQL
+identity before loading the one target handoff private key. Queue operations
+repeat SQL admission, including after reconnects. The existing
+[runtime storage rules](../specs/stewardship/operations/spec.md#runtime-storage)
+control actual mounts. No role string or request UUID grants filesystem access.
+
+## Durable replacement sequence
+
+| Request state | Durable meaning |
+| --- | --- |
+| `staged` | Bound expiring sealed candidate, awaiting the matching installer |
+| `testing` | Target installer owns validation; the working file is unchanged |
+| `installing` | Tested fingerprint and sealed rollback journal precede file replacement |
+| `awaiting_ack` | Atomic owner-only replacement completed; candidate staging is scrubbed |
+| `cleanup_pending` | Applied, failed, cancelled or expired outcome is decided; cleanup remains |
+| Terminal outcome | Staging is scrubbed and terminal checkpoint/audit committed |
+
+The target's owner-only directory holds a nonblocking exclusive file lock and
+an atomic private journal. The journal seals both the candidate and previous
+working bytes to the target key, with different candidate/rollback contexts.
+It never stages plaintext outside the selected working credential file. Database
+transactions are short and do not enclose provider validation or filesystem IO.
+
+A rename can succeed before an fsync or caller failure. Retry reconciles the
+actual selected fingerprint against the journal; it does not assume an exception
+means no write occurred. Unknown file fingerprints are preserved and block
+completion. The old credential is restored on failure or unacknowledged expiry,
+before the database reports a terminal outcome. Cancellation is accepted while
+still staged; it cannot race a replacement already being installed.
+
+Each consumer acknowledges through its own authenticated SQL login. Wrong-role,
+wrong-target, wrong-fingerprint, expired and out-of-state acknowledgements fail.
+The immutable acknowledgement and audit commit together. Every required consumer
+must match before the request can decide `applied`. That decision commits before
+rollback ciphertext is destroyed. A crash after the decision replays using its
+database acknowledgement instant, so later expiry cannot reverse an already
+approved replacement. A scrubbed file journal is released only after the terminal
+database receipt is durable; restart reconciles any remaining journal first.
+
+## Runtime integration boundaries
+
+The internal consumer hook attests the credential bytes loaded by a whole
+single-instance Compose service, not one arbitrary child process. Its owning
+runtime supervisor must wait for all children to load the same replacement.
+Individual file bind mounts retain their original inode: replacing the host file
+does not update that mount. OPS-04 must recreate the affected consumer container
+and verify its fingerprint; a reload signal alone is insufficient. The installer
+does not mount the Docker socket or get authority to restart other services.
+
+Provider-specific candidate validation/testing, whole-service startup and
+recreation, handoff-key provisioning, and current-Admin/CSRF/fresh-Google web
+admission remain explicit integration work. The internal orchestrator requires
+a validator but does not supply a production always-successful validator.
+No new web credential endpoint or enabled production service exists here.
+Keyring retirement additionally needs the separate online-migration and retained-
+backup compatibility workflow; successful file replacement does not retire keys.
+
+## Verification
+
+The [file protocol tests](../../tests/stewardship/test_credential_files.py)
+exercise bounded private files, sealed rollback, journal swaps, competing locks,
+validation failures, expiry and post-rename recovery. The
+[restricted-role integration tests](../../tests/stewardship/database/test_credential_isolation_postgresql.py)
+exercise actual PostgreSQL role/RLS/grant boundaries together with private files,
+consumer acknowledgements, cleanup and crashes before/after durable decisions.
+They use only synthetic credentials and an explicitly disposable database.
+Run them with the [database test profile](stewardship-database-tests.md).
+The application image's real-kernel mount proof is separate from these database
+checks; neither alone proves production service provisioning is complete.

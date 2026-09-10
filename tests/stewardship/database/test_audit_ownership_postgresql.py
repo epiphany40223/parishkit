@@ -448,11 +448,16 @@ def test_broad_downgrade_preserves_upgraded_legacy_ownership(tmp_path, history):
             )
             assert not ConfigurationActivation.objects.exists()
         else:
-            stage_secret_request(
-                request_id=uuid4(),
+            secret_model = executor.loader.project_state(
+                [PREVIOUS, ("stewardship_accounts", "0015_secret_request_guards")]
+            ).apps.get_model("stewardship_accounts", "SecretReplacementRequest")
+            actor = uuid4()
+            secret_model.objects.create(
+                id=uuid4(),
                 target="parishsoft",
                 staging_reference=uuid4(),
-                actor_id=uuid4(),
+                actor_id=actor,
+                requested_by_id=actor,
                 reauthenticated_at=timezone.now() - timedelta(minutes=1),
                 expires_at=timezone.now() + timedelta(minutes=10),
                 expected_fingerprint=None,

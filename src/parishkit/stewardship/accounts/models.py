@@ -34,6 +34,8 @@ from .request_models import (  # noqa: F401
 )
 from .runtime_models import ConfigurationActivation, SystemConfiguration  # noqa: F401
 from .secret_models import (  # noqa: F401
+    CredentialConsumerAcknowledgement,
+    SealedCredentialStaging,
     SecretReplacementRequest,
     SecretRequestCheckpoint,
 )

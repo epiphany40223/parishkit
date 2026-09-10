@@ -1,5 +1,12 @@
 # Stewardship secret-request storage
 
+Historical Phase 1A increment: the statements below describe its original
+metadata-only scope. The later Phase 1B
+[credential installer protocol](stewardship-credential-installers.md) adds a
+separate sealed payload store, restricted SQL identities, installation states
+and consumer acknowledgements. It preserves the legacy cleanup port but does
+not allow that port to consume the newer sealed installation requests.
+
 This internal DAT-01 increment implements metadata and cleanup for the
 [secret replacement contract](../specs/stewardship/architecture/spec.md#configuration-and-secrets).
 It does not enable secret replacement, a web route, worker, or production service.

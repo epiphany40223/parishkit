@@ -51,9 +51,17 @@ def _path(path):
     return path
 
 
-def read_private(path):
+def _maximum(value):
+    """Allow larger sealed installer journals without unbounded private-file reads."""
+    if type(value) is not int or not 1 <= value <= 1024 * 1024:
+        raise CryptographicError("Invalid private-file size bound.")
+    return value
+
+
+def read_private(path, *, maximum=MAX_FILE_BYTES):
     """Open once without following the last link, then validate the actual inode."""
     descriptor = None
+    _maximum(maximum)
     try:
         path = _path(path)
         descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
@@ -63,15 +71,15 @@ def read_private(path):
             or metadata.st_uid != os.geteuid()
             or stat.S_IMODE(metadata.st_mode) != 0o600
             or metadata.st_nlink != 1
-            or not 0 < metadata.st_size <= MAX_FILE_BYTES
+            or not 0 < metadata.st_size <= maximum
         ):
             raise CryptographicError(
                 "Credential file ownership, mode or size is invalid."
             )
         with os.fdopen(descriptor, "rb") as stream:
             descriptor = None
-            result = stream.read(MAX_FILE_BYTES + 1)
-        if not 0 < len(result) <= MAX_FILE_BYTES:
+            result = stream.read(maximum + 1)
+        if not 0 < len(result) <= maximum:
             raise CryptographicError("Credential file size is invalid.")
         return result
     except OSError:
@@ -81,14 +89,15 @@ def read_private(path):
             os.close(descriptor)
 
 
-def write_private(path, value):
+def write_private(path, value, *, maximum=MAX_FILE_BYTES):
     """Use the shared atomic writer only inside a pre-provisioned private target.
 
     Parent fsync makes the rename durable. A write error may follow a committed
     rename: the installer journal must reconcile its fingerprint, never assume
     an exception proves the prior file remained selected.
     """
-    if type(value) is not bytes or not 0 < len(value) <= MAX_FILE_BYTES:
+    _maximum(maximum)
+    if type(value) is not bytes or not 0 < len(value) <= maximum:
         raise CryptographicError("Credential bytes must be nonempty and bounded.")
     try:
         text = value.decode("utf-8")
@@ -101,7 +110,7 @@ def write_private(path, value):
         ):
             raise CryptographicError("Credential target must be owner-only storage.")
         if path.exists():
-            read_private(path)
+            read_private(path, maximum=maximum)
         atomic_write_text(path, text)
         descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:

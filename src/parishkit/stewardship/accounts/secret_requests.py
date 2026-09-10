@@ -1,10 +1,11 @@
 """Internal secret-request storage and retryable external-staging cleanup.
 
 These primitives are not authentication, encryption or credential installation.
-Only the future authenticated Admin admission and target-isolated ARC-06 service
-may call them. A target string is a consistency check, never a service identity.
+Only authenticated Admin admission and target-isolated ARC-06 services may call
+them. A target string is a consistency check, never a service identity.
 The cleanup callback must remove only the named target-owned opaque object and
-be idempotent when that object is already absent. No operational caller exists.
+be idempotent when that object is already absent. That legacy cleanup port cannot
+consume sealed requests: credential_installation owns their file/SQL protocol.
 """
 
 import re
@@ -16,11 +17,15 @@ from django.core.exceptions import ValidationError
 from django.db import connection, transaction
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.service_boundaries import ALLOWED_SECRETS
 from parishkit.stewardship.storage import StorageInvariantError, UTCDateTimeField
 
+from .cryptography import TokenPublicKeyring, envelope_header
 from .secret_models import (
     MAX_STAGING_LIFETIME,
+    SECRET_PENDING,
     SECRET_TARGETS,
+    SealedCredentialStaging,
     SecretReplacementRequest,
 )
 
@@ -98,6 +103,9 @@ def stage_secret_request(
     expires_at,
     expected_fingerprint,
     correlation_id,
+    required_consumers=(),
+    sealed_candidate=None,
+    candidate_fingerprint=None,
 ):
     """Record a trusted, already sealed staging reference with exact retry identity.
 
@@ -107,6 +115,27 @@ def stage_secret_request(
     """
     _identifiers(request_id, staging_reference, actor_id, correlation_id)
     _target(target)
+    allowed_consumers = {
+        role.value for role, names in ALLOWED_SECRETS.items() if target in names
+    }
+    if (
+        type(required_consumers) is not tuple
+        or any(type(value) is not str for value in required_consumers)
+        or len(set(required_consumers)) != len(required_consumers)
+        or set(required_consumers) - allowed_consumers
+        or bool(required_consumers) != (sealed_candidate is not None)
+        or (sealed_candidate is None) != (candidate_fingerprint is None)
+    ):
+        raise ConfigError("Invalid credential consumer/staging inventory.")
+    if sealed_candidate is not None:
+        if (
+            type(sealed_candidate) is not str
+            or len(sealed_candidate) > 262144
+            or type(candidate_fingerprint) is not str
+            or re.fullmatch(r"[0-9a-f]{64}", candidate_fingerprint) is None
+        ):
+            raise ConfigError("Invalid sealed credential payload.")
+        envelope_header(sealed_candidate, TokenPublicKeyring.algorithm)
     field = UTCDateTimeField()
     try:
         reauthenticated_at, expires_at = (
@@ -129,11 +158,19 @@ def stage_secret_request(
         reauthenticated_at=reauthenticated_at,
         expires_at=expires_at,
         expected_fingerprint=expected_fingerprint,
+        required_consumers=sorted(required_consumers),
     )
     with _transaction():
         existing = SecretReplacementRequest.objects.filter(pk=request_id).first()
         if existing is not None:
             if any(getattr(existing, key) != value for key, value in intent.items()):
+                raise ConfigError("Secret request identity is already bound.")
+            if (
+                required_consumers
+                and not SealedCredentialStaging.objects.filter(
+                    request=existing, fingerprint=candidate_fingerprint
+                ).exists()
+            ):
                 raise ConfigError("Secret request identity is already bound.")
             return _receipt(existing)
         now = _now()
@@ -142,21 +179,28 @@ def stage_secret_request(
         if expires_at - now > MAX_STAGING_LIFETIME:
             raise ConfigError("Secret staging lifetime cannot exceed 24 hours.")
         if SecretReplacementRequest.objects.filter(
-            target=target, state__in=["staged", "cleanup_pending"]
+            target=target, state__in=SECRET_PENDING
         ).exists():
             raise ConfigError("Credential target already has a pending request.")
         if SecretReplacementRequest.objects.filter(
             staging_reference=staging_reference
         ).exists():
             raise ConfigError("Staging reference is already bound.")
-        return _receipt(
-            SecretReplacementRequest.objects.create(
-                id=request_id,
-                actor_id=actor_id,
-                correlation_id=correlation_id,
-                **intent,
-            )
+        record = SecretReplacementRequest.objects.create(
+            id=request_id,
+            actor_id=actor_id,
+            correlation_id=correlation_id,
+            **intent,
         )
+        if required_consumers:
+            SealedCredentialStaging.objects.create(
+                reference=staging_reference,
+                request=record,
+                target=target,
+                ciphertext=sealed_candidate,
+                fingerprint=candidate_fingerprint,
+            )
+        return _receipt(record)
 
 
 def secret_request_status(*, request_id, actor_id):
@@ -224,6 +268,10 @@ def clean_secret_request(*, request_id, target, correlation_id, remove_payload):
     _target(target)
     with _transaction():
         record = _get(request_id, target=target)
+        if record.required_consumers:
+            raise ConfigError(
+                "Sealed installation cleanup requires its target installer."
+            )
         if record.state in ("cancelled", "expired"):
             return _receipt(record)
         if record.state != "cleanup_pending":
