@@ -43,7 +43,7 @@ def proof_owner(**changes):
 
     @contextmanager
     def dependencies(previous, replacement):
-        """Hold evidence through commit and prove audit is durable before exit."""
+        """Supply synthetic evidence; the real transaction-lock regression is below."""
         proof = RetirementProof(
             inventory_digest(previous), inventory_digest(replacement), True, True
         )

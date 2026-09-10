@@ -128,7 +128,7 @@ Scope and dependencies: [ARC-05 work package](../../plans/stewardship/architectu
 
 Evidence: Campaign credentials, MAC lookup/backfill, sealed link generations,
 rehearsal epochs, Family sessions and guarded code reports are implemented on
-`pr/stewardship-phase-1b`. Family HTTP tests and 39 browser-component checks cover
+`pr/stewardship-phase-1b`. Family HTTP tests and 66 browser-component checks cover
 separate sessions, warnings and activity handling. The guarded code-report role
 matrix permits Admin/Staff without fresh reauthentication and denies leaders.
 Active-generation arrival/reactivation and restore-fence cases now pass, alongside
@@ -193,11 +193,12 @@ Scope and dependencies: [ARC-08 work package](../../plans/stewardship/architectu
 - [ ] ARC-08.04 — Integrate automated accessibility and focus helpers.
 - [ ] ARC-08.05 — Measure baseline page and task-status performance.
 
-Evidence: Initial scope is in progress. Versioned self-hosted assets and an
-explicit Chromium/Firefox/WebKit matrix pass 39 component checks including axe,
+Evidence: The initial identity/component scope is implemented. Versioned assets and an
+explicit Chromium/Firefox/WebKit matrix pass 66 component checks including axe,
 keyboard focus, mobile layouts, browser-local times and session behavior.
-An initial 5,000-Family/100-live-session fixture verifies constant-size lookup
-work and enforces query/p95 budgets for lookup, Family page and Admin shell.
+Separate rehearsal and Production fixtures verify lookup work with 5,000 Family
+identities; the Production case has 5,000 actual MAC-index rows and 100 live
+sessions. Query/p95 budgets cover lookup, Family page and Admin shell.
 This is not simultaneous-request load or the complete task/report baseline. Full
 source/submission/outbox scale fixtures stay with their later phase owners;
 see [Phase 1B evidence](../../guides/stewardship-phase-1b.md).

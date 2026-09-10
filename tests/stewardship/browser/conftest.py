@@ -15,11 +15,16 @@ from parishkit.stewardship.web.security import CSP
 NOW = datetime(2026, 9, 10, 12, tzinfo=UTC)
 
 
+@pytest.fixture(scope="module", autouse=True)
+def browser_opt_in():
+    """Skip before any browser, HTTP-server or npm-asset fixture is evaluated."""
+    if os.environ.get("PARISHKIT_RUN_BROWSER_TESTS") != "1":
+        pytest.skip("Browser component tests require PARISHKIT_RUN_BROWSER_TESTS=1.")
+
+
 @pytest.fixture(scope="module")
 def browser_engine(request):
     """An explicitly enabled browser job fails if tools/engines are missing."""
-    if os.environ.get("PARISHKIT_RUN_BROWSER_TESTS") != "1":
-        pytest.skip("Browser component tests require PARISHKIT_RUN_BROWSER_TESTS=1.")
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as runner:
@@ -93,7 +98,9 @@ def component_origin():
         )
     for name, kind in (("css", "text/css"), ("js", "application/javascript")):
         asset = f"stewardship/ui-v1.{name}"
-        responses[f"/static/{asset}"] = (kind, Path(finders.find(asset)).read_text())
+        located = finders.find(asset)
+        assert located is not None, f"Required component asset is missing: {asset}"
+        responses[f"/static/{asset}"] = (kind, Path(located).read_text())
 
     class Handler(BaseHTTPRequestHandler):
         """Suppress raw request logging; unknown routes are intentionally empty."""

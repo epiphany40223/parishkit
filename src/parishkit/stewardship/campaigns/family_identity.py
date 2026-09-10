@@ -146,7 +146,8 @@ def reconcile_families(
 ):
     """Caller owns an atomic source promotion; no partial corpus can become visible.
 
-    DAT-03 supplies the validated promoted generation and admission callback.
+    DAT-03 supplies the validated promoted generation and admission callback,
+    which must return exactly True under its owning authorization locks.
     Only this campaign-specific identity overlay is stored here, not source rows.
     """
     if not connection.in_atomic_block or connection.vendor != "postgresql":
@@ -182,7 +183,8 @@ def reconcile_families(
             cursor.execute("SELECT id FROM stewardship_system_configuration FOR SHARE")
             cursor.execute("SELECT id FROM stewardship_credential_deployment FOR SHARE")
         campaign = Campaign.objects.select_for_update().get(pk=campaign_id)
-        admit(campaign)
+        if admit(campaign) is not True:
+            raise PermissionError("Family reconciliation is not admitted.")
         if campaign.active_token_generation_id is not None and not isinstance(
             public, TokenPublicKeyring
         ):

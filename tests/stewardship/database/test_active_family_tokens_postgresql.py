@@ -113,7 +113,7 @@ def test_explicit_link_rotation_changes_only_token_not_manual_code(active):
     row = FamilyAccessToken.objects.get()
     prior = row.ciphertext, row.digest
     code = row.family.code_ciphertext
-    rotate_token(token_id=row.pk, public=ring.public, admit=lambda *args: None)
+    rotate_token(token_id=row.pk, public=ring.public, admit=lambda *args: True)
     row.refresh_from_db()
     assert row.ciphertext != prior[0] and row.digest != prior[1]
     assert row.rotated_at is not None

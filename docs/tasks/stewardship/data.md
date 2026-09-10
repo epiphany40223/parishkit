@@ -176,7 +176,8 @@ stable encrypted manual codes, versioned MAC lookup/collision constraints,
 population reconciliation, sealed token generations, rehearsal epochs/reservations
 and isolated sessions. Actual source promotion and submission/mail-state pointers
 remain with DAT-03/DAT-06/DAT-07; do not fabricate those later tables. Additional
-credential lifecycle/reactivation and retirement cases remain in progress. See
+credential lifecycle/reactivation and retirement cases now pass; actual source
+promotion and backup-catalog integration retain their named later owners. See
 [Phase 1B evidence](../../guides/stewardship-phase-1b.md); the mixed-phase tasks stay
 unchecked rather than claiming complete integration from the storage foundation.
 

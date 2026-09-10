@@ -38,6 +38,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 ROLES = (
     "pk_stewardship_web",
     "pk_stewardship_worker",
+    "pk_stewardship_backup_worker",
     "pk_stewardship_credential_slack",
     "pk_stewardship_credential_parishsoft",
 )
@@ -84,7 +85,7 @@ def isolated_roles():
                         "GRANT INSERT ON stewardship_credential_consumer_ack "
                         f'TO "{role}"'
                     )
-                else:
+                elif role != "pk_stewardship_backup_worker":
                     cursor.execute(
                         f'GRANT UPDATE ON stewardship_secret_request TO "{role}"'
                     )
@@ -104,6 +105,11 @@ def isolated_roles():
                 elif role.startswith("pk_stewardship_credential_"):
                     cursor.execute(
                         "GRANT SELECT, UPDATE ON stewardship_sealed_credential_staging "
+                        f'TO "{role}"'
+                    )
+                elif role == "pk_stewardship_backup_worker":
+                    cursor.execute(
+                        "GRANT SELECT ON stewardship_sealed_credential_staging "
                         f'TO "{role}"'
                     )
         yield
@@ -175,6 +181,16 @@ def test_target_and_web_roles_cannot_cross_credential_or_campaign_boundaries(
     slack, _ = stage()
     parishsoft, _ = stage("parishsoft")
     with identity("pk_stewardship_credential_slack"):
+        assert not SealedCredentialStaging.objects.filter(
+            request_id=parishsoft
+        ).exists()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT ciphertext FROM stewardship_sealed_credential_staging "
+                "WHERE request_id=%s",
+                [parishsoft],
+            )
+            assert cursor.fetchall() == []
         assert list(SecretReplacementRequest.objects.values_list("pk", flat=True)) == [
             slack
         ]
@@ -193,6 +209,11 @@ def test_target_and_web_roles_cannot_cross_credential_or_campaign_boundaries(
             SealedCredentialStaging.objects.get(request_id=slack)
         with pytest.raises(DatabaseError, match="Only the target installer"):
             advance(slack, "testing")
+    with identity("pk_stewardship_backup_worker"):
+        assert (
+            SealedCredentialStaging.objects.filter(ciphertext__isnull=False).count()
+            == 2
+        )
 
 
 def test_applied_requires_matching_consumer_identity_and_durable_scrubbing(

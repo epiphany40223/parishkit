@@ -37,6 +37,10 @@ or its required review rounds and integrated review gate.
 The per-package checklists remain authoritative; evidence is added as each
 deliverable and its tests finish.
 
+The dated/internal checkpoints below are historical measurements, not current
+suite counts. The [review ledger](stewardship-phase-1b-reviews.md) owns the latest
+validation and correction evidence; current browser coverage is 66 cases.
+
 Internal checkpoint (September 10, 2026): trusted ingress/content/export
 primitives and the WSGI response-lifetime adapter are implemented. The targeted
 pure security/content/cryptography/scaffold run passes 121 tests, and seven
@@ -213,8 +217,10 @@ remains disabled until the Phase 1C operational owners are integrated.
 [Review dispositions and regression evidence](stewardship-phase-1b-reviews.md)
 track the complete branch review loop. Round one reviewed `324a10c` with both
 vendors and returned one High and 46 Medium consolidated findings. Its corrections
-and applicable post-fix validation are complete; two further independent rounds
-remain required. No final review approval or PR completion is claimed yet.
+and applicable post-fix validation are complete. Round two reviewed `6b4f720`
+and returned 30 Medium findings with no High/Critical findings. Its accepted
+corrections and integrated validation also pass; the third independent round
+remains required. No final review approval or PR completion is claimed yet.
 
 Google callbacks request and verify signed `auth_time`, retaining that verified
 instant instead of assigning callback time. Ordinary SSO can use an older Google
@@ -237,6 +243,21 @@ Permanent invalid-link audit is sampled to one deployment-wide signal per five
 minutes, without source/candidate fingerprints or attempted values; it is not an
 exact attempt count. This bound also holds during Valkey outages. Distributed
 threshold incidents retain their existing deduplicated counts and notifications.
+The same five-minute sampling bound now applies independently to failed Admin
+callbacks and manual Family-code submissions, including already-throttled public
+callbacks. This is sampled audit evidence, not a permanent record per attempt.
+
+Code-report audit records distinguish the initial request from server-side stream
+completion or failure and retain the prepared row count without codes. Terminal
+audit runs after the read guard closes. Successful producer exhaustion is not
+proof that a remote browser displayed every byte; interrupted streams are failures.
+Full source/filter/export audit integration remains with RPT-01/RPT-05.
+
+OPS-03/OPS-04 must assemble both the validated proxy-hop count and actual trusted
+proxy networks before enabling production; browser transport settings alone do
+not configure ingress trust. OPS-02/OPS-04 must also call the web staging-grant
+assertion using the real web SQL login, alongside complete runtime grant checks.
+Its consumer-acknowledgement integration already rejects ciphertext SELECT grants.
 
 ## Browser component validation
 

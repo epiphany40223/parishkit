@@ -35,7 +35,7 @@ from parishkit.stewardship.campaigns.lifecycle import portal_admitted
 from parishkit.stewardship.campaigns.runtime import _now, campaign_facts
 from parishkit.stewardship.web.security import login_denial
 
-from .auth_incidents import record_link_rejection
+from .auth_incidents import record_link_rejection, record_login_rejection
 from .configuration_installation import coherent_configuration
 from .cryptography import (
     CodeMacKeyring,
@@ -338,7 +338,7 @@ def entry(request):
                 return HttpResponseRedirect("/family/")
         delay = service.limiter.counters([ip, pair] if pair else [ip], failure=True)
         service.limiter.failed("family", request.client_address, candidate=fingerprint)
-        AuditEvent.objects.create(event_type="family_login_failed")
+        record_login_rejection("family_login_failed")
         return denied(status=429 if delay else 403, retry=delay)
     except (LimiterUnavailable, CryptographicError, ConfigError):
         return denied(status=503, retry=5)

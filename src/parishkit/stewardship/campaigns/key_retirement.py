@@ -99,8 +99,9 @@ def retire_keys(previous, replacement, *, admit, dependencies):
     """Recheck all dependencies under exclusive inventory and owner locks.
 
     dependencies(previous, replacement) is a required context-manager factory.
-    Its transaction-compatible locks fence backup creation/escrow destruction
-    and consumer evidence through commit, not merely through proof collection.
+    It runs inside the retirement transaction and must acquire transaction-scoped
+    database locks fencing backup creation/escrow destruction and consumer
+    evidence. Those locks must survive context exit until transaction commit.
     No provider I/O belongs inside this transaction. The future operational
     command must supply real owners; callers cannot assume an empty catalog.
     """
@@ -108,11 +109,11 @@ def retire_keys(previous, replacement, *, admit, dependencies):
     removed = _removed(previous, replacement)
     if not callable(admit) or not callable(dependencies):
         raise TypeError("Retirement requires admission and locked owner evidence.")
-    # Owner locks enclose the database commit. Taking them before the shared key
-    # inventory lock is the global order for backup/retirement coordination.
+    # Enter the transaction before owner locks, then take the key inventory lock.
+    # PostgreSQL retains the owner's transaction locks through the outer commit.
     with (
-        dependencies(old_inventory, new_inventory) as proof,
         transaction.atomic(durable=True),
+        dependencies(old_inventory, new_inventory) as proof,
         key_set_lock(old_inventory, exclusive=True),
     ):
         if admit() is not True:

@@ -602,11 +602,14 @@ def wait_internal_live(compose, body, *, touch_on_retry=None):
     )
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
-        result = compose(
-            "exec", "-T", "web", "python", "-c", script, check=False, timeout=5
-        )
-        if result.returncode == 0 and result.stdout.encode() == body:
-            return
+        try:
+            result = compose(
+                "exec", "-T", "web", "python", "-c", script, check=False, timeout=5
+            )
+            if result.returncode == 0 and result.stdout.encode() == body:
+                return
+        except subprocess.TimeoutExpired:
+            pass
         if touch_on_retry is not None:
             os.utime(touch_on_retry, None)
         time.sleep(0.2)

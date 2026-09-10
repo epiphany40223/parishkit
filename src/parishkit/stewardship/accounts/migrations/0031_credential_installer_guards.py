@@ -155,7 +155,7 @@ BEGIN
     BEGIN j:=value::jsonb; EXCEPTION WHEN OTHERS THEN RETURN false; END;
     RETURN jsonb_typeof(j)='object' AND j ?& ARRAY['v','alg','kid','body']
         AND j-ARRAY['v','alg','kid','body']='{}'::jsonb AND j->'v'='1'::jsonb
-        AND j->>'alg'='sealedbox-v1' AND j->>'kid' ~ '^[A-Za-z0-9][A-Za-z0-9_.-]{0,47}$'
+        AND j->>'alg'='sealedbox-v1' AND j->>'kid' ~ '^[A-Za-z0-9_-]{1,48}$'
         AND j->>'body' ~ '^[A-Za-z0-9_-]+$';
 END $$;
 CREATE FUNCTION stewardship_sealed_staging_guard_v1() RETURNS trigger
@@ -254,6 +254,11 @@ DROP FUNCTION stewardship_credential_consumers_v1(text);
             sql=migrations.RunSQL.noop,
             reverse_sql="""
 LOCK TABLE stewardship_secret_request,stewardship_sealed_credential_staging,stewardship_credential_consumer_ack IN ACCESS EXCLUSIVE MODE;
+-- The schema owner must see retained history even without superuser/BYPASSRLS.
+-- A rejected downgrade rolls these changes back with the atomic migration.
+ALTER TABLE stewardship_secret_request NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE stewardship_sealed_credential_staging NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE stewardship_credential_consumer_ack NO FORCE ROW LEVEL SECURITY;
 DO $$ BEGIN
     IF EXISTS(SELECT 1 FROM stewardship_secret_request WHERE state NOT IN('staged','cleanup_pending','cancelled','expired')
         OR required_consumers<>'[]'::jsonb OR resulting_fingerprint IS NOT NULL OR installed_at IS NOT NULL OR acknowledged_at IS NOT NULL)

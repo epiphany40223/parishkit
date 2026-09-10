@@ -47,7 +47,7 @@ def bounded_text(value):
 
 def sanitize_html(value):
     """No images, styles, forms, event handlers or executable URL schemes."""
-    return nh3.clean(
+    clean = nh3.clean(
         bounded_text(value),
         tags=TAGS,
         attributes={"a": {"href", "title"}},
@@ -56,6 +56,7 @@ def sanitize_html(value):
         link_rel="noopener noreferrer",
         strip_comments=True,
     )
+    return bounded_text(clean)
 
 
 class _PlainText(HTMLParser):
@@ -117,16 +118,22 @@ def render_template(value, substitutions, *, html=False, subject=False):
     names = validate_template(value, subject=subject)
     if not names <= substitutions.keys():
         raise ValueError("A required template substitution is missing.")
-    for name in names:
-        bounded_text(substitutions[name])
-    rendered = PLACEHOLDER.sub(
-        lambda match: (
-            escape(substitutions[match[1]], quote=True)
-            if html
-            else substitutions[match[1]]
-        ),
-        value,
-    )
+    replacements = {
+        name: escape(bounded_text(substitutions[name]), quote=True)
+        if html
+        else bounded_text(substitutions[name])
+        for name in names
+    }
+    # Count the exact UTF-8 expansion before allocating the combined result.
+    # Each escaped replacement is individually bounded by six times the input;
+    # repeated placeholders must never multiply that into a gigabyte buffer.
+    lengths = {name: len(text.encode("utf-8")) for name, text in replacements.items()}
+    total = len(value.encode("utf-8"))
+    for match in PLACEHOLDER.finditer(value):
+        total += lengths[match[1]] - len(match[0].encode("utf-8"))
+    if total > MAX_TEXT_BYTES:
+        raise ValueError("Template output exceeds the content limit.")
+    rendered = PLACEHOLDER.sub(lambda match: replacements[match[1]], value)
     if subject and (len(rendered) > 254 or any(char in rendered for char in "\r\n")):
         raise ValueError("Invalid email subject substitution.")
     bounded_text(rendered)

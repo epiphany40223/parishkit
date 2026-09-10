@@ -202,7 +202,7 @@ def _origin(value: object, profile: DeploymentProfile) -> str:
         invalid = True
     if invalid:
         raise ConfigError("public_origin must be a bare HTTP(S) origin")
-    _host(parsed.hostname, "public_origin host")
+    hostname = _host(parsed.hostname, "public_origin host").lower()
     if profile is DeploymentProfile.PRODUCTION:
         if parsed.scheme != "https":
             raise ConfigError("production public_origin requires HTTPS")
@@ -212,7 +212,10 @@ def _origin(value: object, profile: DeploymentProfile) -> str:
         "::1",
     }:
         raise ConfigError("development/test public_origin requires loopback HTTP")
-    return origin.removesuffix("/")
+    authority = f"[{hostname}]" if ":" in hostname else hostname
+    if port is not None:
+        authority += f":{port}"
+    return f"{parsed.scheme}://{authority}"
 
 
 def load_deployment(

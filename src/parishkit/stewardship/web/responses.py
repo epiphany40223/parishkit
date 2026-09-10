@@ -1,8 +1,9 @@
 """WSGI response-lifetime adapters for the campaign storage read barriers.
 
 These synchronous adapters must be entered, consumed and closed on one WSGI
-thread. Authentication/session activity and report audit writes precede entry;
-later middleware must not write through the response-owned read-only connection.
+thread. Authentication/session activity and report intent writes precede entry;
+terminal audit writes follow guard closure. Later middleware must not write
+through the response-owned read-only connection.
 No fallback silently converts a guarded response to ASGI or a buffered iterator.
 """
 
@@ -54,8 +55,9 @@ def _socket_abort(request):
 class _Content:
     """Serialize producer steps with timeout cancellation without thread handoff."""
 
-    def __init__(self, request, campaigns, authorize, open_content, pool):
+    def __init__(self, request, campaigns, authorize, open_content, pool, on_close):
         self.stopped, self.producing = Event(), Lock()
+        self.completed, self.finalized, self.on_close = False, False, on_close
         self.transport_abort = _socket_abort(request)
         self.guard = CampaignReadGuard(
             campaigns, authorize=authorize, abort=self.abort, pool=pool
@@ -72,7 +74,15 @@ class _Content:
             if self.stopped.is_set():
                 self.close()
                 raise StopIteration
-            return next(self.response)
+            try:
+                return next(self.response)
+            except StopIteration:
+                self.completed = True
+                self.close()
+                raise
+            except BaseException:
+                self.close()
+                raise
 
     def abort(self):
         """Prove both transport and producer stopped before claiming cancellation.
@@ -96,6 +106,10 @@ class _Content:
         """WSGI close/disconnect calls this on the owner; repeated calls are safe."""
         self.stopped.set()
         self.response.close()
+        if not self.finalized:
+            self.finalized = True
+            if self.on_close is not None:
+                self.on_close(self.completed)
 
 
 def campaign_response(
@@ -107,12 +121,17 @@ def campaign_response(
     filename=None,
     content_type="text/html; charset=utf-8",
     pool=DOWNLOAD_POOL,
+    on_close=None,
 ):
     """Authorize before headers; keep guard through bytes and transport disconnect.
 
     ``open_content`` must open files/query data only when called under this guard.
     Filename selects bounded download admission; HTML uses the interactive class.
     Missing transport support fails before querying or opening private content.
+    Optional on_close receives whether the producer exhausted normally, after
+    the read-only guard closes; it may record a terminal server-side audit, not
+    proof that a remote browser received or displayed every byte. Admission
+    failures before response creation remain the calling view's responsibility.
     """
     headers = (
         download_headers(filename, content_type=content_type)
@@ -126,6 +145,7 @@ def campaign_response(
             authorize,
             open_content,
             pool if filename is not None else None,
+            on_close,
         )
     except ReadUnavailable:
         return unavailable()

@@ -34,9 +34,9 @@ from django.views.decorators.http import (
 )
 
 from parishkit.config import ConfigError
-from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.web.security import login_denial
 
+from .auth_incidents import record_login_rejection
 from .limiting import Counter, Limiter, LimiterUnavailable
 from .models import OAuthStateConsumption, PolicyEpoch, PortalUser, SystemConfiguration
 from .policy import current_principal
@@ -111,7 +111,7 @@ def record_failure(request, *, identity="", counter=None):
         counters.append(counter)
     delay = limiter.counters(counters, failure=True)
     limiter.failed("admin", request.client_address, identity=identity)
-    AuditEvent.objects.create(event_type="admin_login_denied")
+    record_login_rejection("admin_login_denied")
     return min(3600, delay * (2 if limiter.elevated("admin") else 1))
 
 
@@ -328,6 +328,8 @@ def login(request):
             return denial(status=429, retry=delay)
         limiter.counters([counter], failure=True)
         nonce = secrets.token_urlsafe(32)
+        if "principal" not in request.session:
+            request.session.set_expiry(database_now() + timedelta(minutes=15))
         provider = get_adapter(request).get_provider(request, "google")
         return provider.redirect(
             request,

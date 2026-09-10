@@ -31,6 +31,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 def admit(campaign, deployment, generation):
     """Pure storage admission only; no task or provider authority is fabricated."""
     assert campaign.state in {"draft", "closed", "active", "scheduled"}
+    return True
 
 
 def begin(campaign, actor, ring, *, operation_id=None):

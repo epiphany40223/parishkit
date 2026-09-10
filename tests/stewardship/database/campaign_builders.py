@@ -315,6 +315,7 @@ def prepared_tokens(campaign, actor, *, configuration_request_id=None):
 
     def admit(campaign, deployment, generation):
         """Credential storage seam only; real external task readiness is not claimed."""
+        return True
 
     generation = begin_generation(
         campaign_id=campaign.pk,

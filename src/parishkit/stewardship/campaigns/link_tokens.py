@@ -4,6 +4,8 @@ BG-02 supplies task/admission ownership and source snapshot validation. No
 service here sends mail, changes a campaign date or directly selects a Campaign
 generation pointer. Activation consumes the prepared manifest inside the owning
 guarded lifecycle command.
+All credential admission callbacks must return exactly True after establishing
+their owning authorization locks; None or a false value does not authorize work.
 """
 
 from uuid import UUID, uuid4
@@ -163,7 +165,8 @@ def begin_generation(
         campaign = Campaign.objects.get(pk=campaign_id)
         CampaignCredentialState.objects.get_or_create(campaign=campaign)
         CampaignCredentialState.objects.select_for_update().get(campaign=campaign)
-        admit(campaign, deployment, None)
+        if admit(campaign, deployment, None) is not True:
+            raise PermissionError("Token generation is not admitted.")
         if configuration_request_id is not None:
             request = ConfigurationChangeRequest.objects.get(
                 pk=configuration_request_id,
@@ -234,7 +237,8 @@ def prepare_generation_batch(*, generation_id, public, admit, batch_size=500):
         )
         campaign = generation.campaign
         CampaignCredentialState.objects.select_for_update().get(campaign=campaign)
-        admit(campaign, deployment, generation)
+        if admit(campaign, deployment, generation) is not True:
+            raise PermissionError("Token preparation is not admitted.")
         population = _current_inputs(generation, campaign, deployment, public)
         families = FamilyCampaign.objects.filter(
             campaign=campaign, portal_eligible=True
@@ -326,7 +330,11 @@ def cancel_generation(*, generation_id, admit):
             .select_related("campaign")
             .get(pk=generation_id)
         )
-        admit(row.campaign, DeploymentCredentialState.objects.get(), row)
+        if (
+            admit(row.campaign, DeploymentCredentialState.objects.get(), row)
+            is not True
+        ):
+            raise PermissionError("Token cancellation is not admitted.")
         if row.state in {"cancelled", "superseded"}:
             return row
         if row.campaign.active_token_generation_id == row.pk or row.state == "active":
@@ -378,7 +386,8 @@ def rotate_token(*, token_id, public, admit):
             .select_related("family", "generation", "campaign")
             .get(pk=token_id)
         )
-        admit(row.campaign, deployment, row.generation)
+        if admit(row.campaign, deployment, row.generation) is not True:
+            raise PermissionError("Token rotation is not admitted.")
         if (
             row.destroyed_at is not None
             or row.generation.credential_epoch != deployment.family_link_epoch

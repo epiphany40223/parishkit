@@ -48,6 +48,31 @@ def test_each_role_has_an_explicit_mount_allowlist(role):
     assert validate_mounts(config, mounts) is role
 
 
+@pytest.mark.parametrize(
+    "target", ["/proc/self/mountinfo", "/dev/private", "/sys/private"]
+)
+def test_arbitrary_tmpfs_bind_is_not_a_kernel_pseudo_mount(target):
+    """A pseudo-filesystem type does not authorize arbitrary privileged paths."""
+    config, mounts = configured(ServiceRole.WEB)
+    with pytest.raises(ConfigError, match="unrecognized"):
+        validate_mounts(
+            config, mounts + [Mount(Path(target), False, "tmpfs", "/", "tmpfs")]
+        )
+
+
+def test_pseudo_mount_source_and_root_are_checked_without_disclosure():
+    """An unrelated bind cannot hide behind an otherwise admitted scratch path."""
+    config, mounts = configured(ServiceRole.WEB)
+    assert validate_mounts(
+        config, mounts + [Mount(Path("/tmp"), False, "tmpfs", "/", "tmpfs")]
+    )
+    mount = Mount(Path("/tmp"), False, "tmpfs", "/private-root", "/private-source")
+    assert "private" not in repr(mount)
+    with pytest.raises(ConfigError, match="unrecognized") as error:
+        validate_mounts(config, mounts + [mount])
+    assert "private" not in str(error.value)
+
+
 def test_authority_override_is_the_only_admitted_authority_mount():
     """An explicit runtime path cannot silently fall back to config/stewardship."""
     config, mounts = configured(ServiceRole.CONFIG_INSTALLER)

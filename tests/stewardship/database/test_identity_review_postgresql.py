@@ -17,6 +17,7 @@ from parishkit.stewardship.accounts.family_authentication import FamilyRuntime
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.secret_models import SecretReplacementRequest
 from parishkit.stewardship.accounts.secret_requests import stage_secret_request
+from parishkit.stewardship.audit.models import AuditContext
 from parishkit.stewardship.campaigns.credential_models import (
     RehearsalCodeFingerprint,
     RehearsalCodeReservation,
@@ -31,6 +32,15 @@ from .credential_builders import keys, populate
 from .test_family_auth_postgresql import family_service  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+
+def report_outcomes():
+    """Read safe outcome/count evidence after the report guard has closed."""
+    return list(
+        AuditContext.objects.filter(event__event_type="family_codes_viewed")
+        .order_by("event__created_at")
+        .values_list("context", flat=True)
+    )
 
 
 @pytest.fixture
@@ -72,6 +82,23 @@ def test_report_decryption_failure_returns_503_before_headers(report, monkeypatc
     assert response.status_code == 503 and response["Retry-After"] == "5"
     assert not response.streaming
     assert b"private key" not in response.content
+    assert report_outcomes() == [
+        {"outcome": "started"},
+        {"outcome": "failed", "count": 0},
+    ]
+
+
+def test_abandoned_report_records_server_failure_after_guard_release(report):
+    """Prepared bytes are not a successful stream when the caller closes early."""
+    browser, path, server = report
+    response = browser.get(path, **{"gunicorn.socket": server})
+    assert response.status_code == 200
+    response.close()
+    response.close()
+    assert report_outcomes() == [
+        {"outcome": "started"},
+        {"outcome": "failed", "count": 2},
+    ]
 
 
 def test_report_reauthorizes_after_outer_admission(report, monkeypatch):
@@ -90,6 +117,10 @@ def test_report_reauthorizes_after_outer_admission(report, monkeypatch):
     response = browser.get(path, **{"gunicorn.socket": server})
     assert response.status_code == 503
     assert PortalSession.objects.get().revoked_at is not None
+    assert report_outcomes() == [
+        {"outcome": "started"},
+        {"outcome": "failed", "count": 0},
+    ]
 
 
 @pytest.mark.parametrize(

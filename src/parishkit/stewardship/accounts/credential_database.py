@@ -118,3 +118,21 @@ def admit_consumer_database(consumer):
     }:
         raise ConfigError("Unknown credential consumer.")
     _identity("pk_stewardship_" + consumer.replace("-", "_"))
+    if consumer == "web":
+        admit_web_staging_grants()
+
+
+def admit_web_staging_grants():
+    """Require ciphertext exclusion at web startup and consumer acknowledgement.
+
+    OPS-02/OPS-04 must call this with the actual web login during startup, beside
+    their complete runtime grant/mount admission. RLS alone is not column privacy.
+    """
+    _identity("pk_stewardship_web")
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT has_column_privilege(current_user,"
+            "'public.stewardship_sealed_credential_staging','ciphertext','SELECT')"
+        )
+        if cursor.fetchone()[0]:
+            raise ConfigError("Web staging ciphertext access is forbidden.")

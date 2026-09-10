@@ -10,12 +10,14 @@ import hmac
 import math
 import re
 from collections import OrderedDict
+from contextlib import suppress
 from dataclasses import dataclass
 from ipaddress import IPv4Address, IPv6Address
 from threading import Lock
 from time import monotonic
 from uuid import uuid4
 
+from django.db import DatabaseError, connection
 from redis.exceptions import RedisError
 
 from parishkit.stewardship.authentication_policy import AuthenticationLimits
@@ -183,10 +185,16 @@ class Limiter:
         The durable baseline survives this process. OPS health/scheduler callers
         can force an observation without generating a synthetic login attempt.
         An unavailable probe follows the same fail-closed path as failed counters.
+        Call outside application transactions: the health observation commits its
+        independent baseline. Contending threads skip the probe, not admission.
         """
         from .limiter_health import observe_store
 
-        with self.health_lock:
+        if connection.in_atomic_block:
+            raise LimiterUnavailable("Authentication requires independent admission.")
+        if not self.health_lock.acquire(blocking=False):
+            return False
+        try:
             if (
                 force
                 or self.health_checked_at is None
@@ -200,10 +208,22 @@ class Limiter:
                     self.health_checked_at = monotonic()
                 # Recovery is durable, not tied to the worker that saw loss.
                 # Each process checks at most once per observation interval.
-                self.incident("limiter_available", 0, 0, (0, 0, 0, 0))
+                self._notify("limiter_available", 0, 0, (0, 0, 0, 0))
                 self.outage = False
                 return result
+        finally:
+            self.health_lock.release()
         return False
+
+    def _notify(self, *args):
+        """An unavailable durable incident store is a retryable auth outage."""
+        try:
+            self.incident(*args)
+        except DatabaseError:
+            self.outage = True
+            raise LimiterUnavailable(
+                "Authentication is temporarily unavailable."
+            ) from None
 
     def fingerprint(self, kind, value):
         """Domain-separated short-lived fingerprints are not reversible identifiers."""
@@ -220,14 +240,15 @@ class Limiter:
         try:
             self.check_health()
             result = script(**kwargs)
-        except RedisError:
+        except (RedisError, DatabaseError):
             self.outage = True
-            self.incident("limiter_unavailable", 2, 0, (0, 0, 0, 0))
+            with suppress(LimiterUnavailable):
+                self._notify("limiter_unavailable", 2, 0, (0, 0, 0, 0))
             raise LimiterUnavailable(
                 "Authentication is temporarily unavailable."
             ) from None
         if self.outage:
-            self.incident("limiter_available", 0, 0, (0, 0, 0, 0))
+            self._notify("limiter_available", 0, 0, (0, 0, 0, 0))
             self.outage = False
         return result
 
@@ -275,7 +296,7 @@ class Limiter:
             )
         except RedisError:
             self.outage = True
-            self.incident("limiter_unavailable", 2, 0, (0, 0, 0, 0))
+            self._notify("limiter_unavailable", 2, 0, (0, 0, 0, 0))
 
     def elevated(self, kind):
         """Elevated controls expire with the last observed distributed burst."""
@@ -287,7 +308,7 @@ class Limiter:
             )
         except RedisError:
             self.outage = True
-            self.incident("limiter_unavailable", 2, 0, (0, 0, 0, 0))
+            self._notify("limiter_unavailable", 2, 0, (0, 0, 0, 0))
             raise LimiterUnavailable(
                 "Authentication is temporarily unavailable."
             ) from None
@@ -330,5 +351,5 @@ class Limiter:
         )
         severity, window, *counts = result
         if severity:
-            self.incident(f"{kind}_abuse", severity, window, tuple(counts))
+            self._notify(f"{kind}_abuse", severity, window, tuple(counts))
         return bool(severity)

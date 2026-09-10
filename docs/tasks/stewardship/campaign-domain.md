@@ -93,7 +93,7 @@ Scope and dependencies: [DOM-04 work package](../../plans/stewardship/campaign-d
 Evidence: Phase 1B backup commit `dfb90d2` adds shared templates, responsive
 self-hosted versioned assets, branding/navigation blocks, form/error/empty/table
 and progress components, server formatting and browser-local time rendering.
-Strings are localization-ready; no translated interface is claimed. Thirty-nine
+Strings are localization-ready; no translated interface is claimed. Sixty-six
 Chromium/Firefox/WebKit component checks pass, covering 320-pixel layouts, axe,
 keyboard focus, no-JavaScript fallback and session warnings/activity. Shared
 pure security/presentation/contracts pass 75 tests. See

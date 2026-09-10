@@ -35,6 +35,7 @@ from .sessions import authenticated_admin
 @require_safe
 def family_codes(request, campaign_id):
     """Audit intent before a read-only response; recheck roles under its read guard."""
+    finish = None
     try:
         service, cryptographic = runtime(), family_runtime()
         principal = authenticated_admin(request, store=service.store, activity=True)
@@ -57,6 +58,26 @@ def family_codes(request, campaign_id):
                 campaign_id=campaign_id,
                 context={"outcome": Outcome.STARTED},
             )
+        prepared_count, finalized = 0, False
+
+        def finish(completed):
+            """Audit server completion only after the response read guard is closed."""
+            nonlocal finalized
+            if finalized:
+                return
+            finalized = True
+            with transaction.atomic():
+                record_action(
+                    Action.FAMILY_CODES_VIEWED,
+                    actor_kind=ActorKind.PORTAL_USER,
+                    actor_id=principal.identity,
+                    parish_id=configuration.active_configuration.parish.pk,
+                    campaign_id=campaign_id,
+                    context={
+                        "outcome": Outcome.SUCCEEDED if completed else Outcome.FAILED,
+                        "count": prepared_count,
+                    },
+                )
 
         def authorize(guard):
             """A stale role-bearing cookie is not permission to decrypt or stream."""
@@ -70,6 +91,7 @@ def family_codes(request, campaign_id):
             This must be an ordinary function, not a generator: key contention
             and decryption failures must reach the view's retryable error path.
             """
+            nonlocal prepared_count
             with key_set_lock(cryptographic.general):
                 rows, has_next = window.rows(
                     FamilyCampaign.objects.filter(
@@ -101,12 +123,22 @@ def family_codes(request, campaign_id):
                         "previous_page": window.page - 1,
                     },
                 ).encode()
+                prepared_count = len(table)
                 return iter((body,))
 
-        return campaign_response(
-            request, [campaign_id], authorize=authorize, open_content=content
+        response = campaign_response(
+            request,
+            [campaign_id],
+            authorize=authorize,
+            open_content=content,
+            on_close=finish,
         )
+        if response.status_code != 200:
+            finish(False)
+        return response
     except (ConfigError, CryptographicError, LimiterUnavailable):
+        if finish is not None:
+            finish(False)
         return denial(status=503, retry=5)
     except ValueError:
         return denial(status=400)

@@ -48,7 +48,9 @@ def prepare_rehearsals(
     """One bounded batch reserves every code before any caller can reference it.
 
     The readiness-test exception is still subject to the owning authenticated
-    task admission callback. Passing a purpose enum alone never authorizes it.
+    task admission callback, which must return exactly True. Passing a purpose
+    enum alone never authorizes it. Other credential mutation ports use the same
+    explicit-True contract, including invalidation and gate release below.
     """
     family_ids = tuple(family_ids)
     if (
@@ -67,7 +69,8 @@ def prepare_rehearsals(
         scope = CampaignCredentialState.objects.select_for_update().get(
             campaign=campaign
         )
-        admit(campaign, purpose)
+        if admit(campaign, purpose) is not True:
+            raise PermissionError("Rehearsal preparation is not admitted.")
         if (
             scope.go_live_gate
             or scope.population_dirty
@@ -185,7 +188,8 @@ def invalidate_rehearsal(*, campaign_id, admit):
         scope = CampaignCredentialState.objects.select_for_update().get(
             campaign=campaign
         )
-        admit(campaign)
+        if admit(campaign) is not True:
+            raise PermissionError("Rehearsal invalidation is not admitted.")
         epoch_id = scope.rehearsal_epoch_id
         scope.go_live_gate, scope.rehearsal_epoch_id = True, None
         scope.version += 1
@@ -207,7 +211,8 @@ def release_rehearsal_gate(*, campaign_id, admit):
         scope = CampaignCredentialState.objects.select_for_update().get(
             campaign=campaign
         )
-        admit(campaign)
+        if admit(campaign) is not True:
+            raise PermissionError("Rehearsal gate release is not admitted.")
         if scope.rehearsal_epoch_id is not None:
             raise StorageInvariantError(
                 "An invalidated rehearsal pointer must remain clear."

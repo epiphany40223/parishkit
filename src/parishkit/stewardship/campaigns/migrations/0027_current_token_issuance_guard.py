@@ -20,7 +20,7 @@ BEGIN
     IF generation.id IS NULL OR generation.state NOT IN('building','active')
        OR generation.credential_epoch IS DISTINCT FROM current_epoch
        OR NOT EXISTS(SELECT 1 FROM stewardship_family_campaign
-                     WHERE id=NEW.family_id AND portal_eligible) THEN
+                     WHERE id=NEW.family_id AND portal_eligible FOR SHARE) THEN
         RAISE EXCEPTION 'Token issuance requires a current eligible generation'
             USING ERRCODE='23514';
     END IF;
@@ -30,6 +30,7 @@ BEGIN
         WHERE c.id=generation.campaign_id AND c.active_token_generation_id=generation.id
           AND c.state IN('scheduled','active') AND s.mode='production'
           AND NOT s.restore_review_required
+        FOR SHARE OF c,s
     ) THEN
         RAISE EXCEPTION 'Live token issuance is not admitted'
             USING ERRCODE='23514';

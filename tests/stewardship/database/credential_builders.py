@@ -48,6 +48,7 @@ def keys():
 def admitted_population(campaign):
     """Storage integration test only; real source-promotion admission is DAT-03."""
     assert campaign.state in {"draft", "scheduled", "active"}
+    return True
 
 
 def populate(campaign, ring, statuses=None, *, generation=1):

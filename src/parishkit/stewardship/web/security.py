@@ -1,4 +1,10 @@
-"""Trusted ingress, uniform private errors and browser security headers."""
+"""Trusted ingress, uniform private errors and browser security headers.
+
+OPS-03/OPS-04 must supply STEWARDSHIP_PROXY_HOPS and the validated
+STEWARDSHIP_TRUSTED_PROXY_NETWORKS from the actual private proxy topology.
+browser_settings is the transport/browser projection, not runtime ingress
+assembly. Production startup remains disabled until that owner is integrated.
+"""
 
 from ipaddress import ip_address, ip_network
 from urllib.parse import urlsplit

@@ -60,12 +60,19 @@ def test_role_bound_code_report_and_safe_audit(
         if expected == 200:
             assert code in b"".join(response.streaming_content)
             response.close()
-            event = AuditEvent.objects.get(event_type="family_codes_viewed")
+            events = AuditEvent.objects.filter(
+                event_type="family_codes_viewed"
+            ).order_by("created_at")
+            assert events.count() == 2
+            event = events.last()
             assert event.ownership_scope == "parish"
             assert event.campaign_reference == campaign.pk
-            assert code.decode() not in json.dumps(
-                AuditContext.objects.get(event=event).context
-            )
+            contexts = [AuditContext.objects.get(event=item).context for item in events]
+            assert contexts == [
+                {"outcome": "started"},
+                {"outcome": "succeeded", "count": 1},
+            ]
+            assert code.decode() not in json.dumps(contexts)
         else:
             assert code not in response.content
             assert not AuditEvent.objects.filter(

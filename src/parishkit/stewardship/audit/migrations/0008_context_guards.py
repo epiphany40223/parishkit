@@ -56,7 +56,8 @@ ALTER TABLE stewardship_operational_log ADD CONSTRAINT operational_context_safe
 CHECK (stewardship_safe_context_v1(schema,context));
 ALTER TABLE stewardship_operational_log ADD CONSTRAINT operational_event_safe
 CHECK (event IN ('configuration_rejected','configuration_digest_mismatch','startup_rejected','startup_validated',
-    'request_completed','task_started','task_completed','task_failed','unstructured_log_suppressed'));
+    'request_completed','task_started','task_completed','task_failed','unstructured_log_suppressed',
+    'authentication_limits_weakened'));
 """,
             reverse_sql="""
 ALTER TABLE stewardship_operational_log DROP CONSTRAINT operational_event_safe;

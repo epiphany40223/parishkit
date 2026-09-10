@@ -96,3 +96,60 @@ privileged freshness; all 49 Google/recovery/privileged-action regressions pass.
 Final integrated validation will be repeated after subsequent review corrections.
 
 Subsequent independent rounds remain pending.
+
+## Round two
+
+Reviewed HEAD: `6b4f720` (round-one corrections).
+Diff base: `6fd21eb586a635333be9f55fc7db9caa39284e60`.
+Pika session: `20260910-173315-e522ff`.
+Both vendors completed, with nine automatically selected Claude sections. No
+failed agents, mismatched verdicts or degraded results were reported. The
+consolidated result contains 30 Medium findings and no High/Critical findings.
+Pika excluded Low findings from this Medium+ correction pass. C is Claude-only;
+X is Codex-only. All accepted findings are corrected and post-correction
+integrated validation passes.
+
+| ID | Disposition | Evidence / correction |
+| --- | --- | --- |
+| C1 | Fixed | SQL operational-event admission includes the new threshold-warning event; every Event member has a real persistence regression. |
+| C2 | Fixed | Cancelled sealed requests reject legacy cleanup before invoking its deletion callback and retain cleanup-pending state. |
+| C3 | Fixed | Signed callback tests reject invalid/stale/future initiation evidence and authentication later than token issuance. |
+| C4 | Fixed | Internal Docker liveness retries individual exec timeouts within its overall deadline. |
+| C5 | Fixed | The unmerged sealed-candidate SQL guard uses the keyring's exact key-ID grammar; a table-driven parity test covers both accepted and rejected IDs. |
+| C6 | Fixed | Middleware tests preserve marked HTML/JSON denial bodies and continue sealing unmarked errors. |
+| C7 | Fixed | Real installer roles cannot select another target's ciphertext; the backup-reader role has explicit ciphertext-read coverage. |
+| C8 | Fixed | Anonymous OAuth sessions expire after fifteen minutes; existing authenticated sessions retain their fixed absolute deadline during reauthentication. |
+| C9 | Fixed | Every secret target has a SQL-versus-mount-consumer vocabulary parity test. |
+| C10 | Fixed | All new credential mutation callbacks require exactly True, matching cipher/retirement admission. False/None fail closed; fixtures and callback documentation follow that contract. Existing earlier lifecycle-owner protocols are not silently redefined. |
+| C11 | Fixed | Exact UTF-8 expansion is computed before combined allocation; sanitized output is also re-bounded. |
+| C12 | Out-of-phase; clarified | No production startup is enabled. OPS-03/OPS-04 own actual proxy topology and both trust settings; the module and handoff now explicitly identify that required assembly. A transport-only settings projection is not presented as production ingress admission. |
+| C13 | Fixed | Module-autouse opt-in gating precedes HTTP, asset and browser fixtures; missing static assets have an explicit diagnostic. |
+| C14 | Fixed | Health probes claim their process slot nonblockingly. Other callers still execute their atomic counters; contention has a regression. |
+| C15 | Fixed | A SCRIPT_NAME request mutates its session and asserts the actual Admin Set-Cookie name/path, rather than merely absence of a Family cookie. |
+| C16 | Clarified and refreshed | Historical checkpoint counts stay historical. Current task evidence reports the measured 66-case browser matrix and links to the latest review validation. |
+| C17 | Fixed | Retirement opens its durable transaction before the owner's transaction-scoped SQL locks. A separate backend proves exclusion at owner-context exit and release only after commit. |
+| C18 | Fixed | Real configuration and activation workflows prove unrelated campaign changes retain the rehearsal gate and pointer activation clears it with a version increment. |
+| C19 | Fixed | Admin callback failures use bounded deployment-wide sampled audit, even beyond public rate limits. Per-attempt keyed accounting stays ephemeral. |
+| C20 | Fixed | Distributed manual-code failures use the same bounded policy and retain their per-attempt ephemeral aggregate count. |
+| C21 | Duplicate | Same manual-code failure audit finding as C20. |
+| C22 | Fixed | Limiter admission inside an existing transaction raises a typed retryable denial before any durable probe. The precondition is documented. |
+| C23 | Fixed | SQL health/incident failures become retryable authentication unavailability, including when the incident store itself is unavailable. |
+| C24 | Fixed | The unmerged downgrade guard removes FORCE RLS under exclusive table locks before inspecting history. A non-superuser table-owner test proves retained history blocks downgrade and failed validation rolls policy changes back. |
+| C25 | Fixed | Report intent is followed by terminal server-side completion/failure and prepared row count, after the read-only guard closes. Tests cover success, admission/decryption failure and early close without duplicate terminal records. |
+| C26 | Fixed | Direct token insertion pins Family eligibility and active campaign/runtime admission facts with row locks; an independent mutation cannot change eligibility mid-insert. |
+| C27 | Fixed | Kernel pseudo mounts are enumerated by exact destination, filesystem, source and mount root, including Docker's masked null devices. Arbitrary descendant/bind mounts are rejected; private source/root strings stay out of diagnostics. |
+| C28 | Fixed | Web staging-grant admission rejects ciphertext SELECT and is integrated into web consumer acknowledgement; production startup must use this assertion with its actual web identity. |
+| C29 | Fixed | Already-dirty populations still take the manifest-row write lock. A competing raw-like Family update proves it cannot bypass serialization. |
+| X1 | Fixed | Accepted internationalized origins are reconstructed with ASCII IDNA hosts and preserved ports/brackets; Django Host and CSRF-origin tests use the browser's punycode form. |
+
+The reviewed commit passed 2,251 ordinary and 831 PostgreSQL tests, with 95.01%
+line and 85.66% branch coverage. That is pre-correction evidence, not final
+validation of this round's changes.
+
+Post-correction validation: 2,263 ordinary tests and 883 PostgreSQL tests pass;
+scoped coverage is 94.71% lines and 85.39% branches. The rebuilt image passes the
+same 2,263 ordinary tests, all 30 Compose checks and all 12 container-isolation
+checks. All 66 browser cases pass. Ruff checks/formatting, tracked Markdown lint,
+migration drift and diff checks pass. The database run uses its own disposable
+PostgreSQL cluster, independent of reviewer test resources. Round two is complete;
+the third independent full-branch review remains required.

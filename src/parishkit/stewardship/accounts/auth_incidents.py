@@ -13,29 +13,43 @@ from parishkit.stewardship.audit.services import record_action
 from .auth_models import AuthenticationIncident
 
 
-def record_link_rejection():
-    """At most one permanent invalid-link signal per deployment per five minutes.
+def record_login_rejection(event_type):
+    """At most one signal per public login class per deployment per five minutes.
 
     Per-attempt keyed source/candidate telemetry belongs only to the ephemeral
     aggregate detector. Public garbage cannot allocate unbounded permanent audit
     rows, even with many sources or when Valkey is unavailable. This signal is
     sampled evidence, not an exact attempt count.
     """
+    kinds = ("family_link_invalid", "admin_login_denied", "family_login_failed")
+    if event_type not in kinds:
+        raise ValueError("Unknown public authentication rejection.")
     with transaction.atomic(), connection.cursor() as cursor:
-        cursor.execute("SELECT pg_try_advisory_xact_lock(%s,%s)", [736228, 1])
+        cursor.execute(
+            "SELECT pg_try_advisory_xact_lock(%s,%s)",
+            [736228, kinds.index(event_type) + 1],
+        )
         if not cursor.fetchone()[0]:
             return
         cursor.execute("SELECT statement_timestamp()")
         since = cursor.fetchone()[0] - timedelta(minutes=5)
         if AuditEvent.objects.filter(
-            event_type=Action.INVALID_LINK.value, created_at__gte=since
+            event_type=event_type, created_at__gte=since
         ).exists():
             return
-        record_action(
-            Action.INVALID_LINK,
-            actor_kind=ActorKind.SYSTEM,
-            context={"outcome": Outcome.DENIED},
-        )
+        if event_type == Action.INVALID_LINK.value:
+            record_action(
+                Action.INVALID_LINK,
+                actor_kind=ActorKind.SYSTEM,
+                context={"outcome": Outcome.DENIED},
+            )
+        else:
+            AuditEvent.objects.create(event_type=event_type)
+
+
+def record_link_rejection():
+    """Keep the opaque-link caller on the same bounded public-rejection policy."""
+    record_login_rejection(Action.INVALID_LINK.value)
 
 
 def record_incident(kind, severity, window, counts):

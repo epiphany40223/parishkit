@@ -63,7 +63,7 @@ def family_service(auth_service, settings):
             mac=ring.mac,
             public=ring.public,
             purpose=CampaignWorkKind.REHEARSAL,
-            admit=lambda *args: None,
+            admit=lambda *args: True,
         )
         credential = RehearsalCredential.objects.get()
         yield FamilyHarness(
@@ -124,6 +124,20 @@ def test_invalid_link_audit_is_bounded_and_attempts_stay_ephemeral(family_servic
     assert AuditContext.objects.get(event=event).context == {"outcome": "denied"}
 
 
+def test_distributed_manual_failures_have_bounded_durable_audit(family_service):
+    """Many public sources retain per-attempt ephemeral counts, not permanent rows."""
+    from parishkit.stewardship.audit.models import AuditEvent
+
+    for index in range(20):
+        response = Client().post(
+            "/", {"code": "ZZZZZZZZ"}, REMOTE_ADDR=f"192.0.2.{index + 1}"
+        )
+        assert response.status_code == 403
+    assert AuditEvent.objects.filter(event_type="family_login_failed").count() == 1
+    limiter = family_service.service.limiter
+    assert limiter.client.zcard(limiter.namespace + ":aggregate:family:attempts") == 20
+
+
 def test_code_exchange_and_token_link_use_clean_isolated_session(family_service):
     client, response = login(family_service.code.lower())
     assert response.status_code == 302 and response["Location"] == "/family/"
@@ -156,7 +170,7 @@ def test_invalidation_ends_testing_sessions_before_sensitive_cleanup(family_serv
     client, _ = login(family_service.code)
     assert client.get("/family/").status_code == 200
     invalidate_rehearsal(
-        campaign_id=family_service.campaign.pk, admit=lambda *args: None
+        campaign_id=family_service.campaign.pk, admit=lambda *args: True
     )
     assert RehearsalCredential.objects.exists()
     assert client.get("/family/").status_code == 302

@@ -14,7 +14,7 @@ class Migration(migrations.Migration):
 CREATE FUNCTION stewardship_population_insert_dirty_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path=pg_catalog,public,pg_temp AS $$ BEGIN
     UPDATE stewardship_campaign_credentials SET population_dirty=true,version=version+1
-    WHERE NOT population_dirty AND campaign_id IN(SELECT DISTINCT campaign_id FROM new_families);
+    WHERE campaign_id IN(SELECT DISTINCT campaign_id FROM new_families);
     RETURN NULL;
 END $$;
 CREATE TRIGGER stewardship_population_insert_dirty_v1 AFTER INSERT ON stewardship_family_campaign
@@ -22,7 +22,7 @@ REFERENCING NEW TABLE AS new_families FOR EACH STATEMENT EXECUTE FUNCTION stewar
 CREATE FUNCTION stewardship_population_update_dirty_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path=pg_catalog,public,pg_temp AS $$ BEGIN
     UPDATE stewardship_campaign_credentials SET population_dirty=true,version=version+1
-    WHERE NOT population_dirty AND campaign_id IN(
+    WHERE campaign_id IN(
         SELECT n.campaign_id FROM new_families n JOIN old_families o ON o.id=n.id
         WHERE (n.portal_eligible,n.source_generation) IS DISTINCT FROM (o.portal_eligible,o.source_generation));
     RETURN NULL;

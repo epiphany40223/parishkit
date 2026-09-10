@@ -47,13 +47,13 @@ def prepare(campaign, ring):
         mac=ring.mac,
         public=ring.public,
         purpose=CampaignWorkKind.READINESS_TEST,
-        admit=lambda *args: None,
+        admit=lambda *args: True,
     )
 
 
 def invalidate(campaign):
     """Run the real storage invalidation under the synthetic owning gate admission."""
-    return invalidate_rehearsal(campaign_id=campaign.pk, admit=lambda *args: None)
+    return invalidate_rehearsal(campaign_id=campaign.pk, admit=lambda *args: True)
 
 
 def test_testing_codes_and_tokens_are_disjoint_and_idempotent(tmp_path):
@@ -87,7 +87,7 @@ def test_invalidation_precedes_bounded_cleanup_and_never_erases_reservations(tmp
     assert cleanup_rehearsal(epoch, batch_size=2) == 1
     assert cleanup_rehearsal(epoch) == 0
     assert RehearsalCodeReservation.objects.count() == 3
-    release_rehearsal_gate(campaign_id=campaign.pk, admit=lambda *args: None)
+    release_rehearsal_gate(campaign_id=campaign.pk, admit=lambda *args: True)
     prepare(campaign, ring)
     assert RehearsalCredential.objects.first().epoch_id != epoch
     assert RehearsalCodeReservation.objects.count() == 6
@@ -127,7 +127,7 @@ def test_retired_code_is_not_reused_after_cleanup_and_key_demotion(
     assert RehearsalCodeReservation.objects.get().key_id == "m1"
     candidates = iter([old_code, "IABCDEFG"])
     monkeypatch.setattr(rehearsals, "new_code", lambda **kwargs: next(candidates))
-    release_rehearsal_gate(campaign_id=campaign.pk, admit=lambda *args: None)
+    release_rehearsal_gate(campaign_id=campaign.pk, admit=lambda *args: True)
     prepare(campaign, TestKeys(ring.general, demoted, ring.private))
     credential = RehearsalCredential.objects.get()
     assert (
@@ -147,7 +147,7 @@ def test_missing_required_mac_inventory_fails_without_production_fallback(tmp_pa
     prepare(campaign, ring)
     epoch = invalidate(campaign)
     cleanup_rehearsal(epoch)
-    release_rehearsal_gate(campaign_id=campaign.pk, admit=lambda *args: None)
+    release_rehearsal_gate(campaign_id=campaign.pk, admit=lambda *args: True)
     incomplete = CodeMacKeyring([Key("m2", "active", b"n" * 32)])
     with pytest.raises(CryptographicError):
         prepare(campaign, TestKeys(ring.general, incomplete, ring.private))

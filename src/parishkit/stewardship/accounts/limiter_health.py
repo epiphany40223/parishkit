@@ -19,6 +19,8 @@ def observe_store(client, namespace):
     a failed audit commit must not erase the only evidence of a flush. Competing
     observers serialize on a low-volume health lock; duplicate loss observations
     within a five-minute alert window produce one notification intent.
+    Run outside application transactions; Limiter.check_health enforces that
+    precondition with a typed retryable denial before calling this primitive.
     """
     fingerprint = hashlib.sha256(namespace.encode("ascii")).hexdigest()
     marker_key = namespace + ":health:marker"

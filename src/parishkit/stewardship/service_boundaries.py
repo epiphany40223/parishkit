@@ -2,7 +2,7 @@
 
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from parishkit.config import ConfigError
@@ -41,6 +41,8 @@ class Mount:
     target: Path
     read_only: bool
     filesystem: str = ""
+    root: str = field(default="", repr=False, compare=False)
+    source: str = field(default="", repr=False, compare=False)
 
 
 def parse_mounts(value):
@@ -63,7 +65,15 @@ def parse_mounts(value):
             or separator + 3 >= len(columns)
         ):
             raise ConfigError("Service mount inventory is invalid.")
-        result.append(Mount(Path(target), "ro" in flags, columns[separator + 1]))
+        result.append(
+            Mount(
+                Path(target),
+                "ro" in flags,
+                columns[separator + 1],
+                columns[3],
+                columns[separator + 2],
+            )
+        )
     if not result or len(result) > 4096:
         raise ConfigError("Service mount inventory is unavailable.")
     return tuple(result)
@@ -176,14 +186,7 @@ def _check_extra(configuration, mount, files, authority, target_directory, insta
         raise ConfigError("Service has a broad or unrelated privileged mount.")
     if path in {Path("/etc/hosts"), Path("/etc/hostname"), Path("/etc/resolv.conf")}:
         return
-    if mount.filesystem in {
-        "proc",
-        "sysfs",
-        "tmpfs",
-        "devpts",
-        "mqueue",
-        "cgroup2",
-    } and (path == Path("/tmp") or path.parts[1] in {"proc", "sys", "dev"}):
+    if _kernel_pseudo_mount(mount):
         return
     if (
         configuration.profile is DeploymentProfile.DEVELOPMENT
@@ -203,6 +206,77 @@ def _check_extra(configuration, mount, files, authority, target_directory, insta
             raise ConfigError("Backup service data mounts must be read-only.")
         return
     raise ConfigError("Service contains an unrecognized mount.")
+
+
+def _kernel_pseudo_mount(mount):
+    """Admit exact container pseudo mounts, not arbitrary binds below /proc or /dev.
+
+    Kernel evidence detects accidental excess mounts, not a malicious host root
+    capable of replacing both this program and its mountinfo view. Sources/roots
+    inform policy but never appear in rejection messages or Mount repr output.
+    """
+    path = str(mount.target)
+    ordinary = {
+        "/proc": "proc",
+        "/dev": "tmpfs",
+        "/dev/pts": "devpts",
+        "/sys": "sysfs",
+        "/sys/fs/cgroup": "cgroup2",
+        "/dev/mqueue": "mqueue",
+        "/dev/shm": "tmpfs",
+        "/tmp": "tmpfs",
+    }
+    if path in ordinary:
+        return (
+            mount.filesystem == ordinary[path]
+            and mount.root == "/"
+            and mount.source
+            in (
+                {"tmpfs", "shm"}
+                if path == "/dev/shm"
+                else {"cgroup", "cgroup2"}
+                if path == "/sys/fs/cgroup"
+                else {mount.filesystem}
+            )
+        )
+    if path in {
+        "/proc/bus",
+        "/proc/fs",
+        "/proc/irq",
+        "/proc/sys",
+        "/proc/sysrq-trigger",
+    }:
+        return (
+            mount.filesystem == "proc"
+            and mount.source == "proc"
+            and mount.root == path.removeprefix("/proc")
+            and mount.read_only
+        )
+    masked_files = {
+        "/proc/interrupts",
+        "/proc/kcore",
+        "/proc/keys",
+        "/proc/latency_stats",
+        "/proc/timer_list",
+    }
+    masked_dirs = {
+        "/proc/acpi",
+        "/proc/scsi",
+        "/sys/firmware",
+        "/sys/devices/virtual/powercap",
+    }
+    if (
+        path in masked_files
+        or path in masked_dirs
+        or re.fullmatch(r"/sys/devices/system/cpu/cpu[0-9]+/thermal_throttle", path)
+    ):
+        return (
+            mount.filesystem == "tmpfs"
+            and mount.source == "tmpfs"
+            and mount.root == ("/null" if path in masked_files else "/")
+            and (path in masked_files or mount.read_only)
+        )
+    return False
 
 
 def admit_online_service(configuration):
