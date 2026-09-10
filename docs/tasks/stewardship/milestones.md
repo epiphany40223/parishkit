@@ -34,6 +34,34 @@ passed; scoped coverage was 97.75% lines and 94.76% branches. Ruff, Markdown,
 whitespace and migration-drift checks passed. Reports are local disposable
 artifacts under `/tmp/parishkit-campaign-round1-quality*`, not repository data.
 
+Round 2: Pika session `20260909-221600-a55bea` reviewed `f8b2fb8`, again with two
+Claude shards and one independent full-branch Codex review. All completed without
+degradation, failure or verdict mismatch: nine Medium findings, no High/Critical.
+
+| Finding | Disposition |
+| --- | --- |
+| Financial SQL lacked direct coverage | Added real ordinary/leap-day financial installations and raw malformed-period rejection tests. |
+| Lifecycle guard metadata lacked contract tests | Added exact actor, mode and guard obligations for every action, plus the full action/state/mode matrix. |
+| Testing ignores delivery-pause flags | Intentional: the controlling live-pause specification is Production-only. Clarified and tested explicit Testing-send semantics. |
+| Temporary campaign holds terminally reject requests | Fixed with a distinct retryable operational exception; a staged request survives the hold and applies when cleared. |
+| Timezone-data disagreement can block retained lineage | Documented isolated upgrade verification, whole-lineage impact and safe recovery limitations; added fail-closed/restored-rules regression coverage. |
+| SQL admits duplicate/unsorted module sets | Fixed independent SQL canonical-set checks and direct malformed-header tests. |
+| SQL admits correctly resolved schedules outside the campaign | Fixed half-open owning-interval checks and raw start/end-edge coverage. |
+| SQL omits cross-schedule relationships | Added deferred initial/reminder chronology/uniqueness and recurring-kind cardinality checks, with complete raw-snapshot negative and positive tests. |
+| Lifecycle mode constraints are incomplete | Added explicit mode contracts, including Testing-only purge edges. Retained normative Testing acceptance for Return to Testing and reopen's preserve/assert-Production workflow rather than adopting overly restrictive suggestions. |
+
+Related lifecycle correction: overdue start remains eligible after the end, and
+close requires the intermediate active state. Tests preserve ordered start/close
+effects without outside-interval access; runtime atomic boundary transactions
+remain assigned to DAT-02/BG-02. Boundary-worker fencing/restore/purge guards and
+global no-current/fencing obligations for all purge-worker edges are explicit.
+Third-round review remains required before opening this batch's PR.
+
+Round 2 correction validation: 1,861 baseline tests and 419 PostgreSQL tests
+passed; scoped coverage was 97.83% lines and 94.94% branches. Ruff, Markdown,
+whitespace and migration-drift checks passed. Disposable reports are under
+`/tmp/parishkit-campaign-round2-quality*`.
+
 [Task index](README.md) · [Task execution plan](overall.md) ·
 [Controlling plan](../../plans/stewardship/overall.md)
 

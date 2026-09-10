@@ -85,8 +85,14 @@ def test_activation_withdrawal_close_and_reopen_races():
     )
     assert transition_target(Action.WITHDRAW, scheduled, INTERVAL.start) is None
     assert transition_target(Action.START, scheduled, INTERVAL.start) is State.ACTIVE
-    assert transition_target(Action.START, scheduled, INTERVAL.end) is None
-    assert transition_target(Action.CLOSE, scheduled, INTERVAL.end) is State.CLOSED
+    assert transition_target(Action.START, scheduled, INTERVAL.end) is State.ACTIVE
+    assert transition_target(Action.CLOSE, scheduled, INTERVAL.end) is None
+    assert (
+        transition_target(
+            Action.CLOSE, replace(scheduled, state=State.ACTIVE), INTERVAL.end
+        )
+        is State.CLOSED
+    )
     assert transition_target(Action.CLOSE, scheduled, INTERVAL.start) is None
     closed = replace(scheduled, state=State.CLOSED)
     extended = UTCInterval(INTERVAL.start, INTERVAL.end + timedelta(days=1))
@@ -208,3 +214,127 @@ def test_noncanonical_facts_fail():
         )
     with pytest.raises(ValueError):
         structural_edit_admitted(State.DRAFT, ever_active=1, locked=False)
+
+
+@pytest.mark.parametrize("state,action,mode", list(product(State, Action, Mode)))
+def test_transition_modes_and_sources(state, action, mode):
+    """The registry is the mode contract, including Testing idempotent commands."""
+    rule = TRANSITIONS[action]
+    facts = CampaignFacts(state, mode, INTERVAL, rule.actor != "purge_worker")
+    now = INTERVAL.start
+    if action in {Action.WITHDRAW, Action.ACTIVATE}:
+        now -= timedelta(seconds=1)
+    elif action in {Action.CLOSE, Action.REOPEN}:
+        now = INTERVAL.end
+    result = transition_target(
+        action,
+        facts,
+        now,
+        proposed_interval=UTCInterval(INTERVAL.start, INTERVAL.end + timedelta(days=1)),
+    )
+    assert (result is not None) == (state in rule.sources and mode in rule.modes)
+
+
+def test_guard_actor_and_mode_contract():
+    """Pin operational obligations independently of the registry implementation."""
+    expected = {
+        Action.ACTIVATE: (
+            "administrator",
+            "testing",
+            "current readiness configuration_coherent cleanup_complete "
+            "token_generation catch_up_demand no_restore no_purge",
+        ),
+        Action.START: (
+            "boundary_worker",
+            "production",
+            "current boundary_current no_restore no_purge fenced_owner",
+        ),
+        Action.CLOSE: (
+            "boundary_worker",
+            "production",
+            "current boundary_current invalidate_family_access "
+            "no_restore no_purge fenced_owner",
+        ),
+        Action.WITHDRAW: (
+            "administrator",
+            "production",
+            "current quiescent cancel_future_work invalidate_readiness "
+            "no_restore no_purge reason",
+        ),
+        Action.REOPEN: (
+            "administrator",
+            "testing production",
+            "current readiness configuration_coherent token_generation "
+            "extended_end no_restore no_purge quiescent",
+        ),
+        Action.ARCHIVE: (
+            "administrator",
+            "testing production",
+            "current quiescent post_close_resolved no_restore no_purge",
+        ),
+        Action.UNARCHIVE: (
+            "administrator",
+            "testing production",
+            "current no_other_current quiescent no_restore no_purge",
+        ),
+        Action.RETURN_TESTING: (
+            "administrator",
+            "testing production",
+            "current quiescent post_close_resolved no_restore no_purge "
+            "clear_current_pointer",
+        ),
+        Action.PURGE: (
+            "purge_worker",
+            "testing",
+            "purge_request purge_window no_current_campaign fresh_backup "
+            "quiescent fenced_owner",
+        ),
+        Action.PURGE_ABORT: (
+            "purge_worker",
+            "testing",
+            "no_deletion_committed no_current_campaign fenced_owner",
+        ),
+        Action.PURGE_COMPLETE: (
+            "purge_worker",
+            "testing",
+            "database_deleted files_deleted fenced_owner no_current_campaign",
+        ),
+        Action.PURGE_CLEANUP_FAILED: (
+            "purge_worker",
+            "testing",
+            "database_deleted fenced_owner no_current_campaign",
+        ),
+    }
+    assert set(expected) == set(Action)
+    for action, (actor, modes, guards) in expected.items():
+        rule = TRANSITIONS[action]
+        assert rule.actor == actor
+        assert rule.modes == frozenset(Mode(mode) for mode in modes.split())
+        assert rule.guards == frozenset(guards.split())
+        assert rule.reauthentication == rule.confirmation == (actor == "administrator")
+
+
+def test_overdue_boundaries_preserve_order_without_reopening_access():
+    """Catch-up must record start then close, never skip the intermediate state."""
+    facts = CampaignFacts(State.SCHEDULED, Mode.PRODUCTION, INTERVAL, True)
+    now = INTERVAL.end + timedelta(days=2)
+    assert transition_target(Action.CLOSE, facts, now) is None
+    for action, target in [(Action.START, State.ACTIVE), (Action.CLOSE, State.CLOSED)]:
+        assert not portal_admitted(facts, now)
+        assert not scheduled_work_admitted(facts, now, delivery=True)
+        assert transition_target(action, facts, now) is target
+        facts = replace(facts, state=target)
+    assert not portal_admitted(facts, now)
+
+
+def test_testing_sends_are_not_live_delivery():
+    """Production pause/catch-up flags do not suppress explicit test sends."""
+    facts = CampaignFacts(
+        State.DRAFT,
+        Mode.TESTING,
+        INTERVAL,
+        True,
+        delivery_paused=True,
+        catch_up_pending=True,
+    )
+    assert scheduled_work_admitted(facts, INTERVAL.start, delivery=True)

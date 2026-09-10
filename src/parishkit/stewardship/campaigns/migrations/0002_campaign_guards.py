@@ -126,6 +126,7 @@ END $$;
 CREATE FUNCTION stewardship_campaign_projection_v1()
 RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE expected jsonb; section text; owner_zone text; expected_due timestamptz;
+    owner_start timestamptz; owner_end timestamptz;
 BEGIN
     section := CASE WHEN TG_TABLE_NAME = 'stewardship_campaign_configuration'
                     THEN 'campaigns' ELSE 'schedules' END;
@@ -144,6 +145,11 @@ BEGIN
            OR NEW.end_date IS DISTINCT FROM (expected->>'end_date')::date
            OR jsonb_typeof(expected->'modules') IS DISTINCT FROM 'array'
            OR coalesce(jsonb_array_length(expected->'modules'), 0) < 1
+           OR expected->'modules' IS DISTINCT FROM (
+               SELECT jsonb_agg(value ORDER BY value COLLATE "C")
+               FROM (SELECT DISTINCT value
+                     FROM jsonb_array_elements_text(expected->'modules')) canonical
+           )
            OR NOT expected->'modules' <@ '["census", "ministry", "financial"]'::jsonb THEN
             RAISE EXCEPTION 'Invalid indexed campaign projection' USING ERRCODE = '23514';
         END IF;
@@ -169,7 +175,8 @@ BEGIN
                             AND record_id = NEW.campaign_id) THEN
             RAISE EXCEPTION 'Invalid schedule ownership' USING ERRCODE = '23514';
         END IF;
-        SELECT timezone INTO owner_zone FROM public.stewardship_campaign_configuration
+        SELECT timezone, starts_at, ends_at INTO owner_zone, owner_start, owner_end
+        FROM public.stewardship_campaign_configuration
         WHERE configuration_id = NEW.configuration_id AND record_id = NEW.campaign_id;
         IF NEW.kind IN ('initial', 'reminder') THEN
             expected_due := public.stewardship_resolve_local_v1(
@@ -177,6 +184,9 @@ BEGIN
         END IF;
         IF NEW.due_at IS DISTINCT FROM expected_due THEN
             RAISE EXCEPTION 'Invalid resolved schedule boundary' USING ERRCODE = '23514';
+        END IF;
+        IF NEW.due_at < owner_start OR NEW.due_at >= owner_end THEN
+            RAISE EXCEPTION 'Schedule is outside campaign interval' USING ERRCODE = '23514';
         END IF;
         -- Match preparation's global lock even for direct competing inserts.
         -- PL/pgSQL's following READ COMMITTED query sees the previous winner.
@@ -207,6 +217,21 @@ BEGIN
         WHERE configuration_id = NEW.id) <> coalesce(jsonb_array_length(
             NEW.canonical_document->'sections'->'schedules'), 0) THEN
         RAISE EXCEPTION 'Campaign projections are incomplete' USING ERRCODE = '23514';
+    END IF;
+    IF EXISTS (
+        SELECT campaign_id FROM public.stewardship_schedule_revision
+        WHERE configuration_id = NEW.id AND kind IN ('initial', 'reminder')
+        GROUP BY campaign_id
+        HAVING count(*) FILTER (WHERE kind = 'initial') <> 1
+           OR count(DISTINCT due_at) <> count(*)
+           OR min(due_at) FILTER (WHERE kind = 'reminder') <=
+              min(due_at) FILTER (WHERE kind = 'initial')
+    ) OR EXISTS (
+        SELECT campaign_id, kind FROM public.stewardship_schedule_revision
+        WHERE configuration_id = NEW.id AND kind IN ('daily_digest', 'weekly_digest')
+        GROUP BY campaign_id, kind HAVING count(*) > 1
+    ) THEN
+        RAISE EXCEPTION 'Invalid schedule relationships' USING ERRCODE = '23514';
     END IF;
     RETURN NULL;
 END $$;

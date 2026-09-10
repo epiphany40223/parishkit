@@ -48,6 +48,33 @@ including scheduler lag, restore gates, independent delivery pause, historical
 unarchive restrictions, purge edges and structural locks. Its target is a policy
 decision, not proof of authorization, readiness, token preparation or quiescence.
 Owning services must obtain those facts under their transaction locks.
+Registry modes deliberately allow Return to Testing when already in Testing,
+and reopen preserves or asserts Production under its separate readiness guard.
+Live delivery pause/catch-up flags are Production-only; they do not suppress
+explicit readiness/test-recipient sends. Overdue boundaries must record start
+then close in one owning transaction, even when both dates have passed. These
+pure decisions never admit Family access outside the effective interval.
+
+Temporary restore/mode admission holds leave a staged configuration request
+retryable; invalid draft intent still produces a terminal rejection receipt.
+
+## Timezone-rule upgrade safety
+
+Python and PostgreSQL independently resolve local times. Their rules must agree
+for every retained campaign and schedule, including historical configurations.
+An affected timezone-data update can invalidate verification of the entire
+immutable lineage, blocking ordinary activation and offline policy recovery,
+even if only an older campaign is affected. Failing closed is intentional.
+
+Before upgrading either image or timezone data, validate the retained lineage
+in an isolated restored copy using the proposed image pair. Keep the known-good
+pair if any boundary differs. Recovery requires matching rules or an explicitly
+reviewed forward migration that preserves historical resolution semantics;
+there is no automatic boundary rewrite or in-place database downgrade. Follow
+the [operations upgrade/restore workflow](../specs/stewardship/operations/spec.md)
+for any required restoration. Do not disable guards, edit historical UTC values,
+or replay old mail to get past a mismatch. Regression tests simulate rule drift
+and verify that restoring matching rules revalidates unchanged stored history.
 
 ## Remaining integration
 

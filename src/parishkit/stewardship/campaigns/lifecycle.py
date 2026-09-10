@@ -41,15 +41,26 @@ class Transition:
     targets: frozenset[State]
     actor: str
     guards: frozenset[str]
+    modes: frozenset[Mode]
     reauthentication: bool = False
     confirmation: bool = False
 
 
-def _transition(sources, targets, actor, *guards):
+def _transition(
+    sources, targets, actor, *guards, modes=(Mode.TESTING, Mode.PRODUCTION)
+):
     """Construct internal registry entries without mutable collections."""
     admin = actor == "administrator"
+    if actor == "purge_worker":
+        guards += ("no_current_campaign", "fenced_owner")
     return Transition(
-        frozenset(sources), frozenset(targets), actor, frozenset(guards), admin, admin
+        frozenset(sources),
+        frozenset(targets),
+        actor,
+        frozenset(guards),
+        frozenset(modes),
+        admin,
+        admin,
     )
 
 
@@ -67,6 +78,7 @@ TRANSITIONS = MappingProxyType(
             "catch_up_demand",
             "no_restore",
             "no_purge",
+            modes=(Mode.TESTING,),
         ),
         Action.START: _transition(
             [State.SCHEDULED],
@@ -76,14 +88,20 @@ TRANSITIONS = MappingProxyType(
             "boundary_current",
             "no_restore",
             "no_purge",
+            "fenced_owner",
+            modes=(Mode.PRODUCTION,),
         ),
         Action.CLOSE: _transition(
-            [State.SCHEDULED, State.ACTIVE],
+            [State.ACTIVE],
             [State.CLOSED],
             "boundary_worker",
             "current",
             "boundary_current",
             "invalidate_family_access",
+            "no_restore",
+            "no_purge",
+            "fenced_owner",
+            modes=(Mode.PRODUCTION,),
         ),
         Action.WITHDRAW: _transition(
             [State.SCHEDULED],
@@ -96,6 +114,7 @@ TRANSITIONS = MappingProxyType(
             "no_restore",
             "no_purge",
             "reason",
+            modes=(Mode.PRODUCTION,),
         ),
         Action.REOPEN: _transition(
             [State.CLOSED],
@@ -150,12 +169,14 @@ TRANSITIONS = MappingProxyType(
             "no_current_campaign",
             "fresh_backup",
             "quiescent",
+            modes=(Mode.TESTING,),
         ),
         Action.PURGE_ABORT: _transition(
             [State.PURGING],
             [State.ARCHIVED],
             "purge_worker",
             "no_deletion_committed",
+            modes=(Mode.TESTING,),
         ),
         Action.PURGE_COMPLETE: _transition(
             [State.PURGING, State.PURGE_CLEANUP_FAILED],
@@ -164,6 +185,7 @@ TRANSITIONS = MappingProxyType(
             "database_deleted",
             "files_deleted",
             "fenced_owner",
+            modes=(Mode.TESTING,),
         ),
         Action.PURGE_CLEANUP_FAILED: _transition(
             [State.PURGING],
@@ -171,6 +193,7 @@ TRANSITIONS = MappingProxyType(
             "purge_worker",
             "database_deleted",
             "fenced_owner",
+            modes=(Mode.TESTING,),
         ),
     }
 )
@@ -215,7 +238,7 @@ def portal_admitted(facts: CampaignFacts, now: datetime) -> bool:
 
 
 def scheduled_work_admitted(facts: CampaignFacts, now: datetime, *, delivery=False):
-    """Separate ordinary schedule preparation from provider dispatch and Family use."""
+    """Apply Production-only live pause/catch-up holds, not Testing-send suppression."""
     if not portal_admitted(facts, now):
         return False
     if facts.mode is Mode.PRODUCTION and facts.catch_up_pending:
@@ -236,20 +259,20 @@ def transition_target(
     if not isinstance(action, Action):
         raise ValueError("A canonical lifecycle action is required.")
     rule = TRANSITIONS[action]
-    if facts.state not in rule.sources:
+    if facts.state not in rule.sources or facts.mode not in rule.modes:
         return None
     if "current" in rule.guards and not facts.current:
         return None
     if "no_restore" in rule.guards and facts.restore_required:
         return None
+    if "no_current_campaign" in rule.guards and facts.current:
+        return None
     if action is Action.ACTIVATE:
-        if facts.mode is not Mode.TESTING or now >= facts.interval.end:
+        if now >= facts.interval.end:
             return None
         return State.ACTIVE if within else State.SCHEDULED
     if action in {Action.START, Action.CLOSE, Action.WITHDRAW, Action.REOPEN}:
-        if facts.mode is not Mode.PRODUCTION:
-            return None
-        if action is Action.START and not within:
+        if action is Action.START and now < facts.interval.start:
             return None
         if action is Action.CLOSE and now < facts.interval.end:
             return None
@@ -262,8 +285,6 @@ def transition_target(
             or not proposed_interval.contains(now)
         ):
             return None
-    if action is Action.PURGE and (facts.mode is not Mode.TESTING or facts.current):
-        return None
     return next(iter(rule.targets))
 
 

@@ -1,12 +1,16 @@
 """Installer preflight for the admitted Testing-only campaign storage subset.
 
-These checks produce terminal invalid-candidate receipts before manifest changes.
+Invalid intent produces terminal receipts; temporary admission gates stay retryable.
 SQL repeats the transactional invariants. The serialized installer is currently
 the only runtime writer; future lifecycle/purge integration must join its global
 admission lock and extend this preflight rather than open parallel unsafe paths.
 """
 
 from parishkit.config import ConfigError
+
+
+class CampaignAdmissionUnavailable(RuntimeError):
+    """Deployment state temporarily blocks configuration; this is not invalid intent."""
 
 
 def validate_installation(document):
@@ -27,7 +31,9 @@ def validate_installation(document):
         if runtime is not None and (
             runtime.mode != "testing" or runtime.restore_review_required
         ):
-            raise ConfigError("Campaign configuration is not currently admitted.")
+            raise CampaignAdmissionUnavailable(
+                "Campaign configuration is not currently admitted."
+            )
         if current is None and (
             Campaign.objects.exists()
             or target["values"]["timezone"]

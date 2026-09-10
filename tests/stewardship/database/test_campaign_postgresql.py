@@ -28,7 +28,7 @@ from parishkit.stewardship.campaigns.models import (
 )
 from parishkit.stewardship.storage import StorageInvariantError
 
-from ..campaign_factory import campaign, schedule
+from ..campaign_factory import campaign, financial, schedule
 from ..configuration_factory import configuration_version
 from ..test_campaign_configuration import document as campaign_document
 from .test_policy_postgresql import change, initialized
@@ -638,7 +638,9 @@ def test_direct_concurrent_schedule_identity_is_serialized(tmp_path):
     assert ScheduleRevision.objects.filter(record_id=identifier).count() == 1
 
 
-@pytest.mark.parametrize("modules", [[], ["unknown"]])
+@pytest.mark.parametrize(
+    "modules", [[], ["unknown"], ["census", "census"], ["ministry", "census"]]
+)
 def test_raw_canonical_header_cannot_admit_invalid_modules(tmp_path, modules):
     """The SQL module check is independent of the Python document validator."""
     from parishkit.stewardship.campaigns.configuration import campaign_values
@@ -673,3 +675,221 @@ def test_raw_canonical_header_cannot_admit_invalid_modules(tmp_path, modules):
             starts_at=interval.start,
             ends_at=interval.end,
         )
+
+
+def raw_campaign_snapshot(root, row, mails):
+    """Insert complete projections without the Python document validation layer."""
+    from parishkit.stewardship.accounts.configuration_models import (
+        AppliedIntegration,
+        Parish,
+    )
+    from parishkit.stewardship.accounts.policy_projections import prepare_policy
+    from parishkit.stewardship.campaigns.intervals import (
+        campaign_interval,
+        resolve_local,
+    )
+
+    document = root.document()
+    document.update(version_id=str(uuid4()), predecessor_digest=root.digest)
+    document["sections"].update(campaigns=[row], schedules=mails)
+    snapshot = AppliedConfigurationVersion.objects.create(
+        id=document["version_id"],
+        digest=uuid4().hex * 2,
+        normalized_digest=uuid4().hex * 2,
+        schema_version=1,
+        validation_schema="campaign-foundation-v3",
+        predecessor_id=root.version_id,
+        canonical_document=document,
+    )
+    for model in (Parish, AppliedIntegration):
+        for values in model.objects.filter(configuration_id=root.version_id).values():
+            values.update(id=uuid4(), configuration_id=snapshot.pk)
+            model.objects.create(**values)
+    prepare_policy(snapshot, document["sections"]["login_rules"], {})
+    values = row["values"]
+    interval = campaign_interval(
+        datetime.fromisoformat(values["start_date"]).date(),
+        datetime.fromisoformat(values["end_date"]).date(),
+        values["timezone"],
+    )
+    CampaignConfiguration.objects.create(
+        configuration=snapshot,
+        record_id=row["id"],
+        values=values,
+        **{key: values[key] for key in ("name", "timezone", "start_date", "end_date")},
+        starts_at=interval.start,
+        ends_at=interval.end,
+    )
+    for mail in mails:
+        attrs = mail["values"]
+        due = (
+            None
+            if attrs["date"] is None
+            else resolve_local(
+                datetime.fromisoformat(attrs["date"] + "T" + attrs["time"]),
+                values["timezone"],
+            )
+        )
+        ScheduleRevision.objects.create(
+            configuration=snapshot,
+            record_id=mail["id"],
+            values=attrs,
+            campaign_id=row["id"],
+            kind=attrs["kind"],
+            due_at=due,
+        )
+    return snapshot
+
+
+@pytest.mark.parametrize(
+    "period", [financial(), financial(start="2028-02-29", end="2029-02-27")]
+)
+def test_financial_period_real_installation(tmp_path, period):
+    """SQL accepts the same full-year and leap-day convention as Python."""
+    store, root, actor = initialized(tmp_path)
+    result, _, _ = add_draft(
+        store, root, actor, campaign(modules=["financial"], financial=period)
+    )
+    assert result.state == "applied" and is_prepared(result.applied_digest)
+
+
+@pytest.mark.parametrize("field", ["end", "comparison_end"])
+def test_raw_financial_period_rejected(tmp_path, field):
+    """A forged canonical header cannot make SQL accept a partial pledge year."""
+    _, root, _ = initialized(tmp_path)
+    period = financial()
+    period[field] = (
+        (datetime.fromisoformat(period[field]) - timedelta(days=1)).date().isoformat()
+    )
+    row = campaign(modules=["financial"], financial=period)
+    with (
+        pytest.raises(IntegrityError, match="Invalid financial period"),
+        transaction.atomic(),
+    ):
+        raw_campaign_snapshot(root, row, [])
+
+
+@pytest.mark.parametrize(
+    "date,time", [("2026-09-30", "23:59:59"), ("2026-11-01", "00:00:00")]
+)
+def test_raw_schedule_outside_interval_rejected(tmp_path, date, time):
+    """Even correctly resolved UTC instants must belong to the owning campaign."""
+    _, root, _ = initialized(tmp_path)
+    row = campaign()
+    with (
+        pytest.raises(IntegrityError, match="outside campaign interval"),
+        transaction.atomic(),
+    ):
+        raw_campaign_snapshot(root, row, [schedule(row["id"], date=date, time=time)])
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "duplicate_initial",
+        "reminder_only",
+        "early_reminder",
+        "same_due",
+        "daily_digest",
+        "weekly_digest",
+        "valid",
+    ],
+)
+def test_raw_schedule_relationships(tmp_path, case):
+    """Deferred checks reject complete but semantically contradictory schedules."""
+    _, root, _ = initialized(tmp_path)
+    row = campaign()
+    initial = schedule(row["id"], time="00:00:00" if case == "valid" else "09:00:00")
+    reminder = schedule(row["id"], kind="reminder", date="2026-10-02")
+    mails = [initial, reminder]
+    if case == "duplicate_initial":
+        mails.append(schedule(row["id"], time="10:00:00"))
+    elif case == "reminder_only":
+        mails = [reminder]
+    elif case in {"early_reminder", "same_due"}:
+        reminder["values"].update(
+            date="2026-10-01",
+            time="08:00:00" if case == "early_reminder" else "09:00:00",
+        )
+    elif case in {"daily_digest", "weekly_digest"}:
+        mails = [
+            schedule(
+                row["id"],
+                kind=case,
+                date=None,
+                weekday=0 if case == "weekly_digest" else None,
+            )
+            for _ in range(2)
+        ]
+    else:
+        mails.append(schedule(row["id"], kind="reminder", date="2026-10-03"))
+    if case == "valid":
+        with transaction.atomic():
+            snapshot = raw_campaign_snapshot(root, row, mails)
+        assert snapshot.schedule_revisions.count() == 3
+    else:
+        with (
+            pytest.raises(IntegrityError, match="Invalid schedule relationships"),
+            transaction.atomic(),
+        ):
+            raw_campaign_snapshot(root, row, mails)
+
+
+def test_temporary_campaign_gate_keeps_request_retryable(tmp_path, monkeypatch):
+    """A restore hold is operational, not a terminal rejection of valid intent."""
+    from parishkit.stewardship.accounts.request_models import (
+        ConfigurationRequestCheckpoint,
+    )
+    from parishkit.stewardship.campaigns.admission import CampaignAdmissionUnavailable
+
+    store, root, actor = initialized(tmp_path)
+    row = campaign()
+    request = record_request(
+        base_digest=root.digest,
+        patch=[{"operation": "add", "section": "campaigns", **row}],
+        actor_id=actor,
+        request_key=uuid4(),
+        correlation_id=uuid4(),
+    )
+    runtime = SystemConfiguration.objects.get()
+    runtime.restore_review_required = True
+    with monkeypatch.context() as patch:
+        patch.setattr(SystemConfiguration.objects, "first", lambda: runtime)
+        with pytest.raises(CampaignAdmissionUnavailable):
+            install_request(
+                store, request_id=request.request_id, correlation_id=uuid4()
+            )
+    assert (
+        ConfigurationRequestCheckpoint.objects.filter(request_id=request.request_id)
+        .latest("sequence")
+        .state
+        == "staged"
+    )
+    assert (
+        install_request(
+            store, request_id=request.request_id, correlation_id=uuid4()
+        ).state
+        == "applied"
+    )
+
+
+def test_timezone_rule_drift_fails_closed_without_rewriting_history(
+    tmp_path, monkeypatch
+):
+    """Restoring matching rules re-verifies the unchanged immutable projection."""
+    from parishkit.stewardship.campaigns import projections
+    from parishkit.stewardship.campaigns.domain import UTCInterval
+
+    store, root, actor = initialized(tmp_path)
+    result, _, _ = add_draft(store, root, actor)
+    original = projections.campaign_values
+
+    def drift(values):
+        """Simulate an interpreter timezone-data update affecting stored boundaries."""
+        interval = original(values)
+        return UTCInterval(interval.start + timedelta(hours=1), interval.end)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(projections, "campaign_values", drift)
+        assert not is_prepared(result.applied_digest)
+    assert is_prepared(result.applied_digest)
