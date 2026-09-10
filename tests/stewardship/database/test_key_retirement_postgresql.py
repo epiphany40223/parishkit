@@ -107,12 +107,14 @@ def test_mac_reservations_block_retirement_after_login_migration(tmp_path):
         [Key("m1", "lookup-only", b"m" * 32), Key("m2", "active", b"n" * 32)]
     )
     add_rotation_key(keys.mac, rotated)
-    backfill_mac_batch(campaign_id=campaign.pk, general=keys.general, mac=rotated)
+    backfill_mac_batch(
+        campaign_id=campaign.pk, general=keys.general, mac=rotated, admit=lambda: True
+    )
     new = CodeMacKeyring([rotated.active])
     with pytest.raises(CryptographicError, match="demotion"):
         retire_keys(rotated, new, admit=admitted, dependencies=proof_owner())
     demoted = CodeMacKeyring([Key("m1", "collision-only", b"m" * 32), rotated.active])
-    collision_only(rotated, demoted)
+    collision_only(rotated, demoted, admit=lambda: True)
     RehearsalCodeReservation.objects.create(
         campaign=campaign, key_id="m1", digest="a" * 64
     )
@@ -127,9 +129,11 @@ def test_backfilled_mac_without_reservations_can_leave_online_ring(tmp_path):
         [Key("m1", "lookup-only", b"m" * 32), Key("m2", "active", b"n" * 32)]
     )
     add_rotation_key(keys.mac, rotated)
-    backfill_mac_batch(campaign_id=campaign.pk, general=keys.general, mac=rotated)
+    backfill_mac_batch(
+        campaign_id=campaign.pk, general=keys.general, mac=rotated, admit=lambda: True
+    )
     demoted = CodeMacKeyring([Key("m1", "collision-only", b"m" * 32), rotated.active])
-    collision_only(rotated, demoted)
+    collision_only(rotated, demoted, admit=lambda: True)
     assert retire_keys(
         demoted,
         CodeMacKeyring([rotated.active]),

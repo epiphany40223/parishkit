@@ -4,7 +4,7 @@ Names/full-source filters are added by the report owner when DAT-03 is present.
 This bounded foundation lists existing campaign identities, never a shadow source.
 """
 
-from django.db import transaction
+from django.db import DatabaseError, transaction
 from django.template.loader import render_to_string
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_safe
@@ -35,7 +35,7 @@ from .sessions import authenticated_admin
 @require_safe
 def family_codes(request, campaign_id):
     """Audit intent before a read-only response; recheck roles under its read guard."""
-    finish = None
+    finish, handed_off = None, False
     try:
         service, cryptographic = runtime(), family_runtime()
         principal = authenticated_admin(request, store=service.store, activity=True)
@@ -133,12 +133,20 @@ def family_codes(request, campaign_id):
             open_content=content,
             on_close=finish,
         )
-        if response.status_code != 200:
-            finish(False)
+        handed_off = response.status_code == 200 and response.streaming
         return response
-    except (ConfigError, CryptographicError, LimiterUnavailable):
-        if finish is not None:
-            finish(False)
+    except (
+        ConfigError,
+        CryptographicError,
+        LimiterUnavailable,
+        UnicodeError,
+        DatabaseError,
+    ):
         return denial(status=503, retry=5)
     except ValueError:
         return denial(status=400)
+    finally:
+        # Once returned, the stream owns terminal audit; all earlier exits,
+        # including unexpected serializer exceptions, finish here instead.
+        if finish is not None and not handed_off:
+            finish(False)

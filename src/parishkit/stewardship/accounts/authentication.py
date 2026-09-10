@@ -14,6 +14,8 @@ from datetime import UTC, datetime, timedelta
 import jwt
 from allauth.core.exceptions import ImmediateHttpResponse
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter, get_adapter
+from allauth.socialaccount.models import SocialApp
+from allauth.socialaccount.providers.base import AuthError
 from allauth.socialaccount.providers.google.views import (
     GoogleOAuth2Adapter,
     _verify_and_decode,
@@ -21,6 +23,7 @@ from allauth.socialaccount.providers.google.views import (
 from allauth.socialaccount.providers.oauth2.client import OAuth2Error
 from allauth.socialaccount.providers.oauth2.views import OAuth2CallbackView
 from django.conf import settings
+from django.core.exceptions import MultipleObjectsReturned
 from django.db import transaction
 from django.db.models import F
 from django.http import HttpResponseRedirect
@@ -154,6 +157,15 @@ class AuthLimitMiddleware:
 class GoogleBoundary(DefaultSocialAccountAdapter):
     """No account creation/connect flow may cross our PortalUser/session boundary."""
 
+    def get_provider(self, request, provider, client_id=None):
+        """Missing/ambiguous operational app configuration is retryable, not a 500."""
+        try:
+            return super().get_provider(request, provider, client_id=client_id)
+        except (SocialApp.DoesNotExist, MultipleObjectsReturned):
+            raise LimiterUnavailable(
+                "Google login is temporarily unavailable."
+            ) from None
+
     def is_open_for_signup(self, request, sociallogin):
         return False
 
@@ -162,6 +174,8 @@ class GoogleBoundary(DefaultSocialAccountAdapter):
 
     def on_authentication_error(self, request, provider, **kwargs):
         """Discard provider exceptions, raw callback parameters and identity hints."""
+        if kwargs.get("error") == AuthError.CANCELLED:
+            raise ImmediateHttpResponse(denial())
         try:
             delay = record_failure(request)
             response = denial(status=429 if delay else 403, retry=delay)

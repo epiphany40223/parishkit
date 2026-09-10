@@ -19,6 +19,7 @@ from parishkit.stewardship.campaigns.read_guards import (
     GuardedResponse,
     ReadUnavailable,
 )
+from parishkit.stewardship.observability import correlation, current_correlation
 
 from .exports import download_headers
 from .security import private_response
@@ -58,6 +59,7 @@ class _Content:
     def __init__(self, request, campaigns, authorize, open_content, pool, on_close):
         self.stopped, self.producing = Event(), Lock()
         self.completed, self.finalized, self.on_close = False, False, on_close
+        self.correlation_id = current_correlation()
         self.transport_abort = _socket_abort(request)
         self.guard = CampaignReadGuard(
             campaigns, authorize=authorize, abort=self.abort, pool=pool
@@ -70,7 +72,7 @@ class _Content:
 
     def __next__(self):
         """A cancelled producer may not start again, even after a lock is released."""
-        with self.producing:
+        with correlation(self.correlation_id), self.producing:
             if self.stopped.is_set():
                 self.close()
                 raise StopIteration
@@ -109,7 +111,8 @@ class _Content:
         if not self.finalized:
             self.finalized = True
             if self.on_close is not None:
-                self.on_close(self.completed)
+                with correlation(self.correlation_id):
+                    self.on_close(self.completed)
 
 
 def campaign_response(

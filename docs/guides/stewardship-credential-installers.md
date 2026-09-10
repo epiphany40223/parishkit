@@ -54,6 +54,12 @@ completion. The old credential is restored on failure or unacknowledged expiry,
 before the database reports a terminal outcome. Cancellation is accepted while
 still staged; it cannot race a replacement already being installed.
 
+Provider adapters signal transient validation failures with the fixed-message
+`CredentialValidationUnavailable` exception. The request retains its sealed input
+and `testing` state; OPS-04 retries with bounded backoff until ordinary expiry.
+A false validation result or other validation failure is terminal. Provider
+exception text is never part of the receipt or retry diagnostic.
+
 Each consumer acknowledges through its own authenticated SQL login. Wrong-role,
 wrong-target, wrong-fingerprint, expired and out-of-state acknowledgements fail.
 The immutable acknowledgement and audit commit together. The frozen consumer set
@@ -67,7 +73,11 @@ database receipt is durable; restart reconciles any remaining journal first.
 
 ## Interrupted-installer recovery
 
-An expired request beyond `staged` remains reserved until its matching installer
+OPS-04 must continually poll every configured target queue, including staged
+expiry and cancelled-request cleanup, and alert on a stopped installer or stalled
+queue. There is intentionally no alternate web/scheduler ciphertext-cleanup role.
+An expired or cancelled request, including one still at `staged`, remains reserved
+until its matching installer
 finishes rollback or acknowledges its already committed result. This is deliberate:
 expiry alone cannot prove which credential file or consumer state is selected.
 

@@ -46,10 +46,13 @@ class NamespacedSessionMiddleware:
         if session.is_empty():
             if name in request.COOKIES:
                 response.delete_cookie(path=path, key=name, samesite="Lax")
-        elif session.modified and response.status_code < 500:
+        elif (
+            session.modified or getattr(session, "stewardship_persisted", False)
+        ) and response.status_code < 500:
             age = session.get_expiry_age()
             try:
-                session.save()
+                if session.modified:
+                    session.save()
             except import_module(settings.SESSION_ENGINE).UpdateError:
                 raise SessionInterrupted(
                     "Session ended; please log in again."
@@ -103,6 +106,10 @@ def _rotate_authority(request, row, principal, now):
     session["authority_fingerprint"] = _authority_fingerprint(principal)
     session.set_expiry(row.expires_at)
     session.save()
+    # The response may next acquire a read-only guard. Transport still needs a
+    # Set-Cookie, but must not repeat this already committed parent-row write.
+    session.modified = False
+    session.stewardship_persisted = True
     replacement = PortalSession.objects.create(
         session_id=session.session_key,
         principal_id=row.principal_id,

@@ -153,3 +153,64 @@ checks. All 66 browser cases pass. Ruff checks/formatting, tracked Markdown lint
 migration drift and diff checks pass. The database run uses its own disposable
 PostgreSQL cluster, independent of reviewer test resources. Round two is complete;
 the third independent full-branch review remains required.
+
+## Round three
+
+Reviewed HEAD: `92e259f` (round-two corrections).
+Diff base: `6fd21eb586a635333be9f55fc7db9caa39284e60`.
+Pika session: `20260910-184453-448a6c`.
+Both vendors completed successfully, including nine Claude sections. Codex
+completed in 729 seconds; all Claude sections completed in about nineteen
+minutes. There were no failed agents, mismatched verdicts, salvage requirements
+or degraded results. The consolidated result contains 30 Medium findings, no
+High/Critical findings, and 106 below-cutoff Low observations. C is Claude-only;
+X is Codex-only. Code corrections and final integrated validation are complete;
+X1's normative audit-contract decision remains open, so review exit is not claimed.
+
+| ID | Disposition | Evidence / correction |
+| --- | --- | --- |
+| C1 | Fixed | Counter rejection tests assert every supplied string stays out of the error text. |
+| C2 | Fixed | Privacy tests inspect Valkey key names and string/hash/sorted-set values, including actual counter and aggregate paths. |
+| C3 | Fixed | Both MAC mutation services require exactly True from their owning admission callback under key/transaction locks; wrong-return tests prove no new fingerprints. |
+| C4 | Fixed | Campaign-without-parish audit evidence raises ValueError before SQL and leaves the caller transaction usable. |
+| C5 | Fixed | The bounded LocalBuckets fallback test now runs in the infrastructure-free baseline. |
+| C6 | Fixed | Pure table-driven mount cases cover ordinary, proc-subtree, masked-file, masked-directory and thermal masks, near-miss metadata, and root refusal. |
+| C7 | Fixed | Explicit token rotation gains callback and durable/stale-projection denial matrices, alongside its real success case. |
+| C8 | Fixed | The pure credential contract explicitly excludes the rehearsal marker from the Production alphabet. |
+| C9 | Fixed | Candidate/rollback substitution fails in both directions; unknown purposes fail for sealing and opening. |
+| C10 | Fixed | Pre-header report exits finish audit in a finally path; malformed decrypted bytes and SQL unavailability use 503. Serializer failures and input failures retain terminal evidence. |
+| C11 | Fixed; partly already covered | Existing report-level tests already covered early close and revoked admission. Direct adapter tests now additionally assert exactly-once False callbacks on close, timeout and lazy failure, plus pre-header authorization denial. |
+| C12 | Fixed | A fixed-message transient-validation exception retains testing state and sealed input for retry; provider adapters own classification and OPS-04 owns bounded retry scheduling. |
+| C13 | Fixed | Google provider resolution maps missing/ambiguous apps to the uniform retryable 503 contract in both entry points. |
+| C14 | Fixed | Disposable container cleanup attempts all owned resources while preserving an existing provisioning/probe exception; cleanup failure after success still fails. |
+| C15 | Fixed | A valid-state Google cancellation returns neutral denial without incrementing authentication-failure counters. Early coarse request admission still applies. |
+| C16 | Fixed | Durable outage resolution and uniqueness windows use PostgreSQL statement time; a skewed-host-clock regression verifies this. |
+| C17 | Fixed | IPv6 ALLOWED_HOSTS retain the brackets required by Django; actual Host-validation tests cover loopback and non-loopback origins. |
+| C18 | Fixed | Deadline-sensitive installer tests use a twenty-second preparation margin and bounded polling of the actual database deadline instead of racing two seconds of real IO. |
+| C19 | Fixed | CSV formula detection scans all leading control/separator/whitespace characters; mixed and repeated prefix tests pin safe quoting. |
+| C20 | Fixed | Nested-transaction bucket admission rejects before the outage-fallback handler; a regression proves no local-bucket downgrade. |
+| C21 | Fixed | The closed alternate client-IP/scheme header set is stripped; documentation states the exact enumerated guarantee and tests every name. |
+| C22 | Fixed | Explicit live-token rotation pins runtime, deployment, campaign and population before token rows and checks Production mode, restore hold, current pointer and clean population. |
+| C23 | Already handled; clarified | Configuration installation pins the exact SQL session across file/commit boundaries and aborts on reconnect, unlike reconnect-capable target installers. Every invocation checks grants; operational grant changes require quiescence/re-admission. SQL enforces revocations per statement. |
+| C24 | Scope clarified | Validated public origins are root-only. The SCRIPT_NAME test checks namespace isolation, not unsupported subpath deployment; its docstring now says so. |
+| C25 | Already handled; clarified | The interrupted-installer runbook already requires restoring and replaying the same target service, not bypassing its reservation. It now explicitly requires continual queue polling and stalled-service alerts, including staged expiry/cancellation. |
+| C26 | Fixed | Rehearsal invalidation checks its affected-row count and rolls back pointer/audit changes on a stale epoch; a real stored-state regression proves it. |
+| C27 | Fixed | A known public-proxy peer is never internal even with missing forwarding headers or overlapping network ranges. OPS-03 still owns network provisioning and the ingress deny rules. |
+| X1 | Decision pending | The normative per-attempt secure-link audit contract conflicts with bounded sampled failure retention. A human clarification is requested before changing that contract. |
+| X2 | Fixed | Guarded iteration/terminal callbacks restore the captured request correlation. Success and interrupted-report tests require both events to match the response correlation header. |
+| X3 | Fixed | Explicitly saved authority rotations mark persistence separately from cookie transport. A guarded Staff code-report request emits the new cookie without writing into the response's read-only transaction. |
+
+Initial correction checks pass 171 infrastructure-free cases and 113 PostgreSQL
+cases. These are focused regression evidence, not the final integrated result.
+
+Final post-correction validation passes 2,312 ordinary tests and 916 PostgreSQL
+tests, with 95.09% scoped line coverage and 85.96% branch coverage. The rebuilt
+image passes the same 2,312 ordinary tests, all 30 Compose checks, all 12 real
+container-isolation checks and all 66 browser cases. Ruff checks/formatting,
+tracked Markdown lint, migration drift and diff checks pass. The PostgreSQL run
+completed in 506.98 seconds on its separate disposable cluster.
+
+No code findings remain unresolved. The sole remaining item is X1: do not publish
+the Phase 1B PR or claim the three-round exit criterion until the normative
+secure-link audit contract is resolved and recorded. No merge, deployment or
+release is authorized by this validation.

@@ -11,7 +11,6 @@ from parishkit.stewardship.accounts.limiting import (
     Counter,
     Limiter,
     LimiterUnavailable,
-    LocalBuckets,
 )
 from parishkit.stewardship.accounts.models import AuthenticationIncident
 from parishkit.stewardship.authentication_policy import AuthenticationLimits
@@ -213,28 +212,32 @@ def test_rate_limited_family_link_retries_family_not_admin(auth_service):
     assert b"/admin/login" not in response.content
 
 
-def test_local_token_buckets_have_fixed_memory_and_refill():
-    now = [0]
-    buckets = LocalBuckets(capacity=2, clock=lambda: now[0])
-    for _ in range(30):
-        assert buckets.consume("one") == 0
-    assert buckets.consume("one") == 1
-    assert buckets.consume("two") == 0
-    assert buckets.consume("three") == 60
-    now[0] += 1
-    assert buckets.consume("one") == 0
-    now[0] += 121
-    assert buckets.consume("three") == 0
-    assert len(buckets.entries) == 1
-
-
 def test_rate_keys_never_retain_raw_identity_or_candidate(auth_service):
     limiter = auth_service.limiter
     private = "private-person@example.org"
     limiter.failed(
         "admin", "192.0.2.1", identity=limiter.fingerprint("identity", private)
     )
-    data = b"".join(limiter.client.scan_iter(limiter.namespace + ":*"))
+    limiter.bucket("admin", "192.0.2.1")
+    limiter.counters(
+        [Counter("family_pair", limiter.fingerprint("pair", private), 5, 900)],
+        failure=True,
+    )
+    contents = []
+    for key in limiter.client.scan_iter(limiter.namespace + ":*"):
+        contents.append(key)
+        kind = limiter.client.type(key)
+        if kind == b"zset":
+            contents.extend(limiter.client.zrange(key, 0, -1))
+        elif kind == b"hash":
+            contents.extend(
+                value for pair in limiter.client.hgetall(key).items() for value in pair
+            )
+        elif kind == b"string":
+            contents.append(limiter.client.get(key))
+        else:
+            pytest.fail("Unexamined limiter value type")
+    data = b"".join(contents)
     assert private.encode() not in data
     assert b"192.0.2.1" not in data
 

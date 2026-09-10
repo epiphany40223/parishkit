@@ -8,9 +8,14 @@ from urllib.parse import quote
 def csv_cell(value):
     """Neutralize spreadsheet formulas, including control/whitespace prefixes."""
     text = "" if value is None else str(value)
-    if text.lstrip().lstrip("\ufeff").lstrip().startswith(
-        ("=", "+", "-", "@")
-    ) or text.startswith(("\t", "\r", "\n")):
+    start = 0
+    while start < len(text) and (
+        text[start].isspace() or unicodedata.category(text[start])[0] in {"C", "Z"}
+    ):
+        start += 1
+    if text[start:].startswith(("=", "+", "-", "@")) or text.startswith(
+        ("\t", "\r", "\n")
+    ):
         return "'" + text
     return text
 

@@ -90,12 +90,15 @@ def test_fingerprint_prevents_duplicate_after_mac_rotation(
         )
 
         backfill_mac_batch(
-            campaign_id=campaign.pk, general=ring.general, mac=replacement
+            campaign_id=campaign.pk,
+            general=ring.general,
+            mac=replacement,
+            admit=lambda: True,
         )
         demoted = CodeMacKeyring(
             [Key("m1", "collision-only", b"m" * 32), replacement.active]
         )
-        collision_only(replacement, demoted)
+        collision_only(replacement, demoted, admit=lambda: True)
         replacement = demoted
     ring = TestKeys(ring.general, replacement, ring.private)
     candidates = iter([code, "ABCDEFGH"])

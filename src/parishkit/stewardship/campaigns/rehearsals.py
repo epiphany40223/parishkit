@@ -195,9 +195,13 @@ def invalidate_rehearsal(*, campaign_id, admit):
         scope.version += 1
         scope.save()
         if epoch_id:
-            RehearsalEpoch.objects.filter(pk=epoch_id, state="active").update(
+            changed = RehearsalEpoch.objects.filter(pk=epoch_id, state="active").update(
                 state="invalidated", invalidated_at=_now(), version=F("version") + 1
             )
+            if changed != 1:
+                raise StorageInvariantError(
+                    "The current rehearsal epoch is not active."
+                )
             AuditEvent.objects.create(
                 event_type="rehearsal_invalidated", subject_id=epoch_id
             )

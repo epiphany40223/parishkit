@@ -2,7 +2,7 @@
 
 from contextlib import contextmanager
 from datetime import timedelta
-from time import sleep
+from time import monotonic, sleep
 from uuid import uuid4
 
 import pytest
@@ -33,6 +33,7 @@ from parishkit.stewardship.accounts.secret_requests import (
     cancel_secret_request,
     stage_secret_request,
 )
+from parishkit.stewardship.accounts.sessions import database_now
 
 pytestmark = pytest.mark.django_db(transaction=True)
 ROLES = (
@@ -353,9 +354,10 @@ def test_cancelled_request_is_never_tested_or_installed(installer):
 
 def test_installed_request_expiry_restores_prior_before_terminal_receipt(installer):
     """A missing consumer never strands the new working credential after expiry."""
-    stage_for(installer, expires_at=timezone.now() + timedelta(seconds=2))
+    deadline = database_now() + timedelta(seconds=20)
+    stage_for(installer, expires_at=deadline)
     assert run(installer).state == "awaiting_ack"
-    sleep(2.1)
+    wait_for_database_deadline(deadline)
     assert run(installer).state == "expired"
     assert read_private(installer.files.path) == b"synthetic-prior"
     assert not installer.files.journal_path.exists()
@@ -399,7 +401,8 @@ def test_crash_after_rename_reconciles_without_retesting_or_double_history(
 
 def test_crash_after_ack_decision_completes_even_after_deadline(installer, monkeypatch):
     """Committed consumer approval cannot turn into a rollback on a delayed retry."""
-    identifier = stage_for(installer, expires_at=timezone.now() + timedelta(seconds=2))
+    deadline = database_now() + timedelta(seconds=20)
+    identifier = stage_for(installer, expires_at=deadline)
     assert run(installer).state == "awaiting_ack"
     acknowledge(identifier)
 
@@ -411,6 +414,15 @@ def test_crash_after_ack_decision_completes_even_after_deadline(installer, monke
         patch.setattr(installer, "_cleanup", crash)
         with pytest.raises(CryptographicError, match="after acknowledgement"):
             run(installer)
-    sleep(2.1)
+    wait_for_database_deadline(deadline)
     assert run(installer).state == "applied"
     assert read_private(installer.files.path) == b"synthetic-candidate"
+
+
+def wait_for_database_deadline(deadline):
+    """Wait on the authoritative clock, with a bounded host-side test deadline."""
+    stop = monotonic() + 25
+    while database_now() <= deadline:
+        if monotonic() >= stop:
+            pytest.fail("Disposable database clock did not reach the test deadline")
+        sleep(0.1)

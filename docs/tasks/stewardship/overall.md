@@ -158,6 +158,13 @@ assignment as one coherent PR. Its [execution checkpoints](../../guides/stewards
 track implementation and validation; no Phase 1B completion or Gate 1 release
 is claimed yet.
 
+Current checkpoint: all Phase 1B code scope and its three rounds of review
+corrections are implemented. The third review had no High/Critical findings.
+Final integrated validation passes; one secure-link audit-retention specification
+clarification remains open. See the [review ledger](../../guides/stewardship-phase-1b-reviews.md#round-three).
+Do not begin Phase 1C or claim this phase's review exit until that decision,
+validation, PR CI and human-approved merge are complete.
+
 1. [ARC-03](architecture.md#arc-03-django-web-foundation-and-security-middleware) → [ARC-04](architecture.md#arc-04-google-identity-authorization-sessions-and-denial-paths) with [ADM-01](admin-portal.md#adm-01-login-denial-and-unconfigured-state-routing) integration.
 2. [DAT-04](data.md#dat-04-family-campaign-identity-and-credentials) credential/schema foundation → [ARC-05](architecture.md#arc-05-family-code-token-and-family-session-security).
 3. [ARC-06](architecture.md#arc-06-enforceable-cryptographic-service-boundary) → [ARC-07](architecture.md#arc-07-application-level-privacy-and-audit-primitives) → initial [ARC-08](architecture.md#arc-08-performance-accessibility-and-compatibility-baseline) and [DOM-04](campaign-domain.md#dom-04-shared-presentation-and-client-contracts).

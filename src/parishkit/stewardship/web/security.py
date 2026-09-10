@@ -4,6 +4,9 @@ OPS-03/OPS-04 must supply STEWARDSHIP_PROXY_HOPS and the validated
 STEWARDSHIP_TRUSTED_PROXY_NETWORKS from the actual private proxy topology.
 browser_settings is the transport/browser projection, not runtime ingress
 assembly. Production startup remains disabled until that owner is integrated.
+Internal networks must exclude public ingress peers. Known proxy peers cannot
+use internal routes even when forwarding headers are absent; OPS-03 must retain
+the separate ingress deny rules and must not trust an entire shared network.
 """
 
 from ipaddress import ip_address, ip_network
@@ -27,6 +30,13 @@ FORWARDED = (
     "HTTP_X_FORWARDED_FOR",
     "HTTP_X_FORWARDED_PROTO",
     "HTTP_X_FORWARDED_HOST",
+    "HTTP_X_FORWARDED_PORT",
+    "HTTP_X_FORWARDED_SSL",
+    "HTTP_X_REAL_IP",
+    "HTTP_CF_CONNECTING_IP",
+    "HTTP_TRUE_CLIENT_IP",
+    "HTTP_CLIENT_IP",
+    "HTTP_FRONT_END_HTTPS",
 )
 
 
@@ -52,7 +62,9 @@ def browser_settings(deployment):
     ):
         raise ValueError("A valid secure canonical production origin is required.")
     return {
-        "ALLOWED_HOSTS": [origin.hostname],
+        "ALLOWED_HOSTS": [
+            f"[{origin.hostname}]" if ":" in origin.hostname else origin.hostname
+        ],
         "CSRF_TRUSTED_ORIGINS": [deployment.public_origin.rstrip("/")],
         "SESSION_COOKIE_SECURE": production,
         "CSRF_COOKIE_SECURE": production,
@@ -117,15 +129,14 @@ def resolve_client(request):
 
     REMOTE_ADDR is supplied by the WSGI server, never by a browser header.
     Production provisioning validates the peer networks and hop count. Strip
-    every forwarded header after resolving it so other middleware cannot apply
-    a different interpretation; Host remains Django's separately checked input.
+    the enumerated identity/scheme forwarding headers after resolving them so
+    middleware cannot reinterpret those inputs; Host stays separately checked.
     """
     peer = ip_address(request.META.get("REMOTE_ADDR", ""))
     request.client_address = peer
     forwarded = any(key in request.META for key in FORWARDED)
-    trusted = settings.STEWARDSHIP_PROXY_HOPS == 1 and _in_networks(
-        peer, settings.STEWARDSHIP_TRUSTED_PROXY_NETWORKS
-    )
+    proxy_peer = _in_networks(peer, settings.STEWARDSHIP_TRUSTED_PROXY_NETWORKS)
+    trusted = settings.STEWARDSHIP_PROXY_HOPS == 1 and proxy_peer
     if trusted and forwarded:
         if "HTTP_FORWARDED" in request.META:
             raise ValueError("Unsupported forwarding format.")
@@ -137,8 +148,10 @@ def resolve_client(request):
         request.META["wsgi.url_scheme"] = scheme
     for key in FORWARDED:
         request.META.pop(key, None)
-    request.internal_request = not forwarded and _in_networks(
-        peer, settings.STEWARDSHIP_INTERNAL_NETWORKS
+    request.internal_request = (
+        not proxy_peer
+        and not forwarded
+        and _in_networks(peer, settings.STEWARDSHIP_INTERNAL_NETWORKS)
     )
 
 

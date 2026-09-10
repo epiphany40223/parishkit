@@ -35,3 +35,20 @@ def test_handoff_bounds_plaintext_before_sealing(value):
     public = PrivateHandoff("slack", Key("h1", "active", b"h" * 32)).public()
     with pytest.raises(CryptographicError):
         public.seal(uuid4(), value)
+
+
+@pytest.mark.parametrize(
+    "purpose,other", [("candidate", "rollback"), ("rollback", "candidate")]
+)
+def test_handoff_purpose_is_authenticated(purpose, other):
+    """Rollback evidence cannot be substituted for a candidate or vice versa."""
+    private = PrivateHandoff("slack", Key("h1", "active", b"h" * 32))
+    identifier = uuid4()
+    ciphertext = private.public().seal(identifier, b"synthetic-secret", purpose=purpose)
+    assert private.open(identifier, ciphertext, purpose=purpose) == b"synthetic-secret"
+    with pytest.raises(CryptographicError):
+        private.open(identifier, ciphertext, purpose=other)
+    with pytest.raises(CryptographicError):
+        private.public().seal(identifier, b"synthetic-secret", purpose="unapproved")
+    with pytest.raises(CryptographicError):
+        private.open(identifier, ciphertext, purpose="unapproved")

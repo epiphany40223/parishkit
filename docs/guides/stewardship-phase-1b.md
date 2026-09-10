@@ -32,10 +32,10 @@ mutation, deployment, release or gate approval is implied by this batch.
 
 ## Status and evidence
 
-Implementation is in progress. Verified task checkboxes do not close Phase 1B
-or its required review rounds and integrated review gate.
-The per-package checklists remain authoritative; evidence is added as each
-deliverable and its tests finish.
+The Phase 1B foundation and three rounds of code corrections are implemented.
+Final integrated validation passes; the secure-link audit-retention clarification
+in round-three X1 remains pending. Verified task checkboxes do not close Phase 1B
+or its integrated review gate; the per-package checklists remain authoritative.
 
 The dated/internal checkpoints below are historical measurements, not current
 suite counts. The [review ledger](stewardship-phase-1b-reviews.md) owns the latest
@@ -219,8 +219,11 @@ track the complete branch review loop. Round one reviewed `324a10c` with both
 vendors and returned one High and 46 Medium consolidated findings. Its corrections
 and applicable post-fix validation are complete. Round two reviewed `6b4f720`
 and returned 30 Medium findings with no High/Critical findings. Its accepted
-corrections and integrated validation also pass; the third independent round
-remains required. No final review approval or PR completion is claimed yet.
+corrections and integrated validation also pass. Round three reviewed `92e259f`
+and returned 30 Medium findings with no High/Critical findings; both vendors
+completed without degradation. Its code corrections and full integrated
+validation pass. The linked ledger tracks final results and the remaining
+audit-contract decision. No final review approval or PR completion is claimed yet.
 
 Google callbacks request and verify signed `auth_time`, retaining that verified
 instant instead of assigning callback time. Ordinary SSO can use an older Google

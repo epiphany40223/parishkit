@@ -87,6 +87,12 @@ class ConfigurationInstaller:
         and durable commits, detects lost SQL sessions and reconciles only the
         exact prepared digest. Exceptional campaigns still require their owning
         admission callback. No callback silently approves missing future owners.
+
+        Unlike target credential queues (file locks survive reconnects), this
+        engine pins the exact PostgreSQL session across every file/SQL boundary
+        and aborts on reconnect. Grants are admitted for each resumable invocation;
+        SQL still enforces revocation on every statement. Operational grant changes
+        must quiesce the service and restart admission, not alter live authority.
         """
         if not isinstance(request_id, UUID):
             raise ConfigError("A configuration request reference is required.")

@@ -24,6 +24,8 @@ def record_action(
         raise StorageInvariantError("Audited effects require their owning transaction.")
     if not isinstance(action, Action) or not isinstance(actor_kind, ActorKind):
         raise ValueError("Audit requires canonical action and actor types.")
+    if campaign_id is not None and parish_id is None:
+        raise ValueError("Campaign audit requires parish ownership.")
     safe = sanitize(ContextKind.ACTION, {} if context is None else context)
     event = AuditEvent.objects.create(
         event_type=action.value,

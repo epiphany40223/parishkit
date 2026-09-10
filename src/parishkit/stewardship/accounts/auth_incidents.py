@@ -4,7 +4,6 @@ from datetime import timedelta
 
 from django.db import connection, transaction
 from django.db.models import F
-from django.utils import timezone
 
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
@@ -70,17 +69,19 @@ def record_incident(kind, severity, window, counts):
         raise ValueError("Invalid authentication incident level/window.")
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [736225, 1])
+        cursor.execute("SELECT statement_timestamp()")
+        now = cursor.fetchone()[0]
         pending = AuthenticationIncident.objects.filter(
             kind="limiter_unavailable", resolved_at__isnull=True
         )
         if kind == "limiter_available":
-            if pending.update(resolved_at=timezone.now(), version=F("version") + 1):
+            if pending.update(resolved_at=now, version=F("version") + 1):
                 AuditEvent.objects.create(event_type="limiter_recovered")
             return
         if kind == "limiter_unavailable":
             if pending.exists():
                 return
-            window = int(timezone.now().timestamp() * 1_000_000)
+            window = int(now.timestamp() * 1_000_000)
         incident, created = AuthenticationIncident.objects.get_or_create(
             kind=kind,
             window=window,

@@ -144,7 +144,11 @@ def test_anonymous_oauth_expiry_is_short_without_shortening_reauthentication(
 
 
 def test_modified_admin_session_under_script_name_sets_admin_cookie():
-    """Exercise the actual Set-Cookie path, not just absence of a Family cookie."""
+    """Root-only deployment keeps its namespace; this is not subpath support.
+
+    Validated public origins reject non-root paths. SCRIPT_NAME cannot choose
+    the Family namespace or redefine the configured Admin cookie path.
+    """
     request = RequestFactory().get("/admin/login", SCRIPT_NAME="/prefix")
 
     def mutate(value):

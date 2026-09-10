@@ -7,6 +7,8 @@ does not provision production services or claim their queue boundaries tested.
 import json
 import os
 import subprocess
+import sys
+import warnings
 from pathlib import Path
 from uuid import uuid4
 
@@ -172,19 +174,25 @@ def _probe(tmp_path, image, role, *, target=None):
         assert result.returncode == 0, result.stderr
         assert result.stdout.strip() == "isolated"
     finally:
-        subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=15)
-        # Also clean a bootstrap process left running by a host-side timeout.
-        subprocess.run(
-            ["docker", "rm", "-f", volume + "-bootstrap"],
-            capture_output=True,
-            timeout=15,
-        )
-        subprocess.run(
-            ["docker", "volume", "rm", volume],
-            check=True,
-            capture_output=True,
-            timeout=15,
-        )
+        _cleanup_probe(name, volume, body_failed=sys.exc_info()[0] is not None)
+
+
+def _cleanup_probe(name, volume, *, body_failed):
+    """Attempt every owned cleanup without replacing a provisioning/probe error."""
+    failure = None
+    for command, check in (
+        (["docker", "rm", "-f", name], False),
+        (["docker", "rm", "-f", volume + "-bootstrap"], False),
+        (["docker", "volume", "rm", volume], True),
+    ):
+        try:
+            subprocess.run(command, check=check, capture_output=True, timeout=15)
+        except (subprocess.SubprocessError, OSError) as error:
+            failure = failure or error
+    if failure is not None:
+        if not body_failed:
+            raise failure
+        warnings.warn("Disposable isolation fixture cleanup failed.", stacklevel=2)
 
 
 def _fixture_volume(root, image, name):

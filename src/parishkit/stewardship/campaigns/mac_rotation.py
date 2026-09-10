@@ -1,4 +1,8 @@
-"""Idempotent display-code MAC backfill and verified collision-only demotion."""
+"""Idempotent display-code MAC backfill and verified collision-only demotion.
+
+The operational owner must establish its authorization locks and return exactly
+True from admit inside the transaction; no omitted or truthy callback is consent.
+"""
 
 from django.db import transaction
 from django.db.models import Exists, F, OuterRef
@@ -22,11 +26,13 @@ from .family_identity import code_context
 from .rehearsals import code_context as rehearsal_context
 
 
-def backfill_mac_batch(*, campaign_id, general, mac, batch_size=500):
+def backfill_mac_batch(*, campaign_id, general, mac, admit, batch_size=500):
     """Rekey retained plaintext-capable rows; anonymous reservations are untouched."""
     if type(batch_size) is not int or not 1 <= batch_size <= 1000:
         raise ValueError("MAC backfill requires a bounded batch size.")
     with transaction.atomic(), key_set_lock(general, mac):
+        if admit() is not True:
+            raise PermissionError("MAC migration is not admitted.")
         CampaignCredentialState.objects.select_for_update().get(campaign_id=campaign_id)
         existing = FamilyCodeFingerprint.objects.filter(
             family_id=OuterRef("pk"), key_id=mac.active.id
@@ -77,7 +83,7 @@ def backfill_mac_batch(*, campaign_id, general, mac, batch_size=500):
         return len(families) + len(rehearsals)
 
 
-def collision_only(previous, replacement):
+def collision_only(previous, replacement, *, admit):
     """Remove old-key login acceptance after every retained code is backfilled.
 
     This does not retire any key: required reservation and backup keys remain
@@ -104,6 +110,8 @@ def collision_only(previous, replacement):
                 "Only lookup-only to collision-only demotion is allowed."
             )
     with transaction.atomic(), key_set_lock(previous, exclusive=True):
+        if admit() is not True:
+            raise PermissionError("MAC demotion is not admitted.")
         family_mac = FamilyCodeFingerprint.objects.filter(
             family_id=OuterRef("pk"), key_id=previous.active.id
         )

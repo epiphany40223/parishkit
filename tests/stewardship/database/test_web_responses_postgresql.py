@@ -8,7 +8,11 @@ from django.db import connection, connections
 from django.test import RequestFactory
 
 from parishkit.stewardship.campaigns.models import Campaign
-from parishkit.stewardship.campaigns.read_guards import DownloadPool, ReadLimits
+from parishkit.stewardship.campaigns.read_guards import (
+    DownloadPool,
+    ReadLimits,
+    ReadUnavailable,
+)
 from parishkit.stewardship.web.responses import campaign_response
 
 from .campaign_builders import draft_campaign
@@ -99,22 +103,27 @@ def test_capacity_failure_precedes_content_and_headers(tmp_path, channel):
 def test_disconnect_closes_without_consuming_content(tmp_path, channel):
     """The WSGI close hook releases the database even without a first iteration."""
     _, campaign, _ = draft_campaign(tmp_path)
+    terminal = []
     response = campaign_response(
         channel[0],
         [campaign.pk],
         authorize=lambda _: None,
         open_content=lambda: iter([b"private"]),
+        on_close=terminal.append,
     )
     assert connection.in_atomic_block
     response.close()
+    response.close()
     assert not connection.in_atomic_block
     assert list(response.streaming_content) == []
+    assert terminal == [False]
 
 
 def test_timeout_interrupts_real_socket_before_releasing_download(tmp_path, channel):
     """A timer-thread expiry closes the channel and cannot emit another chunk."""
     _, campaign, _ = draft_campaign(tmp_path)
     pool = DownloadPool(ReadLimits(process_pool_size=1))
+    terminal = []
     response = campaign_response(
         channel[0],
         [campaign.pk],
@@ -123,6 +132,7 @@ def test_timeout_interrupts_real_socket_before_releasing_download(tmp_path, chan
         filename="report.csv",
         content_type="text/csv",
         pool=pool,
+        on_close=terminal.append,
     )
     content = response._iterator
     thread = Thread(target=content.guard._expire)
@@ -134,6 +144,7 @@ def test_timeout_interrupts_real_socket_before_releasing_download(tmp_path, chan
     assert channel[1].fileno() >= 0  # The WSGI server still owns descriptor cleanup.
     assert list(response.streaming_content) == []
     response.close()
+    assert terminal == [False]
     pool.acquire()
     pool.release()
 
@@ -141,6 +152,7 @@ def test_timeout_interrupts_real_socket_before_releasing_download(tmp_path, chan
 def test_source_failure_releases_response(tmp_path, channel):
     """Failed lazy serialization cannot retain the guarded transaction."""
     _, campaign, _ = draft_campaign(tmp_path)
+    terminal = []
 
     def broken():
         """A synthetic serializer failure occurs only when the server consumes."""
@@ -152,6 +164,7 @@ def test_source_failure_releases_response(tmp_path, channel):
         [campaign.pk],
         authorize=lambda _: None,
         open_content=broken,
+        on_close=terminal.append,
     )
     stream = response.streaming_content
     assert next(stream) == b"first"
@@ -159,3 +172,21 @@ def test_source_failure_releases_response(tmp_path, channel):
         next(stream)
     response.close()
     assert not connection.in_atomic_block
+    assert terminal == [False]
+
+
+def test_guard_authorization_failure_returns_no_private_bytes(tmp_path, channel):
+    """Fresh rejection before guard entry is a retryable nonstreaming response."""
+    _, campaign, _ = draft_campaign(tmp_path)
+
+    def refuse(_):
+        raise ReadUnavailable("Synthetic revoked admission")
+
+    response = campaign_response(
+        channel[0],
+        [campaign.pk],
+        authorize=refuse,
+        open_content=lambda: pytest.fail("opened private data"),
+    )
+    assert response.status_code == 503 and response["Retry-After"] == "5"
+    assert not response.streaming and not connection.in_atomic_block

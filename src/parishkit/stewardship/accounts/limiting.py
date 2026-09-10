@@ -254,6 +254,8 @@ class Limiter:
 
     def bucket(self, kind, source):
         """Admit before allocating session/state or computing a link-token digest."""
+        if connection.in_atomic_block:
+            raise LimiterUnavailable("Authentication requires independent admission.")
         if kind not in {"admin", "access"}:
             raise ValueError("Unknown authentication route class.")
         fingerprint = self.fingerprint("ip", source)

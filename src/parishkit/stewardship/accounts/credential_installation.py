@@ -33,6 +33,13 @@ from .secret_models import (
 from .secret_requests import _now, _receipt, _transaction, _transition
 
 
+class CredentialValidationUnavailable(Exception):
+    """A provider adapter requests retry without exposing provider error text."""
+
+    def __init__(self):
+        super().__init__("Credential validation is temporarily unavailable.")
+
+
 class CredentialInstaller:
     """Internal orchestrator: typed files alone do not authorize queue access.
 
@@ -104,6 +111,10 @@ class CredentialInstaller:
                 file_fingerprint(value) == staged.fingerprint
                 and self.validate(value) is True
             )
+        except CredentialValidationUnavailable:
+            # Retain testing state and sealed input; the owning loop retries
+            # with its bounded backoff until the request's ordinary expiry.
+            raise CredentialValidationUnavailable() from None
         except Exception:
             # Provider exceptions can contain the supplied credential. The public
             # outcome is only failed, and the previous file has not been changed.

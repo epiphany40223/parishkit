@@ -380,7 +380,13 @@ def scrub_generation(generation_id, *, batch_size=500):
 def rotate_token(*, token_id, public, admit):
     """Invalidate prior email links without changing a Family's stable manual code."""
     with transaction.atomic(), key_set_lock(public):
+        runtime = SystemConfiguration.objects.select_for_update().get()
         deployment = DeploymentCredentialState.objects.select_for_update().get()
+        campaign_id = FamilyAccessToken.objects.values_list(
+            "campaign_id", flat=True
+        ).get(pk=token_id)
+        Campaign.objects.select_for_update().get(pk=campaign_id)
+        population = coverage(campaign_id)
         row = (
             FamilyAccessToken.objects.select_for_update()
             .select_related("family", "generation", "campaign")
@@ -389,7 +395,12 @@ def rotate_token(*, token_id, public, admit):
         if admit(row.campaign, deployment, row.generation) is not True:
             raise PermissionError("Token rotation is not admitted.")
         if (
-            row.destroyed_at is not None
+            runtime.mode != "production"
+            or runtime.restore_review_required
+            or runtime.current_campaign_id != row.campaign_id
+            or population.population_dirty
+            or row.destroyed_at is not None
+            or row.generation.state != "active"
             or row.generation.credential_epoch != deployment.family_link_epoch
             or row.campaign.active_token_generation_id != row.generation_id
             or not row.family.portal_eligible

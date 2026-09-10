@@ -21,6 +21,13 @@ from parishkit.stewardship.accounts.cryptography import (
 )
 
 
+def test_rehearsal_marker_is_excluded_from_production_namespace():
+    """The prefix is a disjoint namespace, not merely an entry-format convention."""
+    assert "I" not in ALPHABET
+    assert new_code(testing=True).startswith("I")
+    assert not new_code().startswith("I")
+
+
 def test_general_envelopes_are_randomized_context_bound_and_versioned():
     ring = GeneralKeyring([Key("g1", "active", b"a" * 32)])
     one = ring.encrypt(b"ABCDEFGH", context=b"family:1")

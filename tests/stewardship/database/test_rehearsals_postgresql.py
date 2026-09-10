@@ -2,17 +2,22 @@
 
 import pytest
 from django.db import IntegrityError, transaction
+from django.db.models import F
 
 from parishkit.stewardship.accounts.cryptography import (
     CodeMacKeyring,
     CryptographicError,
     Key,
 )
+from parishkit.stewardship.accounts.sessions import database_now
+from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.credential_keys import add_rotation_key
 from parishkit.stewardship.campaigns.credential_models import (
+    CampaignCredentialState,
     FamilyCampaign,
     RehearsalCodeReservation,
     RehearsalCredential,
+    RehearsalEpoch,
 )
 from parishkit.stewardship.campaigns.lifecycle import CampaignWorkKind
 from parishkit.stewardship.campaigns.mac_rotation import (
@@ -54,6 +59,22 @@ def prepare(campaign, ring):
 def invalidate(campaign):
     """Run the real storage invalidation under the synthetic owning gate admission."""
     return invalidate_rehearsal(campaign_id=campaign.pk, admit=lambda *args: True)
+
+
+def test_invalid_epoch_pointer_cannot_emit_fictitious_transition(tmp_path):
+    """Corrupt/stale durable epoch state fails before clearing its retained pointer."""
+    _, campaign, _, ring = family_campaign(tmp_path)
+    prepare(campaign, ring)
+    scope = CampaignCredentialState.objects.get(campaign=campaign)
+    original = scope.rehearsal_epoch_id, scope.version
+    RehearsalEpoch.objects.filter(pk=scope.rehearsal_epoch_id).update(
+        state="invalidated", invalidated_at=database_now(), version=F("version") + 1
+    )
+    with pytest.raises(StorageInvariantError, match="not active"):
+        invalidate(campaign)
+    scope.refresh_from_db()
+    assert (scope.rehearsal_epoch_id, scope.version) == original
+    assert not AuditEvent.objects.filter(event_type="rehearsal_invalidated").exists()
 
 
 def test_testing_codes_and_tokens_are_disjoint_and_idempotent(tmp_path):
@@ -114,16 +135,26 @@ def test_retired_code_is_not_reused_after_cleanup_and_key_demotion(
         [Key("m1", "collision-only", b"m" * 32), Key("m2", "active", b"n" * 32)]
     )
     with pytest.raises(CryptographicError, match="incomplete"):
-        collision_only(rotating, demoted)
+        collision_only(rotating, demoted, admit=lambda: True)
     assert (
-        backfill_mac_batch(campaign_id=campaign.pk, general=ring.general, mac=rotating)
+        backfill_mac_batch(
+            campaign_id=campaign.pk,
+            general=ring.general,
+            mac=rotating,
+            admit=lambda: True,
+        )
         == 1
     )
     assert (
-        backfill_mac_batch(campaign_id=campaign.pk, general=ring.general, mac=rotating)
+        backfill_mac_batch(
+            campaign_id=campaign.pk,
+            general=ring.general,
+            mac=rotating,
+            admit=lambda: True,
+        )
         == 0
     )
-    collision_only(rotating, demoted)
+    collision_only(rotating, demoted, admit=lambda: True)
     assert RehearsalCodeReservation.objects.get().key_id == "m1"
     candidates = iter([old_code, "IABCDEFG"])
     monkeypatch.setattr(rehearsals, "new_code", lambda **kwargs: next(candidates))
