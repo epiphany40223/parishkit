@@ -1,0 +1,407 @@
+"""Exhaustive lifecycle/date predicates; these do not simulate readiness evidence."""
+
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
+from itertools import product
+from uuid import uuid4
+
+import pytest
+
+from parishkit.stewardship.campaigns.domain import CampaignState as State
+from parishkit.stewardship.campaigns.domain import SystemMode as Mode
+from parishkit.stewardship.campaigns.domain import UTCInterval
+from parishkit.stewardship.campaigns.lifecycle import (
+    TRANSITIONS,
+    Action,
+    CampaignFacts,
+    campaign_work_admitted,
+    draft_creation_admitted,
+    portal_admitted,
+    structural_edit_admitted,
+    transition_audit_event,
+    transition_target,
+)
+from parishkit.stewardship.campaigns.lifecycle import (
+    CampaignWorkKind as Work,
+)
+
+INTERVAL = UTCInterval(
+    datetime(2026, 10, 1, tzinfo=UTC), datetime(2026, 11, 1, tzinfo=UTC)
+)
+
+
+@pytest.mark.parametrize(
+    "state,mode,current,restore",
+    list(product(State, Mode, (True, False), (True, False))),
+)
+def test_portal_boundary_matrix(state, mode, current, restore):
+    """All modes/states fail closed at the exact close even if scheduler state lags."""
+    facts = CampaignFacts(state, mode, INTERVAL, current, restore)
+    allowed = (
+        current
+        and not restore
+        and (
+            state is State.DRAFT
+            if mode is Mode.TESTING
+            else state in {State.SCHEDULED, State.ACTIVE}
+        )
+    )
+    for now, in_range in [
+        (INTERVAL.start - timedelta(microseconds=1), False),
+        (INTERVAL.start, True),
+        (INTERVAL.end - timedelta(microseconds=1), True),
+        (INTERVAL.end, False),
+    ]:
+        assert portal_admitted(facts, now) == (allowed and in_range)
+
+
+@pytest.mark.parametrize("state,action", list(product(State, Action)))
+def test_transition_registry_rejects_unlisted_sources(state, action):
+    """Every source/action pairing consults the same explicit registry."""
+    facts = CampaignFacts(state, Mode.PRODUCTION, INTERVAL, True)
+    target = transition_target(action, facts, INTERVAL.start)
+    if state not in TRANSITIONS[action].sources:
+        assert target is None
+    elif target is not None:
+        assert target in TRANSITIONS[action].targets
+    rule = TRANSITIONS[action]
+    assert transition_audit_event(action) == "campaign_" + action.value
+    if rule.actor == "administrator":
+        assert rule.reauthentication and rule.confirmation
+
+
+def test_activation_withdrawal_close_and_reopen_races():
+    """Time is checked at execution, not inferred from a stale lifecycle flag."""
+    draft = CampaignFacts(State.DRAFT, Mode.TESTING, INTERVAL, True)
+    assert (
+        transition_target(Action.ACTIVATE, draft, INTERVAL.start - timedelta(seconds=1))
+        is State.SCHEDULED
+    )
+    assert transition_target(Action.ACTIVATE, draft, INTERVAL.start) is State.ACTIVE
+    assert transition_target(Action.ACTIVATE, draft, INTERVAL.end) is None
+    scheduled = replace(draft, state=State.SCHEDULED, mode=Mode.PRODUCTION)
+    assert (
+        transition_target(
+            Action.WITHDRAW, scheduled, INTERVAL.start - timedelta(seconds=1)
+        )
+        is State.DRAFT
+    )
+    assert transition_target(Action.WITHDRAW, scheduled, INTERVAL.start) is None
+    assert transition_target(Action.START, scheduled, INTERVAL.start) is State.ACTIVE
+    assert transition_target(Action.START, scheduled, INTERVAL.end) is State.ACTIVE
+    assert transition_target(Action.CLOSE, scheduled, INTERVAL.end) is None
+    assert (
+        transition_target(
+            Action.CLOSE, replace(scheduled, state=State.ACTIVE), INTERVAL.end
+        )
+        is State.CLOSED
+    )
+    assert transition_target(Action.CLOSE, scheduled, INTERVAL.start) is None
+    closed = replace(scheduled, state=State.CLOSED)
+    extended = UTCInterval(INTERVAL.start, INTERVAL.end + timedelta(days=1))
+    assert (
+        transition_target(
+            Action.REOPEN, closed, INTERVAL.end, proposed_interval=extended
+        )
+        is State.ACTIVE
+    )
+    for interval in (
+        None,
+        INTERVAL,
+        UTCInterval(INTERVAL.start - timedelta(days=1), extended.end),
+    ):
+        assert (
+            transition_target(
+                Action.REOPEN, closed, INTERVAL.end, proposed_interval=interval
+            )
+            is None
+        )
+    assert (
+        transition_target(
+            Action.REOPEN, closed, extended.end, proposed_interval=extended
+        )
+        is None
+    )
+
+
+def test_historical_restore_and_work_holds():
+    """Pause is independent of portal access; archive history never becomes current."""
+    active = CampaignFacts(
+        State.ACTIVE, Mode.PRODUCTION, INTERVAL, True, delivery_paused=True
+    )
+    assert portal_admitted(active, INTERVAL.start)
+    assert campaign_work_admitted(active, INTERVAL.start, Work.LIVE_PREPARATION)
+    assert not campaign_work_admitted(active, INTERVAL.start, Work.LIVE_DELIVERY)
+    assert not campaign_work_admitted(
+        replace(active, catch_up_pending=True), INTERVAL.start, Work.LIVE_PREPARATION
+    )
+    assert not campaign_work_admitted(
+        replace(active, current=False), INTERVAL.start, Work.LIVE_PREPARATION
+    )
+    archived = replace(active, state=State.ARCHIVED)
+    assert transition_target(Action.UNARCHIVE, archived, INTERVAL.end) is State.CLOSED
+    assert (
+        transition_target(
+            Action.UNARCHIVE, replace(archived, current=False), INTERVAL.end
+        )
+        is None
+    )
+    assert (
+        transition_target(
+            Action.UNARCHIVE, replace(archived, restore_required=True), INTERVAL.end
+        )
+        is None
+    )
+    assert transition_target(Action.PURGE, archived, INTERVAL.end) is None
+    assert (
+        transition_target(
+            Action.PURGE,
+            replace(archived, mode=Mode.TESTING, current=False),
+            INTERVAL.end,
+        )
+        is State.PURGING
+    )
+    assert (
+        transition_target(
+            Action.PURGE, replace(archived, mode=Mode.TESTING), INTERVAL.end
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize("state", State)
+def test_successor_and_structural_locks(state):
+    """Every unfinished purge request blocks creation, even while lifecycle is
+    archived.
+    """
+    expected = state in {State.ARCHIVED, State.PURGED}
+    kwargs = dict(
+        mode=Mode.TESTING, current_id=None, states=[state], nonterminal_purge=False
+    )
+    assert draft_creation_admitted(**kwargs) == expected
+    assert not draft_creation_admitted(**(kwargs | {"nonterminal_purge": True}))
+    assert not draft_creation_admitted(**(kwargs | {"current_id": uuid4()}))
+    assert not draft_creation_admitted(**(kwargs | {"mode": Mode.PRODUCTION}))
+    assert structural_edit_admitted(state, ever_active=False, locked=False) == (
+        state is State.DRAFT
+    )
+    assert not structural_edit_admitted(state, ever_active=True, locked=False)
+    assert not structural_edit_admitted(state, ever_active=False, locked=True)
+
+
+def test_noncanonical_facts_fail():
+    """Strings, truthy integers and naive instants cannot impersonate domain values."""
+    facts = CampaignFacts(State.DRAFT, Mode.TESTING, INTERVAL, True)
+    for changes in (
+        {"state": "draft"},
+        {"mode": "testing"},
+        {"interval": None},
+        {"current": 1},
+    ):
+        with pytest.raises(ValueError):
+            replace(facts, **changes)
+    with pytest.raises(ValueError):
+        transition_target("activate", facts, INTERVAL.start)
+    with pytest.raises(ValueError):
+        transition_audit_event("activate")
+    with pytest.raises(ValueError):
+        portal_admitted(facts, datetime(2026, 10, 1))
+    with pytest.raises(ValueError):
+        draft_creation_admitted(
+            mode="testing", current_id=None, states=[], nonterminal_purge=False
+        )
+    with pytest.raises(ValueError):
+        draft_creation_admitted(
+            mode=Mode.TESTING,
+            current_id=None,
+            states=["draft"],
+            nonterminal_purge=False,
+        )
+    with pytest.raises(ValueError):
+        structural_edit_admitted(State.DRAFT, ever_active=1, locked=False)
+
+
+@pytest.mark.parametrize("state,action,mode", list(product(State, Action, Mode)))
+def test_transition_modes_and_sources(state, action, mode):
+    """The registry is the mode contract, including Testing idempotent commands."""
+    rule = TRANSITIONS[action]
+    facts = CampaignFacts(state, mode, INTERVAL, rule.actor != "purge_worker")
+    now = INTERVAL.start
+    if action in {Action.WITHDRAW, Action.ACTIVATE}:
+        now -= timedelta(seconds=1)
+    elif action in {Action.CLOSE, Action.REOPEN}:
+        now = INTERVAL.end
+    result = transition_target(
+        action,
+        facts,
+        now,
+        proposed_interval=UTCInterval(INTERVAL.start, INTERVAL.end + timedelta(days=1)),
+    )
+    assert (result is not None) == (state in rule.sources and mode in rule.modes)
+
+
+def test_guard_actor_and_mode_contract():
+    """Pin operational obligations independently of the registry implementation."""
+    expected = {
+        Action.ACTIVATE: (
+            "administrator",
+            "testing",
+            "current readiness configuration_coherent cleanup_complete "
+            "token_generation catch_up_demand no_restore no_purge",
+        ),
+        Action.START: (
+            "boundary_worker",
+            "production",
+            "current boundary_current no_restore no_purge fenced_owner",
+        ),
+        Action.CLOSE: (
+            "boundary_worker",
+            "production",
+            "current boundary_current invalidate_family_access "
+            "no_restore no_purge fenced_owner",
+        ),
+        Action.WITHDRAW: (
+            "administrator",
+            "production",
+            "current quiescent cancel_future_work invalidate_readiness "
+            "no_restore no_purge reason",
+        ),
+        Action.REOPEN: (
+            "administrator",
+            "testing production",
+            "current readiness configuration_coherent token_generation "
+            "extended_end no_restore no_purge quiescent",
+        ),
+        Action.ARCHIVE: (
+            "administrator",
+            "testing production",
+            "current quiescent post_close_resolved no_restore no_purge",
+        ),
+        Action.UNARCHIVE: (
+            "administrator",
+            "testing production",
+            "current no_other_current quiescent no_restore no_purge",
+        ),
+        Action.RETURN_TESTING: (
+            "administrator",
+            "testing production",
+            "current quiescent post_close_resolved no_restore no_purge "
+            "clear_current_pointer",
+        ),
+        Action.PURGE: (
+            "purge_worker",
+            "testing",
+            "purge_request purge_window no_current_campaign fresh_backup "
+            "quiescent fenced_owner",
+        ),
+        Action.PURGE_ABORT: (
+            "purge_worker",
+            "testing",
+            "no_deletion_committed no_current_campaign fenced_owner",
+        ),
+        Action.PURGE_COMPLETE: (
+            "purge_worker",
+            "testing",
+            "database_deleted files_deleted fenced_owner no_current_campaign",
+        ),
+        Action.PURGE_CLEANUP_FAILED: (
+            "purge_worker",
+            "testing",
+            "database_deleted fenced_owner no_current_campaign",
+        ),
+    }
+    assert set(expected) == set(Action)
+    for action, (actor, modes, guards) in expected.items():
+        rule = TRANSITIONS[action]
+        assert rule.actor == actor
+        assert rule.modes == frozenset(Mode(mode) for mode in modes.split())
+        assert rule.guards == frozenset(guards.split())
+        assert rule.reauthentication == rule.confirmation == (actor == "administrator")
+
+
+def test_overdue_boundaries_preserve_order_without_reopening_access():
+    """Catch-up must record start then close, never skip the intermediate state."""
+    facts = CampaignFacts(State.SCHEDULED, Mode.PRODUCTION, INTERVAL, True)
+    now = INTERVAL.end + timedelta(days=2)
+    assert transition_target(Action.CLOSE, facts, now) is None
+    for action, target in [(Action.START, State.ACTIVE), (Action.CLOSE, State.CLOSED)]:
+        assert not portal_admitted(facts, now)
+        assert not campaign_work_admitted(facts, now, Work.LIVE_DELIVERY)
+        assert transition_target(action, facts, now) is target
+        facts = replace(facts, state=target)
+    assert not portal_admitted(facts, now)
+
+
+def test_testing_sends_are_not_live_delivery():
+    """Production pause/catch-up flags do not suppress explicit test sends."""
+    facts = CampaignFacts(
+        State.DRAFT,
+        Mode.TESTING,
+        INTERVAL,
+        True,
+        delivery_paused=True,
+        catch_up_pending=True,
+    )
+    assert campaign_work_admitted(facts, INTERVAL.start, Work.REHEARSAL)
+    assert campaign_work_admitted(facts, INTERVAL.start, Work.READINESS_TEST)
+
+
+@pytest.mark.parametrize("state,mode,kind", list(product(State, Mode, Work)))
+def test_work_kind_interval_and_mode_matrix(state, mode, kind):
+    """Immutable classes distinguish live/rehearsal occurrences from explicit tests."""
+    facts = CampaignFacts(state, mode, INTERVAL, True)
+    explicit = kind in {Work.PREVIEW, Work.READINESS_TEST}
+    valid_preview = state not in {
+        State.PURGING,
+        State.PURGE_CLEANUP_FAILED,
+        State.PURGED,
+    }
+    for now, within in [
+        (INTERVAL.start - timedelta(seconds=1), False),
+        (INTERVAL.start, True),
+        (INTERVAL.end, False),
+    ]:
+        expected = (
+            valid_preview
+            if explicit
+            else within
+            and (
+                (mode is Mode.TESTING and state is State.DRAFT)
+                if kind is Work.REHEARSAL
+                else (
+                    mode is Mode.PRODUCTION and state in {State.SCHEDULED, State.ACTIVE}
+                )
+            )
+        )
+        assert campaign_work_admitted(facts, now, kind) == expected
+        assert not campaign_work_admitted(replace(facts, current=False), now, kind)
+        assert not campaign_work_admitted(
+            replace(facts, restore_required=True), now, kind
+        )
+        if explicit:
+            assert (
+                campaign_work_admitted(
+                    replace(facts, delivery_paused=True, catch_up_pending=True),
+                    now,
+                    kind,
+                )
+                == expected
+            )
+
+
+@pytest.mark.parametrize(
+    "invalid", ["interval", {}, (INTERVAL.start, INTERVAL.end), object()]
+)
+def test_reopen_rejects_unresolved_intervals(invalid):
+    """Wrong input types consistently fail with ValueError, never duck typing."""
+    facts = CampaignFacts(State.CLOSED, Mode.PRODUCTION, INTERVAL, True)
+    with pytest.raises(ValueError, match="resolved proposed"):
+        transition_target(Action.REOPEN, facts, INTERVAL.end, proposed_interval=invalid)
+
+
+@pytest.mark.parametrize("invalid", ["preview", True, None])
+def test_work_kind_rejects_caller_flags(invalid):
+    """A boolean/string is not a canonical immutable routing classification."""
+    facts = CampaignFacts(State.DRAFT, Mode.TESTING, INTERVAL, True)
+    with pytest.raises(ValueError, match="canonical campaign work"):
+        campaign_work_admitted(facts, INTERVAL.start, invalid)

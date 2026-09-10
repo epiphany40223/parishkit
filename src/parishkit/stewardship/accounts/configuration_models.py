@@ -48,6 +48,7 @@ class AppliedConfigurationVersion(ImmutableRecord):
                     validation_schema__in=[
                         "parish-integrations-v1",
                         "foundation-policy-v2",
+                        "campaign-foundation-v3",
                     ]
                 ),
                 name="configuration_validation_schema",

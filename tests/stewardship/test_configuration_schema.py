@@ -201,13 +201,13 @@ def test_timezone_validation_ignores_host_only_catalog(tmp_path):
 @pytest.mark.parametrize("failure", [OSError, UnicodeError, ModuleNotFoundError])
 def test_timezone_catalog_failure_is_safe(monkeypatch, failure):
     """Broken installations fail closed without exposing resource paths."""
-    from parishkit.stewardship.accounts import configuration_schema as schema
+    from parishkit.stewardship import schema_primitives as schema
 
     def fail(package):
         """Simulate unreadable/corrupt/missing installed resources, not input files."""
         raise failure("private-resource-location")
 
-    schema._timezone_names.cache_clear()
+    schema.timezone_names.cache_clear()
     monkeypatch.setattr(schema, "files", fail)
     try:
         with pytest.raises(
@@ -216,12 +216,12 @@ def test_timezone_catalog_failure_is_safe(monkeypatch, failure):
             configuration_version()
         assert "private-resource-location" not in str(error.value)
     finally:
-        schema._timezone_names.cache_clear()
+        schema.timezone_names.cache_clear()
 
 
 def test_frozen_catalog_ignores_changed_dependency(monkeypatch):
     """Changing the installed tzdata catalog cannot change the v1 accepted set."""
-    from parishkit.stewardship.accounts import configuration_schema as schema
+    from parishkit.stewardship import schema_primitives as schema
 
     original = schema.files
     requests = []
@@ -233,27 +233,27 @@ def test_frozen_catalog_ignores_changed_dependency(monkeypatch):
             raise ModuleNotFoundError("Synthetic upgraded dependency")
         return original(package)
 
-    schema._timezone_names.cache_clear()
+    schema.timezone_names.cache_clear()
     monkeypatch.setattr(schema, "files", only_application_data)
     try:
         configuration_version()
-        assert requests == [schema.__package__]
+        assert requests == [schema.SCHEMA_ASSET_PACKAGE]
     finally:
-        schema._timezone_names.cache_clear()
+        schema.timezone_names.cache_clear()
 
 
 def test_frozen_catalog_digest_rejects_asset_drift(tmp_path, monkeypatch):
     """A damaged or silently regenerated schema asset is an installation error."""
-    from parishkit.stewardship.accounts import configuration_schema as schema
+    from parishkit.stewardship import schema_primitives as schema
 
     (tmp_path / "timezone_names_v1.txt").write_text("Synthetic/NewZone\n")
     monkeypatch.setattr(schema, "files", lambda package: tmp_path)
-    schema._timezone_names.cache_clear()
+    schema.timezone_names.cache_clear()
     try:
         with pytest.raises(schema.SchemaEnvironmentError):
             configuration_version()
     finally:
-        schema._timezone_names.cache_clear()
+        schema.timezone_names.cache_clear()
 
 
 def test_unknown_schema_never_selects_current_validator():
@@ -272,9 +272,7 @@ def test_wheel_includes_frozen_schema_catalog(tmp_path):
     from pathlib import Path
     from zipfile import ZipFile
 
-    from parishkit.stewardship.accounts.configuration_schema import (
-        _TIMEZONE_NAMES_SHA256,
-    )
+    from parishkit.stewardship.schema_primitives import _TIMEZONE_NAMES_SHA256
 
     subprocess.run(
         [

@@ -616,7 +616,7 @@ def test_history_dispatches_its_stored_validator(db, monkeypatch):
 
 def test_catalog_outage_is_not_mislabeled_as_corrupt_history(db, monkeypatch):
     """Installation failures propagate distinctly from a content mismatch."""
-    from parishkit.stewardship.accounts import configuration_schema as schema
+    from parishkit.stewardship import schema_primitives as schema
 
     version = configuration_version()
     prepare(version)
@@ -625,7 +625,7 @@ def test_catalog_outage_is_not_mislabeled_as_corrupt_history(db, monkeypatch):
         """Simulate an unreadable installed schema asset."""
         raise OSError("private-installation-path")
 
-    schema._timezone_names.cache_clear()
+    schema.timezone_names.cache_clear()
     monkeypatch.setattr(schema, "files", unavailable)
     try:
         with pytest.raises(schema.SchemaEnvironmentError, match="catalog"):
@@ -633,4 +633,4 @@ def test_catalog_outage_is_not_mislabeled_as_corrupt_history(db, monkeypatch):
         with pytest.raises(schema.SchemaEnvironmentError, match="catalog"):
             prepare(version)
     finally:
-        schema._timezone_names.cache_clear()
+        schema.timezone_names.cache_clear()

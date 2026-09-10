@@ -298,7 +298,9 @@ def test_retry_uses_stored_schema_after_current_builder_changes(intake, monkeypa
         """Represent future input requirements without altering the old builder."""
         raise ConfigError("Synthetic new-schema rejection")
 
-    monkeypatch.setattr(configuration_requests, "REQUEST_SCHEMA", "future-v2")
+    monkeypatch.setattr(
+        configuration_requests, "default_schema", lambda *_: "future-v2"
+    )
     monkeypatch.setattr(
         request_patch, "BUILDERS", {**request_patch.BUILDERS, "future-v2": reject_new}
     )
@@ -515,7 +517,9 @@ def test_concurrent_winner_selects_stored_schema_before_validation(intake, monke
         """This schema must not run once the old process has won the immutable key."""
         pytest.fail("The retry used the loser's current schema")
 
-    monkeypatch.setattr(configuration_requests, "REQUEST_SCHEMA", "future-v2")
+    monkeypatch.setattr(
+        configuration_requests, "default_schema", lambda *_: "future-v2"
+    )
     monkeypatch.setattr(
         request_patch, "BUILDERS", {**request_patch.BUILDERS, "future-v2": reject_new}
     )

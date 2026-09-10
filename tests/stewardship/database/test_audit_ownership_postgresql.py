@@ -45,6 +45,31 @@ def initialize(tmp_path):
     return store, root, actor
 
 
+def initialize_legacy(executor):
+    """Create legacy activation with historical models, not newer runtime columns."""
+    root, actor = configuration_version(), uuid4()
+    correlation_id = uuid4()
+    installer.prepare_snapshot(root, actor_id=actor, correlation_id=correlation_id)
+    apps = executor.loader.project_state(
+        [PREVIOUS, ("stewardship_accounts", "0015_secret_request_guards")]
+    ).apps
+    with transaction.atomic():
+        apps.get_model("stewardship_accounts", "SystemConfiguration").objects.create(
+            testing_recipient="test@example.org",
+            actor_id=actor,
+            correlation_id=correlation_id,
+        )
+        apps.get_model(
+            "stewardship_accounts", "ConfigurationActivation"
+        ).objects.create(
+            configuration_id=root.version_id,
+            sequence=1,
+            actor_id=actor,
+            correlation_id=correlation_id,
+        )
+    return root
+
+
 @pytest.fixture
 def initialized(tmp_path):
     """Start each configured scenario from its own durable synthetic root."""
@@ -369,7 +394,7 @@ def test_legacy_upgrade_preserves_original_rows_without_guessing(tmp_path):
     leaves = executor.loader.graph.leaf_nodes()
     try:
         executor.migrate([PREVIOUS])
-        _, root, _ = initialize(tmp_path)
+        root = initialize_legacy(executor)
         old_model = executor.loader.project_state(
             [PREVIOUS, ("stewardship_accounts", "0015_secret_request_guards")]
         ).apps.get_model("stewardship_audit", "AuditEvent")
@@ -392,7 +417,7 @@ def test_broad_downgrade_preserves_upgraded_legacy_ownership(tmp_path, history):
     try:
         executor.migrate([PREVIOUS])
         if history == "activation":
-            initialize(tmp_path)
+            initialize_legacy(executor)
         elif history == "checkpoint":
             root, actor = configuration_version(), uuid4()
             installer.prepare_snapshot(root, actor_id=actor, correlation_id=uuid4())

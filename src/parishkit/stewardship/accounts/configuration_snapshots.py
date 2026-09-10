@@ -34,8 +34,11 @@ def _normalized(document, schema=None):
     """Extract just the projections, retaining deterministic authoritative IDs."""
     sections = document["sections"]
     names = ("parish", "integrations")
-    if (schema or schema_for(document)) == "foundation-policy-v2":
+    selected = schema or schema_for(document)
+    if selected in {"foundation-policy-v2", "campaign-foundation-v3"}:
         names += ("login_rules",)
+    if selected == "campaign-foundation-v3":
+        names += ("campaigns", "schedules")
     return {name: sections.get(name, []) for name in names}
 
 
@@ -83,10 +86,14 @@ def _stored_projections(snapshot):
             )
         ],
     }
-    if snapshot.validation_schema == "foundation-policy-v2":
+    if snapshot.validation_schema in {"foundation-policy-v2", "campaign-foundation-v3"}:
         from .policy_projections import stored_policy
 
         result["login_rules"] = stored_policy(snapshot)
+    if snapshot.validation_schema == "campaign-foundation-v3":
+        from parishkit.stewardship.campaigns.projections import stored_campaigns
+
+        result.update(stored_campaigns(snapshot))
     return result
 
 
@@ -106,7 +113,7 @@ def _history(snapshot):
 
 
 def _load_history(digest):
-    """Load an entire immutable lineage in three queries, independent of depth.
+    """Load an immutable lineage with bounded query count, independent of depth.
 
     UNION deduplicates identity pairs, so even a forged cycle terminates in SQL;
     the Python verifier then explicitly rejects it. Projection prefetches avoid
@@ -134,7 +141,9 @@ def _load_history(digest):
         row.predecessor = by_id.get(row.predecessor_id)
     prefetch_related_objects(rows, "parish", "integrations")
     policy_rows = [
-        row for row in rows if row.validation_schema == "foundation-policy-v2"
+        row
+        for row in rows
+        if row.validation_schema in {"foundation-policy-v2", "campaign-foundation-v3"}
     ]
     prefetch_related_objects(
         policy_rows,
@@ -142,6 +151,19 @@ def _load_history(digest):
         "addressrule_set__grants",
         "ministryassignment_set",
     )
+    campaign_rows = [
+        row for row in rows if row.validation_schema == "campaign-foundation-v3"
+    ]
+    prefetch_related_objects(
+        campaign_rows,
+        "campaign_configurations",
+        "schedule_revisions",
+    )
+    if campaign_rows:
+        from parishkit.stewardship.campaigns.projections import sql_boundaries_match
+
+        if not sql_boundaries_match([row.pk for row in campaign_rows]):
+            return None
     return next(row for row in rows if row.digest == digest)
 
 
@@ -341,4 +363,7 @@ def prepare_snapshot(version, *, actor_id, correlation_id):
         prepare_policy(
             snapshot, document["sections"].get("login_rules", []), attribution
         )
+        from parishkit.stewardship.campaigns.projections import prepare_campaigns
+
+        prepare_campaigns(snapshot, document, attribution)
         return snapshot

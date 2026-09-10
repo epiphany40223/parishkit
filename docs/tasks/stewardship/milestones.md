@@ -1482,6 +1482,96 @@ passed. No real provider credentials or parish data were used. PR CI checks and
 human approval remain merge requirements; this satisfies the batch review cycle,
 not the incomplete Phase 1A or G1.
 
+### Campaign configuration and lifecycle policy batch
+
+September 10, 2026: branch `pr/stewardship-campaign-lifecycle` starts from merged
+PR #17 (`4e8ac93`). See the [batch boundary](../../guides/stewardship-campaign-foundation.md)
+for delivered configuration/policy work and explicit remaining DAT-02 integration.
+The required three independent review/fix rounds are recorded below. Phase 1A
+and Gate 1 remain incomplete.
+
+Round 1: Pika session `20260909-215117-8c4b3b` reviewed `5da411c`, with two
+Claude shards and one independent full-branch Codex review. Finalization had
+no failures, degradation or verdict mismatch; nine findings passed its filter.
+
+| Finding | Disposition |
+| --- | --- |
+| High: a hypothetical later migration could overwrite policy schema predicates | False-positive as a present defect: no such migration exists; explicit dependencies order the current extension, and real v3 installation already exercises it. Added a full-forward function-definition regression check as requested. |
+| Medium: missing raw projection/completeness/update tests | Fixed with forged direct inserts, deferred completeness, invalid module and raw UPDATE cases. |
+| Medium: unrelated activations claim a campaign edit | Fixed with `campaign_reprojected` audit semantics; projection/version advancement remains intentional and documented. |
+| Medium: repeated structural validation per schedule | Fixed by reusing the validated interval within each preparation/verification call; added a call-count regression. |
+| Medium: bootstrap allegedly leaves the current pointer null | False-positive: the activation UPDATE follows bootstrap INSERT and atomically creates/selects the draft. Added root-v3 installation and subsequent Parish-timezone-edit regression coverage. |
+| Medium: current archived target passes pure purge predicate | Fixed by rejecting a current target and naming the separate global no-current guard. |
+| Medium: SQL permits forged resolved UTC columns | Fixed with independent SQL resolution and direct-insert denial tests, plus gap/fold/half-hour/skipped-day parity cases. |
+| Medium: disabled-module content is accepted | Fixed with module/additional-information slot validation and negative tests. |
+| Medium: conflicting raw schedule identity insert race | Fixed with the preparation advisory lock in the SQL guard and an independent-connection raw-writer race. |
+
+Related integrity hardening also verifies duplicate JSON/indexed fields exactly
+instead of allowing reconstructed values to mask a mismatch. Seven findings are
+fixed; two claims are rejected with regression evidence. Later rounds must still
+meet the human's minimum-three-round/no-final-High requirement.
+
+Round 1 correction validation: 1,666 baseline tests and 402 PostgreSQL tests
+passed; scoped coverage was 97.75% lines and 94.76% branches. Ruff, Markdown,
+whitespace and migration-drift checks passed. Reports are local disposable
+artifacts under `/tmp/parishkit-campaign-round1-quality*`, not repository data.
+
+Round 2: Pika session `20260909-221600-a55bea` reviewed `f8b2fb8`, again with two
+Claude shards and one independent full-branch Codex review. All completed without
+degradation, failure or verdict mismatch: nine Medium findings, no High/Critical.
+
+| Finding | Disposition |
+| --- | --- |
+| Financial SQL lacked direct coverage | Added real ordinary/leap-day financial installations and raw malformed-period rejection tests. |
+| Lifecycle guard metadata lacked contract tests | Added exact actor, mode and guard obligations for every action, plus the full action/state/mode matrix. |
+| Testing ignores delivery-pause flags | Intentional: the controlling live-pause specification is Production-only. Clarified and tested explicit Testing-send semantics. |
+| Temporary campaign holds terminally reject requests | Fixed with a distinct retryable operational exception; a staged request survives the hold and applies when cleared. |
+| Timezone-data disagreement can block retained lineage | Documented isolated upgrade verification, whole-lineage impact and safe recovery limitations; added fail-closed/restored-rules regression coverage. |
+| SQL admits duplicate/unsorted module sets | Fixed independent SQL canonical-set checks and direct malformed-header tests. |
+| SQL admits correctly resolved schedules outside the campaign | Fixed half-open owning-interval checks and raw start/end-edge coverage. |
+| SQL omits cross-schedule relationships | Added deferred initial/reminder chronology/uniqueness and recurring-kind cardinality checks, with complete raw-snapshot negative and positive tests. |
+| Lifecycle mode constraints are incomplete | Added explicit mode contracts, including Testing-only purge edges. Retained normative Testing acceptance for Return to Testing and reopen's preserve/assert-Production workflow rather than adopting overly restrictive suggestions. |
+
+Related lifecycle correction: overdue start remains eligible after the end, and
+close requires the intermediate active state. Tests preserve ordered start/close
+effects without outside-interval access; runtime atomic boundary transactions
+remain assigned to DAT-02/BG-02. Boundary-worker fencing/restore/purge guards and
+global no-current/fencing obligations for all purge-worker edges are explicit.
+The following third round completes the minimum review count.
+
+Round 2 correction validation: 1,861 baseline tests and 419 PostgreSQL tests
+passed; scoped coverage was 97.83% lines and 94.94% branches. Ruff, Markdown,
+whitespace and migration-drift checks passed. Disposable reports are under
+`/tmp/parishkit-campaign-round2-quality*`.
+
+Round 3: Pika session `20260909-224152-346bad` reviewed `084c829`, with two
+Claude shards and one independent full-branch Codex review. Finalization reports
+eight Medium findings, no High/Critical, no failed agents, degradation or verdict
+mismatch. The delegated triage dispositions are:
+
+| Finding | Disposition |
+| --- | --- |
+| Milestone evidence displaces navigation and phase hierarchy | Moved this batch under Phase 1, after the preceding authorization batch; existing anchors are unchanged. |
+| Cross-app schema primitives create an import cycle | Extracted public shared primitives, retaining their frozen semantics, catalog asset/checksum and exception compatibility. Updated catalog fault-injection and packaging tests. |
+| Reopen accepts a noncanonical proposed interval | Added explicit UTCInterval validation and wrong-type regression cases. |
+| A campaign hold would also block unrelated recovery in future runtime states | Auto-skipped as already scoped: Production/restore-review states are forbidden by this foundation's Python and SQL runtime guards. Documented the requirement to replace both layers for unrelated reprojection/recovery when later runtime work enables those states; no premature bypass was introduced. |
+| Full timezone catalog lacks database compatibility coverage | Added winter/summer resolution parity for every frozen name. This exposed missing backward aliases and ambiguous abbreviations in the pinned database image; the SQL resolver now freezes IANA 2026c link normalization without changing stored names or the accepted schema catalog. |
+| SQL lacks financial overlap confirmation | Added the inclusive overlap/explicit-true guard and raw snapshot rejection/acceptance tests. |
+| Retained verification misses database-only timezone drift | Added one set-based SQL check per loaded lineage and independent campaign/schedule database-rule drift tests; existing Python drift coverage remains. |
+| Work admission conflates rehearsals and explicit test sends | Replaced the delivery boolean with canonical immutable work classifications and full state/mode/kind/date tests. Explicit preview/readiness sends are date-exempt; ordinary rehearsals are not. Durable routing/authorization remain owning-service obligations. |
+
+Seven findings are fixed; one future-state concern is explicitly scoped to its
+owning runtime migration. All accepted Medium-or-higher issues are resolved.
+Final correction validation at implementation `1edef35`: 1,948 baseline tests
+and 425 PostgreSQL tests passed; scoped coverage was 97.82% lines and 94.93%
+branches. The rebuilt image passed the same 1,948 baseline tests, and all 30
+Compose checks passed. Ruff, Markdown, whitespace and migration-drift checks
+passed. Disposable reports/logs are under `/tmp/parishkit-campaign-final-*`.
+All three review/fix rounds are complete, and the final round found no High or
+Critical issues. PR CI and human merge approval remain required. Phase 1A and
+Gate 1 are not complete; continue the remaining DAT-02 storage/read-guard batch
+after the human-approved merge.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).

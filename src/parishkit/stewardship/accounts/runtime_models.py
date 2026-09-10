@@ -23,6 +23,12 @@ class SystemConfiguration(MutableRecord):
     active_configuration = models.ForeignKey(
         "AppliedConfigurationVersion", null=True, blank=True, on_delete=models.PROTECT
     )
+    current_campaign = models.ForeignKey(
+        "stewardship_campaigns.Campaign",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+    )
 
     class Meta(MutableRecord.Meta):
         db_table = "stewardship_system_configuration"

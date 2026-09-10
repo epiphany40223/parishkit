@@ -30,6 +30,8 @@ class ConfigurationChangeRequest(ImmutableRecord):
                         "parish-integrations-patch-v1",
                         "foundation-policy-patch-v2",
                         "operator-recovery-patch-v1",
+                        "operator-recovery-patch-v2",
+                        "campaign-foundation-patch-v3",
                     ]
                 ),
                 name="config_request_schema",
@@ -47,7 +49,12 @@ class ConfigurationChangeRequest(ImmutableRecord):
                         confirmed_deployment_id__isnull=True,
                         recovery_target__isnull=True,
                     )
-                    & ~models.Q(request_schema="operator-recovery-patch-v1")
+                    & ~models.Q(
+                        request_schema__in=[
+                            "operator-recovery-patch-v1",
+                            "operator-recovery-patch-v2",
+                        ]
+                    )
                     | models.Q(
                         authority="operator_recovery",
                         actor_id__isnull=True,
@@ -55,7 +62,10 @@ class ConfigurationChangeRequest(ImmutableRecord):
                         operator_reason__isnull=False,
                         confirmed_deployment_id__isnull=False,
                         recovery_target__isnull=False,
-                        request_schema="operator-recovery-patch-v1",
+                        request_schema__in=[
+                            "operator-recovery-patch-v1",
+                            "operator-recovery-patch-v2",
+                        ],
                     )
                 ),
                 name="config_request_actor",
