@@ -8,15 +8,17 @@ guarded lifecycle command.
 
 from uuid import UUID, uuid4
 
-from django.db import transaction
-from django.db.models import F
+from django.db import connection, transaction
+from django.db.models import Exists, F, OuterRef
 
 from parishkit.stewardship.accounts.cryptography import (
     CryptographicError,
+    TokenPublicKeyring,
     new_token,
     token_digest,
 )
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
+from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
@@ -44,6 +46,71 @@ def coverage(campaign_id):
     return CampaignCredentialState.objects.select_for_update().get(
         campaign_id=campaign_id
     )
+
+
+def extend_active_generation(campaign, *, public):
+    """Population-owner hook: missing links join only the current live generation.
+
+    The source transaction already pins runtime, deployment, campaign and Family
+    population in that order. Existing links survive temporary ineligibility;
+    frozen readiness manifests describe initial activation, not later arrivals.
+    This function neither changes the generation pointer nor creates email work.
+    """
+    if not connection.in_atomic_block or not isinstance(public, TokenPublicKeyring):
+        raise CryptographicError("Active population requires its public token keyring.")
+    with key_set_lock(public):
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM stewardship_system_configuration FOR SHARE")
+            cursor.execute("SELECT id FROM stewardship_credential_deployment FOR SHARE")
+        campaign = Campaign.objects.select_for_update().get(pk=campaign.pk)
+        population = coverage(campaign.pk)
+        runtime = SystemConfiguration.objects.get()
+        deployment = DeploymentCredentialState.objects.get()
+        generation = FamilyAccessTokenGeneration.objects.get(
+            pk=campaign.active_token_generation_id, campaign=campaign
+        )
+        if (
+            population.population_dirty
+            or runtime.restore_review_required
+            or runtime.mode != "production"
+            or runtime.current_campaign_id != campaign.pk
+            or campaign.state not in {"scheduled", "active"}
+            or generation.state != "active"
+            or generation.credential_epoch != deployment.family_link_epoch
+        ):
+            raise CryptographicError("Active token generation is not current.")
+        retained = FamilyAccessToken.objects.filter(
+            generation=generation, family_id=OuterRef("pk")
+        )
+        missing = (
+            FamilyCampaign.objects.filter(campaign=campaign, portal_eligible=True)
+            .filter(~Exists(retained))
+            .order_by("family_duid")
+        )
+        count = 0
+        while families := list(missing[:500]):
+            tokens = []
+            for family in families:
+                identifier, value = uuid4(), new_token()
+                tokens.append(
+                    FamilyAccessToken(
+                        id=identifier,
+                        family=family,
+                        campaign=campaign,
+                        generation=generation,
+                        ciphertext=public.encrypt(
+                            value.encode("ascii"), context=token_context(identifier)
+                        ),
+                        digest=token_digest(value, campaign.pk),
+                    )
+                )
+            FamilyAccessToken.objects.bulk_create(tokens)
+            count += len(tokens)
+        if count:
+            AuditEvent.objects.create(
+                event_type="family_link_population_extended", subject_id=generation.pk
+            )
+        return count
 
 
 def _current_inputs(generation, campaign, deployment, public):

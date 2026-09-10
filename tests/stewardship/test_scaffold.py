@@ -71,8 +71,10 @@ def test_namespaced_scaffold_routes(client, name, url, status):
     assert response["Cache-Control"] == "no-store"
     assert not response.cookies
     assert client.head(url).status_code == status
+    # Setup admission precedes HTTP-method dispatch for all application routes.
+    # Internal probes retain their safe-method contract without a runtime.
     assert client.post(url).status_code == (
-        503 if name in {"admin:login", "public:entry"} else 405
+        405 if name.startswith("internal:") else 503
     )
 
 

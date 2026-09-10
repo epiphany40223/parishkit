@@ -300,7 +300,8 @@ def authenticated_family(
 
 def _ip_counter(service, source):
     """Shared-network allowance tightens temporarily only during detected abuse."""
-    limit = 50 if service.limiter.elevated("family") else 100
+    base = service.limiter.limits.family_ip
+    limit = max(1, base // 2) if service.limiter.elevated("family") else base
     return Counter("family_ip", service.limiter.fingerprint("ip", source), limit, 600)
 
 
@@ -325,7 +326,7 @@ def entry(request):
                 service.limiter.fingerprint(
                     "family_pair", str(request.client_address) + ":" + fingerprint
                 ),
-                5,
+                service.limiter.limits.family_pair,
                 900,
             )
             identity = lookup(service, code=code)

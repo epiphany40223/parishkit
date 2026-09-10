@@ -98,6 +98,19 @@ Service identities are `web`, `worker`, `scheduler`, `config-installer`,
 `bootstrap`, and `migration`. Parsing a role is not permission to invoke it or
 access its secrets. Actual mount/queue/admission checks remain separate tasks.
 
+### Authentication thresholds
+
+`deployment.authentication_limits` accepts the closed count fields in
+[`AuthenticationLimits`](../../src/parishkit/stewardship/authentication_policy.py).
+Each has an `AUTH_LIMIT_<UPPERCASE_FIELD>` environment/explicit-override suffix;
+normal CLI/environment/YAML precedence applies. Values must be integers from
+1 through 1,000. Unknown names, booleans and out-of-range values fail validation.
+The source dataclass owns the default counts; windows are fixed by the
+[authentication policy](../specs/stewardship/architecture/spec.md#identity-and-session-security).
+Production parsing warns when a threshold is weaker than its default, naming
+only the affected fields. Runtime assembly must pass these validated limits to
+the shared limiter; syntactic parsing alone does not enable authentication.
+
 ### Paths
 
 `paths.root` defaults through the shared runtime helper to `/opt/parishkit`;

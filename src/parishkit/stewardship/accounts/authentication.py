@@ -6,6 +6,7 @@ endpoints and never persists SocialAccount, SocialToken or Django User objects.
 """
 
 import secrets
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -55,6 +56,20 @@ class AuthRuntime:
 
     store: object
     limiter: Limiter
+    setup_complete: Callable[[], bool] | None = None
+
+    def configured(self):
+        """Read the owning setup marker every request; absence always fails closed.
+
+        ADM-02 supplies its durable completed-setup marker after its atomic
+        finalization. A prepared YAML snapshot alone is not completed setup.
+        """
+        if self.setup_complete is None:
+            return False
+        result = self.setup_complete()
+        if type(result) is not bool:
+            raise ConfigError("The setup completion marker is unavailable.")
+        return result
 
 
 def runtime():
@@ -79,7 +94,7 @@ def ip_counter(limiter, source, *, initiation=False):
     return Counter(
         "admin_start" if initiation else "admin_callback",
         limiter.fingerprint("ip", source),
-        20 if initiation else 10,
+        limiter.limits.admin_starts if initiation else limiter.limits.admin_callbacks,
         600,
     )
 
@@ -227,7 +242,12 @@ def complete_identity(request, subject, email, hosted):
         or 0
     )
     fingerprint = service.limiter.fingerprint("identity", subject + "\x00" + email)
-    counter = Counter(f"admin_identity_{epoch}", fingerprint, 5, 900)
+    counter = Counter(
+        f"admin_identity_{epoch}",
+        fingerprint,
+        service.limiter.limits.admin_identity,
+        900,
+    )
     delay = service.limiter.counters([counter])
     if delay:
         record_failure(request, identity=fingerprint, counter=counter)

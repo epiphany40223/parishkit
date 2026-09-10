@@ -3,7 +3,7 @@
 from django.urls import include, path
 
 from . import views
-from .accounts import authentication, code_reports, family_authentication
+from .accounts import access_gate, authentication, code_reports, family_authentication
 
 public_patterns = [
     path("", family_authentication.entry, name="entry"),
@@ -15,6 +15,8 @@ family_patterns = [
     path("logout", family_authentication.logout, name="logout"),
 ]
 admin_patterns = [
+    path("setup", access_gate.setup, name="setup"),
+    path("maintenance", access_gate.maintenance, name="maintenance"),
     path(
         "campaign/<uuid:campaign_id>/family-codes",
         code_reports.family_codes,

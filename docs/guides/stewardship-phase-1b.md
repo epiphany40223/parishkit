@@ -133,6 +133,19 @@ p95 timings were below 0.03 seconds. Tests enforce a 64-query ceiling and a
 not a 100-concurrent-request load test; complete source, submissions, task/report
 fixtures and mixed-worker load remain with their later phase owners.
 
+## Identity gate checkpoint
+
+September 10 integrated identity checkpoint: 2,246 ordinary tests and all 762
+PostgreSQL tests pass. Deployment-configurable authentication thresholds retain
+fixed windows and bounded stores, including a regression proving stricter refill
+rates cannot regain their full burst through premature expiry. Setup/restore
+admission now gates resolved HTML and POST routes; ADM-02 still owns the durable
+configured marker and wizard, so a missing marker provider fails closed.
+Active-generation population reconciliation issues links for newly eligible
+Families atomically with the population, preserves existing links, and rejects
+issuance across the restore credential fence. These results precede the remaining
+installer/retirement changes and do not count as peer-review rounds.
+
 ## Browser component validation
 
 Install test-only Python inputs from `requirements/stewardship-browser.txt`, run

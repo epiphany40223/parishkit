@@ -14,10 +14,41 @@ from parishkit.stewardship.accounts.limiting import (
     LocalBuckets,
 )
 from parishkit.stewardship.accounts.models import AuthenticationIncident
+from parishkit.stewardship.authentication_policy import AuthenticationLimits
 
 from .auth_builders import signed_in
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+
+def test_tuned_bucket_uses_refill_horizon_for_expiry(auth_service):
+    """An idle custom bucket cannot regain a full burst before its refill time."""
+    limiter = auth_service.limiter
+    limiter.limits = AuthenticationLimits(access_per_minute=1, access_burst=5)
+    for _ in range(5):
+        assert limiter.bucket("access", "192.0.2.1") == 0
+    assert limiter.bucket("access", "192.0.2.1") > 0
+    key = limiter.namespace + ":bucket:access:" + limiter.fingerprint("ip", "192.0.2.1")
+    assert 299 <= limiter.client.ttl(key) <= 300
+
+
+def test_tuned_failure_thresholds_reach_actual_window_and_aggregate_paths(auth_service):
+    """Configuration changes the real limiter without weakening candidate accounting."""
+    from parishkit.stewardship.accounts.authentication import ip_counter
+
+    limiter = auth_service.limiter
+    limiter.limits = AuthenticationLimits(
+        admin_starts=2, admin_callbacks=3, aggregate_attempts=2, family_sources=2
+    )
+    start_counter = ip_counter(limiter, "192.0.2.1", initiation=True)
+    assert start_counter.limit == 2
+    assert ip_counter(limiter, "192.0.2.1").limit == 3
+    assert limiter.counters([start_counter], failure=True) == 0
+    assert limiter.counters([start_counter], failure=True) > 0
+    assert not limiter.failed("family", "192.0.2.1")
+    assert limiter.failed("family", "192.0.2.2")
+    incident = AuthenticationIncident.objects.get()
+    assert (incident.attempts, incident.sources) == (2, 2)
 
 
 def test_sliding_window_atomic_capacity_and_expiry(auth_service):
@@ -123,7 +154,9 @@ def test_outage_fail_closed_but_links_and_existing_sessions_work(
     limiter = Limiter(
         unavailable, b"synthetic-test-outage-key-material", incident=record_incident
     )
-    settings.STEWARDSHIP_AUTH_RUNTIME = AuthRuntime(auth_service.store, limiter)
+    settings.STEWARDSHIP_AUTH_RUNTIME = AuthRuntime(
+        auth_service.store, limiter, auth_service.setup_complete
+    )
     assert Client().get("/admin/login").status_code == 503
     assert Client().get("/admin/oauth/callback").status_code == 503
     assert browser.get("/admin/").status_code == 200

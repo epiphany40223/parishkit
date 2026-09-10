@@ -35,7 +35,9 @@ def auth_service(tmp_path, settings):
         incident=record_incident,
         namespace=namespace,
     )
-    settings.STEWARDSHIP_AUTH_RUNTIME = AuthRuntime(store, limiter)
+    # ADM-02's durable configured marker has not been implemented. These tests
+    # explicitly model completed setup, never infer it from a prepared snapshot.
+    settings.STEWARDSHIP_AUTH_RUNTIME = AuthRuntime(store, limiter, lambda: True)
     settings.SOCIALACCOUNT_PROVIDERS = {
         "google": {
             "OAUTH_PKCE_ENABLED": True,

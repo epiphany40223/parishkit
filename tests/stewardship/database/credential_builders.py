@@ -63,6 +63,7 @@ def populate(campaign, ring, statuses=None, *, generation=1):
             statuses=statuses,
             general=ring.general,
             mac=ring.mac,
+            public=ring.public,
             admit=admitted_population,
         )
 

@@ -18,6 +18,8 @@ from uuid import uuid4
 
 from redis.exceptions import RedisError
 
+from parishkit.stewardship.authentication_policy import AuthenticationLimits
+
 WINDOW = """
 local t = redis.call('TIME')
 local now = tonumber(t[1]) + tonumber(t[2]) / 1000000
@@ -53,7 +55,7 @@ end
 local wait = 0
 if tokens >= 1 then tokens = tokens-1 else wait = math.ceil((1-tokens)/rate) end
 redis.call('HSET', KEYS[1], 'tokens', tokens, 'at', now)
-redis.call('EXPIRE', KEYS[1], 120)
+redis.call('EXPIRE', KEYS[1], math.max(120, math.ceil(capacity/rate)))
 return wait
 """
 
@@ -68,8 +70,8 @@ for i=1,4 do
 end
 local counts = {}
 for i=1,4 do counts[i] = redis.call('ZCARD', KEYS[i]) end
-local meets = counts[1] >= 100 and (counts[2] >= tonumber(ARGV[5])
-    or (ARGV[6] == 'admin' and counts[3] >= 10))
+local meets = counts[1] >= tonumber(ARGV[7]) and (counts[2] >= tonumber(ARGV[5])
+    or (ARGV[6] == 'admin' and counts[3] >= tonumber(ARGV[8])))
 local severity = 0
 if meets then
     redis.call('SET', KEYS[6], '1', 'EX', 300)
@@ -133,7 +135,10 @@ class LocalBuckets:
         """Do not evict active clients to let arbitrary new addresses evade caps."""
         with self.lock:
             now = self.clock()
-            while self.entries and next(iter(self.entries.values()))[1] <= now - 120:
+            lifetime = max(120, burst / rate)
+            while (
+                self.entries and next(iter(self.entries.values()))[1] <= now - lifetime
+            ):
                 self.entries.popitem(last=False)
             if fingerprint not in self.entries and len(self.entries) >= self.capacity:
                 return 60
@@ -147,7 +152,12 @@ class LocalBuckets:
 class Limiter:
     """One service-scoped store; outage never silently weakens guessable routes."""
 
-    def __init__(self, client, key, *, incident, namespace="stewardship:auth:v1"):
+    def __init__(
+        self, client, key, *, incident, namespace="stewardship:auth:v1", limits=None
+    ):
+        self.limits = AuthenticationLimits() if limits is None else limits
+        if not isinstance(self.limits, AuthenticationLimits):
+            raise TypeError("Typed authentication limits are required.")
         if type(key) is not bytes or len(key) < 32:
             raise ValueError(
                 "An independent limiter key of at least 32 bytes is required."
@@ -218,7 +228,11 @@ class Limiter:
         if kind not in {"admin", "access"}:
             raise ValueError("Unknown authentication route class.")
         fingerprint = self.fingerprint("ip", source)
-        rate, burst = (1, 20) if kind == "admin" else (2, 30)
+        rate, burst = (
+            (self.limits.admin_per_minute / 60, self.limits.admin_burst)
+            if kind == "admin"
+            else (self.limits.access_per_minute / 60, self.limits.access_burst)
+        )
         try:
             return self._call(
                 self.bucket_script,
@@ -298,8 +312,12 @@ class Limiter:
                 self.fingerprint("ip", source),
                 identity,
                 candidate,
-                10 if kind == "admin" else 20,
+                self.limits.admin_sources
+                if kind == "admin"
+                else self.limits.family_sources,
                 kind,
+                self.limits.aggregate_attempts,
+                self.limits.admin_identities,
             ],
         )
         severity, window, *counts = result

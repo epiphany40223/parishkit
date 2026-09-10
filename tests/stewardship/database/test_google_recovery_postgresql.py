@@ -119,7 +119,10 @@ def test_google_after_recovery_does_not_release_restore_maintenance(
         )
         browser, response = signed_in()
         assert response.status_code == 302
-        denied = browser.get("/admin/")
+        response = browser.get("/admin/")
+        assert response.status_code == 302
+        assert response["Location"] == "/admin/maintenance"
+        denied = browser.get("/admin/maintenance")
         assert denied.status_code == 503
         assert b"/admin/login" in denied.content
         assert SystemConfiguration.objects.get().restore_review_required

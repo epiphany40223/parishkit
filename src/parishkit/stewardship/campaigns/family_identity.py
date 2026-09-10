@@ -130,7 +130,15 @@ def _allocate(campaign_id, rows, general, mac):
 
 
 def reconcile_families(
-    *, campaign_id, source_snapshot_id, source_generation, statuses, general, mac, admit
+    *,
+    campaign_id,
+    source_snapshot_id,
+    source_generation,
+    statuses,
+    general,
+    mac,
+    admit,
+    public=None,
 ):
     """Caller owns an atomic source promotion; no partial corpus can become visible.
 
@@ -163,7 +171,13 @@ def reconcile_families(
     ) != len(statuses):
         raise ValueError("Family reconciliation requires unique validated statuses.")
     with key_set_lock(general, mac):
-        campaign = Campaign.objects.get(pk=campaign_id)
+        # Follow lifecycle/restore order before locking the population or any
+        # Family row. Token preparation/rotation takes deployment before those
+        # same rows; reversing that order can deadlock a source promotion.
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM stewardship_system_configuration FOR SHARE")
+            cursor.execute("SELECT id FROM stewardship_credential_deployment FOR SHARE")
+        campaign = Campaign.objects.select_for_update().get(pk=campaign_id)
         admit(campaign)
         CampaignCredentialState.objects.get_or_create(campaign=campaign)
         population = CampaignCredentialState.objects.select_for_update().get(
@@ -273,4 +287,8 @@ def reconcile_families(
         population.population_dirty = False
         population.version += 1
         population.save()
+        if campaign.active_token_generation_id is not None:
+            from .link_tokens import extend_active_generation
+
+            extend_active_generation(campaign, public=public)
         return len(changed)
