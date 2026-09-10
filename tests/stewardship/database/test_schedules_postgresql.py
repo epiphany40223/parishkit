@@ -26,44 +26,17 @@ from parishkit.stewardship.campaigns.schedules import (
 from .campaign_builders import (
     admit_task_work,
     admit_test_work,
+    advance,
     campaign_clock,
+    claimed_task,
     command,
+    complete_empty_catchup,
     draft_campaign,
+    occurrence,
     restored_runtime,
 )
-from .test_boundary_catchup_postgresql import claimed_task
-from .test_exceptional_end_postgresql import complete_empty_catchup
 
 pytestmark = pytest.mark.django_db(transaction=True)
-
-
-def occurrence(definition, actor, target="family:1"):
-    """Allocate ordinary rehearsal work under a real canonical schedule revision."""
-    return create_occurrence(
-        definition_id=definition.pk,
-        revision_id=definition.current_revision_id,
-        mode="testing",
-        target=target,
-        slot="once",
-        due_at=definition.current_revision.due_at,
-        actor_id=actor,
-        correlation_id=uuid4(),
-        admit=admit_test_work,
-    )
-
-
-def advance(row, actor, state, **kwargs):
-    """Supply fresh optimistic versions without bypassing occurrence SQL guards."""
-    row.refresh_from_db()
-    return change_occurrence(
-        occurrence_id=row.pk,
-        state=state,
-        expected_version=row.version,
-        actor_id=actor,
-        correlation_id=uuid4(),
-        admit=admit_test_work,
-        **kwargs,
-    )
 
 
 def test_semantic_delivery_survives_revision_change(tmp_path):
@@ -231,7 +204,7 @@ def test_restore_blocks_schedule_change_but_not_unrelated_configuration(tmp_path
     from parishkit.stewardship.accounts.configuration_requests import _status
     from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 
-    from .test_policy_postgresql import change
+    from .campaign_builders import change
 
     store, campaign, actor = draft_campaign(tmp_path)
     definition = ScheduleDefinition.objects.get()
@@ -358,7 +331,17 @@ def test_recovery_matches_canonical_source_action_matrix(
             admit=admit_test_work,
             replacement_id=replacement.pk if outcome == "coalesced" else None,
         )
-        with pytest.raises(StorageInvariantError):
+        early_unknown = source == "delivery_unknown" and outcome in {
+            "delivery_unknown",
+            "skipped",
+            "coalesced",
+        }
+        with pytest.raises(
+            StorageInvariantError,
+            match="resolved outcome"
+            if early_unknown
+            else "Task ownership must be reconciled",
+        ):
             recover_occurrence(**args)
         change_run(
             run_id=run.run_id,

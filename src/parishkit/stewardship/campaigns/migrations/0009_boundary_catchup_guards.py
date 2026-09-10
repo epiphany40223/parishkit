@@ -28,6 +28,8 @@ BEGIN
             AND t.boundary_id=NEW.id AND t.campaign_id=NEW.campaign_id AND t.action=NEW.kind
             AND t.actor_id IS NOT DISTINCT FROM NEW.actor_id AND t.correlation_id=NEW.correlation_id
         ) THEN RAISE EXCEPTION 'Boundary success requires exact transition' USING ERRCODE='23514'; END IF;
+        -- Scheduled close remains an obligation: its worker must apply Start
+        -- first, not erase Close because that prerequisite has not run yet.
         IF NEW.state='skipped' AND (NEW.reason NOT IN ('not_applicable','boundary_replaced') OR (
             NEW.due_at=due AND c.id=r.current_campaign_id AND r.mode='production'
             AND ((NEW.kind='start' AND c.state='scheduled') OR (NEW.kind='close' AND c.state IN ('scheduled','active')))
@@ -133,6 +135,8 @@ class Migration(migrations.Migration):
         migrations.RunSQL(
             SQL,
             reverse_sql="""
+DO $$ BEGIN IF EXISTS(SELECT 1 FROM stewardship_campaign_boundary) THEN
+    RAISE EXCEPTION 'Boundary history prevents schema downgrade' USING ERRCODE='23514'; END IF; END $$;
 DROP TRIGGER stewardship_checkpoint_effect_v1 ON stewardship_catchup_checkpoint;
 DROP FUNCTION stewardship_checkpoint_effect_v1();
 DROP TRIGGER stewardship_checkpoint_guard_v1 ON stewardship_catchup_checkpoint;

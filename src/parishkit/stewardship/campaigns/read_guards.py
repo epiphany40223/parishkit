@@ -7,6 +7,7 @@ that terminates its transport on deadline. No view is exposed by this module.
 
 import hashlib
 from contextlib import ExitStack
+from copy import deepcopy
 from dataclasses import dataclass
 from threading import BoundedSemaphore, Event, Lock, Timer, get_ident
 from time import monotonic
@@ -160,7 +161,11 @@ class CampaignReadGuard:
                 self.pool.acquire()
                 self._slot_owned = True
                 self._stack.callback(self._release_slot)
-                self.db = self.original.copy(alias="default")
+                # Construct an explicitly zero-idle response connection; do not
+                # depend on Django's test-only wrapper.copy() convenience API.
+                settings = deepcopy(self.original.settings_dict)
+                settings.update(CONN_MAX_AGE=0, CONN_HEALTH_CHECKS=False)
+                self.db = type(self.original)(settings, alias="default")
                 self._stack.callback(self._restore_alias)
                 connections["default"] = self.db
                 self._stack.callback(self.db.close)

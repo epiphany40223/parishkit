@@ -37,6 +37,12 @@ def test_keys_are_stable_and_input_is_canonical():
     identifier = UUID("12345678-1234-1234-1234-123456789abc")
     assert campaign_lock_key(identifier) == campaign_lock_key(UUID(str(identifier)))
     assert -(2**31) <= campaign_lock_key(identifier) < 2**31
+    assert campaign_lock_key(UUID(int=0)) == 927402239
+    first, second = UUID(int=1), UUID(int=2)
+    reader = CampaignReadGuard(
+        [second, first, second], authorize=lambda _: None, abort=lambda: None
+    )
+    assert reader.campaigns == (first, second)
     with pytest.raises(TypeError):
         campaign_lock_key(str(identifier))
     for values in [[], ["private"], [None]]:

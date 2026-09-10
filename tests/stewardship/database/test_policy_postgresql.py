@@ -41,24 +41,9 @@ from parishkit.stewardship.storage import StorageInvariantError
 
 from ..configuration_factory import configuration_document, configuration_version
 from ..policy_factory import address, assignment, domain
+from .campaign_builders import bind_operations, change, initialized
 
 pytestmark = pytest.mark.django_db(transaction=True)
-
-
-def initialized(tmp_path, records=None):
-    """Install synthetic policy through the real manifest/database protocol."""
-    document = configuration_document()
-    document["sections"]["login_rules"] = [address()] if records is None else records
-    version = configuration_version(document)
-    store, actor = AuthorityStore(tmp_path, validate_sections), uuid4()
-    prepare_initial_configuration(
-        store,
-        version,
-        testing_recipient="test@example.org",
-        actor_id=actor,
-        correlation_id=uuid4(),
-    )
-    return store, version, actor
 
 
 def user(email, hosted=None):
@@ -69,38 +54,6 @@ def user(email, hosted=None):
         hosted_domain=hosted,
         verified_at=timezone.now(),
     )
-
-
-def change(store, version, actor, patch):
-    """Record and install one exact-base intent, retaining its durable receipt."""
-    key = uuid4()
-    bind_operations(patch, policy_operation_id(actor, key))
-    receipt = record_request(
-        base_digest=version.digest,
-        patch=patch,
-        actor_id=actor,
-        request_key=key,
-        correlation_id=uuid4(),
-    )
-    result = install_request(
-        store, request_id=receipt.request_id, correlation_id=uuid4()
-    )
-    return result
-
-
-def bind_operations(patch, operation_id):
-    """Make valid new manual test records refer to their actual request identity."""
-    for operation in patch:
-        if operation["section"] != "login_rules" or operation["operation"] != "add":
-            continue
-        values = operation["values"]
-        if values["kind"] == "address":
-            values["creation_operation"] = str(operation_id)
-            for origins in values["grants"].values():
-                if "manual" in origins:
-                    origins["manual"] = str(operation_id)
-        elif values["kind"] == "assignment":
-            values["operation_id"] = str(operation_id)
 
 
 def test_prepared_policy_is_exact_and_immutable(tmp_path):

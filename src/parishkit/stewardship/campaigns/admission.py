@@ -88,16 +88,16 @@ def validate_installation(document, *, request_id=None):
         values = candidates[identifier]["values"]
         if identifier != str(current) and values != row.active_configuration.values:
             raise ConfigError("Historical campaign configuration cannot be edited.")
-        if row.structural_locked and any(
-            values[key] != row.active_configuration.values[key]
-            for key in values
-            if key
-            not in (
-                {"name", "year_label", "content_versions", "end_date"}
-                if intent and intent.campaign_id == row.pk
-                else {"name", "year_label", "content_versions"}
-            )
-        ):
+        editable = {"name", "year_label", "content_versions"}
+        if intent and intent.campaign_id == row.pk:
+            editable.add("end_date")
+        if row.structural_locked and {
+            key: value for key, value in values.items() if key not in editable
+        } != {
+            key: value
+            for key, value in row.active_configuration.values.items()
+            if key not in editable
+        }:
             raise ConfigError("Campaign structural settings are locked.")
     target = (
         candidates.get(str(current))

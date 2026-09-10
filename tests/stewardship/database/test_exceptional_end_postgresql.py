@@ -9,7 +9,6 @@ from parishkit.stewardship.accounts.configuration_installation import install_re
 from parishkit.stewardship.accounts.configuration_requests import record_request
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.boundaries import apply_due_boundaries
-from parishkit.stewardship.campaigns.catchup import bind_catchup, checkpoint_catchup
 from parishkit.stewardship.campaigns.configuration_intents import (
     bind_configuration_intent,
 )
@@ -20,74 +19,17 @@ from parishkit.stewardship.campaigns.models import (
 )
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
-from .campaign_builders import admit_test_work, campaign_clock, command, draft_campaign
-from .test_boundary_catchup_postgresql import claimed_task
+from .campaign_builders import (
+    admit_test_work,
+    campaign_clock,
+    claimed_task,
+    command,
+    complete_empty_catchup,
+    draft_campaign,
+    end_request,
+)
 
 pytestmark = pytest.mark.django_db(transaction=True)
-
-
-def complete_empty_catchup(campaign, actor):
-    """Finish actual direct-activation work; pre-start activation has no demand."""
-    campaign.refresh_from_db()
-    demand = ActivationCatchUpDemand.objects.filter(campaign=campaign).first()
-    if demand is None:
-        assert campaign.state == "scheduled"
-        return
-    run = claimed_task("activation_catchup", demand.pk, actor)
-    bind_catchup(
-        demand_id=demand.pk,
-        task_root_id=run.root_id,
-        source_snapshot_id=uuid4(),
-        actor_id=actor,
-        correlation_id=uuid4(),
-        admit=admit_test_work,
-    )
-    checkpoint_catchup(
-        demand_id=demand.pk,
-        group_key="complete",
-        cursor="end",
-        items=0,
-        phase="complete",
-        complete=True,
-        task_id=run.run_id,
-        fence=run.fence,
-        actor_id=actor,
-        correlation_id=uuid4(),
-        admit=admit_test_work,
-    )
-
-
-def end_request(store, campaign, actor, action, end_date="2026-11-10"):
-    """Stage the date candidate, then bind reviewed runtime inputs separately."""
-    campaign.refresh_from_db()
-    runtime = SystemConfiguration.objects.get()
-    request = record_request(
-        base_digest=store.active().digest,
-        patch=[
-            {
-                "operation": "update",
-                "section": "campaigns",
-                "id": str(campaign.pk),
-                "values": {"end_date": end_date},
-            }
-        ],
-        actor_id=actor,
-        request_key=uuid4(),
-        correlation_id=uuid4(),
-    )
-    token = uuid4() if action == "reopen" else None
-    bind_configuration_intent(
-        campaign_id=campaign.pk,
-        request_id=request.request_id,
-        action=action,
-        expected_version=campaign.version,
-        expected_runtime_version=runtime.version,
-        actor_id=actor,
-        correlation_id=uuid4(),
-        token_generation_id=token,
-        admit=admit_test_work,
-    )
-    return request, token
 
 
 def test_exceptional_bind_reports_typed_stale_version(tmp_path):
@@ -358,7 +300,7 @@ def test_unapplied_exceptional_abort_recovers_after_file_failure(
         assert CampaignConfigurationAbort.objects.count() == 1
         assert CampaignConfigurationAbort.objects.get().actor_id == resolver
         if interruption == "prepared_advanced":
-            from .test_policy_postgresql import change
+            from .campaign_builders import change
 
             parish = original.document()["sections"]["parish"][0]
             assert (

@@ -9,7 +9,6 @@ from django.db.models import F
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.admission import CampaignAdmissionUnavailable
-from parishkit.stewardship.campaigns.boundaries import apply_due_boundaries
 from parishkit.stewardship.campaigns.controls import (
     change_control,
     release_work_gate,
@@ -32,33 +31,18 @@ from parishkit.stewardship.storage import StaleRecordError, StorageInvariantErro
 
 from ..campaign_factory import campaign as campaign_row
 from .campaign_builders import (
+    add_draft,
     admit_test_work,
     campaign_clock,
+    close_campaign,
+    closed_digest,
     command,
+    complete_empty_catchup,
     draft_campaign,
     restored_runtime,
 )
-from .test_boundary_catchup_postgresql import claimed_task
-from .test_campaign_postgresql import add_draft
-from .test_exceptional_end_postgresql import complete_empty_catchup
 
 pytestmark = pytest.mark.django_db(transaction=True)
-
-
-def close_campaign(campaign, actor):
-    """Complete the empty corpus and apply due boundaries through real ledgers."""
-    complete_empty_catchup(campaign, actor)
-    run = claimed_task("campaign_boundary", campaign.pk, actor)
-    with campaign_clock(campaign.active_configuration.ends_at):
-        apply_due_boundaries(
-            campaign_id=campaign.pk,
-            task_id=run.run_id,
-            fence=run.fence,
-            actor_id=actor,
-            correlation_id=uuid4(),
-            admit=admit_test_work,
-        )
-    campaign.refresh_from_db()
 
 
 def test_pause_is_orthogonal_and_withdrawal_unlocks_only_never_active(tmp_path):
@@ -288,8 +272,7 @@ def test_postclose_exact_versions_do_not_suppress_later_corrections(tmp_path):
         resolve_postclose(**arguments, coverage=coverage)
     from parishkit.stewardship.campaigns.schedules import create_occurrence
 
-    from .test_policy_postgresql import change
-    from .test_schedules_postgresql import advance
+    from .campaign_builders import advance, change
 
     assert (
         change(
@@ -328,46 +311,6 @@ def test_postclose_exact_versions_do_not_suppress_later_corrections(tmp_path):
         first.coverage_digest != second.coverage_digest
         and PostCloseMailResolution.objects.count() == 2
     )
-
-
-def closed_digest(tmp_path):
-    """Build a real post-close digest skip with no TaskRun/outbox yet allocated."""
-    from parishkit.stewardship.campaigns.schedules import create_occurrence
-
-    from ..campaign_factory import schedule
-    from .test_policy_postgresql import change
-    from .test_schedules_postgresql import advance
-
-    store, campaign, actor = draft_campaign(tmp_path)
-    digest = schedule(str(campaign.pk), kind="daily_digest", date=None)
-    assert (
-        change(
-            store,
-            store.active(),
-            actor,
-            [{"operation": "add", "section": "schedules", **digest}],
-        ).state
-        == "applied"
-    )
-    campaign.refresh_from_db()
-    with campaign_clock(campaign.active_configuration.starts_at):
-        command(campaign, actor, Action.ACTIVATE)
-    close_campaign(campaign, actor)
-    definition = ScheduleDefinition.objects.get(pk=digest["id"])
-    with campaign_clock(campaign.active_configuration.ends_at):
-        row = create_occurrence(
-            definition_id=definition.pk,
-            revision_id=definition.current_revision_id,
-            mode="production",
-            target="admins",
-            slot="final-day",
-            due_at=campaign.active_configuration.ends_at,
-            actor_id=actor,
-            correlation_id=uuid4(),
-            admit=admit_test_work,
-        )
-        row = advance(row, actor, "skipped", reason="admin_post_close_skip")
-    return store, campaign, actor, row
 
 
 @pytest.mark.parametrize(

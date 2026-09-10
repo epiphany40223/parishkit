@@ -23,6 +23,7 @@ from .campaign_builders import (
     admit_test_work,
     campaign_clock,
     draft_campaign,
+    inventory_values,
     restored_runtime,
 )
 
@@ -79,24 +80,6 @@ def test_invalid_coverage_is_rejected_by_python_and_sql(manifest):
         assert cursor.fetchone()[0] is False
 
 
-def inventory_values(campaign, actor, restore_id):
-    """Return a valid, identifiers-only inventory bound to a synthetic restore."""
-    start = campaign.active_configuration.starts_at
-    return dict(
-        restore_id=restore_id,
-        definition=ScheduleDefinition.objects.get(),
-        mode="testing",
-        target="family:1",
-        slot="once",
-        backup_at=start,
-        window_start=start,
-        window_end=start + timedelta(days=1),
-        discovery="inventory",
-        actor_id=actor,
-        correlation_id=uuid4(),
-    )
-
-
 @pytest.mark.parametrize(
     "change",
     [
@@ -117,7 +100,7 @@ def test_invalid_restore_inventory_rejected(tmp_path, change):
     _, campaign, actor = draft_campaign(tmp_path)
     with (
         restored_runtime(campaign.active_configuration.starts_at) as restore_id,
-        pytest.raises(IntegrityError),
+        pytest.raises(IntegrityError, match="Invalid restore uncertainty inventory"),
         transaction.atomic(),
     ):
         RestoreDeliveryHold.objects.create(
@@ -188,7 +171,12 @@ def test_restore_resend_requires_released_global_gate_and_exact_pending_slot(
     hold.refresh_from_db()
     assert hold.state == outcome and decision.version == 2
     assert not ScheduleFulfillment.objects.exists()
-    with pytest.raises(IntegrityError), transaction.atomic():
+    with (
+        pytest.raises(
+            IntegrityError, match="Invalid restore hold review or resend binding"
+        ),
+        transaction.atomic(),
+    ):
         RestoreHoldResolution.objects.create(
             hold=hold,
             version=3,
@@ -225,7 +213,12 @@ def test_restore_resolution_requires_exact_review_evidence(tmp_path, change):
         hold = RestoreDeliveryHold.objects.create(
             **inventory_values(campaign, actor, restore_id)
         )
-    with pytest.raises(IntegrityError), transaction.atomic():
+    with (
+        pytest.raises(
+            IntegrityError, match="Invalid restore hold review or resend binding"
+        ),
+        transaction.atomic(),
+    ):
         RestoreHoldResolution.objects.create(
             **(
                 dict(
@@ -276,7 +269,7 @@ def test_postclose_cancellation_evidence_cannot_cover_unrelated_obligations(
     """Each cancellation receipt can back only one semantic resolution."""
     from parishkit.stewardship.campaigns.resolutions import resolve_postclose
 
-    from .test_controls_resolutions_postgresql import closed_digest
+    from .campaign_builders import closed_digest
 
     _, campaign, actor, row = closed_digest(tmp_path)
     args = dict(
@@ -304,11 +297,13 @@ def test_closed_report_can_recover_but_family_invitation_cannot(tmp_path):
     from parishkit.stewardship.campaigns.lifecycle import Action
 
     from ..campaign_factory import schedule
-    from .campaign_builders import command
-    from .test_boundary_catchup_postgresql import claimed_task
-    from .test_controls_resolutions_postgresql import close_campaign
-    from .test_policy_postgresql import change
-    from .test_schedules_postgresql import advance
+    from .campaign_builders import (
+        advance,
+        change,
+        claimed_task,
+        close_campaign,
+        command,
+    )
 
     store, campaign, actor = draft_campaign(tmp_path)
     digest = schedule(str(campaign.pk), kind="daily_digest", date=None)

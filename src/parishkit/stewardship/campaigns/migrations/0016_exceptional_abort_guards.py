@@ -1,6 +1,8 @@
 """Explicit abort restores only a candidate's still-applied predecessor."""
 
 # ruff: noqa: E501
+from importlib import import_module
+
 from django.db import migrations
 
 from parishkit.stewardship.storage_migrations import immutable_guard_v1
@@ -26,16 +28,22 @@ def restore_checkpoint(apps, editor):
     """A committed abort decision cannot be discarded by downgrade."""
     editor.execute("""DO $$ BEGIN IF EXISTS(SELECT 1 FROM stewardship_campaign_config_abort) THEN
         RAISE EXCEPTION 'Exceptional abort history prevents reversal' USING ERRCODE='23514'; END IF; END $$;""")
-    with editor.connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT pg_get_functiondef('stewardship_request_checkpoint_v2()'::regprocedure)"
-        )
-        sql = cursor.fetchone()[0]
-    start = sql.index("AND (NEW.state = 'applied' OR (NEW.state='failed'")
-    end = sql.index("i.request_id=NEW.request_id))))", start) + len(
-        "i.request_id=NEW.request_id))))"
+    script = "\n".join(
+        op.sql
+        for op in import_module(
+            "parishkit.stewardship.accounts.migrations.0013_activation_guards"
+        ).Migration.operations
+        if isinstance(op, migrations.RunSQL)
     )
-    editor.execute(sql[:start] + "AND NEW.state = 'applied')" + sql[end:], params=None)
+    marker = "CREATE FUNCTION stewardship_request_checkpoint_v2()"
+    if script.count(marker) != 1:
+        raise RuntimeError("Exceptional abort checkpoint predecessor is inconsistent.")
+    start = script.index(marker)
+    end = script.index("$$;", start) + 3
+    editor.execute(
+        script[start:end].replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1),
+        params=None,
+    )
 
 
 SQL = """

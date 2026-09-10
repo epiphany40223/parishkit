@@ -18,9 +18,14 @@ from parishkit.stewardship.campaigns.runtime import (
 )
 from parishkit.stewardship.storage import StaleRecordError
 
-from .campaign_builders import admit_test_work, campaign_clock, command, draft_campaign
-from .test_controls_resolutions_postgresql import close_campaign
-from .test_exceptional_end_postgresql import complete_empty_catchup
+from .campaign_builders import (
+    admit_test_work,
+    campaign_clock,
+    close_campaign,
+    command,
+    complete_empty_catchup,
+    draft_campaign,
+)
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -86,6 +91,26 @@ def test_competing_confirmations_have_one_winner(tmp_path, action):
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             results = list(executor.map(confirm, range(2)))
+        # The race may lose at the installer lock. Independently pin the stale
+        # version branch after contention has ended, under a fresh command ID.
+        stale = dict(
+            campaign_id=campaign.pk,
+            request_id=uuid4(),
+            expected_runtime_version=runtime.version,
+            actor_id=actor,
+            correlation_id=uuid4(),
+            admit=admit_test_work,
+        )
+        with pytest.raises(StaleRecordError):
+            if action is Action.RETURN_TESTING:
+                return_to_testing(**stale)
+            else:
+                transition_campaign(
+                    **stale,
+                    expected_version=campaign.version,
+                    action=action,
+                    token_generation_id=uuid4() if action is Action.ACTIVATE else None,
+                )
     assert sorted(results) == ["committed", "retry"]
     assert SystemConfiguration.objects.get().version == runtime.version + 1
     assert CampaignTransition.objects.count() == count + (
@@ -125,7 +150,7 @@ def test_competing_reopen_candidates_have_one_atomic_winner(tmp_path):
         install_request,
     )
 
-    from .test_exceptional_end_postgresql import end_request
+    from .campaign_builders import end_request
 
     store, campaign, actor = draft_campaign(tmp_path)
     with campaign_clock(campaign.active_configuration.starts_at):
@@ -237,8 +262,7 @@ def test_occurrence_claim_races_claim_or_replacement(tmp_path, competitor):
     )
     from parishkit.stewardship.campaigns.schedules import change_occurrence
 
-    from .test_boundary_catchup_postgresql import claimed_task
-    from .test_schedules_postgresql import occurrence
+    from .campaign_builders import claimed_task, occurrence
 
     store, campaign, actor = draft_campaign(tmp_path)
     definition = ScheduleDefinition.objects.get()
@@ -305,8 +329,7 @@ def test_concurrent_restore_decisions_cannot_overwrite_review(tmp_path):
     )
     from parishkit.stewardship.campaigns.resolutions import resolve_restore_hold
 
-    from .campaign_builders import restored_runtime
-    from .test_campaign_review_guards_postgresql import inventory_values
+    from .campaign_builders import inventory_values, restored_runtime
 
     _, campaign, actor = draft_campaign(tmp_path)
     with restored_runtime(campaign.active_configuration.starts_at) as restore_id:
@@ -338,7 +361,7 @@ def test_competing_close_workers_commit_one_boundary_history(tmp_path):
     from parishkit.stewardship.campaigns.boundaries import apply_due_boundaries
     from parishkit.stewardship.campaigns.models import CampaignBoundaryOccurrence
 
-    from .test_boundary_catchup_postgresql import claimed_task
+    from .campaign_builders import claimed_task
 
     _, campaign, actor = draft_campaign(tmp_path)
     with campaign_clock(campaign.active_configuration.starts_at):
@@ -381,7 +404,7 @@ def test_parish_default_timezone_races_creation_without_rebucketing(tmp_path):
 
     from ..campaign_factory import campaign as campaign_record
     from ..campaign_factory import schedule
-    from .test_policy_postgresql import initialized
+    from .campaign_builders import initialized
 
     store, root, actor = initialized(tmp_path)
     row = campaign_record()

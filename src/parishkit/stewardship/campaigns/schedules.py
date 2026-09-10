@@ -7,6 +7,7 @@ are deliberately not public task or provider APIs.
 
 import hashlib
 import json
+import re
 from uuid import UUID
 
 from parishkit.stewardship.jobs.models import TaskRun
@@ -19,6 +20,14 @@ from .models import (
     ScheduleOccurrence,
 )
 from .runtime import campaign_transaction
+
+
+def _identifiers(*required, optional=()):
+    """Reject ORM-coercible identifiers before writes or exact-replay comparison."""
+    if any(not isinstance(value, UUID) for value in required) or any(
+        value is not None and not isinstance(value, UUID) for value in optional
+    ):
+        raise TypeError("Occurrence identifiers must be canonical UUIDs.")
 
 
 def occurrence_key(revision_id, mode, target, slot):
@@ -54,6 +63,7 @@ def create_occurrence(
     """Allocate once after current admission; old revisions never gain new work."""
     if not callable(admit):
         raise TypeError("Occurrence admission callback is required.")
+    _identifiers(definition_id, revision_id, actor_id, correlation_id)
     key = occurrence_key(revision_id, mode, target, slot)
     definition = ScheduleDefinition.objects.get(pk=definition_id)
     with campaign_transaction(
@@ -107,7 +117,21 @@ def change_occurrence(
     """
     if not callable(admit) or type(expected_version) is not int or expected_version < 1:
         raise TypeError("Occurrence transition requires admission and a version.")
-    if state not in {
+    _identifiers(
+        occurrence_id,
+        actor_id,
+        correlation_id,
+        optional=(task_id, replacement_id, retry_command_id),
+    )
+    if (
+        type(reason) is not str
+        or len(reason) > 64
+        or (reason and re.fullmatch(r"[a-z][a-z0-9_]*", reason) is None)
+    ):
+        raise TypeError("Occurrence reasons must be bounded codes, not provider text.")
+    if fence is not None and (type(fence) is not int or fence < 1):
+        raise TypeError("Occurrence fencing requires a positive integer.")
+    if type(state) is not str or state not in {
         "pending",
         "running",
         "delivery_unknown",
@@ -117,6 +141,8 @@ def change_occurrence(
         "failed",
     }:
         raise ValueError("Invalid occurrence state.")
+    if (state == "coalesced") != (replacement_id is not None):
+        raise StorageInvariantError("Only coalescing requires a replacement.")
     original = ScheduleOccurrence.objects.select_related("definition").get(
         pk=occurrence_id
     )
@@ -126,6 +152,10 @@ def change_occurrence(
         ScheduleDefinition.objects.select_for_update().get(pk=original.definition_id)
         row = ScheduleOccurrence.objects.select_for_update().get(pk=occurrence_id)
         admit("change_occurrence", campaign, runtime, row)
+        if state != "running" and (
+            task_id is not None or (row.state != "running" and fence is not None)
+        ):
+            raise StorageInvariantError("Unexpected occurrence ownership metadata.")
         if retry_command_id is not None:
             if not isinstance(retry_command_id, UUID) or state != "pending":
                 raise ValueError("Invalid explicit occurrence retry command.")
@@ -177,6 +207,7 @@ def record_fulfillment(*, occurrence_id, disposition, actor_id, correlation_id, 
     """Cover the original semantic slot without confusing coalescing with success."""
     if not callable(admit) or disposition not in {"delivered", "coalesced"}:
         raise TypeError("Semantic coverage requires an owning outcome verifier.")
+    _identifiers(occurrence_id, actor_id, correlation_id)
     original = ScheduleOccurrence.objects.select_related("definition").get(
         pk=occurrence_id
     )
@@ -185,6 +216,11 @@ def record_fulfillment(*, occurrence_id, disposition, actor_id, correlation_id, 
     ) as (campaign, runtime):
         row = ScheduleOccurrence.objects.select_for_update().get(pk=occurrence_id)
         admit("fulfillment", campaign, runtime, row)
+        if (disposition == "delivered" and row.state != "succeeded") or (
+            disposition == "coalesced"
+            and (row.state != "coalesced" or row.replacement_id is None)
+        ):
+            raise StorageInvariantError("Semantic coverage requires its exact outcome.")
         covered_by = row.replacement_id if disposition == "coalesced" else row.pk
         identity = dict(
             definition_id=row.definition_id,
@@ -234,8 +270,17 @@ def recover_occurrence(
         "recovery_skip": "skipped",
         "recovery_coalesce": "coalesced",
     }
-    if not callable(admit) or action not in outcomes or not isinstance(actor_id, UUID):
+    if (
+        not callable(admit)
+        or type(action) is not str
+        or action not in outcomes
+        or type(expected_version) is not int
+        or expected_version < 1
+    ):
         raise TypeError("Occurrence recovery requires attributed owning evidence.")
+    _identifiers(occurrence_id, actor_id, correlation_id, optional=(replacement_id,))
+    if (action == "recovery_coalesce") != (replacement_id is not None):
+        raise StorageInvariantError("Only coalescing requires a replacement.")
     original = ScheduleOccurrence.objects.select_related("definition").get(
         pk=occurrence_id
     )

@@ -87,7 +87,25 @@ def resolve_postclose(
     key is ``schedule:<definition UUID>:<slot>``. DAT-06/DAT-07 add receipt identity
     and concrete outbox evidence; soft UUIDs do not establish provider outcomes.
     """
-    if not callable(admit) or not isinstance(actor_id, UUID) or not reason.strip():
+    if (
+        not callable(admit)
+        or any(
+            not isinstance(value, UUID)
+            for value in (campaign_id, actor_id, correlation_id)
+        )
+        or any(
+            value is not None and not isinstance(value, UUID)
+            for value in (occurrence_id, task_id, outbox_id)
+        )
+        or type(reason) is not str
+        or not reason.strip()
+        or len(reason) > 1024
+        or type(mode) is not str
+        or mode not in {"testing", "production"}
+        or type(obligation_key) is not str
+        or not obligation_key
+        or len(obligation_key) > 256
+    ):
         raise TypeError(
             "Post-close resolution requires attributed admission and a reason."
         )
@@ -140,7 +158,23 @@ def resolve_restore_hold(
     recovery_occurrence_id=None,
 ):
     """Append a review decision; assumed delivery never inserts fulfillment."""
-    if not callable(admit) or not isinstance(actor_id, UUID):
+    if (
+        not callable(admit)
+        or any(
+            not isinstance(value, UUID) for value in (hold_id, actor_id, correlation_id)
+        )
+        or (
+            recovery_occurrence_id is not None
+            and not isinstance(recovery_occurrence_id, UUID)
+        )
+        or type(expected_version) is not int
+        or expected_version < 1
+        or type(state) is not str
+        or state not in {"assumed_delivered", "resend_authorized", "not_applicable"}
+        or type(evidence) is not str
+        or not evidence.strip()
+        or len(evidence) > 1024
+    ):
         raise TypeError("Restore hold resolution requires current owning admission.")
     original = RestoreDeliveryHold.objects.select_related("definition").get(pk=hold_id)
     with campaign_transaction(

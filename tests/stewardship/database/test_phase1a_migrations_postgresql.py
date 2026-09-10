@@ -1,18 +1,34 @@
 """New history and active readers refuse lossy Phase 1A downgrades."""
 
+from datetime import timedelta
 from importlib import import_module
+from uuid import UUID, uuid4
 
 import pytest
 from django.db import IntegrityError, connection, connections, transaction
 from django.db.migrations.executor import MigrationExecutor
+from django.db.migrations.recorder import MigrationRecorder
 
 from parishkit.stewardship.campaigns.lifecycle import Action
-from parishkit.stewardship.campaigns.models import RestoreDeliveryHold
+from parishkit.stewardship.campaigns.models import (
+    Campaign,
+    CampaignBoundaryOccurrence,
+    RestoreDeliveryHold,
+)
 from parishkit.stewardship.campaigns.read_guards import DOWNLOAD_NAMESPACE
 
-from .campaign_builders import campaign_clock, command, draft_campaign, restored_runtime
-from .test_campaign_review_guards_postgresql import inventory_values
-from .test_exceptional_end_postgresql import complete_empty_catchup, end_request
+from ..campaign_factory import campaign as campaign_record
+from .campaign_builders import (
+    campaign_clock,
+    change,
+    command,
+    complete_empty_catchup,
+    draft_campaign,
+    end_request,
+    initialized,
+    inventory_values,
+    restored_runtime,
+)
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -23,13 +39,29 @@ pytestmark = pytest.mark.django_db(transaction=True)
         ("intent", "0009_boundary_catchup_guards", "Exceptional configuration history"),
         ("hold", "0013_control_guards", "Mail resolution history"),
         ("checkpoint", "0007_schedule_guards", "Catch-up completion history"),
+        ("runtime", "0005_admission_gate", "Runtime history"),
+        ("boundary", "0008_checkpoint_completion", "Boundary history"),
     ],
 )
 def test_populated_phase1a_reverse_preserves_history(
     tmp_path, history, target, message
 ):
     """Actual downgrade refuses new ledgers; cleanup reapplies any preceding steps."""
-    store, campaign, actor = draft_campaign(tmp_path)
+    if history == "runtime":
+        store, root, actor = initialized(tmp_path)
+        record = campaign_record()
+        assert (
+            change(
+                store,
+                root,
+                actor,
+                [{"operation": "add", "section": "campaigns", **record}],
+            ).state
+            == "applied"
+        )
+        campaign = Campaign.objects.get(pk=UUID(record["id"]))
+    else:
+        store, campaign, actor = draft_campaign(tmp_path)
     if history == "intent":
         with campaign_clock(campaign.active_configuration.starts_at):
             command(campaign, actor, Action.ACTIVATE)
@@ -38,17 +70,32 @@ def test_populated_phase1a_reverse_preserves_history(
         with campaign_clock(campaign.active_configuration.starts_at):
             command(campaign, actor, Action.ACTIVATE)
             complete_empty_catchup(campaign, actor)
+    elif history == "runtime":
+        with campaign_clock(
+            campaign.active_configuration.starts_at - timedelta(days=1)
+        ):
+            command(campaign, actor, Action.ACTIVATE)
+    elif history == "boundary":
+        CampaignBoundaryOccurrence.objects.create(
+            campaign=campaign,
+            kind="close",
+            due_at=campaign.active_configuration.ends_at,
+            actor_id=actor,
+            correlation_id=uuid4(),
+        )
     else:
         with restored_runtime(campaign.active_configuration.starts_at) as restore_id:
             RestoreDeliveryHold.objects.create(
                 **inventory_values(campaign, actor, restore_id)
             )
     leaves = MigrationExecutor(connection).loader.graph.leaf_nodes()
+    applied = set(MigrationRecorder(connection).applied_migrations())
     try:
         with pytest.raises(IntegrityError, match=message):
             MigrationExecutor(connection).migrate([("stewardship_campaigns", target)])
     finally:
         MigrationExecutor(connection).migrate(leaves)
+        assert set(MigrationRecorder(connection).applied_migrations()) == applied
 
 
 def test_capacity_delete_has_constraint_sqlstate():

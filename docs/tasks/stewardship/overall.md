@@ -134,14 +134,16 @@ September 10, 2026: PR #18 merged as
 one PR, as explicitly requested. Its
 [execution checkpoints and integration contracts](../../guides/stewardship-phase-1a-completion.md)
 cover DAT-02, persistent DOM-02 integration and initial database-backed DOM-05
-builders. Validation and three full-branch review/fix rounds are in progress;
-neither Phase 1A completion nor Gate 1 release is claimed yet.
+builders. Phase 1A implementation and local validation are complete; Gate 1
+remains after the integrated Phase 1B/1C foundation.
 The implementation scope is now complete: DAT-02.01–.05 and DOM-02.03–.05 are
 checked with PostgreSQL evidence, and DAT-01/DAT-05/DOM-03/DOM-05 explicitly
-separate their completed Phase 1A portions from later consumers. Review rounds
-1 through 3 are complete with accepted corrections. Round 3 found a High
-callback-arity issue, now fixed with strict-signature fixtures; final validation,
-a fourth independent review and PR CI remain. After this PR's human-approved merge, the
+separate their completed Phase 1A portions from later consumers. Four independent
+full-branch dual-model review/fix rounds are complete. Round 3's High callback
+issue was corrected before round 4, which found no High/Critical issues; all
+accepted Medium+ findings are resolved. Final validation passes 1,958 baseline
+and 634 PostgreSQL tests, plus all 30 rebuilt-image/Compose checks. CI and human
+merge approval are tracked on the associated completion PR. After its merge, the
 next dependency-ready batch is **Phase 1B**, starting with ARC-03; do not create
 another Phase 1A foundation increment.
 

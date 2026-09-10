@@ -1588,11 +1588,18 @@ Codex, 19 validated findings. Both rounds completed without degradation or
 failed reviewers; accepted Medium+ corrections are implemented and regression
 tested. Round 3 (`20260910-100528-1d2bfd`, reviewed `9e31e37`) also completed
 with both vendors and no degradation. It found one real High callback-arity
-issue; the fix and strict-signature regression fixtures require a fourth review.
-The [guide](../../guides/stewardship-phase-1a-completion.md#validation-and-reviews)
-records all 19 findings' dispositions. Final validation, fourth review and PR CI
-remain pending. No Gate 1 or human merge approval is implied. After merge, proceed to Phase 1B as a coherent
-batch; Gate 1 still follows the integrated Phase 1B/1C foundation.
+issue, corrected with strict-signature regression fixtures before round 4.
+Round 4 (`20260910-103435-666968`, reviewed `577248f`) completed with both
+vendors, no degradation/failures, 27 Medium findings and zero High/Critical.
+Its 23 corrections/test improvements and four retained behaviors are documented
+in the [guide](../../guides/stewardship-phase-1a-completion.md#validation-and-reviews).
+All accepted Medium+ findings are resolved, and the four-round exit criterion
+is satisfied. Final validation passes 1,958 baseline and 634 PostgreSQL tests
+(96.75% lines, 90.44% branches), all 30 rebuilt-image/Compose checks, Ruff,
+formatting, Markdown and migration-drift checks. CI and human merge approval
+are tracked on the associated PR. Phase 1A is complete; Gate 1 is not released.
+After merge, proceed to Phase 1B as a coherent batch; Gate 1 still follows the
+integrated Phase 1B/1C foundation.
 
 ## Gate 1: Foundation and security
 

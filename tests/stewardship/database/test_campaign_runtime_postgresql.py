@@ -21,8 +21,13 @@ from parishkit.stewardship.campaigns.runtime import transition_campaign
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
 from ..configuration_factory import configuration_version
-from .campaign_builders import admit_test_work, campaign_clock, command, draft_campaign
-from .test_policy_postgresql import change
+from .campaign_builders import (
+    admit_test_work,
+    campaign_clock,
+    change,
+    command,
+    draft_campaign,
+)
 
 pytestmark = pytest.mark.django_db(transaction=True)
 

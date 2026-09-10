@@ -29,12 +29,13 @@ from .campaign_builders import (
     admit_task_work,
     admit_test_work,
     campaign_clock,
+    claimed_task,
     command,
+    complete_empty_catchup,
     draft_campaign,
+    end_request,
     restored_runtime,
 )
-from .test_boundary_catchup_postgresql import claimed_task
-from .test_exceptional_end_postgresql import complete_empty_catchup, end_request
 from .test_read_guards_postgresql import family_campaign, guard
 
 pytestmark = pytest.mark.django_db(transaction=True)

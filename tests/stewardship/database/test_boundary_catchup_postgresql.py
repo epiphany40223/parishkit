@@ -21,38 +21,19 @@ from parishkit.stewardship.campaigns.models import (
     CampaignTransition,
 )
 from parishkit.stewardship.campaigns.runtime import campaign_facts
-from parishkit.stewardship.jobs.storage import change_run, enqueue
+from parishkit.stewardship.jobs.storage import change_run
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
 from .campaign_builders import (
     admit_task_work,
     admit_test_work,
     campaign_clock,
+    claimed_task,
     command,
     draft_campaign,
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
-
-
-def claimed_task(kind, domain_id, actor):
-    """Allocate and claim actual durable TaskRun metadata for a synthetic worker."""
-    run = enqueue(
-        task_type=kind,
-        domain_request_id=domain_id,
-        actor_id=actor,
-        correlation_id=uuid4(),
-        admit=admit_task_work,
-    )
-    return change_run(
-        run_id=run.run_id,
-        action="claim",
-        expected_version=run.version,
-        actor_id=actor,
-        correlation_id=uuid4(),
-        admit=admit_task_work,
-        lease_seconds=300,
-    )
 
 
 def test_overdue_boundaries_commit_start_then_close_and_retry_exactly(tmp_path):

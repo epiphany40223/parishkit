@@ -57,7 +57,7 @@ def restore_predecessors(apps, editor):
             IF EXISTS (SELECT 1 FROM stewardship_campaign_transition)
                OR EXISTS (SELECT 1 FROM stewardship_runtime_transition)
                OR EXISTS (SELECT 1 FROM stewardship_campaign WHERE state <> 'draft') THEN
-                RAISE EXCEPTION 'Runtime history prevents schema downgrade';
+                RAISE EXCEPTION 'Runtime history prevents schema downgrade' USING ERRCODE='23514';
             END IF;
         END $$;
     """)
@@ -97,7 +97,7 @@ def restore_predecessors(apps, editor):
 
 SQL = """
 CREATE FUNCTION stewardship_activation_global_v1() RETURNS trigger
-LANGUAGE plpgsql AS $$ BEGIN
+LANGUAGE plpgsql SET search_path=pg_catalog,public,pg_temp AS $$ BEGIN
     PERFORM pg_advisory_xact_lock(736220,1); RETURN NEW;
 END $$;
 CREATE TRIGGER aaa_stewardship_activation_global_v1 BEFORE INSERT
@@ -105,10 +105,10 @@ ON stewardship_config_activation FOR EACH ROW
 EXECUTE FUNCTION stewardship_activation_global_v1();
 
 CREATE FUNCTION stewardship_campaign_now_v1() RETURNS timestamptz
-LANGUAGE sql STABLE AS $$ SELECT statement_timestamp() $$;
+LANGUAGE sql STABLE SET search_path=pg_catalog,public,pg_temp AS $$ SELECT statement_timestamp() $$;
 
 CREATE FUNCTION stewardship_campaign_quiet_v1(target uuid) RETURNS boolean
-LANGUAGE sql STABLE AS $$
+LANGUAGE sql STABLE SET search_path=pg_catalog,public,pg_temp AS $$
     SELECT NOT EXISTS (SELECT 1 FROM stewardship_activation_catchup WHERE campaign_id=$1 AND completed_at IS NULL)
        AND NOT EXISTS (SELECT 1 FROM stewardship_campaign WHERE id=$1 AND delivery_paused)
        AND NOT EXISTS (SELECT 1 FROM stewardship_schedule_occurrence o

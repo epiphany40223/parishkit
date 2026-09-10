@@ -19,7 +19,9 @@ not another individual storage increment. Gate 1 remains after Phases 1B/1C.
    validate host/PostgreSQL/image/Compose behavior, complete at least three
    full-branch review/fix rounds, open one PR and resolve CI failures.
 
-Implementation and validation are in progress. No review gate is claimed.
+Phase 1A implementation, local validation and four independent review/fix rounds
+are complete. CI and human merge approval are tracked on the associated PR;
+no formal Gate 1 release is claimed.
 No public lifecycle endpoint, provider action, credential operation or Production
 startup is authorized by internal storage primitives. Concrete owning services
 must supply current authorization, readiness and external-effect evidence before
@@ -136,6 +138,11 @@ must marshal disconnect cleanup to the owner. Deadline cleanup closes only the
 raw driver handle off-thread; owning-thread teardown marks the lost transaction
 closed before unwinding Django, and must not reconnect to restore autocommit.
 Normal teardown acknowledges rollback then discards the response-owned session.
+This intentionally includes healthy interactive reads: it prevents a deadline
+racing rollback from reopening a backend during Django's autocommit cleanup.
+Connection budgeting must account for response-owned sessions rather than assume
+interactive persistent-connection reuse. Dedicated downloads explicitly construct
+their backend wrapper with zero idle retention and health checks disabled.
 The deadline remains armed during cleanup so network stalls cannot remove that
 last bound; cancellation/loss still closes the exact handle without reconnecting.
 
@@ -161,8 +168,8 @@ an unrelated coherent configuration advances; it never rewinds that newer YAML.
 Targeted PostgreSQL tests cover ordered boundary rollback, catch-up fencing,
 schedule replacement/fulfillment, pause/withdrawal, archive/successor gating,
 restore assumptions, exact post-close versions, reopen and interrupted abort.
-The complete validation run and three independent review/fix rounds remain in
-progress; this file will record their evidence before the PR is opened.
+The following chronological checkpoints record validation and all four
+independent review/fix rounds. Final completion evidence is at the end.
 
 Round 1 reviewed `f4c9588bfc4cb4b1e589fba64ef3617be25eacc7` against the complete
 PR #18 merge base, with four Pika-assigned Claude shards and Pika's independent
@@ -193,8 +200,8 @@ later-owner running/tombstone sentinel states without executing a purge.
 Post-round-1 validation passes 1,958 baseline tests and 539 PostgreSQL tests;
 scoped coverage is 96.01% lines and 88.56% branches. A subsequent focused
 13-test read-guard run also covers cancellation failure during deadline cleanup.
-Ruff, Markdown, migration-drift and whitespace checks pass. The remaining review
-rounds and final image/Compose validation are still required before handoff.
+Ruff, Markdown, migration-drift and whitespace checks pass. At that checkpoint,
+the remaining review rounds and final image/Compose validation were still required.
 
 Round 2 reviewed `d7483b0af1ccd104b3405f963d2ef8775503eab3` against the same
 complete base, using five Pika-assigned Claude shards and Pika's Codex reviewer.
@@ -256,3 +263,59 @@ with 96.53% line and 89.65% branch coverage. All 30 rebuilt-image/Compose checks
 pass, including the same baseline inside the image. Ruff, Markdown, whitespace
 and migration-drift checks pass. Local artifacts are
 `/tmp/parishkit-phase1a-quality7.*` and `/tmp/parishkit-phase1a-compose-tests4.log`.
+
+Round 4 reviewed `577248f086360474e4f4635cf77252dc7c87815e` against the same
+full base in Pika session `20260910-103435-666968`. All five assigned Claude
+shards and the independent Codex reviewer completed successfully. Finalization
+reports 27 Medium findings, zero High/Critical, and no degradation, failed agents,
+verdict mismatch or salvage. The four-round review/fix cycle satisfies the
+approved minimum-three-round/no-final-High criterion; final-round Medium fixes
+belong to this round, not an additional independent review.
+
+Triage fixes 23 findings and retains four behaviors. All findings below are
+Medium; numbering follows Claude's validated findings, then Codex's finding.
+
+| # | Disposition | Correction or rationale |
+| --- | --- | --- |
+| 1 | Fixed | PostgreSQL cases reject every destructive campaign state, missing read scope, reused/nested guards and malformed drain inputs. |
+| 2 | Fixed | Runtime-history downgrade refusal consistently uses SQLSTATE `23514`. |
+| 3 | Fixed | Recovery matrix asserts the precise unknown-outcome or unreconciled TaskRun error. |
+| 4 | Fixed | Missing/mismatched download policy tests prove typed refusal and capacity cleanup. |
+| 5 | Fixed | Pin a known SHA-256 advisory key and sorted, deduplicated UUID inputs. |
+| 6 | Fixed | Fulfillment checks its exact outcome before falling back to SQL constraints. |
+| 7 | Fixed | Recovery rejects boolean, float, string and nonpositive expected versions before querying. |
+| 8 | Fixed | Restore inventory/review tests assert semantic trigger messages, not incidental FK failures. |
+| 9 | Retained | Per-chunk server probes preserve fail-closed connection continuity; a cached producer may never query again. |
+| 10 | Fixed | Twelve shared scenario helpers move into `campaign_builders`; their callers no longer import them from other test modules. Distinct pre-existing activation/audit setup fixtures are not conflated. |
+| 11 | Fixed | A real runtime-only populated downgrade case reaches the previously uncovered refusal. |
+| 12 | Fixed | Occurrence reasons require bounded lowercase codes rather than arbitrary provider text. |
+| 13 | Fixed | Canonical occurrence allocation/transition/recovery inputs have direct regression coverage. |
+| 14 | Fixed | Restore decisions require canonical identity, version, state and bounded evidence for exact replay. |
+| 15 | Fixed | Post-close metadata is validated before stripping text, querying or comparing replay identity. |
+| 16 | Fixed | Deterministic stale confirmations follow each race, independently of installer-lock contention. |
+| 17 | Fixed | All three runtime SQL helper search paths are pinned and checked through PostgreSQL's catalog. |
+| 18 | Fixed | Reject irrelevant ownership metadata and require a replacement exactly for coalescing. |
+| 19 | Fixed | Exceptional checkpoint reversal reconstructs the frozen accounts migration predecessor. |
+| 20 | Retained | Discarding healthy response-owned sessions closes the tested deadline/rollback reconnect race; see the connection contract above. |
+| 21 | Fixed | Dedicated downloads explicitly construct their zero-idle backend wrapper rather than call Django's test convenience method. |
+| 22 | Retained | Bounded installer serialization preserves selected-YAML/database agreement; background owners retry contention with backoff. |
+| 23 | Fixed | Downgrade tests assert exact applied-migration-set restoration; reapply exceptions already fail the originating test. |
+| 24 | Fixed | Catch-up failure receipts obey the same restore/current-campaign/work-gate constraints as progress; a restore regression verifies rollback. |
+| 25 | Fixed | Structural preflight compares complete filtered dictionaries and rejects added/removed keys with a typed configuration error. |
+| 26 | Retained | Scheduled Close remains an outstanding obligation: the worker must apply Start first. Skipping Start while remaining scheduled is not a valid path; narrowing the guard would permit losing Close. Existing ordered-boundary and rollback tests verify the prerequisite. |
+| 27 | Fixed | Boundary-only history now blocks downgrade before its guards/table can be removed; a real migration regression verifies preservation. |
+
+The final-round focused PostgreSQL suite passes all 138 cases. The rebuilt image
+passes all 30 Compose checks, including 1,958 baseline tests inside the image.
+The final full run passes 1,958 baseline tests and 634 PostgreSQL tests, with
+96.75% line and 90.44% branch coverage. Ruff, formatting, tracked Markdown,
+whitespace and migration-drift checks pass. Artifacts are
+`/tmp/parishkit-phase1a-quality8.*`, `/tmp/parishkit-phase1a-compose-tests5.log`
+and `/tmp/parishkit-phase1a-compose-build5.log`; generated logs and reports are
+not committed. The rebuilt development image is
+`sha256:21c301d398774f599a6e0ccc72483b1c7bb052a97a4b75ebac1ae76f7017d21b`.
+
+No accepted Medium-or-higher finding remains unresolved. This completes Phase 1A,
+not the integrated Gate 1 milestone. After this PR's human-approved merge,
+proceed to Phase 1B beginning with ARC-03. No merge, deployment, release or
+operational startup is authorized by this completion record.

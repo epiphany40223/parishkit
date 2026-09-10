@@ -51,16 +51,18 @@ def restore_demand(apps, editor):
 SQL = """
 CREATE FUNCTION stewardship_catchup_failure_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path=pg_catalog,public,pg_temp AS $$
-DECLARE d stewardship_activation_catchup%ROWTYPE; t stewardship_task_run%ROWTYPE;
+DECLARE d stewardship_activation_catchup%ROWTYPE; t stewardship_task_run%ROWTYPE; r stewardship_system_configuration%ROWTYPE;
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
-    PERFORM 1 FROM stewardship_system_configuration FOR UPDATE;
+    SELECT * INTO r FROM stewardship_system_configuration FOR UPDATE;
     SELECT * INTO d FROM stewardship_activation_catchup WHERE id=NEW.demand_id FOR UPDATE;
     SELECT * INTO t FROM stewardship_task_run WHERE id=NEW.task_id FOR UPDATE;
     IF d.id IS NULL OR d.completed_at IS NOT NULL OR NEW.expected_version<>d.version OR NEW.actor_id IS NULL
        OR NEW.code NOT IN ('source_unavailable','invalid_source','enumeration_failed','outcome_failed','recovery_required')
        OR t.id IS NULL OR d.task_root_id IS NULL OR t.root_id<>d.task_root_id OR t.state<>'running'
-       OR t.fence<>NEW.fence OR t.worker_id IS DISTINCT FROM NEW.actor_id OR t.lease_expires_at<=clock_timestamp() THEN
+       OR t.fence<>NEW.fence OR t.worker_id IS DISTINCT FROM NEW.actor_id OR t.lease_expires_at<=clock_timestamp()
+       OR r.restore_review_required OR r.current_campaign_id IS DISTINCT FROM d.campaign_id
+       OR EXISTS(SELECT 1 FROM stewardship_campaign_work_gate WHERE campaign_id=d.campaign_id AND state IN ('preparing','running','tombstone')) THEN
         RAISE EXCEPTION 'Catch-up failure requires exact fenced evidence' USING ERRCODE='23514'; END IF;
     RETURN NEW;
 END $$;

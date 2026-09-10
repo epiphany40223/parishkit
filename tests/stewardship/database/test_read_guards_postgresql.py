@@ -19,8 +19,7 @@ from parishkit.stewardship.campaigns.read_guards import (
     campaign_lock_key,
 )
 
-from .test_campaign_postgresql import add_draft
-from .test_policy_postgresql import initialized
+from .campaign_builders import add_draft, initialized
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
