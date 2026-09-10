@@ -89,6 +89,29 @@ def login(code, client=None):
     return client, response
 
 
+def test_ordered_family_cleanup_preserves_audit_attribution(family_service):
+    from django.contrib.sessions.models import Session
+
+    from parishkit.stewardship.accounts.sessions import cleanup_family_sessions
+    from parishkit.stewardship.audit.models import AuditEvent
+
+    client, response = login(family_service.code)
+    assert response.status_code == 302
+    row = FamilySession.objects.get()
+    assert cleanup_family_sessions() == 0
+    response = client.post(
+        "/family/logout",
+        {
+            "csrfmiddlewaretoken": client.cookies["csrftoken"].value,
+        },
+    )
+    assert response.status_code == 302
+    assert cleanup_family_sessions() == 1
+    assert not FamilySession.objects.filter(pk=row.pk).exists()
+    assert not Session.objects.filter(pk=row.session_id).exists()
+    assert AuditEvent.objects.filter(subject_id=row.pk).exists()
+
+
 def test_code_exchange_and_token_link_use_clean_isolated_session(family_service):
     client, response = login(family_service.code.lower())
     assert response.status_code == 302 and response["Location"] == "/family/"

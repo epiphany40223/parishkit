@@ -1,5 +1,7 @@
 """Separate PostgreSQL cookie namespaces and live policy-based Admin sessions."""
 
+import hashlib
+import json
 from datetime import timedelta
 from importlib import import_module
 
@@ -8,6 +10,7 @@ from django.contrib.sessions.exceptions import SessionInterrupted
 from django.contrib.sessions.models import Session
 from django.db import connection, transaction
 from django.db.models import F, Q
+from django.middleware.csrf import rotate_token
 from django.utils import timezone
 from django.utils.cache import patch_vary_headers
 from django.utils.http import http_date
@@ -76,6 +79,42 @@ def revocation_epoch():
     return str(latest.pk) if latest else "initial"
 
 
+def _authority_fingerprint(principal):
+    """Detect privilege transitions without treating stored scopes as authority."""
+    value = json.dumps(
+        [sorted(principal.roles), sorted(principal.ministries)],
+        separators=(",", ":"),
+    ).encode()
+    return hashlib.sha256(value).hexdigest()
+
+
+def _rotate_authority(request, row, principal, now):
+    """Replace a locked session without extending Google freshness or lifetime.
+
+    Django's cycle_key deletes its protected parent, so create a new parent and
+    metadata explicitly. Revoked metadata stays available for ordered cleanup.
+    Concurrent requests holding the old cookie see only the revoked row.
+    """
+    _revoke(row, now, "admin_privileges_changed")
+    session = import_module(settings.SESSION_ENGINE).SessionStore()
+    session["principal"] = str(row.principal_id)
+    session["recovery_epoch"] = request.session.get("recovery_epoch")
+    session["authority_fingerprint"] = _authority_fingerprint(principal)
+    session.set_expiry(row.expires_at)
+    session.save()
+    replacement = PortalSession.objects.create(
+        session_id=session.session_key,
+        principal_id=row.principal_id,
+        authenticated_at=row.authenticated_at,
+        last_activity_at=row.last_activity_at,
+        expires_at=row.expires_at,
+        actor_id=row.principal_id,
+    )
+    request.session = session
+    rotate_token(request)
+    return replacement
+
+
 def _revoke(row, now, reason):
     """One locked revocation creates exactly one safe permanent audit envelope."""
     if row.revoked_at is None:
@@ -120,6 +159,7 @@ def issue_admin(request, user_id, *, store):
         now = database_now()
         request.session["principal"] = str(user_id)
         request.session["recovery_epoch"] = revocation_epoch()
+        request.session["authority_fingerprint"] = _authority_fingerprint(principal)
         request.session.set_expiry(now + ADMIN_ABSOLUTE)
         request.session.save()
         row = PortalSession.objects.create(
@@ -165,6 +205,14 @@ def authenticated_admin(request, *, store, activity=False, read_only=False):
             if not read_only:
                 _revoke(row, now, reason)
             return None
+        if request.session.get("authority_fingerprint") != _authority_fingerprint(
+            principal
+        ):
+            # A read guard cannot write or rotate a cookie after headers start.
+            # Its ordinary admission must first establish a current session.
+            if read_only:
+                return None
+            row = _rotate_authority(request, row, principal, now)
         if activity:
             PortalSession.objects.filter(pk=row.pk).update(
                 last_activity_at=now,
@@ -208,3 +256,67 @@ def cleanup_admin_sessions(*, batch_size=500):
         PortalSession.objects.filter(pk__in=[row.pk for row in rows]).delete()
         Session.objects.filter(session_key__in=keys).delete()
         return len(rows)
+
+
+def cleanup_family_sessions(*, batch_size=500):
+    """Expire Family authority before removing protected metadata and parent rows."""
+    from parishkit.stewardship.campaigns.credential_models import FamilySession
+
+    if type(batch_size) is not int or not 1 <= batch_size <= 1000:
+        raise ValueError("Session cleanup requires a bounded batch size.")
+    with transaction.atomic():
+        now = database_now()
+        rows = list(
+            FamilySession.objects.select_for_update(skip_locked=True)
+            .filter(
+                Q(revoked_at__isnull=False)
+                | Q(expires_at__lte=now)
+                | Q(last_activity_at__lte=now - FAMILY_IDLE)
+            )
+            .order_by("expires_at", "pk")[:batch_size]
+        )
+        for row in rows:
+            if row.revoked_at is None:
+                FamilySession.objects.filter(pk=row.pk).update(
+                    revoked_at=max(now, row.last_activity_at),
+                    version=F("version") + 1,
+                )
+                AuditEvent.objects.create(
+                    event_type="family_session_ended",
+                    subject_id=row.pk,
+                    actor_id=row.family_id,
+                )
+        identifiers = [row.pk for row in rows]
+        keys = [row.session_id for row in rows]
+        FamilySession.objects.filter(pk__in=identifiers).delete()
+        Session.objects.filter(pk__in=keys).delete()
+        return len(rows)
+
+
+def cleanup_anonymous_sessions(*, batch_size=500):
+    """Clean expired OAuth sessions/one-use receipts without crossing live metadata."""
+    from .auth_models import OAuthStateConsumption
+
+    if type(batch_size) is not int or not 1 <= batch_size <= 1000:
+        raise ValueError("Session cleanup requires a bounded batch size.")
+    with transaction.atomic():
+        now = database_now()
+        keys = list(
+            Session.objects.select_for_update(of=("self",), skip_locked=True)
+            .filter(
+                expire_date__lte=now,
+                stewardship_portal__isnull=True,
+                familysession__isnull=True,
+            )
+            .order_by("expire_date", "pk")
+            .values_list("pk", flat=True)[:batch_size]
+        )
+        Session.objects.filter(pk__in=keys).delete()
+        receipts = list(
+            OAuthStateConsumption.objects.select_for_update(skip_locked=True)
+            .filter(expires_at__lte=now)
+            .order_by("expires_at", "pk")
+            .values_list("pk", flat=True)[:batch_size]
+        )
+        OAuthStateConsumption.objects.filter(pk__in=receipts).delete()
+        return len(keys), len(receipts)

@@ -36,7 +36,12 @@ class AuthenticationIncident(MutableRecord):
             ),
             models.CheckConstraint(
                 condition=models.Q(
-                    kind__in=["limiter_unavailable", "admin_abuse", "family_abuse"]
+                    kind__in=[
+                        "limiter_unavailable",
+                        "limiter_state_lost",
+                        "admin_abuse",
+                        "family_abuse",
+                    ]
                 ),
                 name="auth_incident_kind",
             ),
@@ -50,5 +55,27 @@ class AuthenticationIncident(MutableRecord):
                     kind="limiter_unavailable", resolved_at__isnull=True
                 ),
                 name="auth_single_limiter_outage",
+            ),
+        ]
+
+
+class LimiterStoreHealth(MutableRecord):
+    """Durable non-identifying baseline detects loss across application restarts."""
+
+    namespace_fingerprint = models.CharField(max_length=64, unique=True)
+    run_id = models.CharField(max_length=40)
+    marker = models.UUIDField()
+    evicted_keys = models.PositiveBigIntegerField()
+
+    class Meta(MutableRecord.Meta):
+        db_table = "stewardship_limiter_health"
+        constraints = MutableRecord.Meta.constraints + [
+            models.CheckConstraint(
+                condition=models.Q(namespace_fingerprint__regex=r"^[0-9a-f]{64}$"),
+                name="limiter_health_namespace",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(run_id__regex=r"^[0-9a-f]{40}$"),
+                name="limiter_health_run_id",
             ),
         ]

@@ -23,6 +23,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 def test_sliding_window_atomic_capacity_and_expiry(auth_service):
     """Parallel failures cannot lose increments; expiry uses Valkey's own clock."""
     limiter = auth_service.limiter
+    limiter.check_health()
     counter = Counter("family_pair", limiter.fingerprint("pair", "synthetic"), 5, 900)
     with ThreadPoolExecutor(max_workers=4) as executor:
         results = list(
@@ -163,3 +164,67 @@ def test_rate_keys_never_retain_raw_identity_or_candidate(auth_service):
     data = b"".join(limiter.client.scan_iter(limiter.namespace + ":*"))
     assert private.encode() not in data
     assert b"192.0.2.1" not in data
+
+
+@pytest.mark.parametrize("loss", ["marker", "restart", "eviction", "stats_reset"])
+def test_counter_loss_creates_durable_critical_intent(auth_service, loss, monkeypatch):
+    """Probe real Valkey; simulate only INFO transitions without resetting services."""
+    from parishkit.stewardship.accounts.auth_models import LimiterStoreHealth
+
+    limiter = auth_service.limiter
+    assert not limiter.check_health(force=True)
+    original = limiter.client.info
+
+    def info(section):
+        """No tests restart shared services, evict keys, or flush databases."""
+        values = original(section)
+        if loss == "restart" and section == "server":
+            values["run_id"] = "f" * 40
+        if loss in {"eviction", "stats_reset"} and section == "stats":
+            values["evicted_keys"] += 1
+        return values
+
+    if loss == "marker":
+        limiter.client.delete(limiter.namespace + ":health:marker")
+    elif loss == "stats_reset":
+        from django.db.models import F
+
+        LimiterStoreHealth.objects.update(evicted_keys=99, version=F("version") + 1)
+    monkeypatch.setattr(limiter.client, "info", info)
+    assert limiter.check_health(force=True)
+    incident = AuthenticationIncident.objects.get(kind="limiter_state_lost")
+    assert incident.level == "CRITICAL"
+    assert incident.notification_pending
+    assert not limiter.check_health(force=True)
+    replacement = Limiter(
+        limiter.client,
+        limiter.key,
+        incident=record_incident,
+        namespace=limiter.namespace,
+    )
+    assert not replacement.check_health(force=True)
+    assert AuthenticationIncident.objects.count() == 1
+
+
+def test_marker_repair_waits_for_durable_audit(auth_service, monkeypatch):
+    """An audit failure leaves the evidence of counter loss observable on retry."""
+    from parishkit.stewardship.accounts import limiter_health
+
+    limiter = auth_service.limiter
+    limiter.check_health(force=True)
+    marker = limiter.namespace + ":health:marker"
+    limiter.client.delete(marker)
+    original = limiter_health.record_incident
+
+    def fail(*args):
+        """Exercise rollback at the durable notification boundary."""
+        raise RuntimeError("Synthetic audit unavailable")
+
+    monkeypatch.setattr(limiter_health, "record_incident", fail)
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        limiter.check_health(force=True)
+    assert not limiter.client.exists(marker)
+    monkeypatch.setattr(limiter_health, "record_incident", original)
+    assert limiter.check_health(force=True)
+    assert limiter.client.exists(marker)
+    assert AuthenticationIncident.objects.get().level == "CRITICAL"

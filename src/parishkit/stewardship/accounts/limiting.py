@@ -8,6 +8,7 @@ rejections. PostgreSQL incident delivery is supplied by the owning service.
 import hashlib
 import hmac
 import math
+import re
 from collections import OrderedDict
 from dataclasses import dataclass
 from ipaddress import IPv4Address, IPv6Address
@@ -102,6 +103,24 @@ class Counter:
     limit: int
     seconds: int
 
+    def __post_init__(self):
+        """Do not let a caller put a raw identity or unbounded policy into Valkey."""
+        if (
+            type(self.name) is not str
+            or (
+                self.name
+                not in {"admin_start", "admin_callback", "family_ip", "family_pair"}
+                and re.fullmatch(r"admin_identity_[1-9][0-9]{0,18}", self.name) is None
+            )
+            or type(self.fingerprint) is not str
+            or re.fullmatch(r"[0-9a-f]{64}", self.fingerprint) is None
+            or type(self.limit) is not int
+            or not 1 <= self.limit <= 10000
+            or type(self.seconds) is not int
+            or not 1 <= self.seconds <= 86400
+        ):
+            raise ValueError("Invalid authentication counter policy.")
+
 
 class LocalBuckets:
     """Equivalent token bucket for opaque links only, with a bounded memory cap."""
@@ -133,6 +152,11 @@ class Limiter:
             raise ValueError(
                 "An independent limiter key of at least 32 bytes is required."
             )
+        if (
+            type(namespace) is not str
+            or re.fullmatch(r"[a-zA-Z0-9:_-]{1,96}", namespace) is None
+        ):
+            raise ValueError("Invalid authentication store namespace.")
         self.client, self.key, self.incident = client, key, incident
         self.namespace = namespace
         self.window_script = client.register_script(WINDOW)
@@ -140,6 +164,28 @@ class Limiter:
         self.aggregate_script = client.register_script(AGGREGATE)
         self.fallback = LocalBuckets()
         self.outage = False
+        self.health_lock = Lock()
+        self.health_checked_at = None
+
+    def check_health(self, *, force=False):
+        """Observe on first use and at most every 30 seconds in each process.
+
+        The durable baseline survives this process. OPS health/scheduler callers
+        can force an observation without generating a synthetic login attempt.
+        An unavailable probe follows the same fail-closed path as failed counters.
+        """
+        from .limiter_health import observe_store
+
+        with self.health_lock:
+            if (
+                force
+                or self.health_checked_at is None
+                or monotonic() - self.health_checked_at >= 30
+            ):
+                result = observe_store(self.client, self.namespace)
+                self.health_checked_at = monotonic()
+                return result
+        return False
 
     def fingerprint(self, kind, value):
         """Domain-separated short-lived fingerprints are not reversible identifiers."""
@@ -154,6 +200,7 @@ class Limiter:
     def _call(self, script, **kwargs):
         """Durable, deduplicated health notification precedes generic unavailability."""
         try:
+            self.check_health()
             result = script(**kwargs)
         except RedisError:
             self.outage = True
@@ -185,6 +232,13 @@ class Limiter:
 
     def counters(self, counters, *, failure=False):
         """Check or record applicable windows atomically without plaintext inputs."""
+        if (
+            type(counters) not in {list, tuple}
+            or not 1 <= len(counters) <= 5
+            or any(not isinstance(counter, Counter) for counter in counters)
+            or type(failure) is not bool
+        ):
+            raise ValueError("Authentication counters require a bounded typed batch.")
         keys, args = [], [uuid4().hex if failure else ""]
         for counter in counters:
             keys.append(f"{self.namespace}:window:{counter.name}:{counter.fingerprint}")
@@ -198,15 +252,19 @@ class Limiter:
                 f"{self.namespace}:window:{counter.name}:{counter.fingerprint}"
             )
         except RedisError:
+            self.outage = True
             self.incident("limiter_unavailable", 2, 0, (0, 0, 0, 0))
 
     def elevated(self, kind):
         """Elevated controls expire with the last observed distributed burst."""
+        if kind not in {"family", "admin"}:
+            raise ValueError("Unknown authentication failure class.")
         try:
             return bool(
                 self.client.exists(f"{self.namespace}:aggregate:{kind}:elevated")
             )
         except RedisError:
+            self.outage = True
             self.incident("limiter_unavailable", 2, 0, (0, 0, 0, 0))
             raise LimiterUnavailable(
                 "Authentication is temporarily unavailable."
@@ -216,6 +274,12 @@ class Limiter:
         """Call once per request; diversity of candidates never gates detection."""
         if kind not in {"admin", "family"}:
             raise ValueError("Unknown authentication failure class.")
+        if any(
+            type(value) is not str
+            or (value and re.fullmatch(r"[0-9a-f]{64}", value) is None)
+            for value in (identity, candidate)
+        ):
+            raise ValueError("Authentication telemetry requires keyed fingerprints.")
         result = self._call(
             self.aggregate_script,
             keys=[

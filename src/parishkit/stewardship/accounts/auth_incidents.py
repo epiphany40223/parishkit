@@ -14,6 +14,7 @@ def record_incident(kind, severity, window, counts):
     if kind not in {
         "limiter_unavailable",
         "limiter_available",
+        "limiter_state_lost",
         "admin_abuse",
         "family_abuse",
     }:

@@ -28,7 +28,8 @@ def test_full_google_flow_uses_pkce_nonce_signed_claims_and_no_password_user(
     before = client.cookies["pk_admin"].value
     assert query["code_challenge_method"] == ["S256"]
     assert len(query["nonce"][0]) >= 32
-    assert query["scope"] == ["openid email"]
+    assert len(query["scope"]) == 1
+    assert set(query["scope"][0].split()) == {"openid", "email"}
     assert query["max_age"] == ["0"]
     response = client.get(
         "/admin/oauth/callback", {"code": "synthetic", "state": query["state"][0]}
@@ -48,7 +49,12 @@ def test_full_google_flow_uses_pkce_nonce_signed_claims_and_no_password_user(
     assert PortalUser.objects.get().google_subject == "synthetic-google-subject"
     assert client.get("/admin/").status_code == 200
     data = Session.objects.get(pk=row.session_id).get_decoded()
-    assert set(data) == {"principal", "recovery_epoch", "_session_expiry"}
+    assert set(data) == {
+        "principal",
+        "recovery_epoch",
+        "authority_fingerprint",
+        "_session_expiry",
+    }
     assert AuditEvent.objects.filter(event_type="admin_login").count() == 1
 
 
@@ -154,3 +160,118 @@ def test_missing_state_and_preverification_limit_are_accounted_once(
 )
 def test_password_signup_recovery_and_direct_token_routes_absent(auth_service, path):
     assert Client().get(path).status_code == 404
+
+
+@pytest.mark.parametrize("absolute", [False, True])
+def test_admin_idle_and_absolute_boundaries_and_fresh_auth(
+    auth_service, google, monkeypatch, absolute
+):
+    from django.test import RequestFactory
+
+    from parishkit.stewardship.accounts import sessions
+
+    browser, _ = signed_in()
+    row = PortalSession.objects.get()
+    request = RequestFactory().get("/admin/")
+    request.portal_session = row
+    monkeypatch.setattr(
+        sessions, "database_now", lambda: row.authenticated_at + timedelta(minutes=5)
+    )
+    assert sessions.require_fresh(request) == row.authenticated_at
+    monkeypatch.setattr(
+        sessions,
+        "database_now",
+        lambda: row.authenticated_at + timedelta(minutes=5, microseconds=1),
+    )
+    with pytest.raises(PermissionError):
+        sessions.require_fresh(request)
+    if absolute:
+        row.last_activity_at = row.expires_at - timedelta(minutes=5)
+        PortalSession.objects.filter(pk=row.pk).update(
+            last_activity_at=row.last_activity_at,
+            version=F("version") + 1,
+        )
+    boundary = (
+        row.expires_at if absolute else row.last_activity_at + timedelta(minutes=30)
+    )
+    monkeypatch.setattr(sessions, "database_now", lambda: boundary)
+    assert browser.get("/admin/").status_code == 302
+    row.refresh_from_db()
+    assert row.revoked_at is not None
+    assert sessions.cleanup_admin_sessions() == 1
+
+
+def test_anonymous_cleanup_preserves_live_protected_sessions(auth_service, google):
+    from django.contrib.sessions.backends.db import SessionStore
+    from django.utils import timezone
+
+    from parishkit.stewardship.accounts.auth_models import OAuthStateConsumption
+    from parishkit.stewardship.accounts.sessions import cleanup_anonymous_sessions
+
+    _, _ = signed_in()
+    live = PortalSession.objects.get()
+    expired = SessionStore()
+    expired["oauth_state"] = "synthetic-state"
+    expired.set_expiry(timezone.now() - timedelta(seconds=1))
+    expired.save()
+    OAuthStateConsumption.objects.create(
+        fingerprint="a" * 64, expires_at=timezone.now() - timedelta(seconds=1)
+    )
+    assert cleanup_anonymous_sessions() == (1, 1)
+    assert Session.objects.filter(pk=live.session_id).exists()
+    assert not Session.objects.filter(pk=expired.session_key).exists()
+
+
+def test_changed_privileges_rotate_cookie_without_refreshing_authentication(
+    auth_service, google, monkeypatch
+):
+    """A newly authorized scope cannot reuse the old session or its CSRF token."""
+    from parishkit.stewardship.accounts import sessions
+    from parishkit.stewardship.accounts.policy import Principal
+
+    browser, _ = signed_in()
+    original = PortalSession.objects.get()
+    cookie = browser.cookies["pk_admin"].value
+    csrf = browser.cookies["csrftoken"].value
+    principal = Principal(original.principal_id, frozenset({"staff"}))
+    monkeypatch.setattr(sessions, "current_principal", lambda *args: principal)
+    assert browser.get("/admin/").status_code == 200
+    assert browser.cookies["pk_admin"].value != cookie
+    assert browser.cookies["csrftoken"].value != csrf
+    replacement = PortalSession.objects.get(revoked_at__isnull=True)
+    assert replacement.authenticated_at == original.authenticated_at
+    assert replacement.expires_at == original.expires_at
+    original.refresh_from_db()
+    assert original.revoked_at is not None
+    stale = Client()
+    stale.cookies["pk_admin"] = cookie
+    assert stale.get("/admin/").status_code == 302
+    assert AuditEvent.objects.filter(event_type="admin_privileges_changed").count() == 1
+    current_cookie = browser.cookies["pk_admin"].value
+    assert browser.get("/admin/").status_code == 200
+    assert browser.cookies["pk_admin"].value == current_cookie
+
+
+def test_read_guard_never_rotates_privilege_transition(
+    auth_service, google, monkeypatch
+):
+    """Streaming reauthorization fails closed if its prior admission became stale."""
+    from django.contrib.sessions.backends.db import SessionStore
+    from django.test import RequestFactory
+
+    from parishkit.stewardship.accounts import sessions
+    from parishkit.stewardship.accounts.policy import Principal
+
+    browser, _ = signed_in()
+    row = PortalSession.objects.get()
+    principal = Principal(row.principal_id, frozenset({"staff"}))
+    monkeypatch.setattr(sessions, "current_principal", lambda *args: principal)
+    request = RequestFactory().get("/admin/")
+    request.session = SessionStore(browser.cookies["pk_admin"].value)
+    assert (
+        sessions.authenticated_admin(request, store=auth_service.store, read_only=True)
+        is None
+    )
+    assert PortalSession.objects.count() == 1
+    row.refresh_from_db()
+    assert row.revoked_at is None
