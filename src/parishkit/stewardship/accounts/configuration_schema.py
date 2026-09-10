@@ -171,10 +171,28 @@ def _validate_v2_sections(document):
     validate_policy_records(policy)
 
 
+def _validate_v3_sections(document):
+    """Add campaign configuration without reinterpreting historical policy schemas."""
+    from parishkit.stewardship.campaigns.configuration import validate_campaign_sections
+
+    if not document["sections"].get("login_rules"):
+        _invalid()
+    base = document | {
+        "sections": {
+            name: records
+            for name, records in document["sections"].items()
+            if name not in {"campaigns", "schedules"}
+        }
+    }
+    _validate_v2_sections(base)
+    validate_campaign_sections(document)
+
+
 VALIDATORS = MappingProxyType(
     {
         "parish-integrations-v1": _validate_v1_sections,
         "foundation-policy-v2": _validate_v2_sections,
+        "campaign-foundation-v3": _validate_v3_sections,
     }
 )
 
@@ -194,6 +212,8 @@ def validate_sections(document):
 
 def schema_for(document):
     """Keep legacy documents on their retained schema until new policy is present."""
+    if any(document["sections"].get(name) for name in ("campaigns", "schedules")):
+        return "campaign-foundation-v3"
     return (
         "foundation-policy-v2"
         if document["sections"].get("login_rules")

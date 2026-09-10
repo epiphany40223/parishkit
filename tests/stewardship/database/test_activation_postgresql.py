@@ -454,7 +454,12 @@ def test_downgrade_with_history_preserves_guards_and_migration_marker(
         assert MigrationRecorder.Migration.objects.filter(
             app="stewardship_accounts", name="0013_activation_guards"
         ).exists()
-        assert SystemConfiguration.objects.get().active_configuration_id == before
+        assert (
+            SystemConfiguration.objects.values_list(
+                "active_configuration_id", flat=True
+            ).get()
+            == before
+        )
         with pytest.raises(IntegrityError), transaction.atomic():
             SystemConfiguration.objects.update(version=F("version") + 1)
     finally:

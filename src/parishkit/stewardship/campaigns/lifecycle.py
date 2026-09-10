@@ -1,0 +1,299 @@
+"""Pure lifecycle decisions, not authorization or proof of external readiness.
+
+Owning transactions must lock and reload these facts and obtain the named
+guards from trusted services. A True decision is never an activation permit:
+token preparation, work drainage and current Google authorization have separate
+owners. No caller may treat a serialized collection of booleans as evidence.
+"""
+
+from dataclasses import dataclass
+from datetime import datetime
+from enum import StrEnum
+from types import MappingProxyType
+
+from .domain import CampaignState as State
+from .domain import SystemMode as Mode
+from .domain import UTCInterval
+
+
+class Action(StrEnum):
+    """Explicit commands; mode-only operations are not fake campaign transitions."""
+
+    ACTIVATE = "activate"
+    START = "start"
+    CLOSE = "close"
+    WITHDRAW = "withdraw"
+    REOPEN = "reopen"
+    ARCHIVE = "archive"
+    UNARCHIVE = "unarchive"
+    RETURN_TESTING = "return_testing"
+    PURGE = "purge"
+    PURGE_ABORT = "purge_abort"
+    PURGE_COMPLETE = "purge_complete"
+    PURGE_CLEANUP_FAILED = "purge_cleanup_failed"
+
+
+@dataclass(frozen=True)
+class Transition:
+    """Reviewable registry entry with immutable guard and attribution contracts."""
+
+    sources: frozenset[State]
+    targets: frozenset[State]
+    actor: str
+    guards: frozenset[str]
+    reauthentication: bool = False
+    confirmation: bool = False
+
+
+def _transition(sources, targets, actor, *guards):
+    """Construct internal registry entries without mutable collections."""
+    admin = actor == "administrator"
+    return Transition(
+        frozenset(sources), frozenset(targets), actor, frozenset(guards), admin, admin
+    )
+
+
+TRANSITIONS = MappingProxyType(
+    {
+        Action.ACTIVATE: _transition(
+            [State.DRAFT],
+            [State.SCHEDULED, State.ACTIVE],
+            "administrator",
+            "current",
+            "readiness",
+            "configuration_coherent",
+            "cleanup_complete",
+            "token_generation",
+            "catch_up_demand",
+            "no_restore",
+            "no_purge",
+        ),
+        Action.START: _transition(
+            [State.SCHEDULED],
+            [State.ACTIVE],
+            "boundary_worker",
+            "current",
+            "boundary_current",
+            "no_restore",
+            "no_purge",
+        ),
+        Action.CLOSE: _transition(
+            [State.SCHEDULED, State.ACTIVE],
+            [State.CLOSED],
+            "boundary_worker",
+            "current",
+            "boundary_current",
+            "invalidate_family_access",
+        ),
+        Action.WITHDRAW: _transition(
+            [State.SCHEDULED],
+            [State.DRAFT],
+            "administrator",
+            "current",
+            "quiescent",
+            "cancel_future_work",
+            "invalidate_readiness",
+            "no_restore",
+            "no_purge",
+            "reason",
+        ),
+        Action.REOPEN: _transition(
+            [State.CLOSED],
+            [State.ACTIVE],
+            "administrator",
+            "current",
+            "readiness",
+            "configuration_coherent",
+            "token_generation",
+            "extended_end",
+            "no_restore",
+            "no_purge",
+            "quiescent",
+        ),
+        Action.ARCHIVE: _transition(
+            [State.CLOSED],
+            [State.ARCHIVED],
+            "administrator",
+            "current",
+            "quiescent",
+            "post_close_resolved",
+            "no_restore",
+            "no_purge",
+        ),
+        Action.UNARCHIVE: _transition(
+            [State.ARCHIVED],
+            [State.CLOSED],
+            "administrator",
+            "current",
+            "no_other_current",
+            "quiescent",
+            "no_restore",
+            "no_purge",
+        ),
+        Action.RETURN_TESTING: _transition(
+            [State.ARCHIVED],
+            [State.ARCHIVED],
+            "administrator",
+            "current",
+            "quiescent",
+            "post_close_resolved",
+            "no_restore",
+            "no_purge",
+            "clear_current_pointer",
+        ),
+        Action.PURGE: _transition(
+            [State.ARCHIVED],
+            [State.PURGING],
+            "purge_worker",
+            "purge_request",
+            "purge_window",
+            "fresh_backup",
+            "quiescent",
+        ),
+        Action.PURGE_ABORT: _transition(
+            [State.PURGING],
+            [State.ARCHIVED],
+            "purge_worker",
+            "no_deletion_committed",
+        ),
+        Action.PURGE_COMPLETE: _transition(
+            [State.PURGING, State.PURGE_CLEANUP_FAILED],
+            [State.PURGED],
+            "purge_worker",
+            "database_deleted",
+            "files_deleted",
+            "fenced_owner",
+        ),
+        Action.PURGE_CLEANUP_FAILED: _transition(
+            [State.PURGING],
+            [State.PURGE_CLEANUP_FAILED],
+            "purge_worker",
+            "database_deleted",
+            "fenced_owner",
+        ),
+    }
+)
+
+
+@dataclass(frozen=True)
+class CampaignFacts:
+    """A point-in-time view; constructor rejects noncanonical identity and mode."""
+
+    state: State
+    mode: Mode
+    interval: UTCInterval
+    current: bool
+    restore_required: bool = False
+    delivery_paused: bool = False
+    catch_up_pending: bool = False
+
+    def __post_init__(self):
+        """Reject strings/bools that could silently masquerade as trusted facts."""
+        if not isinstance(self.state, State) or not isinstance(self.mode, Mode):
+            raise ValueError("Canonical lifecycle and mode are required.")
+        if not isinstance(self.interval, UTCInterval):
+            raise ValueError("A resolved campaign interval is required.")
+        for name in (
+            "current",
+            "restore_required",
+            "delivery_paused",
+            "catch_up_pending",
+        ):
+            if type(getattr(self, name)) is not bool:
+                raise ValueError("Campaign flags must be booleans.")
+
+
+def portal_admitted(facts: CampaignFacts, now: datetime) -> bool:
+    """Gate exactly by dates even when persisted start/close processing lags."""
+    within = facts.interval.contains(now)
+    if not facts.current or facts.restore_required or not within:
+        return False
+    if facts.mode is Mode.TESTING:
+        return facts.state is State.DRAFT
+    return facts.state in {State.SCHEDULED, State.ACTIVE}
+
+
+def scheduled_work_admitted(facts: CampaignFacts, now: datetime, *, delivery=False):
+    """Separate ordinary schedule preparation from provider dispatch and Family use."""
+    if not portal_admitted(facts, now):
+        return False
+    if facts.mode is Mode.PRODUCTION and facts.catch_up_pending:
+        return False
+    return not (delivery and facts.mode is Mode.PRODUCTION and facts.delivery_paused)
+
+
+def transition_target(
+    action: Action,
+    facts: CampaignFacts,
+    now: datetime,
+    *,
+    proposed_interval: UTCInterval | None = None,
+) -> State | None:
+    """Return a date/state-eligible target, never proof that registry guards passed."""
+    # Validate now even for an operation with no date predicate.
+    within = facts.interval.contains(now)
+    if not isinstance(action, Action):
+        raise ValueError("A canonical lifecycle action is required.")
+    rule = TRANSITIONS[action]
+    if facts.state not in rule.sources:
+        return None
+    if "current" in rule.guards and not facts.current:
+        return None
+    if "no_restore" in rule.guards and facts.restore_required:
+        return None
+    if action is Action.ACTIVATE:
+        if facts.mode is not Mode.TESTING or now >= facts.interval.end:
+            return None
+        return State.ACTIVE if within else State.SCHEDULED
+    if action in {Action.START, Action.CLOSE, Action.WITHDRAW, Action.REOPEN}:
+        if facts.mode is not Mode.PRODUCTION:
+            return None
+        if action is Action.START and not within:
+            return None
+        if action is Action.CLOSE and now < facts.interval.end:
+            return None
+        if action is Action.WITHDRAW and now >= facts.interval.start:
+            return None
+        if action is Action.REOPEN and (
+            proposed_interval is None
+            or proposed_interval.start != facts.interval.start
+            or proposed_interval.end <= facts.interval.end
+            or not proposed_interval.contains(now)
+        ):
+            return None
+    if action is Action.PURGE and facts.mode is not Mode.TESTING:
+        return None
+    return next(iter(rule.targets))
+
+
+def draft_creation_admitted(*, mode, current_id, states, nonterminal_purge):
+    """Require the global purge-request fact, not only visible purge lifecycle
+    states.
+    """
+    if not isinstance(mode, Mode) or type(nonterminal_purge) is not bool:
+        raise ValueError("Canonical creation facts are required.")
+    states = tuple(states)
+    if any(not isinstance(state, State) for state in states):
+        raise ValueError("Canonical campaign states are required.")
+    return (
+        mode is Mode.TESTING
+        and current_id is None
+        and not nonterminal_purge
+        and all(state in {State.ARCHIVED, State.PURGED} for state in states)
+    )
+
+
+def structural_edit_admitted(state: State, *, ever_active: bool, locked: bool):
+    """Only withdrawal can unlock a never-active draft; Testing alone is not enough."""
+    if not isinstance(state, State) or any(
+        type(v) is not bool for v in (ever_active, locked)
+    ):
+        raise ValueError("Canonical structural-lock facts are required.")
+    return state is State.DRAFT and not ever_active and not locked
+
+
+def transition_audit_event(action: Action) -> str:
+    """Derive a stable event name; owning workflows emit its validated payload."""
+    if not isinstance(action, Action):
+        raise ValueError("A canonical lifecycle action is required.")
+    return "campaign_" + action.value

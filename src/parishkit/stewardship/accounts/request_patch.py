@@ -19,6 +19,7 @@ from .configuration_schema import validator_for
 
 REQUEST_SCHEMA = "parish-integrations-patch-v1"
 POLICY_REQUEST_SCHEMA = "foundation-policy-patch-v2"
+CAMPAIGN_REQUEST_SCHEMA = "campaign-foundation-patch-v3"
 
 
 def _invalid():
@@ -70,6 +71,27 @@ def _build_v2_candidate(base, patch, *, candidate_id):
         base.document()["sections"].get("login_rules", []),
         result.candidate.document()["sections"].get("login_rules", []),
     )
+    return result
+
+
+def _build_v3_candidate(base, patch, *, candidate_id):
+    """Admit campaign drafts and schedules with unchanged manual-policy provenance."""
+    from parishkit.stewardship.campaigns.configuration import validate_campaign_change
+
+    from .policy_schema import validate_policy_change
+
+    result = _build_records(
+        base,
+        patch,
+        candidate_id=candidate_id,
+        schema="campaign-foundation-v3",
+        sections={"parish", "integrations", "login_rules", "campaigns", "schedules"},
+    )
+    validate_policy_change(
+        base.document()["sections"].get("login_rules", []),
+        result.candidate.document()["sections"].get("login_rules", []),
+    )
+    validate_campaign_change(base.document(), result.candidate.document())
     return result
 
 
@@ -156,13 +178,15 @@ def _build_records(base, patch, *, candidate_id, schema, sections):
 
 # Freeze each accepted intent's parser and candidate schema. Future schemas add
 # another builder and database-admitted name; retries dispatch the stored name.
-def _build_recovery_candidate(base, patch, *, candidate_id):
+def _build_recovery_candidate(
+    base, patch, *, candidate_id, schema="foundation-policy-v2"
+):
     """The dedicated recovery format admits only an additive exact-address Admin."""
     result = _build_records(
         base,
         patch,
         candidate_id=candidate_id,
-        schema="foundation-policy-v2",
+        schema=schema,
         sections={"login_rules"},
     )
     if len(patch) != 1 or patch[0]["operation"] not in {"add", "update"}:
@@ -208,11 +232,20 @@ def _build_recovery_candidate(base, patch, *, candidate_id):
     return result
 
 
+def _build_recovery_v2_candidate(base, patch, *, candidate_id):
+    """Preserve additive-only operator recovery after campaign schema adoption."""
+    return _build_recovery_candidate(
+        base, patch, candidate_id=candidate_id, schema="campaign-foundation-v3"
+    )
+
+
 BUILDERS = MappingProxyType(
     {
         "parish-integrations-patch-v1": _build_v1_candidate,
         POLICY_REQUEST_SCHEMA: _build_v2_candidate,
+        CAMPAIGN_REQUEST_SCHEMA: _build_v3_candidate,
         "operator-recovery-patch-v1": _build_recovery_candidate,
+        "operator-recovery-patch-v2": _build_recovery_v2_candidate,
     }
 )
 
@@ -230,6 +263,19 @@ def build_candidate(base, patch, *, candidate_id, request_schema=None):
 
 def default_schema(base, patch):
     """Choose a new intent schema while keeping every stored retry discriminator."""
+    if (
+        isinstance(base, ConfigurationVersion)
+        and any(
+            base.document()["sections"].get(name) for name in ("campaigns", "schedules")
+        )
+    ) or (
+        type(patch) is list
+        and any(
+            type(item) is dict and item.get("section") in ("campaigns", "schedules")
+            for item in patch
+        )
+    ):
+        return CAMPAIGN_REQUEST_SCHEMA
     policy = isinstance(base, ConfigurationVersion) and base.document()["sections"].get(
         "login_rules"
     )

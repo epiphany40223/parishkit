@@ -141,11 +141,16 @@ def recover_admin(
         else:
             runtime = coherent_configuration(store)
             base, version = intake_base(runtime.active_configuration.digest)
+            schema = (
+                "operator-recovery-patch-v2"
+                if base.validation_schema == "campaign-foundation-v3"
+                else "operator-recovery-patch-v1"
+            )
             intent = build_candidate(
                 version,
                 _patch(version, email, operation_id),
                 candidate_id=uuid4(),
-                request_schema="operator-recovery-patch-v1",
+                request_schema=schema,
             )
             with transaction.atomic(durable=True):
                 request = ConfigurationChangeRequest.objects.create(
@@ -153,7 +158,7 @@ def recover_admin(
                     patch=intent.patch(),
                     actor_id=None,
                     request_key=operation_id,
-                    request_schema="operator-recovery-patch-v1",
+                    request_schema=schema,
                     correlation_id=correlation_id,
                     payload_fingerprint=intent.payload_fingerprint,
                     candidate_version_id=intent.candidate.version_id,

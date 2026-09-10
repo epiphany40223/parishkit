@@ -1,5 +1,13 @@
 # Stewardship milestones and review tasks
 
+## Campaign configuration and lifecycle policy batch
+
+September 10, 2026: branch `pr/stewardship-campaign-lifecycle` starts from merged
+PR #17 (`4e8ac93`). See the [batch boundary](../../guides/stewardship-campaign-foundation.md)
+for delivered configuration/policy work and explicit remaining DAT-02 integration.
+Initial validation and the required three independent review/fix rounds are in
+progress. Phase 1A and Gate 1 remain incomplete.
+
 [Task index](README.md) · [Task execution plan](overall.md) ·
 [Controlling plan](../../plans/stewardship/overall.md)
 

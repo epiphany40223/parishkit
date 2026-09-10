@@ -124,7 +124,15 @@ Scope and dependencies: [DAT-02 work package](../../plans/stewardship/data.md#da
 - [ ] DAT-02.04 — Implement schedules, fulfillment, holds, and post-close resolutions.
 - [ ] DAT-02.05 — Test campaign and schedule transition races.
 
-Evidence: Not started.
+Evidence: September 10, 2026 campaign batch adds immutable v3 CampaignConfiguration
+and ScheduleRevision projections, module-dependent validation, periods/mappings,
+share/content references, resolved boundaries and atomic Testing draft activation.
+Historical schemas and additive recovery remain supported. Tests cover competing
+requests, rollback, raw-write denial, timezone independence, removal history and
+migrations. See the [integration boundary](../../guides/stewardship-campaign-foundation.md).
+All DAT-02 items remain partial/open: live structural/lifecycle state, bounded
+read/download guards, boundary/catch-up/history records, runtime fulfillment/
+holds/resolution and their races are still required.
 
 ## DAT-03: Versioned ParishSoft source corpus
 

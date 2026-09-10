@@ -86,6 +86,16 @@ review/fix rounds and final local validation are complete; see the
 [batch evidence](milestones.md#authorization-and-recovery-batch).
 Human PR merge approval and passing PR CI are required before the next batch.
 
+September 10, 2026: the human merged PR #17 as
+`4e8ac93a6ec8a8c835ce1b6854bc78e25ee80b9e`. Branch
+`pr/stewardship-campaign-lifecycle` starts from that refreshed `origin/main`.
+The campaign configuration/lifecycle-policy batch groups versioned drafts,
+schedule revisions, atomic Testing runtime selection and pure lifecycle policy.
+See its [boundary](../../guides/stewardship-campaign-foundation.md) and
+[evidence](milestones.md#campaign-configuration-and-lifecycle-policy-batch).
+DAT-02 remains incomplete; its remaining storage/read-guard work is next before
+Phase 1B consumers. No formal review gate has been released.
+
 The merged configuration-preparation increment completed three dual-model
 review/fix rounds and final CI; see its
 [dispositions and validation](milestones.md#configuration-preparation-increment).
