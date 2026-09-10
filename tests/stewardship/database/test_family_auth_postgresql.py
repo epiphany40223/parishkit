@@ -113,15 +113,33 @@ def test_ordered_family_cleanup_preserves_audit_attribution(family_service):
 
 
 def test_invalid_link_audit_is_bounded_and_attempts_stay_ephemeral(family_service):
-    """Different garbage links count individually but cannot grow durable audit."""
+    """ARC-05 audit policy: sample failures, but retain each successful login."""
     from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 
     for index in range(10):
-        assert Client().get(f"/access/invalid-{index}").status_code == 403
+        response = Client().get(
+            f"/access/invalid-{index}", REMOTE_ADDR=f"192.0.2.{index + 1}"
+        )
+        assert response.status_code == 403
     limiter = family_service.service.limiter
     assert limiter.client.zcard(limiter.namespace + ":aggregate:family:attempts") == 10
     event = AuditEvent.objects.get(event_type="family_link_invalid")
     assert AuditContext.objects.get(event=event).context == {"outcome": "denied"}
+    assert event.actor_id is None and event.subject_id is None
+    assert event.campaign_reference is None
+
+    # Failure sampling must never suppress successful exchanges, even when they
+    # reuse the same valid link immediately after a deployment-wide sample.
+    for _ in range(2):
+        assert Client().get("/access/" + family_service.token).status_code == 302
+    sessions = FamilySession.objects.all()
+    assert sessions.count() == 2
+    assert set(
+        AuditEvent.objects.filter(event_type="family_login").values_list(
+            "subject_id", "actor_id"
+        )
+    ) == set(sessions.values_list("pk", "family_id"))
+    assert AuditEvent.objects.filter(event_type="family_link_invalid").count() == 1
 
 
 def test_distributed_manual_failures_have_bounded_durable_audit(family_service):

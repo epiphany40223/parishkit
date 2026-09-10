@@ -165,7 +165,7 @@ minutes. There were no failed agents, mismatched verdicts, salvage requirements
 or degraded results. The consolidated result contains 30 Medium findings, no
 High/Critical findings, and 106 below-cutoff Low observations. C is Claude-only;
 X is Codex-only. Code corrections and final integrated validation are complete;
-X1's normative audit-contract decision remains open, so review exit is not claimed.
+X1's normative audit-contract clarification is approved and recorded below.
 
 | ID | Disposition | Evidence / correction |
 | --- | --- | --- |
@@ -196,7 +196,7 @@ X1's normative audit-contract decision remains open, so review exit is not claim
 | C25 | Already handled; clarified | The interrupted-installer runbook already requires restoring and replaying the same target service, not bypassing its reservation. It now explicitly requires continual queue polling and stalled-service alerts, including staged expiry/cancellation. |
 | C26 | Fixed | Rehearsal invalidation checks its affected-row count and rolls back pointer/audit changes on a stale epoch; a real stored-state regression proves it. |
 | C27 | Fixed | A known public-proxy peer is never internal even with missing forwarding headers or overlapping network ranges. OPS-03 still owns network provisioning and the ingress deny rules. |
-| X1 | Decision pending | The normative per-attempt secure-link audit contract conflicts with bounded sampled failure retention. A human clarification is requested before changing that contract. |
+| X1 | Fixed with human approval | The owner approved bounded sampled failed secure-link audit instead of permanent per-attempt records, while preserving individual successful-login events. The architecture specification owns the policy; the portal specification and ARC-05 plan link to it. The Family HTTP regression verifies distributed failed attempts remain individually counted ephemerally, produce one safe durable sample, and do not suppress two subsequent successful-login events. |
 | X2 | Fixed | Guarded iteration/terminal callbacks restore the captured request correlation. Success and interrupted-report tests require both events to match the response correlation header. |
 | X3 | Fixed | Explicitly saved authority rotations mark persistence separately from cookie transport. A guarded Staff code-report request emits the new cookie without writing into the response's read-only transaction. |
 
@@ -212,7 +212,11 @@ Ruff checks/formatting,
 tracked Markdown lint, migration drift and diff checks pass. The PostgreSQL run
 completed in 506.98 seconds on its separate disposable cluster.
 
-No code findings remain unresolved. The sole remaining item is X1: do not publish
-the Phase 1B PR or claim the three-round exit criterion until the normative
-secure-link audit contract is resolved and recorded. No merge, deployment or
-release is authorized by this validation.
+All accepted Medium+ findings are resolved. The owner-approved X1 clarification
+closes the three-round review-and-correction exit criterion. The regression is
+`tests/stewardship/database/test_family_auth_postgresql.py::test_invalid_link_audit_is_bounded_and_attempts_stay_ephemeral`.
+After that specification/regression clarification, all 2,312 ordinary tests and
+all 12 Family PostgreSQL authentication tests pass again; Ruff and tracked
+Markdown checks pass. Runtime code is unchanged from the integrated snapshot.
+PR CI and human-approved merge remain required; this is not integrated Gate 1
+approval or authorization to merge, deploy, or release.

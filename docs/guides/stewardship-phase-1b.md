@@ -33,9 +33,10 @@ mutation, deployment, release or gate approval is implied by this batch.
 ## Status and evidence
 
 The Phase 1B foundation and three rounds of code corrections are implemented.
-Final integrated validation passes; the secure-link audit-retention clarification
-in round-three X1 remains pending. Verified task checkboxes do not close Phase 1B
-or its integrated review gate; the per-package checklists remain authoritative.
+Final integrated validation passes. The owner approved the secure-link
+audit-retention clarification in round-three X1, closing the three-round review
+exit. PR CI and human-approved merge remain required; the integrated Gate 1 is
+not released. The per-package checklists remain authoritative.
 
 The dated/internal checkpoints below are historical measurements, not current
 suite counts. The [review ledger](stewardship-phase-1b-reviews.md) owns the latest

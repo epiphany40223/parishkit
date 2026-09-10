@@ -1610,9 +1610,9 @@ The [implementation guide](../../guides/stewardship-phase-1b.md) and
 validation and dispositions. Three independent full-branch dual-vendor reviews
 have completed without degradation. Round three reviewed `92e259f` and found
 30 Medium issues, no High/Critical issues. Code corrections and integrated
-validation are complete; round-three X1's normative audit-retention clarification
-remains open. This is not review-exit or Gate 1
-approval. After resolution, passing CI and human-approved merge, the next
+validation are complete; the owner approved round-three X1's normative
+audit-retention clarification. The three-round review exit is satisfied, not
+integrated Gate 1 approval. After passing CI and human-approved merge, the next
 dependency-ready batch is Phase 1C, starting with OPS-02.
 
 ## Gate 1: Foundation and security
