@@ -133,6 +133,10 @@ def release_work_gate(*, gate_id, expected_version, actor_id, correlation_id, ad
     """Release only aborted preparation; running/tombstoned deletion never reopens."""
     if not callable(admit):
         raise TypeError("Work gate release requires owning quiescence proof.")
+    if any(not isinstance(value, UUID) for value in (gate_id, actor_id)):
+        raise TypeError("Work gate release identifiers must be UUIDs.")
+    if type(expected_version) is not int or expected_version < 1:
+        raise ValueError("Work gate version must be a positive integer.")
     gate = CampaignWorkGate.objects.get(pk=gate_id)
     with campaign_transaction(gate.campaign_id, correlation_id=correlation_id) as (
         campaign,

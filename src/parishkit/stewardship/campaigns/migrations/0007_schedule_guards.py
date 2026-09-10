@@ -15,6 +15,8 @@ DECLARE r stewardship_system_configuration%ROWTYPE; chosen stewardship_schedule_
 BEGIN
     IF TG_OP='DELETE' THEN RAISE EXCEPTION 'Schedules are removed through configuration' USING ERRCODE='23514'; END IF;
     SELECT * INTO r FROM stewardship_system_configuration;
+    IF r.restore_review_required THEN
+        RAISE EXCEPTION 'Restore review holds schedule selection changes' USING ERRCODE='23514'; END IF;
     SELECT * INTO chosen FROM stewardship_schedule_revision
         WHERE configuration_id=r.active_configuration_id AND record_id=NEW.id;
     IF NEW.campaign_id IS DISTINCT FROM r.current_campaign_id

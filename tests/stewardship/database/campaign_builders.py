@@ -14,8 +14,12 @@ from .test_campaign_postgresql import add_draft
 from .test_policy_postgresql import initialized
 
 
-def admit_test_work(*args):
+def admit_test_work(action, campaign, runtime, subject):
     """Isolated storage fixture; deliberately cannot establish external readiness."""
+
+
+def admit_task_work(action, status):
+    """TaskRun has a separate fixed-arity verifier; never mask campaign arity drift."""
 
 
 def draft_campaign(tmp_path, row=None):

@@ -15,6 +15,7 @@ from parishkit.stewardship.campaigns.models import (
     ScheduleDefinition,
     ScheduleFulfillment,
     ScheduleOccurrence,
+    ScheduleSelection,
 )
 from parishkit.stewardship.campaigns.schedules import (
     change_occurrence,
@@ -23,6 +24,7 @@ from parishkit.stewardship.campaigns.schedules import (
 )
 
 from .campaign_builders import (
+    admit_task_work,
     admit_test_work,
     campaign_clock,
     command,
@@ -68,6 +70,7 @@ def test_semantic_delivery_survives_revision_change(tmp_path):
     """Changing a template/time cannot resend an already fulfilled logical slot."""
     store, campaign, actor = draft_campaign(tmp_path)
     definition = ScheduleDefinition.objects.select_related("current_revision").get()
+    previous_revision = definition.current_revision_id
     with campaign_clock(definition.current_revision.due_at):
         row = occurrence(definition, actor)
         assert occurrence(definition, actor).pk == row.pk
@@ -102,6 +105,23 @@ def test_semantic_delivery_survives_revision_change(tmp_path):
             == "applied"
         )
         definition.refresh_from_db()
+        selections = list(
+            ScheduleSelection.objects.filter(definition=definition).order_by("version")
+        )
+        assert len(selections) == 2
+        assert selections[0].previous_revision_id is None
+        assert selections[0].selected_revision_id == previous_revision
+        assert (
+            selections[1].previous_revision_id,
+            selections[1].selected_revision_id,
+            selections[1].version,
+            selections[1].configuration_id,
+        ) == (
+            previous_revision,
+            definition.current_revision_id,
+            definition.version,
+            store.active().version_id,
+        )
         with pytest.raises(IntegrityError, match="not admitted"):
             occurrence(definition, actor)
     assert ScheduleFulfillment.objects.get().pk == fulfillment.pk
@@ -194,6 +214,16 @@ def test_safe_replacement_skips_unallocated_pending_work(tmp_path):
     row.refresh_from_db()
     assert definition.current_revision_id is None and definition.removed_at is not None
     assert row.state == "skipped" and row.reason == "schedule_removed"
+    selections = list(
+        ScheduleSelection.objects.filter(definition=definition).order_by("version")
+    )
+    assert len(selections) == 2
+    assert (
+        selections[1].previous_revision_id,
+        selections[1].selected_revision_id,
+        selections[1].configuration_id,
+        selections[1].version,
+    ) == (row.revision_id, None, store.active().version_id, definition.version)
 
 
 def test_restore_blocks_schedule_change_but_not_unrelated_configuration(tmp_path):
@@ -337,7 +367,7 @@ def test_recovery_matches_canonical_source_action_matrix(
             fence=run.fence,
             actor_id=actor,
             correlation_id=uuid4(),
-            admit=admit_test_work,
+            admit=admit_task_work,
         )
         if source == "delivery_unknown" and outcome in {
             "delivery_unknown",
@@ -412,7 +442,7 @@ def test_abandoned_execution_must_be_reconciled_before_schedule_replacement(tmp_
             domain_request_id=row.pk,
             actor_id=actor,
             correlation_id=uuid4(),
-            admit=admit_test_work,
+            admit=admit_task_work,
         )
         run = act(queued, "claim", lease_seconds=1, actor_id=actor)
         advance(row, actor, "running", task_id=run.run_id, fence=run.fence)

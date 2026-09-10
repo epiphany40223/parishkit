@@ -24,7 +24,13 @@ from parishkit.stewardship.campaigns.runtime import campaign_facts
 from parishkit.stewardship.jobs.storage import change_run, enqueue
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
-from .campaign_builders import admit_test_work, campaign_clock, command, draft_campaign
+from .campaign_builders import (
+    admit_task_work,
+    admit_test_work,
+    campaign_clock,
+    command,
+    draft_campaign,
+)
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -36,7 +42,7 @@ def claimed_task(kind, domain_id, actor):
         domain_request_id=domain_id,
         actor_id=actor,
         correlation_id=uuid4(),
-        admit=admit_test_work,
+        admit=admit_task_work,
     )
     return change_run(
         run_id=run.run_id,
@@ -44,7 +50,7 @@ def claimed_task(kind, domain_id, actor):
         expected_version=run.version,
         actor_id=actor,
         correlation_id=uuid4(),
-        admit=admit_test_work,
+        admit=admit_task_work,
         lease_seconds=300,
     )
 
@@ -215,10 +221,17 @@ def test_catchup_checkpoint_is_exact_fenced_and_independent_of_task_completion(
         correlation_id=uuid4(),
         admit=admit_test_work,
     )
-    with pytest.raises(IntegrityError):
+    with pytest.raises(ValueError):
         record_catchup_failure(**(failure_args | {"code": "untrusted provider detail"}))
+    for value in (True, 0, "1"):
+        with pytest.raises(ValueError):
+            record_catchup_failure(**(failure_args | {"fence": value}))
+    with pytest.raises(StaleRecordError):
+        record_catchup_failure(**(failure_args | {"fence": run.fence + 1}))
     failure = record_catchup_failure(**failure_args)
     assert record_catchup_failure(**failure_args).pk == failure.pk
+    with pytest.raises(StaleRecordError):
+        record_catchup_failure(**(failure_args | {"actor_id": uuid4()}))
     demand.refresh_from_db()
     assert demand.failure_code == "enumeration_failed"
     assert demand.groups_completed == 1 and demand.items_completed == 5
@@ -233,7 +246,7 @@ def test_catchup_checkpoint_is_exact_fenced_and_independent_of_task_completion(
         fence=run.fence,
         actor_id=actor,
         correlation_id=uuid4(),
-        admit=admit_test_work,
+        admit=admit_task_work,
     )
     demand.refresh_from_db()
     assert demand.completed_at is None and demand.items_completed == 5

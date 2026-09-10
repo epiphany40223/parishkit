@@ -95,10 +95,7 @@ def test_competing_confirmations_have_one_winner(tmp_path, action):
 
 def concurrent_calls(*callbacks):
     """Race separately connected owners; return typed admission/conflict outcomes."""
-    from django.db import IntegrityError
-
     from parishkit.stewardship.campaigns.admission import CampaignAdmissionUnavailable
-    from parishkit.stewardship.storage import StorageInvariantError
 
     barrier = Barrier(len(callbacks))
 
@@ -113,8 +110,6 @@ def concurrent_calls(*callbacks):
             ConfigurationBusy,
             StaleRecordError,
             CampaignAdmissionUnavailable,
-            StorageInvariantError,
-            IntegrityError,
         ):
             return "retry"
         finally:

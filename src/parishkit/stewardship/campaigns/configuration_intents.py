@@ -185,5 +185,5 @@ def recover_configuration_abort(materializer):
         )
     runtime = SystemConfiguration.objects.get()
     campaign = Campaign.objects.get(pk=abort.intent.campaign_id)
-    materializer.admit_campaign("abort_configuration", campaign, runtime)
+    materializer.admit_campaign("abort_configuration", campaign, runtime, abort.intent)
     return materializer.restore_aborted_candidate()

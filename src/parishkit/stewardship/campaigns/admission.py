@@ -65,6 +65,9 @@ def validate_installation(document, *, request_id=None):
         ):
             raise ConfigError("Exceptional edit requires a valid changed end date.")
         if (
+            # BG-02 may durably allocate/bind a pending boundary before execution.
+            # The current atomic executor serializes against the installer, but
+            # retained/restored pending work must also block stale end edits.
             CampaignBoundaryOccurrence.objects.filter(
                 campaign=row,
                 kind="close",
@@ -130,7 +133,16 @@ def validate_installation(document, *, request_id=None):
     # otherwise the SQL defense would leave the installer at 'validating'.
     schedules = document["sections"].get("schedules", [])
     proposed_schedules = {row["id"]: row["values"] for row in schedules}
-    for definition in ScheduleDefinition.objects.select_related("current_revision"):
+    definitions = list(ScheduleDefinition.objects.select_related("current_revision"))
+    if (
+        runtime is not None
+        and runtime.restore_review_required
+        and set(proposed_schedules) - {str(row.pk) for row in definitions}
+    ):
+        raise CampaignAdmissionUnavailable(
+            "Schedule changes are held for restore review."
+        )
+    for definition in definitions:
         proposed = proposed_schedules.get(str(definition.pk))
         old = (
             definition.current_revision.values if definition.current_revision else None

@@ -78,8 +78,19 @@ def _emit(
     reason="",
 ):
     """Insert the immutable command; SQL commits runtime/history effects together."""
+    if action not in {
+        Action.ACTIVATE,
+        Action.START,
+        Action.CLOSE,
+        Action.WITHDRAW,
+        Action.ARCHIVE,
+        Action.UNARCHIVE,
+    }:
+        raise StorageInvariantError(
+            "Campaign action requires its separate owning workflow."
+        )
     target = transition_target(action, campaign_facts(campaign, runtime), _now())
-    if target is None or action is Action.RETURN_TESTING:
+    if target is None:
         raise StorageInvariantError("Campaign transition is not admitted.")
     next_mode = (
         "production"
@@ -213,6 +224,8 @@ def return_to_testing(
         or not isinstance(actor_id, UUID)
     ):
         raise TypeError("Return to Testing requires attributed owning admission.")
+    if type(expected_runtime_version) is not int or expected_runtime_version < 1:
+        raise ValueError("Runtime version must be a positive integer.")
     with campaign_transaction(campaign_id, correlation_id=correlation_id) as (
         campaign,
         runtime,

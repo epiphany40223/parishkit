@@ -139,8 +139,9 @@ neither Phase 1A completion nor Gate 1 release is claimed yet.
 The implementation scope is now complete: DAT-02.01–.05 and DOM-02.03–.05 are
 checked with PostgreSQL evidence, and DAT-01/DAT-05/DOM-03/DOM-05 explicitly
 separate their completed Phase 1A portions from later consumers. Review rounds
-1 and 2 are complete with accepted corrections; final validation, the third
-independent review and PR CI remain. After this PR's human-approved merge, the
+1 through 3 are complete with accepted corrections. Round 3 found a High
+callback-arity issue, now fixed with strict-signature fixtures; final validation,
+a fourth independent review and PR CI remain. After this PR's human-approved merge, the
 next dependency-ready batch is **Phase 1B**, starting with ARC-03; do not create
 another Phase 1A foundation increment.
 

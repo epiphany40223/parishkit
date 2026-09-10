@@ -1586,8 +1586,12 @@ Claude shards plus independent Codex, 38 validated findings. Round 2: session
 `20260910-083115-c257ba`, reviewed `d7483b0`, five Claude shards plus independent
 Codex, 19 validated findings. Both rounds completed without degradation or
 failed reviewers; accepted Medium+ corrections are implemented and regression
-tested. Third review, final validation and PR CI remain pending. No Gate 1 or
-human merge approval is implied. After merge, proceed to Phase 1B as a coherent
+tested. Round 3 (`20260910-100528-1d2bfd`, reviewed `9e31e37`) also completed
+with both vendors and no degradation. It found one real High callback-arity
+issue; the fix and strict-signature regression fixtures require a fourth review.
+The [guide](../../guides/stewardship-phase-1a-completion.md#validation-and-reviews)
+records all 19 findings' dispositions. Final validation, fourth review and PR CI
+remain pending. No Gate 1 or human merge approval is implied. After merge, proceed to Phase 1B as a coherent
 batch; Gate 1 still follows the integrated Phase 1B/1C foundation.
 
 ## Gate 1: Foundation and security

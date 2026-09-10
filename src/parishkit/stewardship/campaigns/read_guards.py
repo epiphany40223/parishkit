@@ -12,7 +12,7 @@ from threading import BoundedSemaphore, Event, Lock, Timer, get_ident
 from time import monotonic
 from uuid import UUID
 
-from django.db import connections, transaction
+from django.db import OperationalError, connections, transaction
 from psycopg import Error as DriverError
 
 from parishkit.stewardship.storage import StorageInvariantError
@@ -23,6 +23,9 @@ DOWNLOAD_NAMESPACE = 736222
 
 class ReadUnavailable(RuntimeError):
     """Admission, connection continuity or the total response lifetime failed."""
+
+    status_code = 503
+    retry_after = 5
 
 
 class DownloadBusy(ReadUnavailable):
@@ -211,6 +214,12 @@ class CampaignReadGuard:
             self.authorize(self)
             self.check()
             return self
+        except OperationalError as error:
+            self.close()
+            if getattr(error.__cause__, "sqlstate", None) == "55P03":
+                kind = DownloadBusy if self.pool else ReadUnavailable
+                raise kind("Campaign reads are temporarily unavailable.") from None
+            raise
         except BaseException:
             self.close()
             raise
@@ -297,18 +306,26 @@ class CampaignReadGuard:
         if self.closed.is_set():
             return
         self.closed.set()
-        if self._timer:
-            self._timer.cancel()
-        if self._stack:
-            if self._raw is not None and self._raw.closed and self.db.in_atomic_block:
-                # The timer may close the raw handle, but only this owning
-                # thread may update Django's transaction bookkeeping. Without
-                # this marker Atomic.__exit__ can reconnect to set autocommit.
-                self.db.closed_in_transaction = True
-                self.db.needs_rollback = True
-            # Always roll back a read transaction, including a cancelled raw
-            # connection; never attempt a successful commit after expiration.
-            self._stack.__exit__(ReadUnavailable, ReadUnavailable(), None)
+        try:
+            if self._stack:
+                if self._raw is not None and self.db.in_atomic_block:
+                    try:
+                        # A normal close acknowledges rollback before releasing
+                        # local capacity. Keep the deadline armed if network IO
+                        # stalls; a lost backend cannot require an acknowledgement.
+                        if not self._raw.closed:
+                            self._raw.rollback()
+                    except DriverError:
+                        pass
+                    finally:
+                        # Only the owner may update Django's bookkeeping. Always
+                        # discard this handle before Atomic unwinds, including a
+                        # timer racing with rollback; never reconnect for cleanup.
+                        self.db.close()
+                self._stack.__exit__(ReadUnavailable, ReadUnavailable(), None)
+        finally:
+            if self._timer:
+                self._timer.cancel()
 
     def __exit__(self, *error):
         """Read-only transactions have no effects to commit on response failure."""

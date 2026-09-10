@@ -39,16 +39,16 @@ Scope and dependencies: [DOM-02 work package](../../plans/stewardship/campaign-d
 Evidence: The Phase 1A policy batch adds `campaigns.intervals` and 25 pure tests
 covering UTC boundaries, earlier folds, first-valid gap resolution, 23/25-hour
 days, a whole skipped date, invalid dates and first-anniversary financial ends.
-Lifecycle predicates, persisted date gates and transaction/race integration
-remain DOM-02.02 through .05 with DAT-02. See the
+At that batch's checkpoint, lifecycle predicates, persisted date gates and
+transaction/race integration remained DOM-02.02 through .05 with DAT-02. See the
 [foundation boundary](../../guides/stewardship-authorization-foundation.md).
 
 September 10, 2026: the campaign batch adds an immutable transition registry,
 required guards/actor/reauthentication/confirmation metadata and pure portal,
 schedule, structural-lock and successor predicates. Tests cover state/action and
 state/mode/current/restore combinations, exact boundaries, withdrawal/reopen,
-purge preparation and delivery holds. DOM-02.03 through .05 remain partial until
-persistent transition/read-guard/worker integration. See the
+purge preparation and delivery holds. At that checkpoint, DOM-02.03 through .05
+remained partial pending persistent transition/read-guard integration. See the
 [campaign boundary](../../guides/stewardship-campaign-foundation.md).
 
 The Phase 1A completion batch integrates those predicates with DAT-02's durable

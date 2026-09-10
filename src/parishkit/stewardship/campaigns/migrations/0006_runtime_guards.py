@@ -187,6 +187,10 @@ BEGIN
     IF target IS NOT NULL THEN
         SELECT * INTO candidate FROM stewardship_campaign_configuration WHERE record_id=target AND configuration_id=NEW.active_configuration_id;
         IF NOT FOUND THEN RAISE EXCEPTION 'Current campaign cannot be removed' USING ERRCODE='23514'; END IF;
+        IF NEW.restore_review_required AND EXISTS (
+            SELECT 1 FROM stewardship_campaign c JOIN stewardship_campaign_configuration old_c ON old_c.id=c.active_configuration_id
+            WHERE c.id=target AND old_c.values IS DISTINCT FROM candidate.values
+        ) THEN RAISE EXCEPTION 'Restore review holds campaign configuration changes' USING ERRCODE='23514'; END IF;
         IF OLD.current_campaign_id IS NULL AND candidate.timezone<>(SELECT timezone FROM stewardship_parish WHERE configuration_id=NEW.active_configuration_id) THEN
             RAISE EXCEPTION 'New draft must copy the parish timezone' USING ERRCODE='23514';
         END IF;

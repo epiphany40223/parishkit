@@ -11,6 +11,33 @@ from parishkit.stewardship.storage import StaleRecordError, StorageInvariantErro
 from .models import ActivationCatchUpDemand, CatchUpCheckpoint, CatchUpFailure
 from .runtime import campaign_transaction
 
+FAILURE_CODES = frozenset(
+    {
+        "source_unavailable",
+        "invalid_source",
+        "enumeration_failed",
+        "outcome_failed",
+        "recovery_required",
+    }
+)
+
+
+def _require_owner(demand, task_id, fence, actor_id):
+    """Use the same typed ownership proof for progress, failure and exact replay."""
+    if (
+        not TaskRun.objects.select_for_update()
+        .filter(
+            pk=task_id,
+            root_id=demand.task_root_id,
+            state="running",
+            fence=fence,
+            worker_id=actor_id,
+            lease_expires_at__gt=Now(),
+        )
+        .exists()
+    ):
+        raise StaleRecordError("Catch-up requires current fenced input.")
+
 
 def record_catchup_failure(
     *,
@@ -39,6 +66,10 @@ def record_catchup_failure(
         )
     ):
         raise TypeError("Catch-up failure requires attributed owning admission.")
+    if any(type(value) is not int or value < 1 for value in (fence, expected_version)):
+        raise ValueError("Catch-up failure requires positive versions and fencing.")
+    if type(code) is not str or code not in FAILURE_CODES:
+        raise ValueError("Invalid catch-up failure code.")
     demand = ActivationCatchUpDemand.objects.get(pk=demand_id)
     with campaign_transaction(demand.campaign_id, correlation_id=correlation_id) as (
         campaign,
@@ -46,6 +77,7 @@ def record_catchup_failure(
     ):
         demand.refresh_from_db()
         admit("catchup_failure", campaign, runtime, demand)
+        _require_owner(demand, task_id, fence, actor_id)
         values = dict(
             demand_id=demand_id,
             expected_version=expected_version,
@@ -146,19 +178,7 @@ def checkpoint_catchup(
         admit("catchup_checkpoint", campaign, runtime, demand)
         # Both a first checkpoint and an exact replay need a current owner of
         # the bound execution chain. SQL repeats this proof against raw writes.
-        if (
-            not TaskRun.objects.select_for_update()
-            .filter(
-                pk=task_id,
-                root_id=demand.task_root_id,
-                state="running",
-                fence=fence,
-                worker_id=actor_id,
-                lease_expires_at__gt=Now(),
-            )
-            .exists()
-        ):
-            raise StaleRecordError("Catch-up requires current fenced input.")
+        _require_owner(demand, task_id, fence, actor_id)
         existing = CatchUpCheckpoint.objects.filter(
             demand=demand, group_key=group_key
         ).first()

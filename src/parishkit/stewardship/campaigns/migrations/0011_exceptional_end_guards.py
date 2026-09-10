@@ -13,6 +13,7 @@ def extend_functions(apps, editor):
             (
                 "ARRAY['name','year_label','content_versions']",
                 "ARRAY['name','year_label','content_versions','end_date']",
+                2,  # Both sides of the structural comparison must change.
             )
         ],
         "stewardship_campaign_transition_v1": [
@@ -30,16 +31,19 @@ def extend_functions(apps, editor):
                ) THEN RAISE EXCEPTION 'Reopen requires exact extended configuration intent' USING ERRCODE='23514'; END IF;
             expected_state:='active'; expected_mode:='production';
         WHEN 'archive' THEN""",
+                1,
             )
         ],
         "stewardship_campaign_transition_effect_v1": [
             (
                 "NEW.action IN ('activate','withdraw')",
                 "NEW.action IN ('activate','withdraw','reopen')",
+                1,
             ),
             (
                 "CASE WHEN NEW.action='activate' THEN NEW.token_generation_id",
                 "CASE WHEN NEW.action IN ('activate','reopen') THEN NEW.token_generation_id",
+                1,
             ),
         ],
     }
@@ -47,8 +51,8 @@ def extend_functions(apps, editor):
         with editor.connection.cursor() as cursor:
             cursor.execute("SELECT pg_get_functiondef(%s::regprocedure)", [name + "()"])
             sql = cursor.fetchone()[0]
-        for old, new in changes:
-            if old not in sql:
+        for old, new, expected_count in changes:
+            if sql.count(old) != expected_count:
                 raise RuntimeError("Exceptional end guard predecessor is inconsistent.")
             sql = sql.replace(old, new)
         editor.execute(sql, params=None)
@@ -148,6 +152,10 @@ BEGIN
     END IF;
     RETURN NEW;
 END $$;
+-- PostgreSQL runs same-event triggers in name order. This must follow
+-- stewardship_campaign_activate_v1 (new campaign projection) and
+-- zzz_stewardship_schedules_activate_v1 (selected schedule revisions). Reading
+-- ends_at or emitting reopen before those effects would use stale authority.
 CREATE TRIGGER zzzz_stewardship_campaign_end_effect_v1 AFTER UPDATE ON stewardship_system_configuration
 FOR EACH ROW EXECUTE FUNCTION stewardship_campaign_end_effect_v1();
 """

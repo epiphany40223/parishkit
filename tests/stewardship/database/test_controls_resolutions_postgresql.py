@@ -68,7 +68,7 @@ def test_pause_is_orthogonal_and_withdrawal_unlocks_only_never_active(tmp_path):
     with campaign_clock(before_start):
         command(campaign, actor, Action.ACTIVATE)
         complete_empty_catchup(campaign, actor)
-        for action in ("pause", "resume"):
+        for index, action in enumerate(("pause", "resume", "pause", "resume"), 1):
             campaign.refresh_from_db()
             runtime = SystemConfiguration.objects.get()
             change_control(
@@ -83,6 +83,14 @@ def test_pause_is_orthogonal_and_withdrawal_unlocks_only_never_active(tmp_path):
                 reason="reviewed",
             )
             campaign.refresh_from_db()
+            runtime.refresh_from_db()
+            assert campaign.delivery_paused is (action == "pause")
+            assert campaign.pause_version == index
+            assert (
+                campaign.pause_actor_id == actor and campaign.pause_reason == "reviewed"
+            )
+            assert campaign.paused_at == before_start
+            assert campaign.resumed_at == (before_start if action == "resume" else None)
             assert (
                 campaign.state == "scheduled"
                 and SystemConfiguration.objects.get().mode == "production"
@@ -392,3 +400,52 @@ def test_control_input_types_are_validated_before_any_write(tmp_path, change):
         )
     campaign.refresh_from_db()
     assert not campaign.delivery_paused
+
+
+@pytest.mark.parametrize(
+    "action,column",
+    [
+        ("first_delivery", "first_live_delivery_at"),
+        ("first_submission", "first_live_submission_at"),
+    ],
+)
+def test_first_live_effect_requires_exact_once_only_in_interval_evidence(
+    tmp_path, action, column
+):
+    """Require future-owner evidence and verify real timestamps/effect writes."""
+    _, campaign, actor = draft_campaign(tmp_path)
+    start, end = (
+        campaign.active_configuration.starts_at,
+        campaign.active_configuration.ends_at,
+    )
+    with campaign_clock(start):
+        command(campaign, actor, Action.ACTIVATE)
+    campaign.refresh_from_db()
+    args = dict(
+        campaign_id=campaign.pk,
+        action=action,
+        request_id=uuid4(),
+        expected_version=campaign.version,
+        expected_runtime_version=SystemConfiguration.objects.get().version,
+        actor_id=actor,
+        correlation_id=uuid4(),
+        admit=admit_test_work,
+        evidence_id=uuid4(),
+        occurred_at=start,
+    )
+    with campaign_clock(end):
+        for change in (
+            {"evidence_id": None},
+            {"occurred_at": start - timedelta(microseconds=1)},
+            {"occurred_at": end},
+        ):
+            with pytest.raises(IntegrityError, match="first-live-effect"):
+                change_control(**(args | change))
+        receipt = change_control(**args)
+        assert change_control(**args).pk == receipt.pk
+        campaign.refresh_from_db()
+        assert getattr(campaign, column) == start
+        with pytest.raises(IntegrityError, match="first-live-effect"):
+            change_control(
+                **(args | {"request_id": uuid4(), "expected_version": campaign.version})
+            )

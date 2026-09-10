@@ -128,10 +128,16 @@ producer and transport termination and returns local capacity after closing the
 connection, even if the abandoned consumer never resumes. An abort callback
 that raises has violated this contract; local capacity stays reserved until
 owning-thread cleanup rather than claiming the producer stopped.
+Lock contention during read or download admission maps to typed
+`ReadUnavailable`/`DownloadBusy` (503, Retry-After: 5); unrelated database errors
+are not silently reclassified as ordinary contention.
 Direct asynchronous/off-thread response consumption is unsupported: adapters
 must marshal disconnect cleanup to the owner. Deadline cleanup closes only the
 raw driver handle off-thread; owning-thread teardown marks the lost transaction
 closed before unwinding Django, and must not reconnect to restore autocommit.
+Normal teardown acknowledges rollback then discards the response-owned session.
+The deadline remains armed during cleanup so network stalls cannot remove that
+last bound; cancellation/loss still closes the exact handle without reconnecting.
 
 Post-close storage currently supports digest obligations identified by
 `schedule:<definition UUID>:<slot>`. It requires the exact skipped occurrence,
@@ -214,5 +220,39 @@ line and 89.45% branch coverage. An earlier run had two secret-expiry failures;
 the unchanged audit group passes all 30 tests separately, then the complete
 rerun passes. Reports are `/tmp/parishkit-phase1a-quality6.*`.
 All 30 rebuilt-image/Compose checks pass, including the same 1,958 image baseline
-tests. Ruff, Markdown, whitespace and migration-drift checks pass. The third
-independent review remains required before PR handoff.
+tests. Ruff, Markdown, whitespace and migration-drift checks pass.
+
+Round 3 reviewed `9e31e37df3a44acd8a82c3c57d90c0a19d6d111a` against the full
+merge base in Pika session `20260910-100528-1d2bfd`. All five Claude shards and
+Codex completed successfully; finalization reports 19 validated findings, no
+degradation and no failed agents. Both vendors identified one real High issue:
+the exceptional-abort recovery callback still omitted its fourth argument.
+The recovery call is corrected, and all campaign fixtures now enforce the exact
+four-argument signature. TaskRun fixtures have a separate two-argument verifier.
+
+Triage fixes 14 findings, consolidates three duplicate findings and retains two
+specified behaviors with evidence:
+
+- Coalesced coverage precedes provider delivery; the previous round's regression
+  already verifies the required distinction. No resurrection of original work
+  is introduced when its replacement needs retry or explicit resolution.
+- Pending boundary interlocks are not dead: durable allocation/binding is
+  supported storage for BG-02 and restored state. A new real-ledger regression
+  proves a committed pending close with a running task blocks an end edit;
+  reconciling that task permits replacement and atomically skips the old boundary.
+
+Other corrections add first-live-effect and pause/resume assertions, exact
+schedule-selection history checks, strict failure/version metadata, typed read
+contention, explicit rejection of unowned generic transitions, SQL restore gates,
+guard-patching multiplicity checks and trigger-order documentation. Race helpers
+no longer conceal invariant/SQL failures as ordinary retries. Forced expiration
+during read rollback verifies that cleanup cannot open a replacement backend.
+DOM-02 evidence now explicitly distinguishes historical checkpoints from current
+completion. Because round 3 found a real High issue, a fourth independent review
+is required after correction validation; three rounds alone do not close this PR.
+
+Post-round-3 validation passes 1,958 baseline tests and 597 PostgreSQL tests,
+with 96.53% line and 89.65% branch coverage. All 30 rebuilt-image/Compose checks
+pass, including the same baseline inside the image. Ruff, Markdown, whitespace
+and migration-drift checks pass. Local artifacts are
+`/tmp/parishkit-phase1a-quality7.*` and `/tmp/parishkit-phase1a-compose-tests4.log`.

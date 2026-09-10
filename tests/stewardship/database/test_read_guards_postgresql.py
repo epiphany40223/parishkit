@@ -154,7 +154,7 @@ def test_readonly_transaction_cannot_modify_campaign(tmp_path):
 
 def test_exclusive_drain_rejects_new_readers_until_transaction_ends(tmp_path):
     """The shared destructive primitive and read admission use identical lock keys."""
-    from django.db import OperationalError, transaction
+    from django.db import transaction
 
     from parishkit.stewardship.campaigns.read_guards import acquire_campaign_drain
 
@@ -165,7 +165,7 @@ def test_exclusive_drain_rejects_new_readers_until_transaction_ends(tmp_path):
         close_old_connections()
         try:
             with (
-                pytest.raises(OperationalError),
+                pytest.raises(ReadUnavailable),
                 guard(identifier, limits=ReadLimits(lock_seconds=1)),
             ):
                 pytest.fail("Reader crossed an exclusive campaign barrier")
