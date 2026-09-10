@@ -56,7 +56,20 @@ def admit_admin_action(request, *, actor_id, action):
         .exists()
     ):
         raise PermissionError("Access is unavailable.")
-    principal = authenticated_admin(request, store=service.store)
+    if (
+        not PortalSession.objects.select_for_update()
+        .filter(
+            session_id=request.session.session_key,
+            principal_id=actor_id,
+            revoked_at__isnull=True,
+        )
+        .exists()
+    ):
+        raise PermissionError("Access is unavailable.")
+    # Authorization cannot rotate a cookie inside an intent transaction that may
+    # subsequently roll back. Normal page admission owns that session mutation;
+    # a stale privilege fingerprint is denied here without dangling session state.
+    principal = authenticated_admin(request, store=service.store, read_only=True)
     if (
         principal is None
         or principal.identity != actor_id

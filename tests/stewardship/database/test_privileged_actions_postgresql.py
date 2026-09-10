@@ -62,6 +62,7 @@ def config_intent(service):
 
 
 def test_configuration_intent_uses_live_actor_and_atomic_audit(auth_service, google):
+    """An authenticated retry retains the original attributed durable receipt."""
     browser, _ = signed_in()
     request = admitted_request(browser)
     intent = config_intent(auth_service)
@@ -77,6 +78,7 @@ def test_configuration_intent_uses_live_actor_and_atomic_audit(auth_service, goo
 
 @pytest.mark.parametrize("failure", ["csrf", "bypass", "family", "get", "revoked"])
 def test_admission_rejects_before_durable_intent(auth_service, google, failure):
+    """Wrong namespace, method, CSRF processing or revoked identity writes nothing."""
     browser, _ = signed_in()
     request = admitted_request(browser)
     if failure == "csrf":
@@ -100,6 +102,7 @@ def test_admission_rejects_before_durable_intent(auth_service, google, failure):
 
 
 def test_current_staff_role_denies_even_with_old_admin_cookie(auth_service, google):
+    """A denied intent cannot retain privilege or leave a rolled-back cookie."""
     browser, _ = signed_in()
     root = auth_service.store.active()
     replacement = address("staff@example.org", roles=("staff",))
@@ -117,9 +120,13 @@ def test_current_staff_role_denies_even_with_old_admin_cookie(auth_service, goog
     _, response = signed_in()
     assert response.status_code == 302
     before = ConfigurationChangeRequest.objects.count()
+    request = admitted_request(browser)
+    old_session = request.session.session_key
     with pytest.raises(PermissionError):
-        configuration_request(admitted_request(browser), **config_intent(auth_service))
+        configuration_request(request, **config_intent(auth_service))
     assert ConfigurationChangeRequest.objects.count() == before
+    assert request.session.session_key == old_session
+    assert PortalSession.objects.filter(session_id=old_session).exists()
 
 
 def secret_intent():
@@ -143,6 +150,7 @@ def secret_intent():
 def test_sealed_intake_privacy_and_audit_share_real_authentication(
     auth_service, google
 ):
+    """Only isolated staging retains ciphertext; receipts and audit stay non-secret."""
     browser, response = signed_in()
     marker, intent = secret_intent()
     receipt = sealed_secret_request(admitted_request(browser), **intent)
@@ -176,6 +184,7 @@ def test_secret_intake_rejects_stale_auth_and_client_evidence(
     google,
     monkeypatch,
 ):
+    """A browser timestamp cannot replace a recent completed Google round trip."""
     browser, _ = signed_in()
     request = admitted_request(browser)
     _, intent = secret_intent()
@@ -193,6 +202,7 @@ def test_secret_intake_rejects_stale_auth_and_client_evidence(
 
 
 def test_admission_requires_owning_transaction_and_closed_action(auth_service, google):
+    """No point-in-time permission token escapes the intent's transaction."""
     browser, _ = signed_in()
     request = admitted_request(browser)
     actor = PortalSession.objects.get(

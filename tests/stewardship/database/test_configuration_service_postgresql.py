@@ -64,6 +64,7 @@ def as_config_installer():
 def test_restricted_installer_applies_real_yaml_and_retries(
     tmp_path, config_role, monkeypatch
 ):
+    """An admitted service installs an exact digest without private-data reads."""
     store, root, actor = initialized(tmp_path)
     request = record_request(
         base_digest=root.digest,
@@ -117,6 +118,7 @@ def test_restricted_installer_applies_real_yaml_and_retries(
     ["SELECT ON stewardship_family_campaign", "INSERT ON stewardship_config_request"],
 )
 def test_excess_grants_rejected_before_any_install(config_role, grant):
+    """Even unused excess authority fails closed before selecting a request."""
     with connection.cursor() as cursor:
         cursor.execute(f'GRANT {grant} TO "{ROLE}"')
     with as_config_installer(), pytest.raises(ConfigError, match="excessive"):
@@ -124,6 +126,7 @@ def test_excess_grants_rejected_before_any_install(config_role, grant):
 
 
 def test_superuser_and_role_impersonation_are_not_admitted(config_role):
+    """A configured role label does not establish an isolated SQL login."""
     with pytest.raises(ConfigError, match="identity"):
         admit_configuration_database()
     with connection.cursor() as cursor:
