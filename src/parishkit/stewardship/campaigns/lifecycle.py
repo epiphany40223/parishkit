@@ -33,6 +33,21 @@ class Action(StrEnum):
     PURGE_CLEANUP_FAILED = "purge_cleanup_failed"
 
 
+class CampaignWorkKind(StrEnum):
+    """Immutable routing classifications supplied by the owning durable work record.
+
+    These are policy inputs, not caller-selectable authorization exemptions.
+    Post-close reporting, operational mail and restore maintenance have separate
+    owners and are deliberately not represented as ordinary campaign work.
+    """
+
+    LIVE_PREPARATION = "live_preparation"
+    LIVE_DELIVERY = "live_delivery"
+    REHEARSAL = "rehearsal"
+    PREVIEW = "preview"
+    READINESS_TEST = "readiness_test"
+
+
 @dataclass(frozen=True)
 class Transition:
     """Reviewable registry entry with immutable guard and attribution contracts."""
@@ -237,13 +252,32 @@ def portal_admitted(facts: CampaignFacts, now: datetime) -> bool:
     return facts.state in {State.SCHEDULED, State.ACTIVE}
 
 
-def scheduled_work_admitted(facts: CampaignFacts, now: datetime, *, delivery=False):
-    """Apply Production-only live pause/catch-up holds, not Testing-send suppression."""
+def campaign_work_admitted(facts: CampaignFacts, now: datetime, kind: CampaignWorkKind):
+    """Decide ordinary/live versus explicit-test applicability, not authorization.
+
+    The owner must reload immutable routing under the work/admission locks;
+    selecting an enum in a web request must never grant an exemption.
+    """
+    facts.interval.contains(now)  # Validate the instant even for an explicit preview.
+    if not isinstance(kind, CampaignWorkKind):
+        raise ValueError("A canonical campaign work kind is required.")
+    if not facts.current or facts.restore_required:
+        return False
+    if kind in {CampaignWorkKind.PREVIEW, CampaignWorkKind.READINESS_TEST}:
+        return facts.state in {
+            State.DRAFT,
+            State.SCHEDULED,
+            State.ACTIVE,
+            State.CLOSED,
+            State.ARCHIVED,
+        }
     if not portal_admitted(facts, now):
         return False
-    if facts.mode is Mode.PRODUCTION and facts.catch_up_pending:
+    if kind is CampaignWorkKind.REHEARSAL:
+        return facts.mode is Mode.TESTING
+    if facts.mode is not Mode.PRODUCTION or facts.catch_up_pending:
         return False
-    return not (delivery and facts.mode is Mode.PRODUCTION and facts.delivery_paused)
+    return kind is not CampaignWorkKind.LIVE_DELIVERY or not facts.delivery_paused
 
 
 def transition_target(
@@ -258,6 +292,8 @@ def transition_target(
     within = facts.interval.contains(now)
     if not isinstance(action, Action):
         raise ValueError("A canonical lifecycle action is required.")
+    if proposed_interval is not None and not isinstance(proposed_interval, UTCInterval):
+        raise ValueError("A resolved proposed campaign interval is required.")
     rule = TRANSITIONS[action]
     if facts.state not in rule.sources or facts.mode not in rule.modes:
         return None

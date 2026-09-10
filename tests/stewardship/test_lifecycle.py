@@ -14,12 +14,15 @@ from parishkit.stewardship.campaigns.lifecycle import (
     TRANSITIONS,
     Action,
     CampaignFacts,
+    campaign_work_admitted,
     draft_creation_admitted,
     portal_admitted,
-    scheduled_work_admitted,
     structural_edit_admitted,
     transition_audit_event,
     transition_target,
+)
+from parishkit.stewardship.campaigns.lifecycle import (
+    CampaignWorkKind as Work,
 )
 
 INTERVAL = UTCInterval(
@@ -127,12 +130,14 @@ def test_historical_restore_and_work_holds():
         State.ACTIVE, Mode.PRODUCTION, INTERVAL, True, delivery_paused=True
     )
     assert portal_admitted(active, INTERVAL.start)
-    assert scheduled_work_admitted(active, INTERVAL.start)
-    assert not scheduled_work_admitted(active, INTERVAL.start, delivery=True)
-    assert not scheduled_work_admitted(
-        replace(active, catch_up_pending=True), INTERVAL.start
+    assert campaign_work_admitted(active, INTERVAL.start, Work.LIVE_PREPARATION)
+    assert not campaign_work_admitted(active, INTERVAL.start, Work.LIVE_DELIVERY)
+    assert not campaign_work_admitted(
+        replace(active, catch_up_pending=True), INTERVAL.start, Work.LIVE_PREPARATION
     )
-    assert not scheduled_work_admitted(replace(active, current=False), INTERVAL.start)
+    assert not campaign_work_admitted(
+        replace(active, current=False), INTERVAL.start, Work.LIVE_PREPARATION
+    )
     archived = replace(active, state=State.ARCHIVED)
     assert transition_target(Action.UNARCHIVE, archived, INTERVAL.end) is State.CLOSED
     assert (
@@ -321,7 +326,7 @@ def test_overdue_boundaries_preserve_order_without_reopening_access():
     assert transition_target(Action.CLOSE, facts, now) is None
     for action, target in [(Action.START, State.ACTIVE), (Action.CLOSE, State.CLOSED)]:
         assert not portal_admitted(facts, now)
-        assert not scheduled_work_admitted(facts, now, delivery=True)
+        assert not campaign_work_admitted(facts, now, Work.LIVE_DELIVERY)
         assert transition_target(action, facts, now) is target
         facts = replace(facts, state=target)
     assert not portal_admitted(facts, now)
@@ -337,4 +342,66 @@ def test_testing_sends_are_not_live_delivery():
         delivery_paused=True,
         catch_up_pending=True,
     )
-    assert scheduled_work_admitted(facts, INTERVAL.start, delivery=True)
+    assert campaign_work_admitted(facts, INTERVAL.start, Work.REHEARSAL)
+    assert campaign_work_admitted(facts, INTERVAL.start, Work.READINESS_TEST)
+
+
+@pytest.mark.parametrize("state,mode,kind", list(product(State, Mode, Work)))
+def test_work_kind_interval_and_mode_matrix(state, mode, kind):
+    """Immutable classes distinguish live/rehearsal occurrences from explicit tests."""
+    facts = CampaignFacts(state, mode, INTERVAL, True)
+    explicit = kind in {Work.PREVIEW, Work.READINESS_TEST}
+    valid_preview = state not in {
+        State.PURGING,
+        State.PURGE_CLEANUP_FAILED,
+        State.PURGED,
+    }
+    for now, within in [
+        (INTERVAL.start - timedelta(seconds=1), False),
+        (INTERVAL.start, True),
+        (INTERVAL.end, False),
+    ]:
+        expected = (
+            valid_preview
+            if explicit
+            else within
+            and (
+                (mode is Mode.TESTING and state is State.DRAFT)
+                if kind is Work.REHEARSAL
+                else (
+                    mode is Mode.PRODUCTION and state in {State.SCHEDULED, State.ACTIVE}
+                )
+            )
+        )
+        assert campaign_work_admitted(facts, now, kind) == expected
+        assert not campaign_work_admitted(replace(facts, current=False), now, kind)
+        assert not campaign_work_admitted(
+            replace(facts, restore_required=True), now, kind
+        )
+        if explicit:
+            assert (
+                campaign_work_admitted(
+                    replace(facts, delivery_paused=True, catch_up_pending=True),
+                    now,
+                    kind,
+                )
+                == expected
+            )
+
+
+@pytest.mark.parametrize(
+    "invalid", ["interval", {}, (INTERVAL.start, INTERVAL.end), object()]
+)
+def test_reopen_rejects_unresolved_intervals(invalid):
+    """Wrong input types consistently fail with ValueError, never duck typing."""
+    facts = CampaignFacts(State.CLOSED, Mode.PRODUCTION, INTERVAL, True)
+    with pytest.raises(ValueError, match="resolved proposed"):
+        transition_target(Action.REOPEN, facts, INTERVAL.end, proposed_interval=invalid)
+
+
+@pytest.mark.parametrize("invalid", ["preview", True, None])
+def test_work_kind_rejects_caller_flags(invalid):
+    """A boolean/string is not a canonical immutable routing classification."""
+    facts = CampaignFacts(State.DRAFT, Mode.TESTING, INTERVAL, True)
+    with pytest.raises(ValueError, match="canonical campaign work"):
+        campaign_work_admitted(facts, INTERVAL.start, invalid)
