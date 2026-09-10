@@ -1,0 +1,225 @@
+"""Pinned SQL reads, deadline/loss cleanup and cross-connection download limits."""
+
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier, Event
+from uuid import UUID
+
+import pytest
+from django.db import close_old_connections, connection, connections
+
+from parishkit.stewardship.campaigns.models import Campaign
+from parishkit.stewardship.campaigns.read_guards import (
+    READ_NAMESPACE,
+    CampaignReadGuard,
+    DownloadBusy,
+    DownloadPool,
+    GuardedResponse,
+    ReadLimits,
+    ReadUnavailable,
+    campaign_lock_key,
+)
+
+from .test_campaign_postgresql import add_draft
+from .test_policy_postgresql import initialized
+
+pytestmark = pytest.mark.django_db(transaction=True)
+
+
+def family_campaign(tmp_path):
+    """Use real configuration activation, never an unguarded campaign fixture."""
+    store, root, actor = initialized(tmp_path)
+    _, row, _ = add_draft(store, root, actor)
+    return UUID(row["id"])
+
+
+def guard(identifier, **kwargs):
+    """Synthetic authorization/transport callbacks remain inside disposable tests."""
+    return CampaignReadGuard(
+        [identifier], authorize=lambda _: None, abort=lambda: None, **kwargs
+    )
+
+
+def test_guard_pins_orm_lazy_stream_and_blocks_exclusive_drain(tmp_path):
+    """The shared guard survives yielding and closes only with the response."""
+    identifier = family_campaign(tmp_path)
+    reader = guard(identifier)
+    observed = []
+
+    def content():
+        """Both generator construction and lazy ORM evaluation use the pinned DB."""
+        observed.append(connection.connection)
+        yield Campaign.objects.get(pk=identifier).state.encode()
+
+    response = GuardedResponse(reader, content)
+    assert next(response) == b"draft"
+    assert observed == [reader._raw]
+    other = connections["default"].copy(alias="probe")
+    try:
+        with other.cursor() as cursor:
+            cursor.execute(
+                "SELECT pg_try_advisory_lock(%s,%s)",
+                [READ_NAMESPACE, campaign_lock_key(identifier)],
+            )
+            assert cursor.fetchone()[0] is False
+        response.close()
+        with other.cursor() as cursor:
+            cursor.execute(
+                "SELECT pg_try_advisory_lock(%s,%s)",
+                [READ_NAMESPACE, campaign_lock_key(identifier)],
+            )
+            assert cursor.fetchone()[0] is True
+    finally:
+        response.close()
+        other.close()
+
+
+@pytest.mark.parametrize("failure", ["authorizer", "content", "connection", "deadline"])
+def test_failure_closes_guard_and_restores_download_connection(tmp_path, failure):
+    """No failed read can retain local capacity or continue on a reconnected DB."""
+    identifier = family_campaign(tmp_path)
+    original = connections["default"]
+    pool = DownloadPool(ReadLimits(process_pool_size=1))
+    reader = guard(identifier, pool=pool)
+
+    def content():
+        """Inject failure at lazy serialization, not before admission."""
+        if failure == "content":
+            raise ValueError("synthetic")
+        yield b"test"
+
+    if failure == "authorizer":
+
+        def deny(_):
+            raise ReadUnavailable("denied")
+
+        reader.authorize = deny
+        with pytest.raises(ReadUnavailable):
+            GuardedResponse(reader, content)
+    else:
+        response = GuardedResponse(reader, content)
+        assert connections["default"] is not original
+        if failure == "connection":
+            reader._raw.close()
+        elif failure == "deadline":
+            reader._expire()
+        with pytest.raises((ReadUnavailable, ValueError)):
+            next(response)
+        response.close()
+    assert connections["default"] is original
+    with guard(identifier, pool=pool):
+        assert Campaign.objects.get().pk == identifier
+
+
+def test_download_capacity_is_global_across_independent_pools(tmp_path):
+    """Five separately constructed pools cannot claim five deployment slots."""
+    identifier = family_campaign(tmp_path)
+    barrier, release = Barrier(5), Event()
+
+    def hold(_):
+        """Independent thread-local Django connections simulate separate workers."""
+        close_old_connections()
+        try:
+            with guard(identifier, pool=DownloadPool()):
+                barrier.wait(timeout=10)
+                assert release.wait(timeout=10)
+        finally:
+            close_old_connections()
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = [executor.submit(hold, index) for index in range(4)]
+        barrier.wait(timeout=10)
+        try:
+            with pytest.raises(DownloadBusy), guard(identifier, pool=DownloadPool()):
+                pytest.fail("Deployment-wide admission was bypassed")
+        finally:
+            release.set()
+        for future in futures:
+            future.result(timeout=10)
+    with guard(identifier, pool=DownloadPool()):
+        pass
+
+
+def test_readonly_transaction_cannot_modify_campaign(tmp_path):
+    """Read guards cannot be reused as an accidental write workflow."""
+    from django.db import InternalError
+
+    identifier = family_campaign(tmp_path)
+    with pytest.raises(InternalError), guard(identifier), connection.cursor() as cursor:
+        cursor.execute("UPDATE stewardship_campaign SET version=version+1")
+
+
+def test_exclusive_drain_rejects_new_readers_until_transaction_ends(tmp_path):
+    """The shared destructive primitive and read admission use identical lock keys."""
+    from django.db import OperationalError, transaction
+
+    from parishkit.stewardship.campaigns.read_guards import acquire_campaign_drain
+
+    identifier = family_campaign(tmp_path)
+
+    def attempt():
+        """Read from an independent session while the destructive barrier is held."""
+        close_old_connections()
+        try:
+            with (
+                pytest.raises(OperationalError),
+                guard(identifier, limits=ReadLimits(lock_seconds=1)),
+            ):
+                pytest.fail("Reader crossed an exclusive campaign barrier")
+        finally:
+            close_old_connections()
+
+    with transaction.atomic(), ThreadPoolExecutor(max_workers=1) as executor:
+        acquire_campaign_drain([identifier, identifier])
+        executor.submit(attempt).result(timeout=10)
+    with guard(identifier):
+        assert Campaign.objects.get().pk == identifier
+
+
+def test_idle_response_deadline_aborts_without_consumer_activity(tmp_path):
+    """A stalled consumer cannot keep the connection and guard alive indefinitely."""
+    identifier = family_campaign(tmp_path)
+    aborted = Event()
+    limits = ReadLimits(
+        interactive_seconds=2,
+        download_seconds=2,
+        lock_seconds=1,
+        download_idle_seconds=3,
+        drain_seconds=4,
+        process_pool_size=1,
+    )
+    pool = DownloadPool(limits)
+    reader = CampaignReadGuard(
+        [identifier], authorize=lambda _: None, abort=aborted.set, pool=pool
+    )
+    response = GuardedResponse(reader, lambda: iter([b"not emitted"]))
+    assert aborted.wait(timeout=5)
+    with pytest.raises(ReadUnavailable):
+        next(response)
+    assert reader.closed.is_set()
+    with guard(identifier, pool=pool):
+        assert Campaign.objects.get().pk == identifier
+
+
+def test_capacity_cannot_resize_while_a_dedicated_session_holds_slot(tmp_path):
+    """Pool policy changes cannot orphan a live slot or increase active capacity."""
+    from django.db import IntegrityError
+
+    identifier = family_campaign(tmp_path)
+    other = connections["default"].copy(alias="capacity-probe")
+    try:
+        with (
+            guard(identifier, pool=DownloadPool()),
+            other.cursor() as cursor,
+            pytest.raises(IntegrityError),
+        ):
+            cursor.execute(
+                "UPDATE stewardship_download_policy "
+                "SET capacity=5,version=version+1 WHERE id=1"
+            )
+        with other.cursor() as cursor:
+            cursor.execute(
+                "SELECT capacity FROM stewardship_download_policy WHERE id=1"
+            )
+            assert cursor.fetchone()[0] == 4
+    finally:
+        other.close()

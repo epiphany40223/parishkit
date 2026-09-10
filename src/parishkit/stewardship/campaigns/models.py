@@ -7,7 +7,11 @@ an accidental route around those dependencies.
 
 from django.db import models
 
-from parishkit.stewardship.storage import ImmutableRecord, MutableRecord
+from parishkit.stewardship.storage import (
+    ImmutableRecord,
+    MutableRecord,
+    UTCDateTimeField,
+)
 
 
 class CampaignConfiguration(ImmutableRecord):
@@ -49,21 +53,65 @@ class CampaignConfiguration(ImmutableRecord):
 
 
 class Campaign(MutableRecord):
-    """Stable campaign UUID; configuration activation is the only current writer."""
+    """Stable UUID with configuration projections and separately ledgered runtime."""
 
-    immutable_fields = MutableRecord.immutable_fields + ("state",)
+    immutable_fields = MutableRecord.immutable_fields
     state = models.CharField(max_length=24, default="draft")
     active_configuration = models.ForeignKey(
         CampaignConfiguration, on_delete=models.PROTECT
     )
+    structural_locked = models.BooleanField(default=False, db_default=False)
+    ever_active = models.BooleanField(default=False, db_default=False)
+    first_live_delivery_at = UTCDateTimeField(null=True)
+    first_live_submission_at = UTCDateTimeField(null=True)
+    delivery_paused = models.BooleanField(default=False, db_default=False)
+    pause_version = models.PositiveBigIntegerField(default=0, db_default=0)
+    pause_actor_id = models.UUIDField(null=True)
+    pause_reason = models.CharField(max_length=1024, default="", db_default="")
+    paused_at = UTCDateTimeField(null=True)
+    resumed_at = UTCDateTimeField(null=True)
+    active_token_generation_id = models.UUIDField(null=True)
+    readiness_revision = models.PositiveBigIntegerField(default=0, db_default=0)
 
     class Meta(MutableRecord.Meta):
         db_table = "stewardship_campaign"
         constraints = MutableRecord.Meta.constraints + [
             models.CheckConstraint(
-                condition=models.Q(state="draft"), name="campaign_draft_subset"
+                condition=models.Q(
+                    state__in=[
+                        "draft",
+                        "scheduled",
+                        "active",
+                        "closed",
+                        "archived",
+                        "purging",
+                        "purge_cleanup_failed",
+                        "purged",
+                    ]
+                ),
+                name="campaign_known_state",
             ),
-            models.UniqueConstraint(models.Value(1), name="campaign_one_draft_subset"),
+            models.UniqueConstraint(
+                models.Value(1),
+                condition=models.Q(
+                    state__in=["draft", "scheduled", "active", "closed"]
+                ),
+                name="campaign_one_current_state",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(ever_active=False)
+                | models.Q(structural_locked=True),
+                name="campaign_live_structure_locked",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(delivery_paused=False)
+                | models.Q(
+                    paused_at__isnull=False,
+                    pause_actor_id__isnull=False,
+                    pause_version__gt=0,
+                ),
+                name="campaign_pause_evidence",
+            ),
         ]
 
 
@@ -102,3 +150,27 @@ class ScheduleRevision(ImmutableRecord):
                 name="schedule_revision_due_kind",
             ),
         ]
+
+
+# Django discovers models through this module; ownership stays in focused modules.
+from .runtime_models import (  # noqa: E402,F401
+    ActivationCatchUpDemand,
+    CampaignBoundaryOccurrence,
+    CampaignConfigurationAbort,
+    CampaignConfigurationIntent,
+    CampaignControlChange,
+    CampaignTransition,
+    CampaignWorkGate,
+    CatchUpCheckpoint,
+    RuntimeTransition,
+)
+from .schedule_models import (  # noqa: E402,F401
+    OccurrenceTransition,
+    PostCloseMailResolution,
+    RestoreDeliveryHold,
+    RestoreHoldResolution,
+    ScheduleDefinition,
+    ScheduleFulfillment,
+    ScheduleOccurrence,
+    ScheduleSelection,
+)

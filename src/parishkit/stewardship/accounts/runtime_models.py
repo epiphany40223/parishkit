@@ -1,25 +1,30 @@
 """Runtime configuration and immutable activation evidence, separate from YAML.
 
-This first runtime schema admits Testing only. Campaign/mode/restore workflows
-must extend its guards explicitly before those capabilities can be enabled.
+Campaign commands and configuration activations have independent version
+sequences. Restore metadata is reserved for its later guarded operational owner.
 """
 
 from django.db import models
 
-from parishkit.stewardship.storage import ImmutableRecord, MutableRecord
+from parishkit.stewardship.storage import (
+    ImmutableRecord,
+    MutableRecord,
+    UTCDateTimeField,
+)
 
 
 class SystemConfiguration(MutableRecord):
-    """One deployment runtime row; only the activation ledger advances its pointer."""
+    """One runtime row; immutable activation and transition ledgers own its pointers."""
 
-    immutable_fields = MutableRecord.immutable_fields + (
-        "mode",
-        "testing_recipient",
-        "restore_review_required",
-    )
+    immutable_fields = MutableRecord.immutable_fields + ("testing_recipient",)
     mode = models.CharField(max_length=16, default="testing")
     testing_recipient = models.EmailField()
     restore_review_required = models.BooleanField(default=False)
+    configuration_sequence = models.PositiveBigIntegerField(default=1, db_default=1)
+    restore_id = models.UUIDField(null=True)
+    restore_backup_at = UTCDateTimeField(null=True)
+    restore_activated_at = UTCDateTimeField(null=True)
+    restore_released_at = UTCDateTimeField(null=True)
     active_configuration = models.ForeignKey(
         "AppliedConfigurationVersion", null=True, blank=True, on_delete=models.PROTECT
     )
@@ -37,7 +42,8 @@ class SystemConfiguration(MutableRecord):
                 models.Value(1), name="system_configuration_singleton"
             ),
             models.CheckConstraint(
-                condition=models.Q(mode="testing"), name="system_testing_only"
+                condition=models.Q(mode__in=["testing", "production"]),
+                name="system_known_mode",
             ),
             models.CheckConstraint(
                 condition=models.Q(

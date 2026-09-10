@@ -12,7 +12,7 @@ from contextlib import contextmanager
 
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
-from django.db import transaction
+from django.db import connection, transaction
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.storage import StorageInvariantError
@@ -35,7 +35,14 @@ class DatabaseMaterializer:
     """
 
     def __init__(
-        self, store, *, actor_id, correlation_id, request=None, testing_recipient=None
+        self,
+        store,
+        *,
+        actor_id,
+        correlation_id,
+        request=None,
+        testing_recipient=None,
+        admit_campaign=None,
     ):
         """Bind one request, or an initial recipient committed only at activation."""
         if request is not None and request.authority == "operator_recovery":
@@ -47,6 +54,7 @@ class DatabaseMaterializer:
         self.store, self.actor_id, self.correlation_id = store, actor_id, correlation_id
         self.request = request
         self.testing_recipient = testing_recipient
+        self.admit_campaign = admit_campaign
         self._guard = None
 
     @contextmanager
@@ -124,7 +132,10 @@ class DatabaseMaterializer:
         self._candidate(version)
         from parishkit.stewardship.campaigns.admission import validate_installation
 
-        validate_installation(version.document())
+        validate_installation(
+            version.document(), request_id=self.request.pk if self.request else None
+        )
+        self._campaign_admission()
         prepare_snapshot(
             version, actor_id=self.actor_id, correlation_id=self.correlation_id
         )
@@ -151,7 +162,10 @@ class DatabaseMaterializer:
         self.checkpoint("yaml_activated")
         self._check()
         with transaction.atomic(durable=True):
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [736220, 1])
             runtime = SystemConfiguration.objects.select_for_update().first()
+            self._campaign_admission()
             if runtime is None:
                 if self.request is not None or self.testing_recipient is None:
                     raise ConfigError("Runtime configuration is not initialized.")
@@ -163,13 +177,21 @@ class DatabaseMaterializer:
             ConfigurationActivation.objects.create(
                 configuration_id=selected.version_id,
                 predecessor_id=runtime.active_configuration_id,
-                sequence=runtime.version,
+                sequence=runtime.configuration_sequence,
                 request=self.request,
                 actor_id=self.actor_id,
                 correlation_id=self.correlation_id,
             )
             # SQL inserts Applied, safe audit, and the runtime pointer in this
             # same transaction. A failure in any effect rolls them all back.
+
+    def _campaign_admission(self):
+        """Exceptional edits require fresh owning proof, even after YAML selection."""
+        if self.request is None:
+            return
+        from parishkit.stewardship.campaigns.configuration_intents import verify_intent
+
+        verify_intent(self.request.pk, self.admit_campaign)
 
 
 def prepare_initial_configuration(
@@ -211,7 +233,7 @@ def prepare_initial_configuration(
         apply_version(store, materializer, version)
 
 
-def install_request(store, *, request_id, correlation_id):
+def install_request(store, *, request_id, correlation_id, admit_campaign=None):
     """Resume an intent without claiming work that cannot yet be admitted.
 
     Operational preflight errors leave staged requests cancellable. Once YAML
@@ -228,16 +250,32 @@ def install_request(store, *, request_id, correlation_id):
         raise LookupError("Configuration request is unavailable.")
     if request.authority != "admin":
         raise ConfigError("Operator recovery requires the offline workflow.")
-    return _install_request(store, request=request, correlation_id=correlation_id)
+    return _install_request(
+        store,
+        request=request,
+        correlation_id=correlation_id,
+        admit_campaign=admit_campaign,
+    )
 
 
-def _install_request(store, *, request, correlation_id):
+def _install_request(store, *, request, correlation_id, admit_campaign=None):
     """Shared checkpoint engine after its distinct online/offline authority boundary."""
     materializer = DatabaseMaterializer(
-        store, actor_id=request.actor_id, correlation_id=correlation_id, request=request
+        store,
+        actor_id=request.actor_id,
+        correlation_id=correlation_id,
+        request=request,
+        admit_campaign=admit_campaign,
     )
     with materializer.lock():
         current = _status(request)
+        from parishkit.stewardship.campaigns.configuration_intents import (
+            recover_configuration_abort,
+        )
+
+        aborted = recover_configuration_abort(materializer)
+        if aborted is not None:
+            return aborted
         if current.state in {"cancelled", "failed", "applied"}:
             return current
         selected = store.active()
@@ -284,7 +322,10 @@ def _install_request(store, *, request, correlation_id):
                     validate_installation,
                 )
 
-                validate_installation(intent.candidate.document())
+                validate_installation(
+                    intent.candidate.document(), request_id=request.pk
+                )
+                materializer._campaign_admission()
                 if (
                     intent.candidate.digest != request.candidate_digest
                     or intent.payload_fingerprint != request.payload_fingerprint
