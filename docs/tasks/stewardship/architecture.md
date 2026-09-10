@@ -92,12 +92,12 @@ verification remain with Phase 1C. Package completion and reviews are pending.
 
 Scope and dependencies: [ARC-04 work package](../../plans/stewardship/architecture.md#arc-04-google-identity-authorization-sessions-and-denial-paths).
 
-- [ ] ARC-04.01 — Implement Google authorization-code authentication.
+- [x] ARC-04.01 — Implement Google authorization-code authentication.
 - [x] ARC-04.02 — Integrate exact-address precedence and domain policies.
 - [x] ARC-04.03 — Implement durable staff sessions and revocation.
-- [ ] ARC-04.04 — Build retryable authentication denial paths.
-- [ ] ARC-04.05 — Implement OAuth limiting and distributed-abuse telemetry.
-- [ ] ARC-04.06 — Test authentication, session security, and denial boundaries.
+- [x] ARC-04.04 — Build retryable authentication denial paths.
+- [x] ARC-04.05 — Implement OAuth limiting and distributed-abuse telemetry.
+- [x] ARC-04.06 — Test authentication, session security, and denial boundaries.
 
 Foundation handoff: PortalSession protects its Django Session parent. Plain
 `clearsessions` aborts the whole sweep when an expired session has protected
@@ -109,29 +109,32 @@ Evidence: Current-policy authorization and PostgreSQL sessions are integrated
 with Google-only HTTP login. Idle/absolute expiry, revocation, separate cookies,
 logout, ordered cleanup and privilege-transition rotation pass integration tests;
 rotation preserves the original Google authentication time and absolute expiry.
-The combined Google/Family/Valkey suite passes 49 tests. Remaining scope includes
-setup routing, complete recovery/identity-change HTTP coverage and operational
-limiter configuration; [Phase 1B evidence](../../guides/stewardship-phase-1b.md)
-records the active implementation and incomplete review status.
+Setup/maintenance admission, recovery/identity-change HTTP cases and configurable
+limiter thresholds now pass in the 762-test PostgreSQL checkpoint. Production
+runtime assembly stays with Phase 1C and the durable wizard marker with ADM-02;
+[Phase 1B evidence](../../guides/stewardship-phase-1b.md) records those boundaries
+and the incomplete review status.
 
 ## ARC-05: Family code, token, and Family-session security
 
 Scope and dependencies: [ARC-05 work package](../../plans/stewardship/architecture.md#arc-05-family-code-token-and-family-session-security).
 
-- [ ] ARC-05.01 — Implement Family codes, MAC lookup, and collision-safe migration.
-- [ ] ARC-05.02 — Implement credential lifecycles and collision-only reservation keys.
+- [x] ARC-05.01 — Implement Family codes, MAC lookup, and collision-safe migration.
+- [x] ARC-05.02 — Implement credential lifecycles and collision-only reservation keys.
 - [x] ARC-05.03 — Implement mode/epoch-scoped Family sessions and activity handling.
-- [ ] ARC-05.04 — Implement and test distributed Family-code guessing controls.
+- [x] ARC-05.04 — Implement and test distributed Family-code guessing controls.
 - [x] ARC-05.05 — Enforce Admin/Staff code visibility and leader exclusion.
-- [ ] ARC-05.06 — Test credential, session, outage, and boundary behavior.
+- [x] ARC-05.06 — Test credential, session, outage, and boundary behavior.
 
 Evidence: Campaign credentials, MAC lookup/backfill, sealed link generations,
 rehearsal epochs, Family sessions and guarded code reports are implemented on
 `pr/stewardship-phase-1b`. Family HTTP tests and 39 browser-component checks cover
 separate sessions, warnings and activity handling. The guarded code-report role
 matrix permits Admin/Staff without fresh reauthentication and denies leaders.
-Remaining lifecycle/rotation and integration cases keep the other tasks open;
-see [Phase 1B evidence](../../guides/stewardship-phase-1b.md).
+Active-generation arrival/reactivation and restore-fence cases now pass, alongside
+the full identity suite. Backup-aware inventory retirement separately requires
+ARC-06 owner evidence; actual DAT-03 source promotion remains Phase 2 integration.
+See [Phase 1B evidence](../../guides/stewardship-phase-1b.md).
 
 ## ARC-06: Enforceable cryptographic service boundary
 
@@ -152,16 +155,19 @@ batches preserve code/token values and roll back on corruption; rotation plus
 storage regressions pass 47 tests. Target credential queue/file orchestration
 and actual restricted-role isolation now pass ten integration cases; see the
 [installer boundary](../../guides/stewardship-credential-installers.md). Twelve
-actual-container mount checks pass. Configuration service admission,
-consumer runtime recreation and backup-aware retirement remain incomplete;
-[Phase 1B evidence](../../guides/stewardship-phase-1b.md)
-does not claim complete service admission or production readiness.
+actual-container mount checks pass. Configuration service admission now passes
+four real restricted-role cases; backup-aware retirement passes fourteen
+cases using explicitly synthetic owner evidence. Phase 1C still supplies
+production provisioning, consumer recreation and command assembly; later backup
+owners supply actual catalog/escrow evidence. These mixed-phase tasks remain
+open rather than claiming production readiness. See the
+[remaining owner contracts](../../guides/stewardship-phase-1b.md#installer-and-retirement-handoff).
 
 ## ARC-07: Application-level privacy and audit primitives
 
 Scope and dependencies: [ARC-07 work package](../../plans/stewardship/architecture.md#arc-07-application-level-privacy-and-audit-primitives).
 
-- [ ] ARC-07.01 — Implement shared audited service wrappers.
+- [x] ARC-07.01 — Implement shared audited service wrappers.
 - [x] ARC-07.02 — Define and enforce structured redaction schemas.
 - [x] ARC-07.03 — Implement concurrency and validation-error helpers.
 - [x] ARC-07.04 — Implement bounded pagination and neutral denial responses.
@@ -170,9 +176,12 @@ Scope and dependencies: [ARC-07 work package](../../plans/stewardship/architectu
 Evidence: Closed typed audit/operational contexts, PostgreSQL schema guards,
 optimistic-version checks, progressive validation errors, bounded pagination
 and neutral denial responses are implemented. Shared audit/storage checks pass
-52 tests and pure security/presentation/contracts pass 75 tests. Complete
-privileged-action wrapper integration and seeded artifact privacy scanning remain
-open; see [Phase 1B evidence](../../guides/stewardship-phase-1b.md).
+52 tests and pure security/presentation/contracts pass 75 tests. Ten additional
+privileged-action cases cover locked current-role/CSRF/freshness admission into
+configuration and sealed-secret intake, including seeded receipt/audit privacy.
+The initial wrapper contracts are implemented; later feature forms and generated
+support-artifact owners must extend the privacy scan. See
+[Phase 1B evidence](../../guides/stewardship-phase-1b.md).
 
 ## ARC-08: Performance, accessibility, and compatibility baseline
 

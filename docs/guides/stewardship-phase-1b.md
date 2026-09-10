@@ -104,6 +104,16 @@ parity, in-image tests, reload, restart and durable storage. Reload probes now
 reach liveness from inside the web container; external health requests must
 return 404 rather than weakening internal-route isolation for the test harness.
 
+Later Docker Desktop validation reproduced incorrect PostgreSQL data-directory
+ownership on host file sharing after the entrypoint dropped privileges. The
+disposable Compose smoke fixture now offers explicit
+`PARISHKIT_COMPOSE_NATIVE_POSTGRES=1`: it binds the daemon mountpoint of its own
+UUID-named native volume, verifies database persistence across recreation, and
+removes only that synthetic volume after teardown. This is not tmpfs or a
+permission relaxation. Linux CI keeps the default host-bind test; production
+topology is unchanged. Actual developer native-volume provisioning remains
+OPS-02's runtime integration, not an implicit change to an existing database.
+
 The integrated scoped coverage runner passes with 95.19% lines and 86.75%
 branches, including 731 PostgreSQL tests. Browser revalidation passes all 39
 checks. Signed commit `0f569ca` records the session/limiter lifecycle checkpoint;
@@ -145,6 +155,56 @@ Active-generation population reconciliation issues links for newly eligible
 Families atomically with the population, preserves existing links, and rejects
 issuance across the restore credential fence. These results precede the remaining
 installer/retirement changes and do not count as peer-review rounds.
+
+## Installer and retirement handoff
+
+The configuration service checks the actual non-superuser SQL identity and a
+closed grant registry before each request. It cannot stage configuration intent,
+read Families/tokens/sessions or access sealed-credential staging. Its admitted
+store uses the explicit authority-path override. The existing durable engine
+still owns serialization, prepared snapshots, exact-digest activation and crash
+reconciliation. Four restricted-role integration cases pass.
+
+Shared privileged-action adapters now check current Google-session authority,
+CSRF processing, setup/restore admission and (for secret replacement/destructive
+confirmation) fresh Google authentication inside the durable intent transaction.
+They pin current configuration, user and session authority through commit.
+Configuration and sealed-secret request SQL retains atomic audit ownership.
+Ten integration cases pass, including stale Admin-cookie denial after a verified
+account changes to a Staff-only address and seeded secret exclusion from receipts,
+responses and durable audit/operational records. Future feature forms still own
+confirmation UX and must use these admission hooks, not internal attribution-only
+storage calls. No new public configuration or secret-edit endpoint is enabled.
+
+Inventory retirement rechecks all online ciphertexts or active-key MAC coverage
+under an exclusive key lock. Anonymous rehearsal reservations keep their MAC key
+operational until campaign purge; they cannot be rekeyed from their digest alone.
+Signing retirement needs the last possible old-key credential expiry, not a file
+installation timestamp. Fourteen retirement tests pass.
+
+The required retirement dependency context must hold backup/escrow and consumer
+evidence stable through commit, binding exact old/new inventory digests. Every
+retained backup must be migrated or paired with tested recoverable escrow;
+consumer evidence must prove old-key issuance has stopped. Missing evidence has
+no permissive default. The service never deletes key files or escrow. OPS-02/
+OPS-04 own process provisioning, command assembly and whole-consumer recreation;
+OPS backup owners supply actual catalog/escrow evidence when their records land.
+Tests use an explicitly synthetic locked owner port, not a shadow backup catalog.
+
+## Pre-review validation checkpoint
+
+The complete scoped run passes 2,247 ordinary tests and 790 PostgreSQL tests,
+with 94.79% line coverage and 85.55% branch coverage. The rebuilt image passes
+all 30 Compose checks with the explicit native PostgreSQL fixture above, all
+12 real-container isolation checks, and all 39 browser checks. Ruff, Markdown
+lint and migration-drift checks pass. After this full run, a focused correction
+made privileged admission read-only with respect to cookie rotation inside the
+intent transaction; all ten affected PostgreSQL cases pass again. The normal
+page admission still owns privilege-transition cookie rotation.
+
+This is implementation/validation evidence before the required independent
+review rounds, not a Phase 1B approval or Gate 1 release. Production startup
+remains disabled until the Phase 1C operational owners are integrated.
 
 ## Browser component validation
 
