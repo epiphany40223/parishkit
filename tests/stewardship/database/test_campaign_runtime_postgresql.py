@@ -27,6 +27,7 @@ from .campaign_builders import (
     change,
     command,
     draft_campaign,
+    prepared_tokens,
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -84,7 +85,7 @@ def test_transition_replay_is_exact_and_rechecks_admission(tmp_path):
         actor_id=actor,
         correlation_id=uuid4(),
         admit=admit_test_work,
-        token_generation_id=uuid4(),
+        token_generation_id=prepared_tokens(campaign, actor),
     )
     with campaign_clock(campaign.active_configuration.starts_at):
         first = transition_campaign(**arguments)

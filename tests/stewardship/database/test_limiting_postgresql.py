@@ -1,0 +1,342 @@
+"""Atomic Valkey limiter boundaries, bounded fallback and durable outage signals."""
+
+from concurrent.futures import ThreadPoolExecutor
+
+import pytest
+from django.test import Client
+from redis import Redis
+
+from parishkit.stewardship.accounts.auth_incidents import record_incident
+from parishkit.stewardship.accounts.limiting import (
+    Counter,
+    Limiter,
+    LimiterUnavailable,
+)
+from parishkit.stewardship.accounts.models import AuthenticationIncident
+from parishkit.stewardship.authentication_policy import AuthenticationLimits
+
+from .auth_builders import signed_in
+
+pytestmark = pytest.mark.django_db(transaction=True)
+
+
+def test_tuned_bucket_uses_refill_horizon_for_expiry(auth_service):
+    """An idle custom bucket cannot regain a full burst before its refill time."""
+    limiter = auth_service.limiter
+    limiter.limits = AuthenticationLimits(access_per_minute=1, access_burst=5)
+    for _ in range(5):
+        assert limiter.bucket("access", "192.0.2.1") == 0
+    assert limiter.bucket("access", "192.0.2.1") > 0
+    key = limiter.namespace + ":bucket:access:" + limiter.fingerprint("ip", "192.0.2.1")
+    assert 299 <= limiter.client.ttl(key) <= 300
+
+
+def test_tuned_failure_thresholds_reach_actual_window_and_aggregate_paths(auth_service):
+    """Configuration changes the real limiter without weakening candidate accounting."""
+    from parishkit.stewardship.accounts.authentication import ip_counter
+
+    limiter = auth_service.limiter
+    limiter.limits = AuthenticationLimits(
+        admin_starts=2, admin_callbacks=3, aggregate_attempts=2, family_sources=2
+    )
+    start_counter = ip_counter(limiter, "192.0.2.1", initiation=True)
+    assert start_counter.limit == 2
+    assert ip_counter(limiter, "192.0.2.1").limit == 3
+    assert limiter.counters([start_counter], failure=True) == 0
+    assert limiter.counters([start_counter], failure=True) > 0
+    assert not limiter.failed("family", "192.0.2.1")
+    assert limiter.failed("family", "192.0.2.2")
+    incident = AuthenticationIncident.objects.get()
+    assert (incident.attempts, incident.sources) == (2, 2)
+
+
+def test_sliding_window_atomic_capacity_and_expiry(auth_service):
+    """Parallel failures cannot lose increments; expiry uses Valkey's own clock."""
+    limiter = auth_service.limiter
+    limiter.check_health()
+    counter = Counter("family_pair", limiter.fingerprint("pair", "synthetic"), 5, 900)
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        results = list(
+            executor.map(lambda _: limiter.counters([counter], failure=True), range(5))
+        )
+    assert sorted(results) == [0, 0, 0, 0, 30]
+    assert limiter.counters([counter]) == 30
+    key = limiter.namespace + ":window:family_pair:" + counter.fingerprint
+    assert 0 < limiter.client.ttl(key) <= 900
+    for item in limiter.client.zrange(key, 0, -1):
+        limiter.client.zadd(key, {item: 1})
+    assert limiter.counters([counter]) == 0
+
+
+def test_counters_remain_bounded_and_success_clears_only_pair(auth_service):
+    limiter = auth_service.limiter
+    pair = Counter("family_pair", limiter.fingerprint("pair", "first"), 5, 900)
+    other = Counter("family_pair", limiter.fingerprint("pair", "second"), 5, 900)
+    ip = Counter("family_ip", limiter.fingerprint("ip", "127.0.0.1"), 100, 600)
+    for _ in range(200):
+        assert limiter.counters([pair, other, ip], failure=True) <= 3600
+    limiter.clear(pair)
+    assert limiter.counters([pair]) == 0
+    assert limiter.counters([other, ip]) > 0
+    for key in limiter.client.scan_iter(limiter.namespace + ":window:*"):
+        assert limiter.client.zcard(key) <= 209
+
+
+def test_admin_and_link_token_bursts_are_independent(auth_service):
+    limiter = auth_service.limiter
+    assert [limiter.bucket("admin", "127.0.0.1") for _ in range(20)] == [0] * 20
+    assert limiter.bucket("admin", "127.0.0.1") > 0
+    assert [limiter.bucket("access", "127.0.0.1") for _ in range(30)] == [0] * 30
+    assert limiter.bucket("access", "127.0.0.1") > 0
+    assert limiter.bucket("admin", "127.0.0.2") == 0
+
+
+@pytest.mark.parametrize(("kind", "sources"), [("admin", 10), ("family", 20)])
+def test_distributed_threshold_counts_repeated_dictionary_and_deduplicates(
+    auth_service, kind, sources
+):
+    limiter = auth_service.limiter
+    for index in range(99):
+        limiter.failed(
+            kind,
+            f"192.0.2.{index % sources + 1}",
+            candidate=limiter.fingerprint("code", "SAMECODE"),
+        )
+    assert not AuthenticationIncident.objects.exists()
+    limiter.failed(kind, "192.0.2.1", candidate=limiter.fingerprint("code", "SAMECODE"))
+    incident = AuthenticationIncident.objects.get()
+    assert incident.kind == kind + "_abuse"
+    assert incident.attempts == 100
+    assert incident.sources == sources
+    assert incident.candidates == 1
+    assert incident.notification_pending
+    limiter.failed(kind, "192.0.2.1")
+    assert AuthenticationIncident.objects.count() == 1
+    assert limiter.elevated(kind)
+
+
+def test_admin_identity_diversity_can_detect_single_ip_attack(auth_service):
+    limiter = auth_service.limiter
+    for index in range(100):
+        limiter.failed(
+            "admin",
+            "192.0.2.1",
+            identity=limiter.fingerprint("identity", str(index % 10)),
+        )
+    incident = AuthenticationIncident.objects.get()
+    assert incident.sources == 1
+    assert incident.identities == 10
+
+
+def test_three_consecutive_windows_escalate_critical(auth_service):
+    """Seed the two prior closed window receipts, not wall-clock sleeps."""
+    limiter = auth_service.limiter
+    now = limiter.client.time()[0]
+    limiter.client.hset(
+        limiter.namespace + ":aggregate:family:alert",
+        mapping={"window": now // 300 - 1, "streak": 2},
+    )
+    for index in range(100):
+        limiter.failed("family", f"192.0.2.{index % 20 + 1}")
+    assert AuthenticationIncident.objects.get().level == "CRITICAL"
+
+
+def test_outage_fail_closed_but_links_and_existing_sessions_work(
+    auth_service, google, settings
+):
+    from parishkit.stewardship.accounts.authentication import AuthRuntime
+
+    browser, _ = signed_in()
+    unavailable = Redis(
+        host="127.0.0.1", port=56380, socket_timeout=0.1, socket_connect_timeout=0.1
+    )
+    limiter = Limiter(
+        unavailable, b"synthetic-test-outage-key-material", incident=record_incident
+    )
+    settings.STEWARDSHIP_AUTH_RUNTIME = AuthRuntime(
+        auth_service.store, limiter, auth_service.setup_complete
+    )
+    assert Client().get("/admin/login").status_code == 503
+    assert Client().get("/admin/oauth/callback").status_code == 503
+    assert browser.get("/admin/").status_code == 200
+    with pytest.raises(LimiterUnavailable):
+        limiter.bucket("admin", "192.0.2.1")
+    assert limiter.bucket("access", "192.0.2.1") == 0
+    assert (
+        AuthenticationIncident.objects.filter(kind="limiter_unavailable").count() == 1
+    )
+    recovered = Limiter(
+        auth_service.limiter.client,
+        auth_service.limiter.key,
+        incident=record_incident,
+        namespace=auth_service.limiter.namespace,
+    )
+    assert recovered.bucket("admin", "192.0.2.1") == 0
+    assert AuthenticationIncident.objects.get().resolved_at is not None
+    assert Client().get("/admin/login").status_code == 503
+    assert AuthenticationIncident.objects.count() == 2
+    unavailable.close()
+
+
+def test_failed_health_probes_are_throttled_without_weakening_admission(
+    auth_service, monkeypatch
+):
+    """An outage does not serialize a remote INFO probe per incoming request."""
+    from redis.exceptions import ConnectionError
+
+    from parishkit.stewardship.accounts import limiter_health
+
+    observed = []
+
+    def failed_probe(*args):
+        observed.append(True)
+        raise ConnectionError("Synthetic unavailable store")
+
+    limiter = auth_service.limiter
+    monkeypatch.setattr(limiter_health, "observe_store", failed_probe)
+    with pytest.raises(LimiterUnavailable):
+        limiter.bucket("admin", "192.0.2.1")
+    # Only INFO is unavailable in this fixture; real counter scripts still run.
+    assert limiter.bucket("admin", "192.0.2.1") == 0
+    assert observed == [True]
+    assert AuthenticationIncident.objects.get().resolved_at is not None
+
+
+def test_rate_limited_family_link_retries_family_not_admin(auth_service):
+    """A public-link denial keeps parishioners on their own sign-in flow."""
+    for _ in range(auth_service.limiter.limits.access_burst):
+        auth_service.limiter.bucket("access", "127.0.0.1")
+    response = Client().get("/access/invalid")
+    assert response.status_code == 429
+    assert b'href="/"' in response.content
+    assert b"/admin/login" not in response.content
+
+
+def test_rate_keys_never_retain_raw_identity_or_candidate(auth_service):
+    limiter = auth_service.limiter
+    private = "private-person@example.org"
+    limiter.failed(
+        "admin", "192.0.2.1", identity=limiter.fingerprint("identity", private)
+    )
+    limiter.bucket("admin", "192.0.2.1")
+    limiter.counters(
+        [Counter("family_pair", limiter.fingerprint("pair", private), 5, 900)],
+        failure=True,
+    )
+    contents = []
+    for key in limiter.client.scan_iter(limiter.namespace + ":*"):
+        contents.append(key)
+        kind = limiter.client.type(key)
+        if kind == b"zset":
+            contents.extend(limiter.client.zrange(key, 0, -1))
+        elif kind == b"hash":
+            contents.extend(
+                value for pair in limiter.client.hgetall(key).items() for value in pair
+            )
+        elif kind == b"string":
+            contents.append(limiter.client.get(key))
+        else:
+            pytest.fail("Unexamined limiter value type")
+    data = b"".join(contents)
+    assert private.encode() not in data
+    assert b"192.0.2.1" not in data
+
+
+@pytest.mark.parametrize("loss", ["marker", "restart", "eviction", "stats_reset"])
+def test_counter_loss_creates_durable_critical_intent(auth_service, loss, monkeypatch):
+    """Probe real Valkey; simulate only INFO transitions without resetting services."""
+    from parishkit.stewardship.accounts.auth_models import LimiterStoreHealth
+
+    limiter = auth_service.limiter
+    assert not limiter.check_health(force=True)
+    original = limiter.client.info
+
+    def info(section):
+        """No tests restart shared services, evict keys, or flush databases."""
+        values = original(section)
+        if loss == "restart" and section == "server":
+            values["run_id"] = "f" * 40
+        if loss in {"eviction", "stats_reset"} and section == "stats":
+            values["evicted_keys"] += 1
+        return values
+
+    if loss == "marker":
+        limiter.client.delete(limiter.namespace + ":health:marker")
+    elif loss == "stats_reset":
+        from django.db.models import F
+
+        LimiterStoreHealth.objects.update(evicted_keys=99, version=F("version") + 1)
+    monkeypatch.setattr(limiter.client, "info", info)
+    assert limiter.check_health(force=True)
+    incident = AuthenticationIncident.objects.get(kind="limiter_state_lost")
+    assert incident.level == "CRITICAL"
+    assert incident.notification_pending
+    assert not limiter.check_health(force=True)
+    replacement = Limiter(
+        limiter.client,
+        limiter.key,
+        incident=record_incident,
+        namespace=limiter.namespace,
+    )
+    assert not replacement.check_health(force=True)
+    assert AuthenticationIncident.objects.count() == 1
+
+
+def test_marker_repair_waits_for_durable_audit(auth_service, monkeypatch):
+    """An audit failure leaves the evidence of counter loss observable on retry."""
+    from parishkit.stewardship.accounts import limiter_health
+
+    limiter = auth_service.limiter
+    limiter.check_health(force=True)
+    marker = limiter.namespace + ":health:marker"
+    limiter.client.delete(marker)
+    original = limiter_health.record_incident
+
+    def fail(*args):
+        """Exercise rollback at the durable notification boundary."""
+        raise RuntimeError("Synthetic audit unavailable")
+
+    monkeypatch.setattr(limiter_health, "record_incident", fail)
+    with pytest.raises(RuntimeError, match="audit unavailable"):
+        limiter.check_health(force=True)
+    assert not limiter.client.exists(marker)
+    monkeypatch.setattr(limiter_health, "record_incident", original)
+    assert limiter.check_health(force=True)
+    assert limiter.client.exists(marker)
+    assert AuthenticationIncident.objects.get().level == "CRITICAL"
+
+
+def test_health_network_io_holds_no_database_transaction(auth_service, monkeypatch):
+    """A stalled Valkey response cannot hold the shared SQL health advisory lock."""
+    from django.db import connection
+
+    original = auth_service.limiter.client.info
+
+    def observe(section):
+        assert not connection.in_atomic_block
+        return original(section)
+
+    monkeypatch.setattr(auth_service.limiter.client, "info", observe)
+    assert not auth_service.limiter.check_health(force=True)
+
+
+def test_older_health_sample_cannot_overwrite_concurrent_baseline(
+    auth_service, monkeypatch
+):
+    """A canary sampled before another observer's commit is not a new loss."""
+    from parishkit.stewardship.accounts.limiter_health import observe_store
+
+    limiter = auth_service.limiter
+    original = limiter.client.get
+    first = [True]
+
+    def overlapping(key):
+        value = original(key)
+        if first[0]:
+            first[0] = False
+            assert not observe_store(limiter.client, limiter.namespace)
+        return value
+
+    monkeypatch.setattr(limiter.client, "get", overlapping)
+    assert not limiter.check_health(force=True)
+    assert not AuthenticationIncident.objects.exists()

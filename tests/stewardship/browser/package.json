@@ -1,0 +1,7 @@
+{
+  "name": "parishkit-stewardship-browser-tests",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Local-only accessibility instrumentation; never a shipped browser asset",
+  "devDependencies": { "axe-core": "4.13.0" }
+}

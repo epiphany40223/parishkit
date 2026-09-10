@@ -151,6 +151,20 @@ another Phase 1A foundation increment.
 
 Source scope: [Phase 1B: Identity and web foundations](../../plans/stewardship/overall.md#phase-1-secure-foundation-and-durable-domain).
 
+September 10, 2026: PR #19 merged at
+`6fd21eb586a635333be9f55fc7db9caa39284e60`. The branch
+`pr/stewardship-phase-1b` starts at that tip and carries the complete Phase 1B
+assignment as one coherent PR. Its [execution checkpoints](../../guides/stewardship-phase-1b.md)
+track implementation and validation; Gate 1 is not released.
+
+Current implementation SHA: `120e10552b1e51d1810f58fec23148eed65bf17a`.
+All Phase 1B code scope and its three rounds of review
+corrections are implemented. The third review had no High/Critical findings.
+Final integrated validation passes. The owner approved the secure-link
+audit-retention clarification, closing the three-round review exit. See the
+[review ledger](../../guides/stewardship-phase-1b-reviews.md#round-three).
+Do not begin Phase 1C until PR CI and human-approved merge are complete.
+
 1. [ARC-03](architecture.md#arc-03-django-web-foundation-and-security-middleware) → [ARC-04](architecture.md#arc-04-google-identity-authorization-sessions-and-denial-paths) with [ADM-01](admin-portal.md#adm-01-login-denial-and-unconfigured-state-routing) integration.
 2. [DAT-04](data.md#dat-04-family-campaign-identity-and-credentials) credential/schema foundation → [ARC-05](architecture.md#arc-05-family-code-token-and-family-session-security).
 3. [ARC-06](architecture.md#arc-06-enforceable-cryptographic-service-boundary) → [ARC-07](architecture.md#arc-07-application-level-privacy-and-audit-primitives) → initial [ARC-08](architecture.md#arc-08-performance-accessibility-and-compatibility-baseline) and [DOM-04](campaign-domain.md#dom-04-shared-presentation-and-client-contracts).

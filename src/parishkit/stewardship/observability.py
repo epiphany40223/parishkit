@@ -22,6 +22,7 @@ class Event(StrEnum):
     TASK_STARTED = "task_started"
     TASK_COMPLETED = "task_completed"
     TASK_FAILED = "task_failed"
+    AUTHENTICATION_LIMITS_WEAKENED = "authentication_limits_weakened"
     UNSTRUCTURED = "unstructured_log_suppressed"
 
 
@@ -49,7 +50,11 @@ def correlation(identifier: UUID | None = None):
 
 
 def emit(
-    event: Event, *, level: int = logging.INFO, task_id: UUID | None = None
+    event: Event,
+    *,
+    level: int = logging.INFO,
+    task_id: UUID | None = None,
+    authentication_limits: tuple[str, ...] = (),
 ) -> None:
     """Emit only typed identifiers and an allowlisted event; accept no free text."""
     if not isinstance(event, Event) or level not in {
@@ -62,10 +67,35 @@ def emit(
         raise ValueError("event and severity must be recognized logging values")
     if task_id is not None and not isinstance(task_id, UUID):
         raise ValueError("task_id must be an internal UUID")
+    if authentication_limits and (
+        event is not Event.AUTHENTICATION_LIMITS_WEAKENED
+        or not _safe_thresholds(authentication_limits)
+    ):
+        raise ValueError("Authentication threshold names must be reviewed fields.")
     logging.getLogger("parishkit.stewardship").log(
         level,
         event,
-        extra=log_extra({"correlation_id": _correlation.get(), "task_id": task_id}),
+        extra=log_extra(
+            {
+                "correlation_id": _correlation.get(),
+                "task_id": task_id,
+                "authentication_limits": authentication_limits,
+            }
+        ),
+    )
+
+
+def _safe_thresholds(value):
+    """Accept only names from the typed policy, never arbitrary metadata strings."""
+    from dataclasses import fields
+
+    from .authentication_policy import AuthenticationLimits
+
+    names = {item.name for item in fields(AuthenticationLimits)}
+    return (
+        type(value) is tuple
+        and 0 < len(value) <= len(names)
+        and all(type(item) is str and item in names for item in value)
     )
 
 
@@ -100,6 +130,12 @@ class SafeJsonFormatter(JsonLogFormatter):
             for key in ("correlation_id", "task_id")
             if isinstance(context, dict) and isinstance(context.get(key), UUID)
         }
+        if (
+            record.msg is Event.AUTHENTICATION_LIMITS_WEAKENED
+            and isinstance(context, dict)
+            and _safe_thresholds(context.get("authentication_limits"))
+        ):
+            safe.extra["authentication_limits"] = list(context["authentication_limits"])
         return super().format(safe)
 
 

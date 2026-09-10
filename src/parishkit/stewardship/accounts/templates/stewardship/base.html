@@ -1,0 +1,24 @@
+{% load static i18n %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% translate "Stewardship campaign" %}{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'stewardship/ui-v1.css' %}">
+  <script src="{% static 'stewardship/ui-v1.js' %}" defer></script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <a class="skip-link" href="#main" tabindex="0">{% translate "Skip to content" %}</a>
+  <header class="site-header">
+    {% block branding %}<p class="brand">{{ parish_name|default:_("Parish campaign") }}</p>{% endblock %}
+    {% block navigation %}{% endblock %}
+  </header>
+  <main id="main" tabindex="-1">
+    {% block banners %}{% endblock %}
+    {% include 'stewardship/components/errors.html' %}
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="site-footer"><p>{% translate "Stewardship and census" %}</p></footer>
+</body>
+</html>

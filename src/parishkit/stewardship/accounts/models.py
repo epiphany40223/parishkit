@@ -4,6 +4,12 @@ from django.db import models
 
 from parishkit.stewardship.storage import MutableRecord, UTCDateTimeField
 
+from .auth_models import (  # noqa: F401
+    AuthenticationIncident,
+    LimiterStoreHealth,
+    OAuthStateConsumption,
+)
+
 # Django discovers these models through this module; keep session and immutable
 # configuration contracts in separate source files for maintainability.
 from .configuration_models import (  # noqa: F401
@@ -28,6 +34,8 @@ from .request_models import (  # noqa: F401
 )
 from .runtime_models import ConfigurationActivation, SystemConfiguration  # noqa: F401
 from .secret_models import (  # noqa: F401
+    CredentialConsumerAcknowledgement,
+    SealedCredentialStaging,
     SecretReplacementRequest,
     SecretRequestCheckpoint,
 )

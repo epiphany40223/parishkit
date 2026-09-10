@@ -135,7 +135,9 @@ def _checkpoint(request, *, sequence, state, actor_id, correlation_id):
     )
 
 
-def record_request(*, base_digest, patch, actor_id, request_key, correlation_id):
+def record_request(
+    *, base_digest, patch, actor_id, request_key, correlation_id, admit=None
+):
     """Persist one validated intent; identical actor/key retries return its state.
 
     The base check is bounded to one snapshot, not an entire canonical lineage.
@@ -159,6 +161,8 @@ def record_request(*, base_digest, patch, actor_id, request_key, correlation_id)
         signed=True,
     )
     with transaction.atomic(durable=True):
+        if admit is not None and (not callable(admit) or admit() is not True):
+            raise PermissionError("Configuration request is not admitted.")
         with connection.cursor() as cursor:
             cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [736211, key])
         existing = (

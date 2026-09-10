@@ -11,13 +11,19 @@ Follow the [execution and completion rules](README.md#execution-and-completion).
 
 Scope and dependencies: [ADM-01 work package](../../plans/stewardship/admin-portal.md#adm-01-login-denial-and-unconfigured-state-routing).
 
-- [ ] ADM-01.01 — Build Google login, callback, logout, and denial pages.
-- [ ] ADM-01.02 — Gate all Admin routes on current authorization and state.
-- [ ] ADM-01.03 — Handle unconfigured and maintenance states.
-- [ ] ADM-01.04 — Audit login, logout, timeout, and revocation.
-- [ ] ADM-01.05 — Test direct routes and partial endpoints.
+- [x] ADM-01.01 — Build Google login, callback, logout, and denial pages.
+- [x] ADM-01.02 — Gate all Admin routes on current authorization and state.
+- [x] ADM-01.03 — Handle unconfigured and maintenance states.
+- [x] ADM-01.04 — Audit login, logout, timeout, and revocation.
+- [x] ADM-01.05 — Test direct routes and partial endpoints.
 
-Evidence: Not started.
+Evidence: Phase 1B implements Google-only initiation/callback, CSRF logout,
+retryable denial, current-role checks and durable login/session audit. Real
+PostgreSQL and synthetic signed Google tests cover normal and denied claims,
+revocation, cookie isolation, expiry and recovery boundaries. Setup/maintenance
+routing and direct HTML/POST admission pass ten additional PostgreSQL cases.
+The actual wizard and its durable configured marker stay with ADM-02; absent
+marker providers fail closed. See [Phase 1B evidence](../../guides/stewardship-phase-1b.md).
 
 ## ADM-02: Bootstrap command and transactional setup wizard
 

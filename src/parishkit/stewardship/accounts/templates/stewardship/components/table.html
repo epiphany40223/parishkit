@@ -1,0 +1,7 @@
+{% load i18n %}<div class="table-scroll" role="region" aria-label="{{ table_caption }}" tabindex="0">
+<table>
+  <caption>{{ table_caption }}</caption>
+  <thead><tr>{% for heading in table_headings %}<th scope="col">{{ heading }}</th>{% endfor %}</tr></thead>
+  <tbody>{% for row in table_rows %}<tr>{% for cell in row %}{% if forloop.first %}<th scope="row">{{ cell }}</th>{% else %}<td>{{ cell }}</td>{% endif %}{% endfor %}</tr>{% empty %}<tr><td colspan="{{ table_headings|length }}">{% translate "No matching records." %}</td></tr>{% endfor %}</tbody>
+</table>
+</div>

@@ -33,6 +33,9 @@ stewardship = [
   "cryptography>=50.0.1,<51",
   "PyNaCl>=1.6.2,<1.7",
   "tzdata>=2026.2",
+  "django-allauth[socialaccount]>=65.19.2,<66",
+  "Pillow>=12.3.0,<13",
+  "nh3>=0.3.7,<0.4",
 ]
 google = [
   "google-api-python-client>=2.139.0",

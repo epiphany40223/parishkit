@@ -7,7 +7,7 @@ directory. The later startup validator checks the actual deployment state.
 import os
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from enum import StrEnum
 from ipaddress import ip_address
 from pathlib import Path
@@ -16,6 +16,8 @@ from urllib.parse import urlsplit
 
 from parishkit.config import ConfigError, load_yaml_config
 from parishkit.paths import runtime_root
+
+from .authentication_policy import AuthenticationLimits
 
 
 class DeploymentProfile(StrEnum):
@@ -118,6 +120,9 @@ class DeploymentConfiguration:
     valkey: ValkeyConfiguration
     secrets: Mapping[str, Path] = field(repr=False)
     credential_target: str | None
+    authentication_limits: AuthenticationLimits = field(
+        default_factory=AuthenticationLimits
+    )
 
 
 def _mapping(value: object, keys: set[str] | frozenset[str], label: str) -> dict:
@@ -197,7 +202,7 @@ def _origin(value: object, profile: DeploymentProfile) -> str:
         invalid = True
     if invalid:
         raise ConfigError("public_origin must be a bare HTTP(S) origin")
-    _host(parsed.hostname, "public_origin host")
+    hostname = _host(parsed.hostname, "public_origin host").lower()
     if profile is DeploymentProfile.PRODUCTION:
         if parsed.scheme != "https":
             raise ConfigError("production public_origin requires HTTPS")
@@ -207,7 +212,10 @@ def _origin(value: object, profile: DeploymentProfile) -> str:
         "::1",
     }:
         raise ConfigError("development/test public_origin requires loopback HTTP")
-    return origin.removesuffix("/")
+    authority = f"[{hostname}]" if ":" in hostname else hostname
+    if port is not None:
+        authority += f":{port}"
+    return f"{parsed.scheme}://{authority}"
 
 
 def load_deployment(
@@ -269,6 +277,7 @@ def load_deployment(
             "valkey",
             "secrets",
             "credential_target",
+            "authentication_limits",
         },
         "deployment",
     )
@@ -426,11 +435,34 @@ def load_deployment(
     )
     if hops != (1 if profile is DeploymentProfile.PRODUCTION else 0):
         raise ConfigError("proxy hops must be one in production and zero locally")
+    limit_fields = fields(AuthenticationLimits)
+    limit_config = _mapping(
+        deployment.get("authentication_limits", {}),
+        {item.name for item in limit_fields},
+        "authentication limits",
+    )
+    limits = AuthenticationLimits(
+        **{
+            item.name: _integer(
+                select(
+                    "AUTH_LIMIT_" + item.name.upper(),
+                    limit_config.get(item.name),
+                    item.default,
+                ),
+                "authentication limit",
+                1,
+                1000,
+            )
+            for item in limit_fields
+        }
+    )
     supplied_keys = set(explicit) | {
         key for key in env if key.startswith("PARISHKIT_STEWARDSHIP_")
     }
     if supplied_keys - consumed_keys:
         raise ConfigError("unknown deployment environment or CLI override")
+    if profile is DeploymentProfile.PRODUCTION:
+        limits.warn_if_weaker()
     return DeploymentConfiguration(
         profile,
         role,
@@ -441,4 +473,5 @@ def load_deployment(
         broker,
         MappingProxyType(secrets),
         target,
+        limits,
     )

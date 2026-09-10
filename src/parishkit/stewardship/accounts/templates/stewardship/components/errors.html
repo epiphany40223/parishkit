@@ -1,0 +1,6 @@
+{% load i18n %}{% if errors %}
+<section class="notice notice-error" data-error-summary tabindex="-1" aria-labelledby="error-title">
+  <h2 id="error-title">{% translate "Please check your information" %}</h2>
+  <ul>{% for error in errors %}<li>{% if error.field_id %}<a href="#{{ error.field_id }}">{{ error.message }}</a>{% else %}{{ error.message }}{% endif %}</li>{% endfor %}</ul>
+</section>
+{% endif %}

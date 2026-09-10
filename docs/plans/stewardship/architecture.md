@@ -123,10 +123,13 @@ phase without treating absent product validation as completed configuration.
    explicitly untrusted CSRF-protected activity keepalive. Check mode/epoch on
    every Family request so invalidated Testing sessions cannot cross go-live.
 4. Add public code-guessing limiters, distributed detection, uniform timing/
-   errors, invalid-token audit fingerprints, and Valkey fail-closed behavior.
+   errors, the [bounded authentication audit policy](../../specs/stewardship/architecture/spec.md#identity-and-session-security),
+   and Valkey fail-closed behavior for manual-code guessing.
    Base distributed detection on total invalid attempts and source-IP count;
    candidate diversity is diagnostic only. Test repeated-dictionary attacks,
-   threshold boundaries, and exactly-once accounting for rejected attempts.
+   threshold boundaries, and exactly-once ephemeral accounting for rejected
+   attempts. Test sampled durable failures separately from individually audited
+   successful logins, without retaining attempted values or token fingerprints.
    Apply the shared-network IP allowance and independent code-pair limit;
    test different Families sharing an IP, threshold enforcement, and expiry.
 5. Preserve the low-sensitivity Admin/Staff manual-code access policy while

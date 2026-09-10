@@ -52,9 +52,9 @@ wizard URL. The generic email URL points to `/`.
 
 An unknown, revoked, rotated, closed-campaign, or ineligible-Family token creates
 no session and shows the same generic "This secure Family link cannot be found
-or used" page with a link to manual code entry. Every attempt records result
-class, campaign when knowable, source metadata, and only the token's lookup-
-digest fingerprint, never the token/path. Because the token has 256 bits of
+or used" page with a link to manual code entry. Failed attempts follow the
+[bounded authentication audit policy](../architecture/spec.md#identity-and-session-security);
+successful logins remain individually audited. Because the token has 256 bits of
 entropy, failures do not consume guessable-code counters; ordinary request-
 abuse limits still apply uniformly through the
 [secure-link anti-flood policy](../architecture/spec.md#identity-and-session-security).

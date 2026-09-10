@@ -325,6 +325,18 @@ remain available with a per-process rather than deployment-wide ceiling. The
 fallback resets on process restart, does not weaken the separate readiness/
 CRITICAL signal, and returns to Valkey automatically when it recovers.
 
+Public authentication failures use bounded, sampled durable audit signals: at
+most one event per deployment per five minutes independently for invalid secure
+Family links, failed manual Family codes, and denied Admin logins. PostgreSQL
+time and cross-process exclusion enforce this bound, including during Valkey
+outages. Samples contain the rejection class/outcome, not attempted values,
+token paths, source addresses, or source/candidate/token fingerprints. They are
+not an exact attempt count or a replayable history of failed authentication.
+Per-attempt accounting for distributed-abuse detection remains in the
+short-lived keyed telemetry described above when its backing store is available;
+sampling never substitutes for that accounting. Every successful login remains
+individually audited with its session and actor attribution, without credentials.
+
 Admin sessions have a 30-minute idle timeout and 12-hour absolute lifetime.
 Family sessions have a 60-minute idle timeout and four-hour absolute lifetime.
 Both receive a visible warning before idle expiry. Privileged operations such

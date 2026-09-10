@@ -46,7 +46,8 @@ def test_safe_test_settings():
     # pytest-django substitutes its in-memory backend for each test.
     assert settings.EMAIL_BACKEND == "django.core.mail.backends.locmem.EmailBackend"
     assert "django.contrib.admin" not in settings.INSTALLED_APPS
-    assert "django.contrib.auth" not in settings.INSTALLED_APPS
+    # Allauth uses Django's auth internals, but no password backend is enabled.
+    assert settings.AUTHENTICATION_BACKENDS == []
 
 
 @pytest.mark.parametrize(
@@ -70,7 +71,11 @@ def test_namespaced_scaffold_routes(client, name, url, status):
     assert response["Cache-Control"] == "no-store"
     assert not response.cookies
     assert client.head(url).status_code == status
-    assert client.post(url).status_code == 405
+    # Setup admission precedes HTTP-method dispatch for all application routes.
+    # Internal probes retain their safe-method contract without a runtime.
+    assert client.post(url).status_code == (
+        405 if name.startswith("internal:") else 503
+    )
 
 
 def test_token_placeholder_does_not_reflect_or_exchange_token(client):

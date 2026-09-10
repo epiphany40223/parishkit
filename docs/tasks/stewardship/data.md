@@ -171,7 +171,15 @@ Scope and dependencies: [DAT-04 work package](../../plans/stewardship/data.md#da
 - [ ] DAT-04.04 — Implement token generations, credential epochs, reservation records, and cleanup.
 - [ ] DAT-04.05 — Test generation, rotation, and reactivation races.
 
-Evidence: Not started.
+Evidence: Phase 1B implements Family identities and eligibility/cohort provenance,
+stable encrypted manual codes, versioned MAC lookup/collision constraints,
+population reconciliation, sealed token generations, rehearsal epochs/reservations
+and isolated sessions. Actual source promotion and submission/mail-state pointers
+remain with DAT-03/DAT-06/DAT-07; do not fabricate those later tables. Additional
+credential lifecycle/reactivation and retirement cases now pass; actual source
+promotion and backup-catalog integration retain their named later owners. See
+[Phase 1B evidence](../../guides/stewardship-phase-1b.md); the mixed-phase tasks stay
+unchecked rather than claiming complete integration from the storage foundation.
 
 ## DAT-05: Portal users and authorization policy records
 

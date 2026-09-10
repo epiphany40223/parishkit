@@ -1,0 +1,15 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Portal unavailable" %}{% endblock %}
+{% block content %}<section class="flow panel">
+  {% if setup %}
+  <h1>{% translate "The system is not configured yet" %}</h1>
+  <p>{% translate "The parish must complete setup before this portal is available." %}</p>
+  {% else %}
+  <h1>{% translate "The system is temporarily unavailable" %}</h1>
+  <p>{% translate "The parish must finish its maintenance review before normal access resumes." %}</p>
+  {% endif %}
+  {% if admin %}
+  <p><a href="/admin/login">{% translate "Try signing in again" %}</a></p>
+  <form method="post" action="/admin/logout">{% csrf_token %}<button type="submit">{% translate "Sign out" %}</button></form>
+  {% else %}<p><a href="/">{% translate "Try again" %}</a></p>{% endif %}
+</section>{% endblock %}

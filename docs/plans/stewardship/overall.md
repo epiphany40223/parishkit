@@ -114,6 +114,16 @@ workflows, unavailable credentials, real external writes, destructive operations
 deployment, and release retain their existing authorization boundaries. This
 workflow does not grant blanket permission bypasses or waive gate-specific tests.
 
+Reviewer patience update (human instruction, September 10, 2026): double the
+previous reviewer wait budget before asking whether to continue waiting. For
+the current Pika baseline, use 40 minutes of wall time and 10 minutes without
+progress, instead of 20 and 5 minutes. Apply this per review invocation, without
+changing installed skills or global tooling defaults. Use short nonblocking
+polls, continue useful independent work, and keep the human informed; slow
+progress alone is not a permission blocker or a reason to request approval.
+Actual permission failures and invalid/degraded review results retain the
+existing handling rules and never count as a completed round.
+
 ## Phase 0: Reproducible project skeleton
 
 Goal: every later change has a runnable package, test harness, Compose target,

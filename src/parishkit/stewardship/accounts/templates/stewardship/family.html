@@ -1,0 +1,13 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Family campaign" %}{% endblock %}
+{% block content %}<section class="flow" data-family-session data-server-now="{{ server_now|instant }}" data-idle-deadline="{{ deadline|instant }}" data-absolute-deadline="{{ absolute_deadline|instant }}">
+  <h1>{% translate "Family campaign" %}</h1>
+  <noscript><p class="notice">{% translate "To complete the Family response flow, enable JavaScript in a current or previous major version of Chrome, Edge, Firefox or Safari." %}</p></noscript>
+  <p id="session-warning" class="notice" role="status" aria-live="polite" hidden>{% translate "Your session ends in less than five minutes. Changes that have not been submitted will be lost. The session cannot extend beyond its four-hour limit." %}</p>
+  <p id="session-expired" class="notice notice-error" role="alert" hidden>{% translate "Your session has ended. Unsubmitted changes have not been saved." %} <a href="/">{% translate "Sign in again" %}</a></p>
+  <div class="panel">
+    <p>{% translate "Your Family is signed in. The campaign response flow is not yet available." %}</p>
+    <p>{% translate "Session deadline:" %} <time datetime="{{ deadline|instant }}" data-local-instant>{{ deadline|instant }} UTC</time></p>
+  </div>
+  <form method="post" action="{% url 'family:logout' %}">{% csrf_token %}<button type="submit">{% translate "Sign out" %}</button></form>
+</section>{% endblock %}

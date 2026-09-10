@@ -1601,6 +1601,20 @@ are tracked on the associated PR. Phase 1A is complete; Gate 1 is not released.
 After merge, proceed to Phase 1B as a coherent batch; Gate 1 still follows the
 integrated Phase 1B/1C foundation.
 
+### Phase 1B identity and web-foundation batch
+
+PR #19 merged at `6fd21eb586a635333be9f55fc7db9caa39284e60`; branch
+`pr/stewardship-phase-1b` delivers the complete Phase 1B scope as one batch.
+The [implementation guide](../../guides/stewardship-phase-1b.md) and
+[review ledger](../../guides/stewardship-phase-1b-reviews.md) own detailed scope,
+validation and dispositions. Three independent full-branch dual-vendor reviews
+have completed without degradation. Round three reviewed `92e259f` and found
+30 Medium issues, no High/Critical issues. Code corrections and integrated
+validation are complete; the owner approved round-three X1's normative
+audit-retention clarification. The three-round review exit is satisfied, not
+integrated Gate 1 approval. After passing CI and human-approved merge, the next
+dependency-ready batch is Phase 1C, starting with OPS-02.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).

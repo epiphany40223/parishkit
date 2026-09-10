@@ -16,6 +16,9 @@ env/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+node_modules/
+playwright-report/
+test-results/
 htmlcov/
 
 # Local editor and OS files

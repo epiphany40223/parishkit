@@ -7,7 +7,9 @@ application-file-scanner==0.6.4
 application-properties==0.9.3
     # via pymarkdownlnt
 asgiref==3.12.1
-    # via django
+    # via
+    #   django
+    #   django-allauth
 billiard==4.2.4
     # via celery
 build==1.6.0
@@ -46,7 +48,12 @@ cryptography==50.0.1
     # via
     #   parishkit (pyproject.toml)
     #   google-auth
+    #   pyjwt
 django==5.2.17
+    # via
+    #   parishkit (pyproject.toml)
+    #   django-allauth
+django-allauth==65.19.2
     # via parishkit (pyproject.toml)
 et-xmlfile==2.0.0
     # via openpyxl
@@ -81,8 +88,12 @@ iniconfig==2.3.0
     # via pytest
 kombu==5.6.2
     # via celery
+nh3==0.3.7
+    # via parishkit (pyproject.toml)
 oauthlib==3.3.1
-    # via requests-oauthlib
+    # via
+    #   django-allauth
+    #   requests-oauthlib
 openpyxl==3.1.5
     # via parishkit (pyproject.toml)
 opentelemetry-api==1.44.0
@@ -92,6 +103,8 @@ packaging==26.3
     #   build
     #   kombu
     #   pytest
+pillow==12.3.0
+    # via parishkit (pyproject.toml)
 pluggy==1.6.0
     # via
     #   pytest
@@ -125,6 +138,8 @@ pygments==2.21.0
     # via pytest
 pyjson5==2.0.1
     # via application-properties
+pyjwt==2.13.0
+    # via django-allauth
 pymarkdownlnt==0.9.39
     # via parishkit (pyproject.toml)
 pynacl==1.6.2
@@ -153,6 +168,7 @@ redis==6.4.0
 requests==2.34.2
     # via
     #   parishkit (pyproject.toml)
+    #   django-allauth
     #   google-api-core
     #   requests-oauthlib
 requests-oauthlib==2.0.0

@@ -1,0 +1,16 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Campaign administration" %}{% endblock %}
+{% block content %}
+  <div data-admin-session data-server-now="{{ server_now|instant }}" data-idle-deadline="{{ deadline|instant }}" data-absolute-deadline="{{ absolute_deadline|instant }}">
+  <p id="session-warning" class="notice" role="status" aria-live="polite" hidden>{% translate "Your session ends in less than five minutes. Finish your current action or sign in again." %}</p>
+  <p id="session-expired" class="notice notice-error" role="alert" hidden>{% translate "Your session has ended." %} <a href="/admin/login">{% translate "Sign in again" %}</a></p>
+  <h1>{% translate "Campaign administration" %}</h1>
+  <section class="panel">
+    <p>{{ configuration.active_configuration.parish.name }}</p>
+    <p>{% translate "You are signed in. Campaign workflows will appear here as they become available." %}</p>
+  </section>
+  <form method="post" action="{% url 'admin:logout' %}">
+    {% csrf_token %}<button type="submit">{% translate "Sign out" %}</button>
+  </form>
+  </div>
+{% endblock %}

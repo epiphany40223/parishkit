@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import time
+import warnings
 from collections import Counter
 from pathlib import Path
 from unittest.mock import MagicMock, Mock
@@ -590,6 +591,31 @@ def wait_http(origin, path, status, body=None, *, touch_on_retry=None):
     pytest.fail(f"Scaffold endpoint did not reach expected status {status}")
 
 
+def wait_internal_live(compose, body, *, touch_on_retry=None):
+    """Probe inside the web network namespace; never expose health for reload tests."""
+    script = (
+        "from urllib.request import build_opener, ProxyHandler; "
+        "import sys; "
+        "response=build_opener(ProxyHandler({})).open("
+        "'http://127.0.0.1:8000/health/live',timeout=2); "
+        "sys.stdout.buffer.write(response.read(128)); response.close()"
+    )
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        try:
+            result = compose(
+                "exec", "-T", "web", "python", "-c", script, check=False, timeout=5
+            )
+            if result.returncode == 0 and result.stdout.encode() == body:
+                return
+        except subprocess.TimeoutExpired:
+            pass
+        if touch_on_retry is not None:
+            os.utime(touch_on_retry, None)
+        time.sleep(0.2)
+    pytest.fail("Internal liveness did not reach the expected body")
+
+
 @pytest.mark.parametrize("pending", ["body", "status", "unavailable"])
 def test_http_wait_retouches_fixture_only_while_pending(tmp_path, monkeypatch, pending):
     """A startup race retries the copied fixture, then stops when content matches."""
@@ -742,7 +768,40 @@ def test_development_container_lifecycle(tmp_path):
             )
         return result
 
+    native_volume = None
     try:
+        if os.environ.get("PARISHKIT_COMPOSE_NATIVE_POSTGRES") == "1":
+            # Docker Desktop file shares can report initdb's directory as owned
+            # by a different UID when PostgreSQL drops privileges. This explicit
+            # test-only option keeps real durable Linux inodes, not tmpfs, while
+            # CI continues to exercise the default host bind. No live volume is
+            # discovered or adopted; this UUID project owns the entire fixture.
+            candidate_volume = project + "-postgres-fixture"
+            subprocess.run(
+                [
+                    "docker",
+                    "volume",
+                    "create",
+                    "--label",
+                    "parishkit.test=" + project,
+                    candidate_volume,
+                ],
+                check=True,
+                capture_output=True,
+                timeout=15,
+            )
+            native_volume = candidate_volume
+            inspected = subprocess.run(
+                ["docker", "volume", "inspect", native_volume],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            volume = json.loads(inspected.stdout)[0]
+            assert volume["Name"] == native_volume
+            assert volume["Labels"]["parishkit.test"] == project
+            environment["STEWARDSHIP_POSTGRES_PATH"] = volume["Mountpoint"]
         # Collect independently on the host; never use the outer invocation's
         # selection (-k, a single test file, etc.) as the complete baseline.
         host_environment = {
@@ -799,8 +858,10 @@ def test_development_container_lifecycle(tmp_path):
         compose("up", "--wait", "--wait-timeout", "90", "web", "postgres", "valkey")
         assert compose("exec", "-T", "web", "id", "-u").stdout.strip() == "10001"
         origin = "http://" + compose("port", "web", "8000").stdout.strip()
-        wait_http(origin, "/health/live", 200, b"ok\n")
-        for path in ("/", "/admin/", "/family/", "/health/ready"):
+        wait_internal_live(compose, b"ok\n")
+        for path in ("/health/live", "/health/ready"):
+            wait_http(origin, path, 404)
+        for path in ("/", "/admin/", "/family/"):
             wait_http(origin, path, 503)
         wait_http(origin, "/metrics", 404)
         sentinel = "synthetic-private-access-sentinel"
@@ -815,9 +876,9 @@ def test_development_container_lifecycle(tmp_path):
         original = views.read_text()
         assert '"ok\\n"' in original
         views.write_text(original.replace('"ok\\n"', '"reloaded\\n"'))
-        wait_http(origin, "/health/live", 200, b"reloaded\n", touch_on_retry=views)
+        wait_internal_live(compose, b"reloaded\n", touch_on_retry=views)
         views.write_text(original)
-        wait_http(origin, "/health/live", 200, b"ok\n", touch_on_retry=views)
+        wait_internal_live(compose, b"ok\n", touch_on_retry=views)
 
         config = json.loads(compose("config", "--format", "json").stdout)
         for name in ("postgres", "valkey"):
@@ -881,6 +942,23 @@ def test_development_container_lifecycle(tmp_path):
         assert stopped["State"] == "exited" and stopped["ExitCode"] != 137
         compose("up", "--wait", "--wait-timeout", "30", "web")
         origin = "http://" + compose("port", "web", "8000").stdout.strip()
-        wait_http(origin, "/health/live", 200, b"ok\n")
+        wait_internal_live(compose, b"ok\n")
     finally:
-        compose("down", "--timeout", "10", timeout=60)
+        failed = sys.exc_info()[0] is not None
+        try:
+            compose(
+                "down", "--timeout", "10", timeout=60, check=False
+            ).check_returncode()
+            if native_volume is not None:
+                subprocess.run(
+                    ["docker", "volume", "rm", native_volume],
+                    check=True,
+                    capture_output=True,
+                    timeout=15,
+                )
+        except (subprocess.SubprocessError, OSError):
+            if not failed:
+                raise
+            # Retain the original assertion/startup failure; leftover UUID-owned
+            # fixtures remain inspectable rather than hiding that first cause.
+            warnings.warn("Disposable Compose fixture cleanup failed.", stacklevel=2)

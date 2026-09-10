@@ -1,0 +1,10 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Administration sign-in" %}{% endblock %}
+{% block content %}<section class="flow panel">
+  <h1>{% translate "Administration sign-in" %}</h1>
+  <p>{% translate "Use your authorized Google account to continue." %}</p>
+  <form method="post" action="{% url 'admin:login' %}">
+    {% csrf_token %}<button type="submit">{% translate "Sign in with Google" %}</button>
+  </form>
+  <p><a href="/">{% translate "Family campaign portal" %}</a></p>
+</section>{% endblock %}
