@@ -147,6 +147,7 @@ TRANSITIONS = MappingProxyType(
             "purge_worker",
             "purge_request",
             "purge_window",
+            "no_current_campaign",
             "fresh_backup",
             "quiescent",
         ),
@@ -261,7 +262,7 @@ def transition_target(
             or not proposed_interval.contains(now)
         ):
             return None
-    if action is Action.PURGE and facts.mode is not Mode.TESTING:
+    if action is Action.PURGE and (facts.mode is not Mode.TESTING or facts.current):
         return None
     return next(iter(rule.targets))
 

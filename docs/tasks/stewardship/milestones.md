@@ -8,6 +8,32 @@ for delivered configuration/policy work and explicit remaining DAT-02 integratio
 Initial validation and the required three independent review/fix rounds are in
 progress. Phase 1A and Gate 1 remain incomplete.
 
+Round 1: Pika session `20260909-215117-8c4b3b` reviewed `5da411c`, with two
+Claude shards and one independent full-branch Codex review. Finalization had
+no failures, degradation or verdict mismatch; nine findings passed its filter.
+
+| Finding | Disposition |
+| --- | --- |
+| High: a hypothetical later migration could overwrite policy schema predicates | False-positive as a present defect: no such migration exists; explicit dependencies order the current extension, and real v3 installation already exercises it. Added a full-forward function-definition regression check as requested. |
+| Medium: missing raw projection/completeness/update tests | Fixed with forged direct inserts, deferred completeness, invalid module and raw UPDATE cases. |
+| Medium: unrelated activations claim a campaign edit | Fixed with `campaign_reprojected` audit semantics; projection/version advancement remains intentional and documented. |
+| Medium: repeated structural validation per schedule | Fixed by reusing the validated interval within each preparation/verification call; added a call-count regression. |
+| Medium: bootstrap allegedly leaves the current pointer null | False-positive: the activation UPDATE follows bootstrap INSERT and atomically creates/selects the draft. Added root-v3 installation and subsequent Parish-timezone-edit regression coverage. |
+| Medium: current archived target passes pure purge predicate | Fixed by rejecting a current target and naming the separate global no-current guard. |
+| Medium: SQL permits forged resolved UTC columns | Fixed with independent SQL resolution and direct-insert denial tests, plus gap/fold/half-hour/skipped-day parity cases. |
+| Medium: disabled-module content is accepted | Fixed with module/additional-information slot validation and negative tests. |
+| Medium: conflicting raw schedule identity insert race | Fixed with the preparation advisory lock in the SQL guard and an independent-connection raw-writer race. |
+
+Related integrity hardening also verifies duplicate JSON/indexed fields exactly
+instead of allowing reconstructed values to mask a mismatch. Seven findings are
+fixed; two claims are rejected with regression evidence. Later rounds must still
+meet the human's minimum-three-round/no-final-High requirement.
+
+Round 1 correction validation: 1,666 baseline tests and 402 PostgreSQL tests
+passed; scoped coverage was 97.75% lines and 94.76% branches. Ruff, Markdown,
+whitespace and migration-drift checks passed. Reports are local disposable
+artifacts under `/tmp/parishkit-campaign-round1-quality*`, not repository data.
+
 [Task index](README.md) · [Task execution plan](overall.md) ·
 [Controlling plan](../../plans/stewardship/overall.md)
 

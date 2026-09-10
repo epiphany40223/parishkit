@@ -144,9 +144,17 @@ def test_historical_restore_and_work_holds():
     assert transition_target(Action.PURGE, archived, INTERVAL.end) is None
     assert (
         transition_target(
-            Action.PURGE, replace(archived, mode=Mode.TESTING), INTERVAL.end
+            Action.PURGE,
+            replace(archived, mode=Mode.TESTING, current=False),
+            INTERVAL.end,
         )
         is State.PURGING
+    )
+    assert (
+        transition_target(
+            Action.PURGE, replace(archived, mode=Mode.TESTING), INTERVAL.end
+        )
+        is None
     )
 
 

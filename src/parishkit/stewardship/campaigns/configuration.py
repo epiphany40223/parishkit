@@ -142,10 +142,17 @@ def campaign_values(values):
         _invalid()
     for reference in content.values():
         _typed(reference, "uuid")
+    if any(
+        name in content and name not in modules
+        for name in ("census", "ministry", "financial")
+    ):
+        _invalid()
+    if "additional" in content and not values["additional_information"]:
+        _invalid()
     return interval
 
 
-def schedule_values(values, campaign):
+def schedule_values(values, campaign, *, interval=None):
     """Validate one schedule in its campaign zone; return one-time UTC due or None."""
     if set(values) != {
         "campaign_id",
@@ -186,7 +193,9 @@ def schedule_values(values, campaign):
         due = resolve_local(
             datetime.combine(_date(values["date"]), local_time), campaign["timezone"]
         )
-        if not campaign_values(campaign).contains(due):
+        if not (campaign_values(campaign) if interval is None else interval).contains(
+            due
+        ):
             _invalid()
         return due
     if values["date"] is not None:
@@ -200,9 +209,9 @@ def validate_campaign_sections(document):
     """
     sections = document["sections"]
     campaigns = {row["id"]: row["values"] for row in sections.get("campaigns", [])}
-    names = set()
-    for values in campaigns.values():
-        campaign_values(values)
+    names, intervals = set(), {}
+    for identifier, values in campaigns.items():
+        intervals[identifier] = campaign_values(values)
         name = values["name"].casefold()
         if name in names:
             _invalid()
@@ -214,7 +223,9 @@ def validate_campaign_sections(document):
         identifier = values.get("campaign_id")
         if type(identifier) is not str or identifier not in campaigns:
             _invalid()
-        due = schedule_values(values, campaigns[identifier])
+        due = schedule_values(
+            values, campaigns[identifier], interval=intervals[identifier]
+        )
         if due is not None:
             mail.setdefault(identifier, []).append((due, values["kind"]))
         else:

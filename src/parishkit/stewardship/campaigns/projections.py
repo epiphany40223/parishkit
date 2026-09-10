@@ -9,10 +9,11 @@ def prepare_campaigns(snapshot, document, attribution):
     draft.
     """
     sections = document["sections"]
-    campaigns = {}
+    campaigns, intervals = {}, {}
     for row in sections.get("campaigns", []):
         values = row["values"]
         interval = campaign_values(values)
+        intervals[row["id"]] = interval
         campaigns[row["id"]] = values
         CampaignConfiguration.objects.create(
             configuration=snapshot,
@@ -34,14 +35,18 @@ def prepare_campaigns(snapshot, document, attribution):
             values=values,
             campaign_id=values["campaign_id"],
             kind=values["kind"],
-            due_at=schedule_values(values, campaigns[values["campaign_id"]]),
+            due_at=schedule_values(
+                values,
+                campaigns[values["campaign_id"]],
+                interval=intervals[values["campaign_id"]],
+            ),
             **attribution,
         )
 
 
 def stored_campaigns(snapshot):
     """Round-trip indexed columns as well as opaque versioned references."""
-    campaigns, result = {}, {"campaigns": [], "schedules": []}
+    campaigns, intervals, result = {}, {}, {"campaigns": [], "schedules": []}
     for row in sorted(
         snapshot.campaign_configurations.all(), key=lambda item: str(item.record_id)
     ):
@@ -52,18 +57,29 @@ def stored_campaigns(snapshot):
             "end_date": row.end_date.isoformat(),
         }
         interval = campaign_values(values)
-        if (row.starts_at, row.ends_at) != (interval.start, interval.end):
+        if values != row.values or (row.starts_at, row.ends_at) != (
+            interval.start,
+            interval.end,
+        ):
             from parishkit.config import ConfigError
 
             raise ConfigError("Campaign boundary projection is invalid.")
         campaigns[str(row.record_id)] = values
+        intervals[str(row.record_id)] = interval
         result["campaigns"].append({"id": str(row.record_id), "values": values})
     for row in sorted(
         snapshot.schedule_revisions.all(), key=lambda item: str(item.record_id)
     ):
         values = row.values | {"campaign_id": str(row.campaign_id), "kind": row.kind}
         campaign = campaigns.get(str(row.campaign_id))
-        if campaign is None or row.due_at != schedule_values(values, campaign):
+        if (
+            values != row.values
+            or campaign is None
+            or row.due_at
+            != schedule_values(
+                values, campaign, interval=intervals[str(row.campaign_id)]
+            )
+        ):
             from parishkit.config import ConfigError
 
             raise ConfigError("Schedule boundary projection is invalid.")

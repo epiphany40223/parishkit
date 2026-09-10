@@ -283,3 +283,36 @@ def test_schedule_identity_and_option_uniqueness():
             campaign_values(
                 campaign(modules=["financial"], share_options=options)["values"]
             )
+
+
+@pytest.mark.parametrize("slot", ["ministry", "financial", "additional"])
+def test_disabled_content_slot_is_rejected(slot):
+    """Disabled feature content is a stray module-dependent value, not hidden state."""
+    with pytest.raises(ConfigError):
+        campaign_values(
+            campaign(
+                additional_information=False, content_versions={slot: str(uuid4())}
+            )["values"]
+        )
+
+
+def test_campaign_interval_is_reused_for_all_schedules(monkeypatch):
+    """One campaign validation suffices for a configuration with many reminders."""
+    from parishkit.stewardship.campaigns import configuration
+
+    value = document()
+    identifier = value["sections"]["campaigns"][0]["id"]
+    value["sections"]["schedules"].extend(
+        schedule(identifier, kind="reminder", date=f"2026-10-{day:02}")
+        for day in range(2, 20)
+    )
+    calls, original = [], configuration.campaign_values
+
+    def tracked(values):
+        """Count structural validation without changing its result."""
+        calls.append(1)
+        return original(values)
+
+    monkeypatch.setattr(configuration, "campaign_values", tracked)
+    validate_campaign_sections(value)
+    assert len(calls) == 1

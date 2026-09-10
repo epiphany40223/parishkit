@@ -30,6 +30,12 @@ The first draft timezone copies the Parish value; later draft edits can change
 it independently. Parish timezone edits never rebucket existing campaign data.
 The current applied configuration selects configured schedule revisions; removed
 revisions remain historical. Retired schedule UUIDs cannot change owner or type.
+Every activation advances the campaign projection pointer/version, even for an
+unrelated configuration edit; its audit event is then `campaign_reprojected`,
+not `campaign_configured`. Callers must treat that version as projection freshness,
+not as a count of user-visible campaign edits. SQL insertion guards independently
+resolve stored UTC boundaries; gap/fold parity tests cover non-hour transitions
+and a whole skipped day. Timezone-rule disagreement fails closed.
 
 The runtime deliberately forbids Production, lifecycle mutations, campaign
 deletion and replacement. Future migrations must replace these restrictions
