@@ -11,6 +11,17 @@ from .configuration_models import (  # noqa: F401
     AppliedIntegration,
     Parish,
 )
+from .policy_models import (  # noqa: F401
+    AddressRoleGrant,
+    AddressRule,
+    AdminRevocation,
+    AssignmentOverlay,
+    DomainRule,
+    MinistryAssignment,
+    PolicyEpoch,
+    PolicySecurityEvent,
+    PortalUser,
+)
 from .request_models import (  # noqa: F401
     ConfigurationChangeRequest,
     ConfigurationRequestCheckpoint,

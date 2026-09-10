@@ -30,25 +30,36 @@ authorization remain DOM-02 work; these are pure values, not admission policy.
 
 Scope and dependencies: [DOM-02 work package](../../plans/stewardship/campaign-domain.md#dom-02-campaign-interval-and-lifecycle-policy).
 
-- [ ] DOM-02.01 — Implement the canonical UTC interval resolver and DST rules.
+- [x] DOM-02.01 — Implement the canonical UTC interval resolver and DST rules.
 - [ ] DOM-02.02 — Define the lifecycle transition registry.
 - [ ] DOM-02.03 — Centralize access, work-admission, and lifecycle predicates.
 - [ ] DOM-02.04 — Enforce exact date boundaries despite scheduler lag.
 - [ ] DOM-02.05 — Test transitions, races, DST, and lifecycle invariants.
 
-Evidence: Not started.
+Evidence: The Phase 1A policy batch adds `campaigns.intervals` and 25 pure tests
+covering UTC boundaries, earlier folds, first-valid gap resolution, 23/25-hour
+days, a whole skipped date, invalid dates and first-anniversary financial ends.
+Lifecycle predicates, persisted date gates and transaction/race integration
+remain DOM-02.02 through .05 with DAT-02. See the
+[foundation boundary](../../guides/stewardship-authorization-foundation.md).
 
 ## DOM-03: Authorization capability policy
 
 Scope and dependencies: [DOM-03 work package](../../plans/stewardship/campaign-domain.md#dom-03-authorization-capability-policy).
 
-- [ ] DOM-03.01 — Implement named capability policies from the role matrix.
-- [ ] DOM-03.02 — Implement role implication and object scopes.
-- [ ] DOM-03.03 — Implement report-column privacy policies.
+- [x] DOM-03.01 — Implement named capability policies from the role matrix.
+- [x] DOM-03.02 — Implement role implication and object scopes.
+- [x] DOM-03.03 — Implement report-column privacy policies.
 - [ ] DOM-03.04 — Integrate policies across views, jobs, exports, and audit.
 - [ ] DOM-03.05 — Test every role, scope, and revocation combination.
 
-Evidence: Not started.
+Evidence: The Phase 1A policy batch adds named capability decisions, role
+implication, exact-address/hosted-domain precedence, separate Family scope and
+Ministry column filtering. Parameterized tests cover the complete named
+role/capability/scope matrix; PostgreSQL tests exercise live rule changes and
+seed-overlay suspension/reactivation. DOM-03.04/.05 remain partial until ARC-04
+and later callers enforce current policy/session checks, including transaction
+races. See the [foundation boundary](../../guides/stewardship-authorization-foundation.md).
 
 ## DOM-04: Shared presentation and client contracts
 

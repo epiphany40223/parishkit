@@ -1400,6 +1400,88 @@ tests belong to the same round, per the controlling delivery cycle. The PR/CI
 handoff will carry the final pushed SHA and check results. Human merge approval
 is still required; neither Phase 1 nor Gate 1 is released.
 
+### Authorization and recovery batch
+
+Branch `pr/stewardship-phase-1a` starts from PR #16 merge
+`e5706c8a745d4cd33198918eb006180485be50b9`. Implementation `3206aa8` groups
+versioned policy, provenance, capability/column decisions, security effects,
+offline-recovery records/protocol and the DST interval prerequisite. See the
+[integration boundary and batch rationale](../../guides/stewardship-authorization-foundation.md).
+This does not release Phase 1A or Gate 1; operational identity, recovery commands,
+campaign lifecycle/schedules, secret integration and later consumers remain open.
+
+Round 1: Pika session `20260909-172302-7d3155` reviewed the complete branch against
+the merge base, using Codex and two Pika-generated Claude file shards. Exact-path
+Claude permission preflight passed. All reviewers completed and finalization
+reported no failed agents, mismatches or degradation: 10 Medium, no High/Critical.
+Nine findings were corrected: request-bound manual provenance; clock-skew-tolerant
+session revocation; explicit seed rejection tests; invalid-principal column denial;
+v2 unsupported-section/legacy-dispatch tests; reuse of verified policy projections;
+retired-ID intake and installer preflight; normalized seeded lookup; explicit
+first-policy alert-recipient coverage. The proposed single-day campaign change was
+rejected because the user's original requirement explicitly requires the end date
+to be after the start date. Empty prior-Admin recipients on a historical pre-policy
+upgrade are deliberate, not invented Admin authority for the Testing recipient.
+
+Initial complete validation passed 1,386 baseline tests, 336 PostgreSQL tests and
+30 opt-in Compose tests, including built-image test parity. Stewardship coverage
+was 97.57% lines and 93.79% branches. Ruff, Markdown, migration drift and Docker
+build passed. Round-1 correction PostgreSQL validation passed 340 tests; complete
+post-correction coverage and remaining review rounds are in progress. These
+intermediate counts are not final PR or CI evidence. Complete round-1 corrections
+at `bc46d4d` passed 1,394 baseline and 340 PostgreSQL tests, with 97.60% scoped
+lines and 93.93% branches, followed by a fresh image and 30 passing Compose checks.
+
+Round 2: session `20260909-174131-9affa5`, again complete-branch Codex plus two
+Claude shards, passed exact-path permission preflight and finalized without
+degradation, failed agents or mismatches. Thirteen Medium findings, no High or
+Critical. Twelve addressed: model-derived SQL identifiers; confirmed-target replay
+tests; malformed recovery input/already-Admin tests; safe uninitialized-runtime
+diagnostics; installer-side ancestry failure tests; manual-Admin update and missing
+grant tests; explicit failed-receipt semantics; normalized confirmation; bound
+recovery creation provenance; invalid optional hosted-domain handling; denial epochs
+for restored manual scope/origins; and same-patch address replacement rejection.
+The deployment binding already has SQL/immutability enforcement and an early
+runtime mismatch test; tests do not disable those guards merely to mutate history.
+The proposed cross-request cache was declined: no measured performance failure
+justifies weakening current manifest/projection corruption detection without an
+invalidation contract. ARC-04 performance work may revisit it with evidence.
+Deleting an override in one operation and explicitly creating a later override
+is not silently rewriting the provenance of an existing rule; the new guard
+specifically rejects same-patch identity replacement.
+
+Post-round-2 coverage passed 1,399 baseline and 362 PostgreSQL tests, with 97.74%
+scoped lines and 94.51% branches. Ruff and Markdown passed. Round 3 and final
+image/CI validation remain required before PR handoff.
+
+Round 3: session `20260909-180150-c7745e` reviewed the complete branch at
+`096353b`, with the same two-source/sharded roster and successful exact-path
+permission preflight. All reviewers completed; no degradation, failed agents
+or verdict mismatch. Four Medium findings, no High/Critical. The canonical
+Ministry-scope finding was fixed with exact integer/range checks and bool,
+float, string, container and out-of-range regression cases. Three were rejected:
+
+- The online-installer recovery-denial test already exists in
+  `test_additive_recovery_is_attributed_revoking_and_idempotent`; its checkpoint
+  preservation assertion was made explicit as well.
+- Removing an exact denial does not add Admin, create a domain, or add Staff
+  to a domain. The specification deliberately limits high-impact notifications
+  to those three categories; the existing ordinary audit and denial-epoch
+  effects are appropriate, without inventing a fourth notification category.
+- Request UUIDs were never authorization credentials. The installer is an
+  unexposed internal primitive; ARC-04/ADM-07/service admission remains mandatory
+  before any operational caller, regardless of UUID randomness. A separate
+  random handle is not a substitute for that boundary.
+
+All three independent review/fix rounds are complete. Accepted Medium findings
+have been corrected. Final local validation passed 1,427 baseline tests and
+362 PostgreSQL tests, with 97.77% scoped line and 94.62% branch coverage. All
+30 opt-in Compose checks passed, including the freshly rebuilt image's 1,427
+baseline tests. Ruff check/format, Markdown, migration drift and Docker build
+passed. No real provider credentials or parish data were used. PR CI checks and
+human approval remain merge requirements; this satisfies the batch review cycle,
+not the incomplete Phase 1A or G1.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).

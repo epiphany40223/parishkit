@@ -1,9 +1,10 @@
-"""Internal PostgreSQL materializer and resumable parish-profile installer.
+"""Internal PostgreSQL materializer and resumable configuration/policy installer.
 
 No service, route, or command exposes this implementation. Actor UUIDs are
 attribution, not authorization. Online Admin admission, credential evidence,
 offline bootstrap/recovery interlocks, and service grants/mounts remain required
-before exposure. This schema cannot change roles, secrets, campaigns, or mode.
+before exposure. Versioned policy is supported internally; operational secret,
+campaign and mode changes are not. Request IDs are references, never credentials.
 """
 
 import re
@@ -37,7 +38,12 @@ class DatabaseMaterializer:
         self, store, *, actor_id, correlation_id, request=None, testing_recipient=None
     ):
         """Bind one request, or an initial recipient committed only at activation."""
-        _identities(actor_id, correlation_id)
+        if request is not None and request.authority == "operator_recovery":
+            _identities(correlation_id)
+            if actor_id is not None or request.actor_id is not None:
+                raise ConfigError("Offline recovery cannot impersonate a portal actor.")
+        else:
+            _identities(actor_id, correlation_id)
         self.store, self.actor_id, self.correlation_id = store, actor_id, correlation_id
         self.request = request
         self.testing_recipient = testing_recipient
@@ -217,6 +223,13 @@ def install_request(store, *, request_id, correlation_id):
     )
     if request is None:
         raise LookupError("Configuration request is unavailable.")
+    if request.authority != "admin":
+        raise ConfigError("Operator recovery requires the offline workflow.")
+    return _install_request(store, request=request, correlation_id=correlation_id)
+
+
+def _install_request(store, *, request, correlation_id):
+    """Shared checkpoint engine after its distinct online/offline authority boundary."""
     materializer = DatabaseMaterializer(
         store, actor_id=request.actor_id, correlation_id=correlation_id, request=request
     )
@@ -250,6 +263,17 @@ def install_request(store, *, request_id, correlation_id):
                     candidate_id=request.candidate_version_id,
                     request_schema=request.request_schema,
                 )
+                if request.request_schema == "foundation-policy-patch-v2":
+                    from .policy_schema import validate_manual_operation
+
+                    validate_manual_operation(
+                        base.document()["sections"].get("login_rules", []),
+                        intent.candidate.document()["sections"].get("login_rules", []),
+                        request.pk,
+                    )
+                from .request_admission import check_historical_additions
+
+                check_historical_additions(request.base_id, request.patch)
                 if (
                     intent.candidate.digest != request.candidate_digest
                     or intent.payload_fingerprint != request.payload_fingerprint
@@ -303,4 +327,7 @@ def coherent_configuration(store):
         or store.manifest_reference() != (selected.version_id, selected.digest)
     ):
         raise ConfigError("Configuration is incomplete or requires recovery.")
+    # Reuse the exact projection instance just verified, including its prefetch
+    # cache. Downstream policy reads must not reload the same immutable corpus.
+    runtime.active_configuration = snapshot
     return runtime

@@ -18,6 +18,7 @@ from parishkit.stewardship.accounts.configuration_models import Parish
 from parishkit.stewardship.accounts.configuration_requests import record_request
 from parishkit.stewardship.accounts.configuration_schema import validate_sections
 from parishkit.stewardship.accounts.request_models import ConfigurationRequestCheckpoint
+from parishkit.stewardship.accounts.request_patch import build_candidate
 from parishkit.stewardship.accounts.runtime_models import ConfigurationActivation
 from parishkit.stewardship.accounts.secret_requests import stage_secret_request
 from parishkit.stewardship.audit.models import AuditEvent
@@ -395,15 +396,27 @@ def test_broad_downgrade_preserves_upgraded_legacy_ownership(tmp_path, history):
         elif history == "checkpoint":
             root, actor = configuration_version(), uuid4()
             installer.prepare_snapshot(root, actor_id=actor, correlation_id=uuid4())
-            request = record_request(
-                base_digest=root.digest,
-                patch=parish_patch(root, name="Next Parish"),
+            intent = build_candidate(
+                root, parish_patch(root, name="Next Parish"), candidate_id=uuid4()
+            )
+            # Historical fixtures must use historical models: current request
+            # services now include offline-recovery columns absent at this leaf.
+            request_model = executor.loader.project_state(
+                [PREVIOUS, ("stewardship_accounts", "0015_secret_request_guards")]
+            ).apps.get_model("stewardship_accounts", "ConfigurationChangeRequest")
+            request = request_model.objects.create(
+                base_id=root.version_id,
+                patch=intent.patch(),
                 actor_id=actor,
                 request_key=uuid4(),
                 correlation_id=uuid4(),
+                request_schema="parish-integrations-patch-v1",
+                payload_fingerprint=intent.payload_fingerprint,
+                candidate_version_id=intent.candidate.version_id,
+                candidate_digest=intent.candidate.digest,
             )
             ConfigurationRequestCheckpoint.objects.create(
-                request_id=request.request_id,
+                request_id=request.pk,
                 actor_id=actor,
                 state="validating",
                 sequence=2,

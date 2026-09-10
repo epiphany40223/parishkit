@@ -40,6 +40,7 @@ def check_historical_additions(base_id, patch):
     every canonical document. Full ancestry validation remains mandatory when
     the installer prepares the candidate; this is not a readiness certificate.
     """
+    _check_policy_additions(base_id, patch)
     additions = [
         item
         for item in patch
@@ -86,3 +87,46 @@ def check_historical_additions(base_id, patch):
             raise ConfigError(
                 "Integration identities must remain stable across history."
             )
+
+
+def _check_policy_additions(base_id, patch):
+    """Compare only added policy IDs against retained ancestry, before claiming work."""
+    from .configuration_snapshots import _remember_policy
+
+    additions = [
+        item
+        for item in patch
+        if item["section"] == "login_rules" and item["operation"] == "add"
+    ]
+    if not additions:
+        return
+    identities = {}
+    _remember_policy({"sections": {"login_rules": additions}}, identities)
+    quote, meta = connection.ops.quote_name, AppliedConfigurationVersion._meta
+    table = quote(meta.db_table)
+    pk, predecessor, document = (
+        quote(meta.get_field(field).column)
+        for field in ("id", "predecessor", "canonical_document")
+    )
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"""
+            WITH RECURSIVE chain(id, predecessor_id) AS (
+                SELECT {pk}, {predecessor}
+                FROM {table} WHERE {pk} = %s
+                UNION
+                SELECT p.{pk}, p.{predecessor}
+                FROM {table} p JOIN chain c ON p.{pk} = c.predecessor_id
+            ) SELECT record FROM chain JOIN {table} p ON p.{pk} = chain.id,
+              jsonb_array_elements(p.{document}->'sections'->'login_rules') record
+              WHERE record->>'id' = ANY(%s)
+            """,
+            [base_id, [item["id"] for item in additions]],
+        )
+        import json
+
+        records = [
+            json.loads(row[0]) if isinstance(row[0], str) else row[0]
+            for row in cursor.fetchall()
+        ]
+    _remember_policy({"sections": {"login_rules": records}}, identities)

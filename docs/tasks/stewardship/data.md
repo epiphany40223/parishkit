@@ -105,6 +105,15 @@ claim/retry races, rollback, privacy and migrations. BG-01 still owns actual
 scheduling, service identity/admission, task-specific phases/retry budgets and
 reconciliation. DAT-01.02/.03/.06 retain their remaining integration work.
 
+The Phase 1A policy batch adds tagged operator-recovery requests, an additive
+manual Admin patch format, bound operation replay, and the ordinary installer
+checkpoint protocol without impersonating a portal actor. Activation atomically
+revokes administration-session metadata and records revocation/audit/security
+intents. The [foundation boundary](../../guides/stewardship-authorization-foundation.md)
+identifies the still-required OPS-04 offline interlock/command, ARC-04 pending
+OAuth revocation and session enforcement, notification delivery, and remaining
+runtime/secret integration. DAT-01.02/.03/.06 therefore remain partial.
+
 ## DAT-02: Campaign lifecycle and schedule schema
 
 Scope and dependencies: [DAT-02 work package](../../plans/stewardship/data.md#dat-02-campaign-lifecycle-and-schedule-schema).
@@ -148,13 +157,21 @@ Evidence: Not started.
 Scope and dependencies: [DAT-05 work package](../../plans/stewardship/data.md#dat-05-portal-users-and-authorization-policy-records).
 
 - [ ] DAT-05.01 — Implement portal users, login rules, and assignments.
-- [ ] DAT-05.02 — Materialize policy from applied YAML versions.
-- [ ] DAT-05.03 — Enforce rule precedence and last-Administrator guards.
+- [x] DAT-05.02 — Materialize policy from applied YAML versions.
+- [x] DAT-05.03 — Enforce rule precedence and last-Administrator guards.
 - [ ] DAT-05.04 — Implement provenance-aware chair seeds and runtime suspension overlays.
-- [ ] DAT-05.05 — Index login and Ministry authorization queries.
+- [x] DAT-05.05 — Index login and Ministry authorization queries.
 - [ ] DAT-05.06 — Test policy activation, source transitions, and idempotent autosave races.
 
-Evidence: Not started.
+Evidence: The Phase 1A policy batch adds immutable normalized rule/grant/
+assignment projections, explicit provenance, verified identity metadata, runtime
+overlays, lookup indexes, strict v2 schema/patch dispatch, last-Admin protection
+and immediate exact-address/hosted-domain decisions. High-impact activation
+commits security-notification intent and denial-namespace evidence atomically.
+See the [foundation boundary](../../guides/stewardship-authorization-foundation.md).
+DAT-05.01/.04/.06 remain partial: source-backed suggestions/review tasks,
+Admin-confirmed seeds, promotion integration, actual login/audit/session
+enforcement, and autosave/service admission races require Phase 1B/2 consumers.
 
 ## DAT-06: Immutable submissions and proposal overlay
 

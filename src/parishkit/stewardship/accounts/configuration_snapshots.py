@@ -23,13 +23,20 @@ from .configuration_models import (
     AppliedIntegration,
     Parish,
 )
-from .configuration_schema import VALIDATION_SCHEMA, validate_sections, validator_for
+from .configuration_schema import (
+    schema_for,
+    validate_sections,
+    validator_for,
+)
 
 
-def _normalized(document):
+def _normalized(document, schema=None):
     """Extract just the projections, retaining deterministic authoritative IDs."""
     sections = document["sections"]
-    return {name: sections.get(name, []) for name in ("parish", "integrations")}
+    names = ("parish", "integrations")
+    if (schema or schema_for(document)) == "foundation-policy-v2":
+        names += ("login_rules",)
+    return {name: sections.get(name, []) for name in names}
 
 
 def _digest(value):
@@ -44,7 +51,7 @@ def _digest(value):
 def _stored_projections(snapshot):
     """Reconstruct YAML-shaped records from the actual persisted projection rows."""
     parish = snapshot.parish
-    return {
+    result = {
         "parish": [
             {
                 "id": str(parish.record_id),
@@ -76,6 +83,11 @@ def _stored_projections(snapshot):
             )
         ],
     }
+    if snapshot.validation_schema == "foundation-policy-v2":
+        from .policy_projections import stored_policy
+
+        result["login_rules"] = stored_policy(snapshot)
+    return result
 
 
 def _history(snapshot):
@@ -121,6 +133,15 @@ def _load_history(digest):
         # Populate the ordinary FK cache without lazy per-ancestor SELECTs.
         row.predecessor = by_id.get(row.predecessor_id)
     prefetch_related_objects(rows, "parish", "integrations")
+    policy_rows = [
+        row for row in rows if row.validation_schema == "foundation-policy-v2"
+    ]
+    prefetch_related_objects(
+        policy_rows,
+        "domainrule_set",
+        "addressrule_set__grants",
+        "ministryassignment_set",
+    )
     return next(row for row in rows if row.digest == digest)
 
 
@@ -155,7 +176,8 @@ def verified_snapshot_version(snapshot, *, predecessor_digest):
             and version.digest == snapshot.digest
             and version.predecessor_digest == predecessor_digest
             and snapshot.schema_version == 1
-            and _digest(_normalized(version.document())) == snapshot.normalized_digest
+            and _digest(_normalized(version.document(), snapshot.validation_schema))
+            == snapshot.normalized_digest
             and _digest(_stored_projections(snapshot)) == snapshot.normalized_digest
         ):
             return version
@@ -170,20 +192,44 @@ def _verify_history(snapshot, candidate=None):
         return False
     try:
         parish_id = str(snapshot.parish.record_id)
-        by_kind, by_id = {}, {}
+        by_kind, by_id, policy_ids = {}, {}, {}
+        newer_policy = None
         if candidate is not None:
             if candidate["sections"]["parish"][0]["id"] != parish_id:
                 return False
             _remember_integrations(candidate, by_kind, by_id)
+            newer_policy = _remember_policy(candidate, policy_ids)
         for entry in _history(snapshot):
             predecessor = entry.predecessor.digest if entry.predecessor_id else None
             version = verified_snapshot_version(entry, predecessor_digest=predecessor)
             if str(entry.parish.record_id) != parish_id:
                 return False
             _remember_integrations(version.document(), by_kind, by_id)
+            has_policy = _remember_policy(version.document(), policy_ids)
+            if newer_policy is False and has_policy:
+                return False
+            newer_policy = has_policy
         return True
     except (ConfigError, Parish.DoesNotExist):
         return False
+
+
+def _remember_policy(document, identities):
+    """Keep a retired UUID's immutable identity/provenance across the entire chain."""
+    records = document["sections"].get("login_rules", [])
+    frozen = {
+        "domain": ("domain",),
+        "address": ("email", "creation_origin", "creation_operation"),
+        "assignment": ("email", "ministry_duid", "source", "operation_id"),
+    }
+    for record in records:
+        values = record["values"]
+        identity = (values["kind"], *(values[name] for name in frozen[values["kind"]]))
+        if identities.setdefault(record["id"], identity) != identity:
+            raise ConfigError(
+                "Policy record identities must remain stable across history."
+            )
+    return bool(records)
 
 
 def is_prepared(digest):
@@ -266,7 +312,7 @@ def prepare_snapshot(version, *, actor_id, correlation_id):
             predecessor=predecessor,
             canonical_document=document,
             normalized_digest=_digest(_normalized(document)),
-            validation_schema=VALIDATION_SCHEMA,
+            validation_schema=schema_for(document),
             **attribution,
         )
         values = parish_record["values"]
@@ -290,4 +336,9 @@ def prepare_snapshot(version, *, actor_id, correlation_id):
                 **record["values"],
                 **attribution,
             )
+        from .policy_projections import prepare_policy
+
+        prepare_policy(
+            snapshot, document["sections"].get("login_rules", []), attribution
+        )
         return snapshot
