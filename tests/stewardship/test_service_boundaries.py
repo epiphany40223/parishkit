@@ -21,6 +21,8 @@ def configured(role, *, target=None):
     config = load_deployment(environ={})
     names = ALLOWED_SECRETS[role] if target is None else {target, "handoff_private"}
     secrets = {name: Path("/run/secrets") / name for name in names}
+    if target:
+        secrets[target] = config.paths["credentials"] / target / "credential"
     config = replace(
         config,
         service_role=role,
@@ -34,7 +36,7 @@ def configured(role, *, target=None):
             role is not ServiceRole.CONFIG_INSTALLER,
         ),
     ]
-    mounts += [Mount(path, True) for path in secrets.values()]
+    mounts += [Mount(path, True) for name, path in secrets.items() if name != target]
     if target:
         mounts.append(Mount(config.paths["credentials"] / target, False))
     return config, mounts

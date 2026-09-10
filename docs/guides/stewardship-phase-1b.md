@@ -32,7 +32,8 @@ mutation, deployment, release or gate approval is implied by this batch.
 
 ## Status and evidence
 
-Implementation is in progress. No Phase 1B task or review gate is claimed complete.
+Implementation is in progress. Verified task checkboxes do not close Phase 1B
+or its required review rounds and integrated review gate.
 The per-package checklists remain authoritative; evidence is added as each
 deliverable and its tests finish.
 
@@ -66,6 +67,51 @@ passes 2,113 tests, and 39 browser checks pass. Audit schema/storage tests pass
 mount-policy matrix passes 16 tests. Isolated installer execution, rotation
 completion and actual mount/DB-role proof remain unfinished. No peer-review
 round or Phase 1B completion is claimed by the intermediate backup commit.
+
+Latest integrated checkpoint: 730 PostgreSQL tests pass; the ordinary suite
+passes 2,163 tests. Session privilege changes rotate the cookie and CSRF token
+without extending Google freshness or absolute lifetime. Ordered cleanup removes
+expired anonymous, administration and Family sessions without bypassing their
+protected metadata. Real-Valkey health observation detects server restart,
+eviction and marker loss against a durable non-identifying baseline and records
+critical notification intent. The authentication suite passes 49 tests.
+
+General-code and private-token re-encryption is bounded and transactional,
+preserves the original credential/digest, and independently verifies retained
+ciphertexts. Tests cover corruption rollback and cross-purpose key reuse during
+isolated inventory installation. The combined rotation/Family-identity suite
+passes 16 tests. This does not yet claim backup-aware retirement, complete
+installer orchestration or service/queue admission.
+
+The application image builds successfully. Twelve real-container tests pass for
+kernel-visible mount access, owner-only files, configuration/credential target
+writes and token-private-key separation. These tests use a disposable native
+Docker volume: this Docker Desktop file-sharing configuration reports host bind
+files as Linux-root-owned across container starts, even after chown. Native
+volume-backed file binds preserve the required ownership without relaxing modes.
+The bootstrap fixture has only synthetic inputs and its own temporary volume;
+online probes are non-root, network-disabled and capability-free. Actual
+deployment provisioning and production startup remain Phase 1C work.
+
+Run the container checks after building the application image with
+`PARISHKIT_RUN_ISOLATION_TESTS=1 python -m pytest
+tests/stewardship/test_container_isolation.py -q`. The CI Compose job and release
+validation explicitly run them. Application service database/queue isolation is
+separate remaining evidence, not implied by successful mount checks.
+
+The complete Compose validation passes 30 tests, including image/host collection
+parity, in-image tests, reload, restart and durable storage. Reload probes now
+reach liveness from inside the web container; external health requests must
+return 404 rather than weakening internal-route isolation for the test harness.
+
+The integrated scoped coverage runner passes with 95.19% lines and 86.75%
+branches, including 731 PostgreSQL tests. Browser revalidation passes all 39
+checks. Signed commit `0f569ca` records the session/limiter lifecycle checkpoint;
+this remains intermediate evidence, not the final Phase 1B review or handoff.
+
+Health observation uses only the documented server incarnation and eviction
+counters from [Valkey INFO](https://valkey.io/commands/info/), plus an opaque
+per-namespace marker. No address, attempted code or token enters that baseline.
 
 ## Browser component validation
 

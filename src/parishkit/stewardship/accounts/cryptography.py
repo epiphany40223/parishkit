@@ -277,11 +277,9 @@ class SigningKeyring(_Ring):
 
 
 def independent_keyrings(*rings):
-    """Reject secret reuse across purposes; public/private counterparts are expected."""
+    """Reject reuse across purposes, including a public key reused as a secret."""
     seen = set()
     for ring in rings:
-        if isinstance(ring, TokenPublicKeyring):
-            continue
         for key in ring.keys.values():
             if key.material in seen:
                 raise CryptographicError("Keyrings require independent key material.")

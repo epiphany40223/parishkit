@@ -590,6 +590,28 @@ def wait_http(origin, path, status, body=None, *, touch_on_retry=None):
     pytest.fail(f"Scaffold endpoint did not reach expected status {status}")
 
 
+def wait_internal_live(compose, body, *, touch_on_retry=None):
+    """Probe inside the web network namespace; never expose health for reload tests."""
+    script = (
+        "from urllib.request import build_opener, ProxyHandler; "
+        "import sys; "
+        "response=build_opener(ProxyHandler({})).open("
+        "'http://127.0.0.1:8000/health/live',timeout=2); "
+        "sys.stdout.buffer.write(response.read(128)); response.close()"
+    )
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        result = compose(
+            "exec", "-T", "web", "python", "-c", script, check=False, timeout=5
+        )
+        if result.returncode == 0 and result.stdout.encode() == body:
+            return
+        if touch_on_retry is not None:
+            os.utime(touch_on_retry, None)
+        time.sleep(0.2)
+    pytest.fail("Internal liveness did not reach the expected body")
+
+
 @pytest.mark.parametrize("pending", ["body", "status", "unavailable"])
 def test_http_wait_retouches_fixture_only_while_pending(tmp_path, monkeypatch, pending):
     """A startup race retries the copied fixture, then stops when content matches."""
@@ -799,8 +821,10 @@ def test_development_container_lifecycle(tmp_path):
         compose("up", "--wait", "--wait-timeout", "90", "web", "postgres", "valkey")
         assert compose("exec", "-T", "web", "id", "-u").stdout.strip() == "10001"
         origin = "http://" + compose("port", "web", "8000").stdout.strip()
-        wait_http(origin, "/health/live", 200, b"ok\n")
-        for path in ("/", "/admin/", "/family/", "/health/ready"):
+        wait_internal_live(compose, b"ok\n")
+        for path in ("/health/live", "/health/ready"):
+            wait_http(origin, path, 404)
+        for path in ("/", "/admin/", "/family/"):
             wait_http(origin, path, 503)
         wait_http(origin, "/metrics", 404)
         sentinel = "synthetic-private-access-sentinel"
@@ -815,9 +839,9 @@ def test_development_container_lifecycle(tmp_path):
         original = views.read_text()
         assert '"ok\\n"' in original
         views.write_text(original.replace('"ok\\n"', '"reloaded\\n"'))
-        wait_http(origin, "/health/live", 200, b"reloaded\n", touch_on_retry=views)
+        wait_internal_live(compose, b"reloaded\n", touch_on_retry=views)
         views.write_text(original)
-        wait_http(origin, "/health/live", 200, b"ok\n", touch_on_retry=views)
+        wait_internal_live(compose, b"ok\n", touch_on_retry=views)
 
         config = json.loads(compose("config", "--format", "json").stdout)
         for name in ("postgres", "valkey"):
@@ -881,6 +905,6 @@ def test_development_container_lifecycle(tmp_path):
         assert stopped["State"] == "exited" and stopped["ExitCode"] != 137
         compose("up", "--wait", "--wait-timeout", "30", "web")
         origin = "http://" + compose("port", "web", "8000").stdout.strip()
-        wait_http(origin, "/health/live", 200, b"ok\n")
+        wait_internal_live(compose, b"ok\n")
     finally:
         compose("down", "--timeout", "10", timeout=60)

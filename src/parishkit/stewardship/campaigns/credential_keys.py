@@ -63,6 +63,7 @@ def initialize_key_inventories(*rings):
     with transaction.atomic(), key_set_lock(exclusive=True):
         DeploymentCredentialState.objects.get_or_create()
         for ring in rings:
+            _check_independent_inventory(ring)
             row, created = CredentialKeyState.objects.get_or_create(
                 kind=ring.kind,
                 defaults={
@@ -96,6 +97,7 @@ def add_rotation_key(previous, replacement):
         if new is None or new.material != key.material or new.usage not in allowed:
             raise CryptographicError("Rotation must preserve retained keys.")
     with transaction.atomic(), key_set_lock(previous, exclusive=True):
+        _check_independent_inventory(replacement)
         row = CredentialKeyState.objects.get(kind=previous.kind)
         CredentialKeyState.objects.filter(pk=row.pk).update(
             inventory=list(replacement.inventory()),
@@ -105,3 +107,17 @@ def add_rotation_key(previous, replacement):
         AuditEvent.objects.create(
             event_type="credential_key_activated", subject_id=row.pk
         )
+
+
+def _check_independent_inventory(ring):
+    """Compare fingerprints with every other installed purpose under the key lock.
+
+    Single-target installation cannot rely on having unrelated private keyrings
+    in memory. Inventories allow checking without unrelated decryption access.
+    """
+    fingerprints = {key.fingerprint for key in ring.keys.values()}
+    for inventory in CredentialKeyState.objects.exclude(kind=ring.kind).values_list(
+        "inventory", flat=True
+    ):
+        if any(item["fingerprint"] in fingerprints for item in inventory):
+            raise CryptographicError("Keyrings require independent key material.")

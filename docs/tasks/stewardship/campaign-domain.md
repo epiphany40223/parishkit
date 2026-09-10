@@ -84,13 +84,23 @@ belong to Phase 1B and later routes/jobs/reports, not another Phase 1A increment
 
 Scope and dependencies: [DOM-04 work package](../../plans/stewardship/campaign-domain.md#dom-04-shared-presentation-and-client-contracts).
 
-- [ ] DOM-04.01 — Build shared responsive and accessible UI components.
-- [ ] DOM-04.02 — Implement date, currency, number, and percentage formatters.
-- [ ] DOM-04.03 — Prepare interface strings for localization.
-- [ ] DOM-04.04 — Define browser and progressive-enhancement contracts.
-- [ ] DOM-04.05 — Test formatters and accessible components.
+- [x] DOM-04.01 — Build shared responsive and accessible UI components.
+- [x] DOM-04.02 — Implement date, currency, number, and percentage formatters.
+- [x] DOM-04.03 — Prepare interface strings for localization.
+- [x] DOM-04.04 — Define browser and progressive-enhancement contracts.
+- [x] DOM-04.05 — Test formatters and accessible components.
 
-Evidence: Not started.
+Evidence: Phase 1B backup commit `dfb90d2` adds shared templates, responsive
+self-hosted versioned assets, branding/navigation blocks, form/error/empty/table
+and progress components, server formatting and browser-local time rendering.
+Strings are localization-ready; no translated interface is claimed. Thirty-nine
+Chromium/Firefox/WebKit component checks pass, covering 320-pixel layouts, axe,
+keyboard focus, no-JavaScript fallback and session warnings/activity. Shared
+pure security/presentation/contracts pass 75 tests. See
+[component validation and limits](../../guides/stewardship-phase-1b.md#browser-component-validation).
+Feature-specific screens and manual screen-reader/current-previous branded
+browser acceptance remain with their named feature packages and OPS-09.
+Phase 1B peer-review rounds and the integrated Gate 1 demonstration remain open.
 
 ## DOM-05: Cross-domain acceptance harness
 

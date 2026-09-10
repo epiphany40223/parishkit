@@ -73,6 +73,13 @@ jobs:
       - name: Build artifacts
         run: python -m build --no-isolation
 
+      - name: Verify application image mount isolation
+        env:
+          PARISHKIT_RUN_ISOLATION_TESTS: "1"
+        run: |
+          docker compose -f deploy/stewardship/compose.yaml -f deploy/stewardship/compose.development.yaml build web
+          python -m pytest tests/stewardship/test_container_isolation.py -q
+
       - uses: actions/setup-node@v4
         with:
           node-version: "24"

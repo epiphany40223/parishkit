@@ -97,7 +97,10 @@ def validate_mounts(configuration, mounts):
         ServiceRole.MAIL_DISPATCH: {"token_private", "google_workspace"},
         ServiceRole.TOKEN_KEY_ROTATION: {"token_private", "token_public"},
         ServiceRole.BACKUP_WORKER: {"backup_target", "backup_data"},
-    }.get(role, {"handoff_private"} if installer else set())
+    }.get(
+        role,
+        {"handoff_private", configuration.credential_target} if installer else set(),
+    )
     if required - configuration.secrets.keys():
         raise ConfigError("Service credential mounts are incomplete.")
     mount_map = {mount.target: mount for mount in mounts}
@@ -106,6 +109,14 @@ def validate_mounts(configuration, mounts):
     credential_root = configuration.paths["credentials"]
     authority = configuration.paths["config"] / "stewardship"
     target_directory = credential_root / str(configuration.credential_target)
+    if (
+        installer
+        and configuration.secrets[configuration.credential_target].parent
+        != target_directory
+    ):
+        raise ConfigError(
+            "Installer credential file must be inside its writable target."
+        )
     files = set(configuration.secrets.values())
     connection_paths = [
         path

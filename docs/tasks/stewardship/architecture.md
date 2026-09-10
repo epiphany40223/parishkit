@@ -76,20 +76,25 @@ Scope and dependencies: [ARC-03 work package](../../plans/stewardship/architectu
 
 - [ ] ARC-03.01 — Configure Django request and browser security controls.
 - [ ] ARC-03.02 — Separate public and internal routes.
-- [ ] ARC-03.03 — Implement safe graphic upload and variant processing.
-- [ ] ARC-03.04 — Implement rich-text sanitization and template validation.
+- [x] ARC-03.03 — Implement safe graphic upload and variant processing.
+- [x] ARC-03.04 — Implement rich-text sanitization and template validation.
 - [ ] ARC-03.05 — Implement safe CSV cells, download headers, and response-lifetime read guards.
-- [ ] ARC-03.06 — Test malicious requests, content, files, and error paths.
+- [x] ARC-03.06 — Test malicious requests, content, files, and error paths.
 
-Evidence: Not started.
+Evidence: Phase 1B implementation on `pr/stewardship-phase-1b`, including backup
+commit `dfb90d2`; see [implementation evidence](../../guides/stewardship-phase-1b.md).
+Graphic, rich-text, template and hostile-input tests pass. ARC-03.01/.02/.05
+have tested middleware, production settings policy and WSGI response-lifetime
+adapters; production startup, actual proxy isolation and deployment headroom
+verification remain with Phase 1C. Package completion and reviews are pending.
 
 ## ARC-04: Google identity, authorization sessions, and denial paths
 
 Scope and dependencies: [ARC-04 work package](../../plans/stewardship/architecture.md#arc-04-google-identity-authorization-sessions-and-denial-paths).
 
 - [ ] ARC-04.01 — Implement Google authorization-code authentication.
-- [ ] ARC-04.02 — Integrate exact-address precedence and domain policies.
-- [ ] ARC-04.03 — Implement durable staff sessions and revocation.
+- [x] ARC-04.02 — Integrate exact-address precedence and domain policies.
+- [x] ARC-04.03 — Implement durable staff sessions and revocation.
 - [ ] ARC-04.04 — Build retryable authentication denial paths.
 - [ ] ARC-04.05 — Implement OAuth limiting and distributed-abuse telemetry.
 - [ ] ARC-04.06 — Test authentication, session security, and denial boundaries.
@@ -100,7 +105,14 @@ metadata. ARC-04.03 must provide ordered revoke/metadata/session cleanup before
 login is enabled; see the executable PostgreSQL regression and
 [database guide](../../guides/stewardship-database-tests.md#foundation-boundaries).
 
-Evidence: Not started.
+Evidence: Current-policy authorization and PostgreSQL sessions are integrated
+with Google-only HTTP login. Idle/absolute expiry, revocation, separate cookies,
+logout, ordered cleanup and privilege-transition rotation pass integration tests;
+rotation preserves the original Google authentication time and absolute expiry.
+The combined Google/Family/Valkey suite passes 49 tests. Remaining scope includes
+setup routing, complete recovery/identity-change HTTP coverage and operational
+limiter configuration; [Phase 1B evidence](../../guides/stewardship-phase-1b.md)
+records the active implementation and incomplete review status.
 
 ## ARC-05: Family code, token, and Family-session security
 
@@ -108,18 +120,24 @@ Scope and dependencies: [ARC-05 work package](../../plans/stewardship/architectu
 
 - [ ] ARC-05.01 — Implement Family codes, MAC lookup, and collision-safe migration.
 - [ ] ARC-05.02 — Implement credential lifecycles and collision-only reservation keys.
-- [ ] ARC-05.03 — Implement mode/epoch-scoped Family sessions and activity handling.
+- [x] ARC-05.03 — Implement mode/epoch-scoped Family sessions and activity handling.
 - [ ] ARC-05.04 — Implement and test distributed Family-code guessing controls.
-- [ ] ARC-05.05 — Enforce Admin/Staff code visibility and leader exclusion.
+- [x] ARC-05.05 — Enforce Admin/Staff code visibility and leader exclusion.
 - [ ] ARC-05.06 — Test credential, session, outage, and boundary behavior.
 
-Evidence: Not started.
+Evidence: Campaign credentials, MAC lookup/backfill, sealed link generations,
+rehearsal epochs, Family sessions and guarded code reports are implemented on
+`pr/stewardship-phase-1b`. Family HTTP tests and 39 browser-component checks cover
+separate sessions, warnings and activity handling. The guarded code-report role
+matrix permits Admin/Staff without fresh reauthentication and denies leaders.
+Remaining lifecycle/rotation and integration cases keep the other tasks open;
+see [Phase 1B evidence](../../guides/stewardship-phase-1b.md).
 
 ## ARC-06: Enforceable cryptographic service boundary
 
 Scope and dependencies: [ARC-06 work package](../../plans/stewardship/architecture.md#arc-06-enforceable-cryptographic-service-boundary).
 
-- [ ] ARC-06.01 — Define independent versioned keyrings.
+- [x] ARC-06.01 — Define independent versioned keyrings.
 - [ ] ARC-06.02 — Implement isolated configuration activation and recovery.
 - [ ] ARC-06.03 — Implement target-specific sealed credential replacement.
 - [ ] ARC-06.04 — Configure mail-dispatch and token-key-rotation services.
@@ -127,19 +145,31 @@ Scope and dependencies: [ARC-06 work package](../../plans/stewardship/architectu
 - [ ] ARC-06.06 — Implement key rotation and backup compatibility workflows.
 - [ ] ARC-06.07 — Test installer isolation, failures, races, and mount boundaries.
 
-Evidence: Not started.
+Evidence: Independent general-encryption, signing, MAC and sealed-box keyrings,
+purpose-bound envelopes, safe fingerprints and owner-only key-file handling are
+implemented. Target-specific handoff encryption passes 15 tests. Re-encryption
+batches preserve code/token values and roll back on corruption; rotation plus
+storage regressions pass 47 tests. Installer orchestration, database/queue
+isolation and backup-aware retirement remain incomplete. Actual container mount
+proof is in progress; [Phase 1B evidence](../../guides/stewardship-phase-1b.md)
+does not claim complete service admission or production readiness.
 
 ## ARC-07: Application-level privacy and audit primitives
 
 Scope and dependencies: [ARC-07 work package](../../plans/stewardship/architecture.md#arc-07-application-level-privacy-and-audit-primitives).
 
 - [ ] ARC-07.01 — Implement shared audited service wrappers.
-- [ ] ARC-07.02 — Define and enforce structured redaction schemas.
-- [ ] ARC-07.03 — Implement concurrency and validation-error helpers.
-- [ ] ARC-07.04 — Implement bounded pagination and neutral denial responses.
+- [x] ARC-07.02 — Define and enforce structured redaction schemas.
+- [x] ARC-07.03 — Implement concurrency and validation-error helpers.
+- [x] ARC-07.04 — Implement bounded pagination and neutral denial responses.
 - [ ] ARC-07.05 — Test secret exclusion across logs and support artifacts.
 
-Evidence: Not started.
+Evidence: Closed typed audit/operational contexts, PostgreSQL schema guards,
+optimistic-version checks, progressive validation errors, bounded pagination
+and neutral denial responses are implemented. Shared audit/storage checks pass
+52 tests and pure security/presentation/contracts pass 75 tests. Complete
+privileged-action wrapper integration and seeded artifact privacy scanning remain
+open; see [Phase 1B evidence](../../guides/stewardship-phase-1b.md).
 
 ## ARC-08: Performance, accessibility, and compatibility baseline
 
@@ -151,4 +181,9 @@ Scope and dependencies: [ARC-08 work package](../../plans/stewardship/architectu
 - [ ] ARC-08.04 — Integrate automated accessibility and focus helpers.
 - [ ] ARC-08.05 — Measure baseline page and task-status performance.
 
-Evidence: Not started.
+Evidence: Initial scope is in progress. Versioned self-hosted assets and an
+explicit Chromium/Firefox/WebKit matrix pass 39 component checks including axe,
+keyboard focus, mobile layouts, browser-local times and session behavior. Query
+budgets and representative baseline measurements are still pending. Full
+source/submission/outbox scale fixtures stay with their later phase owners;
+see [Phase 1B evidence](../../guides/stewardship-phase-1b.md).
