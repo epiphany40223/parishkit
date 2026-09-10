@@ -48,6 +48,33 @@ def test_each_role_has_an_explicit_mount_allowlist(role):
     assert validate_mounts(config, mounts) is role
 
 
+def test_authority_override_is_the_only_admitted_authority_mount():
+    """An explicit runtime path cannot silently fall back to config/stewardship."""
+    config, mounts = configured(ServiceRole.CONFIG_INSTALLER)
+    previous = config.paths["authority"]
+    config = replace(
+        config,
+        paths=replace(
+            config.paths,
+            values={
+                **config.paths.values,
+                "authority": Path("/custom/authority"),
+            },
+        ),
+    )
+    with pytest.raises(ConfigError, match="authority mount"):
+        validate_mounts(config, mounts)
+    mounts = [
+        replace(mount, target=config.paths["authority"])
+        if mount.target == previous
+        else mount
+        for mount in mounts
+    ]
+    assert validate_mounts(config, mounts) is ServiceRole.CONFIG_INSTALLER
+    with pytest.raises(ConfigError):
+        validate_mounts(config, mounts + [Mount(previous, False)])
+
+
 @pytest.mark.parametrize(
     "role",
     [

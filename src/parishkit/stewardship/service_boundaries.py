@@ -107,7 +107,7 @@ def validate_mounts(configuration, mounts):
     if len(mount_map) != len(mounts):
         raise ConfigError("Overmounted service paths are not admitted.")
     credential_root = configuration.paths["credentials"]
-    authority = configuration.paths["config"] / "stewardship"
+    authority = configuration.paths["authority"]
     target_directory = credential_root / str(configuration.credential_target)
     if (
         installer

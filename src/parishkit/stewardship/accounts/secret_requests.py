@@ -106,6 +106,7 @@ def stage_secret_request(
     required_consumers=(),
     sealed_candidate=None,
     candidate_fingerprint=None,
+    admit=None,
 ):
     """Record a trusted, already sealed staging reference with exact retry identity.
 
@@ -161,6 +162,8 @@ def stage_secret_request(
         required_consumers=sorted(required_consumers),
     )
     with _transaction():
+        if admit is not None and (not callable(admit) or admit() is not True):
+            raise PermissionError("Secret request is not admitted.")
         existing = SecretReplacementRequest.objects.filter(pk=request_id).first()
         if existing is not None:
             if any(getattr(existing, key) != value for key, value in intent.items()):
