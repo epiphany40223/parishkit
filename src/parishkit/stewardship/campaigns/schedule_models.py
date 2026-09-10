@@ -324,6 +324,21 @@ class PostCloseMailResolution(ImmutableRecord):
                 fields=["campaign", "mode", "obligation_key", "coverage_digest"],
                 name="postclose_semantic_resolution",
             ),
+            models.UniqueConstraint(
+                fields=["occurrence"],
+                condition=models.Q(occurrence__isnull=False),
+                name="postclose_occurrence_once",
+            ),
+            models.UniqueConstraint(
+                fields=["task"],
+                condition=models.Q(task__isnull=False),
+                name="postclose_task_once",
+            ),
+            models.UniqueConstraint(
+                fields=["outbox_id"],
+                condition=models.Q(outbox_id__isnull=False),
+                name="postclose_outbox_once",
+            ),
             models.CheckConstraint(
                 condition=models.Q(coverage_digest__regex=r"^[0-9a-f]{64}$"),
                 name="postclose_coverage_digest",

@@ -6,12 +6,20 @@ from django.db import migrations
 SQL = """
 CREATE FUNCTION stewardship_restore_hold_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path=pg_catalog,public,pg_temp AS $$
+DECLARE r stewardship_system_configuration%ROWTYPE;
 BEGIN
     IF TG_OP='DELETE' THEN RAISE EXCEPTION 'Restore hold history cannot be deleted' USING ERRCODE='23514'; END IF;
     IF TG_OP='INSERT' THEN
-        IF NEW.state<>'unreviewed' OR NEW.version<>1 OR NEW.resolved_at IS NOT NULL OR NEW.recovery_occurrence_id IS NOT NULL
+        PERFORM pg_advisory_xact_lock(736220,1);
+        SELECT * INTO r FROM stewardship_system_configuration FOR UPDATE;
+        IF NEW.actor_id IS NULL OR NEW.state<>'unreviewed' OR NEW.version<>1 OR NEW.resolved_at IS NOT NULL OR NEW.recovery_occurrence_id IS NOT NULL
            OR NEW.evidence<>'' OR NEW.mode NOT IN ('testing','production') OR NEW.target='' OR NEW.slot='' OR NEW.discovery=''
-           OR NEW.window_start<>NEW.backup_at THEN
+           OR NEW.window_start<>NEW.backup_at
+           OR r.id IS NULL OR NOT r.restore_review_required OR r.restore_released_at IS NOT NULL
+           OR r.restore_id IS NULL OR r.restore_backup_at IS NULL OR r.restore_activated_at IS NULL
+           OR NEW.restore_id IS DISTINCT FROM r.restore_id OR NEW.backup_at IS DISTINCT FROM r.restore_backup_at
+           OR NOT EXISTS(SELECT 1 FROM stewardship_schedule_definition d WHERE d.id=NEW.definition_id
+               AND d.campaign_id=r.current_campaign_id) THEN
             RAISE EXCEPTION 'Invalid restore uncertainty inventory' USING ERRCODE='23514'; END IF;
     ELSIF NOT EXISTS(SELECT 1 FROM stewardship_restore_hold_resolution k WHERE k.hold_id=NEW.id AND k.version=NEW.version
         AND k.state=NEW.state AND k.evidence=NEW.evidence AND k.recovery_occurrence_id IS NOT DISTINCT FROM NEW.recovery_occurrence_id
@@ -87,7 +95,7 @@ BEGIN
        OR stewardship_coverage_valid_v1(NEW.coverage) IS DISTINCT FROM true
        OR NEW.coverage_digest<>encode(sha256(convert_to(NEW.coverage::text,'UTF8')),'hex')
        OR NOT EXISTS(SELECT 1 FROM stewardship_campaign c JOIN stewardship_system_configuration r ON r.current_campaign_id=c.id
-           WHERE c.id=NEW.campaign_id AND c.state='closed' AND NOT r.restore_review_required)
+           WHERE c.id=NEW.campaign_id AND c.state='closed' AND NEW.mode=r.mode AND NOT r.restore_review_required)
        OR (NEW.occurrence_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM stewardship_schedule_occurrence o
            JOIN stewardship_schedule_definition d ON d.id=o.definition_id WHERE o.id=NEW.occurrence_id
            AND d.campaign_id=NEW.campaign_id AND o.mode=NEW.mode AND o.state='skipped'))
@@ -106,6 +114,11 @@ class Migration(migrations.Migration):
         migrations.RunSQL(
             SQL,
             reverse_sql="""
+DO $$ BEGIN
+    IF EXISTS(SELECT 1 FROM stewardship_restore_delivery_hold) OR EXISTS(SELECT 1 FROM stewardship_restore_hold_resolution)
+       OR EXISTS(SELECT 1 FROM stewardship_postclose_resolution) THEN
+        RAISE EXCEPTION 'Mail resolution history prevents reversal' USING ERRCODE='23514'; END IF;
+END $$;
 DROP TRIGGER stewardship_postclose_guard_v1 ON stewardship_postclose_resolution;
 DROP FUNCTION stewardship_postclose_guard_v1();
 DROP FUNCTION stewardship_coverage_valid_v1(jsonb);

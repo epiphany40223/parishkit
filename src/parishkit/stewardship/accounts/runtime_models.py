@@ -16,7 +16,16 @@ from parishkit.stewardship.storage import (
 class SystemConfiguration(MutableRecord):
     """One runtime row; immutable activation and transition ledgers own its pointers."""
 
-    immutable_fields = MutableRecord.immutable_fields + ("testing_recipient",)
+    # OPS-06 will replace this freeze with its journalled restore/release owner.
+    # Ordinary campaign/configuration writers must never change the safety gate.
+    immutable_fields = MutableRecord.immutable_fields + (
+        "testing_recipient",
+        "restore_review_required",
+        "restore_id",
+        "restore_backup_at",
+        "restore_activated_at",
+        "restore_released_at",
+    )
     mode = models.CharField(max_length=16, default="testing")
     testing_recipient = models.EmailField()
     restore_review_required = models.BooleanField(default=False)

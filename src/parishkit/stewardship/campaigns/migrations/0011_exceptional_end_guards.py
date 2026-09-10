@@ -34,9 +34,13 @@ def extend_functions(apps, editor):
         ],
         "stewardship_campaign_transition_effect_v1": [
             (
+                "NEW.action IN ('activate','withdraw')",
+                "NEW.action IN ('activate','withdraw','reopen')",
+            ),
+            (
                 "CASE WHEN NEW.action='activate' THEN NEW.token_generation_id",
                 "CASE WHEN NEW.action IN ('activate','reopen') THEN NEW.token_generation_id",
-            )
+            ),
         ],
     }
     for name, changes in replacements.items():

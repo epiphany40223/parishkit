@@ -87,7 +87,11 @@ def change_control(
 
 
 def reserve_work_gate(*, campaign_id, request_id, actor_id, correlation_id, admit):
-    """Reserve the single global purge-preparation admission gate, without deleting."""
+    """Reserve purge preparation or return its exact, possibly terminal receipt.
+
+    Replaying a released/tombstoned request never grants a new reservation; the
+    owning workflow must inspect the returned state before scheduling any work.
+    """
     if (
         not callable(admit)
         or not isinstance(request_id, UUID)
@@ -101,12 +105,16 @@ def reserve_work_gate(*, campaign_id, request_id, actor_id, correlation_id, admi
         admit("reserve_work_gate", campaign, runtime)
         existing = CampaignWorkGate.objects.filter(request_id=request_id).first()
         if existing:
-            if existing.campaign_id != campaign_id:
+            if (existing.campaign_id, existing.initiated_by_id) != (
+                campaign_id,
+                actor_id,
+            ):
                 raise StorageInvariantError("Work gate request is already bound.")
             return existing
         return CampaignWorkGate.objects.create(
             campaign=campaign,
             request_id=request_id,
+            initiated_by_id=actor_id,
             actor_id=actor_id,
             correlation_id=correlation_id,
         )

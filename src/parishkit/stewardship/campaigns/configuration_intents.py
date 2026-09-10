@@ -55,6 +55,13 @@ def bind_configuration_intent(
                     "Exceptional edit request is already bound."
                 )
             return existing
+        if (campaign.version, runtime.version) != (
+            expected_version,
+            expected_runtime_version,
+        ):
+            raise StaleRecordError(
+                "Exceptional campaign inputs changed; refresh readiness."
+            )
         return CampaignConfigurationIntent.objects.create(
             campaign=campaign,
             request_id=request_id,
@@ -92,6 +99,22 @@ def verify_intent(request_id, admit):
     admit(intent.action, campaign, runtime)
 
 
+def verify_intent_receipt(request_id, admit):
+    """Authorize a terminal receipt without rerunning obsolete activation readiness."""
+    intent = CampaignConfigurationIntent.objects.filter(request_id=request_id).first()
+    if intent is None:
+        return
+    if not callable(admit):
+        raise StorageInvariantError(
+            "Exceptional campaign receipt requires current admission."
+        )
+    admit(
+        "configuration_receipt",
+        Campaign.objects.get(pk=intent.campaign_id),
+        SystemConfiguration.objects.get(),
+    )
+
+
 def abort_configuration_intent(
     store, *, request_id, actor_id, correlation_id, reason, admit
 ):
@@ -110,15 +133,19 @@ def abort_configuration_intent(
 
     if not callable(admit) or not isinstance(actor_id, UUID) or not reason.strip():
         raise TypeError("Exceptional cancellation requires fresh attributed admission.")
-    request = ConfigurationChangeRequest.objects.get(pk=request_id, actor_id=actor_id)
+    request = ConfigurationChangeRequest.objects.get(pk=request_id, authority="admin")
     materializer = DatabaseMaterializer(
         store,
-        actor_id=actor_id,
+        actor_id=request.actor_id,
         correlation_id=correlation_id,
         request=request,
         admit_campaign=admit,
     )
     with materializer.lock():
+        if not materializer.is_prepared(request.candidate_digest):
+            raise StorageInvariantError(
+                "Exceptional cancellation requires exact prepared data."
+            )
         with transaction.atomic(durable=True):
             with connection.cursor() as cursor:
                 cursor.execute("SELECT pg_advisory_xact_lock(%s,%s)", [736220, 1])
@@ -134,7 +161,7 @@ def abort_configuration_intent(
                     actor_id=actor_id,
                     correlation_id=correlation_id,
                 )
-            elif abort.actor_id != actor_id or abort.reason != reason:
+            elif abort.reason != reason:
                 raise StorageInvariantError(
                     "Exceptional cancellation has different intent."
                 )
@@ -143,8 +170,6 @@ def abort_configuration_intent(
 
 def recover_configuration_abort(materializer):
     """Resume a durable abort before ordinary selected-candidate recovery runs."""
-    from parishkit.stewardship.accounts.configuration_requests import _status
-
     request = materializer.request
     abort = (
         CampaignConfigurationAbort.objects.select_related("intent")
@@ -160,24 +185,4 @@ def recover_configuration_abort(materializer):
     runtime = SystemConfiguration.objects.get()
     campaign = Campaign.objects.get(pk=abort.intent.campaign_id)
     materializer.admit_campaign("abort_configuration", campaign, runtime)
-    status = _status(request)
-    if status.state == "failed" and status.failure_code == "invalid_candidate":
-        return status
-    if runtime.active_configuration_id != request.base_id:
-        raise StorageInvariantError(
-            "Cannot cancel an applied or superseded configuration."
-        )
-    selected = materializer.store.active()
-    if selected is None or selected.version_id not in {
-        request.base_id,
-        request.candidate_version_id,
-    }:
-        raise StorageInvariantError(
-            "Exceptional cancellation has unrelated YAML authority."
-        )
-    materializer._check()
-    if selected.version_id != request.base_id:
-        materializer.store.select(materializer.store.read_version(request.base_id))
-    materializer._check()
-    materializer.checkpoint("failed", failure_code="invalid_candidate")
-    return _status(request)
+    return materializer.restore_aborted_candidate()

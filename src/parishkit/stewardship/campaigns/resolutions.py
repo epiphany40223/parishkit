@@ -29,7 +29,8 @@ def coverage_digest(coverage):
         if type(item) is not dict or set(item) != {"kind", "id", "version"}:
             raise ValueError("Invalid mail coverage item.")
         if (
-            item["kind"] not in {"submission", "item", "correction"}
+            type(item["kind"]) is not str
+            or item["kind"] not in {"submission", "item", "correction"}
             or type(item["version"]) is not int
             or item["version"] < 1
         ):

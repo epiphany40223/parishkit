@@ -8,11 +8,12 @@ that terminates its transport on deadline. No view is exposed by this module.
 import hashlib
 from contextlib import ExitStack
 from dataclasses import dataclass
-from threading import BoundedSemaphore, Event, Timer, get_ident
+from threading import BoundedSemaphore, Event, Lock, Timer, get_ident
 from time import monotonic
 from uuid import UUID
 
 from django.db import connections, transaction
+from psycopg import Error as DriverError
 
 from parishkit.stewardship.storage import StorageInvariantError
 
@@ -29,6 +30,10 @@ class DownloadBusy(ReadUnavailable):
 
     status_code = 503
     retry_after = 5
+
+
+class DownloadConfigurationUnavailable(DownloadBusy):
+    """A coordinated capacity change needs matching deployment configuration."""
 
 
 @dataclass(frozen=True)
@@ -127,6 +132,8 @@ class CampaignReadGuard:
         self._stack = None
         self._timer = None
         self._raw = None
+        self._slot_lock = Lock()
+        self._slot_owned = False
 
     def __enter__(self):
         """Acquire capacity before a read transaction, file open or sensitive query."""
@@ -148,7 +155,8 @@ class CampaignReadGuard:
         try:
             if self.pool:
                 self.pool.acquire()
-                self._stack.callback(self.pool.release)
+                self._slot_owned = True
+                self._stack.callback(self._release_slot)
                 self.db = self.original.copy(alias="default")
                 self._stack.callback(self._restore_alias)
                 connections["default"] = self.db
@@ -216,7 +224,7 @@ class CampaignReadGuard:
             )
             row = cursor.fetchone()
             if row is None or row[0] != self.limits.download_capacity:
-                raise ReadUnavailable(
+                raise DownloadConfigurationUnavailable(
                     "Download capacity configuration requires reconciliation."
                 )
             for slot in range(row[0]):
@@ -231,18 +239,37 @@ class CampaignReadGuard:
         """Restore the interactive connection only on the owning thread."""
         connections["default"] = self.original
 
+    def _release_slot(self):
+        """Deadline and owner cleanup race; return local capacity at most once."""
+        with self._slot_lock:
+            if self._slot_owned:
+                self.pool.release()
+                self._slot_owned = False
+
     def _expire(self):
         """Hard deadline; the adapter must stop transport AND producer before return."""
         self.expired.set()
+        stopped = False
         try:
             self.abort()
+            stopped = True
         finally:
-            # psycopg raw handles, unlike Django wrappers, may be closed here.
-            if self._raw is not None:
-                try:
-                    self._raw.cancel()
-                finally:
-                    self._raw.close()
+            try:
+                # Raw handles, unlike Django wrappers, may be closed here.
+                if self._raw is not None:
+                    try:
+                        self._raw.cancel()
+                    except DriverError:
+                        # Cancellation can fail on an already-lost backend; the
+                        # unconditional close still tears down this exact handle.
+                        pass
+                    finally:
+                        self._raw.close()
+            finally:
+                # Failed abort does not prove the producer stopped. A successful
+                # abort plus closed connection permits exactly one slot release.
+                if stopped and (self._raw is None or self._raw.closed):
+                    self._release_slot()
 
     def check(self):
         """No reconnect, thread handoff, expired response or unguarded continuation."""
@@ -257,8 +284,11 @@ class CampaignReadGuard:
         ):
             raise ReadUnavailable("The guarded response is no longer available.")
         # Detect a server-side disconnect even if the driver has not read EOF yet.
-        with self._raw.cursor() as cursor:
-            cursor.execute("SELECT 1")
+        try:
+            with self._raw.cursor() as cursor:
+                cursor.execute("SELECT 1")
+        except DriverError:
+            raise ReadUnavailable("The guarded database connection was lost.") from None
 
     def close(self):
         """Close on the owning thread; release pool capacity after SQL cleanup."""

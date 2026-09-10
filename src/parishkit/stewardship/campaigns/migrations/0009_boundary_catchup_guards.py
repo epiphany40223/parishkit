@@ -17,7 +17,7 @@ BEGIN
     due:=CASE WHEN NEW.kind='start' THEN p.starts_at ELSE p.ends_at END;
     IF TG_OP='INSERT' THEN
         IF NEW.state<>'pending' OR NEW.version<>1 OR NEW.due_at<>due
-           OR NEW.task_id IS NOT NULL OR NEW.reason<>''
+           OR NEW.task_id IS NOT NULL OR NEW.task_fence IS NOT NULL OR NEW.reason<>''
            OR c.id IS DISTINCT FROM r.current_campaign_id OR r.restore_review_required
            OR EXISTS(SELECT 1 FROM stewardship_campaign_work_gate WHERE campaign_id=c.id AND state IN ('preparing','running','tombstone')) THEN
             RAISE EXCEPTION 'Invalid boundary allocation' USING ERRCODE='23514'; END IF;
@@ -32,12 +32,17 @@ BEGIN
             NEW.due_at=due AND c.id=r.current_campaign_id AND r.mode='production'
             AND ((NEW.kind='start' AND c.state='scheduled') OR (NEW.kind='close' AND c.state IN ('scheduled','active')))
         )) THEN RAISE EXCEPTION 'Applicable boundary cannot be skipped' USING ERRCODE='23514'; END IF;
-        IF NEW.task_id IS DISTINCT FROM OLD.task_id THEN
+        IF NEW.state='skipped' AND NEW.reason='not_applicable' AND NOT EXISTS(
+            SELECT 1 FROM stewardship_task_run t WHERE t.id=NEW.task_id AND t.task_type='campaign_boundary'
+            AND t.domain_request_id=c.id AND t.state='running' AND t.worker_id=NEW.actor_id
+            AND t.fence=NEW.task_fence AND t.lease_expires_at>clock_timestamp()
+        ) THEN RAISE EXCEPTION 'Boundary skip requires current fenced worker' USING ERRCODE='23514'; END IF;
+        IF (NEW.task_id,NEW.task_fence) IS DISTINCT FROM (OLD.task_id,OLD.task_fence) THEN
             IF NEW.state<>'pending' OR NOT EXISTS(
                 SELECT 1 FROM stewardship_task_run t WHERE t.id=NEW.task_id AND t.task_type='campaign_boundary'
                 AND t.domain_request_id=c.id AND t.state='running' AND t.worker_id=NEW.actor_id
-                AND t.lease_expires_at>clock_timestamp()
-            ) OR EXISTS(SELECT 1 FROM stewardship_task_run WHERE id=OLD.task_id AND state='running' AND lease_expires_at>clock_timestamp()) THEN
+                AND t.fence=NEW.task_fence AND t.lease_expires_at>clock_timestamp()
+            ) OR EXISTS(SELECT 1 FROM stewardship_task_run WHERE id=OLD.task_id AND fence=OLD.task_fence AND state='running' AND lease_expires_at>clock_timestamp()) THEN
                 RAISE EXCEPTION 'Boundary task binding requires current worker ownership' USING ERRCODE='23514'; END IF;
         END IF;
     END IF;
@@ -66,7 +71,7 @@ BEGIN
         IF NEW.version<>1 OR NEW.phase<>'pending' OR NEW.cursor<>'' OR NEW.groups_completed<>0 OR NEW.items_completed<>0
            OR NEW.completed_at IS NOT NULL OR NEW.failure_code<>'' OR NEW.task_root_id IS NOT NULL OR NEW.source_snapshot_id IS NOT NULL
            OR NOT EXISTS(SELECT 1 FROM stewardship_campaign_transition t WHERE t.id=NEW.activation_id
-               AND t.campaign_id=NEW.campaign_id AND t.configuration_id=NEW.configuration_id AND t.action IN ('activate','reopen')
+               AND t.campaign_id=NEW.campaign_id AND t.configuration_id=NEW.configuration_id AND t.action='activate'
                AND t.actor_id IS NOT DISTINCT FROM NEW.actor_id AND t.correlation_id=NEW.correlation_id)
         THEN RAISE EXCEPTION 'Catch-up demand requires activation evidence' USING ERRCODE='23514'; END IF;
     ELSE
@@ -80,7 +85,7 @@ BEGIN
         ELSIF NOT EXISTS(SELECT 1 FROM stewardship_catchup_checkpoint k WHERE k.demand_id=NEW.id
             AND k.sequence=OLD.groups_completed+1 AND NEW.groups_completed=k.sequence
             AND NEW.items_completed=OLD.items_completed+k.items AND NEW.cursor=k.cursor AND NEW.phase=k.phase
-            AND (NEW.completed_at IS NOT NULL)=k.complete AND NEW.failure_code=OLD.failure_code
+            AND (NEW.completed_at IS NOT NULL)=k.complete AND NEW.failure_code=''
             AND k.actor_id IS NOT DISTINCT FROM NEW.actor_id AND k.correlation_id=NEW.correlation_id) THEN
             RAISE EXCEPTION 'Catch-up progress requires exact checkpoint' USING ERRCODE='23514';
         END IF;
@@ -113,7 +118,7 @@ CREATE FUNCTION stewardship_checkpoint_effect_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path=pg_catalog,public,pg_temp AS $$
 BEGIN
     UPDATE stewardship_activation_catchup SET groups_completed=NEW.sequence,items_completed=items_completed+NEW.items,
-        cursor=NEW.cursor,phase=NEW.phase,completed_at=CASE WHEN NEW.complete THEN stewardship_campaign_now_v1() END,
+        cursor=NEW.cursor,phase=NEW.phase,failure_code='',completed_at=CASE WHEN NEW.complete THEN stewardship_campaign_now_v1() END,
         version=version+1,actor_id=NEW.actor_id,correlation_id=NEW.correlation_id WHERE id=NEW.demand_id;
     RETURN NEW;
 END $$;

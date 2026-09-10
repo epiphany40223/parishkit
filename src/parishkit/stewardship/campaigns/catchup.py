@@ -4,10 +4,66 @@ from uuid import UUID
 
 from django.db.models import F
 
-from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
-from .models import ActivationCatchUpDemand, CatchUpCheckpoint
+from .models import ActivationCatchUpDemand, CatchUpCheckpoint, CatchUpFailure
 from .runtime import campaign_transaction
+
+
+def record_catchup_failure(
+    *,
+    demand_id,
+    request_id,
+    expected_version,
+    task_id,
+    fence,
+    code,
+    actor_id,
+    correlation_id,
+    admit,
+):
+    """Record a failed owned attempt, preserving counts, cursor and live-mail hold.
+
+    The worker calls this before releasing its TaskRun lease. A later successful
+    progress checkpoint clears the current code, not the immutable failure log.
+    """
+    if not callable(admit) or any(
+        not isinstance(value, UUID)
+        for value in (
+            demand_id,
+            request_id,
+            task_id,
+            actor_id,
+        )
+    ):
+        raise TypeError("Catch-up failure requires attributed owning admission.")
+    demand = ActivationCatchUpDemand.objects.get(pk=demand_id)
+    with campaign_transaction(demand.campaign_id, correlation_id=correlation_id) as (
+        campaign,
+        runtime,
+    ):
+        demand.refresh_from_db()
+        admit("catchup_failure", campaign, runtime, demand)
+        values = dict(
+            demand_id=demand_id,
+            expected_version=expected_version,
+            task_id=task_id,
+            fence=fence,
+            code=code,
+            actor_id=actor_id,
+        )
+        existing = CatchUpFailure.objects.filter(pk=request_id).first()
+        if existing:
+            if any(getattr(existing, key) != value for key, value in values.items()):
+                raise StorageInvariantError(
+                    "Catch-up failure request has different intent."
+                )
+            return existing
+        if demand.version != expected_version:
+            raise StaleRecordError("Catch-up failure inputs changed.")
+        return CatchUpFailure.objects.create(
+            id=request_id, **values, correlation_id=correlation_id
+        )
 
 
 def bind_catchup(
@@ -90,6 +146,27 @@ def checkpoint_catchup(
             demand=demand, group_key=group_key
         ).first()
         if existing:
+            from django.db.models.functions import Now
+
+            from parishkit.stewardship.jobs.models import TaskRun
+
+            # A retry may replay an earlier owner's group, but only a currently
+            # fenced member of the bound execution chain may observe success.
+            if (
+                not TaskRun.objects.select_for_update()
+                .filter(
+                    pk=task_id,
+                    root_id=demand.task_root_id,
+                    state="running",
+                    fence=fence,
+                    worker_id=actor_id,
+                    lease_expires_at__gt=Now(),
+                )
+                .exists()
+            ):
+                raise StorageInvariantError(
+                    "Catch-up replay requires current fenced input."
+                )
             if (existing.cursor, existing.items, existing.phase, existing.complete) != (
                 cursor,
                 items,

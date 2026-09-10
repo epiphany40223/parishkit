@@ -113,7 +113,11 @@ def test_failure_closes_guard_and_restores_download_connection(tmp_path, failure
 def test_download_capacity_is_global_across_independent_pools(tmp_path):
     """Five separately constructed pools cannot claim five deployment slots."""
     identifier = family_campaign(tmp_path)
-    barrier, release = Barrier(5), Event()
+    capacity = ReadLimits().download_capacity
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT capacity FROM stewardship_download_policy WHERE id=1")
+        assert cursor.fetchone()[0] == capacity
+    barrier, release = Barrier(capacity + 1), Event()
 
     def hold(_):
         """Independent thread-local Django connections simulate separate workers."""
@@ -125,8 +129,8 @@ def test_download_capacity_is_global_across_independent_pools(tmp_path):
         finally:
             close_old_connections()
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        futures = [executor.submit(hold, index) for index in range(4)]
+    with ThreadPoolExecutor(max_workers=capacity) as executor:
+        futures = [executor.submit(hold, index) for index in range(capacity)]
         barrier.wait(timeout=10)
         try:
             with pytest.raises(DownloadBusy), guard(identifier, pool=DownloadPool()):
@@ -223,3 +227,52 @@ def test_capacity_cannot_resize_while_a_dedicated_session_holds_slot(tmp_path):
             assert cursor.fetchone()[0] == 4
     finally:
         other.close()
+
+
+def test_remote_backend_termination_is_typed_and_releases_capacity(tmp_path):
+    """A server-side disconnect must not escape as a raw psycopg exception."""
+    identifier = family_campaign(tmp_path)
+    pool = DownloadPool(ReadLimits(process_pool_size=1))
+    other = connections["default"].copy(alias="termination-probe")
+    try:
+        reader = guard(identifier, pool=pool)
+        response = GuardedResponse(reader, lambda: iter([b"not emitted"]))
+        with other.cursor() as cursor:
+            cursor.execute(
+                "SELECT pg_terminate_backend(%s,5000)", [reader._raw.info.backend_pid]
+            )
+            assert cursor.fetchone()[0]
+        with pytest.raises(ReadUnavailable, match="connection was lost"):
+            next(response)
+        with guard(identifier, pool=pool):
+            pass
+    finally:
+        other.close()
+
+
+@pytest.mark.parametrize("cancel_fails", [False, True])
+def test_expiry_releases_local_slot_without_further_iteration(
+    tmp_path, monkeypatch, cancel_fails
+):
+    """A confirmed transport abort need not wait for a disconnected consumer."""
+    identifier = family_campaign(tmp_path)
+    pool = DownloadPool(ReadLimits(process_pool_size=1))
+    reader = guard(identifier, pool=pool)
+    response = GuardedResponse(reader, lambda: iter([b"not emitted"]))
+    if cancel_fails:
+        from psycopg import OperationalError
+
+        def failed_cancel():
+            """Cancellation of a lost backend may itself fail before close."""
+            raise OperationalError("synthetic cancellation failure")
+
+        monkeypatch.setattr(reader._raw, "cancel", failed_cancel)
+    reader._expire()
+    pool.acquire()
+    pool.release()
+    response.close()
+    # Later close cannot over-release the bounded semaphore.
+    pool.acquire()
+    with pytest.raises(DownloadBusy):
+        pool.acquire()
+    pool.release()

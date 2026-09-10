@@ -108,6 +108,7 @@ class Migration(migrations.Migration):
                 ),
                 ("version", models.PositiveBigIntegerField(default=1, editable=False)),
                 ("kind", models.CharField(max_length=8)),
+                ("task_fence", models.PositiveBigIntegerField(null=True)),
                 ("due_at", parishkit.stewardship.storage.UTCDateTimeField()),
                 ("state", models.CharField(default="pending", max_length=16)),
                 (
@@ -1270,6 +1271,30 @@ class Migration(migrations.Migration):
             constraint=models.UniqueConstraint(
                 fields=("campaign", "mode", "obligation_key", "coverage_digest"),
                 name="postclose_semantic_resolution",
+            ),
+        ),
+        migrations.AddConstraint(
+            model_name="postclosemailresolution",
+            constraint=models.UniqueConstraint(
+                fields=["occurrence"],
+                condition=models.Q(occurrence__isnull=False),
+                name="postclose_occurrence_once",
+            ),
+        ),
+        migrations.AddConstraint(
+            model_name="postclosemailresolution",
+            constraint=models.UniqueConstraint(
+                fields=["task"],
+                condition=models.Q(task__isnull=False),
+                name="postclose_task_once",
+            ),
+        ),
+        migrations.AddConstraint(
+            model_name="postclosemailresolution",
+            constraint=models.UniqueConstraint(
+                fields=["outbox_id"],
+                condition=models.Q(outbox_id__isnull=False),
+                name="postclose_outbox_once",
             ),
         ),
         migrations.AddConstraint(

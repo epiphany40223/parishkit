@@ -4,10 +4,11 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 from django.db.models import F
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+from parishkit.stewardship.campaigns.admission import CampaignAdmissionUnavailable
 from parishkit.stewardship.campaigns.boundaries import apply_due_boundaries
 from parishkit.stewardship.campaigns.controls import (
     change_control,
@@ -27,9 +28,16 @@ from parishkit.stewardship.campaigns.resolutions import (
     resolve_restore_hold,
 )
 from parishkit.stewardship.campaigns.runtime import campaign_facts, return_to_testing
+from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
 from ..campaign_factory import campaign as campaign_row
-from .campaign_builders import admit_test_work, campaign_clock, command, draft_campaign
+from .campaign_builders import (
+    admit_test_work,
+    campaign_clock,
+    command,
+    draft_campaign,
+    restored_runtime,
+)
 from .test_boundary_catchup_postgresql import claimed_task
 from .test_campaign_postgresql import add_draft
 from .test_exceptional_end_postgresql import complete_empty_catchup
@@ -119,10 +127,60 @@ def test_archive_return_testing_and_purge_reservation_serialize_successor(tmp_pa
         correlation_id=uuid4(),
         admit=admit_test_work,
     )
-    denied, _, _ = add_draft(
-        store, store.active(), actor, campaign_row(name="Successor")
+    replay = dict(
+        campaign_id=campaign.pk,
+        request_id=gate.request_id,
+        actor_id=actor,
+        correlation_id=uuid4(),
+        admit=admit_test_work,
     )
-    assert denied.state == "failed" and Campaign.objects.count() == 1
+    assert reserve_work_gate(**replay).pk == gate.pk
+    with pytest.raises(StorageInvariantError, match="already bound"):
+        reserve_work_gate(**(replay | {"actor_id": uuid4()}))
+    with pytest.raises(StaleRecordError):
+        release_work_gate(
+            gate_id=gate.pk,
+            expected_version=gate.version + 1,
+            actor_id=actor,
+            correlation_id=uuid4(),
+            admit=admit_test_work,
+        )
+    with pytest.raises(CampaignAdmissionUnavailable, match="creation is held"):
+        add_draft(store, store.active(), actor, campaign_row(name="Successor"))
+    assert Campaign.objects.count() == 1
+
+    def load_future_gate_state(state):
+        """Test future-owner sentinel states without implementing a purge executor.
+
+        Only this disposable schema-owner fixture bypasses the gate transition
+        guard. Release itself always runs with all guards enabled, even against
+        the otherwise permissive archived-campaign precondition.
+        """
+        with transaction.atomic(), connection.cursor() as cursor:
+            cursor.execute(
+                "ALTER TABLE stewardship_campaign_work_gate DISABLE TRIGGER USER"
+            )
+            cursor.execute(
+                "UPDATE stewardship_campaign_work_gate SET state=%s WHERE id=%s",
+                [state, gate.pk],
+            )
+            cursor.execute(
+                "ALTER TABLE stewardship_campaign_work_gate ENABLE TRIGGER USER"
+            )
+
+    try:
+        for state in ("running", "tombstone"):
+            load_future_gate_state(state)
+            with pytest.raises(IntegrityError, match="Invalid work gate transition"):
+                release_work_gate(
+                    gate_id=gate.pk,
+                    expected_version=gate.version,
+                    actor_id=actor,
+                    correlation_id=uuid4(),
+                    admit=admit_test_work,
+                )
+    finally:
+        load_future_gate_state("preparing")
     release_work_gate(
         gate_id=gate.pk,
         expected_version=gate.version,
@@ -130,6 +188,23 @@ def test_archive_return_testing_and_purge_reservation_serialize_successor(tmp_pa
         correlation_id=uuid4(),
         admit=admit_test_work,
     )
+    assert reserve_work_gate(**replay).state == "released"
+    with pytest.raises(StaleRecordError):
+        release_work_gate(
+            gate_id=gate.pk,
+            expected_version=gate.version,
+            actor_id=actor,
+            correlation_id=uuid4(),
+            admit=admit_test_work,
+        )
+    with pytest.raises(IntegrityError, match="Invalid work gate transition"):
+        release_work_gate(
+            gate_id=gate.pk,
+            expected_version=gate.version + 1,
+            actor_id=actor,
+            correlation_id=uuid4(),
+            admit=admit_test_work,
+        )
     accepted, _, _ = add_draft(
         store, store.active(), actor, campaign_row(name="Successor")
     )
@@ -141,19 +216,20 @@ def test_restore_assumption_never_becomes_fulfillment(tmp_path):
     _, campaign, actor = draft_campaign(tmp_path)
     definition = ScheduleDefinition.objects.get()
     start = campaign.active_configuration.starts_at
-    hold = RestoreDeliveryHold.objects.create(
-        restore_id=uuid4(),
-        definition=definition,
-        mode="production",
-        target="family:1",
-        slot="once",
-        backup_at=start,
-        window_start=start,
-        window_end=start + timedelta(days=1),
-        discovery="inventory",
-        actor_id=actor,
-        correlation_id=uuid4(),
-    )
+    with restored_runtime(start) as restore_id:
+        hold = RestoreDeliveryHold.objects.create(
+            restore_id=restore_id,
+            definition=definition,
+            mode="production",
+            target="family:1",
+            slot="once",
+            backup_at=start,
+            window_start=start,
+            window_end=start + timedelta(days=1),
+            discovery="inventory",
+            actor_id=actor,
+            correlation_id=uuid4(),
+        )
     arguments = dict(
         hold_id=hold.pk,
         expected_version=hold.version,
@@ -196,6 +272,8 @@ def test_postclose_exact_versions_do_not_suppress_later_corrections(tmp_path):
         "daily_range": None,
     }
     first = resolve_postclose(**arguments, coverage=coverage)
+    with pytest.raises(IntegrityError, match="Post-close skip"):
+        resolve_postclose(**(arguments | {"mode": "testing"}), coverage=coverage)
     assert resolve_postclose(**arguments, coverage=coverage).pk == first.pk
     coverage["items"][0]["version"] = 2
     second = resolve_postclose(**arguments, coverage=coverage)

@@ -31,7 +31,6 @@ def apply_due_boundaries(
         campaign,
         runtime,
     ):
-        admit("boundaries", campaign, runtime)
         if (
             runtime.restore_review_required
             or runtime.current_campaign_id != campaign.pk
@@ -46,6 +45,7 @@ def apply_due_boundaries(
         ):
             if due > now:
                 continue
+            admit(kind, campaign, runtime)
             occurrence, _ = CampaignBoundaryOccurrence.objects.get_or_create(
                 campaign=campaign,
                 kind=kind.value,
@@ -55,6 +55,14 @@ def apply_due_boundaries(
             if occurrence.state != "pending":
                 results.append(occurrence)
                 continue
+            if (occurrence.task_id, occurrence.task_fence) != (task_id, fence):
+                CampaignBoundaryOccurrence.objects.filter(pk=occurrence.pk).update(
+                    task_id=task_id,
+                    task_fence=fence,
+                    version=F("version") + 1,
+                    actor_id=actor_id,
+                    correlation_id=correlation_id,
+                )
             if campaign.state != source or runtime.mode != "production":
                 CampaignBoundaryOccurrence.objects.filter(pk=occurrence.pk).update(
                     state="skipped",
@@ -65,13 +73,6 @@ def apply_due_boundaries(
                     correlation_id=correlation_id,
                 )
             else:
-                if occurrence.task_id != task_id:
-                    CampaignBoundaryOccurrence.objects.filter(pk=occurrence.pk).update(
-                        task_id=task_id,
-                        version=F("version") + 1,
-                        actor_id=actor_id,
-                        correlation_id=correlation_id,
-                    )
                 _emit(
                     campaign,
                     runtime,

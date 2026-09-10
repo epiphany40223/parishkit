@@ -3,7 +3,7 @@
 from contextlib import contextmanager
 from uuid import UUID, uuid4
 
-from django.db import connection
+from django.db import connection, transaction
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.lifecycle import Action
@@ -63,3 +63,45 @@ def command(campaign, actor, action, **kwargs):
         **({"token_generation_id": uuid4()} if action is Action.ACTIVATE else {}),
         **kwargs,
     )
+
+
+@contextmanager
+def restored_runtime(backup_at):
+    """Emulate offline restore input, not an application writer or release API.
+
+    OPS-06 owns the future journalled restore operation. These fixtures require
+    the disposable database's schema-owner privileges to load its otherwise
+    frozen gate fields, with user triggers disabled only inside each fixture
+    transaction. All application operations execute with every guard enabled.
+    """
+    restore_id = uuid4()
+    columns = (
+        "restore_review_required",
+        "restore_id",
+        "restore_backup_at",
+        "restore_activated_at",
+        "restore_released_at",
+    )
+    saved = SystemConfiguration.objects.values_list(*columns).get()
+
+    def load(values):
+        """Install synthetic backup state atomically and immediately restore guards."""
+        with transaction.atomic(), connection.cursor() as cursor:
+            cursor.execute(
+                "ALTER TABLE stewardship_system_configuration DISABLE TRIGGER USER"
+            )
+            cursor.execute(
+                "UPDATE stewardship_system_configuration "
+                "SET restore_review_required=%s, restore_id=%s, restore_backup_at=%s, "
+                "restore_activated_at=%s, restore_released_at=%s",
+                values,
+            )
+            cursor.execute(
+                "ALTER TABLE stewardship_system_configuration ENABLE TRIGGER USER"
+            )
+
+    load((True, restore_id, backup_at, backup_at, None))
+    try:
+        yield restore_id
+    finally:
+        load(saved)

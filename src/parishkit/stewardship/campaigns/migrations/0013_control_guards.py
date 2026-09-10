@@ -100,7 +100,7 @@ BEGIN
     IF NEW.actor_id IS NULL OR r.current_campaign_id IS NOT NULL OR r.mode<>'testing' OR r.restore_review_required THEN
         RAISE EXCEPTION 'Work gate requires the exclusive maintenance window' USING ERRCODE='23514'; END IF;
     IF TG_OP='INSERT' THEN
-        IF NEW.state<>'preparing' OR NEW.version<>1 OR c.state<>'archived'
+        IF NEW.state<>'preparing' OR NEW.version<>1 OR c.state<>'archived' OR NEW.initiated_by_id IS DISTINCT FROM NEW.actor_id
            OR EXISTS(SELECT 1 FROM stewardship_campaign_work_gate WHERE state IN ('preparing','running')) THEN
             RAISE EXCEPTION 'Only one global purge preparation is admitted' USING ERRCODE='23514'; END IF;
     ELSE

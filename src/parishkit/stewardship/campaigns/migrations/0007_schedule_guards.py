@@ -100,8 +100,9 @@ BEGIN
            OR c.id IS DISTINCT FROM r.current_campaign_id OR r.restore_review_required
            OR NEW.mode<>r.mode OR EXISTS (SELECT 1 FROM stewardship_campaign_work_gate WHERE campaign_id=c.id AND state IN ('preparing','running','tombstone'))
            OR NOT EXISTS (SELECT 1 FROM stewardship_campaign_configuration p WHERE p.id=c.active_configuration_id
-               AND instant>=p.starts_at AND instant<p.ends_at
-               AND ((NEW.mode='testing' AND c.state='draft') OR (NEW.mode='production' AND c.state IN ('scheduled','active'))))
+               AND ((instant>=p.starts_at AND instant<p.ends_at
+                   AND ((NEW.mode='testing' AND c.state='draft') OR (NEW.mode='production' AND c.state IN ('scheduled','active'))))
+                   OR (NEW.mode='production' AND c.state='closed' AND d.kind IN ('daily_digest','weekly_digest'))))
            OR (NEW.mode='production' AND EXISTS(SELECT 1 FROM stewardship_activation_catchup WHERE campaign_id=c.id AND completed_at IS NULL))
            OR EXISTS (SELECT 1 FROM stewardship_schedule_fulfillment WHERE definition_id=d.id AND mode=NEW.mode AND target=NEW.target AND slot=NEW.slot) THEN
             RAISE EXCEPTION 'Occurrence creation is not admitted' USING ERRCODE='23514'; END IF;
@@ -121,9 +122,11 @@ BEGIN
                OR t.domain_request_id IS DISTINCT FROM NEW.id
                OR t.task_type<>'schedule_occurrence'
                OR NOT EXISTS(SELECT 1 FROM stewardship_campaign_configuration p WHERE p.id=c.active_configuration_id
-                   AND instant>=p.starts_at AND instant<p.ends_at
-                   AND ((NEW.mode='testing' AND c.state='draft') OR (NEW.mode='production' AND c.state IN ('scheduled','active'))))
+                   AND ((instant>=p.starts_at AND instant<p.ends_at
+                       AND ((NEW.mode='testing' AND c.state='draft') OR (NEW.mode='production' AND c.state IN ('scheduled','active'))))
+                       OR (NEW.mode='production' AND c.state='closed' AND d.kind IN ('daily_digest','weekly_digest'))))
                OR NEW.due_at>instant
+               OR (NEW.mode='production' AND c.delivery_paused)
                OR (NEW.mode='production' AND EXISTS(SELECT 1 FROM stewardship_activation_catchup WHERE campaign_id=c.id AND completed_at IS NULL))
                OR EXISTS(SELECT 1 FROM stewardship_schedule_fulfillment WHERE definition_id=d.id AND mode=NEW.mode AND target=NEW.target AND slot=NEW.slot)
                OR EXISTS(SELECT 1 FROM stewardship_restore_delivery_hold h WHERE h.definition_id=d.id AND h.mode=NEW.mode

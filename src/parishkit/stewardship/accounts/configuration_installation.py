@@ -193,6 +193,48 @@ class DatabaseMaterializer:
 
         verify_intent(self.request.pk, self.admit_campaign)
 
+    def restore_aborted_candidate(self):
+        """Recover an exact durable abort, preserving every applied configuration.
+
+        Abort attribution lives on its immutable decision; technical request
+        checkpoints retain the original request actor even when another current
+        Admin resolves it. The caller must recheck that Admin's authority first.
+        """
+        from parishkit.stewardship.campaigns.models import CampaignConfigurationAbort
+
+        self._check()
+        request = self.request
+        if (
+            request is None
+            or not CampaignConfigurationAbort.objects.filter(
+                intent__request=request
+            ).exists()
+        ):
+            raise StorageInvariantError(
+                "Exceptional cancellation requires its journal."
+            )
+        status = _status(request)
+        if status.state == "failed" and status.failure_code == "invalid_candidate":
+            return status
+        if SystemConfiguration.objects.get().active_configuration_id != request.base_id:
+            raise StorageInvariantError(
+                "Cannot cancel an applied or superseded configuration."
+            )
+        selected = self.store.active()
+        if selected is None or selected.version_id not in {
+            request.base_id,
+            request.candidate_version_id,
+        }:
+            raise StorageInvariantError(
+                "Exceptional cancellation has unrelated YAML authority."
+            )
+        self._check()
+        if selected.version_id != request.base_id:
+            self.store.select(self.store.read_version(request.base_id))
+        self._check()
+        self.checkpoint("failed", failure_code="invalid_candidate")
+        return _status(request)
+
 
 def prepare_initial_configuration(
     store, version, *, testing_recipient, actor_id, correlation_id
@@ -277,6 +319,11 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
         if aborted is not None:
             return aborted
         if current.state in {"cancelled", "failed", "applied"}:
+            from parishkit.stewardship.campaigns.configuration_intents import (
+                verify_intent_receipt,
+            )
+
+            verify_intent_receipt(request.pk, admit_campaign)
             return current
         selected = store.active()
         active_digest = materializer.active_digest()

@@ -121,7 +121,8 @@ RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog,public,pg_temp AS $$
 BEGIN
     IF TG_OP='DELETE' THEN RAISE EXCEPTION 'Runtime configuration cannot be deleted' USING ERRCODE='23514'; END IF;
     IF TG_OP='INSERT' THEN
-        IF NEW.version<>1 OR NEW.configuration_sequence<>1 OR NEW.active_configuration_id IS NOT NULL OR NEW.mode<>'testing' OR NEW.restore_review_required THEN
+        IF NEW.version<>1 OR NEW.configuration_sequence<>1 OR NEW.active_configuration_id IS NOT NULL OR NEW.mode<>'testing' OR NEW.restore_review_required
+           OR NEW.restore_id IS NOT NULL OR NEW.restore_backup_at IS NOT NULL OR NEW.restore_activated_at IS NOT NULL OR NEW.restore_released_at IS NOT NULL THEN
             RAISE EXCEPTION 'Runtime must start unconfigured in Testing' USING ERRCODE='23514';
         END IF;
         RETURN NEW;
@@ -382,7 +383,15 @@ class Migration(migrations.Migration):
         ),
         mutable_guard_v1("stewardship_campaign"),
         mutable_guard_v1(
-            "stewardship_system_configuration", frozen_fields=("testing_recipient",)
+            "stewardship_system_configuration",
+            frozen_fields=(
+                "testing_recipient",
+                "restore_review_required",
+                "restore_id",
+                "restore_backup_at",
+                "restore_activated_at",
+                "restore_released_at",
+            ),
         ),
         immutable_guard_v1("stewardship_campaign_transition"),
         immutable_guard_v1("stewardship_runtime_transition"),
@@ -403,7 +412,7 @@ class Migration(migrations.Migration):
         ),
         mutable_guard_v1(
             "stewardship_campaign_work_gate",
-            frozen_fields=("campaign_id", "request_id"),
+            frozen_fields=("campaign_id", "request_id", "initiated_by_id"),
         ),
         migrations.RunSQL(
             SQL,

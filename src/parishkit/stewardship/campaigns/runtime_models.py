@@ -21,11 +21,16 @@ class CampaignWorkGate(MutableRecord):
     atomically; no purge executor or deletion is exposed by Phase 1A.
     """
 
-    immutable_fields = MutableRecord.immutable_fields + ("campaign_id", "request_id")
+    immutable_fields = MutableRecord.immutable_fields + (
+        "campaign_id",
+        "request_id",
+        "initiated_by_id",
+    )
     campaign = models.ForeignKey(
         "stewardship_campaigns.Campaign", on_delete=models.PROTECT
     )
     request_id = models.UUIDField(unique=True)
+    initiated_by_id = models.UUIDField(null=True)
     state = models.CharField(max_length=16, default="preparing")
 
     class Meta(MutableRecord.Meta):
@@ -183,6 +188,7 @@ class CampaignBoundaryOccurrence(MutableRecord):
     task = models.ForeignKey(
         "stewardship_jobs.TaskRun", null=True, on_delete=models.PROTECT
     )
+    task_fence = models.PositiveBigIntegerField(null=True)
     transition = models.OneToOneField(
         CampaignTransition, null=True, on_delete=models.PROTECT
     )
@@ -263,6 +269,24 @@ class ActivationCatchUpDemand(MutableRecord):
         indexes = [
             models.Index(
                 fields=["campaign", "completed_at"], name="campaign_catchup_hold"
+            )
+        ]
+
+
+class CatchUpFailure(ImmutableRecord):
+    """Sanitized failed attempt evidence without claiming any completed coverage."""
+
+    demand = models.ForeignKey(ActivationCatchUpDemand, on_delete=models.PROTECT)
+    expected_version = models.PositiveBigIntegerField()
+    task = models.ForeignKey("stewardship_jobs.TaskRun", on_delete=models.PROTECT)
+    fence = models.PositiveBigIntegerField()
+    code = models.CharField(max_length=32)
+
+    class Meta:
+        db_table = "stewardship_catchup_failure"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["demand", "expected_version"], name="catchup_failure_version"
             )
         ]
 

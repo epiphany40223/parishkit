@@ -18,7 +18,7 @@ from parishkit.stewardship.campaigns.models import (
     ActivationCatchUpDemand,
     CampaignTransition,
 )
-from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
 from .campaign_builders import admit_test_work, campaign_clock, command, draft_campaign
 from .test_boundary_catchup_postgresql import claimed_task
@@ -53,7 +53,7 @@ def complete_empty_catchup(campaign, actor):
     )
 
 
-def end_request(store, campaign, actor, action):
+def end_request(store, campaign, actor, action, end_date="2026-11-10"):
     """Stage the date candidate, then bind reviewed runtime inputs separately."""
     campaign.refresh_from_db()
     runtime = SystemConfiguration.objects.get()
@@ -64,7 +64,7 @@ def end_request(store, campaign, actor, action):
                 "operation": "update",
                 "section": "campaigns",
                 "id": str(campaign.pk),
-                "values": {"end_date": "2026-11-10"},
+                "values": {"end_date": end_date},
             }
         ],
         actor_id=actor,
@@ -84,6 +84,45 @@ def end_request(store, campaign, actor, action):
         admit=admit_test_work,
     )
     return request, token
+
+
+def test_exceptional_bind_reports_typed_stale_version(tmp_path):
+    """Stale confirmation is a refreshable conflict, not an SQL invariant error."""
+    store, campaign, actor = draft_campaign(tmp_path)
+    with campaign_clock(campaign.active_configuration.starts_at):
+        command(campaign, actor, Action.ACTIVATE)
+        request, _ = end_request(store, campaign, actor, "edit_end")
+        from parishkit.stewardship.campaigns.models import CampaignConfigurationIntent
+
+        # A distinct command uses the same patch but intentionally stale versions.
+        new = record_request(
+            base_digest=store.active().digest,
+            patch=[
+                {
+                    "operation": "update",
+                    "section": "campaigns",
+                    "id": str(campaign.pk),
+                    "values": {"end_date": "2026-11-11"},
+                }
+            ],
+            actor_id=actor,
+            request_key=uuid4(),
+            correlation_id=uuid4(),
+        )
+        with pytest.raises(StaleRecordError):
+            bind_configuration_intent(
+                campaign_id=campaign.pk,
+                request_id=new.request_id,
+                action="edit_end",
+                expected_version=campaign.version + 1,
+                expected_runtime_version=SystemConfiguration.objects.get().version,
+                actor_id=actor,
+                correlation_id=uuid4(),
+                admit=admit_test_work,
+            )
+        assert (
+            CampaignConfigurationIntent.objects.get().request_id == request.request_id
+        )
 
 
 def test_live_end_edit_preserves_structural_lock_and_mode(tmp_path):
@@ -107,6 +146,36 @@ def test_live_end_edit_preserves_structural_lock_and_mode(tmp_path):
     )
     assert campaign.active_configuration.end_date.isoformat() == "2026-11-10"
     assert SystemConfiguration.objects.get().mode == "production"
+    from django.db import IntegrityError
+
+    from parishkit.stewardship.campaigns.configuration_intents import (
+        abort_configuration_intent,
+    )
+    from parishkit.stewardship.campaigns.models import CampaignConfigurationAbort
+
+    with pytest.raises(IntegrityError, match="Only unapplied"):
+        abort_configuration_intent(
+            store,
+            request_id=request.request_id,
+            actor_id=actor,
+            correlation_id=uuid4(),
+            reason="Already applied",
+            admit=admit_test_work,
+        )
+    assert not CampaignConfigurationAbort.objects.exists()
+    with pytest.raises(
+        StorageInvariantError, match="receipt requires current admission"
+    ):
+        install_request(store, request_id=request.request_id, correlation_id=uuid4())
+    assert (
+        install_request(
+            store,
+            request_id=request.request_id,
+            correlation_id=uuid4(),
+            admit_campaign=admit_test_work,
+        ).state
+        == "applied"
+    )
 
 
 def test_reopen_selects_yaml_state_and_prepared_generation_together(tmp_path):
@@ -149,9 +218,61 @@ def test_reopen_selects_yaml_state_and_prepared_generation_together(tmp_path):
     transition = CampaignTransition.objects.get(action="reopen")
     assert transition.prior_projection_id == original.pk
     assert campaign.active_configuration.configuration_id == store.active().version_id
+    assert campaign.readiness_revision == 2
+    assert ActivationCatchUpDemand.objects.count() == 1
 
 
-def test_unapplied_exceptional_abort_recovers_after_file_failure(tmp_path, monkeypatch):
+@pytest.mark.parametrize("action", ["edit_end", "reopen"])
+@pytest.mark.parametrize("candidate", ["unchanged", "past"])
+def test_invalid_exceptional_end_fails_before_yaml_selection(
+    tmp_path, action, candidate
+):
+    """No-op and nonextending/elapsed candidates receive clean failure receipts."""
+    store, campaign, actor = draft_campaign(tmp_path)
+    original = campaign.active_configuration
+    with campaign_clock(original.starts_at):
+        command(campaign, actor, Action.ACTIVATE)
+    if action == "reopen":
+        complete_empty_catchup(campaign, actor)
+        run = claimed_task("campaign_boundary", campaign.pk, actor)
+        with campaign_clock(original.ends_at):
+            apply_due_boundaries(
+                campaign_id=campaign.pk,
+                task_id=run.run_id,
+                fence=run.fence,
+                actor_id=actor,
+                correlation_id=uuid4(),
+                admit=admit_test_work,
+            )
+    instant = (
+        original.ends_at
+        if action == "reopen"
+        else original.ends_at - timedelta(hours=1)
+    )
+    date = (
+        original.end_date
+        if candidate == "unchanged"
+        else original.end_date - timedelta(days=1)
+    )
+    with campaign_clock(instant):
+        request, _ = end_request(store, campaign, actor, action, date.isoformat())
+        before = store.active()
+        result = install_request(
+            store,
+            request_id=request.request_id,
+            correlation_id=uuid4(),
+            admit_campaign=admit_test_work,
+        )
+    assert result.state == "failed" and result.failure_code == "invalid_candidate"
+    assert store.active() == before
+    campaign.refresh_from_db()
+    assert campaign.active_configuration_id == original.pk
+
+
+@pytest.mark.parametrize("interruption", ["prepared", "yaml_activated"])
+def test_unapplied_exceptional_abort_recovers_after_file_failure(
+    tmp_path, monkeypatch, interruption
+):
     """Expired readiness can be cancelled without rewinding any applied history."""
     from parishkit.stewardship.accounts.configuration_installation import (
         DatabaseMaterializer,
@@ -172,8 +293,21 @@ def test_unapplied_exceptional_abort_recovers_after_file_failure(tmp_path, monke
             materializer.checkpoint("yaml_activated")
             raise RuntimeError("synthetic interruption")
 
+        original_checkpoint = DatabaseMaterializer.checkpoint
+
+        def interrupted_checkpoint(materializer, state, **kwargs):
+            """Crash with durable projections but no prepared receipt."""
+            if state == "prepared":
+                raise RuntimeError("synthetic interruption")
+            return original_checkpoint(materializer, state, **kwargs)
+
         with monkeypatch.context() as patch:
-            patch.setattr(DatabaseMaterializer, "activate", interrupted)
+            if interruption == "prepared":
+                patch.setattr(
+                    DatabaseMaterializer, "checkpoint", interrupted_checkpoint
+                )
+            else:
+                patch.setattr(DatabaseMaterializer, "activate", interrupted)
             with pytest.raises(RuntimeError, match="synthetic interruption"):
                 install_request(
                     store,
@@ -181,7 +315,11 @@ def test_unapplied_exceptional_abort_recovers_after_file_failure(tmp_path, monke
                     correlation_id=uuid4(),
                     admit_campaign=admit_test_work,
                 )
-        assert store.active().version_id == request.candidate_version_id
+        assert store.active().version_id == (
+            original.version_id
+            if interruption == "prepared"
+            else request.candidate_version_id
+        )
         assert (
             SystemConfiguration.objects.get().active_configuration_id
             == original.version_id
@@ -191,18 +329,28 @@ def test_unapplied_exceptional_abort_recovers_after_file_failure(tmp_path, monke
             """Crash after the durable abort, leaving its exact recovery repeatable."""
             raise OSError("synthetic file failure")
 
+        resolver = uuid4()
         with monkeypatch.context() as patch:
-            patch.setattr(store, "select", failed_select)
+            # Even the pre-selection crash has a durable abort before checkpoint IO.
+            if interruption == "prepared":
+                patch.setattr(
+                    DatabaseMaterializer,
+                    "restore_aborted_candidate",
+                    lambda _: failed_select(None),
+                )
+            else:
+                patch.setattr(store, "select", failed_select)
             with pytest.raises(OSError, match="synthetic file failure"):
                 abort_configuration_intent(
                     store,
                     request_id=request.request_id,
-                    actor_id=actor,
+                    actor_id=resolver,
                     correlation_id=uuid4(),
                     reason="Readiness expired",
                     admit=admit_test_work,
                 )
         assert CampaignConfigurationAbort.objects.count() == 1
+        assert CampaignConfigurationAbort.objects.get().actor_id == resolver
         recovered = install_request(
             store,
             request_id=request.request_id,

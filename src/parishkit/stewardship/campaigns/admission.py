@@ -20,6 +20,7 @@ def validate_installation(document, *, request_id=None):
 
     from .models import (
         Campaign,
+        CampaignBoundaryOccurrence,
         CampaignConfigurationIntent,
         CampaignWorkGate,
         ScheduleDefinition,
@@ -39,6 +40,42 @@ def validate_installation(document, *, request_id=None):
         if request_id
         else None
     )
+    if intent is not None:
+        from .configuration import campaign_values
+        from .runtime import _now
+
+        row = existing.get(str(intent.campaign_id))
+        proposed = candidates.get(str(intent.campaign_id))
+        if row is None or proposed is None:
+            raise ConfigError("Exceptional edit requires its current campaign.")
+        interval = campaign_values(proposed["values"])
+        prior = row.active_configuration
+        now = _now()
+        if (
+            interval.end == prior.ends_at
+            or interval.end <= now
+            or (
+                intent.action == "reopen"
+                and (row.state != "closed" or interval.end <= prior.ends_at)
+            )
+            or (
+                intent.action == "edit_end"
+                and (row.state not in {"scheduled", "active"} or now >= prior.ends_at)
+            )
+        ):
+            raise ConfigError("Exceptional edit requires a valid changed end date.")
+        if (
+            CampaignBoundaryOccurrence.objects.filter(
+                campaign=row,
+                kind="close",
+                state="pending",
+                task__state__in=["running", "abandoned"],
+            ).exists()
+            or CampaignWorkGate.objects.filter(
+                state__in=["preparing", "running"]
+            ).exists()
+        ):
+            raise CampaignAdmissionUnavailable("Exceptional end changes are held.")
     added = set(candidates) - set(existing)
     if len(added) > 1 or (current is not None and added):
         raise ConfigError("Only one current campaign can be configured.")
@@ -73,17 +110,22 @@ def validate_installation(document, *, request_id=None):
             raise CampaignAdmissionUnavailable(
                 "Campaign configuration is not currently admitted."
             )
-        if current is None and (
-            (runtime is not None and runtime.mode != "testing")
-            or any(row.state not in {"archived", "purged"} for row in existing.values())
-            or CampaignWorkGate.objects.filter(
-                state__in=["preparing", "running"]
-            ).exists()
-            or (runtime is not None and runtime.restore_review_required)
-            or target["values"]["timezone"]
-            != document["sections"]["parish"][0]["values"]["timezone"]
-        ):
-            raise ConfigError("A new draft must copy the current parish timezone.")
+        if current is None:
+            if (runtime is not None and runtime.mode != "testing") or (
+                CampaignWorkGate.objects.filter(
+                    state__in=["preparing", "running"]
+                ).exists()
+            ):
+                raise CampaignAdmissionUnavailable("New campaign creation is held.")
+            if any(
+                row.state not in {"archived", "purged"} for row in existing.values()
+            ):
+                raise ConfigError("Previous campaigns must be archived.")
+            if (
+                target["values"]["timezone"]
+                != document["sections"]["parish"][0]["values"]["timezone"]
+            ):
+                raise ConfigError("A new draft must copy the current parish timezone.")
     # Check retired definition identities before immutable projection insertion;
     # otherwise the SQL defense would leave the installer at 'validating'.
     schedules = document["sections"].get("schedules", [])

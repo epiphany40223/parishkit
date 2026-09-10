@@ -53,6 +53,7 @@ class Migration(migrations.Migration):
                 ),
                 ("version", models.PositiveBigIntegerField(default=1, editable=False)),
                 ("request_id", models.UUIDField(unique=True)),
+                ("initiated_by_id", models.UUIDField(null=True)),
                 ("state", models.CharField(default="preparing", max_length=16)),
                 (
                     "campaign",

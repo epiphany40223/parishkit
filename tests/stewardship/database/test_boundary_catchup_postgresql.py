@@ -9,7 +9,11 @@ from django.db.models import F
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.boundaries import apply_due_boundaries
-from parishkit.stewardship.campaigns.catchup import bind_catchup, checkpoint_catchup
+from parishkit.stewardship.campaigns.catchup import (
+    bind_catchup,
+    checkpoint_catchup,
+    record_catchup_failure,
+)
 from parishkit.stewardship.campaigns.lifecycle import Action, portal_admitted
 from parishkit.stewardship.campaigns.models import (
     ActivationCatchUpDemand,
@@ -105,6 +109,60 @@ def test_wrong_boundary_fence_rolls_back_both_occurrences(tmp_path):
     assert CampaignTransition.objects.count() == 1
 
 
+def test_obsolete_start_still_requires_fenced_worker(tmp_path):
+    """Worker-produced skips cannot bypass TaskRun ownership through a null binding."""
+    _, campaign, actor = draft_campaign(tmp_path)
+    with campaign_clock(campaign.active_configuration.starts_at):
+        command(campaign, actor, Action.ACTIVATE)
+        run = claimed_task("campaign_boundary", campaign.pk, actor)
+        arguments = dict(
+            campaign_id=campaign.pk,
+            task_id=run.run_id,
+            fence=run.fence,
+            actor_id=actor,
+            correlation_id=uuid4(),
+            admit=admit_test_work,
+        )
+        with pytest.raises(IntegrityError):
+            apply_due_boundaries(**(arguments | {"fence": run.fence + 1}))
+        assert not CampaignBoundaryOccurrence.objects.exists()
+        (result,) = apply_due_boundaries(**arguments)
+    assert result.state == "skipped" and result.task_fence == run.fence
+
+
+def test_close_admission_sees_started_facts_and_rejection_rolls_back(tmp_path):
+    """Each due boundary has fresh owning admission, within one atomic transaction."""
+    _, campaign, actor = draft_campaign(tmp_path)
+    with campaign_clock(campaign.active_configuration.starts_at - timedelta(days=1)):
+        command(campaign, actor, Action.ACTIVATE)
+    run = claimed_task("campaign_boundary", campaign.pk, actor)
+    seen = []
+
+    def admission(action, current, runtime):
+        """Refuse close after observing start's transaction-local effects."""
+        seen.append((action, current.state))
+        if action is Action.CLOSE:
+            raise StorageInvariantError("synthetic close admission")
+
+    with (
+        campaign_clock(campaign.active_configuration.ends_at),
+        pytest.raises(StorageInvariantError),
+    ):
+        apply_due_boundaries(
+            campaign_id=campaign.pk,
+            task_id=run.run_id,
+            fence=run.fence,
+            actor_id=actor,
+            correlation_id=uuid4(),
+            admit=admission,
+        )
+    assert seen == [(Action.START, "scheduled"), (Action.CLOSE, "active")]
+    campaign.refresh_from_db()
+    assert campaign.state == "scheduled"
+    assert not CampaignBoundaryOccurrence.objects.exists()
+    assert CampaignTransition.objects.count() == 1
+
+
 def test_catchup_checkpoint_is_exact_fenced_and_independent_of_task_completion(
     tmp_path,
 ):
@@ -137,12 +195,37 @@ def test_catchup_checkpoint_is_exact_fenced_and_independent_of_task_completion(
     )
     first = checkpoint_catchup(**arguments)
     assert checkpoint_catchup(**arguments).pk == first.pk
+    with pytest.raises(StorageInvariantError, match="current fenced input"):
+        checkpoint_catchup(**(arguments | {"fence": run.fence + 1}))
     with pytest.raises(StorageInvariantError):
         checkpoint_catchup(**(arguments | {"items": 6}))
     with pytest.raises(IntegrityError):
         checkpoint_catchup(
             **(arguments | {"group_key": "second", "fence": run.fence + 1})
         )
+    demand.refresh_from_db()
+    failure_args = dict(
+        demand_id=demand.pk,
+        request_id=uuid4(),
+        expected_version=demand.version,
+        task_id=run.run_id,
+        fence=run.fence,
+        code="enumeration_failed",
+        actor_id=actor,
+        correlation_id=uuid4(),
+        admit=admit_test_work,
+    )
+    with pytest.raises(IntegrityError):
+        record_catchup_failure(**(failure_args | {"code": "untrusted provider detail"}))
+    failure = record_catchup_failure(**failure_args)
+    assert record_catchup_failure(**failure_args).pk == failure.pk
+    demand.refresh_from_db()
+    assert demand.failure_code == "enumeration_failed"
+    assert demand.groups_completed == 1 and demand.items_completed == 5
+    assert demand.completed_at is None
+    checkpoint_catchup(**(arguments | {"group_key": "second", "items": 0}))
+    demand.refresh_from_db()
+    assert demand.failure_code == "" and demand.groups_completed == 2
     change_run(
         run_id=run.run_id,
         action="complete",

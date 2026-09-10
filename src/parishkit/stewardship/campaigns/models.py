@@ -162,6 +162,7 @@ from .runtime_models import (  # noqa: E402,F401
     CampaignTransition,
     CampaignWorkGate,
     CatchUpCheckpoint,
+    CatchUpFailure,
     RuntimeTransition,
 )
 from .schedule_models import (  # noqa: E402,F401
