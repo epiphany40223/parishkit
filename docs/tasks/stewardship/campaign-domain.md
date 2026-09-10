@@ -32,24 +32,32 @@ Scope and dependencies: [DOM-02 work package](../../plans/stewardship/campaign-d
 
 - [x] DOM-02.01 — Implement the canonical UTC interval resolver and DST rules.
 - [x] DOM-02.02 — Define the lifecycle transition registry.
-- [ ] DOM-02.03 — Centralize access, work-admission, and lifecycle predicates.
-- [ ] DOM-02.04 — Enforce exact date boundaries despite scheduler lag.
-- [ ] DOM-02.05 — Test transitions, races, DST, and lifecycle invariants.
+- [x] DOM-02.03 — Centralize access, work-admission, and lifecycle predicates.
+- [x] DOM-02.04 — Enforce exact date boundaries despite scheduler lag.
+- [x] DOM-02.05 — Test transitions, races, DST, and lifecycle invariants.
 
 Evidence: The Phase 1A policy batch adds `campaigns.intervals` and 25 pure tests
 covering UTC boundaries, earlier folds, first-valid gap resolution, 23/25-hour
 days, a whole skipped date, invalid dates and first-anniversary financial ends.
-Lifecycle predicates, persisted date gates and transaction/race integration
-remain DOM-02.02 through .05 with DAT-02. See the
+At that batch's checkpoint, lifecycle predicates, persisted date gates and
+transaction/race integration remained DOM-02.02 through .05 with DAT-02. See the
 [foundation boundary](../../guides/stewardship-authorization-foundation.md).
 
 September 10, 2026: the campaign batch adds an immutable transition registry,
 required guards/actor/reauthentication/confirmation metadata and pure portal,
 schedule, structural-lock and successor predicates. Tests cover state/action and
 state/mode/current/restore combinations, exact boundaries, withdrawal/reopen,
-purge preparation and delivery holds. DOM-02.03 through .05 remain partial until
-persistent transition/read-guard/worker integration. See the
+purge preparation and delivery holds. At that checkpoint, DOM-02.03 through .05
+remained partial pending persistent transition/read-guard integration. See the
 [campaign boundary](../../guides/stewardship-campaign-foundation.md).
+
+The Phase 1A completion batch integrates those predicates with DAT-02's durable
+transactions, boundary/catch-up storage, read guards and independent-connection
+races. Exact date gates remain authoritative when scheduler state lags, and
+both overdue boundaries commit in order or roll back together. DOM-02 is now
+complete for its policy/storage scope; BG-02 and ADM-04 through ADM-06 own the
+later concrete schedulers and authenticated workflows. See
+[completion evidence](../../guides/stewardship-phase-1a-completion.md).
 
 ## DOM-03: Authorization capability policy
 
@@ -68,6 +76,9 @@ role/capability/scope matrix; PostgreSQL tests exercise live rule changes and
 seed-overlay suspension/reactivation. DOM-03.04/.05 remain partial until ARC-04
 and later callers enforce current policy/session checks, including transaction
 races. See the [foundation boundary](../../guides/stewardship-authorization-foundation.md).
+The complete pure capability policy and database-backed rule/revocation
+foundations satisfy Phase 1A. Remaining .04/.05 consumer-integration checkboxes
+belong to Phase 1B and later routes/jobs/reports, not another Phase 1A increment.
 
 ## DOM-04: Shared presentation and client contracts
 
@@ -109,3 +120,10 @@ database factories/transaction clock integration. DOM-05.03 has owners but no
 implemented end-to-end scenario nodes; all ten scenarios are explicitly
 `planned`, not falsely covered by helper tests. Add executable scenario evidence
 with each vertical slice and complete DOM-05.05 in Phase 7.
+
+Phase 1A adds shared real-installer parish/campaign builders, attributed TaskRun
+fixtures, lifecycle histories, SQL domain-clock scenarios, bounded read/download
+fixtures and synthetic offline restore input. Application calls always exercise
+their SQL guards. This completes Phase 1A's requirement to begin .01; source,
+Family, submission, outbox and destructive-state factories grow with their
+owning phases, so the whole cross-domain factory task remains open.

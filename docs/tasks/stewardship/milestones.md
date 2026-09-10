@@ -1572,6 +1572,35 @@ Critical issues. PR CI and human merge approval remain required. Phase 1A and
 Gate 1 are not complete; continue the remaining DAT-02 storage/read-guard batch
 after the human-approved merge.
 
+### Phase 1A completion batch
+
+PR #18 merged at `9f644b0e1fdef1fb09e009bc1576f979c096f643`. The branch
+`pr/stewardship-phase-1a-completion` completes the remaining Phase 1A scope in
+one PR. DAT-02 and DOM-02 are implemented; the other mixed-phase packages
+explicitly retain only their later operational integration. See the
+[completion guide](../../guides/stewardship-phase-1a-completion.md) for the
+contracts, demonstrations, review dispositions and validation evidence.
+
+Round 1: Pika session `20260910-074438-7d9457`, reviewed `f4c9588`, four
+Claude shards plus independent Codex, 38 validated findings. Round 2: session
+`20260910-083115-c257ba`, reviewed `d7483b0`, five Claude shards plus independent
+Codex, 19 validated findings. Both rounds completed without degradation or
+failed reviewers; accepted Medium+ corrections are implemented and regression
+tested. Round 3 (`20260910-100528-1d2bfd`, reviewed `9e31e37`) also completed
+with both vendors and no degradation. It found one real High callback-arity
+issue, corrected with strict-signature regression fixtures before round 4.
+Round 4 (`20260910-103435-666968`, reviewed `577248f`) completed with both
+vendors, no degradation/failures, 27 Medium findings and zero High/Critical.
+Its 23 corrections/test improvements and four retained behaviors are documented
+in the [guide](../../guides/stewardship-phase-1a-completion.md#validation-and-reviews).
+All accepted Medium+ findings are resolved, and the four-round exit criterion
+is satisfied. Final validation passes 1,958 baseline and 634 PostgreSQL tests
+(96.75% lines, 90.44% branches), all 30 rebuilt-image/Compose checks, Ruff,
+formatting, Markdown and migration-drift checks. CI and human merge approval
+are tracked on the associated PR. Phase 1A is complete; Gate 1 is not released.
+After merge, proceed to Phase 1B as a coherent batch; Gate 1 still follows the
+integrated Phase 1B/1C foundation.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).

@@ -114,15 +114,22 @@ identifies the still-required OPS-04 offline interlock/command, ARC-04 pending
 OAuth revocation and session enforcement, notification delivery, and remaining
 runtime/secret integration. DAT-01.02/.03/.06 therefore remain partial.
 
+Phase 1A completion batch: the remaining campaign/mode runtime schema, durable
+transition effects and exceptional configuration recovery are implemented. All
+Phase 1A portions of DAT-01 are now present and tested; these mixed-phase task
+checkboxes remain open only for ARC-04/ARC-06 session/secret consumer enforcement
+and ARC-02/OPS-04 operational installation/startup. They do not block Phase 1B.
+See the [completion evidence and integration contracts](../../guides/stewardship-phase-1a-completion.md).
+
 ## DAT-02: Campaign lifecycle and schedule schema
 
 Scope and dependencies: [DAT-02 work package](../../plans/stewardship/data.md#dat-02-campaign-lifecycle-and-schedule-schema).
 
-- [ ] DAT-02.01 — Implement Campaign structure and immutable timezone snapshot.
-- [ ] DAT-02.02 — Enforce campaign constraints, read guards, and bounded download admission.
-- [ ] DAT-02.03 — Implement lifecycle records and durable activation catch-up demands.
-- [ ] DAT-02.04 — Implement schedules, fulfillment, holds, and post-close resolutions.
-- [ ] DAT-02.05 — Test campaign and schedule transition races.
+- [x] DAT-02.01 — Implement Campaign structure and immutable timezone snapshot.
+- [x] DAT-02.02 — Enforce campaign constraints, read guards, and bounded download admission.
+- [x] DAT-02.03 — Implement lifecycle records and durable activation catch-up demands.
+- [x] DAT-02.04 — Implement schedules, fulfillment, holds, and post-close resolutions.
+- [x] DAT-02.05 — Test campaign and schedule transition races.
 
 Evidence: September 10, 2026 campaign batch adds immutable v3 CampaignConfiguration
 and ScheduleRevision projections, module-dependent validation, periods/mappings,
@@ -130,9 +137,15 @@ share/content references, resolved boundaries and atomic Testing draft activatio
 Historical schemas and additive recovery remain supported. Tests cover competing
 requests, rollback, raw-write denial, timezone independence, removal history and
 migrations. See the [integration boundary](../../guides/stewardship-campaign-foundation.md).
-All DAT-02 items remain partial/open: live structural/lifecycle state, bounded
-read/download guards, boundary/catch-up/history records, runtime fulfillment/
-holds/resolution and their races are still required.
+The completion batch now supplies live structural/lifecycle state, pinned
+response-lifetime reads, deployment-wide download capacity, ordered boundaries,
+fenced catch-up checkpoints/failures, schedule history/fulfillment, restore holds
+and exact post-close coverage. PostgreSQL regressions exercise every lifecycle
+race named in DAT-02.05, raw-write denial, replay, rollback and migration reversal.
+See [validation and review evidence](../../guides/stewardship-phase-1a-completion.md#validation-and-reviews).
+Storage task completion does not expose operational endpoints: DAT-04/06/07,
+BG-01/02/04, ADM-05/06, OPS-04/06 and DAT-09/BG-11 retain the linked concrete
+credential, submission/outbox, readiness, restore and purge integration.
 
 ## DAT-03: Versioned ParishSoft source corpus
 
@@ -180,6 +193,8 @@ See the [foundation boundary](../../guides/stewardship-authorization-foundation.
 DAT-05.01/.04/.06 remain partial: source-backed suggestions/review tasks,
 Admin-confirmed seeds, promotion integration, actual login/audit/session
 enforcement, and autosave/service admission races require Phase 1B/2 consumers.
+The Phase 1A policy-schema portion is complete; these mixed-phase checkboxes
+do not represent additional Phase 1A PRs.
 
 ## DAT-06: Immutable submissions and proposal overlay
 

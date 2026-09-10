@@ -43,6 +43,18 @@ validation/errors, candidate digest, installer checkpoints, and state:
 without changing YAML; a crash after YAML activation leaves the application
 fail-closed until the prepared matching database snapshot is activated.
 
+An exceptional end-date/reopen candidate may lose its date eligibility or
+readiness before database activation can succeed. Its dedicated cancellation
+workflow records an immutable `CampaignConfigurationAbort` before restoring
+the YAML manifest to the exact predecessor that is **still active in the
+database**. The installer must prove the candidate was never applied, serialize
+cancellation against activation, recheck current Admin authority, and recover
+an interrupted manifest restoration from that journal before ordinary recovery.
+The request then ends as failed with `invalid_candidate`; the abort preserves
+its specific reason. This narrow cancellation never rolls back an applied
+version, removes prepared history, or chooses an arbitrary side of a mismatch.
+Ordinary configuration recovery retains the forward-only contract above.
+
 Configuration requests identify their authority as authenticated Admin or the
 explicit [offline operator-recovery workflow](../operations/spec.md#offline-admin-access-recovery).
 The latter stores a named operator, reason, confirmed deployment/target, and

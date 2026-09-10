@@ -31,25 +31,9 @@ from parishkit.stewardship.storage import StorageInvariantError
 from ..campaign_factory import campaign, financial, schedule
 from ..configuration_factory import configuration_version
 from ..test_campaign_configuration import document as campaign_document
-from .test_policy_postgresql import change, initialized
+from .campaign_builders import add_draft, change, initialized
 
 pytestmark = pytest.mark.django_db(transaction=True)
-
-
-def add_draft(store, version, actor, row=None):
-    """Use the ordinary configuration request and activation, never ORM draft CRUD."""
-    row = campaign() if row is None else row
-    mail = schedule(row["id"])
-    result = change(
-        store,
-        version,
-        actor,
-        [
-            {"operation": "add", "section": "campaigns", **row},
-            {"operation": "add", "section": "schedules", **mail},
-        ],
-    )
-    return result, row, mail
 
 
 def test_draft_activation_history_and_parish_timezone(tmp_path):

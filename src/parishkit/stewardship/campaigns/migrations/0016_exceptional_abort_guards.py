@@ -1,0 +1,98 @@
+"""Explicit abort restores only a candidate's still-applied predecessor."""
+
+# ruff: noqa: E501
+from importlib import import_module
+
+from django.db import migrations
+
+from parishkit.stewardship.storage_migrations import immutable_guard_v1
+
+
+def extend_checkpoint(apps, editor):
+    """Only a journalled exceptional abort may fail after YAML selection."""
+    with editor.connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT pg_get_functiondef('stewardship_request_checkpoint_v2()'::regprocedure)"
+        )
+        sql = cursor.fetchone()[0]
+    old = "AND NEW.state = 'applied')"
+    new = """AND (NEW.state = 'applied' OR (NEW.state='failed' AND NEW.failure_code='invalid_candidate'
+                        AND EXISTS(SELECT 1 FROM stewardship_campaign_config_abort b
+                            JOIN stewardship_campaign_config_intent i ON i.id=b.intent_id WHERE i.request_id=NEW.request_id))))"""
+    if sql.count(old) != 1:
+        raise RuntimeError("Exceptional abort checkpoint predecessor is inconsistent.")
+    editor.execute(sql.replace(old, new), params=None)
+
+
+def restore_checkpoint(apps, editor):
+    """A committed abort decision cannot be discarded by downgrade."""
+    editor.execute("""DO $$ BEGIN IF EXISTS(SELECT 1 FROM stewardship_campaign_config_abort) THEN
+        RAISE EXCEPTION 'Exceptional abort history prevents reversal' USING ERRCODE='23514'; END IF; END $$;""")
+    script = "\n".join(
+        op.sql
+        for op in import_module(
+            "parishkit.stewardship.accounts.migrations.0013_activation_guards"
+        ).Migration.operations
+        if isinstance(op, migrations.RunSQL)
+    )
+    marker = "CREATE FUNCTION stewardship_request_checkpoint_v2()"
+    if script.count(marker) != 1:
+        raise RuntimeError("Exceptional abort checkpoint predecessor is inconsistent.")
+    start = script.index(marker)
+    end = script.index("$$;", start) + 3
+    editor.execute(
+        script[start:end].replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1),
+        params=None,
+    )
+
+
+SQL = """
+CREATE FUNCTION stewardship_exceptional_abort_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path=pg_catalog,public,pg_temp AS $$
+DECLARE i stewardship_campaign_config_intent%ROWTYPE; q stewardship_config_request%ROWTYPE;
+    r stewardship_system_configuration%ROWTYPE; checkpoint_state text;
+BEGIN
+    PERFORM pg_advisory_xact_lock(736220,1);
+    SELECT * INTO r FROM stewardship_system_configuration FOR UPDATE;
+    SELECT * INTO i FROM stewardship_campaign_config_intent WHERE id=NEW.intent_id;
+    SELECT * INTO q FROM stewardship_config_request WHERE id=i.request_id FOR UPDATE;
+    SELECT state INTO checkpoint_state FROM stewardship_config_checkpoint WHERE request_id=q.id ORDER BY sequence DESC LIMIT 1;
+    IF q.id IS NULL OR r.active_configuration_id IS DISTINCT FROM q.base_id OR NEW.actor_id IS NULL OR btrim(NEW.reason)=''
+       OR checkpoint_state IS NULL OR checkpoint_state NOT IN ('validating','prepared','yaml_activated')
+       OR NOT EXISTS(SELECT 1 FROM stewardship_configuration_version v WHERE v.id=q.candidate_version_id
+           AND v.digest=q.candidate_digest AND v.predecessor_id=q.base_id)
+       OR EXISTS(SELECT 1 FROM stewardship_config_activation WHERE request_id=q.id) THEN
+        RAISE EXCEPTION 'Only unapplied exceptional configuration can be aborted' USING ERRCODE='23514'; END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER stewardship_exceptional_abort_v1 BEFORE INSERT ON stewardship_campaign_config_abort
+FOR EACH ROW EXECUTE FUNCTION stewardship_exceptional_abort_v1();
+
+CREATE FUNCTION stewardship_aborted_activation_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path=pg_catalog,public,pg_temp AS $$
+BEGIN
+    IF EXISTS(SELECT 1 FROM stewardship_campaign_config_abort b JOIN stewardship_campaign_config_intent i ON i.id=b.intent_id
+              WHERE i.request_id=NEW.request_id) THEN
+        RAISE EXCEPTION 'Aborted exceptional candidate cannot be activated' USING ERRCODE='23514'; END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER aab_stewardship_aborted_activation_v1 BEFORE INSERT ON stewardship_config_activation
+FOR EACH ROW EXECUTE FUNCTION stewardship_aborted_activation_v1();
+"""
+
+
+class Migration(migrations.Migration):
+    dependencies = [("stewardship_campaigns", "0015_exceptional_abort")]
+    operations = [
+        migrations.RunPython(extend_checkpoint, restore_checkpoint),
+        immutable_guard_v1("stewardship_campaign_config_abort"),
+        migrations.RunSQL(
+            SQL,
+            reverse_sql="""
+DROP TRIGGER aab_stewardship_aborted_activation_v1 ON stewardship_config_activation;
+DROP FUNCTION stewardship_aborted_activation_v1();
+DROP TRIGGER stewardship_exceptional_abort_v1 ON stewardship_campaign_config_abort;
+DROP FUNCTION stewardship_exceptional_abort_v1();
+""",
+        ),
+    ]

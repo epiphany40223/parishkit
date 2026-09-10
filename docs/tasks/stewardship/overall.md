@@ -128,6 +128,25 @@ Phase 1C, following the controlling plan; all existing review gates remain.
 1. [DAT-01](data.md#dat-01-storage-conventions-and-base-records) → [DOM-02](campaign-domain.md#dom-02-campaign-interval-and-lifecycle-policy).01 interval resolver → [DAT-02](data.md#dat-02-campaign-lifecycle-and-schedule-schema) → remaining [DOM-02](campaign-domain.md#dom-02-campaign-interval-and-lifecycle-policy) policy.
 2. [DAT-05](data.md#dat-05-portal-users-and-authorization-policy-records) → [DOM-03](campaign-domain.md#dom-03-authorization-capability-policy); start database-backed [DOM-05](campaign-domain.md#dom-05-cross-domain-acceptance-harness) factories after [DAT-01](data.md#dat-01-storage-conventions-and-base-records).
 
+September 10, 2026: PR #18 merged as
+`9f644b0e1fdef1fb09e009bc1576f979c096f643`. The completion branch
+`pr/stewardship-phase-1a-completion` targets **all remaining Phase 1A work** in
+one PR, as explicitly requested. Its
+[execution checkpoints and integration contracts](../../guides/stewardship-phase-1a-completion.md)
+cover DAT-02, persistent DOM-02 integration and initial database-backed DOM-05
+builders. Phase 1A implementation and local validation are complete; Gate 1
+remains after the integrated Phase 1B/1C foundation.
+The implementation scope is now complete: DAT-02.01–.05 and DOM-02.03–.05 are
+checked with PostgreSQL evidence, and DAT-01/DAT-05/DOM-03/DOM-05 explicitly
+separate their completed Phase 1A portions from later consumers. Four independent
+full-branch dual-model review/fix rounds are complete. Round 3's High callback
+issue was corrected before round 4, which found no High/Critical issues; all
+accepted Medium+ findings are resolved. Final validation passes 1,958 baseline
+and 634 PostgreSQL tests, plus all 30 rebuilt-image/Compose checks. CI and human
+merge approval are tracked on the associated completion PR. After its merge, the
+next dependency-ready batch is **Phase 1B**, starting with ARC-03; do not create
+another Phase 1A foundation increment.
+
 ## Phase 1B: Identity and web foundations
 
 Source scope: [Phase 1B: Identity and web foundations](../../plans/stewardship/overall.md#phase-1-secure-foundation-and-durable-domain).

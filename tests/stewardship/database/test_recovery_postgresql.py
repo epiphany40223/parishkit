@@ -24,7 +24,7 @@ from parishkit.stewardship.audit.models import AuditEvent
 
 from ..policy_factory import address
 from ..test_request_patch import parish_patch
-from .test_policy_postgresql import change, initialized
+from .campaign_builders import change, initialized
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
