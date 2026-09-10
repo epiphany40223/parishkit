@@ -17,7 +17,12 @@ Scope and dependencies: [ADM-01 work package](../../plans/stewardship/admin-port
 - [ ] ADM-01.04 — Audit login, logout, timeout, and revocation.
 - [ ] ADM-01.05 — Test direct routes and partial endpoints.
 
-Evidence: Not started.
+Evidence: Phase 1B implements Google-only initiation/callback, CSRF logout,
+retryable denial, current-role checks and durable login/session audit. Real
+PostgreSQL and synthetic signed Google tests cover normal and denied claims,
+revocation, cookie isolation, expiry and recovery boundaries. Setup/configured
+state routing and complete endpoint admission remain in progress; the actual
+wizard stays with ADM-02. See [Phase 1B evidence](../../guides/stewardship-phase-1b.md).
 
 ## ADM-02: Bootstrap command and transactional setup wizard
 

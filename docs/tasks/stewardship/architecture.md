@@ -149,9 +149,12 @@ Evidence: Independent general-encryption, signing, MAC and sealed-box keyrings,
 purpose-bound envelopes, safe fingerprints and owner-only key-file handling are
 implemented. Target-specific handoff encryption passes 15 tests. Re-encryption
 batches preserve code/token values and roll back on corruption; rotation plus
-storage regressions pass 47 tests. Installer orchestration, database/queue
-isolation and backup-aware retirement remain incomplete. Actual container mount
-proof is in progress; [Phase 1B evidence](../../guides/stewardship-phase-1b.md)
+storage regressions pass 47 tests. Target credential queue/file orchestration
+and actual restricted-role isolation now pass ten integration cases; see the
+[installer boundary](../../guides/stewardship-credential-installers.md). Twelve
+actual-container mount checks pass. Configuration service admission,
+consumer runtime recreation and backup-aware retirement remain incomplete;
+[Phase 1B evidence](../../guides/stewardship-phase-1b.md)
 does not claim complete service admission or production readiness.
 
 ## ARC-07: Application-level privacy and audit primitives
@@ -183,7 +186,9 @@ Scope and dependencies: [ARC-08 work package](../../plans/stewardship/architectu
 
 Evidence: Initial scope is in progress. Versioned self-hosted assets and an
 explicit Chromium/Firefox/WebKit matrix pass 39 component checks including axe,
-keyboard focus, mobile layouts, browser-local times and session behavior. Query
-budgets and representative baseline measurements are still pending. Full
+keyboard focus, mobile layouts, browser-local times and session behavior.
+An initial 5,000-Family/100-live-session fixture verifies constant-size lookup
+work and enforces query/p95 budgets for lookup, Family page and Admin shell.
+This is not simultaneous-request load or the complete task/report baseline. Full
 source/submission/outbox scale fixtures stay with their later phase owners;
 see [Phase 1B evidence](../../guides/stewardship-phase-1b.md).

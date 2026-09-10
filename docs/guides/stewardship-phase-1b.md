@@ -113,6 +113,26 @@ Health observation uses only the documented server incarnation and eviction
 counters from [Valkey INFO](https://valkey.io/commands/info/), plus an opaque
 per-namespace marker. No address, attempted code or token enters that baseline.
 
+The [credential installer protocol](stewardship-credential-installers.md) now
+combines target-key-sealed intake, crash-reconcilable private files and actual
+restricted PostgreSQL identities. Ten queue/file/role integration cases pass,
+including cross-target denial, denied web ciphertext reads, candidate-test
+failure, cancellation, expiry rollback and replay after durable acknowledgement.
+The pure file/handoff/key suite passes 44 cases. The ordinary baseline passes
+2,177 tests; the subsequent full PostgreSQL run found two schema/test-fixture
+issues. Both are corrected, and 84 installer/storage/audit/recovery regressions
+pass, including Google HTTP checks across offline recovery. These are intermediate results,
+not a final validation or review claim. Production provisioning and whole-service
+consumer recreation remain with OPS-02/OPS-04.
+
+The initial identity-scale benchmark creates 5,000 real Family identities and
+100 unexpired sessions. Lookup uses 22 queries with either 1 or 5,000 Families;
+the Family page uses 25 and the Admin shell 23. On this development host, observed
+p95 timings were below 0.03 seconds. Tests enforce a 64-query ceiling and a
+2-second p95 budget rather than those machine-specific observations. This is
+not a 100-concurrent-request load test; complete source, submissions, task/report
+fixtures and mixed-worker load remain with their later phase owners.
+
 ## Browser component validation
 
 Install test-only Python inputs from `requirements/stewardship-browser.txt`, run
