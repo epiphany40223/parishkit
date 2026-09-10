@@ -158,7 +158,8 @@ assignment as one coherent PR. Its [execution checkpoints](../../guides/stewards
 track implementation and validation; no Phase 1B completion or Gate 1 release
 is claimed yet.
 
-Current checkpoint: all Phase 1B code scope and its three rounds of review
+Current implementation SHA: `120e10552b1e51d1810f58fec23148eed65bf17a`.
+All Phase 1B code scope and its three rounds of review
 corrections are implemented. The third review had no High/Critical findings.
 Final integrated validation passes; one secure-link audit-retention specification
 clarification remains open. See the [review ledger](../../guides/stewardship-phase-1b-reviews.md#round-three).

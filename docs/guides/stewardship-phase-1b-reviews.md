@@ -203,10 +203,12 @@ X1's normative audit-contract decision remains open, so review exit is not claim
 Initial correction checks pass 171 infrastructure-free cases and 113 PostgreSQL
 cases. These are focused regression evidence, not the final integrated result.
 
+Implementation corrections: `120e10552b1e51d1810f58fec23148eed65bf17a`.
 Final post-correction validation passes 2,312 ordinary tests and 916 PostgreSQL
 tests, with 95.09% scoped line coverage and 85.96% branch coverage. The rebuilt
-image passes the same 2,312 ordinary tests, all 30 Compose checks, all 12 real
-container-isolation checks and all 66 browser cases. Ruff checks/formatting,
+image passes the same 2,312 ordinary tests. All 30 Compose checks and all 12 real
+container-isolation checks pass; the host-run browser matrix passes all 66 cases.
+Ruff checks/formatting,
 tracked Markdown lint, migration drift and diff checks pass. The PostgreSQL run
 completed in 506.98 seconds on its separate disposable cluster.
 
