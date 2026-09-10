@@ -25,6 +25,7 @@ from .campaign_builders import (
     command,
     complete_empty_catchup,
     draft_campaign,
+    prepared_tokens,
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -56,6 +57,7 @@ def test_competing_confirmations_have_one_winner(tmp_path, action):
         campaign.refresh_from_db()
         runtime = SystemConfiguration.objects.get()
         count = CampaignTransition.objects.count()
+        tokens = prepared_tokens(campaign, actor) if action is Action.ACTIVATE else None
         barrier = Barrier(2)
 
         def confirm(_):
@@ -78,9 +80,7 @@ def test_competing_confirmations_have_one_winner(tmp_path, action):
                         **shared,
                         expected_version=campaign.version,
                         action=action,
-                        token_generation_id=uuid4()
-                        if action is Action.ACTIVATE
-                        else None,
+                        token_generation_id=tokens,
                         reason="reviewed" if action is Action.WITHDRAW else "",
                     )
                 return "committed"
@@ -204,6 +204,7 @@ def test_draft_end_edit_races_activation_without_partial_configuration(
     from parishkit.stewardship.accounts.configuration_requests import record_request
 
     store, campaign, actor = draft_campaign(tmp_path)
+    tokens = prepared_tokens(campaign, actor)
     runtime = SystemConfiguration.objects.get()
     request = record_request(
         base_digest=store.active().digest,
@@ -230,7 +231,7 @@ def test_draft_end_edit_races_activation_without_partial_configuration(
                 action=Action.ACTIVATE,
                 expected_version=campaign.version,
                 expected_runtime_version=runtime.version,
-                token_generation_id=uuid4(),
+                token_generation_id=tokens,
                 actor_id=actor,
                 correlation_id=uuid4(),
                 admit=admit_test_work,

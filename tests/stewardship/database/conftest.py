@@ -3,6 +3,8 @@
 import pytest
 from django.conf import settings
 
+from .auth_builders import auth_service, google  # noqa: F401
+
 
 def pytest_collection_modifyitems(items):
     """Skip before pytest-django can create a database in the pure baseline."""

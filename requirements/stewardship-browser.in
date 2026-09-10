@@ -1,0 +1,2 @@
+# Browser tools are test-only; the application image does not need a browser.
+playwright==1.62.0

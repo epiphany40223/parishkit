@@ -153,6 +153,21 @@ class ScheduleRevision(ImmutableRecord):
 
 
 # Django discovers models through this module; ownership stays in focused modules.
+from .credential_models import (  # noqa: E402,F401
+    CampaignCredentialState,
+    CredentialKeyState,
+    DeploymentCredentialState,
+    FamilyAccessToken,
+    FamilyAccessTokenGeneration,
+    FamilyCampaign,
+    FamilyCodeFingerprint,
+    FamilyEligibilityChange,
+    FamilySession,
+    RehearsalCodeFingerprint,
+    RehearsalCodeReservation,
+    RehearsalCredential,
+    RehearsalEpoch,
+)
 from .runtime_models import (  # noqa: E402,F401
     ActivationCatchUpDemand,
     CampaignBoundaryOccurrence,

@@ -1,0 +1,13 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Family campaign sign-in" %}{% endblock %}
+{% block content %}<section class="flow panel">
+  <h1>{% translate "Family campaign sign-in" %}</h1>
+  <form method="post" action="/">
+    {% csrf_token %}
+    <label for="family-code">{% translate "Family code" %}</label>
+    <p class="help" id="code-help">{% translate "Enter the eight letters from your campaign invitation." %}</p>
+    <input id="family-code" name="code" type="text" maxlength="128" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-describedby="code-help" required>
+    <button type="submit">{% translate "Continue" %}</button>
+  </form>
+  <p><a href="/admin/login">{% translate "Administration sign-in" %}</a></p>
+</section>{% endblock %}

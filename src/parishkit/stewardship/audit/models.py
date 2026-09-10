@@ -47,3 +47,38 @@ class AuditEvent(ImmutableRecord):
                 name="audit_ownership_shape",
             ),
         ]
+
+
+class AuditContext(ImmutableRecord):
+    """Reviewed structured context never contains the values of a viewed report."""
+
+    event = models.OneToOneField(AuditEvent, on_delete=models.PROTECT)
+    actor_kind = models.CharField(max_length=16)
+    schema = models.CharField(max_length=16)
+    context = models.JSONField(default=dict)
+
+    class Meta:
+        db_table = "stewardship_audit_context"
+
+
+class OperationalLog(ImmutableRecord):
+    """Queryable diagnostics with closed event/schema values, not free-form text."""
+
+    level = models.CharField(max_length=8)
+    event = models.CharField(max_length=64)
+    schema = models.CharField(max_length=16)
+    context = models.JSONField(default=dict)
+
+    class Meta:
+        db_table = "stewardship_operational_log"
+        indexes = [
+            models.Index(fields=["level", "created_at"], name="operational_level_time")
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(
+                    level__in=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+                ),
+                name="operational_log_level",
+            )
+        ]

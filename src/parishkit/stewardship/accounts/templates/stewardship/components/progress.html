@@ -1,0 +1,6 @@
+{% load i18n stewardship %}<section class="panel" aria-labelledby="progress-title">
+  <h2 id="progress-title">{{ progress_title }}</h2>
+  <p role="status" aria-live="polite">{{ progress_summary }}</p>
+  {% if progress_total %}<progress max="{{ progress_total }}" value="{{ progress_count }}" aria-label="{{ progress_title }}">{{ progress_count|number }}</progress>{% endif %}
+  <p>{{ progress_description }}</p>
+</section>

@@ -82,6 +82,8 @@ def command(campaign, actor, action, **kwargs):
     """Fresh expected versions plus synthetic owning admission for storage tests."""
     campaign.refresh_from_db()
     runtime = SystemConfiguration.objects.get()
+    if action is Action.ACTIVATE and "token_generation_id" not in kwargs:
+        kwargs["token_generation_id"] = prepared_tokens(campaign, actor)
     return transition_campaign(
         campaign_id=campaign.pk,
         action=action,
@@ -91,7 +93,6 @@ def command(campaign, actor, action, **kwargs):
         actor_id=actor,
         correlation_id=uuid4(),
         admit=admit_test_work,
-        **({"token_generation_id": uuid4()} if action is Action.ACTIVATE else {}),
         **kwargs,
     )
 
@@ -271,7 +272,11 @@ def end_request(store, campaign, actor, action, end_date="2026-11-10"):
         request_key=uuid4(),
         correlation_id=uuid4(),
     )
-    token = uuid4() if action == "reopen" else None
+    token = (
+        prepared_tokens(campaign, actor, configuration_request_id=request.request_id)
+        if action == "reopen"
+        else None
+    )
     bind_configuration_intent(
         campaign_id=campaign.pk,
         request_id=request.request_id,
@@ -284,6 +289,50 @@ def end_request(store, campaign, actor, action, end_date="2026-11-10"):
         admit=admit_test_work,
     )
     return request, token
+
+
+def prepared_tokens(campaign, actor, *, configuration_request_id=None):
+    """Prepare a real empty-corpus generation for foundation lifecycle scenarios.
+
+    Credential-specific tests populate their own Families. This helper never
+    resets that population or accepts an arbitrary UUID in place of readiness.
+    """
+    from parishkit.stewardship.campaigns.credential_models import (
+        CampaignCredentialState,
+    )
+    from parishkit.stewardship.campaigns.link_tokens import (
+        begin_generation,
+        prepare_generation_batch,
+    )
+
+    from .credential_builders import keys, populate
+
+    ring = keys()
+    population = CampaignCredentialState.objects.filter(campaign=campaign).first()
+    if population is None:
+        populate(campaign, ring, [])
+        population = CampaignCredentialState.objects.get(campaign=campaign)
+
+    def admit(campaign, deployment, generation):
+        """Credential storage seam only; real external task readiness is not claimed."""
+
+    generation = begin_generation(
+        campaign_id=campaign.pk,
+        operation_id=uuid4(),
+        source_snapshot_id=population.source_snapshot_id,
+        source_generation=population.source_generation,
+        configuration_request_id=configuration_request_id,
+        actor_id=actor,
+        public=ring.public,
+        admit=admit,
+    )
+    while generation.state == "building":
+        generation = prepare_generation_batch(
+            generation_id=generation.pk,
+            public=ring.public,
+            admit=admit,
+        )
+    return generation.pk
 
 
 def close_campaign(campaign, actor):
