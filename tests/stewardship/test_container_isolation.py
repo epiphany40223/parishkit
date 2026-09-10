@@ -173,6 +173,12 @@ def _probe(tmp_path, image, role, *, target=None):
         assert result.stdout.strip() == "isolated"
     finally:
         subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=15)
+        # Also clean a bootstrap process left running by a host-side timeout.
+        subprocess.run(
+            ["docker", "rm", "-f", volume + "-bootstrap"],
+            capture_output=True,
+            timeout=15,
+        )
         subprocess.run(
             ["docker", "volume", "rm", volume],
             check=True,
@@ -211,6 +217,8 @@ for path in paths:
             "docker",
             "run",
             "--rm",
+            "--name",
+            name + "-bootstrap",
             "--network",
             "none",
             "--read-only",

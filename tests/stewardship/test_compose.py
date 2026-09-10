@@ -764,7 +764,39 @@ def test_development_container_lifecycle(tmp_path):
             )
         return result
 
+    native_volume = None
     try:
+        if os.environ.get("PARISHKIT_COMPOSE_NATIVE_POSTGRES") == "1":
+            # Docker Desktop file shares can report initdb's directory as owned
+            # by a different UID when PostgreSQL drops privileges. This explicit
+            # test-only option keeps real durable Linux inodes, not tmpfs, while
+            # CI continues to exercise the default host bind. No live volume is
+            # discovered or adopted; this UUID project owns the entire fixture.
+            native_volume = project + "-postgres-fixture"
+            subprocess.run(
+                [
+                    "docker",
+                    "volume",
+                    "create",
+                    "--label",
+                    "parishkit.test=" + project,
+                    native_volume,
+                ],
+                check=True,
+                capture_output=True,
+                timeout=15,
+            )
+            inspected = subprocess.run(
+                ["docker", "volume", "inspect", native_volume],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            volume = json.loads(inspected.stdout)[0]
+            assert volume["Name"] == native_volume
+            assert volume["Labels"]["parishkit.test"] == project
+            environment["STEWARDSHIP_POSTGRES_PATH"] = volume["Mountpoint"]
         # Collect independently on the host; never use the outer invocation's
         # selection (-k, a single test file, etc.) as the complete baseline.
         host_environment = {
@@ -908,3 +940,10 @@ def test_development_container_lifecycle(tmp_path):
         wait_internal_live(compose, b"ok\n")
     finally:
         compose("down", "--timeout", "10", timeout=60)
+        if native_volume is not None:
+            subprocess.run(
+                ["docker", "volume", "rm", native_volume],
+                check=True,
+                capture_output=True,
+                timeout=15,
+            )
