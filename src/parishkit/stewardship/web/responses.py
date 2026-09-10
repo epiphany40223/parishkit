@@ -42,13 +42,11 @@ def _socket_abort(request):
 
     def abort():
         """Interrupt blocked socket writes before returning capacity to the pool."""
-        try:
+        # Already-disconnected transports cannot emit further bytes.
+        with suppress(OSError):
             channel.shutdown(socket.SHUT_RDWR)
-        except OSError:
-            # Already-disconnected transports cannot emit further bytes.
-            pass
-        finally:
-            channel.close()
+        # The WSGI server owns descriptor lifetime. Shutdown stops writes without
+        # making its descriptor available for reuse while the server unwinds.
 
     return abort
 

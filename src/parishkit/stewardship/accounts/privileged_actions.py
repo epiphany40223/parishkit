@@ -36,7 +36,7 @@ def admit_admin_action(request, *, actor_id, action):
         raise ValueError("Unknown privileged operation.")
     if (
         request.method != "POST"
-        or not request.path.startswith("/admin/")
+        or not request.path_info.startswith("/admin/")
         or getattr(request, "csrf_processing_done", False) is not True
         or getattr(request, "_dont_enforce_csrf_checks", False)
     ):

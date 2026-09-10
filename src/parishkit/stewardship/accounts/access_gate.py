@@ -43,13 +43,13 @@ class AccessGateMiddleware(MiddlewareMixin):
 
     def process_view(self, request, view_func, view_args, view_kwargs):
         """Direct HTML and partial/POST endpoints share the same state admission."""
-        admin = request.path.startswith("/admin/")
+        admin = request.path_info.startswith("/admin/")
         family = (
-            request.path == "/"
-            or request.path.startswith("/family/")
-            or request.path.startswith("/access/")
+            request.path_info == "/"
+            or request.path_info.startswith("/family/")
+            or request.path_info.startswith("/access/")
         )
-        if (not admin and not family) or request.path in AUTH_ROUTES:
+        if (not admin and not family) or request.path_info in AUTH_ROUTES:
             return None
         try:
             service = runtime()
@@ -69,7 +69,7 @@ class AccessGateMiddleware(MiddlewareMixin):
                 return self._unavailable(
                     request, "setup", admin, principal if admin else None
                 )
-            if request.path in {"/admin/setup", "/admin/maintenance"}:
+            if request.path_info in {"/admin/setup", "/admin/maintenance"}:
                 return HttpResponseRedirect("/admin/")
         except (ConfigError, LimiterUnavailable):
             # Keep the missing-runtime scaffold closed, with a stable retry URL.
@@ -82,7 +82,7 @@ class AccessGateMiddleware(MiddlewareMixin):
         """An Admin may reach only the matching placeholder/future owner workflow."""
         if admin and "administrator" in principal.roles:
             destination = "/admin/" + kind
-            if request.path == destination:
+            if request.path_info == destination:
                 return None
             if request.method in {"GET", "HEAD"}:
                 return HttpResponseRedirect(destination)

@@ -218,7 +218,7 @@ class FamilyAccessToken(MutableRecord):
     ciphertext = models.TextField(null=True)
     digest = models.CharField(max_length=64, null=True)
     destroyed_at = UTCDateTimeField(null=True)
-    revoked_at = UTCDateTimeField(null=True)
+    rotated_at = UTCDateTimeField(null=True)
 
     class Meta(MutableRecord.Meta):
         db_table = "stewardship_family_token"
@@ -332,6 +332,12 @@ class RehearsalCodeFingerprint(ImmutableRecord):
                 fields=["epoch", "key_id", "digest"],
                 name="rehearsal_epoch_code_key_unique",
             ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    algorithm="hmac-sha256-v1", digest__regex=r"^[0-9a-f]{64}$"
+                ),
+                name="rehearsal_code_mac_format",
+            ),
         ]
 
 
@@ -352,6 +358,12 @@ class RehearsalCodeReservation(models.Model):
             models.UniqueConstraint(
                 fields=["campaign", "key_id", "algorithm", "digest"],
                 name="rehearsal_reservation_unique",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    algorithm="hmac-sha256-v1", digest__regex=r"^[0-9a-f]{64}$"
+                ),
+                name="rehearsal_reservation_format",
             ),
         ]
 

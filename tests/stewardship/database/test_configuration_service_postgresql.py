@@ -137,3 +137,36 @@ def test_superuser_and_role_impersonation_are_not_admitted(config_role):
     finally:
         with connection.cursor() as cursor:
             cursor.execute("RESET ROLE")
+
+
+@pytest.mark.parametrize("extra", ["table", "definer", "sequence", "schema_create"])
+def test_nonpublic_or_indirect_installer_grants_are_rejected(config_role, extra):
+    """An auxiliary schema or definer routine cannot hide privilege expansion."""
+    schema = "installer_test_" + uuid4().hex
+    with connection.cursor() as cursor:
+        cursor.execute(f'CREATE SCHEMA "{schema}"')
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO "{ROLE}"')
+            if extra == "table":
+                cursor.execute(f'CREATE TABLE "{schema}".private_data (id integer)')
+                cursor.execute(f'GRANT SELECT ON "{schema}".private_data TO "{ROLE}"')
+            elif extra == "definer":
+                cursor.execute(
+                    f'CREATE FUNCTION "{schema}".private_reader() RETURNS integer '
+                    "LANGUAGE sql SECURITY DEFINER AS 'SELECT 1'"
+                )
+            elif extra == "sequence":
+                cursor.execute(f'CREATE SEQUENCE "{schema}".private_sequence')
+                cursor.execute(
+                    f'GRANT USAGE ON SEQUENCE "{schema}".private_sequence TO "{ROLE}"'
+                )
+            else:
+                cursor.execute(f'GRANT CREATE ON SCHEMA "{schema}" TO "{ROLE}"')
+        with as_config_installer(), pytest.raises(ConfigError, match="excessive"):
+            admit_configuration_database()
+    finally:
+        # This test created the exact UUID namespace above; no existing schema
+        # or application object is discovered, adopted or removed here.
+        with connection.cursor() as cursor:
+            cursor.execute(f'DROP SCHEMA "{schema}" CASCADE')

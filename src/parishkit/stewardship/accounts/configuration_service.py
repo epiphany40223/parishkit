@@ -8,8 +8,6 @@ The service cannot stage requests, access credential staging, or read Families.
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
-from django.db import connection
-
 from parishkit.config import ConfigError
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.service_boundaries import admit_online_service
@@ -17,7 +15,7 @@ from parishkit.stewardship.service_boundaries import admit_online_service
 from .authority import AuthorityStore
 from .configuration_installation import install_request
 from .configuration_schema import validate_sections
-from .credential_database import _identity
+from .credential_database import _identity, admit_grants
 
 # Include trigger-owned effects, not just the ORM statements in the installer.
 # No DELETE/TRUNCATE/DDL, secret-staging, Family, source, response or session grants
@@ -59,23 +57,7 @@ CONFIGURATION_GRANTS = {
 def admit_configuration_database():
     """Reject impersonation, inherited/owner authority and every excess grant."""
     _identity("pk_stewardship_config_installer")
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT c.relname,p,c.relowner=(SELECT oid FROM pg_roles "
-            "WHERE rolname=current_user) FROM pg_class c "
-            "JOIN pg_namespace n ON n.oid=c.relnamespace "
-            "CROSS JOIN unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE',"
-            "'TRUNCATE','REFERENCES','TRIGGER']) p "
-            "WHERE n.nspname='public' AND c.relkind IN('r','p','v','m','f') "
-            "AND (has_table_privilege(current_user,c.oid,p) OR "
-            "CASE WHEN p IN('SELECT','INSERT','UPDATE','REFERENCES') "
-            "THEN has_any_column_privilege(current_user,c.oid,p) ELSE false END)"
-        )
-        for table, privilege, owner in cursor.fetchall():
-            if owner or privilege not in CONFIGURATION_GRANTS.get(table, set()):
-                raise ConfigError(
-                    "Configuration installer database grants are excessive."
-                )
+    admit_grants(CONFIGURATION_GRANTS)
 
 
 @dataclass(frozen=True)

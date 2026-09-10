@@ -85,8 +85,8 @@ def login_denial(*, admin=False, status=403):
     return response
 
 
-def error_response(request, exception=None, *, status=500):
-    """Identical errors with or without DEBUG; detailed values stay out of HTML."""
+def error_response(request, *, status):
+    """Internal explicit-status helper, not a Django handler4xx callback."""
     messages = {
         400: "Invalid request.\n",
         403: "Access is not authorized.\n",
@@ -151,7 +151,7 @@ class SecurityBoundaryMiddleware:
             response = error_response(request, status=400)
         else:
             if (
-                request.path in {"/health/live", "/health/ready", "/metrics"}
+                request.path_info in {"/health/live", "/health/ready", "/metrics"}
                 and not request.internal_request
             ):
                 response = error_response(request, status=404)
@@ -175,6 +175,6 @@ class SecurityBoundaryMiddleware:
             response["Strict-Transport-Security"] = (
                 f"max-age={settings.SECURE_HSTS_SECONDS}"
             )
-        if not request.path.startswith(settings.STATIC_URL):
+        if not request.path_info.startswith(settings.STATIC_URL):
             response["Cache-Control"] = "no-store"
         return response

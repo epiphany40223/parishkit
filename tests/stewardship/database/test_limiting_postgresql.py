@@ -166,11 +166,51 @@ def test_outage_fail_closed_but_links_and_existing_sessions_work(
     assert (
         AuthenticationIncident.objects.filter(kind="limiter_unavailable").count() == 1
     )
-    record_incident("limiter_available", 0, 0, (0, 0, 0, 0))
+    recovered = Limiter(
+        auth_service.limiter.client,
+        auth_service.limiter.key,
+        incident=record_incident,
+        namespace=auth_service.limiter.namespace,
+    )
+    assert recovered.bucket("admin", "192.0.2.1") == 0
     assert AuthenticationIncident.objects.get().resolved_at is not None
     assert Client().get("/admin/login").status_code == 503
     assert AuthenticationIncident.objects.count() == 2
     unavailable.close()
+
+
+def test_failed_health_probes_are_throttled_without_weakening_admission(
+    auth_service, monkeypatch
+):
+    """An outage does not serialize a remote INFO probe per incoming request."""
+    from redis.exceptions import ConnectionError
+
+    from parishkit.stewardship.accounts import limiter_health
+
+    observed = []
+
+    def failed_probe(*args):
+        observed.append(True)
+        raise ConnectionError("Synthetic unavailable store")
+
+    limiter = auth_service.limiter
+    monkeypatch.setattr(limiter_health, "observe_store", failed_probe)
+    with pytest.raises(LimiterUnavailable):
+        limiter.bucket("admin", "192.0.2.1")
+    # Only INFO is unavailable in this fixture; real counter scripts still run.
+    assert limiter.bucket("admin", "192.0.2.1") == 0
+    assert observed == [True]
+    assert AuthenticationIncident.objects.get().resolved_at is not None
+
+
+def test_rate_limited_family_link_retries_family_not_admin(auth_service):
+    """A public-link denial keeps parishioners on their own sign-in flow."""
+    for _ in range(auth_service.limiter.limits.access_burst):
+        auth_service.limiter.bucket("access", "127.0.0.1")
+    response = Client().get("/access/invalid")
+    assert response.status_code == 429
+    assert b'href="/"' in response.content
+    assert b"/admin/login" not in response.content
 
 
 def test_local_token_buckets_have_fixed_memory_and_refill():
@@ -261,3 +301,39 @@ def test_marker_repair_waits_for_durable_audit(auth_service, monkeypatch):
     assert limiter.check_health(force=True)
     assert limiter.client.exists(marker)
     assert AuthenticationIncident.objects.get().level == "CRITICAL"
+
+
+def test_health_network_io_holds_no_database_transaction(auth_service, monkeypatch):
+    """A stalled Valkey response cannot hold the shared SQL health advisory lock."""
+    from django.db import connection
+
+    original = auth_service.limiter.client.info
+
+    def observe(section):
+        assert not connection.in_atomic_block
+        return original(section)
+
+    monkeypatch.setattr(auth_service.limiter.client, "info", observe)
+    assert not auth_service.limiter.check_health(force=True)
+
+
+def test_older_health_sample_cannot_overwrite_concurrent_baseline(
+    auth_service, monkeypatch
+):
+    """A canary sampled before another observer's commit is not a new loss."""
+    from parishkit.stewardship.accounts.limiter_health import observe_store
+
+    limiter = auth_service.limiter
+    original = limiter.client.get
+    first = [True]
+
+    def overlapping(key):
+        value = original(key)
+        if first[0]:
+            first[0] = False
+            assert not observe_store(limiter.client, limiter.namespace)
+        return value
+
+    monkeypatch.setattr(limiter.client, "get", overlapping)
+    assert not limiter.check_health(force=True)
+    assert not AuthenticationIncident.objects.exists()

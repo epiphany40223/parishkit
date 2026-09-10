@@ -124,3 +124,19 @@ def test_current_marker_changes_and_invalid_marker_results_fail_closed(
     response = browser.get("/admin/")
     assert response.status_code == 503
     assert b"synthetic-private-value" not in response.content
+
+
+def test_wsgi_script_name_cannot_bypass_setup_or_cookie_namespace(
+    auth_service, google, settings
+):
+    """Routing/security use PATH_INFO even when a server supplies SCRIPT_NAME."""
+    browser, _ = signed_in()
+    settings.STEWARDSHIP_AUTH_RUNTIME = replace(
+        auth_service, setup_complete=lambda: False
+    )
+    response = browser.get("/admin/", SCRIPT_NAME="/prefix")
+    assert response.status_code == 302
+    assert response["Location"] == "/admin/setup"
+    assert "pk_family" not in response.cookies
+    denied = browser.get("/family/", SCRIPT_NAME="/prefix")
+    assert denied.status_code == 503

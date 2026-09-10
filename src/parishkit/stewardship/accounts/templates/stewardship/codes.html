@@ -3,11 +3,7 @@
 {% block content %}
   <h1>{% translate "Family campaign codes" %}</h1>
   <p>{% translate "These are the stable Production codes. Testing email uses separate rehearsal credentials." %}</p>
-  <div class="table-scroll" role="region" aria-label="{% translate 'Family campaign codes' %}" tabindex="0">
-    <table><caption>{% translate "Active Families" %}</caption>
-    <thead><tr><th scope="col">{% translate "Family DUID" %}</th><th scope="col">{% translate "Code" %}</th></tr></thead>
-    <tbody>{% for row in table_rows %}<tr><th scope="row">{{ row.0 }}</th><td>{{ row.1 }}</td></tr>{% empty %}<tr><td colspan="2">{% translate "No matching Families." %}</td></tr>{% endfor %}</tbody></table>
-  </div>
+  {% include 'stewardship/components/table.html' %}
   <nav aria-label="{% translate 'Report pages' %}"><ul>
     {% if page > 1 %}<li><a href="?page={{ previous_page }}&amp;size={{ size }}">{% translate "Previous page" %}</a></li>{% endif %}
     <li>{% translate "Page" %} {{ page|number }}</li>

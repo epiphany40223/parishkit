@@ -20,6 +20,7 @@ from parishkit.stewardship.accounts.cryptography import (
     SigningKeyring,
     TokenPrivateKeyring,
 )
+from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.audit.models import AuditEvent
 
 from .cipher_rotation import verify_ciphertexts
@@ -129,7 +130,7 @@ def retire_keys(previous, replacement, *, admit, dependencies):
             if (
                 not isinstance(end, datetime)
                 or timezone.is_naive(end)
-                or end > timezone.now()
+                or end > database_now()
             ):
                 raise CryptographicError("Signing verification window remains open.")
         elif isinstance(previous, CodeMacKeyring):

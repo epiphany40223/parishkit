@@ -56,7 +56,7 @@ class FieldError:
 
 
 def validation_response(errors, *, status=400):
-    """The same safe envelope serves full-form and enhanced validation consumers."""
+    """Return safe JSON to enhanced clients; HTML views own their error rendering."""
     if status not in {400, 403, 409, 422, 503}:
         raise ValueError("Unsupported validation status.")
     if (

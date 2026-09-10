@@ -49,6 +49,7 @@ TEMPLATES = [
     }
 ]
 SESSION_ENGINE = "django.contrib.sessions.backends.db"
+MESSAGE_STORAGE = "django.contrib.messages.storage.session.SessionStorage"
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_HTTPONLY = True

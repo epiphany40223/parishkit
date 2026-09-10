@@ -116,5 +116,5 @@ def test_explicit_link_rotation_changes_only_token_not_manual_code(active):
     rotate_token(token_id=row.pk, public=ring.public, admit=lambda *args: None)
     row.refresh_from_db()
     assert row.ciphertext != prior[0] and row.digest != prior[1]
-    assert row.revoked_at is not None
+    assert row.rotated_at is not None
     assert row.family.code_ciphertext == code

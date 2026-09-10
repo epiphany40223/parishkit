@@ -131,6 +131,7 @@ def test_timeout_interrupts_real_socket_before_releasing_download(tmp_path, chan
     assert not thread.is_alive()
     channel[2].settimeout(1)
     assert channel[2].recv(1) == b""
+    assert channel[1].fileno() >= 0  # The WSGI server still owns descriptor cleanup.
     assert list(response.streaming_content) == []
     response.close()
     pool.acquire()

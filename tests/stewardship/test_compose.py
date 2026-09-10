@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import time
+import warnings
 from collections import Counter
 from pathlib import Path
 from unittest.mock import MagicMock, Mock
@@ -772,7 +773,7 @@ def test_development_container_lifecycle(tmp_path):
             # test-only option keeps real durable Linux inodes, not tmpfs, while
             # CI continues to exercise the default host bind. No live volume is
             # discovered or adopted; this UUID project owns the entire fixture.
-            native_volume = project + "-postgres-fixture"
+            candidate_volume = project + "-postgres-fixture"
             subprocess.run(
                 [
                     "docker",
@@ -780,12 +781,13 @@ def test_development_container_lifecycle(tmp_path):
                     "create",
                     "--label",
                     "parishkit.test=" + project,
-                    native_volume,
+                    candidate_volume,
                 ],
                 check=True,
                 capture_output=True,
                 timeout=15,
             )
+            native_volume = candidate_volume
             inspected = subprocess.run(
                 ["docker", "volume", "inspect", native_volume],
                 check=True,
@@ -939,11 +941,21 @@ def test_development_container_lifecycle(tmp_path):
         origin = "http://" + compose("port", "web", "8000").stdout.strip()
         wait_internal_live(compose, b"ok\n")
     finally:
-        compose("down", "--timeout", "10", timeout=60)
-        if native_volume is not None:
-            subprocess.run(
-                ["docker", "volume", "rm", native_volume],
-                check=True,
-                capture_output=True,
-                timeout=15,
-            )
+        failed = sys.exc_info()[0] is not None
+        try:
+            compose(
+                "down", "--timeout", "10", timeout=60, check=False
+            ).check_returncode()
+            if native_volume is not None:
+                subprocess.run(
+                    ["docker", "volume", "rm", native_volume],
+                    check=True,
+                    capture_output=True,
+                    timeout=15,
+                )
+        except (subprocess.SubprocessError, OSError):
+            if not failed:
+                raise
+            # Retain the original assertion/startup failure; leftover UUID-owned
+            # fixtures remain inspectable rather than hiding that first cause.
+            warnings.warn("Disposable Compose fixture cleanup failed.", stacklevel=2)

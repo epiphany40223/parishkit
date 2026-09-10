@@ -8,7 +8,11 @@ from uuid import UUID, uuid4
 from django.db import IntegrityError, connection, transaction
 from django.db.models import Q
 
-from parishkit.stewardship.accounts.cryptography import CryptographicError, new_code
+from parishkit.stewardship.accounts.cryptography import (
+    CryptographicError,
+    TokenPublicKeyring,
+    new_code,
+)
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .credential_keys import key_set_lock
@@ -179,10 +183,21 @@ def reconcile_families(
             cursor.execute("SELECT id FROM stewardship_credential_deployment FOR SHARE")
         campaign = Campaign.objects.select_for_update().get(pk=campaign_id)
         admit(campaign)
+        if campaign.active_token_generation_id is not None and not isinstance(
+            public, TokenPublicKeyring
+        ):
+            raise CryptographicError("Active token issuance requires its public ring.")
         CampaignCredentialState.objects.get_or_create(campaign=campaign)
         population = CampaignCredentialState.objects.select_for_update().get(
             campaign=campaign
         )
+        if (
+            population.source_generation is not None
+            and source_generation < population.source_generation
+        ):
+            raise StorageInvariantError(
+                "A stale source generation cannot replace Family population."
+            )
         existing = {
             row.family_duid: row
             for row in FamilyCampaign.objects.filter(campaign=campaign)
@@ -238,6 +253,12 @@ def reconcile_families(
                 raise StorageInvariantError(
                     "A stale source generation cannot replace Family identity."
                 )
+            if (
+                source_generation == row.source_generation
+                and all(getattr(row, key) == getattr(status, key) for key in fields)
+                and (not status.portal_eligible or row.first_eligible_at is not None)
+            ):
+                continue
             if any(getattr(row, key) != getattr(status, key) for key in fields):
                 row.eligibility_changed_at = now
             for key in fields:

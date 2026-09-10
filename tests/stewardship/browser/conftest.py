@@ -68,6 +68,29 @@ def component_origin():
             ),
         ),
     }
+    for path, template, extra in (
+        ("/home", "home", {"configuration": {"mode": "testing"}}),
+        (
+            "/codes",
+            "codes",
+            {
+                "table_caption": "Active Families",
+                "table_headings": ["Family DUID", "Code"],
+                "table_rows": [["1234567890123456789", "ABCDEFGH"]],
+                "page": 2,
+                "size": 50,
+                "has_next": True,
+                "previous_page": 1,
+                "next_page": 3,
+            },
+        ),
+        ("/availability", "availability", {"setup": True, "admin": True}),
+        ("/denied", "denied", {"retry_path": "/admin/login"}),
+    ):
+        responses[path] = (
+            "text/html",
+            render_to_string(f"stewardship/{template}.html", {**context, **extra}),
+        )
     for name, kind in (("css", "text/css"), ("js", "application/javascript")):
         asset = f"stewardship/ui-v1.{name}"
         responses[f"/static/{asset}"] = (kind, Path(finders.find(asset)).read_text())

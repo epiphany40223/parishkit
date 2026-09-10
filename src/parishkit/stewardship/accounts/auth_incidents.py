@@ -1,12 +1,41 @@
 """PostgreSQL-deduplicated, safe incident/notification intents for auth outages."""
 
+from datetime import timedelta
+
 from django.db import connection, transaction
 from django.db.models import F
 from django.utils import timezone
 
 from parishkit.stewardship.audit.models import AuditEvent
+from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
+from parishkit.stewardship.audit.services import record_action
 
 from .auth_models import AuthenticationIncident
+
+
+def record_link_rejection():
+    """At most one permanent invalid-link signal per deployment per five minutes.
+
+    Per-attempt keyed source/candidate telemetry belongs only to the ephemeral
+    aggregate detector. Public garbage cannot allocate unbounded permanent audit
+    rows, even with many sources or when Valkey is unavailable. This signal is
+    sampled evidence, not an exact attempt count.
+    """
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SELECT pg_try_advisory_xact_lock(%s,%s)", [736228, 1])
+        if not cursor.fetchone()[0]:
+            return
+        cursor.execute("SELECT statement_timestamp()")
+        since = cursor.fetchone()[0] - timedelta(minutes=5)
+        if AuditEvent.objects.filter(
+            event_type=Action.INVALID_LINK.value, created_at__gte=since
+        ).exists():
+            return
+        record_action(
+            Action.INVALID_LINK,
+            actor_kind=ActorKind.SYSTEM,
+            context={"outcome": Outcome.DENIED},
+        )
 
 
 def record_incident(kind, severity, window, counts):

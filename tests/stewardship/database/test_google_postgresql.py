@@ -1,5 +1,6 @@
 """Google cryptographic claims, durable sessions, early limits and namespace tests."""
 
+import json
 from datetime import timedelta
 
 import pytest
@@ -31,6 +32,9 @@ def test_full_google_flow_uses_pkce_nonce_signed_claims_and_no_password_user(
     assert len(query["scope"]) == 1
     assert set(query["scope"][0].split()) == {"openid", "email"}
     assert query["max_age"] == ["0"]
+    assert json.loads(query["claims"][0]) == {
+        "id_token": {"auth_time": {"essential": True}}
+    }
     response = client.get(
         "/admin/oauth/callback", {"code": "synthetic", "state": query["state"][0]}
     )
@@ -45,7 +49,7 @@ def test_full_google_flow_uses_pkce_nonce_signed_claims_and_no_password_user(
     assert not SocialAccount.objects.exists()
     assert not SocialToken.objects.exists()
     row = PortalSession.objects.get()
-    assert row.expires_at - row.authenticated_at == timedelta(hours=12)
+    assert row.expires_at - row.last_activity_at == timedelta(hours=12)
     assert PortalUser.objects.get().google_subject == "synthetic-google-subject"
     assert client.get("/admin/").status_code == 200
     data = Session.objects.get(pk=row.session_id).get_decoded()
@@ -69,6 +73,11 @@ def test_full_google_flow_uses_pkce_nonce_signed_claims_and_no_password_user(
         {"exp": 1},
         {"sub": ""},
         {"email": "broken"},
+        {"auth_time": None},
+        {"auth_time": True},
+        {"auth_time": "123"},
+        {"auth_time": 0},
+        {"auth_time": 10**30},
     ],
 )
 def test_signed_but_invalid_claims_do_not_issue_session(auth_service, google, claims):
@@ -79,6 +88,90 @@ def test_signed_but_invalid_claims_do_not_issue_session(auth_service, google, cl
     assert not PortalSession.objects.exists()
     assert b"synthetic" not in response.content
     assert "/admin/login" in response.content.decode()
+
+
+def test_freshness_uses_signed_authentication_not_callback_time(auth_service, google):
+    """An older signed instant is retained; a new callback cannot reset its age."""
+    from parishkit.stewardship.accounts.sessions import database_now
+
+    instant = int(database_now().timestamp()) - 20
+    google[0]["auth_time"] = instant
+    _, response = signed_in()
+    assert response.status_code == 302
+    assert PortalSession.objects.get().authenticated_at.timestamp() == instant
+
+
+@pytest.mark.parametrize("age", [301, 86400])
+def test_existing_google_session_allows_login_without_privileged_freshness(
+    auth_service, google, age
+):
+    """Ordinary SSO remains usable without minting fresh privileged authority."""
+    from django.test import RequestFactory
+
+    from parishkit.stewardship.accounts.sessions import database_now, require_fresh
+
+    instant = int(database_now().timestamp()) - age
+    google[0]["auth_time"] = instant
+    browser, response = signed_in()
+    assert response.status_code == 302
+    row = PortalSession.objects.get()
+    assert row.authenticated_at.timestamp() == instant
+    assert row.expires_at - row.last_activity_at == timedelta(hours=12)
+    assert browser.get("/admin/").status_code == 200
+    request = RequestFactory().get("/admin/")
+    request.portal_session = row
+    with pytest.raises(PermissionError):
+        require_fresh(request)
+
+
+def test_future_google_authentication_is_denied(auth_service, google):
+    """Provider clock skew cannot manufacture future privileged authority."""
+    from parishkit.stewardship.accounts.sessions import database_now
+
+    google[0]["auth_time"] = int(database_now().timestamp()) + 60
+    _, response = signed_in()
+    assert response.status_code == 403
+
+
+def test_google_callback_configuration_gap_is_retryable(
+    auth_service, google, monkeypatch
+):
+    """A file/SQL activation mismatch returns the sealed retry page, not a 500."""
+    from parishkit.config import ConfigError
+    from parishkit.stewardship.accounts import authentication
+
+    def unavailable(*args):
+        raise ConfigError("Synthetic configuration activation gap")
+
+    monkeypatch.setattr(authentication, "current_principal", unavailable)
+    _, response = signed_in()
+    assert response.status_code == 503
+    assert response["Retry-After"] == "5"
+    assert not PortalSession.objects.exists()
+
+
+def test_missing_policy_epoch_returns_retryable_denial(
+    auth_service, google, monkeypatch
+):
+    """A pre-bootstrap callback cannot construct an invalid identity counter."""
+    from parishkit.stewardship.accounts import authentication
+
+    class EmptyEpochs:
+        """Model an absent bootstrap epoch without deleting immutable SQL history."""
+
+        def order_by(self, *args):
+            return self
+
+        def values_list(self, *args, **kwargs):
+            return self
+
+        def first(self):
+            return None
+
+    monkeypatch.setattr(authentication.PolicyEpoch, "objects", EmptyEpochs())
+    _, response = signed_in()
+    assert response.status_code == 503
+    assert not PortalSession.objects.exists()
 
 
 def test_signed_denied_account_is_not_authorized(auth_service, google):

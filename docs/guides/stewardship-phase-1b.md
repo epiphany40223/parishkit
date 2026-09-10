@@ -135,8 +135,10 @@ pass, including Google HTTP checks across offline recovery. These are intermedia
 not a final validation or review claim. Production provisioning and whole-service
 consumer recreation remain with OPS-02/OPS-04.
 
-The initial identity-scale benchmark creates 5,000 real Family identities and
-100 unexpired sessions. Lookup uses 22 queries with either 1 or 5,000 Families;
+The initial rehearsal identity-scale benchmark creates 5,000 real Family identity
+overlays and 100 unexpired rehearsal sessions. Its rehearsal index contains one
+credential; it does not demonstrate a 5,000-row Production MAC lookup.
+Rehearsal lookup uses 22 queries with either 1 or 5,000 Family overlays;
 the Family page uses 25 and the Admin shell 23. On this development host, observed
 p95 timings were below 0.03 seconds. Tests enforce a 64-query ceiling and a
 2-second p95 budget rather than those machine-specific observations. This is
@@ -194,7 +196,7 @@ Tests use an explicitly synthetic locked owner port, not a shadow backup catalog
 ## Pre-review validation checkpoint
 
 The complete scoped run passes 2,247 ordinary tests and 790 PostgreSQL tests,
-with 94.79% line coverage and 85.55% branch coverage. The rebuilt image passes
+with 94.78% line coverage and 85.53% branch coverage. The rebuilt image passes
 all 30 Compose checks with the explicit native PostgreSQL fixture above, all
 12 real-container isolation checks, and all 39 browser checks. Ruff, Markdown
 lint and migration-drift checks pass. After this full run, a focused correction
@@ -205,6 +207,36 @@ page admission still owns privilege-transition cookie rotation.
 This is implementation/validation evidence before the required independent
 review rounds, not a Phase 1B approval or Gate 1 release. Production startup
 remains disabled until the Phase 1C operational owners are integrated.
+
+## Independent review and correction
+
+[Review dispositions and regression evidence](stewardship-phase-1b-reviews.md)
+track the complete branch review loop. Round one reviewed `324a10c` with both
+vendors and returned one High and 46 Medium consolidated findings. Its corrections
+and applicable post-fix validation are complete; two further independent rounds
+remain required. No final review approval or PR completion is claimed yet.
+
+Google callbacks request and verify signed `auth_time`, retaining that verified
+instant instead of assigning callback time. Ordinary SSO can use an older Google
+session, but privileged operations still require provider authentication within
+five minutes. The local session's twelve-hour lifetime starts at login, not the
+older provider instant; rotation preserves both deadlines. The nonce binds the
+one-use OAuth exchange. Deployment must enable the optional authentication-time
+claim in its Google OAuth client settings; missing or invalid evidence fails
+closed. Account selection and ID-token issuance alone are not freshness proof.
+This follows Google's documented
+[authentication-time claim request](https://developers.google.com/identity/openid-connect/openid-connect#authenticationuriparameters);
+the real-provider smoke check remains an explicit human-run operational check.
+The `max_age=0` request is advisory: Google's documented parameter list does not
+promise that it forces reauthentication. The smoke check must verify the actual
+provider sign-in/reauthentication path and optional-claim settings; an old signed
+claim never grants privileged access merely because that parameter was sent.
+
+Invalid opaque links contribute to the existing ephemeral Family abuse detector.
+Permanent invalid-link audit is sampled to one deployment-wide signal per five
+minutes, without source/candidate fingerprints or attempted values; it is not an
+exact attempt count. This bound also holds during Valkey outages. Distributed
+threshold incidents retain their existing deduplicated counts and notifications.
 
 ## Browser component validation
 

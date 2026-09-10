@@ -32,7 +32,19 @@ def test_csp_permits_the_fixed_google_form_destination(page, component_origin):
     assert page.get_by_role("heading", name="Synthetic Google sign-in").is_visible()
 
 
-@pytest.mark.parametrize("path", ["/login", "/family-login", "/family", "/errors"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/login",
+        "/family-login",
+        "/family",
+        "/errors",
+        "/home",
+        "/codes",
+        "/availability",
+        "/denied",
+    ],
+)
 @pytest.mark.parametrize("width", [320, 1280])
 def test_components_accessible_and_responsive(
     page, component_origin, axe_source, path, width
@@ -108,6 +120,23 @@ def test_activity_keepalive_is_empty_csrf_protected_and_bounded(page, component_
     page.clock.fast_forward(60 * 60 * 1000)
     assert page.locator("#session-expired").is_visible()
     assert len(attempts) == 1
+
+
+def test_admin_activity_never_uses_family_keepalive(page, component_origin):
+    """The Admin clock warns and expires without renewing through Family endpoints."""
+    page.clock.install(time=NOW)
+    attempts = []
+    page.route(
+        "**/family/keepalive",
+        lambda route: (attempts.append(route.request), route.abort()),
+    )
+    page.goto(component_origin + "/home")
+    page.keyboard.press("Tab")
+    page.clock.fast_forward(56 * 60 * 1000)
+    assert page.locator("#session-warning").is_visible()
+    page.clock.fast_forward(5 * 60 * 1000)
+    assert page.locator("#session-expired").is_visible()
+    assert attempts == []
 
 
 def test_javascript_disabled_retains_admin_form_and_family_explanation(

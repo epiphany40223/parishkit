@@ -41,8 +41,11 @@ class AuthenticationLimits:
             if getattr(self, item.name) > item.default
         )
         if weaker:
-            logging.getLogger(__name__).warning(
-                "Authentication thresholds weaker than defaults: %s",
-                ", ".join(weaker),
+            from .observability import Event, emit
+
+            emit(
+                Event.AUTHENTICATION_LIMITS_WEAKENED,
+                level=logging.WARNING,
+                authentication_limits=weaker,
             )
         return weaker

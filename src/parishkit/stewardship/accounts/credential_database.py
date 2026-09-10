@@ -29,7 +29,7 @@ def admit_installer_database(target):
 
     RLS supplies target scoping; deployment provisioning owns these narrow grants.
     The online installer cannot be a table owner, read campaign answers, inspect
-    audit payloads, or read its web-readable staging store through a bypass role.
+    audit payloads, or bypass the target-scoped staging store's row policies.
     """
     if type(target) is not str or target not in SECRET_TARGETS:
         raise ConfigError("Unknown credential target.")
@@ -43,21 +43,8 @@ def admit_installer_database(target):
         "stewardship_system_configuration": {"SELECT"},
         "stewardship_parish": {"SELECT"},
     }
+    admit_grants(allowed)
     with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT c.relname, p, c.relowner=(SELECT oid FROM pg_roles "
-            "WHERE rolname=current_user) FROM pg_class c "
-            "JOIN pg_namespace n ON n.oid=c.relnamespace "
-            "CROSS JOIN unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE',"
-            "'TRUNCATE','REFERENCES','TRIGGER']) p "
-            "WHERE n.nspname='public' AND c.relkind IN('r','p','v','m','f') "
-            "AND (has_table_privilege(current_user,c.oid,p) OR "
-            "CASE WHEN p IN('SELECT','INSERT','UPDATE','REFERENCES') "
-            "THEN has_any_column_privilege(current_user,c.oid,p) ELSE false END)"
-        )
-        for table, privilege, owner in cursor.fetchall():
-            if owner or privilege not in allowed.get(table, set()):
-                raise ConfigError("Credential installer database grants are excessive.")
         # Metadata attribution is deliberately column-scoped. No full YAML,
         # testing recipient, configuration content or provider settings are needed.
         cursor.execute(
@@ -76,6 +63,50 @@ def admit_installer_database(target):
         }
         if set(cursor.fetchall()) - permitted:
             raise ConfigError("Credential installer metadata grants are excessive.")
+
+
+def admit_grants(allowed):
+    """Inspect all application schemas, including indirect definer authority.
+
+    System routines and ordinary SECURITY INVOKER helpers do not add authority:
+    their table access is checked as this same restricted login. Definer routines,
+    sequence privileges, schema creation and relations outside public are denied.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT n.nspname,c.relname,p,c.relowner=(SELECT oid FROM pg_roles "
+            "WHERE rolname=current_user) FROM pg_class c "
+            "JOIN pg_namespace n ON n.oid=c.relnamespace "
+            "CROSS JOIN unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE',"
+            "'TRUNCATE','REFERENCES','TRIGGER']) p "
+            "WHERE n.nspname !~ '^pg_' AND n.nspname<>'information_schema' "
+            "AND c.relkind IN('r','p','v','m','f') "
+            "AND (has_table_privilege(current_user,c.oid,p) OR "
+            "CASE WHEN p IN('SELECT','INSERT','UPDATE','REFERENCES') "
+            "THEN has_any_column_privilege(current_user,c.oid,p) ELSE false END)"
+        )
+        for schema, table, privilege, owner in cursor.fetchall():
+            if (
+                schema != "public"
+                or owner
+                or privilege not in allowed.get(table, set())
+            ):
+                raise ConfigError("Installer database grants are excessive.")
+        cursor.execute(
+            "SELECT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n "
+            "ON n.oid=p.pronamespace WHERE n.nspname !~ '^pg_' "
+            "AND n.nspname<>'information_schema' AND p.prosecdef "
+            "AND has_function_privilege(current_user,p.oid,'EXECUTE')) OR "
+            "EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n "
+            "ON n.oid=c.relnamespace WHERE n.nspname !~ '^pg_' "
+            "AND n.nspname<>'information_schema' AND c.relkind='S' "
+            "AND has_sequence_privilege(current_user,c.oid,'USAGE,SELECT,UPDATE')) OR "
+            "EXISTS(SELECT 1 FROM pg_namespace n WHERE n.nspname !~ '^pg_' "
+            "AND n.nspname<>'information_schema' "
+            "AND has_schema_privilege(current_user,n.oid,'CREATE'))"
+        )
+        if cursor.fetchone()[0]:
+            raise ConfigError("Installer database grants are excessive.")
 
 
 def admit_consumer_database(consumer):

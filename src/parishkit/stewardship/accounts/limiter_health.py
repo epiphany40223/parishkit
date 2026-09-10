@@ -22,22 +22,29 @@ def observe_store(client, namespace):
     """
     fingerprint = hashlib.sha256(namespace.encode("ascii")).hexdigest()
     marker_key = namespace + ":health:marker"
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT statement_timestamp()")
+        observed_after = cursor.fetchone()[0]
+    # No network timeout can hold the global PostgreSQL incident lock. An older
+    # concurrent sample is discarded below if another observer changed baseline.
+    server = client.info("server")
+    stats = client.info("stats")
+    run_id, evictions = server.get("run_id"), stats.get("evicted_keys")
+    if (
+        type(run_id) is not str
+        or re.fullmatch(r"[0-9a-f]{40}", run_id) is None
+        or type(evictions) is not int
+        or not 0 <= evictions <= 2**63 - 1
+    ):
+        raise RedisError("Limiter health evidence is unavailable.")
+    marker = client.get(marker_key)
     with transaction.atomic(durable=True), connection.cursor() as cursor:
         cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [736227, 1])
-        server = client.info("server")
-        stats = client.info("stats")
-        run_id, evictions = server.get("run_id"), stats.get("evicted_keys")
-        if (
-            type(run_id) is not str
-            or re.fullmatch(r"[0-9a-f]{40}", run_id) is None
-            or type(evictions) is not int
-            or not 0 <= evictions <= 2**63 - 1
-        ):
-            raise RedisError("Limiter health evidence is unavailable.")
-        marker = client.get(marker_key)
         row = LimiterStoreHealth.objects.filter(
             namespace_fingerprint=fingerprint
         ).first()
+        if row is not None and row.updated_at >= observed_after:
+            return False
         lost = row is not None and (
             row.run_id != run_id
             or row.evicted_keys != evictions

@@ -41,11 +41,11 @@ def key_set_lock(*rings, exclusive=False):
             "Credential operations require PostgreSQL transactions."
         )
     function = (
-        "pg_advisory_xact_lock" if exclusive else "pg_try_advisory_xact_lock_shared"
+        "pg_try_advisory_xact_lock" if exclusive else "pg_try_advisory_xact_lock_shared"
     )
     with connection.cursor() as cursor:
         cursor.execute(f"SELECT {function}(%s, %s)", KEY_LOCK)
-        if not exclusive and not cursor.fetchone()[0]:
+        if not cursor.fetchone()[0]:
             # Do not queue a new reader behind a rotation writer while holding
             # another owner's runtime lock. The caller retries its transaction.
             raise CryptographicError("Credential key rotation is busy; retry.")

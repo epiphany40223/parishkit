@@ -192,8 +192,16 @@ class Limiter:
                 or self.health_checked_at is None
                 or monotonic() - self.health_checked_at >= 30
             ):
-                result = observe_store(self.client, self.namespace)
-                self.health_checked_at = monotonic()
+                try:
+                    result = observe_store(self.client, self.namespace)
+                finally:
+                    # Failed INFO probes are throttled too; ordinary scripts
+                    # still detect outages on every admission attempt.
+                    self.health_checked_at = monotonic()
+                # Recovery is durable, not tied to the worker that saw loss.
+                # Each process checks at most once per observation interval.
+                self.incident("limiter_available", 0, 0, (0, 0, 0, 0))
+                self.outage = False
                 return result
         return False
 

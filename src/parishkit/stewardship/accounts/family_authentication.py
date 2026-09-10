@@ -1,6 +1,6 @@
 """Campaign/mode/epoch-scoped Family exchange and PostgreSQL session admission."""
 
-from contextlib import nullcontext
+from contextlib import nullcontext, suppress
 from dataclasses import dataclass
 from datetime import timedelta
 from importlib import import_module
@@ -20,8 +20,6 @@ from django.views.decorators.http import (
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.audit.models import AuditEvent
-from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
-from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.credential_keys import key_set_lock
 from parishkit.stewardship.campaigns.credential_models import (
     CampaignCredentialState,
@@ -37,6 +35,7 @@ from parishkit.stewardship.campaigns.lifecycle import portal_admitted
 from parishkit.stewardship.campaigns.runtime import _now, campaign_facts
 from parishkit.stewardship.web.security import login_denial
 
+from .auth_incidents import record_link_rejection
 from .configuration_installation import coherent_configuration
 from .cryptography import (
     CodeMacKeyring,
@@ -355,22 +354,15 @@ def access(request, token):
             request, service, identity, token=token
         ):
             return HttpResponseRedirect("/family/")
-        with transaction.atomic():
-            record_action(
-                Action.INVALID_LINK,
-                actor_kind=ActorKind.SYSTEM,
-                context={
-                    "outcome": Outcome.DENIED,
-                    "source_fingerprint": service.limiter.fingerprint(
-                        "ip",
-                        request.client_address,
-                    ),
-                    "candidate_fingerprint": service.limiter.fingerprint(
-                        "invalid_link",
-                        token,
-                    ),
-                },
+        # Valid opaque links remain usable during a limiter outage. Failed links
+        # still contribute when the store is available, without permanent IDs.
+        with suppress(LimiterUnavailable):
+            service.limiter.failed(
+                "family",
+                request.client_address,
+                candidate=service.limiter.fingerprint("invalid_link", token),
             )
+        record_link_rejection()
         return denied()
     except (LimiterUnavailable, CryptographicError, ConfigError):
         return denied(status=503, retry=5)

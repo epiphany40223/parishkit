@@ -123,7 +123,7 @@ def stage_secret_request(
         type(required_consumers) is not tuple
         or any(type(value) is not str for value in required_consumers)
         or len(set(required_consumers)) != len(required_consumers)
-        or set(required_consumers) - allowed_consumers
+        or (bool(required_consumers) and set(required_consumers) != allowed_consumers)
         or bool(required_consumers) != (sealed_candidate is not None)
         or (sealed_candidate is None) != (candidate_fingerprint is None)
     ):

@@ -7,8 +7,9 @@ endpoints and never persists SocialAccount, SocialToken or Django User objects.
 
 import secrets
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import jwt
 from allauth.core.exceptions import ImmediateHttpResponse
@@ -80,9 +81,9 @@ def runtime():
     return value
 
 
-def denial(*, status=403, retry=None):
+def denial(*, status=403, retry=None, admin=True):
     """Uniform retryable response, with no provider details or denied identity."""
-    response = login_denial(admin=True, status=status)
+    response = login_denial(admin=admin, status=status)
     response.stewardship_safe_error = True
     if retry:
         response["Retry-After"] = str(min(3600, max(1, int(retry))))
@@ -122,13 +123,13 @@ class AuthLimitMiddleware:
 
     def __call__(self, request):
         """Secure opaque links alone use the bounded per-process outage fallback."""
-        callback = request.path == "/admin/oauth/callback"
-        admin = request.path in {
+        callback = request.path_info == "/admin/oauth/callback"
+        admin = request.path_info in {
             "/admin/login",
             "/admin/oauth/start",
             "/admin/oauth/callback",
         }
-        access = request.path.startswith("/access/")
+        access = request.path_info.startswith("/access/")
         if not admin and not access:
             return self.get_response(request)
         try:
@@ -141,9 +142,12 @@ class AuthLimitMiddleware:
             if delay:
                 if callback:
                     record_failure(request)
-                return denial(status=429, retry=delay)
+                elif access:
+                    with suppress(LimiterUnavailable):
+                        limiter.failed("family", request.client_address)
+                return denial(status=429, retry=delay, admin=admin)
         except LimiterUnavailable:
-            return denial(status=503, retry=5)
+            return denial(status=503, retry=5, admin=admin)
         return self.get_response(request)
 
 
@@ -199,9 +203,34 @@ class SignedGoogleAdapter(GoogleOAuth2Adapter):
             hosted = normalized_domain(claims["hd"]) if "hd" in claims else None
         except ConfigError:
             raise OAuth2Error("Verified identity is unavailable.") from None
+        authenticated_at = verified_authentication_time(claims, state)
         raise ImmediateHttpResponse(
-            complete_identity(request, claims["sub"], email, hosted)
+            complete_identity(
+                request, claims["sub"], email, hosted, authenticated_at=authenticated_at
+            )
         )
+
+
+def verified_authentication_time(claims, state):
+    """Preserve signed provider authentication independently of local login time.
+
+    Token issuance and account selection alone do not prove reauthentication.
+    An existing Google session may establish ordinary identity without granting
+    the five-minute privileged window. The one-use nonce binds this exchange;
+    auth_time records the provider's authentication, which may predate it.
+    """
+    now = database_now()
+    authenticated = claims.get("auth_time")
+    initiated = state.get("data", {}).get("initiated_at")
+    if (
+        type(authenticated) is not int
+        or type(initiated) is not int
+        or not now.timestamp() - 900 <= initiated <= now.timestamp()
+        or not 0 < authenticated <= now.timestamp() + 30
+        or authenticated > claims["iat"] + 30
+    ):
+        raise OAuth2Error("Verified identity is unavailable.")
+    return min(now, datetime.fromtimestamp(authenticated, UTC))
 
 
 class GoogleCallback(OAuth2CallbackView):
@@ -232,15 +261,16 @@ class GoogleCallback(OAuth2CallbackView):
         return state, response
 
 
-def complete_identity(request, subject, email, hosted):
+def complete_identity(request, subject, email, hosted, *, authenticated_at):
     """Only a verified Google identity can be created or refresh its email claims."""
     service = runtime()
     epoch = (
         PolicyEpoch.objects.order_by("-sequence")
         .values_list("sequence", flat=True)
         .first()
-        or 0
     )
+    if epoch is None:
+        raise ConfigError("Authentication policy is unavailable.")
     fingerprint = service.limiter.fingerprint("identity", subject + "\x00" + email)
     counter = Counter(
         f"admin_identity_{epoch}",
@@ -273,7 +303,9 @@ def complete_identity(request, subject, email, hosted):
             )
         principal = None if user.disabled else current_principal(service.store, user.pk)
         if principal is not None and principal.roles:
-            issue_admin(request, user.pk, store=service.store)
+            issue_admin(
+                request, user.pk, store=service.store, authenticated_at=authenticated_at
+            )
             rotate_token(request)
     if principal is None or not principal.roles:
         delay = record_failure(request, identity=fingerprint, counter=counter)
@@ -301,9 +333,18 @@ def login(request):
             request,
             process="login",
             next_url="/admin/",
-            data={"nonce": nonce, "recovery_epoch": revocation_epoch()},
+            data={
+                "nonce": nonce,
+                "recovery_epoch": revocation_epoch(),
+                "initiated_at": int(database_now().timestamp()),
+            },
             scope=["openid", "email"],
-            auth_params={"nonce": nonce, "prompt": "select_account", "max_age": "0"},
+            auth_params={
+                "nonce": nonce,
+                "prompt": "select_account",
+                "max_age": "0",
+                "claims": '{"id_token":{"auth_time":{"essential":true}}}',
+            },
         )
     except (LimiterUnavailable, ConfigError):
         return denial(status=503, retry=5)
@@ -314,7 +355,7 @@ def callback(request):
     """All errors use the same safe retry page; the library owns exchange failures."""
     try:
         return GoogleCallback.adapter_view(SignedGoogleAdapter)(request)
-    except LimiterUnavailable:
+    except (LimiterUnavailable, ConfigError):
         return denial(status=503, retry=5)
 
 

@@ -390,7 +390,7 @@ def rotate_token(*, token_id, public, admit):
         value = new_token()
         row.ciphertext = public.encrypt(value.encode(), context=token_context(row.pk))
         row.digest = token_digest(value, row.campaign_id)
-        row.revoked_at, row.version = _now(), row.version + 1
+        row.rotated_at, row.version = _now(), row.version + 1
         row.save()
         AuditEvent.objects.create(event_type="family_link_rotated", subject_id=row.pk)
         return row.pk

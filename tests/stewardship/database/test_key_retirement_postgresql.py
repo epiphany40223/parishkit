@@ -185,6 +185,26 @@ def test_token_retirement_requires_private_owner_and_preserves_active_pair(tmp_p
     assert retire_keys(old, new, admit=admitted, dependencies=proof_owner()) == {"t1"}
 
 
+def test_signing_retirement_ignores_ahead_application_clock(tmp_path, monkeypatch):
+    """Host clock skew cannot retire a key before the database verification end."""
+    from parishkit.stewardship.accounts.sessions import database_now
+
+    family_campaign(tmp_path)
+    old = SigningKeyring(
+        [Key("s1", "verify-only", b"s" * 32), Key("s2", "active", b"r" * 32)]
+    )
+    initialize_key_inventories(old)
+    end = database_now() + timedelta(minutes=10)
+    monkeypatch.setattr(timezone, "now", lambda: end + timedelta(hours=1))
+    with pytest.raises(CryptographicError, match="window"):
+        retire_keys(
+            old,
+            SigningKeyring([old.active]),
+            admit=admitted,
+            dependencies=proof_owner(verification_ends_at=end),
+        )
+
+
 def test_denied_or_combined_retirement_cannot_change_inventory(tmp_path):
     """Admission and exact removal semantics precede any inventory change."""
     old, new = rotated_general(tmp_path)
@@ -194,3 +214,33 @@ def test_denied_or_combined_retirement_cannot_change_inventory(tmp_path):
         retire_keys(new, old, admit=admitted, dependencies=proof_owner())
     with pytest.raises(TypeError):
         retire_keys(old, new, admit=admitted, dependencies=None)
+
+
+def test_exclusive_key_owner_never_waits_indefinitely_behind_reader(tmp_path):
+    """A competing rotation receives the same bounded retry as a competing reader."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from django.db import connections, transaction
+
+    from parishkit.stewardship.campaigns.credential_keys import key_set_lock
+
+    _, _, _, keys = family_campaign(tmp_path)
+    replacement = GeneralKeyring(
+        [Key("g1", "decrypt-only", b"g" * 32), Key("g2", "active", b"h" * 32)]
+    )
+
+    def rotate():
+        try:
+            with pytest.raises(CryptographicError, match="busy"):
+                add_rotation_key(keys.general, replacement)
+        finally:
+            connections.close_all()
+
+    # The executor outlives the held transaction so even a regression timeout
+    # releases its blocking lock before joining the worker thread.
+    with (
+        ThreadPoolExecutor(max_workers=1) as workers,
+        transaction.atomic(),
+        key_set_lock(keys.general),
+    ):
+        workers.submit(rotate).result(timeout=5)

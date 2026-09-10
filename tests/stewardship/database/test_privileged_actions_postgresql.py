@@ -86,7 +86,7 @@ def test_admission_rejects_before_durable_intent(auth_service, google, failure):
     elif failure == "bypass":
         request._dont_enforce_csrf_checks = True
     elif failure == "family":
-        request.path = "/family/"
+        request.path = request.path_info = "/family/"
     elif failure == "get":
         request.method = "GET"
     else:

@@ -187,7 +187,9 @@ class SecretRequestCheckpoint(ImmutableRecord):
 class SealedCredentialStaging(models.Model):
     """Expiring target-owned ciphertext store, separate from permanent receipts.
 
-    The web service can insert newly sealed candidates, never read them back.
+    The web service can insert newly sealed candidates and read non-secret
+    metadata. Column grants deny ciphertext SELECT; RLS separately scopes rows.
+    Only the target's isolated installer has the handoff decryption key.
     Target identity and request bindings are enforced by SQL and row policies.
     Payload bytes are scrubbed before the request's terminal checkpoint commits.
     """

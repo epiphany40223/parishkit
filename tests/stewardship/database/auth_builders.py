@@ -84,6 +84,7 @@ def google(monkeypatch):
             "iss": "https://accounts.google.com",
             "aud": "synthetic-client",
             "iat": now,
+            "auth_time": now,
             "exp": now + 60,
             "nonce": request.stewardship_oauth_state["data"]["nonce"],
             **claims,

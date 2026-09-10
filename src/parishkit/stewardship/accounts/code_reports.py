@@ -6,6 +6,7 @@ This bounded foundation lists existing campaign identities, never a shadow sourc
 
 from django.db import transaction
 from django.template.loader import render_to_string
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_safe
 
 from parishkit.config import ConfigError
@@ -16,12 +17,9 @@ from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.family_identity import code_context
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.web.contracts import (
-    ErrorCode,
-    FieldError,
     PageWindow,
     expected_version,
     filters,
-    validation_response,
 )
 from parishkit.stewardship.web.responses import campaign_response
 
@@ -67,7 +65,11 @@ def family_codes(request, campaign_id):
                 raise ReadUnavailable("This report is unavailable.")
 
         def content():
-            """No code plaintext leaves this response or enters its audit evidence."""
+            """Prepare the bounded page under the guard before HTTP headers commit.
+
+            This must be an ordinary function, not a generator: key contention
+            and decryption failures must reach the view's retryable error path.
+            """
             with key_set_lock(cryptographic.general):
                 rows, has_next = window.rows(
                     FamilyCampaign.objects.filter(
@@ -86,10 +88,12 @@ def family_codes(request, campaign_id):
                     ]
                     for row in rows
                 ]
-                yield render_to_string(
+                body = render_to_string(
                     "stewardship/codes.html",
                     {
                         "table_rows": table,
+                        "table_caption": _("Active Families"),
+                        "table_headings": [_("Family DUID"), _("Code")],
                         "has_next": has_next,
                         "page": window.page,
                         "size": window.size,
@@ -97,11 +101,12 @@ def family_codes(request, campaign_id):
                         "previous_page": window.page - 1,
                     },
                 ).encode()
+                return iter((body,))
 
         return campaign_response(
             request, [campaign_id], authorize=authorize, open_content=content
         )
-    except ValueError:
-        return validation_response([FieldError(ErrorCode.INVALID)])
     except (ConfigError, CryptographicError, LimiterUnavailable):
         return denial(status=503, retry=5)
+    except ValueError:
+        return denial(status=400)

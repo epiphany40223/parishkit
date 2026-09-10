@@ -52,7 +52,12 @@ def test_production_warns_for_weaker_but_not_stricter_thresholds(caplog):
     configuration = load_deployment(environ=environment)
     assert configuration.authentication_limits.admin_callbacks == 11
     assert len(caplog.records) == 1
-    assert caplog.records[0].message.endswith("admin_callbacks")
+    from parishkit.stewardship.observability import SafeJsonFormatter
+
+    serialized = SafeJsonFormatter().format(caplog.records[0])
+    assert '"authentication_limits_weakened"' in serialized
+    assert '"admin_callbacks"' in serialized
+    assert "family_ip" not in serialized
     caplog.clear()
     environment["PARISHKIT_STEWARDSHIP_AUTH_LIMIT_ADMIN_CALLBACKS"] = "9"
     load_deployment(environ=environment)

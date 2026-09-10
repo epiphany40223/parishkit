@@ -68,8 +68,9 @@ def test_corpus_population_rolls_back_as_one_source_commit(tmp_path):
     assert not FamilyEligibilityChange.objects.exists()
 
 
-def test_old_only_fingerprint_prevents_duplicate_after_mac_rotation(
-    tmp_path, monkeypatch
+@pytest.mark.parametrize("demote", [False, True])
+def test_fingerprint_prevents_duplicate_after_mac_rotation(
+    tmp_path, monkeypatch, demote
 ):
     from parishkit.stewardship.campaigns import family_identity
 
@@ -82,6 +83,20 @@ def test_old_only_fingerprint_prevents_duplicate_after_mac_rotation(
         [Key("m1", "lookup-only", b"m" * 32), Key("m2", "active", b"n" * 32)]
     )
     add_rotation_key(ring.mac, replacement)
+    if demote:
+        from parishkit.stewardship.campaigns.mac_rotation import (
+            backfill_mac_batch,
+            collision_only,
+        )
+
+        backfill_mac_batch(
+            campaign_id=campaign.pk, general=ring.general, mac=replacement
+        )
+        demoted = CodeMacKeyring(
+            [Key("m1", "collision-only", b"m" * 32), replacement.active]
+        )
+        collision_only(replacement, demoted)
+        replacement = demoted
     ring = TestKeys(ring.general, replacement, ring.private)
     candidates = iter([code, "ABCDEFGH"])
     monkeypatch.setattr(family_identity, "new_code", lambda: next(candidates))
@@ -99,8 +114,12 @@ def test_old_only_fingerprint_prevents_duplicate_after_mac_rotation(
         ring.general.decrypt(new.code_ciphertext, context=code_context(new.pk))
         == b"ABCDEFGH"
     )
-    assert FamilyCodeFingerprint.objects.filter(family=new).count() == 2
-    assert FamilyCodeFingerprint.objects.filter(family=row).count() == 1
+    assert FamilyCodeFingerprint.objects.filter(family=new).count() == (
+        1 if demote else 2
+    )
+    assert FamilyCodeFingerprint.objects.filter(family=row).count() == (
+        2 if demote else 1
+    )
 
 
 def test_allocation_subtransactions_scale_with_batches_not_families(tmp_path):
@@ -140,7 +159,26 @@ def test_stale_source_generation_cannot_rewind_eligibility(tmp_path):
 def test_cross_campaign_fingerprint_scope_fails_in_sql(tmp_path):
     family_campaign(tmp_path)
     row = FamilyCampaign.objects.get()
-    with pytest.raises(IntegrityError), transaction.atomic():
+    with (
+        pytest.raises(IntegrityError, match="Fingerprint campaign must match Family"),
+        transaction.atomic(),
+    ):
         FamilyCodeFingerprint.objects.create(
             family=row, campaign_id=uuid4(), key_id="m2", digest="a" * 64
         )
+
+
+def test_empty_population_cannot_regress_source_generation(tmp_path):
+    """Even an empty population retains its campaign generation high-water mark."""
+    _, campaign, _, ring = family_campaign(tmp_path, count=0)
+    populate(campaign, ring, [], generation=3)
+    with pytest.raises(StorageInvariantError, match="stale"):
+        populate(campaign, ring, [], generation=2)
+
+
+def test_identical_population_retry_does_not_rewrite_family_versions(tmp_path):
+    """An unchanged same-generation retry preserves optimistic Family versions."""
+    _, campaign, _, ring = family_campaign(tmp_path)
+    before = FamilyCampaign.objects.get().version
+    assert populate(campaign, ring) == 0
+    assert FamilyCampaign.objects.get().version == before

@@ -9,7 +9,8 @@ from django.conf import settings
 from django.contrib.sessions.exceptions import SessionInterrupted
 from django.contrib.sessions.models import Session
 from django.db import connection, transaction
-from django.db.models import F, Q
+from django.db.models import F, Q, Value
+from django.db.models.functions import Greatest
 from django.middleware.csrf import rotate_token
 from django.utils import timezone
 from django.utils.cache import patch_vary_headers
@@ -35,7 +36,7 @@ class NamespacedSessionMiddleware:
 
     def __call__(self, request):
         """Django save/expiry semantics without per-request global setting changes."""
-        admin = request.path.startswith("/admin/")
+        admin = request.path_info.startswith("/admin/")
         name, path = ("pk_admin", "/admin/") if admin else ("pk_family", "/")
         request.session = self.store(request.COOKIES.get(name))
         response = self.get_response(request)
@@ -149,7 +150,7 @@ def end_admin(request, *, reason="admin_logout"):
     request.session = import_module(settings.SESSION_ENGINE).SessionStore()
 
 
-def issue_admin(request, user_id, *, store):
+def issue_admin(request, user_id, *, store, authenticated_at):
     """Issue only after verified identity and fresh current-policy authorization."""
     principal = current_principal(store, user_id)
     if not principal.roles:
@@ -157,15 +158,19 @@ def issue_admin(request, user_id, *, store):
     end_admin(request, reason="admin_reauthenticated")
     with transaction.atomic():
         now = database_now()
+        if timezone.is_naive(authenticated_at) or authenticated_at > now:
+            raise PermissionError("Verified Google authentication is required.")
         request.session["principal"] = str(user_id)
         request.session["recovery_epoch"] = revocation_epoch()
         request.session["authority_fingerprint"] = _authority_fingerprint(principal)
+        # Ordinary Google SSO may predate this application session. Its signed
+        # time gates privileged actions, not the new session's absolute limit.
         request.session.set_expiry(now + ADMIN_ABSOLUTE)
         request.session.save()
         row = PortalSession.objects.create(
             session_id=request.session.session_key,
             principal_id=user_id,
-            authenticated_at=now,
+            authenticated_at=authenticated_at,
             last_activity_at=now,
             expires_at=now + ADMIN_ABSOLUTE,
             actor_id=user_id,
@@ -250,8 +255,23 @@ def cleanup_admin_sessions(*, batch_size=500):
             )
             .order_by("expires_at", "pk")[:batch_size]
         )
-        for row in rows:
-            _revoke(row, now, "admin_timeout")
+        pending = [row for row in rows if row.revoked_at is None]
+        PortalSession.objects.filter(pk__in=[row.pk for row in pending]).update(
+            revoked_at=Greatest(
+                Value(now), F("last_activity_at"), F("authenticated_at")
+            ),
+            version=F("version") + 1,
+        )
+        AuditEvent.objects.bulk_create(
+            [
+                AuditEvent(
+                    event_type="admin_timeout",
+                    actor_id=row.principal_id,
+                    subject_id=row.pk,
+                )
+                for row in pending
+            ]
+        )
         keys = [row.session_id for row in rows]
         PortalSession.objects.filter(pk__in=[row.pk for row in rows]).delete()
         Session.objects.filter(session_key__in=keys).delete()
@@ -275,17 +295,23 @@ def cleanup_family_sessions(*, batch_size=500):
             )
             .order_by("expires_at", "pk")[:batch_size]
         )
-        for row in rows:
-            if row.revoked_at is None:
-                FamilySession.objects.filter(pk=row.pk).update(
-                    revoked_at=max(now, row.last_activity_at),
-                    version=F("version") + 1,
-                )
-                AuditEvent.objects.create(
+        pending = [row for row in rows if row.revoked_at is None]
+        FamilySession.objects.filter(pk__in=[row.pk for row in pending]).update(
+            revoked_at=Greatest(
+                Value(now), F("last_activity_at"), F("authenticated_at")
+            ),
+            version=F("version") + 1,
+        )
+        AuditEvent.objects.bulk_create(
+            [
+                AuditEvent(
                     event_type="family_session_ended",
                     subject_id=row.pk,
                     actor_id=row.family_id,
                 )
+                for row in pending
+            ]
+        )
         identifiers = [row.pk for row in rows]
         keys = [row.session_id for row in rows]
         FamilySession.objects.filter(pk__in=identifiers).delete()

@@ -163,6 +163,10 @@ def prepare_graphics(upload):
             with Image.open(BytesIO(data)) as source:
                 source.load()
                 normalized = ImageOps.exif_transpose(source).convert("RGBA")
+                # Every output is at most 1,024 pixels per side. Bound the pixel
+                # copy before discarding metadata rather than making several
+                # full-resolution RGBA buffers from an accepted 16 MP upload.
+                normalized.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
                 # A fresh pixel buffer deliberately discards EXIF/ICC/text data.
                 clean = Image.frombytes("RGBA", normalized.size, normalized.tobytes())
         result = {}

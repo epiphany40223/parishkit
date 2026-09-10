@@ -56,12 +56,34 @@ still staged; it cannot race a replacement already being installed.
 
 Each consumer acknowledges through its own authenticated SQL login. Wrong-role,
 wrong-target, wrong-fingerprint, expired and out-of-state acknowledgements fail.
-The immutable acknowledgement and audit commit together. Every required consumer
+The immutable acknowledgement and audit commit together. The frozen consumer set
+must equal the complete target mount registry; neither web input nor raw SQL can
+select only some consumers. Every required consumer
 must match before the request can decide `applied`. That decision commits before
 rollback ciphertext is destroyed. A crash after the decision replays using its
 database acknowledgement instant, so later expiry cannot reverse an already
 approved replacement. A scrubbed file journal is released only after the terminal
 database receipt is durable; restart reconciles any remaining journal first.
+
+## Interrupted-installer recovery
+
+An expired request beyond `staged` remains reserved until its matching installer
+finishes rollback or acknowledges its already committed result. This is deliberate:
+expiry alone cannot prove which credential file or consumer state is selected.
+
+If the installer is unavailable, the operator first restores that target service's
+documented SQL login, private handoff key, owner-only journal directory and file
+mounts. Restart the same target installer and replay the original request UUID;
+do not stage a replacement under a new UUID or delete the pending receipt. Its
+normal reconciliation handles crashes in `testing`, `installing`, `awaiting_ack`
+and `cleanup_pending`, including expiry, without a privileged SQL state bypass.
+
+If required journal/key material is missing, or the working file has an unknown
+fingerprint, stop target replacement and recover the matching files and database
+from the operator's consistent backup/escrow evidence. Preserve the unexpected
+files for investigation. Never force `applied`, clear the uniqueness reservation,
+disable triggers, or overwrite an unrecognized working credential to unblock the
+UI. Operational command assembly and its restore runbook remain OPS-04/OPS-06.
 
 ## Runtime integration boundaries
 

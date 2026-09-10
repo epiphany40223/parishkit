@@ -112,6 +112,18 @@ def test_ordered_family_cleanup_preserves_audit_attribution(family_service):
     assert AuditEvent.objects.filter(subject_id=row.pk).exists()
 
 
+def test_invalid_link_audit_is_bounded_and_attempts_stay_ephemeral(family_service):
+    """Different garbage links count individually but cannot grow durable audit."""
+    from parishkit.stewardship.audit.models import AuditContext, AuditEvent
+
+    for index in range(10):
+        assert Client().get(f"/access/invalid-{index}").status_code == 403
+    limiter = family_service.service.limiter
+    assert limiter.client.zcard(limiter.namespace + ":aggregate:family:attempts") == 10
+    event = AuditEvent.objects.get(event_type="family_link_invalid")
+    assert AuditContext.objects.get(event=event).context == {"outcome": "denied"}
+
+
 def test_code_exchange_and_token_link_use_clean_isolated_session(family_service):
     client, response = login(family_service.code.lower())
     assert response.status_code == 302 and response["Location"] == "/family/"
