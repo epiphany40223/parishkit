@@ -51,12 +51,23 @@ Owning services must obtain those facts under their transaction locks.
 Registry modes deliberately allow Return to Testing when already in Testing,
 and reopen preserves or asserts Production under its separate readiness guard.
 Live delivery pause/catch-up flags are Production-only; they do not suppress
-explicit readiness/test-recipient sends. Overdue boundaries must record start
+explicit readiness/test-recipient sends. Ordinary Testing rehearsal work remains
+date-gated; explicit previews/readiness sends may run outside the interval.
+`CampaignWorkKind` makes those distinctions explicit without a boolean dispatch
+exemption. Its owning service must derive the kind from immutable durable work,
+not accept an Admin/caller-selected flag. Post-close, operational and restore
+work have separate owners. Overdue boundaries must record start
 then close in one owning transaction, even when both dates have passed. These
 pure decisions never admit Family access outside the effective interval.
 
 Temporary restore/mode admission holds leave a staged configuration request
 retryable; invalid draft intent still produces a terminal rejection receipt.
+The admitted foundation forbids Production/restore-review runtime states in
+both Python and SQL. Its defensive hold also blocks unrelated configuration
+changes after campaign adoption. The later runtime migration must distinguish
+unchanged campaign reprojection and authorized recovery from campaign edits
+when it enables those states, replacing both layers together; this batch does
+not prematurely relax SQL activation or recovery admission.
 
 ## Timezone-rule upgrade safety
 
@@ -65,6 +76,14 @@ for every retained campaign and schedule, including historical configurations.
 An affected timezone-data update can invalidate verification of the entire
 immutable lineage, blocking ordinary activation and offline policy recovery,
 even if only an older campaign is affected. Failing closed is intentional.
+Retained-lineage verification batch-checks stored campaign boundaries and
+schedule instants with the SQL resolver as well as Python. Tests independently
+simulate drift on each side and check the full frozen name catalog against the
+pinned database image in winter and summer, not just selected transitions.
+The SQL resolver freezes IANA 2026c link-name normalization: the database image
+omits some backward aliases, and abbreviations such as `EET` can otherwise be
+interpreted as fixed offsets. Stored timezone names and the accepted catalog
+remain unchanged; all conversions use the same resolved canonical alias.
 
 Before upgrading either image or timezone data, validate the retained lineage
 in an isolated restored copy using the proposed image pair. Keep the known-good
