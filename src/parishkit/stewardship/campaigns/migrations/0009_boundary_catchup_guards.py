@@ -71,7 +71,7 @@ BEGIN
         IF NEW.version<>1 OR NEW.phase<>'pending' OR NEW.cursor<>'' OR NEW.groups_completed<>0 OR NEW.items_completed<>0
            OR NEW.completed_at IS NOT NULL OR NEW.failure_code<>'' OR NEW.task_root_id IS NOT NULL OR NEW.source_snapshot_id IS NOT NULL
            OR NOT EXISTS(SELECT 1 FROM stewardship_campaign_transition t WHERE t.id=NEW.activation_id
-               AND t.campaign_id=NEW.campaign_id AND t.configuration_id=NEW.configuration_id AND t.action='activate'
+               AND t.campaign_id=NEW.campaign_id AND t.configuration_id=NEW.configuration_id AND t.action='activate' AND t.after_state='active'
                AND t.actor_id IS NOT DISTINCT FROM NEW.actor_id AND t.correlation_id=NEW.correlation_id)
         THEN RAISE EXCEPTION 'Catch-up demand requires activation evidence' USING ERRCODE='23514'; END IF;
     ELSE

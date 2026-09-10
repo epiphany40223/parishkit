@@ -216,11 +216,23 @@ class DatabaseMaterializer:
         status = _status(request)
         if status.state == "failed" and status.failure_code == "invalid_candidate":
             return status
-        if SystemConfiguration.objects.get().active_configuration_id != request.base_id:
-            raise StorageInvariantError(
-                "Cannot cancel an applied or superseded configuration."
-            )
+        runtime = SystemConfiguration.objects.get()
+        if ConfigurationActivation.objects.filter(request=request).exists():
+            raise StorageInvariantError("Cannot cancel an applied configuration.")
         selected = self.store.active()
+        if runtime.active_configuration_id != request.base_id:
+            # The journal prevented this candidate from ever applying. Another
+            # valid install may advance after the abort crash; finish only its
+            # receipt, without rewinding that newer, coherent authority.
+            if (
+                selected is None
+                or selected.version_id != runtime.active_configuration_id
+            ):
+                raise StorageInvariantError(
+                    "Exceptional cancellation has unrelated YAML authority."
+                )
+            self.checkpoint("failed", failure_code="invalid_candidate")
+            return _status(request)
         if selected is None or selected.version_id not in {
             request.base_id,
             request.candidate_version_id,

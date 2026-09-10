@@ -22,7 +22,7 @@ from parishkit.stewardship.campaigns.models import (
 )
 from parishkit.stewardship.campaigns.runtime import campaign_facts
 from parishkit.stewardship.jobs.storage import change_run, enqueue
-from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
 from .campaign_builders import admit_test_work, campaign_clock, command, draft_campaign
 
@@ -138,7 +138,7 @@ def test_close_admission_sees_started_facts_and_rejection_rolls_back(tmp_path):
     run = claimed_task("campaign_boundary", campaign.pk, actor)
     seen = []
 
-    def admission(action, current, runtime):
+    def admission(action, current, runtime, subject):
         """Refuse close after observing start's transaction-local effects."""
         seen.append((action, current.state))
         if action is Action.CLOSE:
@@ -195,11 +195,11 @@ def test_catchup_checkpoint_is_exact_fenced_and_independent_of_task_completion(
     )
     first = checkpoint_catchup(**arguments)
     assert checkpoint_catchup(**arguments).pk == first.pk
-    with pytest.raises(StorageInvariantError, match="current fenced input"):
+    with pytest.raises(StaleRecordError, match="current fenced input"):
         checkpoint_catchup(**(arguments | {"fence": run.fence + 1}))
     with pytest.raises(StorageInvariantError):
         checkpoint_catchup(**(arguments | {"items": 6}))
-    with pytest.raises(IntegrityError):
+    with pytest.raises(StaleRecordError):
         checkpoint_catchup(
             **(arguments | {"group_key": "second", "fence": run.fence + 1})
         )
@@ -280,3 +280,44 @@ def test_catchup_final_checkpoint_releases_hold_and_cannot_be_rewritten(tmp_path
         ActivationCatchUpDemand.objects.filter(pk=demand.pk).update(
             phase="pending", version=F("version") + 1
         )
+
+
+def test_catchup_binding_replay_cannot_rebind_source_or_execution(tmp_path):
+    """The immutable activation cutoff and worker inputs survive exact retries."""
+    _, campaign, actor = draft_campaign(tmp_path)
+    with campaign_clock(campaign.active_configuration.starts_at):
+        command(campaign, actor, Action.ACTIVATE)
+    demand = ActivationCatchUpDemand.objects.get()
+    run = claimed_task("activation_catchup", demand.pk, actor)
+    args = dict(
+        demand_id=demand.pk,
+        task_root_id=run.root_id,
+        source_snapshot_id=uuid4(),
+        actor_id=actor,
+        correlation_id=uuid4(),
+        admit=admit_test_work,
+    )
+    first = bind_catchup(**args)
+    replay = bind_catchup(**args)
+    assert (replay.pk, replay.version, replay.cutoff) == (
+        first.pk,
+        first.version,
+        first.cutoff,
+    )
+    for field in ("task_root_id", "source_snapshot_id"):
+        with pytest.raises(StorageInvariantError, match="already bound"):
+            bind_catchup(**(args | {field: uuid4()}))
+    demand.refresh_from_db()
+    assert demand.version == first.version
+
+
+def test_prestart_activation_and_withdrawal_need_no_catchup(tmp_path):
+    """No overdue work exists before start; withdrawal must not need fake coverage."""
+    _, campaign, actor = draft_campaign(tmp_path)
+    with campaign_clock(campaign.active_configuration.starts_at - timedelta(seconds=1)):
+        command(campaign, actor, Action.ACTIVATE)
+        assert not ActivationCatchUpDemand.objects.exists()
+        command(campaign, actor, Action.WITHDRAW, reason="Postponed")
+    campaign.refresh_from_db()
+    assert campaign.state == "draft"
+    assert not ActivationCatchUpDemand.objects.exists()

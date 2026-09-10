@@ -340,7 +340,7 @@ BEGIN
         before_campaign_id,after_campaign_id,campaign_transition_id,reason,actor_id,correlation_id)
     VALUES (gen_random_uuid(),NEW.request_id,NEW.expected_runtime_version,'campaign',NEW.before_mode,NEW.after_mode,
         NEW.campaign_id,NEW.campaign_id,NEW.id,NEW.reason,NEW.actor_id,NEW.correlation_id);
-    IF NEW.action='activate' THEN
+    IF NEW.action='activate' AND NEW.after_state='active' THEN
         INSERT INTO stewardship_activation_catchup(id,campaign_id,activation_id,cutoff,configuration_id,
             phase,cursor,groups_completed,items_completed,failure_code,version,actor_id,correlation_id)
         VALUES (gen_random_uuid(),NEW.campaign_id,NEW.id,stewardship_campaign_now_v1(),NEW.configuration_id,

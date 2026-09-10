@@ -80,7 +80,13 @@ def resolve_postclose(
     task_id=None,
     outbox_id=None,
 ):
-    """Persist one explicit skip after exact outcome cancellation in the callback."""
+    """Persist a scheduled-digest skip after exact cancellation in the callback.
+
+    The occurrence is mandatory evidence, including previously unmaterialized
+    work; its owner creates/skips it atomically before this insert. The semantic
+    key is ``schedule:<definition UUID>:<slot>``. DAT-06/DAT-07 add receipt identity
+    and concrete outbox evidence; soft UUIDs do not establish provider outcomes.
+    """
     if not callable(admit) or not isinstance(actor_id, UUID) or not reason.strip():
         raise TypeError(
             "Post-close resolution requires attributed admission and a reason."
@@ -89,7 +95,7 @@ def resolve_postclose(
         campaign,
         runtime,
     ):
-        admit("postclose_resolution", campaign, runtime)
+        admit("postclose_resolution", campaign, runtime, None)
         digest = coverage_digest(coverage)
         identity = dict(
             campaign_id=campaign_id,

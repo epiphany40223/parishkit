@@ -1572,6 +1572,24 @@ Critical issues. PR CI and human merge approval remain required. Phase 1A and
 Gate 1 are not complete; continue the remaining DAT-02 storage/read-guard batch
 after the human-approved merge.
 
+### Phase 1A completion batch
+
+PR #18 merged at `9f644b0e1fdef1fb09e009bc1576f979c096f643`. The branch
+`pr/stewardship-phase-1a-completion` completes the remaining Phase 1A scope in
+one PR. DAT-02 and DOM-02 are implemented; the other mixed-phase packages
+explicitly retain only their later operational integration. See the
+[completion guide](../../guides/stewardship-phase-1a-completion.md) for the
+contracts, demonstrations, review dispositions and validation evidence.
+
+Round 1: Pika session `20260910-074438-7d9457`, reviewed `f4c9588`, four
+Claude shards plus independent Codex, 38 validated findings. Round 2: session
+`20260910-083115-c257ba`, reviewed `d7483b0`, five Claude shards plus independent
+Codex, 19 validated findings. Both rounds completed without degradation or
+failed reviewers; accepted Medium+ corrections are implemented and regression
+tested. Third review, final validation and PR CI remain pending. No Gate 1 or
+human merge approval is implied. After merge, proceed to Phase 1B as a coherent
+batch; Gate 1 still follows the integrated Phase 1B/1C foundation.
+
 ## Gate 1: Foundation and security
 
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).

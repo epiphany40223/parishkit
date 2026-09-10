@@ -27,8 +27,12 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 def complete_empty_catchup(campaign, actor):
-    """Synthetic empty corpus establishes storage completion without provider IO."""
-    demand = ActivationCatchUpDemand.objects.get(campaign=campaign)
+    """Finish actual direct-activation work; pre-start activation has no demand."""
+    campaign.refresh_from_db()
+    demand = ActivationCatchUpDemand.objects.filter(campaign=campaign).first()
+    if demand is None:
+        assert campaign.state == "scheduled"
+        return
     run = claimed_task("activation_catchup", demand.pk, actor)
     bind_catchup(
         demand_id=demand.pk,
@@ -269,7 +273,9 @@ def test_invalid_exceptional_end_fails_before_yaml_selection(
     assert campaign.active_configuration_id == original.pk
 
 
-@pytest.mark.parametrize("interruption", ["prepared", "yaml_activated"])
+@pytest.mark.parametrize(
+    "interruption", ["prepared", "yaml_activated", "prepared_advanced"]
+)
 def test_unapplied_exceptional_abort_recovers_after_file_failure(
     tmp_path, monkeypatch, interruption
 ):
@@ -302,7 +308,7 @@ def test_unapplied_exceptional_abort_recovers_after_file_failure(
             return original_checkpoint(materializer, state, **kwargs)
 
         with monkeypatch.context() as patch:
-            if interruption == "prepared":
+            if interruption.startswith("prepared"):
                 patch.setattr(
                     DatabaseMaterializer, "checkpoint", interrupted_checkpoint
                 )
@@ -317,7 +323,7 @@ def test_unapplied_exceptional_abort_recovers_after_file_failure(
                 )
         assert store.active().version_id == (
             original.version_id
-            if interruption == "prepared"
+            if interruption.startswith("prepared")
             else request.candidate_version_id
         )
         assert (
@@ -332,7 +338,7 @@ def test_unapplied_exceptional_abort_recovers_after_file_failure(
         resolver = uuid4()
         with monkeypatch.context() as patch:
             # Even the pre-selection crash has a durable abort before checkpoint IO.
-            if interruption == "prepared":
+            if interruption.startswith("prepared"):
                 patch.setattr(
                     DatabaseMaterializer,
                     "restore_aborted_candidate",
@@ -351,6 +357,27 @@ def test_unapplied_exceptional_abort_recovers_after_file_failure(
                 )
         assert CampaignConfigurationAbort.objects.count() == 1
         assert CampaignConfigurationAbort.objects.get().actor_id == resolver
+        if interruption == "prepared_advanced":
+            from .test_policy_postgresql import change
+
+            parish = original.document()["sections"]["parish"][0]
+            assert (
+                change(
+                    store,
+                    original,
+                    actor,
+                    [
+                        {
+                            "operation": "update",
+                            "section": "parish",
+                            "id": parish["id"],
+                            "values": {"name": "Updated after abort journal"},
+                        }
+                    ],
+                ).state
+                == "applied"
+            )
+            original = store.active()
         recovered = install_request(
             store,
             request_id=request.request_id,

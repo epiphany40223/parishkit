@@ -96,10 +96,14 @@ BEGIN
        OR NEW.coverage_digest<>encode(sha256(convert_to(NEW.coverage::text,'UTF8')),'hex')
        OR NOT EXISTS(SELECT 1 FROM stewardship_campaign c JOIN stewardship_system_configuration r ON r.current_campaign_id=c.id
            WHERE c.id=NEW.campaign_id AND c.state='closed' AND NEW.mode=r.mode AND NOT r.restore_review_required)
-       OR (NEW.occurrence_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM stewardship_schedule_occurrence o
+       OR NEW.occurrence_id IS NULL OR NOT EXISTS(SELECT 1 FROM stewardship_schedule_occurrence o
            JOIN stewardship_schedule_definition d ON d.id=o.definition_id WHERE o.id=NEW.occurrence_id
-           AND d.campaign_id=NEW.campaign_id AND o.mode=NEW.mode AND o.state='skipped'))
-       OR (NEW.task_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM stewardship_task_run t WHERE t.id=NEW.task_id AND t.state='cancelled')) THEN
+           AND d.campaign_id=NEW.campaign_id AND d.kind IN ('daily_digest','weekly_digest')
+           AND o.mode=NEW.mode AND o.state='skipped' AND o.reason='admin_post_close_skip'
+           AND NEW.obligation_key='schedule:'||d.id::text||':'||o.slot
+           AND NEW.task_id IS NOT DISTINCT FROM o.task_id AND NEW.outbox_id IS NOT DISTINCT FROM o.outbox_id)
+       OR (NEW.task_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM stewardship_task_run t
+           WHERE t.id=NEW.task_id AND t.state='cancelled' AND t.domain_request_id=NEW.occurrence_id)) THEN
         RAISE EXCEPTION 'Post-close skip requires exact coverage and cancellation evidence' USING ERRCODE='23514'; END IF;
     RETURN NEW;
 END $$;

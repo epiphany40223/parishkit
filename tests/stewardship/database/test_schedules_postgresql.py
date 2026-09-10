@@ -282,3 +282,173 @@ def test_production_pause_prevents_occurrence_claim(tmp_path):
             advance(row, actor, "running", task_id=run.run_id, fence=run.fence)
     row.refresh_from_db()
     assert row.state == "pending" and row.pause_version is not None
+
+
+@pytest.mark.parametrize("source", ["running", "delivery_unknown"])
+@pytest.mark.parametrize(
+    "action,outcome",
+    [
+        ("recovery_retry", "pending"),
+        ("recovery_unknown", "delivery_unknown"),
+        ("recovery_complete", "succeeded"),
+        ("recovery_fail", "failed"),
+        ("recovery_skip", "skipped"),
+        ("recovery_coalesce", "coalesced"),
+    ],
+)
+def test_recovery_matches_canonical_source_action_matrix(
+    tmp_path, source, action, outcome
+):
+    """Only reconciled TaskRun ownership authorizes the specified recovery edges."""
+    from parishkit.stewardship.campaigns.schedules import recover_occurrence
+    from parishkit.stewardship.jobs.storage import change_run
+    from parishkit.stewardship.storage import StorageInvariantError
+
+    _, _, actor = draft_campaign(tmp_path)
+    definition = ScheduleDefinition.objects.get()
+    with campaign_clock(definition.current_revision.due_at):
+        row = occurrence(definition, actor)
+        replacement = occurrence(definition, actor, target="family:replacement")
+        run = claimed_task("schedule_occurrence", row.pk, actor)
+        row = advance(row, actor, "running", task_id=run.run_id, fence=run.fence)
+        if source == "delivery_unknown":
+            row = advance(
+                row,
+                actor,
+                "delivery_unknown",
+                fence=run.fence,
+                reason="provider_ambiguous",
+            )
+        args = dict(
+            occurrence_id=row.pk,
+            expected_version=row.version,
+            action=action,
+            actor_id=actor,
+            correlation_id=uuid4(),
+            admit=admit_test_work,
+            replacement_id=replacement.pk if outcome == "coalesced" else None,
+        )
+        with pytest.raises(StorageInvariantError):
+            recover_occurrence(**args)
+        change_run(
+            run_id=run.run_id,
+            action="safe_cancel",
+            expected_version=run.version,
+            fence=run.fence,
+            actor_id=actor,
+            correlation_id=uuid4(),
+            admit=admit_test_work,
+        )
+        if source == "delivery_unknown" and outcome in {
+            "delivery_unknown",
+            "skipped",
+            "coalesced",
+        }:
+            with pytest.raises(StorageInvariantError, match="resolved outcome"):
+                recover_occurrence(**args)
+            row.refresh_from_db()
+            assert row.state == source and row.version == args["expected_version"]
+        else:
+            result = recover_occurrence(**args)
+            assert (
+                result.state == outcome
+                and result.version == args["expected_version"] + 1
+            )
+            if outcome == "coalesced":
+                # Coverage is committed before dispatch, not provider success.
+                coverage = record_fulfillment(
+                    occurrence_id=row.pk,
+                    disposition="coalesced",
+                    actor_id=actor,
+                    correlation_id=uuid4(),
+                    admit=admit_test_work,
+                )
+                replacement.refresh_from_db()
+                assert coverage.occurrence_id == replacement.pk
+                assert replacement.state == "pending"
+                assert not ScheduleFulfillment.objects.filter(
+                    disposition="delivered"
+                ).exists()
+
+
+@pytest.mark.parametrize("outcome", ["pending", "succeeded", "failed"])
+def test_unknown_delivery_cannot_be_resolved_by_an_unattributed_raw_write(
+    tmp_path, outcome
+):
+    """Even a well-shaped state edge needs reconciled ownership and coded evidence."""
+    from django.db import transaction
+
+    _, _, actor = draft_campaign(tmp_path)
+    definition = ScheduleDefinition.objects.get()
+    with campaign_clock(definition.current_revision.due_at):
+        row = occurrence(definition, actor)
+        run = claimed_task("schedule_occurrence", row.pk, actor)
+        advance(row, actor, "running", task_id=run.run_id, fence=run.fence)
+        row = advance(
+            row, actor, "delivery_unknown", fence=run.fence, reason="provider_ambiguous"
+        )
+        with (
+            pytest.raises(IntegrityError, match="reconciled ownership"),
+            transaction.atomic(),
+        ):
+            ScheduleOccurrence.objects.filter(pk=row.pk).update(
+                state=outcome, version=row.version + 1, reason="arbitrary"
+            )
+
+
+def test_abandoned_execution_must_be_reconciled_before_schedule_replacement(tmp_path):
+    """Abandonment is nonterminal; resolve its durable retry chain before removal."""
+    from parishkit.stewardship.campaigns.schedules import recover_occurrence
+    from parishkit.stewardship.jobs.storage import enqueue
+
+    from .test_taskrun_postgresql import act, expire
+
+    store, _, actor = draft_campaign(tmp_path)
+    definition = ScheduleDefinition.objects.get()
+    with campaign_clock(definition.current_revision.due_at):
+        row = occurrence(definition, actor)
+        queued = enqueue(
+            task_type="schedule_occurrence",
+            domain_request_id=row.pk,
+            actor_id=actor,
+            correlation_id=uuid4(),
+            admit=admit_test_work,
+        )
+        run = act(queued, "claim", lease_seconds=1, actor_id=actor)
+        advance(row, actor, "running", task_id=run.run_id, fence=run.fence)
+        abandoned = expire(run)
+        row.refresh_from_db()
+        recover_occurrence(
+            occurrence_id=row.pk,
+            expected_version=row.version,
+            action="recovery_retry",
+            actor_id=actor,
+            correlation_id=uuid4(),
+            admit=admit_test_work,
+        )
+        request = record_request(
+            base_digest=store.active().digest,
+            patch=[
+                {
+                    "operation": "remove",
+                    "section": "schedules",
+                    "id": str(definition.pk),
+                }
+            ],
+            actor_id=actor,
+            request_key=uuid4(),
+            correlation_id=uuid4(),
+        )
+        with pytest.raises(CampaignAdmissionUnavailable):
+            install_request(
+                store, request_id=request.request_id, correlation_id=uuid4()
+            )
+        act(abandoned, "recovery_cancel", actor_id=actor)
+        assert (
+            install_request(
+                store, request_id=request.request_id, correlation_id=uuid4()
+            ).state
+            == "applied"
+        )
+    row.refresh_from_db()
+    assert row.state == "skipped" and row.reason == "schedule_removed"

@@ -45,7 +45,7 @@ def apply_due_boundaries(
         ):
             if due > now:
                 continue
-            admit(kind, campaign, runtime)
+            admit(kind, campaign, runtime, None)
             occurrence, _ = CampaignBoundaryOccurrence.objects.get_or_create(
                 campaign=campaign,
                 kind=kind.value,

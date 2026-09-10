@@ -274,58 +274,11 @@ def test_postclose_cancellation_evidence_cannot_cover_unrelated_obligations(
     tmp_path, evidence
 ):
     """Each cancellation receipt can back only one semantic resolution."""
-    from parishkit.stewardship.campaigns.boundaries import apply_due_boundaries
-    from parishkit.stewardship.campaigns.lifecycle import Action
     from parishkit.stewardship.campaigns.resolutions import resolve_postclose
-    from parishkit.stewardship.jobs.storage import change_run
 
-    from .campaign_builders import command
-    from .test_boundary_catchup_postgresql import claimed_task
-    from .test_exceptional_end_postgresql import complete_empty_catchup
-    from .test_schedules_postgresql import advance
+    from .test_controls_resolutions_postgresql import closed_digest
 
-    _, campaign, actor = draft_campaign(tmp_path)
-    definition = ScheduleDefinition.objects.get()
-    with campaign_clock(definition.current_revision.due_at):
-        command(campaign, actor, Action.ACTIVATE)
-        complete_empty_catchup(campaign, actor)
-        row = create_occurrence(
-            definition_id=definition.pk,
-            revision_id=definition.current_revision_id,
-            mode="production",
-            target="family:1",
-            slot="once",
-            due_at=definition.current_revision.due_at,
-            actor_id=actor,
-            correlation_id=uuid4(),
-            admit=admit_test_work,
-        )
-        advance(row, actor, "skipped", reason="reviewed_skip")
-        cancelled = claimed_task("schedule_occurrence", row.pk, actor)
-        change_run(
-            run_id=cancelled.run_id,
-            action="safe_cancel",
-            expected_version=cancelled.version,
-            fence=cancelled.fence,
-            actor_id=actor,
-            correlation_id=uuid4(),
-            admit=admit_test_work,
-        )
-    run = claimed_task("campaign_boundary", campaign.pk, actor)
-    with campaign_clock(campaign.active_configuration.ends_at):
-        apply_due_boundaries(
-            campaign_id=campaign.pk,
-            task_id=run.run_id,
-            fence=run.fence,
-            actor_id=actor,
-            correlation_id=uuid4(),
-            admit=admit_test_work,
-        )
-    identifiers = {
-        "occurrence_id": row.pk,
-        "task_id": cancelled.run_id,
-        "outbox_id": uuid4(),
-    }
+    _, campaign, actor, row = closed_digest(tmp_path)
     args = dict(
         campaign_id=campaign.pk,
         mode="production",
@@ -334,11 +287,16 @@ def test_postclose_cancellation_evidence_cannot_cover_unrelated_obligations(
         actor_id=actor,
         correlation_id=uuid4(),
         admit=admit_test_work,
-        **{evidence: identifiers[evidence]},
+        occurrence_id=row.pk,
+        obligation_key=f"schedule:{row.definition_id}:{row.slot}",
     )
-    resolve_postclose(**args, obligation_key="first")
-    with pytest.raises(IntegrityError, match="postclose_.*_once"):
-        resolve_postclose(**args, obligation_key="unrelated")
+    with pytest.raises(IntegrityError, match="Post-close skip"):
+        resolve_postclose(**(args | {evidence: uuid4()}))
+    with pytest.raises(IntegrityError, match="Post-close skip"):
+        resolve_postclose(**(args | {"occurrence_id": None}))
+    resolve_postclose(**args)
+    with pytest.raises(IntegrityError, match="Post-close skip"):
+        resolve_postclose(**(args | {"obligation_key": "unrelated"}))
 
 
 def test_closed_report_can_recover_but_family_invitation_cannot(tmp_path):

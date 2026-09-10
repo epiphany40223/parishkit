@@ -167,7 +167,16 @@ def test_competing_reopen_candidates_have_one_atomic_winner(tmp_path):
     )
 
 
-def test_draft_end_edit_races_activation_without_partial_configuration(tmp_path):
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"end_date": "2026-11-11"},
+        {"timezone": "America/Los_Angeles"},
+    ],
+)
+def test_draft_end_edit_races_activation_without_partial_configuration(
+    tmp_path, values
+):
     """Either mutable draft configuration wins, or activation freezes its structure."""
     from parishkit.stewardship.accounts.configuration_installation import (
         install_request,
@@ -183,14 +192,14 @@ def test_draft_end_edit_races_activation_without_partial_configuration(tmp_path)
                 "operation": "update",
                 "section": "campaigns",
                 "id": str(campaign.pk),
-                "values": {"end_date": "2026-11-11"},
+                "values": values,
             }
         ],
         actor_id=actor,
         request_key=uuid4(),
         correlation_id=uuid4(),
     )
-    with campaign_clock(campaign.active_configuration.starts_at):
+    with campaign_clock(campaign.active_configuration.starts_at + timedelta(hours=8)):
         results = concurrent_calls(
             lambda: install_request(
                 store, request_id=request.request_id, correlation_id=uuid4()
@@ -327,3 +336,101 @@ def test_concurrent_restore_decisions_cannot_overwrite_review(tmp_path):
     hold.refresh_from_db()
     assert hold.version == 2 and RestoreHoldResolution.objects.count() == 1
     assert hold.state in results
+
+
+def test_competing_close_workers_commit_one_boundary_history(tmp_path):
+    """Repeated close hints cannot split state, tokens, or immutable history."""
+    from parishkit.stewardship.campaigns.boundaries import apply_due_boundaries
+    from parishkit.stewardship.campaigns.models import CampaignBoundaryOccurrence
+
+    from .test_boundary_catchup_postgresql import claimed_task
+
+    _, campaign, actor = draft_campaign(tmp_path)
+    with campaign_clock(campaign.active_configuration.starts_at):
+        command(campaign, actor, Action.ACTIVATE)
+        complete_empty_catchup(campaign, actor)
+    runs = [claimed_task("campaign_boundary", campaign.pk, actor) for _ in range(2)]
+    with campaign_clock(campaign.active_configuration.ends_at):
+        results = concurrent_calls(
+            *[
+                lambda run=run: apply_due_boundaries(
+                    campaign_id=campaign.pk,
+                    task_id=run.run_id,
+                    fence=run.fence,
+                    actor_id=actor,
+                    correlation_id=uuid4(),
+                    admit=admit_test_work,
+                )
+                for run in runs
+            ]
+        )
+    assert "committed" in results and set(results) <= {"committed", "retry"}
+    campaign.refresh_from_db()
+    assert campaign.state == "closed" and campaign.active_token_generation_id is None
+    assert CampaignTransition.objects.filter(action="close").count() == 1
+    assert (
+        CampaignBoundaryOccurrence.objects.filter(
+            kind="close", state="succeeded"
+        ).count()
+        == 1
+    )
+
+
+def test_parish_default_timezone_races_creation_without_rebucketing(tmp_path):
+    """Draft timezone is an explicit snapshot; stale parish defaults cannot drift it."""
+    from parishkit.stewardship.accounts.configuration_installation import (
+        install_request,
+    )
+    from parishkit.stewardship.accounts.configuration_requests import record_request
+    from parishkit.stewardship.campaigns.models import Campaign
+
+    from ..campaign_factory import campaign as campaign_record
+    from ..campaign_factory import schedule
+    from .test_policy_postgresql import initialized
+
+    store, root, actor = initialized(tmp_path)
+    row = campaign_record()
+    parish = root.document()["sections"]["parish"][0]
+    patches = [
+        [
+            {"operation": "add", "section": "campaigns", **row},
+            {"operation": "add", "section": "schedules", **schedule(row["id"])},
+        ],
+        [
+            {
+                "operation": "update",
+                "section": "parish",
+                "id": parish["id"],
+                "values": {"timezone": "America/Chicago"},
+            }
+        ],
+    ]
+    requests = [
+        record_request(
+            base_digest=root.digest,
+            patch=patch,
+            actor_id=actor,
+            request_key=uuid4(),
+            correlation_id=uuid4(),
+        )
+        for patch in patches
+    ]
+    results = concurrent_calls(
+        *[
+            lambda request=request: install_request(
+                store, request_id=request.request_id, correlation_id=uuid4()
+            )
+            for request in requests
+        ]
+    )
+    assert results.count("applied") == 1
+    assert (
+        store.active().version_id
+        == SystemConfiguration.objects.get().active_configuration_id
+    )
+    if results[0] == "applied":
+        assert (
+            Campaign.objects.get().active_configuration.timezone == "America/New_York"
+        )
+    else:
+        assert not Campaign.objects.exists()

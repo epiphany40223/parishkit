@@ -276,3 +276,54 @@ def test_expiry_releases_local_slot_without_further_iteration(
     with pytest.raises(DownloadBusy):
         pool.acquire()
     pool.release()
+
+
+@pytest.mark.parametrize("failure", ["deadline", "local_close", "remote_close"])
+@pytest.mark.parametrize("download", [False, True])
+def test_closed_raw_cleanup_never_opens_a_replacement_backend(
+    tmp_path, monkeypatch, failure, download
+):
+    """Django atomic cleanup must not silently acquire an unbudgeted connection."""
+    identifier = family_campaign(tmp_path)
+    reader = guard(identifier, pool=DownloadPool() if download else None)
+    other = connections["default"].copy(alias="cleanup-probe")
+    response = GuardedResponse(reader, lambda: iter([b"not emitted"]))
+
+    def forbid_new_backend(*args, **kwargs):
+        """Fail if Atomic's autocommit restoration attempts a new driver handle."""
+        pytest.fail("Guard cleanup reconnected after losing its pinned backend")
+
+    monkeypatch.setattr(reader.db, "get_new_connection", forbid_new_backend)
+    try:
+        if failure == "deadline":
+            reader._expire()
+        elif failure == "local_close":
+            reader._raw.close()
+        else:
+            with other.cursor() as cursor:
+                cursor.execute(
+                    "SELECT pg_terminate_backend(%s,5000)",
+                    [reader._raw.info.backend_pid],
+                )
+                assert cursor.fetchone()[0]
+        with pytest.raises(ReadUnavailable):
+            next(response)
+        response.close()
+        assert reader.db.connection is None
+    finally:
+        response.close()
+        other.close()
+
+
+def test_cross_thread_close_is_rejected_without_touching_owner_transaction(tmp_path):
+    """The synchronous adapter must marshal disconnect cleanup to its owner."""
+    from parishkit.stewardship.storage import StorageInvariantError
+
+    identifier = family_campaign(tmp_path)
+    reader = guard(identifier, pool=DownloadPool())
+    with reader, ThreadPoolExecutor(max_workers=1) as executor:
+        with pytest.raises(StorageInvariantError, match="owning thread"):
+            executor.submit(reader.close).result(timeout=5)
+        assert not reader.closed.is_set()
+        reader.check()
+    assert reader.closed.is_set()

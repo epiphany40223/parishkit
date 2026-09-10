@@ -36,11 +36,20 @@ def change_control(
         )
     if any(not isinstance(value, UUID) for value in (request_id, actor_id)):
         raise TypeError("Campaign control identifiers must be UUIDs.")
+    if evidence_id is not None and not isinstance(evidence_id, UUID):
+        raise TypeError("Control evidence must be a UUID.")
+    if type(reason) is not str or len(reason) > 1024:
+        raise ValueError("Control reason must be bounded text.")
+    if any(
+        type(value) is not int or value < 1
+        for value in (expected_version, expected_runtime_version)
+    ):
+        raise ValueError("Control versions must be positive integers.")
     with campaign_transaction(campaign_id, correlation_id=correlation_id) as (
         campaign,
         runtime,
     ):
-        admit(action, campaign, runtime)
+        admit(action, campaign, runtime, None)
         existing = CampaignControlChange.objects.filter(request_id=request_id).first()
         intent = (
             campaign_id,
@@ -102,7 +111,7 @@ def reserve_work_gate(*, campaign_id, request_id, actor_id, correlation_id, admi
         campaign,
         runtime,
     ):
-        admit("reserve_work_gate", campaign, runtime)
+        admit("reserve_work_gate", campaign, runtime, None)
         existing = CampaignWorkGate.objects.filter(request_id=request_id).first()
         if existing:
             if (existing.campaign_id, existing.initiated_by_id) != (
@@ -130,7 +139,7 @@ def release_work_gate(*, gate_id, expected_version, actor_id, correlation_id, ad
         runtime,
     ):
         gate.refresh_from_db()
-        admit("release_work_gate", campaign, runtime)
+        admit("release_work_gate", campaign, runtime, gate)
         if gate.version != expected_version:
             raise StaleRecordError("Work gate changed.")
         CampaignWorkGate.objects.filter(pk=gate.pk).update(

@@ -135,11 +135,20 @@ def transition_campaign(
         for value in (expected_version, expected_runtime_version)
     ):
         raise ValueError("Expected versions must be positive integers.")
+    if any(
+        value is not None and not isinstance(value, UUID)
+        for value in (token_generation_id, boundary_id)
+    ):
+        raise TypeError("Optional lifecycle identifiers must be UUIDs.")
+    if task_fence is not None and (type(task_fence) is not int or task_fence < 1):
+        raise ValueError("Task fence must be a positive integer.")
+    if type(reason) is not str or len(reason) > 1024:
+        raise ValueError("Lifecycle reason must be bounded text.")
     with campaign_transaction(campaign_id, correlation_id=correlation_id) as (
         campaign,
         runtime,
     ):
-        admit(action, campaign, runtime)
+        admit(action, campaign, runtime, None)
         existing = CampaignTransition.objects.filter(request_id=request_id).first()
         if existing is not None:
             if (
@@ -208,7 +217,7 @@ def return_to_testing(
         campaign,
         runtime,
     ):
-        admit(Action.RETURN_TESTING, campaign, runtime)
+        admit(Action.RETURN_TESTING, campaign, runtime, None)
         existing = RuntimeTransition.objects.filter(request_id=request_id).first()
         if existing:
             if (

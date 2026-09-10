@@ -55,6 +55,11 @@ Owning callbacks must raise on failed authorization, readiness or external-effec
 proof. They execute while the relevant records are locked, must not call external
 providers, and are required again on idempotent replay. UUID attribution, a token
 generation reference, an occurrence state or a stored intent is not permission.
+All campaign storage callbacks use the same four positional arguments:
+`admit(action, campaign, runtime, subject)`. The subject is the locked occurrence,
+demand, hold or intent when available, otherwise `None`; callbacks must not rely
+on different argument counts for different operations. TaskRun's separate
+domain-verifier interface is unchanged.
 
 - Phase 1B supplies actual Google/Family sessions, token-generation records and
   service boundaries. No Family credential is generated or usable here.
@@ -73,12 +78,16 @@ generation reference, an occurrence state or a stored intent is not permission.
   transaction. BG-02 adds its explicit fenced preparation-allocation path before
   using occurrences during the catch-up hold; ordinary allocation and dispatch
   remain held. Reopen intentionally does not create activation catch-up: already
-  skipped closed-period mail stays terminal.
+  skipped closed-period mail stays terminal. Pre-start activation to `scheduled`
+  creates no catch-up demand; only direct activation to `active` does.
 - ADM-05/ADM-06 supply current authentication, confirmed readiness, complete
   Testing cleanup and all external quiescence/post-close proof. Restore runtime
   metadata remains frozen until OPS-06 supplies its journalled state-aware
   release, including proposed-state evidence; unrelated runtime writers cannot
   change these fields. No restore command is enabled by these schema additions.
+  Archive admission must inventory all semantic obligations, including those
+  without an occurrence yet: the storage callback is mandatory, and checking
+  existing rows alone is not a complete quiescence proof.
 - DAT-09/BG-11 bind the shared work-gate request identity to the actual
   PurgeRequest, enforce purge-worker transitions and perform destructive drainage.
   No deletion, backup or purge executor is exposed in this phase.
@@ -119,12 +128,27 @@ producer and transport termination and returns local capacity after closing the
 connection, even if the abandoned consumer never resumes. An abort callback
 that raises has violated this contract; local capacity stays reserved until
 owning-thread cleanup rather than claiming the producer stopped.
+Direct asynchronous/off-thread response consumption is unsupported: adapters
+must marshal disconnect cleanup to the owner. Deadline cleanup closes only the
+raw driver handle off-thread; owning-thread teardown marks the lost transaction
+closed before unwinding Django, and must not reconnect to restore autocommit.
+
+Post-close storage currently supports digest obligations identified by
+`schedule:<definition UUID>:<slot>`. It requires the exact skipped occurrence,
+`admin_post_close_skip` reason, and matching task/outbox references. An owner must
+create and cancel any missing occurrence atomically before recording coverage.
+One receipt cannot cover a later corrected version. DAT-06/DAT-07 extend this
+with concrete receipt/outbox identities and cancellation proof; a soft UUID alone
+is never a provider outcome. Coalesced fulfillment covers a semantic slot before
+dispatch, as specified; its replacement remains unresolved work until handled.
 
 Exceptional cancellation can be confirmed by another currently authorized Admin.
 The immutable cancellation records that resolving Admin; technical request
 checkpoints retain the original request's attribution. Recovery also handles a
 crash between preparing the exact snapshot and appending its prepared receipt.
 An applied request remains immutable and cannot acquire an abort journal.
+A journalled, never-applied cancellation can finish its terminal receipt after
+an unrelated coherent configuration advances; it never rewinds that newer YAML.
 
 ## Validation and reviews
 
@@ -165,3 +189,30 @@ scoped coverage is 96.01% lines and 88.56% branches. A subsequent focused
 13-test read-guard run also covers cancellation failure during deadline cleanup.
 Ruff, Markdown, migration-drift and whitespace checks pass. The remaining review
 rounds and final image/Compose validation are still required before handoff.
+
+Round 2 reviewed `d7483b0af1ccd104b3405f963d2ef8775503eab3` against the same
+complete base, using five Pika-assigned Claude shards and Pika's Codex reviewer.
+Both vendors completed without degradation, failed agents or verdict mismatch;
+19 findings were validated, including two High findings. Triage fixes 15 and
+retains four existing behaviors with explicit evidence:
+
+| Finding retained | Reason |
+| --- | --- |
+| Control reverse migration could discard a hypothetical intervening migration | No such migration exists in the dependency chain; restoring the frozen predecessor is correct. |
+| Coalesced coverage precedes replacement delivery | Required by the background specification; regression verifies coverage is not delivery success. |
+| Abandoned TaskRun blocks schedule replacement | Abandonment is nonterminal; regression proves explicit reconciliation/cancellation unblocks replacement. |
+| Foreign-thread read-guard close raises | The synchronous owning-thread contract is intentional; regression verifies rejection does not alter the owner's transaction. |
+
+Corrections cover both High findings, canonical occurrence recovery and SQL
+evidence, uniform campaign callback arity, strict command metadata, catch-up
+replay/fencing, abort recovery/NULL guards, download capacity reentrancy,
+checkpoint downgrade protection and reconnect-free response cleanup. Explicit
+close, draft-timezone and parish-default-timezone races complete DAT-02's
+required concurrency cases. Focused runs pass 119 and 33 PostgreSQL tests.
+The clean full rerun passes 1,958 baseline and 581 PostgreSQL tests, with 96.48%
+line and 89.45% branch coverage. An earlier run had two secret-expiry failures;
+the unchanged audit group passes all 30 tests separately, then the complete
+rerun passes. Reports are `/tmp/parishkit-phase1a-quality6.*`.
+All 30 rebuilt-image/Compose checks pass, including the same 1,958 image baseline
+tests. Ruff, Markdown, whitespace and migration-drift checks pass. The third
+independent review remains required before PR handoff.

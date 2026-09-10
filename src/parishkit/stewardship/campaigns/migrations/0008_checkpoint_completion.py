@@ -19,4 +19,13 @@ class Migration(migrations.Migration):
             name="phase",
             field=models.CharField(default="enumerating", max_length=32),
         ),
+        migrations.RunSQL(
+            migrations.RunSQL.noop,
+            reverse_sql="""
+DO $$ BEGIN IF EXISTS(SELECT 1 FROM stewardship_catchup_checkpoint) THEN
+    RAISE EXCEPTION 'Catch-up completion history prevents reversal'
+        USING ERRCODE='23514';
+END IF; END $$;
+""",
+        ),
     ]

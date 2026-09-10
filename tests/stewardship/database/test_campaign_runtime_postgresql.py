@@ -18,7 +18,7 @@ from parishkit.stewardship.campaigns.models import (
     RuntimeTransition,
 )
 from parishkit.stewardship.campaigns.runtime import transition_campaign
-from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
 from ..configuration_factory import configuration_version
 from .campaign_builders import admit_test_work, campaign_clock, command, draft_campaign
@@ -37,7 +37,7 @@ def test_activation_and_subsequent_policy_edit_have_independent_versions(tmp_pat
     assert campaign.state == "scheduled" and campaign.structural_locked
     assert not campaign.ever_active and runtime.mode == "production"
     assert runtime.version == runtime.configuration_sequence + 1
-    assert ActivationCatchUpDemand.objects.get().activation_id == result.pk
+    assert not ActivationCatchUpDemand.objects.exists()
     assert RuntimeTransition.objects.get().campaign_transition_id == result.pk
     version = configuration_version(
         AppliedConfigurationVersion.objects.get(
@@ -92,6 +92,18 @@ def test_transition_replay_is_exact_and_rechecks_admission(tmp_path):
         )
         with pytest.raises(StaleRecordError):
             transition_campaign(**(arguments | {"request_id": uuid4()}))
+        for change in (
+            {"action": Action.WITHDRAW},
+            {"actor_id": uuid4()},
+            {"token_generation_id": uuid4()},
+            {"boundary_id": uuid4()},
+            {"task_fence": 1},
+            {"reason": "different"},
+            {"expected_version": arguments["expected_version"] + 1},
+            {"expected_runtime_version": arguments["expected_runtime_version"] + 1},
+        ):
+            with pytest.raises(StorageInvariantError, match="different intent"):
+                transition_campaign(**(arguments | change))
 
         def revoked(*_):
             raise PermissionError("revoked")
@@ -118,3 +130,38 @@ def test_runtime_and_campaign_mutations_without_command_are_rejected(tmp_path):
             cursor.execute(f"UPDATE {table} SET {update}, version=version+1")
     assert Campaign.objects.get().state == "draft"
     assert SystemConfiguration.objects.get().mode == "testing"
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"token_generation_id": "00000000-0000-0000-0000-000000000001"},
+        {"boundary_id": "00000000-0000-0000-0000-000000000001"},
+        {"task_fence": True},
+        {"task_fence": "1"},
+        {"task_fence": 0},
+        {"reason": 1},
+        {"reason": "x" * 1025},
+    ],
+)
+def test_optional_lifecycle_metadata_is_canonical_before_writing(tmp_path, change):
+    """No implicit Django coercion can make the first command and replay disagree."""
+    _, campaign, actor = draft_campaign(tmp_path)
+    with pytest.raises((TypeError, ValueError)):
+        transition_campaign(
+            **(
+                dict(
+                    campaign_id=campaign.pk,
+                    action=Action.ACTIVATE,
+                    request_id=uuid4(),
+                    expected_version=campaign.version,
+                    expected_runtime_version=SystemConfiguration.objects.get().version,
+                    actor_id=actor,
+                    correlation_id=uuid4(),
+                    admit=admit_test_work,
+                    token_generation_id=uuid4(),
+                )
+                | change
+            )
+        )
+    assert not CampaignTransition.objects.exists()

@@ -49,8 +49,8 @@ BEGIN
     SELECT * INTO i FROM stewardship_campaign_config_intent WHERE id=NEW.intent_id;
     SELECT * INTO q FROM stewardship_config_request WHERE id=i.request_id FOR UPDATE;
     SELECT state INTO checkpoint_state FROM stewardship_config_checkpoint WHERE request_id=q.id ORDER BY sequence DESC LIMIT 1;
-    IF q.id IS NULL OR r.active_configuration_id<>q.base_id OR NEW.actor_id IS NULL OR btrim(NEW.reason)=''
-       OR checkpoint_state NOT IN ('validating','prepared','yaml_activated')
+    IF q.id IS NULL OR r.active_configuration_id IS DISTINCT FROM q.base_id OR NEW.actor_id IS NULL OR btrim(NEW.reason)=''
+       OR checkpoint_state IS NULL OR checkpoint_state NOT IN ('validating','prepared','yaml_activated')
        OR NOT EXISTS(SELECT 1 FROM stewardship_configuration_version v WHERE v.id=q.candidate_version_id
            AND v.digest=q.candidate_digest AND v.predecessor_id=q.base_id)
        OR EXISTS(SELECT 1 FROM stewardship_config_activation WHERE request_id=q.id) THEN

@@ -3,7 +3,9 @@
 from uuid import UUID
 
 from django.db.models import F
+from django.db.models.functions import Now
 
+from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
 from .models import ActivationCatchUpDemand, CatchUpCheckpoint, CatchUpFailure
@@ -142,31 +144,25 @@ def checkpoint_catchup(
     ):
         demand.refresh_from_db()
         admit("catchup_checkpoint", campaign, runtime, demand)
+        # Both a first checkpoint and an exact replay need a current owner of
+        # the bound execution chain. SQL repeats this proof against raw writes.
+        if (
+            not TaskRun.objects.select_for_update()
+            .filter(
+                pk=task_id,
+                root_id=demand.task_root_id,
+                state="running",
+                fence=fence,
+                worker_id=actor_id,
+                lease_expires_at__gt=Now(),
+            )
+            .exists()
+        ):
+            raise StaleRecordError("Catch-up requires current fenced input.")
         existing = CatchUpCheckpoint.objects.filter(
             demand=demand, group_key=group_key
         ).first()
         if existing:
-            from django.db.models.functions import Now
-
-            from parishkit.stewardship.jobs.models import TaskRun
-
-            # A retry may replay an earlier owner's group, but only a currently
-            # fenced member of the bound execution chain may observe success.
-            if (
-                not TaskRun.objects.select_for_update()
-                .filter(
-                    pk=task_id,
-                    root_id=demand.task_root_id,
-                    state="running",
-                    fence=fence,
-                    worker_id=actor_id,
-                    lease_expires_at__gt=Now(),
-                )
-                .exists()
-            ):
-                raise StorageInvariantError(
-                    "Catch-up replay requires current fenced input."
-                )
             if (existing.cursor, existing.items, existing.phase, existing.complete) != (
                 cursor,
                 items,

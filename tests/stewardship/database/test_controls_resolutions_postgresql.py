@@ -253,15 +253,13 @@ def test_restore_assumption_never_becomes_fulfillment(tmp_path):
 
 def test_postclose_exact_versions_do_not_suppress_later_corrections(tmp_path):
     """A later input version has distinct resolution, not reused coverage."""
-    _, campaign, actor = draft_campaign(tmp_path)
-    with campaign_clock(campaign.active_configuration.starts_at):
-        command(campaign, actor, Action.ACTIVATE)
-    close_campaign(campaign, actor)
+    store, campaign, actor, skipped = closed_digest(tmp_path)
     identifier = str(uuid4())
     arguments = dict(
         campaign_id=campaign.pk,
         mode="production",
-        obligation_key="weekly:2026-10-31",
+        obligation_key=f"schedule:{skipped.definition_id}:{skipped.slot}",
+        occurrence_id=skipped.pk,
         reason="Reviewed explicit skip",
         actor_id=actor,
         correlation_id=uuid4(),
@@ -276,8 +274,121 @@ def test_postclose_exact_versions_do_not_suppress_later_corrections(tmp_path):
         resolve_postclose(**(arguments | {"mode": "testing"}), coverage=coverage)
     assert resolve_postclose(**arguments, coverage=coverage).pk == first.pk
     coverage["items"][0]["version"] = 2
-    second = resolve_postclose(**arguments, coverage=coverage)
+    # A changed version is not covered by the prior skip. It needs a new
+    # occurrence/cancellation receipt, not reuse of the first evidence row.
+    with pytest.raises(IntegrityError):
+        resolve_postclose(**arguments, coverage=coverage)
+    from parishkit.stewardship.campaigns.schedules import create_occurrence
+
+    from .test_policy_postgresql import change
+    from .test_schedules_postgresql import advance
+
+    assert (
+        change(
+            store,
+            store.active(),
+            actor,
+            [
+                {
+                    "operation": "update",
+                    "section": "schedules",
+                    "id": str(skipped.definition_id),
+                    "values": {"time": "10:00:00"},
+                }
+            ],
+        ).state
+        == "applied"
+    )
+    definition = ScheduleDefinition.objects.get(pk=skipped.definition_id)
+    with campaign_clock(campaign.active_configuration.ends_at):
+        replacement = create_occurrence(
+            definition_id=definition.pk,
+            revision_id=definition.current_revision_id,
+            mode="production",
+            target=skipped.target,
+            slot=skipped.slot,
+            due_at=skipped.due_at,
+            actor_id=actor,
+            correlation_id=uuid4(),
+            admit=admit_test_work,
+        )
+        advance(replacement, actor, "skipped", reason="admin_post_close_skip")
+    second = resolve_postclose(
+        **(arguments | {"occurrence_id": replacement.pk}), coverage=coverage
+    )
     assert (
         first.coverage_digest != second.coverage_digest
         and PostCloseMailResolution.objects.count() == 2
     )
+
+
+def closed_digest(tmp_path):
+    """Build a real post-close digest skip with no TaskRun/outbox yet allocated."""
+    from parishkit.stewardship.campaigns.schedules import create_occurrence
+
+    from ..campaign_factory import schedule
+    from .test_policy_postgresql import change
+    from .test_schedules_postgresql import advance
+
+    store, campaign, actor = draft_campaign(tmp_path)
+    digest = schedule(str(campaign.pk), kind="daily_digest", date=None)
+    assert (
+        change(
+            store,
+            store.active(),
+            actor,
+            [{"operation": "add", "section": "schedules", **digest}],
+        ).state
+        == "applied"
+    )
+    campaign.refresh_from_db()
+    with campaign_clock(campaign.active_configuration.starts_at):
+        command(campaign, actor, Action.ACTIVATE)
+    close_campaign(campaign, actor)
+    definition = ScheduleDefinition.objects.get(pk=digest["id"])
+    with campaign_clock(campaign.active_configuration.ends_at):
+        row = create_occurrence(
+            definition_id=definition.pk,
+            revision_id=definition.current_revision_id,
+            mode="production",
+            target="admins",
+            slot="final-day",
+            due_at=campaign.active_configuration.ends_at,
+            actor_id=actor,
+            correlation_id=uuid4(),
+            admit=admit_test_work,
+        )
+        row = advance(row, actor, "skipped", reason="admin_post_close_skip")
+    return store, campaign, actor, row
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"evidence_id": "00000000-0000-0000-0000-000000000001"},
+        {"reason": 1},
+        {"expected_version": True},
+    ],
+)
+def test_control_input_types_are_validated_before_any_write(tmp_path, change):
+    """Command receipts must not change identity through implicit model coercion."""
+    _, campaign, actor = draft_campaign(tmp_path)
+    with pytest.raises((TypeError, ValueError)):
+        change_control(
+            **(
+                dict(
+                    campaign_id=campaign.pk,
+                    request_id=uuid4(),
+                    action="pause",
+                    expected_version=campaign.version,
+                    expected_runtime_version=SystemConfiguration.objects.get().version,
+                    actor_id=actor,
+                    correlation_id=uuid4(),
+                    admit=admit_test_work,
+                    reason="Reviewed",
+                )
+                | change
+            )
+        )
+    campaign.refresh_from_db()
+    assert not campaign.delivery_paused

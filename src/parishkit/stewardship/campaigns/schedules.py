@@ -248,10 +248,15 @@ def recover_occurrence(
             raise StaleRecordError("Occurrence recovery inputs changed.")
         if row.state not in {"running", "delivery_unknown"}:
             raise StorageInvariantError("Only unresolved execution can be reconciled.")
-        if row.state == "running":
-            task = TaskRun.objects.select_for_update().get(pk=row.task_id)
-            if task.state not in {"abandoned", "cancelled", "succeeded", "failed"}:
-                raise StorageInvariantError("Task ownership must be reconciled first.")
+        if row.state == "delivery_unknown" and action not in {
+            "recovery_retry",
+            "recovery_complete",
+            "recovery_fail",
+        }:
+            raise StorageInvariantError("Unknown delivery requires a resolved outcome.")
+        task = TaskRun.objects.select_for_update().get(pk=row.task_id)
+        if task.state not in {"abandoned", "cancelled", "succeeded", "failed"}:
+            raise StorageInvariantError("Task ownership must be reconciled first.")
         row.state, row.reason = outcomes[action], action
         row.lease_expires_at, row.replacement_id = None, replacement_id
         row.actor_id, row.correlation_id = actor_id, correlation_id

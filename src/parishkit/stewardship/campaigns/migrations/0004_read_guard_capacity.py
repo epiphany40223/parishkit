@@ -25,6 +25,11 @@ BEGIN
     END IF;
     -- The row lock serializes new slot claims with resizing. Session-owned
     -- slots cannot be taken over because a timer or heartbeat expired.
+    IF EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory'
+        AND pid=pg_backend_pid() AND classid=736222 AND objsubid=2 AND granted) THEN
+        RAISE EXCEPTION 'A download-owning session cannot resize capacity'
+            USING ERRCODE = '23514';
+    END IF;
     FOR slot IN 0..31 LOOP
         IF NOT pg_try_advisory_xact_lock(736222, slot) THEN
             RAISE EXCEPTION 'Active downloads prevent capacity changes'
@@ -41,6 +46,10 @@ EXECUTE FUNCTION stewardship_download_budget_v1();
             reverse_sql="""
 LOCK TABLE stewardship_download_policy IN ACCESS EXCLUSIVE MODE;
 DO $$ DECLARE slot integer; BEGIN
+    IF EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory'
+        AND pid=pg_backend_pid() AND classid=736222 AND objsubid=2 AND granted) THEN
+        RAISE EXCEPTION 'A download-owning session cannot downgrade capacity';
+    END IF;
     FOR slot IN 0..31 LOOP
         IF NOT pg_try_advisory_xact_lock(736222, slot) THEN
             RAISE EXCEPTION 'Active downloads prevent schema downgrade';

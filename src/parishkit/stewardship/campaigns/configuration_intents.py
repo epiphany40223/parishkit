@@ -30,7 +30,7 @@ def bind_configuration_intent(
         campaign,
         runtime,
     ):
-        admit(action, campaign, runtime)
+        admit(action, campaign, runtime, None)
         existing = CampaignConfigurationIntent.objects.filter(
             request_id=request_id
         ).first()
@@ -96,7 +96,7 @@ def verify_intent(request_id, admit):
         raise StaleRecordError(
             "Exceptional campaign inputs changed; refresh readiness."
         )
-    admit(intent.action, campaign, runtime)
+    admit(intent.action, campaign, runtime, intent)
 
 
 def verify_intent_receipt(request_id, admit):
@@ -112,6 +112,7 @@ def verify_intent_receipt(request_id, admit):
         "configuration_receipt",
         Campaign.objects.get(pk=intent.campaign_id),
         SystemConfiguration.objects.get(),
+        intent,
     )
 
 
@@ -152,7 +153,7 @@ def abort_configuration_intent(
             runtime = SystemConfiguration.objects.select_for_update().get()
             intent = CampaignConfigurationIntent.objects.get(request=request)
             campaign = Campaign.objects.select_for_update().get(pk=intent.campaign_id)
-            admit("abort_configuration", campaign, runtime)
+            admit("abort_configuration", campaign, runtime, intent)
             abort = CampaignConfigurationAbort.objects.filter(intent=intent).first()
             if abort is None:
                 CampaignConfigurationAbort.objects.create(

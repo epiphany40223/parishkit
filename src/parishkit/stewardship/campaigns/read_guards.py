@@ -300,6 +300,12 @@ class CampaignReadGuard:
         if self._timer:
             self._timer.cancel()
         if self._stack:
+            if self._raw is not None and self._raw.closed and self.db.in_atomic_block:
+                # The timer may close the raw handle, but only this owning
+                # thread may update Django's transaction bookkeeping. Without
+                # this marker Atomic.__exit__ can reconnect to set autocommit.
+                self.db.closed_in_transaction = True
+                self.db.needs_rollback = True
             # Always roll back a read transaction, including a cancelled raw
             # connection; never attempt a successful commit after expiration.
             self._stack.__exit__(ReadUnavailable, ReadUnavailable(), None)
