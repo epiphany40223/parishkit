@@ -38,6 +38,34 @@ def configuration_at(path, *, production=False):
 
 
 @pytest.mark.parametrize("production", [False, True])
+def test_operational_fixture_does_not_mount_host_temporary_paths(tmp_path, production):
+    """Linux host staging cannot make writable /tmp an ancestor of credentials."""
+    from .test_operational_compose import seed_runtime
+
+    staging = tmp_path / "host-temporary-seed"
+    configuration, compose = seed_runtime(staging, production=production)
+    container_root = configuration.paths.root
+    assert container_root == Path("/opt/parishkit-integration")
+    for service in compose["services"].values():
+        for mount in service["volumes"]:
+            source, target = Path(mount["source"]), Path(mount["target"])
+            assert not target.is_relative_to(staging)
+            if source.is_relative_to(container_root):
+                seed = staging / source.relative_to(container_root)
+                # Bootstrap generates purpose keys later; their private parent
+                # already exists, but the seed must not fabricate their values.
+                assert seed.exists() or seed.parent.exists()
+    layout = RuntimeLayout(configuration)
+    for name in ("web", "config-installer", "bootstrap"):
+        document = staging / (layout.service_directory / f"{name}.yaml").relative_to(
+            container_root
+        )
+        loaded = load_deployment(document, environ={})
+        assert loaded.paths.root == container_root
+        assert str(staging) not in document.read_text()
+
+
+@pytest.mark.parametrize("production", [False, True])
 def test_rendered_foundation_enforces_individual_mounts_and_profiles(
     tmp_path, production
 ):

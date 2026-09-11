@@ -32,7 +32,16 @@ IMAGE = "parishkit-stewardship:development"
 
 def seed_runtime(root, *, production=False):
     """Only synthetic credentials; fixture ownership is translated on native Linux."""
-    configuration = configuration_at(root, production=production)
+    # The host's pytest directory may live under /tmp. It is staging, not a
+    # container deployment path: placing credentials beneath writable /tmp
+    # correctly fails the runtime's broad-ancestor mount guard on Linux.
+    runtime_root = Path("/opt/parishkit-integration")
+    configuration = configuration_at(runtime_root, production=production)
+
+    def staged(path):
+        """Map a container-owned path into this test's private host seed tree."""
+        return root / path.relative_to(runtime_root)
+
     configuration = replace(
         configuration,
         public_origin="https://parish.example"
@@ -40,12 +49,12 @@ def seed_runtime(root, *, production=False):
         else "http://localhost:8000",
         valkey=replace(
             configuration.valkey,
-            password_file=root / "credentials" / "valkey" / "web",
+            password_file=runtime_root / "credentials" / "valkey" / "web",
         ),
         postgres=replace(
             configuration.postgres,
             password_files={
-                name: root / "credentials" / "selected-sql" / name
+                name: runtime_root / "credentials" / "selected-sql" / name
                 for name in (
                     "operator",
                     "web",
@@ -73,25 +82,26 @@ def seed_runtime(root, *, production=False):
         configuration.paths["cache"] / "static",
     ]
     for directory in directories:
+        directory = staged(directory)
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         directory.chmod(0o700)
     for name in ["operator", *(item[0] for item in database_identities())]:
         write_private(
-            layout.database_password(name), secrets.token_urlsafe(32).encode()
+            staged(layout.database_password(name)), secrets.token_urlsafe(32).encode()
         )
-    write_private(layout.interlock, MARKER)
+    write_private(staged(layout.interlock), MARKER)
     write_private(
-        layout.credential("google_oauth"),
+        staged(layout.credential("google_oauth")),
         b'{"client_id":"fake-client","client_secret":"fake-secret"}',
     )
-    write_private(configuration.valkey.password_file, b"disposable-valkey-only")
+    write_private(staged(configuration.valkey.password_file), b"disposable-valkey-only")
     write_private(
-        configuration.paths["cache"] / "static" / "synthetic.txt",
+        staged(configuration.paths["cache"] / "static" / "synthetic.txt"),
         b"Synthetic static fixture",
     )
     # The fixture uses the same restricted vocabulary needed by limiter/metrics.
     write_private(
-        configuration.valkey.password_file.parent / "server.acl",
+        staged(configuration.valkey.password_file.parent / "server.acl"),
         web_acl(b"disposable-valkey-only"),
     )
     compose, documents = render_runtime(
@@ -106,9 +116,9 @@ def seed_runtime(root, *, production=False):
                 "        }",
                 "issuer internal",
             )
-            write_private(path, document.encode())
+            write_private(staged(path), document.encode())
         else:
-            write_private(path, json.dumps(document).encode())
+            write_private(staged(path), json.dumps(document).encode())
     if production:
         for service in compose["services"].values():
             if service["image"] == PRODUCTION_IMAGE:
@@ -191,8 +201,10 @@ def test_complete_foundation_bootstrap_and_online_exclusion(tmp_path, production
         for service in compose["services"].values():
             for mount in service["volumes"]:
                 path = Path(mount["source"])
-                if path.is_relative_to(root):
-                    mount["source"] = str(mountpoint / path.relative_to(root))
+                if path.is_relative_to(configuration.paths.root):
+                    mount["source"] = str(
+                        mountpoint / path.relative_to(configuration.paths.root)
+                    )
         file.write_text(json.dumps(compose))
         compose_run(file, project, "up", "--detach", "--wait", "postgres", "valkey")
         for command in ("database-roles",):

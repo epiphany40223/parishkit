@@ -48,6 +48,20 @@ def test_each_role_has_an_explicit_mount_allowlist(role):
     assert validate_mounts(config, mounts) is role
 
 
+def test_tmpfs_cannot_be_a_broad_ancestor_of_private_runtime_storage():
+    """A host /tmp staging path must never become a consumer deployment root."""
+    config = replace(
+        load_deployment(environ={"PARISHKIT_ROOT": "/tmp/synthetic-deployment"}),
+        service_role=ServiceRole.WEB,
+    )
+    mounts = [Mount(Path("/"), True), Mount(config.paths["authority"], True)]
+    assert validate_mounts(config, mounts) is ServiceRole.WEB
+    with pytest.raises(ConfigError, match="broad or unrelated privileged mount"):
+        validate_mounts(
+            config, [*mounts, Mount(Path("/tmp"), False, "tmpfs", "/", "tmpfs")]
+        )
+
+
 @pytest.mark.parametrize(
     "role", [ServiceRole.WEB, ServiceRole.WORKER, ServiceRole.BACKUP_WORKER]
 )

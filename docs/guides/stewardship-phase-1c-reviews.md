@@ -325,3 +325,25 @@ All three review/fix rounds are complete, with no High/Critical issue in the
 last round and no unresolved accepted Medium+ findings. Native Linux PR CI and
 human merge/Gate 1 approval remain required; Phase 2 is not released by local
 validation alone.
+
+### Native Linux CI fixture correction
+
+The first PR #21 CI run passed main validation and browser checks, but its
+operational Compose test exposed a host/container path conflation. Linux pytest
+staging lives below `/tmp`; the fixture incorrectly used that host path as the
+container runtime root. Its writable `/tmp` mount was therefore a broad ancestor
+of credentials, which the existing mount guard correctly refused. Docker Desktop's
+macOS staging path did not encounter this collision.
+
+The fixture now stages files under pytest's private host directory while using
+`/opt/parishkit-integration` only inside its isolated containers. Bind sources are
+mapped to the disposable volume independently of targets and rendered settings.
+Focused tests cover both profiles and explicitly retain the broad-ancestor
+refusal. No application code, grant, mount-admission rule or deployment behavior
+changes; this is a test-portability correction, not a material application CI fix
+requiring another independent implementation review. Native CI must pass before
+the remaining technical checklist is closed.
+
+Post-fix local validation passes all 43 focused mount/topology tests, both
+complete Compose scenarios and 2,707 baseline tests. Application source and the
+previously validated image/991-test PostgreSQL scope are unchanged.
