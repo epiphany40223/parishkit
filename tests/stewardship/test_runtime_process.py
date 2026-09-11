@@ -128,3 +128,16 @@ def test_gunicorn_worker_print_cannot_receive_private_startup_exception(
         )
     assert "private" not in str(error.value)
     assert error.value.__suppress_context__
+
+
+def test_gunicorn_worker_receipt_hook_sanitizes_private_failures(monkeypatch):
+    """Post-init failures are outside the application loader's error boundary."""
+
+    def fail(worker):
+        raise ValueError("private-credential-path-or-value")
+
+    monkeypatch.setattr(runtime_process, "publish_worker_receipts", fail)
+    with pytest.raises(ConfigError) as error:
+        runtime_process.admitted_worker_started(SimpleNamespace(pid=1))
+    assert "private" not in str(error.value)
+    assert error.value.__suppress_context__

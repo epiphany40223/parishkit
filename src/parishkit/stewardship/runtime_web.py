@@ -9,7 +9,8 @@ from importlib import import_module
 from parishkit.config import ConfigError
 
 from .accounts.cryptography import independent_keyrings
-from .accounts.key_files import load_keyring, read_private
+from .accounts.key_files import _unique_object, parse_keyring, read_private
+from .accounts.metrics_credentials import MetricsCredential, credential_receipt
 from .deployment import DeploymentProfile, ServiceRole
 from .runtime_database import database_settings
 from .runtime_health import RuntimeHealth
@@ -38,8 +39,13 @@ def google_client(path):
     never returns this document in diagnostics or persists a SocialApp secret.
     Ownership of the Google account itself is established only during Google login.
     """
+    return parse_google_client(read_private(path))
+
+
+def parse_google_client(raw):
+    """Parse the same admitted bytes later identified by the consumer receipt."""
     try:
-        value = json.loads(read_private(path))
+        value = json.loads(raw, object_pairs_hook=_unique_object)
         if type(value) is not dict or set(value) != {"client_id", "client_secret"}:
             raise ValueError
         if any(
@@ -123,13 +129,16 @@ def configure_web(configuration):
     }
     if configuration.secrets.keys() != required:
         raise ConfigError("Web credential mounts are incomplete.")
+    # Read each mounted inode once. A receipt must identify bytes actually used
+    # by this worker, not a later reopening that could observe another file.
+    loaded = {name: read_private(configuration.secrets[name]) for name in required}
     rings = {
-        name: load_keyring(configuration.secrets[name], name)
+        name: parse_keyring(loaded[name], name)
         for name in required - {"google_oauth", "metrics"}
     }
     independent_keyrings(*rings.values())
-    oauth = google_client(configuration.secrets["google_oauth"])
-    metrics_token = read_private(configuration.secrets["metrics"])
+    oauth = parse_google_client(loaded["google_oauth"])
+    metrics_token = MetricsCredential.parse(loaded["metrics"]).token
     base = import_module("parishkit.stewardship.settings.base")
     values = {name: getattr(base, name) for name in dir(base) if name.isupper()}
     ordinary = database_settings(configuration)
@@ -235,4 +244,7 @@ def configure_web(configuration):
     # thread-local connections as needed, bounded by the separately checked roles.
     connections.close_all()
     client.connection_pool.disconnect()
+    settings.STEWARDSHIP_LOADED_CREDENTIAL_RECEIPTS = {
+        name: credential_receipt(raw, name) for name, raw in loaded.items()
+    }
     return settings.STEWARDSHIP_HEALTH_RUNTIME

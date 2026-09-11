@@ -10,7 +10,6 @@ needed to distinguish a matching retry from an unrelated existing credential.
 import base64
 import json
 import os
-import re
 import secrets
 from dataclasses import dataclass
 from uuid import UUID, uuid5
@@ -28,6 +27,7 @@ from .accounts.key_files import (
     serialize_keyring,
     write_private,
 )
+from .accounts.metrics_credentials import MetricsCredential
 from .accounts.policy_schema import normalized_email
 from .deployment import SECRET_NAMES, ServiceRole
 from .deployment_documents import deployment_document
@@ -176,7 +176,7 @@ def _layout(configuration):
 def _generate(identity, target, candidates):
     """Generate only a missing owned candidate, with public material derived last."""
     if target == "metrics":
-        return secrets.token_urlsafe(32).encode()
+        return MetricsCredential.generate().serialize()
     if target == "token_public":
         private = parse_keyring(candidates["token_private"], "token_private")
         return serialize_keyring(private.public())
@@ -196,8 +196,7 @@ def _candidates(layout, identity, *, existing=False):
             existing=existing,
         )
         if target == "metrics":
-            if re.fullmatch(rb"[A-Za-z0-9_-]{43}", value) is None:
-                raise ConfigError("Initial metrics credential is invalid.")
+            MetricsCredential.parse(value)
         else:
             ring = parse_keyring(value, target)
             key_target = "token_private" if target == "token_public" else target

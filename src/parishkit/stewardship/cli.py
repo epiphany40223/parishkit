@@ -26,6 +26,7 @@ _COMMAND_OPTIONS = {
     "healthcheck": set(),
     "health": {"config"},
     "runtime": {"config"},
+    "acknowledge-credential": {"config", "request_id"},
     "prepare-development": {"runtime_root"},
     "bootstrap": {"config", "phase", "deployment_id", "admin_email"},
     "migrate": {"config"},
@@ -87,6 +88,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "confirm-email",
         "operator-name",
         "reason",
+        "request-id",
     ):
         parser.add_argument("--" + option)
     parser.add_argument(
@@ -131,6 +133,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from .runtime_process import execute_runtime
 
         return execute_runtime(args)
+    if args.command == "acknowledge-credential":
+        from .credential_runtime import execute_acknowledgement
+
+        return execute_acknowledgement(args)
     if args.command == "health":
         from .runtime_diagnostics import execute_health
 

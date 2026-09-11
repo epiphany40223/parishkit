@@ -7,9 +7,14 @@ from threading import Event as StopEvent
 
 from parishkit.config import ConfigError
 
+from .consumer_runtime import (
+    DIRECTORY,
+    publish_supervisor_identity,
+    publish_worker_receipts,
+)
 from .deployment import DeploymentProfile, ServiceRole, load_deployment
 from .observability import Event, configure_logging, emit
-from .runtime_paths import RuntimeLayout
+from .runtime_paths import RuntimeLayout, private_directory
 from .startup_interlock import StartupLease
 
 
@@ -28,6 +33,11 @@ def gunicorn_options(configuration):
         "graceful_timeout": budget.drain_seconds,
         "keepalive": 5,
         "worker_tmp_dir": "/tmp",
+        # Gunicorn forcibly chmods its native pidfile to 0644. Our startup hook
+        # instead records the master in the owner-only receipt directory.
+        "on_starting": publish_supervisor_identity,
+        "umask": 0o077,
+        "post_worker_init": admitted_worker_started,
         "accesslog": None,
         "errorlog": "-",
         "forwarded_allow_ips": "",  # The application admits its one exact proxy.
@@ -35,6 +45,16 @@ def gunicorn_options(configuration):
         "limit_request_fields": 64,
         "limit_request_field_size": 8190,
     }
+
+
+def admitted_worker_started(worker):
+    """Publish loaded receipts without exposing hook failures to Gunicorn stderr."""
+    try:
+        publish_worker_receipts(worker)
+    except Exception:
+        raise ConfigError(
+            "Web worker readiness evidence could not be recorded."
+        ) from None
 
 
 def serve_web(configuration, lease):
@@ -50,6 +70,7 @@ def serve_web(configuration, lease):
     from gunicorn.glogging import Logger
 
     lease.check()
+    private_directory(DIRECTORY, create=True)
 
     class PrivateLogger(Logger):
         """Gunicorn's own handler setup must not restore unredacted error logging."""
@@ -169,17 +190,52 @@ def serve_configuration_installer(configuration, lease):
     from .accounts.configuration_service import ConfigurationInstaller
 
     installer = ConfigurationInstaller.from_configuration(configuration)
-    stop = StopEvent()
-
-    def stopping(signum, frame):
-        """Stop promptly after the current finite atomic/recoverable unit finishes."""
-        stop.set()
 
     def run_once():
         """The queue selects opaque identities, never caller-specified file paths."""
         identifier = next_configuration_request()
         if identifier is not None:
             installer.run_request(identifier)
+
+    return serve_installer_loop(run_once, lease)
+
+
+def serve_credential_installer(configuration, lease):
+    """Run only this target's durable queue and private-file reconciliation."""
+    from .operator_commands import configure_operator_database
+    from .runtime_grants import admit_runtime_database
+    from .runtime_web import admit_lifecycle_mounts
+    from .service_boundaries import admit_online_service
+
+    if admit_online_service(configuration) is not ServiceRole.CREDENTIAL_INSTALLER:
+        raise ConfigError("Credential runtime requires its isolated target profile.")
+    admit_lifecycle_mounts(configuration)
+    configure_operator_database(configuration)
+    admit_runtime_database(configuration)
+    from .accounts.credential_installation import CredentialInstaller
+    from .credential_runtime import (
+        validate_metrics_candidate,
+        validation_unavailable,
+    )
+
+    validator = (
+        validate_metrics_candidate
+        if configuration.credential_target == "metrics"
+        else validation_unavailable
+    )
+    installer = CredentialInstaller.from_configuration(
+        configuration, validate=validator
+    )
+    return serve_installer_loop(installer.run_once, lease)
+
+
+def serve_installer_loop(run_once, lease):
+    """Share bounded retry, signal restoration and socket cleanup across installers."""
+    stop = StopEvent()
+
+    def stopping(signum, frame):
+        """Stop promptly after the current finite atomic/recoverable unit finishes."""
+        stop.set()
 
     previous = {
         sig: signal.signal(sig, stopping) for sig in (signal.SIGTERM, signal.SIGINT)
@@ -203,6 +259,7 @@ def execute_runtime(args):
         runners = {
             ServiceRole.WEB: serve_web,
             ServiceRole.CONFIG_INSTALLER: serve_configuration_installer,
+            ServiceRole.CREDENTIAL_INSTALLER: serve_credential_installer,
         }
         runner = runners.get(configuration.service_role)
         if runner is None:

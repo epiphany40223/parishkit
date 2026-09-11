@@ -22,6 +22,7 @@ def health_command(configuration):
     from .accounts.authority import AuthorityStore
     from .accounts.configuration_schema import validate_sections
     from .accounts.key_files import read_private
+    from .accounts.metrics_credentials import MetricsCredential
     from .operator_commands import configure_operator_database
     from .runtime_grants import admit_runtime_database
     from .runtime_health import RuntimeHealth
@@ -39,7 +40,9 @@ def health_command(configuration):
                 configuration,
                 AuthorityStore(configuration.paths["authority"], validate_sections),
                 client,
-                read_private(configuration.secrets["metrics"]),
+                MetricsCredential.parse(
+                    read_private(configuration.secrets["metrics"])
+                ).token,
             )
             result = runtime.checks()
             try:

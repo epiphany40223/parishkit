@@ -248,6 +248,138 @@ def test_complete_foundation_bootstrap_and_online_exclusion(tmp_path):
             str(layout.service_directory / "web.yaml"),
         )
         assert json.loads(diagnosis.stdout)["ready"] is True
+        cohort_probe = (
+            "import json, sys\nfrom pathlib import Path\n"
+            "from parishkit.stewardship.deployment import load_deployment\n"
+            "from parishkit.stewardship import consumer_runtime as consumers\n"
+            "value = consumers.loaded_service_receipts("
+            "load_deployment(Path(sys.argv[1])))\n"
+            "print(json.dumps({'targets': sorted(value), 'workers_agree': True}))\n"
+        )
+        workers = compose_run(
+            file,
+            project,
+            "exec",
+            "-T",
+            "web",
+            "python",
+            "-c",
+            cohort_probe,
+            str(layout.service_directory / "web.yaml"),
+        )
+        assert json.loads(workers.stdout) == {
+            "workers_agree": True,
+            "targets": [
+                "django_signing",
+                "family_code_mac",
+                "general_encryption",
+                "google_oauth",
+                "metrics",
+                "token_public",
+            ],
+        }
+        # A newly launched one-off container may reopen the same files but has
+        # no admitted supervisor/worker cohort, and cannot attest for the service.
+        one_off = compose_run(
+            file,
+            project,
+            "run",
+            "--rm",
+            "--entrypoint",
+            "python",
+            "web",
+            "-c",
+            cohort_probe,
+            str(layout.service_directory / "web.yaml"),
+            check=False,
+        )
+        assert one_off.returncode != 0
+        rotation_script = (
+            Path(__file__).with_name("runtime_rotation_probe.py").read_text()
+        )
+        installer = "credential-installer-metrics"
+        installer_configuration = str(layout.service_directory / (installer + ".yaml"))
+        public = compose_run(
+            file,
+            project,
+            "run",
+            "--rm",
+            "--entrypoint",
+            "python",
+            installer,
+            "-c",
+            rotation_script,
+            installer_configuration,
+            "public",
+        )
+        staged = compose_run(
+            file,
+            project,
+            "exec",
+            "-T",
+            "web",
+            "python",
+            "-c",
+            rotation_script,
+            str(layout.service_directory / "web.yaml"),
+            "stage",
+            public.stdout.strip(),
+        )
+        identifier = json.loads(staged.stdout)["request_id"]
+        compose_run(file, project, "up", "--detach", installer)
+
+        def wait_for_state(expected):
+            """Observe only the exact synthetic request through web's normal grants."""
+            deadline = time.monotonic() + 30
+            while True:
+                result = compose_run(
+                    file,
+                    project,
+                    "exec",
+                    "-T",
+                    "web",
+                    "python",
+                    "-c",
+                    rotation_script,
+                    str(layout.service_directory / "web.yaml"),
+                    "state",
+                    identifier,
+                )
+                state = json.loads(result.stdout)["state"]
+                if state == expected:
+                    return
+                if time.monotonic() >= deadline:
+                    logs = compose_run(file, project, "logs", installer)
+                    pytest.fail(f"Synthetic rotation stayed {state}: {logs.stdout}")
+                time.sleep(0.5)
+
+        wait_for_state("awaiting_ack")
+        acknowledgement = (
+            "exec",
+            "-T",
+            "web",
+            "pk-stewardship",
+            "acknowledge-credential",
+            "--config",
+            str(layout.service_directory / "web.yaml"),
+            "--request-id",
+            identifier,
+        )
+        old_consumer = compose_run(file, project, *acknowledgement, check=False)
+        assert old_consumer.returncode == 2
+        assert "acknowledgement refused" in old_consumer.stderr
+        # Compose stops/removes the old process namespace and remounts the new
+        # credential inode. An ordinary worker reload cannot accomplish this.
+        compose_run(file, project, "up", "--detach", "--force-recreate", "web")
+        deadline = time.monotonic() + 30
+        while True:
+            result = compose_run(file, project, *acknowledgement, check=False)
+            if result.returncode == 0:
+                break
+            if time.monotonic() >= deadline:
+                pytest.fail("Recreated synthetic consumer could not acknowledge")
+            time.sleep(0.5)
+        wait_for_state("applied")
         denied = compose_run(file, project, "run", "--rm", "migration", check=False)
         assert denied.returncode != 0
         assert "offline operation refused" in denied.stderr

@@ -146,3 +146,47 @@ runbook failure injection and final coverage/browser/review rounds remain in thi
 same Phase 1C batch. Generated definitions are still internal integration output,
 not an authorized deployment or a completed task/review gate. Later feature-owned
 services remain unavailable until their implementations are admitted.
+
+## Credential-consumer integration checkpoint
+
+Metrics credentials now use a strict owner-only JSON document with an independent
+random public receipt and a separate bearer token. Durable request, checkpoint,
+acknowledgement and audit records contain that receipt, never the token or its
+hash. Private installer journals retain exact-byte integrity and rollback checks.
+Current and historical receipt reuse is refused.
+
+Each admitted Gunicorn worker publishes only loaded credential receipts and
+kernel PID/start-time identities into private container tmpfs. The operator-only
+`acknowledge-credential --config <web-config> --request-id <UUID>` command runs
+inside the recreated web service and verifies its entire live worker cohort,
+actual mounted credentials, SQL authority and request state. A one-off container,
+partial startup, worker disagreement or old file inode cannot acknowledge.
+The current cohort confirmation supports one web container with multiple workers;
+it explicitly refuses multi-container replica configurations rather than treating
+one replica as evidence for all others. No Docker socket is mounted in the app.
+
+Target-isolated credential installer process loops now run the existing durable
+queue. Metrics has complete local candidate validation. Other targets retain a
+bounded unavailable/retry outcome until their provider or key-retirement owners
+supply the required validation; syntax-only provider acceptance is not enabled.
+
+Validation at this checkpoint:
+
+- Five PostgreSQL metrics scenarios pass, including apply, deadline rollback,
+  current/historical receipt reuse and tampered-file refusal. Durable rows are
+  checked for both token and token/file-hash absence.
+- Fifty-five focused worker/metrics/process tests pass; nineteen credential
+  command/process tests pass after adding the CLI integration.
+- The credential-free baseline passes 2,524 tests, with 1,032 explicit opt-in
+  skips. This is an intermediate count before subsequent integration additions.
+- The rebuilt-image development Compose scenario passes in 24 seconds. It
+  stages a sealed synthetic replacement through web's actual SQL identity,
+  runs the real metrics installer, refuses old-container acknowledgement,
+  force-recreates the complete web service, records its acknowledgement through
+  the operator command and observes the final applied state. Separate one-off
+  container confirmation is refused. Existing bootstrap, health and offline
+  exclusion assertions continue to pass.
+
+This is not Phase 1C completion. Provisioning, production ingress hardening and
+execution, remaining operational runbooks/failure injection, final validation and
+three review/fix rounds remain in the same PR-sized batch.
