@@ -152,6 +152,47 @@ def test_timeout_interrupts_real_socket_before_releasing_download(tmp_path, chan
     pool.release()
 
 
+def test_stalled_producer_keeps_capacity_until_owner_closes(tmp_path, channel):
+    """A closed transport/SQL handle is insufficient while the producer is locked."""
+    from parishkit.stewardship.campaigns.read_guards import DownloadBusy
+
+    _, campaign, _ = draft_campaign(tmp_path)
+    pool, failures = DownloadPool(ReadLimits(process_pool_size=1)), []
+    response = campaign_response(
+        channel[0],
+        [campaign.pk],
+        authorize=lambda _: None,
+        open_content=lambda: iter([b"private"]),
+        filename="report.csv",
+        content_type="text/csv",
+        pool=pool,
+    )
+    content = response._iterator
+
+    def deadline():
+        """The real abort deadline cannot acquire a producer stalled in its step."""
+        try:
+            content.guard._expire()
+        except ReadUnavailable as error:
+            failures.append(str(error))
+
+    try:
+        with content.producing:
+            thread = Thread(target=deadline)
+            thread.start()
+            thread.join(timeout=5)
+            assert not thread.is_alive()
+            assert failures == ["The response producer has not stopped."]
+            with pytest.raises(DownloadBusy):
+                pool.acquire()
+        with pytest.raises(DownloadBusy):
+            pool.acquire()
+    finally:
+        response.close()
+    pool.acquire()
+    pool.release()
+
+
 def test_source_failure_releases_response(tmp_path, channel):
     """Failed lazy serialization cannot retain the guarded transaction."""
     _, campaign, _ = draft_campaign(tmp_path)

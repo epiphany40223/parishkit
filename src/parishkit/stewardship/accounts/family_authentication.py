@@ -47,7 +47,7 @@ from .cryptography import (
 )
 from .limiting import Counter, Limiter, LimiterUnavailable
 from .policy import Principal
-from .sessions import FAMILY_ABSOLUTE, FAMILY_IDLE, database_now
+from .sessions import FAMILY_ABSOLUTE, FAMILY_IDLE, database_now, revoke_family_sessions
 
 
 @dataclass(frozen=True)
@@ -211,9 +211,12 @@ def issue_family(request, service, identity, *, code=None, token=None):
         ):
             return False
         now = database_now()
-        FamilySession.objects.filter(
-            session_id=request.session.session_key, revoked_at__isnull=True
-        ).update(revoked_at=now, version=F("version") + 1)
+        prior = list(
+            FamilySession.objects.select_for_update().filter(
+                session_id=request.session.session_key, revoked_at__isnull=True
+            )
+        )
+        revoke_family_sessions(prior, now=now)
         request.session = import_module(settings.SESSION_ENGINE).SessionStore()
         request.session["family"] = str(family_id)
         request.session.set_expiry(now + FAMILY_ABSOLUTE)

@@ -115,6 +115,23 @@ class ImmutableRecord(DurableRecord):
         raise StorageInvariantError("Historical records cannot be deleted.")
 
 
+def validate_mutation(record):
+    """Validate service values while preserving nullable storage fields.
+
+    Django's form-oriented blank check is stricter than null=True. Only actual
+    None values in nullable columns are excluded; model clean() still runs and
+    SQL remains authoritative for unique and cross-field constraints.
+    """
+    optional = {
+        field.name
+        for field in record._meta.concrete_fields
+        if field.null and getattr(record, field.attname) is None
+    }
+    record.full_clean(
+        exclude=optional, validate_unique=False, validate_constraints=False
+    )
+
+
 def mutate_record(
     model, identifier, *, expected_version, actor_id, correlation_id, change
 ):
@@ -151,7 +168,7 @@ def mutate_record(
         record.correlation_id = correlation_id
         # Keep field/domain validation, but let SQL enforce uniqueness and CHECKs
         # without issuing one validation SELECT for every database constraint.
-        record.full_clean(validate_unique=False, validate_constraints=False)
+        validate_mutation(record)
         record.save()
         # Concrete mutable tables install a trigger that owns the write instant.
         record.refresh_from_db(fields=["updated_at"])

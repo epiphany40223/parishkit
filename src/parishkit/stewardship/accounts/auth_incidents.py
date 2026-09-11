@@ -2,7 +2,7 @@
 
 from datetime import timedelta
 
-from django.db import connection, transaction
+from django.db import DatabaseError, connection, transaction
 from django.db.models import F
 
 from parishkit.stewardship.audit.models import AuditEvent
@@ -13,6 +13,16 @@ from .auth_models import AuthenticationIncident
 
 
 def record_login_rejection(event_type):
+    """Unavailable sampled evidence yields the same typed, private auth outage."""
+    from .limiting import LimiterUnavailable
+
+    try:
+        _record_login_rejection(event_type)
+    except DatabaseError:
+        raise LimiterUnavailable() from None
+
+
+def _record_login_rejection(event_type):
     """At most one signal per public login class per deployment per five minutes.
 
     Per-attempt keyed source/candidate telemetry belongs only to the ephemeral

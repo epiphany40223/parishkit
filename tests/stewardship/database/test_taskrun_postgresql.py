@@ -35,6 +35,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 def permit(action, status):
     """Synthetic admission only; no operational callback is installed by this PR."""
     assert action and status.root_id
+    return True
 
 
 def new(**kwargs):
@@ -140,7 +141,7 @@ def test_enqueue_key_is_exact_and_callback_runs_on_replay():
         idempotency_key=key,
         actor_id=actor,
         domain_request_id=domain,
-        admit=lambda action, status: calls.append(action),
+        admit=lambda action, status: calls.append(action) or True,
     )
     first = new(**args)
     assert new(**args) == first and calls == ["enqueue", "enqueue"]
@@ -493,7 +494,7 @@ def test_retry_replay_checks_binding_before_admission():
     kwargs = dict(
         command_id=command,
         actor_id=actor,
-        admit=lambda action, status: calls.append((action, status)),
+        admit=lambda action, status: calls.append((action, status)) or True,
     )
     child = retry(parent, **kwargs)
     assert retry(parent, **kwargs) == child
@@ -533,6 +534,7 @@ def test_rejected_transition_preserves_caller_transaction():
     def admitted(action, receipt):
         """This admission write belongs to the rejected operation, not its caller."""
         AuditEvent.objects.create(event_type="synthetic_rejected_callback")
+        return True
 
     with transaction.atomic():
         AuditEvent.objects.create(event_type="synthetic_outer_before")
@@ -557,6 +559,7 @@ def test_unrelated_enqueues_do_not_share_an_allocation_lock(keyed):
     def admitted(action, status):
         """A global enqueue lock would prevent the other callback from arriving."""
         barrier.wait(timeout=10)
+        return True
 
     def perform(index):
         """Each independent connection retains its locks through the outer commit."""
@@ -585,6 +588,7 @@ def test_composed_domain_writes_share_task_correlation(action):
     def admitted(operation, receipt):
         """The owning service need not repeat correlation IDs on each record."""
         AuditEvent.objects.create(event_type="synthetic_composed_write")
+        return True
 
     kwargs = dict(admit=admitted, correlation_id=identifier)
     if action == "enqueue":
@@ -645,7 +649,9 @@ def test_stale_worker_tokens_are_rejected(kwargs):
     status = act(new(), "claim")
     calls = []
     with pytest.raises(StaleRecordError):
-        act(status, "complete", admit=lambda *args: calls.append(args), **kwargs)
+        act(
+            status, "complete", admit=lambda *args: calls.append(args) or True, **kwargs
+        )
     assert calls == []
 
 

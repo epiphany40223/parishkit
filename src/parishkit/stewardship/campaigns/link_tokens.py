@@ -224,10 +224,19 @@ def begin_generation(
             operation_id=operation_id
         ).first()
         if existing:
-            if any(getattr(existing, key) != value for key, value in inputs.items()):
+            caller_fields = (
+                "campaign",
+                "source_snapshot_id",
+                "source_generation",
+                "configuration_request_id",
+                "actor_id",
+                "task_id",
+            )
+            if any(getattr(existing, key) != inputs[key] for key in caller_fields):
                 raise StorageInvariantError(
                     "Token operation identity already has different inputs."
                 )
+            _current_inputs(existing, campaign, deployment, public)
             return existing
         generation = FamilyAccessTokenGeneration.objects.create(
             operation_id=operation_id, **inputs

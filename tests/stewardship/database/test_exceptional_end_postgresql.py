@@ -54,7 +54,7 @@ def test_owner_admission_error_keeps_valid_end_edit_retryable(tmp_path):
             )
         assert (
             request_status(request_id=request.request_id, actor_id=actor).state
-            == "validating"
+            == "staged"
         )
         assert (
             install_request(

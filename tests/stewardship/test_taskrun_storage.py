@@ -26,7 +26,7 @@ def test_invalid_enqueue_never_reaches_database(changes):
         domain_request_id=uuid4(),
         actor_id=uuid4(),
         correlation_id=uuid4(),
-        admit=lambda *args: None,
+        admit=lambda *args: True,
     )
     with pytest.raises((ValueError, TypeError)) as error:
         enqueue(**(arguments | changes))
@@ -66,7 +66,7 @@ def test_invalid_change_never_reaches_database(changes):
         actor_id=uuid4(),
         correlation_id=uuid4(),
         lease_seconds=60,
-        admit=lambda *args: None,
+        admit=lambda *args: True,
     )
     with pytest.raises((ValueError, TypeError)) as error:
         change_run(**(arguments | changes))
@@ -81,5 +81,5 @@ def test_retry_requires_real_actor_and_command_identifiers():
             command_id=uuid4(),
             actor_id=None,
             correlation_id=uuid4(),
-            admit=lambda *args: None,
+            admit=lambda *args: True,
         )

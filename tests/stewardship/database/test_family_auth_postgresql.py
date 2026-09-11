@@ -5,10 +5,12 @@ from datetime import timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from django.db import IntegrityError, transaction
 from django.db.models import F
 from django.test import Client
 
 from parishkit.stewardship.accounts.family_authentication import FamilyRuntime
+from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.credential_models import (
     FamilyCampaign,
     FamilySession,
@@ -87,6 +89,19 @@ def login(code, client=None):
         "/", {"code": code, "csrfmiddlewaretoken": client.cookies["csrftoken"].value}
     )
     return client, response
+
+
+def test_session_epoch_cannot_be_rebound_by_direct_update(family_service):
+    """Even an otherwise valid version advance cannot revive a restored session."""
+    _, response = login(family_service.code)
+    assert response.status_code == 302
+    row = FamilySession.objects.get()
+    with pytest.raises(IntegrityError, match="immutable"), transaction.atomic():
+        FamilySession.objects.filter(pk=row.pk).update(
+            credential_epoch=uuid4(), version=F("version") + 1
+        )
+    row.refresh_from_db()
+    assert row.version == 1
 
 
 def test_multipart_keepalive_is_a_bad_request_not_a_server_error(family_service):
@@ -199,11 +214,18 @@ def test_code_exchange_and_token_link_use_clean_isolated_session(family_service)
     assert response.cookies["pk_family"]["samesite"] == "Lax"
     assert client.get("/family/").status_code == 200
     first = client.cookies["pk_family"].value
+    previous = FamilySession.objects.get(revoked_at__isnull=True)
     response = client.get("/access/" + family_service.token)
     assert response.status_code == 302 and response["Location"] == "/family/"
     assert client.cookies["pk_family"].value != first
     assert response["Referrer-Policy"] == "no-referrer"
     assert FamilySession.objects.filter(revoked_at__isnull=True).count() == 1
+    assert (
+        AuditEvent.objects.filter(
+            event_type="family_session_ended", subject_id=previous.pk
+        ).count()
+        == 1
+    )
     row = FamilySession.objects.get(revoked_at__isnull=True)
     assert row.expires_at - row.authenticated_at == timedelta(hours=4)
     assert set(row.session.get_decoded()) == {"family", "_session_expiry"}
@@ -219,7 +241,10 @@ def test_production_code_never_authenticates_testing(family_service):
     assert not FamilySession.objects.exists()
 
 
-def test_invalidation_ends_testing_sessions_before_sensitive_cleanup(family_service):
+@pytest.mark.parametrize("visit_after", [False, True])
+def test_invalidation_ends_testing_sessions_before_sensitive_cleanup(
+    family_service, visit_after
+):
     from django.contrib.sessions.models import Session
 
     from parishkit.stewardship.campaigns.rehearsals import cleanup_rehearsal
@@ -231,8 +256,9 @@ def test_invalidation_ends_testing_sessions_before_sensitive_cleanup(family_serv
         campaign_id=family_service.campaign.pk, admit=lambda *args: True
     )
     assert RehearsalCredential.objects.exists()
-    assert client.get("/family/").status_code == 302
-    assert FamilySession.objects.get().revoked_at is not None
+    if visit_after:
+        assert client.get("/family/").status_code == 302
+        assert FamilySession.objects.get().revoked_at is not None
     assert client.get("/access/" + family_service.token).status_code == 403
     # A batch of one removes one session and one credential independently;
     # parent session cleanup follows deletion of its PROTECT metadata child.
@@ -240,6 +266,12 @@ def test_invalidation_ends_testing_sessions_before_sensitive_cleanup(family_serv
     assert not FamilySession.objects.filter(pk=session.pk).exists()
     assert not Session.objects.filter(pk=session.session_id).exists()
     assert cleanup_rehearsal(session.rehearsal_epoch_id, batch_size=1) == 0
+    assert (
+        AuditEvent.objects.filter(
+            event_type="family_session_ended", subject_id=session.pk
+        ).count()
+        == 1
+    )
 
 
 def test_keepalive_is_empty_csrf_protected_rate_bounded_and_passive(

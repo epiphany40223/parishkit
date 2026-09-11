@@ -46,6 +46,7 @@ class Action(StrEnum):
     PRIVILEGED_REAUTH = "privileged_reauthentication"
     DESTRUCTIVE_CONFIRMATION = "destructive_confirmation"
     INVALID_LINK = "family_link_invalid"
+    FAMILY_MAC_BACKFILLED = "family_mac_backfilled"
 
 
 FIELDS = {
