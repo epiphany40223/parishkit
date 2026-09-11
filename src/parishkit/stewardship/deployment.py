@@ -18,6 +18,7 @@ from parishkit.config import ConfigError, load_yaml_config
 from parishkit.paths import runtime_root
 
 from .authentication_policy import AuthenticationLimits
+from .runtime_budget import RuntimeBudget, parse_budget
 
 
 class DeploymentProfile(StrEnum):
@@ -41,6 +42,7 @@ class ServiceRole(StrEnum):
     TOKEN_KEY_ROTATION = "token-key-rotation"
     BOOTSTRAP = "bootstrap"
     MIGRATION = "migration"
+    ADMIN_RECOVERY = "admin-recovery"
 
 
 # The keys are stable configuration names; all paths, including derived stores,
@@ -123,6 +125,8 @@ class DeploymentConfiguration:
     authentication_limits: AuthenticationLimits = field(
         default_factory=AuthenticationLimits
     )
+    configuration_file: Path | None = field(default=None, repr=False)
+    runtime_budget: RuntimeBudget = field(default_factory=RuntimeBudget)
 
 
 def _mapping(value: object, keys: set[str] | frozenset[str], label: str) -> dict:
@@ -278,6 +282,7 @@ def load_deployment(
             "secrets",
             "credential_target",
             "authentication_limits",
+            "runtime_budget",
         },
         "deployment",
     )
@@ -474,4 +479,6 @@ def load_deployment(
         MappingProxyType(secrets),
         target,
         limits,
+        path.expanduser().absolute() if path is not None else None,
+        parse_budget(deployment.get("runtime_budget", {})),
     )
