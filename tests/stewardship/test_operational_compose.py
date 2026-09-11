@@ -381,16 +381,14 @@ def test_complete_foundation_bootstrap_and_online_exclusion(tmp_path, production
             "load_deployment(Path(sys.argv[1])))\n"
             "print(json.dumps({'targets': sorted(value), 'workers_agree': True}))\n"
         )
-        workers = compose_run(
+        from .runtime_health_checks import wait_for_consumer_cohort
+
+        workers = wait_for_consumer_cohort(
             file,
             project,
-            "exec",
-            "-T",
-            "web",
-            "python",
-            "-c",
             cohort_probe,
-            str(layout.service_directory / "web.yaml"),
+            layout.service_directory / "web.yaml",
+            compose_run,
         )
         assert json.loads(workers.stdout) == {
             "workers_agree": True,

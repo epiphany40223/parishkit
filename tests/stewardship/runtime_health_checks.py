@@ -5,6 +5,34 @@ import subprocess
 import time
 
 
+def wait_for_consumer_cohort(file, project, probe, configuration, run):
+    """A detached restart is not evidence that every new worker has finished booting."""
+    deadline = time.monotonic() + 45
+    while True:
+        result = run(
+            file,
+            project,
+            "exec",
+            "-T",
+            "web",
+            "python",
+            "-c",
+            probe,
+            str(configuration),
+            check=False,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            return result
+        if time.monotonic() >= deadline:
+            raise AssertionError(
+                "Synthetic worker cohort did not become ready: "
+                + result.stdout
+                + result.stderr
+            )
+        time.sleep(0.5)
+
+
 def check_dependency_failure(file, project, web_config, run):
     """A stopped broker changes readiness, not process liveness or public detail."""
     run(file, project, "stop", "--timeout", "10", "valkey")

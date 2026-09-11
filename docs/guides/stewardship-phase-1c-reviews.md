@@ -347,3 +347,19 @@ the remaining technical checklist is closed.
 Post-fix local validation passes all 43 focused mount/topology tests, both
 complete Compose scenarios and 2,707 baseline tests. Application source and the
 previously validated image/991-test PostgreSQL scope are unchanged.
+
+The second CI run passes the development Compose scenario and reaches a later
+production-only synchronization issue: the ingress fixture intentionally stops
+and restarts web, but `up --detach` does not promise that both new workers have
+published their receipts. Its subsequent immediate whole-cohort assertion raced
+startup on the faster native runner. The test now polls the existing exact
+whole-worker admission check with a fixed deadline; persistent failure still
+fails the test, and the one-off-container refusal remains immediate. Focused
+tests verify immediate success, partial-then-complete startup and deadline
+failure. This also changes test orchestration only, not application admission.
+The first run's PostgreSQL job completed successfully, independently of its
+Compose failure; fresh PR-head CI remains required.
+
+The cohort correction passes all 38 focused consumer/polling tests, both full
+Compose scenarios and the 2,710-test baseline locally. Ruff, formatting,
+Markdown and whitespace checks pass. The application image remains unchanged.
