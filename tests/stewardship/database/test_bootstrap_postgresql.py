@@ -251,3 +251,65 @@ def test_materialization_refuses_key_changed_between_phases(tmp_path):
     with pytest.raises(ConfigError, match="does not match"):
         materialize_initial_files(configuration, identity)
     assert not AppliedConfigurationVersion.objects.exists()
+
+
+def test_bootstrap_retires_only_owned_journals_and_resumes_cleanup(
+    tmp_path, monkeypatch
+):
+    """A crash during secret-copy retirement never repeats activation or loses keys."""
+    import json
+    from pathlib import Path
+
+    from parishkit.stewardship import bootstrap
+    from parishkit.stewardship.runtime_paths import RuntimeLayout
+
+    configuration, identity = bootstrap_fixture(tmp_path)
+    bootstrap.provision_initial_files(configuration, identity)
+    layout = RuntimeLayout(configuration)
+    paths = [layout.credential(name) for name in bootstrap.INITIAL_TARGETS]
+    paths += [layout.handoff(name) for name in bootstrap.HANDOFF_TARGETS]
+    selected = {path: path.read_bytes() for path in paths}
+    removed = []
+    unlink = Path.unlink
+
+    def crash_after_removing_one(path, *args, **kwargs):
+        """Use actual unlink, then interrupt before the next target's retirement."""
+        result = unlink(path, *args, **kwargs)
+        if path.name == ".bootstrap-candidate":
+            removed.append(path)
+            if len(removed) == 1:
+                raise OSError("simulated retirement crash")
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "unlink", crash_after_removing_one)
+        with pytest.raises(OSError, match="retirement crash"):
+            bootstrap.materialize_initial_files(configuration, identity)
+    assert ConfigurationActivation.objects.count() == 1
+    marker = layout.deployment_directory / "bootstrap.json"
+    assert json.loads(marker.read_bytes())["state"] == "retiring_journals"
+    bootstrap.materialize_initial_files(configuration, identity)
+    assert ConfigurationActivation.objects.count() == 1
+    assert all(not (path.parent / ".bootstrap-candidate").exists() for path in paths)
+    assert {path: path.read_bytes() for path in paths} == selected
+    assert json.loads(marker.read_bytes())["state"] == "materialized"
+    with pytest.raises(ConfigError, match="already been initialized"):
+        bootstrap.materialize_initial_files(configuration, identity)
+
+
+def test_initial_bootstrap_refuses_unrelated_existing_data(tmp_path):
+    """No configuration singleton does not prove that a database is empty."""
+    from django.contrib.auth.models import User
+
+    from parishkit.stewardship.bootstrap import (
+        materialize_initial_files,
+        provision_initial_files,
+    )
+
+    User.objects.create(username="existing-account")
+    configuration, identity = bootstrap_fixture(tmp_path)
+    provision_initial_files(configuration, identity)
+    with pytest.raises(IntegrityError, match="empty application database"):
+        materialize_initial_files(configuration, identity)
+    assert not AppliedConfigurationVersion.objects.exists()
+    assert User.objects.filter(username="existing-account").exists()

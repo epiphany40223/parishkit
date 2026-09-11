@@ -20,7 +20,7 @@ class RuntimeBudget:
     rollout_overlap: int = 2
     download_capacity: int = 4
     download_pool_per_process: int = 2
-    background_connections: int = 24
+    background_connections: int = 32
     operator_connections: int = 8
     auxiliary_connections: int = 4
     database_connections: int = 100
@@ -46,6 +46,9 @@ class RuntimeBudget:
             or self.download_capacity >= self.web_processes * self.web_threads
             or self.background_connections < 2
             or self.operator_connections < 2
+            or self.download_seconds > 900
+            or self.download_idle_seconds > 1200
+            or self.drain_seconds > 1800
             or self.total_connections > self.database_connections
             or not (
                 self.download_seconds
@@ -56,6 +59,18 @@ class RuntimeBudget:
             )
         ):
             raise ConfigError("Runtime connection or timeout budgets are inconsistent.")
+
+    def validate_topology(self, *, background_processes, operator_processes=1):
+        """Account for concrete launched services, not an arbitrary budget label."""
+        if (
+            type(background_processes) is not int
+            or background_processes < 0
+            or type(operator_processes) is not int
+            or operator_processes < 1
+            or background_processes * self.rollout_overlap > self.background_connections
+            or operator_processes > self.operator_connections
+        ):
+            raise ConfigError("Rendered process topology exceeds connection budgets.")
 
     @property
     def total_connections(self):

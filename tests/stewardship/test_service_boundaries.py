@@ -73,6 +73,23 @@ def test_pseudo_mount_source_and_root_are_checked_without_disclosure():
     assert "private" not in str(error.value)
 
 
+@pytest.mark.parametrize("path", ["/sbin/docker-init", "/usr/sbin/docker-init"])
+def test_stock_init_executable_is_read_only_and_exact(path):
+    """Compose init is allowed; an arbitrary file or writable init is not."""
+    config, mounts = configured(ServiceRole.WEB)
+    mount = Mount(
+        Path(path), True, "overlay", "/usr/libexec/docker/docker-init", "overlay"
+    )
+    assert validate_mounts(config, [*mounts, mount]) is ServiceRole.WEB
+    for invalid in (
+        replace(mount, read_only=False),
+        replace(mount, root="/private/docker-init"),
+        replace(mount, root="/usr/libexec/docker"),
+    ):
+        with pytest.raises(ConfigError, match="unrecognized"):
+            validate_mounts(config, [*mounts, invalid])
+
+
 def test_authority_override_is_the_only_admitted_authority_mount():
     """An explicit runtime path cannot silently fall back to config/stewardship."""
     config, mounts = configured(ServiceRole.CONFIG_INSTALLER)

@@ -19,6 +19,7 @@ from parishkit.paths import runtime_root
 
 from .authentication_policy import AuthenticationLimits
 from .runtime_budget import RuntimeBudget, parse_budget
+from .runtime_network import RuntimeNetwork, parse_network
 
 
 class DeploymentProfile(StrEnum):
@@ -43,6 +44,7 @@ class ServiceRole(StrEnum):
     BOOTSTRAP = "bootstrap"
     MIGRATION = "migration"
     ADMIN_RECOVERY = "admin-recovery"
+    DATABASE_PROVISION = "database-provision"
 
 
 # The keys are stable configuration names; all paths, including derived stores,
@@ -97,6 +99,7 @@ class DatabaseConfiguration:
     user: str
     password_file: Path | None = field(repr=False)
     connect_timeout: int
+    download_password_file: Path | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -127,6 +130,7 @@ class DeploymentConfiguration:
     )
     configuration_file: Path | None = field(default=None, repr=False)
     runtime_budget: RuntimeBudget = field(default_factory=RuntimeBudget)
+    runtime_network: RuntimeNetwork = field(default_factory=RuntimeNetwork)
 
 
 def _mapping(value: object, keys: set[str] | frozenset[str], label: str) -> dict:
@@ -283,6 +287,7 @@ def load_deployment(
             "credential_target",
             "authentication_limits",
             "runtime_budget",
+            "runtime_network",
         },
         "deployment",
     )
@@ -354,7 +359,15 @@ def load_deployment(
     paths = RuntimePaths(root, MappingProxyType(resolved))
     postgres = _mapping(
         deployment.get("postgres", {}),
-        {"host", "port", "name", "user", "password_file", "connect_timeout"},
+        {
+            "host",
+            "port",
+            "name",
+            "user",
+            "password_file",
+            "connect_timeout",
+            "download_password_file",
+        },
         "postgres",
     )
     database = DatabaseConfiguration(
@@ -383,6 +396,11 @@ def load_deployment(
             "postgres.connect_timeout",
             1,
             60,
+        ),
+        download_password_file=select_path(
+            "POSTGRES_DOWNLOAD_PASSWORD_FILE",
+            postgres.get("download_password_file"),
+            None,
         ),
     )
     valkey = _mapping(
@@ -481,4 +499,5 @@ def load_deployment(
         limits,
         path.expanduser().absolute() if path is not None else None,
         parse_budget(deployment.get("runtime_budget", {})),
+        parse_network(deployment.get("runtime_network", {})),
     )

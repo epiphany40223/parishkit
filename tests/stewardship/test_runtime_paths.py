@@ -42,6 +42,18 @@ def test_individual_credential_override_is_preserved(tmp_path):
         layout.database_password("../../database")
 
 
+@pytest.mark.parametrize(
+    "name", [".bootstrap-candidate", ".replacement.json", ".replacement.lock"]
+)
+def test_credential_cannot_overwrite_its_own_journal_or_lock(tmp_path, name):
+    configuration = load_deployment(environ={"PARISHKIT_ROOT": str(tmp_path)})
+    configuration = replace(
+        configuration, secrets={"metrics": tmp_path / "isolated-target" / name}
+    )
+    with pytest.raises(ConfigError, match="aliases"):
+        RuntimeLayout(configuration).validate()
+
+
 @pytest.mark.parametrize("name", ["credentials", "authority", "media", "postgresql"])
 def test_storage_cannot_alias_or_contain_exports(tmp_path, name):
     configuration = load_deployment(environ={"PARISHKIT_ROOT": str(tmp_path)})

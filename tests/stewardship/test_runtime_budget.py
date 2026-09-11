@@ -10,12 +10,15 @@ from parishkit.stewardship.runtime_budget import RuntimeBudget, parse_budget
 
 def test_default_budget_accounts_for_all_classes_and_overlap():
     budget = RuntimeBudget()
-    assert budget.total_connections == 79
+    assert budget.total_connections == 87
     assert parse_budget({}) == budget
     budget.validate_database(maximum=100, reserved=3)
     budget.validate_database(maximum=200, reserved=2)
     with pytest.raises(ConfigError):
         replace(budget, replicas=3)
+    budget.validate_topology(background_processes=13)
+    with pytest.raises(ConfigError):
+        budget.validate_topology(background_processes=17)
 
 
 @pytest.mark.parametrize(

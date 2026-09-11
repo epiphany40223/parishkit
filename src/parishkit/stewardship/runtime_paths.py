@@ -91,7 +91,14 @@ class RuntimeLayout:
     def credential(self, target):
         """Honor an explicit individual credential override before its default."""
         directory = self.credential_directory(target)
-        return self.configuration.secrets.get(target, directory / "credential")
+        path = self.configuration.secrets.get(target, directory / "credential")
+        if path.name in {
+            ".bootstrap-candidate",
+            ".replacement.json",
+            ".replacement.lock",
+        }:
+            raise ConfigError("Credential file aliases an internal journal or lock.")
+        return path
 
     def handoff(self, target):
         """Each installer receives one independent handoff private-key file."""
@@ -104,7 +111,7 @@ class RuntimeLayout:
         """Keep separately authenticated SQL passwords on individual file mounts."""
         from .deployment import SECRET_NAMES, ServiceRole
 
-        roles = {role.value for role in ServiceRole} | {"admin-recovery", "download"}
+        roles = {role.value for role in ServiceRole} | {"operator", "download"}
         roles |= {
             "credential-installer-" + target.replace("_", "-")
             for target in SECRET_NAMES - {"handoff_private"}
@@ -148,6 +155,8 @@ class RuntimeLayout:
         from .deployment import SECRET_NAMES
 
         credential_root = self.configuration.paths["credentials"]
+        for name in SECRET_NAMES - {"handoff_private"}:
+            explicit_path(self.credential(name))
         targets = [
             explicit_path(self.credential_directory(name))
             for name in sorted(SECRET_NAMES - {"handoff_private"})

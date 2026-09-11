@@ -24,7 +24,22 @@ _COMMAND_OPTIONS = {
     },
     "service": {"profile", "service_role", "bind_all_interfaces"},
     "healthcheck": set(),
+    "health": {"config"},
+    "runtime": {"config"},
     "prepare-development": {"runtime_root"},
+    "bootstrap": {"config", "phase", "deployment_id", "admin_email"},
+    "migrate": {"config"},
+    "database-roles": {"config", "confirm_deployment"},
+    "database-grants": {"config", "confirm_deployment"},
+    "recover-admin": {
+        "config",
+        "confirm_deployment",
+        "operation_id",
+        "target_email",
+        "confirm_email",
+        "operator_name",
+        "reason",
+    },
 }
 
 
@@ -62,6 +77,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--service-role", choices=list(ServiceRole))
     parser.add_argument("--public-origin")
     parser.add_argument("--runtime-root")
+    parser.add_argument("--phase", choices=["prepare", "import"])
+    for option in (
+        "deployment-id",
+        "admin-email",
+        "confirm-deployment",
+        "operation-id",
+        "target-email",
+        "confirm-email",
+        "operator-name",
+        "reason",
+    ):
+        parser.add_argument("--" + option)
     parser.add_argument(
         "--bind-all-interfaces",
         action="store_true",
@@ -90,6 +117,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         # option names only: the values may contain credential paths or URLs.
         names = ", ".join("--" + name.replace("_", "-") for name in sorted(unsupported))
         parser.usage_error(f"options not supported by {args.command}: {names}")
+    if args.command in {
+        "bootstrap",
+        "migrate",
+        "recover-admin",
+        "database-roles",
+        "database-grants",
+    }:
+        from .operator_commands import execute_operator
+
+        return execute_operator(args)
+    if args.command == "runtime":
+        from .runtime_process import execute_runtime
+
+        return execute_runtime(args)
+    if args.command == "health":
+        from .runtime_diagnostics import execute_health
+
+        return execute_health(args)
     if args.command == "service":
         if args.bind_all_interfaces and (
             args.profile != DeploymentProfile.DEVELOPMENT

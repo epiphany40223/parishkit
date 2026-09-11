@@ -1,0 +1,262 @@
+"""One fake-backed foundation starts through the real CLI and kernel boundaries."""
+
+import json
+import os
+import secrets
+import subprocess
+import time
+from dataclasses import replace
+from pathlib import Path
+from uuid import uuid4
+
+import pytest
+
+from parishkit.stewardship.accounts.key_files import write_private
+from parishkit.stewardship.bootstrap import HANDOFF_TARGETS, INITIAL_TARGETS
+from parishkit.stewardship.runtime_identities import database_identities
+from parishkit.stewardship.runtime_paths import RuntimeLayout
+from parishkit.stewardship.runtime_topology import render_runtime
+from parishkit.stewardship.runtime_valkey import web_acl
+from parishkit.stewardship.startup_interlock import MARKER
+
+from .test_container_isolation import _fixture_volume
+from .test_runtime_topology import configuration_at
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("PARISHKIT_RUN_RUNTIME_TESTS") != "1",
+    reason="Requires explicitly opted-in disposable Docker runtime validation",
+)
+IMAGE = "parishkit-stewardship:development"
+
+
+def seed_runtime(root):
+    """Only synthetic credentials; fixture ownership is translated on native Linux."""
+    configuration = configuration_at(root)
+    configuration = replace(
+        configuration,
+        public_origin="http://localhost:8000",
+        valkey=replace(
+            configuration.valkey,
+            password_file=root / "credentials" / "valkey" / "web",
+        ),
+    )
+    layout = RuntimeLayout(configuration)
+    directories = [
+        *configuration.paths.values.values(),
+        layout.deployment_directory,
+        layout.service_directory,
+        layout.database_password("operator").parent,
+        configuration.valkey.password_file.parent,
+        *(layout.credential_directory(name) for name in INITIAL_TARGETS),
+        layout.credential_directory("google_oauth"),
+        *(layout.credential_directory(name) for name in HANDOFF_TARGETS),
+        *(layout.handoff(name).parent for name in HANDOFF_TARGETS),
+    ]
+    for directory in directories:
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        directory.chmod(0o700)
+    for name in ["operator", *(item[0] for item in database_identities())]:
+        write_private(
+            layout.database_password(name), secrets.token_urlsafe(32).encode()
+        )
+    write_private(layout.interlock, MARKER)
+    write_private(
+        layout.credential("google_oauth"),
+        b'{"client_id":"fake-client","client_secret":"fake-secret"}',
+    )
+    write_private(configuration.valkey.password_file, b"disposable-valkey-only")
+    # The fixture uses the same restricted vocabulary needed by limiter/metrics.
+    write_private(
+        configuration.valkey.password_file.parent / "server.acl",
+        web_acl(b"disposable-valkey-only"),
+    )
+    compose, documents = render_runtime(configuration, image=IMAGE)
+    for path, document in documents.items():
+        write_private(path, json.dumps(document).encode())
+    # A random local port avoids interacting with any developer's running app.
+    compose["services"]["web"]["ports"] = ["127.0.0.1::8000"]
+    return configuration, compose
+
+
+def compose_run(file, project, *arguments, check=True, timeout=60):
+    """Every command is scoped to this fixture's UUID Compose project."""
+    result = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "--project-name",
+            project,
+            "--file",
+            str(file),
+            *arguments,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    if check:
+        detail = ""
+        if result.returncode and arguments[:2] == ("run", "--rm"):
+            # This fixture contains synthetic values only. Capture the original
+            # exception at the private CLI boundary without weakening production
+            # diagnostics or copying any real operator credentials into a report.
+            command = arguments[3:] or tuple(
+                json.loads(file.read_text())["services"][arguments[2]]["command"]
+            )
+            script = (
+                "import sys, traceback\n"
+                "from parishkit.stewardship.cli import main\n"
+                "def trace(frame, event, arg):\n"
+                "    if (event == 'exception' and\n"
+                "            frame.f_code.co_name == 'execute_operator'):\n"
+                "        traceback.print_exception(*arg)\n"
+                "    return trace\n"
+                "sys.settrace(trace)\n"
+                "main(sys.argv[1:])\n"
+            )
+            diagnosis = compose_run(
+                file,
+                project,
+                "run",
+                "--rm",
+                "--entrypoint",
+                "python",
+                arguments[2],
+                "-c",
+                script,
+                *command,
+                check=False,
+            )
+            detail = diagnosis.stdout + diagnosis.stderr
+        assert result.returncode == 0, result.stdout + result.stderr + detail
+    return result
+
+
+def test_complete_foundation_bootstrap_and_online_exclusion(tmp_path):
+    """Use real operator profiles, narrow mounts, SQL identities and native inodes."""
+    root = tmp_path / "seed"
+    configuration, compose = seed_runtime(root)
+    layout = RuntimeLayout(configuration)
+    project = "parishkit-runtime-" + uuid4().hex
+    volume = project + "-state"
+    file = tmp_path / "compose.json"
+    deployment = str(uuid4())
+    try:
+        mountpoint = _fixture_volume(root, IMAGE, volume, owner=10001)
+        for service in compose["services"].values():
+            for mount in service["volumes"]:
+                path = Path(mount["source"])
+                if path.is_relative_to(root):
+                    mount["source"] = str(mountpoint / path.relative_to(root))
+        file.write_text(json.dumps(compose))
+        compose_run(file, project, "up", "--detach", "--wait", "postgres", "valkey")
+        for command in ("database-roles",):
+            compose_run(
+                file,
+                project,
+                "run",
+                "--rm",
+                "database-provision",
+                command,
+                "--config",
+                str(layout.service_directory / "database-provision.yaml"),
+                "--confirm-deployment",
+                deployment,
+            )
+        for phase in ("prepare", "import"):
+            if phase == "import":
+                compose_run(file, project, "run", "--rm", "migration", timeout=90)
+                compose_run(
+                    file,
+                    project,
+                    "run",
+                    "--rm",
+                    "database-provision",
+                    "database-grants",
+                    "--config",
+                    str(layout.service_directory / "database-provision.yaml"),
+                    "--confirm-deployment",
+                    deployment,
+                )
+            compose_run(
+                file,
+                project,
+                "run",
+                "--rm",
+                "bootstrap",
+                "bootstrap",
+                "--config",
+                str(layout.service_directory / "bootstrap.yaml"),
+                "--phase",
+                phase,
+                "--deployment-id",
+                deployment,
+                "--admin-email",
+                "admin@example.org",
+            )
+        compose_run(file, project, "up", "--detach", "web", "config-installer")
+        deadline = time.monotonic() + 45
+        while True:
+            health = compose_run(
+                file,
+                project,
+                "exec",
+                "-T",
+                "web",
+                "pk-stewardship",
+                "healthcheck",
+                check=False,
+            )
+            if health.returncode == 0:
+                break
+            if time.monotonic() >= deadline:
+                logs = compose_run(file, project, "logs", "web", "config-installer")
+                probe = (
+                    "import sys\nfrom pathlib import Path\n"
+                    "from parishkit.stewardship.deployment import load_deployment\n"
+                    "from parishkit.stewardship.runtime_web import configure_web\n"
+                    "configure_web(load_deployment(Path(sys.argv[1])))\n"
+                )
+                diagnostic = compose_run(
+                    file,
+                    project,
+                    "run",
+                    "--rm",
+                    "--entrypoint",
+                    "python",
+                    "web",
+                    "-c",
+                    probe,
+                    str(layout.service_directory / "web.yaml"),
+                    check=False,
+                )
+                pytest.fail(
+                    "Synthetic runtime liveness failed: "
+                    + logs.stdout
+                    + diagnostic.stderr
+                )
+            time.sleep(0.5)
+        diagnosis = compose_run(
+            file,
+            project,
+            "exec",
+            "-T",
+            "web",
+            "pk-stewardship",
+            "health",
+            "--config",
+            str(layout.service_directory / "web.yaml"),
+        )
+        assert json.loads(diagnosis.stdout)["ready"] is True
+        denied = compose_run(file, project, "run", "--rm", "migration", check=False)
+        assert denied.returncode != 0
+        assert "offline operation refused" in denied.stderr
+    finally:
+        if file.exists():
+            compose_run(file, project, "down", "--timeout", "10", check=False)
+        # Only this fixture's named volume and ephemeral containers are removed.
+        subprocess.run(
+            ["docker", "volume", "rm", volume],
+            capture_output=True,
+            timeout=30,
+        )

@@ -21,6 +21,7 @@ from .credential_database import _identity, admit_grants
 # No DELETE/TRUNCATE/DDL, secret-staging, Family, source, response or session grants
 # belong to this process. New projection owners extend this registry explicitly.
 CONFIGURATION_GRANTS = {
+    "django_migrations": {"SELECT"},
     "stewardship_configuration_version": {"SELECT", "INSERT"},
     "stewardship_parish": {"SELECT", "INSERT"},
     "stewardship_applied_integration": {"SELECT", "INSERT"},

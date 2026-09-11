@@ -25,11 +25,32 @@ def live(request: HttpRequest) -> HttpResponse:
 
 @require_safe
 def ready(request: HttpRequest) -> HttpResponse:
-    """Remain unready until the real startup-phase checks have been implemented."""
-    return _plain_response("unavailable\n", 503)
+    """Report only readiness, never a setup phase, identity, path or exception."""
+    from django.conf import settings
+
+    from .runtime_health import RuntimeHealth
+
+    runtime = getattr(settings, "STEWARDSHIP_HEALTH_RUNTIME", None)
+    ready = isinstance(runtime, RuntimeHealth) and all(runtime.checks().values())
+    return _plain_response("ok\n" if ready else "unavailable\n", 200 if ready else 503)
 
 
 @require_safe
 def metrics(request: HttpRequest) -> HttpResponse:
-    """Expose nothing before the internal metrics authentication task lands."""
-    return _plain_response("Not Found\n", 404)
+    """Require both internal ingress admission and constant-time bearer comparison."""
+    from django.conf import settings
+
+    from .runtime_health import RuntimeHealth
+
+    runtime = getattr(settings, "STEWARDSHIP_HEALTH_RUNTIME", None)
+    if not isinstance(runtime, RuntimeHealth) or not runtime.authorized_metrics(
+        request.META.get("HTTP_AUTHORIZATION")
+    ):
+        return _plain_response("Not Found\n", 404)
+    try:
+        result = runtime.metrics()
+    except Exception:
+        return _plain_response("unavailable\n", 503)
+    response = _plain_response(result, 200)
+    response["Content-Type"] = "text/plain; version=0.0.4; charset=utf-8"
+    return response

@@ -118,24 +118,33 @@ def validate_mounts(configuration, mounts):
         raise ConfigError("Overmounted service paths are not admitted.")
     credential_root = configuration.paths["credentials"]
     authority = configuration.paths["authority"]
-    target_directory = credential_root / str(configuration.credential_target)
-    if (
-        installer
-        and configuration.secrets[configuration.credential_target].parent
-        != target_directory
-    ):
-        raise ConfigError(
-            "Installer credential file must be inside its writable target."
-        )
+    target_directory = (
+        configuration.secrets[configuration.credential_target].parent
+        if installer
+        else credential_root / str(configuration.credential_target)
+    )
+    if installer:
+        from .runtime_paths import RuntimeLayout
+
+        # Overrides change the narrow target, never the installer's breadth.
+        RuntimeLayout(configuration).validate()
     files = set(configuration.secrets.values())
     connection_paths = [
         path
         for path in (
             configuration.postgres.password_file,
             configuration.valkey.password_file,
+            configuration.postgres.download_password_file,
         )
         if path is not None
     ]
+    if (
+        configuration.postgres.download_password_file is not None
+        and role is not ServiceRole.WEB
+    ):
+        raise ConfigError(
+            "Only web receives its isolated download database credential."
+        )
     files.update(connection_paths)
     if len(files) != len(configuration.secrets) + len(connection_paths):
         raise ConfigError("Independent service credentials cannot alias one file.")
@@ -168,6 +177,12 @@ def validate_mounts(configuration, mounts):
 def _check_extra(configuration, mount, files, authority, target_directory, installer):
     """Unexpected mounts outside the configured credential root are forbidden too."""
     path, role = mount.target, configuration.service_role
+    from .runtime_paths import RuntimeLayout
+
+    if path == RuntimeLayout(configuration).interlock and mount.read_only:
+        return
+    if path == configuration.configuration_file and mount.read_only:
+        return
     credential_root = configuration.paths["credentials"]
     if path == Path("/"):
         if not mount.read_only:
@@ -209,13 +224,22 @@ def _check_extra(configuration, mount, files, authority, target_directory, insta
 
 
 def _kernel_pseudo_mount(mount):
-    """Admit exact container pseudo mounts, not arbitrary binds below /proc or /dev.
+    """Admit exact container infrastructure, never broad /proc or /dev binds.
 
     Kernel evidence detects accidental excess mounts, not a malicious host root
     capable of replacing both this program and its mountinfo view. Sources/roots
     inform policy but never appear in rejection messages or Mount repr output.
     """
     path = str(mount.target)
+    if path in {"/sbin/docker-init", "/usr/sbin/docker-init"}:
+        # Compose init:true adds this one readonly executable bind. Its source
+        # is a stock Docker init path, not an arbitrary host file or directory.
+        return mount.read_only and mount.root in {
+            "/usr/libexec/docker/docker-init",
+            "/usr/libexec/docker-init",
+            "/usr/bin/docker-init",
+            "/usr/local/bin/docker-init",
+        }
     ordinary = {
         "/proc": "proc",
         "/dev": "tmpfs",

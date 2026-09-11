@@ -55,7 +55,10 @@ Scope and dependencies: [OPS-02 work package](../../plans/stewardship/operations
 - [ ] OPS-02.04 — Configure safe temporary storage and file permissions.
 - [ ] OPS-02.05 — Test topology, identity, isolation, and durable replacement.
 
-Evidence: Not started.
+Evidence: In progress in the [Phase 1C integration batch](../../guides/stewardship-phase-1c.md#operational-integration-checkpoint).
+Path/mount admission, private provisioning primitives and isolated SQL grants
+have focused tests. Complete composed startup, replacement and cross-platform
+operator provisioning are still required before checking these tasks complete.
 
 Before granting runtime database access or releasing Gate 1, harden existing SQL
 checkpoint/activation/secret emitters and their helper guards against caller
@@ -83,7 +86,10 @@ Scope and dependencies: [OPS-03 work package](../../plans/stewardship/operations
 - [ ] OPS-03.04 — Document DNS, firewall, OAuth, and certificate recovery.
 - [ ] OPS-03.05 — Validate Caddy hardening, writable-state limits, and network/route boundaries before enabling ingress.
 
-Evidence: Not started.
+Evidence: In progress in [Phase 1C](../../guides/stewardship-phase-1c.md#operational-integration-checkpoint).
+The generated stock-Caddy configuration adapts successfully under its constrained
+identity. Full network, filesystem, certificate-state and route execution proof
+remains required; template validation does not enable production ingress.
 
 ## OPS-04: Bootstrap, migrations, startup, and upgrades
 
@@ -95,7 +101,12 @@ Scope and dependencies: [OPS-04 work package](../../plans/stewardship/operations
 - [ ] OPS-04.04 — Document schema evolution and recovery procedures.
 - [ ] OPS-04.05 — Test bootstrap isolation, startup races, mismatch, crash, and upgrade paths.
 
-Evidence: Not started.
+Evidence: In progress in [Phase 1C](../../guides/stewardship-phase-1c.md#operational-integration-checkpoint).
+Offline command boundaries and real startup leases are implemented. A disposable
+PostgreSQL scenario provisions restricted roles, migrates with the schema-owner
+login, imports minimal bootstrap authority and admits web's SQL identity.
+Interrupted bootstrap journal retirement is tested. Complete composed runtime
+startup and backup-aware upgrade ownership are not claimed complete.
 
 ## OPS-05: Backup service and purge-triggered backup
 
@@ -145,7 +156,10 @@ Scope and dependencies: [OPS-08 work package](../../plans/stewardship/operations
 - [ ] OPS-08.05 — Write operational failure and recovery runbooks.
 - [ ] OPS-08.06 — Exercise runbooks using controlled failure injection.
 
-Evidence: Not started.
+Evidence: Baseline implementation is in progress in [Phase 1C](../../guides/stewardship-phase-1c.md#operational-integration-checkpoint).
+Internal readiness, bounded authenticated metrics, protected CLI diagnostics and
+private process-error output have focused tests. Credential rotation, complete
+runtime/runbook failure injection and later feature-owned metrics remain open.
 
 ## OPS-09: CI, coverage, browser, acceptance, and release pipeline
 

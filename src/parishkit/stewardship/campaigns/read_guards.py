@@ -96,8 +96,11 @@ class DownloadPool:
     slot. A failed global claim closes its dedicated connection immediately.
     """
 
-    def __init__(self, limits=DEFAULT_LIMITS):
+    def __init__(self, limits=DEFAULT_LIMITS, *, database=None):
         self.limits = limits
+        # OPS-04 passes a separately authenticated, bounded download-role DSN.
+        # Internal fixtures may omit it; operational startup must never do so.
+        self.database = deepcopy(database)
         self._slots = BoundedSemaphore(limits.process_pool_size)
 
     def acquire(self):
@@ -163,7 +166,7 @@ class CampaignReadGuard:
                 self._stack.callback(self._release_slot)
                 # Construct an explicitly zero-idle response connection; do not
                 # depend on Django's test-only wrapper.copy() convenience API.
-                settings = deepcopy(self.original.settings_dict)
+                settings = deepcopy(self.pool.database or self.original.settings_dict)
                 settings.update(CONN_MAX_AGE=0, CONN_HEALTH_CHECKS=False)
                 self.db = type(self.original)(settings, alias="default")
                 self._stack.callback(self._restore_alias)

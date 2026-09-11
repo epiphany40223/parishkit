@@ -113,6 +113,7 @@ def _probe(tmp_path, image, role, *, target=None):
         "docker",
         "run",
         "--rm",
+        "--init",
         "--network",
         "none",
         "--read-only",
@@ -195,7 +196,7 @@ def _cleanup_probe(name, volume, *, body_failed):
         warnings.warn("Disposable isolation fixture cleanup failed.", stacklevel=2)
 
 
-def _fixture_volume(root, image, name):
+def _fixture_volume(root, image, name, *, owner=None):
     """Provision owner-only Linux inodes inside one disposable named volume.
 
     Some Docker Desktop host-file shares report root ownership in every new
@@ -245,9 +246,9 @@ for path in paths:
             "--mount",
             f"type=volume,src={name},dst=/fixture",
             "--env",
-            f"UID_TARGET={os.getuid()}",
+            f"UID_TARGET={os.getuid() if owner is None else owner}",
             "--env",
-            f"GID_TARGET={os.getgid()}",
+            f"GID_TARGET={os.getgid() if owner is None else owner}",
             "--entrypoint",
             "python",
             image,

@@ -9,6 +9,7 @@ needed to distinguish a matching retry from an unrelated existing credential.
 
 import base64
 import json
+import os
 import re
 import secrets
 from dataclasses import dataclass
@@ -29,6 +30,7 @@ from .accounts.key_files import (
 )
 from .accounts.policy_schema import normalized_email
 from .deployment import SECRET_NAMES, ServiceRole
+from .deployment_documents import deployment_document
 from .runtime_paths import RuntimeLayout, private_directory
 from .startup_interlock import StartupLease
 
@@ -145,6 +147,8 @@ def _marker(layout, identity, *, existing=False):
         record = _read_json(path)
         if record == expected | {"state": "materialized"}:
             raise ConfigError("This deployment has already been initialized.")
+        if existing and record == expected | {"state": "retiring_journals"}:
+            return path
         if record != expected | {"state": "provisioning"}:
             raise ConfigError("Bootstrap identity does not match existing state.")
     else:
@@ -243,6 +247,8 @@ def provision_initial_files(configuration, identity):
             )
         read_private(oauth)
         read_private(password)
+        deployment_file = layout.deployment_directory / "deployment.yaml"
+        _publish(deployment_file, _json(deployment_document(configuration)), lease)
         for path, value in _candidates(layout, identity).items():
             _publish(path, value, lease)
         lease.check()
@@ -253,7 +259,10 @@ def provision_initial_files(configuration, identity):
 
 def materialize_initial_files(configuration, identity):
     """Post-migration phase imports only the exact root into empty/matching state."""
-    from .accounts.configuration_installation import prepare_initial_configuration
+    from .accounts.configuration_installation import (
+        coherent_configuration,
+        prepare_initial_configuration,
+    )
 
     layout = _layout(configuration)
     version = bootstrap_version(identity.deployment_id, identity.admin_email)
@@ -262,17 +271,59 @@ def materialize_initial_files(configuration, identity):
         store = AuthorityStore(configuration.paths["authority"], validate_sections)
         if store.active() != version:
             raise ConfigError("Bootstrap requires its exact initial YAML authority.")
-        # Revalidate all generated material; this phase never creates missing keys.
-        _candidates(layout, identity, existing=True)
-        lease.check()
-        prepare_initial_configuration(
-            store,
-            version,
-            deployment_id=identity.deployment_id,
-            testing_recipient=identity.admin_email,
-            actor_id=uuid5(identity.deployment_id, "bootstrap-operator-v1"),
-            correlation_id=uuid5(identity.deployment_id, "bootstrap-import-v1"),
-        )
+        if _read_json(marker)["state"] == "retiring_journals":
+            runtime = coherent_configuration(store)
+            if runtime.pk != identity.deployment_id:
+                raise ConfigError("Bootstrap database identity has changed.")
+        else:
+            # Revalidate before materialization; this phase creates no missing keys.
+            _candidates(layout, identity, existing=True)
+            lease.check()
+            prepare_initial_configuration(
+                store,
+                version,
+                deployment_id=identity.deployment_id,
+                testing_recipient=identity.admin_email,
+                actor_id=uuid5(identity.deployment_id, "bootstrap-operator-v1"),
+                correlation_id=uuid5(identity.deployment_id, "bootstrap-import-v1"),
+            )
+            lease.check()
+            write_private(
+                marker, _json(identity.document() | {"state": "retiring_journals"})
+            )
+        _retire_journals(layout, identity, lease)
         lease.check()
         write_private(marker, _json(identity.document() | {"state": "materialized"}))
         return version
+
+
+def _retire_journals(layout, identity, lease):
+    """Remove only exact owned initialization copies after durable DB activation.
+
+    The non-secret retiring marker permits a crash retry after some copies have
+    already been removed. This path never generates, adopts, replaces or deletes
+    the selected credential files. Ordinary installers cannot inherit stale
+    bootstrap secret copies after initialization reports completion.
+    """
+    targets = [(name, layout.credential(name)) for name in INITIAL_TARGETS]
+    targets += [("handoff-" + name, layout.handoff(name)) for name in HANDOFF_TARGETS]
+    for target, path in targets:
+        lease.check()
+        journal = path.parent / ".bootstrap-candidate"
+        if not journal.exists():
+            continue
+        record = _read_json(journal)
+        if (
+            type(record) is not dict
+            or set(record) != {"version", "deployment", "target", "candidate"}
+            or record["version"] != 1
+            or record["deployment"] != str(identity.deployment_id)
+            or record["target"] != target
+        ):
+            raise ConfigError("Bootstrap cleanup found an unrelated journal.")
+        journal.unlink()
+        descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
