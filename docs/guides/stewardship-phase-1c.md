@@ -37,3 +37,33 @@ reversing its marker does not weaken the lookup-path defense.
 Runtime path validation, stable offline/online lifecycle leases and finite
 deployment budget primitives are being integrated. No task completion,
 production startup or review-gate release is claimed at this checkpoint.
+
+### Runtime primitives and initial authority
+
+The runtime now has strict durable-path/override validation, an owner-only stable
+startup inode with shared online/exclusive offline leases, and finite connection
+and timeout budgets. Tests include actual cross-process exclusion and inherited
+child leases; closing the launcher does not release a surviving child's lease.
+
+Initial authority uses `bootstrap-policy-v1`, containing only the exact initial
+Admin rule. It does not invent a parish profile. Forward migrations bind its
+policy projections, keep pre-wizard audit deployment-owned, prohibit unrelated
+projections and complete-to-bootstrap regression, and refuse populated downgrade.
+The historical complete schemas remain unchanged. The matching bootstrap recovery
+format retains the existing additive-only, versioned recovery engine and durable
+revocation/security evidence.
+
+Two internal offline bootstrap phases now generate independent purpose-bound
+keys and target-specific handoffs, then import the exact initial authority into
+the migrated empty database. Per-target owner-only candidate journals allow a
+crash retry to compare exact bytes before publication; they are secret files,
+not configuration, audit, ordinary backup or status output. Configured bootstrap
+cannot become a rotation/recovery bypass. The operational command/mount boundary,
+deployment YAML rendering, journal retirement and complete runtime startup are
+still being integrated; these primitives alone do not authorize deployment.
+
+Focused validation includes 112 PostgreSQL configuration/activation/bootstrap
+tests, followed by 70 activation/bootstrap tests after the two-phase file/import
+integration. The latter covers a committed activation interrupted before its
+completion marker and a key changed between phases. Pure tests cover file-write
+crashes, mismatches, permissions, online exclusion and deterministic identity.

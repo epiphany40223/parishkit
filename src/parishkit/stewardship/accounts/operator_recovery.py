@@ -142,7 +142,9 @@ def recover_admin(
             runtime = coherent_configuration(store)
             base, version = intake_base(runtime.active_configuration.digest)
             schema = (
-                "operator-recovery-patch-v2"
+                "operator-recovery-bootstrap-v1"
+                if base.validation_schema == "bootstrap-policy-v1"
+                else "operator-recovery-patch-v2"
                 if base.validation_schema == "campaign-foundation-v3"
                 else "operator-recovery-patch-v1"
             )

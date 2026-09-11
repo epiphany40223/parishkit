@@ -29,13 +29,19 @@ from .configuration_schema import (
     validator_for,
 )
 
+POLICY_SCHEMAS = {
+    "foundation-policy-v2",
+    "campaign-foundation-v3",
+    "bootstrap-policy-v1",
+}
+
 
 def _normalized(document, schema=None):
     """Extract just the projections, retaining deterministic authoritative IDs."""
     sections = document["sections"]
     names = ("parish", "integrations")
     selected = schema or schema_for(document)
-    if selected in {"foundation-policy-v2", "campaign-foundation-v3"}:
+    if selected in POLICY_SCHEMAS:
         names += ("login_rules",)
     if selected == "campaign-foundation-v3":
         names += ("campaigns", "schedules")
@@ -53,6 +59,16 @@ def _digest(value):
 
 def _stored_projections(snapshot):
     """Reconstruct YAML-shaped records from the actual persisted projection rows."""
+    if snapshot.validation_schema == "bootstrap-policy-v1":
+        from .policy_projections import stored_policy
+
+        if hasattr(snapshot, "parish") or list(snapshot.integrations.all()):
+            raise ConfigError("Bootstrap authority has unexpected projections.")
+        return {
+            "parish": [],
+            "integrations": [],
+            "login_rules": stored_policy(snapshot),
+        }
     parish = snapshot.parish
     result = {
         "parish": [
@@ -86,7 +102,7 @@ def _stored_projections(snapshot):
             )
         ],
     }
-    if snapshot.validation_schema in {"foundation-policy-v2", "campaign-foundation-v3"}:
+    if snapshot.validation_schema in POLICY_SCHEMAS:
         from .policy_projections import stored_policy
 
         result["login_rules"] = stored_policy(snapshot)
@@ -140,11 +156,7 @@ def _load_history(digest):
         # Populate the ordinary FK cache without lazy per-ancestor SELECTs.
         row.predecessor = by_id.get(row.predecessor_id)
     prefetch_related_objects(rows, "parish", "integrations")
-    policy_rows = [
-        row
-        for row in rows
-        if row.validation_schema in {"foundation-policy-v2", "campaign-foundation-v3"}
-    ]
+    policy_rows = [row for row in rows if row.validation_schema in POLICY_SCHEMAS]
     prefetch_related_objects(
         policy_rows,
         "domainrule_set",
@@ -213,19 +225,28 @@ def _verify_history(snapshot, candidate=None):
     if snapshot is None:
         return False
     try:
-        parish_id = str(snapshot.parish.record_id)
+        parish_id = None
         by_kind, by_id, policy_ids = {}, {}, {}
         newer_policy = None
+        newer_parish = None
         if candidate is not None:
-            if candidate["sections"]["parish"][0]["id"] != parish_id:
-                return False
+            parishes = candidate["sections"].get("parish", [])
+            newer_parish = bool(parishes)
+            parish_id = parishes[0]["id"] if parishes else None
             _remember_integrations(candidate, by_kind, by_id)
             newer_policy = _remember_policy(candidate, policy_ids)
         for entry in _history(snapshot):
             predecessor = entry.predecessor.digest if entry.predecessor_id else None
             version = verified_snapshot_version(entry, predecessor_digest=predecessor)
-            if str(entry.parish.record_id) != parish_id:
-                return False
+            parishes = version.document()["sections"].get("parish", [])
+            if newer_parish is False and parishes:
+                return False  # Complete authority cannot regress to bootstrap.
+            if parishes:
+                identifier = str(entry.parish.record_id)
+                if parish_id is not None and identifier != parish_id:
+                    return False
+                parish_id = identifier
+            newer_parish = bool(parishes)
             _remember_integrations(version.document(), by_kind, by_id)
             has_policy = _remember_policy(version.document(), policy_ids)
             if newer_policy is False and has_policy:
@@ -325,7 +346,6 @@ def prepare_snapshot(version, *, actor_id, correlation_id):
             return existing
         if predecessor is None and AppliedConfigurationVersion.objects.exists():
             raise ConfigError("A configuration root already exists.")
-        parish_record = document["sections"]["parish"][0]
         attribution = {"actor_id": actor_id, "correlation_id": correlation_id}
         snapshot = AppliedConfigurationVersion.objects.create(
             id=version.version_id,
@@ -337,20 +357,21 @@ def prepare_snapshot(version, *, actor_id, correlation_id):
             validation_schema=schema_for(document),
             **attribution,
         )
-        values = parish_record["values"]
-        Parish.objects.create(
-            configuration=snapshot,
-            record_id=parish_record["id"],
-            name=values["name"],
-            website=values["website"],
-            timezone=values["timezone"],
-            phone=values["phone"],
-            large_logo_id=values["branding"]["large"],
-            menu_logo_id=values["branding"]["menu"],
-            icon_logo_id=values["branding"]["icon"],
-            favicon_id=values["branding"]["favicon"],
-            **attribution,
-        )
+        for parish_record in document["sections"].get("parish", []):
+            values = parish_record["values"]
+            Parish.objects.create(
+                configuration=snapshot,
+                record_id=parish_record["id"],
+                name=values["name"],
+                website=values["website"],
+                timezone=values["timezone"],
+                phone=values["phone"],
+                large_logo_id=values["branding"]["large"],
+                menu_logo_id=values["branding"]["menu"],
+                icon_logo_id=values["branding"]["icon"],
+                favicon_id=values["branding"]["favicon"],
+                **attribution,
+            )
         for record in document["sections"].get("integrations", []):
             AppliedIntegration.objects.create(
                 configuration=snapshot,

@@ -239,6 +239,13 @@ def _build_recovery_v2_candidate(base, patch, *, candidate_id):
     )
 
 
+def _build_recovery_bootstrap_candidate(base, patch, *, candidate_id):
+    """Allow additive offline Admin recovery before the setup wizard completes."""
+    return _build_recovery_candidate(
+        base, patch, candidate_id=candidate_id, schema="bootstrap-policy-v1"
+    )
+
+
 BUILDERS = MappingProxyType(
     {
         "parish-integrations-patch-v1": _build_v1_candidate,
@@ -246,6 +253,7 @@ BUILDERS = MappingProxyType(
         CAMPAIGN_REQUEST_SCHEMA: _build_v3_candidate,
         "operator-recovery-patch-v1": _build_recovery_candidate,
         "operator-recovery-patch-v2": _build_recovery_v2_candidate,
+        "operator-recovery-bootstrap-v1": _build_recovery_bootstrap_candidate,
     }
 )
 
