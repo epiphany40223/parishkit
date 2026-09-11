@@ -8,8 +8,9 @@ It starts from PR #20's merged tip,
 `18a37cb5b6c90bbf2b5f60c5fff37f199cd52201`, on
 `pr/stewardship-phase-1c`. PR and merge-queue CI passed before branching.
 
-Current status: the operational foundation is implemented; integrated Gate 1
-review/corrections and final validation are in progress. The older checkpoints
+Current status: the operational foundation, three integrated review/correction
+rounds and final local validation are complete. Native Linux PR CI and human
+merge/Gate 1 approval remain required. The older checkpoints
 below describe how it was built, not current missing-work claims. See the
 [runtime operator guide](stewardship-runtime.md),
 [review ledger](stewardship-phase-1c-reviews.md), and owning

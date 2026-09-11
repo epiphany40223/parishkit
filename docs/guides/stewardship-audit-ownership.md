@@ -23,11 +23,13 @@ The database resolves ownership in the same INSERT transaction as the event:
 | `configuration_activated` | The activation's selected configuration |
 | All other events, including `secret_request_*` | The active runtime configuration visible to the attribution statement |
 | No active runtime and no explicit request/activation context | Deployment ownership with no Parish reference |
+| Resolved `bootstrap-policy-v1` configuration without a Parish profile | Deployment ownership until the setup owner supplies a real profile |
 
 A prepared candidate alone does not become the active authority. A configuration
 request can nevertheless have explicit base ownership before bootstrap activates
 the runtime. Missing request/activation context or a missing required Parish
-projection fails closed; neither silently falls back to deployment ownership.
+projection fails closed, except for the explicit minimal-bootstrap case installed
+by accounts migration 0034. See the [bootstrap boundary](stewardship-phase-1c.md#runtime-primitives-and-initial-authority).
 Caller-provided conflicting profiles or unknown scopes are rejected. Omitting
 the fields, or submitting their deployment defaults, cannot force deployment
 ownership when the trigger resolves a Parish.

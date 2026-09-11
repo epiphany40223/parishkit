@@ -78,7 +78,7 @@ jobs:
           PARISHKIT_RUN_ISOLATION_TESTS: "1"
         run: |
           docker compose -f deploy/stewardship/compose.yaml -f deploy/stewardship/compose.development.yaml build web
-          python -m pytest tests/stewardship/test_container_isolation.py -q
+          python -m pytest tests/stewardship/test_container_isolation.py --require-no-skips -q
 
       - name: Validate operational runtime and provisioning
         env:
@@ -98,7 +98,7 @@ jobs:
           python -m pip install -r requirements/stewardship-browser.txt
           npm ci --ignore-scripts --prefix tests/stewardship/browser
           python -m playwright install --with-deps chromium firefox webkit
-          python -m pytest tests/stewardship/browser -q
+          python -m pytest tests/stewardship/browser --require-no-skips -q
 
       - name: Generate release notes
         run: |

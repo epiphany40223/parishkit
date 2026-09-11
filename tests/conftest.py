@@ -27,6 +27,15 @@ def pytest_addoption(parser):
 
 def pytest_collection_modifyitems(config, items):
     """A database CI gate must not pass on a pure-profile or empty selection."""
+    if config.getoption("--require-no-skips"):
+        for argument in config.args:
+            selected = Path(str(argument).split("::", 1)[0]).resolve()
+            if not any(
+                item.path.resolve() == selected
+                or item.path.resolve().is_relative_to(selected)
+                for item in items
+            ):
+                raise pytest.UsageError("Required verification path collected no tests")
     if not config.getoption("--require-postgresql-tests"):
         return
     from django.conf import settings
@@ -56,6 +65,16 @@ def pytest_runtest_makereport(item, call):
             if item.config.getoption("--require-postgresql-tests")
             else "A required verification was skipped."
         )
+    return report
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_make_collect_report(collector):
+    """An opt-in gate cannot silently drop a module during collection."""
+    report = yield
+    if collector.config.getoption("--require-no-skips") and report.skipped:
+        report.outcome = "failed"
+        report.longrepr = "A required verification was skipped during collection."
     return report
 
 

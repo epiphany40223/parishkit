@@ -768,10 +768,11 @@ Current Phase 1C evidence: seeded Family code/token/session and boundary tests,
 concurrent campaign/lifecycle SQL cases and 48 real-container checks demonstrate
 M1.02-.04. The latter includes restricted identities, atomic authority, durable
 replacement, metrics credential rotation, offline exclusion and supervisor crash
-recovery in development/production-shaped environments. All 69 browser cases
+recovery in development/production-shaped environments. All 75 browser cases
 pass. The final affected Google/session/report/SQL regression run passes all
-192 cases, completing M1.01's demonstration. The complete validation repeat,
-third review and Gate 1 approval remain open. Current evidence is in the
+192 cases, completing M1.01's demonstration. The complete validation repeat passes
+2,704 baseline and 991 PostgreSQL tests, with 92.45% line and 84.50% branch coverage.
+Review dispositions, CI and human approval status are recorded in the
 [Phase 1C ledger](../../guides/stewardship-phase-1c-reviews.md).
 
 First storage-increment review: September 8, 2026, reviewed SHA `99b715d`,
@@ -1632,16 +1633,19 @@ Apply the complete [review protocol](../../plans/stewardship/overall.md#review-g
 
 - [ ] G1.01 — Prepare coherent signed commits and pass gate-specific validation.
 - [x] G1.02 — Obtain two independent reviews of the complete gate diff.
-- [ ] G1.03 — Triage findings, implement corrections, and add regression coverage.
-- [ ] G1.04 — Repeat validation, the phase demonstration, and independent review.
-- [ ] G1.05 — Resolve all validated Critical/High/Medium findings; document Low deferrals.
+- [x] G1.03 — Triage findings, implement corrections, and add regression coverage.
+- [x] G1.04 — Repeat validation, the phase demonstration, and independent review.
+- [x] G1.05 — Resolve all validated Critical/High/Medium findings; document Low deferrals.
 - [ ] G1.06 — Record reviewed SHA, evidence, and human approval before phase release.
 
 Evidence: the [Phase 1C review ledger](../../guides/stewardship-phase-1c-reviews.md)
 records the cumulative Phase 1 review from the Phase 0 merged handoff `509245d`.
-Both vendors completed round two, including all Pika-generated shards, without
-degradation. Corrections, the third round, final validation and human release
-approval remain open. This gate does not authorize Phase 2 yet.
+Both vendors completed rounds two and three, including all Pika-generated
+shards, without degradation. Round three found no High/Critical issues and all
+retained findings have dispositions. Final post-correction local validation
+passes at implementation `e3fed5c`, with signed UI/runtime/storage correction
+commits. G1.01 still awaits native Linux PR CI; G1.06 awaits human merge/gate
+approval. This gate does not authorize Phase 2 yet.
 
 ## Phase 2: Setup and source truth
 

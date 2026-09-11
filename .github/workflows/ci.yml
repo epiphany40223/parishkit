@@ -71,7 +71,7 @@ jobs:
       - name: Verify real service mount isolation
         env:
           PARISHKIT_RUN_ISOLATION_TESTS: "1"
-        run: python -m pytest tests/stewardship/test_container_isolation.py -q
+        run: python -m pytest tests/stewardship/test_container_isolation.py --require-no-skips -q
 
       - name: Validate topology, in-image tests, reload, and persistence
         env:
@@ -106,7 +106,7 @@ jobs:
       - name: Responsive, keyboard, accessibility, and session component checks
         env:
           PARISHKIT_RUN_BROWSER_TESTS: "1"
-        run: python -m pytest tests/stewardship/browser -q
+        run: python -m pytest tests/stewardship/browser --require-no-skips -q
 
   stewardship-postgresql:
     runs-on: ubuntu-latest

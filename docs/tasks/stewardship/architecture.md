@@ -55,20 +55,20 @@ Markdown checks passed.
 
 ARC-02.01 is partial: shared CLI, configuration, runtime roots, strict YAML, and
 logging are integrated; provider/retry integration belongs with the actual
-provider-using services. ARC-02.03 has canonical envelopes, stable IDs, immutable
-files, atomic manifests, and a tested materializer protocol, but only synthetic
-product validation/materialization in tests. ARC-02.05 remains unimplemented;
-production settings deliberately reject all startup. ARC-02.07 covers pure
-precedence, invalid input, strict parsing, redaction, and fake-backed activation
-failure/recovery, not actual PostgreSQL durability or runtime prerequisite checks.
+provider-using services. Phase 1C completes ARC-02.03/.05/.07 with concrete
+PostgreSQL materialization, crash recovery, digest/mode agreement and actual
+isolated runtime admission. See the [runtime guide](../../guides/stewardship-runtime.md)
+and [review evidence](../../guides/stewardship-phase-1c-reviews.md). Production
+starts through the admitted `pk-stewardship runtime` entry point; importing
+standalone Django production settings deliberately cannot bypass that boundary.
 
 Phase split approved by the human on September 7, 2026 and recorded in the
 controlling plan: Phase 0 supplies configuration contracts and safe scaffold
 rejection. Concrete database materialization/digest/mode checks follow DAT-01 in
 Phase 1; credential/mount/service checks and PostgreSQL-backed recovery complete
-with ARC-06 and OPS-02/OPS-04 before Gate 1. No durable integration, Compose
-milestone, or review gate is claimed complete. Tasks with remaining scope stay
-unchecked; do not introduce shadow tables to bypass the dependency.
+with ARC-06 and OPS-02/OPS-04 before Gate 1. That integration is now implemented;
+human Gate 1 release remains pending. Tasks with later provider scope stay
+unchecked; no shadow tables bypass the dependency.
 
 ## ARC-03: Django web foundation and security middleware
 

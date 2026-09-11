@@ -206,3 +206,122 @@ PostgreSQL cases now pass. The latest baseline passes 2,658 tests; all 69 browse
 checks and two complete 48-check container runs pass. The final rebuilt image
 and complete PostgreSQL/coverage repeat remain required, and run alongside the
 third independent review. No gate release is implied by these corrections.
+
+## Round three: cumulative Gate 1 review
+
+Reviewed implementation: `f6948c08eb856bac34a5cf01ac6d5e26970af447`.
+The cumulative base remains the Phase 0 handoff above. Session
+`20260911-070626-811662` completed all 32 Pika-generated Claude shards and the
+single Pika-launched Codex reviewer in approximately 18 minutes. Finalization
+reports no failed agents, degradation, verdict mismatch or salvage requirement.
+The earlier session-limit failure did not count as a completed review round.
+
+Raw severities: zero Critical/High, 58 Medium and 267 Low. Finalization retained
+57 Medium findings: one agreed and 56 Claude-only. Low observations were below
+the retained action cutoff; they do not imply deferred accepted Medium findings.
+The final review action is COMMENT, not an assertion that corrections or Gate 1
+approval were already complete. Round-two final validation subsequently passed
+2,658 baseline tests, 976 PostgreSQL tests, all 48 rebuilt-container tests and
+69 browser tests, with 91.87% line and 83.68% branch coverage.
+
+The following dispositions use finalized vendor order. They follow the owner's
+delegated, specification-consistent correction policy; none changes a product
+decision or grants authority to deploy, merge or use live providers.
+
+| ID | Finding | Disposition |
+| --- | --- | --- |
+| A1 | Owner-admission retry leaves installer head validating | Corrected the empty-string failure-code check; a refused preflight leaves the request staged and retryable before checkpoint publication. PostgreSQL exceptional-end regression verifies a successful later retry. |
+| C1 | Internal lifecycle helper names start with underscores | Skipped, negligible impact: the module expressly defines internal lifecycle storage, not a public API. Internal imports do not make these stable external contracts; renaming seven callers adds no behavioral protection. |
+| C2 | Database test guide omits Valkey | Added pinned disposable Valkey startup, authenticated readiness and teardown alongside PostgreSQL. |
+| C3 | Nullable model fields fail full validation | Exclude only actual None values of nullable fields from blank validation; retain model cleaning, non-null validation and SQL constraints. Added nullable and invalid-UUID regressions. |
+| C4 | ARC-02 evidence still claims runtime integration missing | Updated task evidence and the standalone production-settings refusal to point to the actual admitted runtime command. |
+| C5 | Retained rehearsal ciphertexts lack rotation coverage | Added real PostgreSQL general/token rotation counts, plaintext preservation and complete migration verification. |
+| C6 | Raster normalization tests omit formats | Added RGB/CMYK JPEG, WebP, EXIF orientation, metadata stripping and real animated APNG/WebP refusal tests. |
+| C7 | Hardlink refusal fixture fails earlier on mode | Set the linked inode to 0600 so the test exercises the hardlink rule. |
+| C8 | Mount-policy branches lack focused tests | Added media read-only admission and writable/foreign-password refusal across web, worker and backup identities. |
+| C9 | Request guide says all requests use v1 | Document current schema selection and stored-schema dispatch on historical retries. |
+| C10 | Offline refusal dispatch covers only half the commands | Parametrize all six operator commands. |
+| C11 | Browser CI can silently skip acceptance | Require no skips in CI and release browser jobs; assert workflow parity. |
+| C12 | CI can skip browser/isolation checks | Duplicate of C11/C20. |
+| C13 | Request guide says policy/campaign schemas are unavailable | Link the implemented policy/campaign owners; preserve the later content-schema boundary. |
+| C14 | OPS-02 prose contradicts completed task boxes | Replace obsolete missing-work prose with current runtime and emitter evidence. |
+| C15 | Offline mount admission lacks positive infrastructure test | Add standard read-only system/source, process and tmpfs mount admission fixtures. |
+| C16 | Read deadline does not prove busy producer-slot handling | Add a PostgreSQL response regression holding the producer lock through expiry: refusal retains the slot until owner cleanup, then reuse succeeds. |
+| C17 | Grant tests cannot detect a table omitted from the registry | Enumerate actual public tables outside installer grants and assert SELECT/INSERT/UPDATE/DELETE denial. |
+| C18 | Browser release parity lacks no-skip enforcement | Duplicate of C11. |
+| C19 | No-op MAC demotion emits migration evidence | Require a changed key usage before starting the transaction; verify unchanged version and absent audit on refusal. |
+| C20 | Isolation CI can silently skip acceptance | Require no skips in CI and release isolation jobs. |
+| C21 | OPS-02 overstates legacy trigger path pinning | Narrow evidence to the eleven named relation-reading emitters; do not claim generic table-independent guards were changed. |
+| C22 | Installer has unused purge-gate mutation grants | Retain SELECT only; test actual-role INSERT/UPDATE/DELETE refusal. |
+| C23 | Bootstrap audit ownership exception undocumented | Document deployment-owned bootstrap-policy-v1 history and its forward migration. |
+| C24 | Unsupported progress values raise rendering errors | Admit only bounded nonnegative integers; unsupported values render without invalid numeric output. Test bool, float and oversized/unsupported values. |
+| C25 | Capability test omits cap_add | Assert only Caddy receives NET_BIND_SERVICE and every other service adds none. |
+| C26 | Family reauthentication revokes prior session without audit | Share transaction-bound revocation with monotonic ended-at values and one terminal event per live session; exercise actual code/token login. |
+| C27 | Policy additions expand canonical history under intake lock | Traverse compact UUID lineage and filtered immutable identity projections, returning at most one conflict without historical document expansion. Existing policy/request PostgreSQL regressions pass. |
+| C28 | Expired Family-session cleanup lacks matching index | Add the expires_at/id index in forward campaign migration 0032. |
+| C29 | Credential acknowledgement CLI omits shared diagnostics | Configure shared logging and emit a closed startup failure category without private exception text. Tests isolate process-global logging handlers. |
+| C30 | Operator dispatch and recovery wrappers lack direct tests | Exercise four implemented dispatch branches, wrong-role rejection, non-applied receipt rejection and preview deployment mismatch. |
+| C31 | Failed keepalive consumes the only dirty signal | Restore dirty on transport, HTTP or malformed-response failure; keep five-minute spacing and never extend expiry on failure. All three browser engines verify retry without another keystroke. |
+| C32 | Authoritative projection instants use ordinary date fields | Use UTCDateTimeField for start/end/due projections in forward migration 0032; migration drift remains clean. |
+| C33 | Health connections are omitted from process budget | Rejected, false positive: auxiliary_connections already reserves two observers per web process, replica and rollout overlap. Add exact total and insufficient-headroom tests. |
+| C34 | SQL password alias/overlap branches lack tests | Add duplicate, interlock and configuration-file overlap refusals. |
+| C35 | Rehearsal cleanup deletes live metadata without logout evidence | Use the shared locked revocation helper before deleting session metadata and protected Django parents. Test both previously visited and unvisited invalidated sessions. |
+| C36 | Unknown health becomes five false dependency failures | Preserve unknown as a typed incomplete-observation result, with fixed retry guidance and a distinct nonzero CLI outcome. |
+| C37 | Generic guard functions do not pin search_path | Skipped, already handled for the supported threat model: these invoker guards read no application relations; runtime roles cannot create schemas, temporary objects or shadowing functions. C38 verifies database CREATE denial too. Do not rewrite frozen v1 migration builders for this hypothetical authority expansion. |
+| C38 | Database-level CREATE escapes grant admission | Explicitly refuse has_database_privilege CREATE; exercise a real granted role, not only registry comparison. |
+| C39 | Interrupted atomic-write residue prevents provisioning retry | Admit only an exact planned-name temporary suffix with private regular owner-only single-link inode checks. Preserve residue and original committed passwords; never adopt or delete unexpected material. Add interrupted-provisioning retry regression. |
+| C40 | No-skip guard misses empty/collection-skipped modules | Require every requested path to contribute tests and convert collection skips to failures. Verify both cases through subprocess pytest runs. |
+| C41 | Private allauth API is paired with a broad version range | Pin the already locked 65.19.2 version; no resolved dependency change. Provider upgrades must rerun the library-consumer and composed-runtime probes. |
+| C42 | Missing predecessor escapes as DoesNotExist | Translate damaged lineage to the existing typed configuration refusal; add focused regression. |
+| C43 | MAC backfill lacks audit evidence | Emit one transaction-bound event for nonempty batches with count and active-key fingerprint only. Exact no-work retries emit nothing. |
+| C44 | Session credential epoch is mutable | Freeze credential_epoch in model and forward SQL guard; reverse migration restores the preceding guard definition. |
+| C45 | Preserve free-form global Caddy error/message fields | Rejected, unsafe premise: non-access proxy/runtime failures can also contain private request URLs and upstream values. Keep both privacy filters; closed diagnostics and bounded health observations remain the supported operational channels. |
+| C46 | Rejection-audit SQL failure escapes the limiter boundary | Convert database failure to LimiterUnavailable without private text, allowing existing public callers to fail closed. |
+| C47 | Invalid bootstrap input leaves a committed marker | Validate exact store, OAuth and password inputs before committing the initial intent marker. Test corrected first-run identity after invalid input. |
+| C48 | Exceptional end guards omit a nonterminal task state | Use the shared NONTERMINAL_STATES vocabulary for both close and schedule checks. |
+| C49 | Missing parish projection bypasses one timezone comparison | Skipped, already handled: prepared projections and the mandatory audit-ownership trigger refuse the entire activation transaction without a parish row. Existing real-SQL corruption and missing-projection tests prove rollback; no campaign can commit through the alleged gap. |
+| C50 | False task admission still commits work | Require the callback result to be exactly True; update established callback fixtures and verify False/None/truthy non-bools leave no task or audit rows. |
+| C51 | Repeated rehearsal-gate release adds duplicate evidence | Emit only on the actual false-to-true transition; PostgreSQL exact retry emits one event. |
+| C52 | Heartbeat/progress audit records grow without a workflow owner | Rejected as a scope/premise mismatch: versioned task events and value-free audit envelopes are intentional durable evidence. Operational cadence/load belongs to BG-01 and exceptional retention to its explicit later owner; those services are not enabled by this storage layer. Do not silently discard contracted evidence. |
+| C53 | Optional HTTP telemetry inherits long broker waits | Use a separate pool with 50 ms per-I/O connect/read timeouts and no automatic retries; disconnect it on shutdown. This is not a claim of a total 50 ms request deadline. |
+| C54 | Token-generation retry skips live derived fences | Compare caller intent separately, then recheck current epoch, source/population, configuration and key inputs. PostgreSQL epoch/population changes refuse exact retries. |
+| C55 | Metrics collection nests a fresh readiness wait | Read only fresh cached dependency observations; omit unknown gauges without launching or waiting on another probe. |
+| C56 | Bootstrap import leaves credential-key inventory absent | Initialize all non-metrics purpose inventories before journal retirement, under the exact bootstrap transaction/admission boundary. Give bootstrap only required SELECT/INSERT authority; composed authentication probe requires inventory-backed key locks. |
+
+All retained findings now have a correction or explicit rejection above:
+49 corrected and eight rejected/already-handled/duplicate findings. No accepted
+Medium-or-higher finding remains unresolved.
+
+Post-correction integration exposed an additional C56 consumer detail: Django's
+audit INSERT requests database-default values with RETURNING, requiring audit
+SELECT authority that bootstrap deliberately lacks. Inventory initialization now
+appends its envelope without RETURNING, preserving append-only audit authority.
+The real restricted-login bootstrap test verifies this path; no audit-history
+read grant is added. Direct SQL regression also verifies C44's frozen session
+epoch, and fast projection tests verify C32's naive-instant refusals.
+The same composed run exposed C29's early-startup classifier importing model
+code before Django settings existed. Its shared credential exception now lives
+in a framework-independent module, retaining the installer's import name.
+A fresh-process CLI regression verifies a fixed private refusal and structured
+failure category with no Django settings or traceback.
+
+### Final local validation
+
+Corrected implementation: `e3fed5ca76c3dca611cc673aba2bd725e015b123`.
+The accompanying evidence/CI commit adds no further application behavior.
+The complete final run passes 2,704 credential-free baseline tests and all
+991 PostgreSQL tests. Scoped coverage is 92.45% lines and 84.50% branches,
+independently above the 80% floors. All 48 rebuilt-image/Compose checks and all
+75 Chromium/Firefox/WebKit checks pass with no-skip enforcement. Ruff, formatting,
+Markdown, migration drift and diff whitespace checks pass.
+
+Rebuilt image: `sha256:ebc413d55904e7737df5ff3e88fe369251e460fa018992800cf8283c1fc2eeef`.
+Local artifacts are the `parishkit-phase1c-round3-quality6`, `containers6` and
+`browser6` logs, with the coverage JSON accompanying quality6; these generated
+files remain outside the repository. Earlier failed integration checkpoints
+are superseded, not counted as passing evidence.
+
+All three review/fix rounds are complete, with no High/Critical issue in the
+last round and no unresolved accepted Medium+ findings. Native Linux PR CI and
+human merge/Gate 1 approval remain required; Phase 2 is not released by local
+validation alone.

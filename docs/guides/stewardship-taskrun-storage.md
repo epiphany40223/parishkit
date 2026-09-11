@@ -49,7 +49,8 @@ that absence does not make configured task audit events deployment-owned.
 `jobs.storage.enqueue`, `retry_failed` and `change_run` are internal transaction
 primitives, not web endpoints, queue consumers or authorization services. Every
 call requires a trusted admission callback, including exact command retries.
-The callback receives an immutable TaskStatus and must raise on failed current
+The callback receives an immutable TaskStatus and must return exactly `True` on
+success; false, missing or merely truthy decisions and exceptions deny. It checks current
 authorization, configuration, lifecycle, restore/purge or task-specific safety
 checks. It runs under the transaction/root lock and must not perform network,
 filesystem or provider side effects. It may compose related database writes;

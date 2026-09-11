@@ -64,21 +64,16 @@ Linux containers run on Docker Desktop; native Linux-host CI is still required
 at PR handoff, and native Windows execution is not claimed. Reserved later
 services remain denied until their owners land. No production approval is implied.
 
-Before granting runtime database access or releasing Gate 1, harden existing SQL
-checkpoint/activation/secret emitters and their helper guards against caller
-search-path shadowing. Audit-ownership review round 3 identified unchanged
-unqualified audit INSERT targets in accounts migrations 0010, 0013 and 0015.
-Use forward migrations with fixed trusted paths/schema-qualified targets, respect
-optional migration ordering, restrict schema creation/temporary-object privileges
-as appropriate, and test each real emitter with a temporary shadow audit table.
-The new audit insertion guard protects attribution only once an INSERT reaches
-the real table; it does not resolve those pre-existing emitter paths. See the
-[scope and review disposition](milestones.md#audit-ownership-increment).
-
-Phase 1C prerequisite: forward migration `0033_trusted_trigger_paths` pins the
-legacy emitters and helper guards. Two new temporary-shadow/inventory tests and
-117 existing PostgreSQL integration tests pass. Runtime grants and the remaining
-OPS-02 scope are still in progress; see the [execution evidence](../../guides/stewardship-phase-1c.md).
+Phase 1C completes the legacy-emitter prerequisite identified by the
+[audit-ownership review](milestones.md#audit-ownership-increment).
+Forward migration `0033_trusted_trigger_paths` pins eleven named legacy
+checkpoint/activation/secret emitters. Temporary-shadow/inventory tests and the
+existing PostgreSQL integration suite verify their real effects. The generic
+mutable/immutable guards do not access application relations; their only
+unqualified call is PostgreSQL's built-in statement clock. Runtime roles cannot
+create schemas or temporary objects. This is not a claim that migration 0033
+changes those generic guards. Runtime grants and OPS-02 implementation are
+complete; final review/CI and human Gate 1 release remain separate requirements.
 
 ## OPS-03: Production ingress, TLS, and network security
 

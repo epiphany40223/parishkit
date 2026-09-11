@@ -177,13 +177,19 @@ PR #20 merged at `18a37cb5b6c90bbf2b5f60c5fff37f199cd52201` after passing
 PR and merge-queue CI. The owner authorized continuing directly into Phase 1C.
 Branch `pr/stewardship-phase-1c` starts at that refreshed `origin/main` tip;
 its [execution evidence](../../guides/stewardship-phase-1c.md) tracks the complete
-batch. No Phase 1C completion or Gate 1 release is claimed yet.
+batch. Local implementation/review validation is complete; PR CI and human
+merge/Gate 1 release remain required.
 
 The operational implementation and its native-volume/production-shaped tests
 are present. Round one reviewed this phase; round two reviewed the complete
-Phase 1 diff from `509245d`, with both vendors completing successfully. Its
-corrections and final validation are in progress before round three and the
-single Phase 1C PR. See the [review ledger](../../guides/stewardship-phase-1c-reviews.md).
+Phase 1 diff from `509245d`, and round three repeated that cumulative scope.
+Both vendors completed all three reviews successfully; round three found no
+High/Critical issues. All retained findings have corrections or evidence-backed
+rejections. Corrected implementation `e3fed5c` passes 2,704 baseline tests,
+991 PostgreSQL tests, 48 rebuilt-container checks and 75 browser checks, with
+92.45% line and 84.50% branch coverage. See the
+[review ledger](../../guides/stewardship-phase-1c-reviews.md) for the single
+Phase 1C PR handoff and remaining CI/human gate conditions.
 Do not start DAT-03 until Gate 1 and the phase PR receive human approval.
 
 1. [OPS-02](operations.md#ops-02-durable-runtime-paths-and-least-privilege-secrets) → [OPS-03](operations.md#ops-03-production-ingress-tls-and-network-security) → [OPS-04](operations.md#ops-04-bootstrap-migrations-startup-and-upgrades) → baseline [OPS-08](operations.md#ops-08-observability-health-and-operational-runbooks).

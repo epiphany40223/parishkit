@@ -87,6 +87,10 @@ its markers to turn a populated deployment into a fresh installation.
 Each retry rechecks the closed planned storage inventory. An empty/partial first
 intent can resume only before any other artifact exists; mismatched or unexpected
 state is preserved and refused, not repaired or deleted.
+Private temporary files left by an interrupted atomic write are tolerated only
+when their names match an exact planned target and their owner, mode, file type
+and link count satisfy admission. They are preserved, never used as replacement
+credentials or automatically deleted; unrelated residue still causes refusal.
 
 Collect packaged public assets with a separate fresh non-HTTP process, mounting
 only the empty static destination read-write:
@@ -127,6 +131,8 @@ Generate and retain one deployment UUID and select the initial Admin Google emai
    Unexpected existing broader grants cause refusal, not automatic revocation.
 6. Repeat the bootstrap command with `--phase import` and the same UUID/email.
    Only exact empty/matching database/YAML/key state can be materialized.
+   Purpose-bound key inventories are installed before private journal retirement,
+   so online key admission does not require a later rotation to become usable.
 7. Start `web`, `config-installer` and target credential installers. After readiness
    and authorized ingress prerequisites, start `caddy` for production. Later worker,
    scheduler, provider and product workflows remain owned by subsequent phases.
@@ -154,6 +160,9 @@ docker compose ... exec -T web pk-stewardship health --config WEB_CONFIG
 
 The result contains fixed check names and booleans only: exit `0` means all checks
 pass, `1` means a dependency check failed, and `2` means diagnostic admission failed.
+Exit `3` means observation is incomplete: retry rather than treating unknown
+dependencies as confirmed failures. Metrics use only fresh cached dependency
+observations and omit unknown gauges instead of starting another readiness probe.
 Do not route traffic away merely because a campaign/business readiness gate closes.
 Runtime and proxy logs omit private request/header/query/error values; preserve
 structured status/correlation evidence instead of enabling raw credential logging.
