@@ -18,6 +18,11 @@ def pytest_addoption(parser):
         action="store_true",
         help="Fail unless disposable PostgreSQL tests are selected and none skip",
     )
+    parser.addoption(
+        "--require-no-skips",
+        action="store_true",
+        help="Fail if any selected runtime verification is skipped",
+    )
 
 
 def pytest_collection_modifyitems(config, items):
@@ -41,9 +46,16 @@ def pytest_collection_modifyitems(config, items):
 def pytest_runtest_makereport(item, call):
     """Do not turn skipped database verification into a successful CI run."""
     report = yield
-    if item.config.getoption("--require-postgresql-tests") and report.skipped:
+    if (
+        item.config.getoption("--require-postgresql-tests")
+        or item.config.getoption("--require-no-skips")
+    ) and report.skipped:
         report.outcome = "failed"
-        report.longrepr = "A required PostgreSQL verification was skipped."
+        report.longrepr = (
+            "A required PostgreSQL verification was skipped."
+            if item.config.getoption("--require-postgresql-tests")
+            else "A required verification was skipped."
+        )
     return report
 
 

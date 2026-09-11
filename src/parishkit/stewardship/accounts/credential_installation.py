@@ -7,6 +7,7 @@ Provider-specific tests and whole-consumer recreation are supplied by the owning
 runtime/provider integrations; this module never controls the Docker socket.
 """
 
+from contextlib import ExitStack
 from functools import partial
 from uuid import UUID, uuid4
 
@@ -14,6 +15,7 @@ from django.db import transaction
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.observability import installer_request
 from parishkit.stewardship.service_boundaries import (
     ALLOWED_SECRETS,
     admit_online_service,
@@ -112,18 +114,6 @@ class CredentialInstaller:
                 credential_receipt(value, self.target) == staged.fingerprint
                 and self.validate(value) is True
             )
-            if valid and self.target == "metrics":
-                from django.db.models import Q
-
-                valid = staged.fingerprint != row.expected_fingerprint and not (
-                    SecretReplacementRequest.objects.filter(target="metrics")
-                    .exclude(pk=row.pk)
-                    .filter(
-                        Q(expected_fingerprint=staged.fingerprint)
-                        | Q(resulting_fingerprint=staged.fingerprint)
-                    )
-                    .exists()
-                )
         except CredentialValidationUnavailable:
             # Retain testing state and sealed input; the owning loop retries
             # with its bounded backoff until the request's ordinary expiry.
@@ -132,6 +122,24 @@ class CredentialInstaller:
             # Provider exceptions can contain the supplied credential. The public
             # outcome is only failed, and the previous file has not been changed.
             valid = False
+        if valid and self.target == "metrics":
+            from django.db import DatabaseError
+            from django.db.models import Q
+
+            try:
+                valid = staged.fingerprint != row.expected_fingerprint and not (
+                    SecretReplacementRequest.objects.filter(target=self.target)
+                    .exclude(pk=row.pk)
+                    .filter(
+                        Q(expected_fingerprint=staged.fingerprint)
+                        | Q(resulting_fingerprint=staged.fingerprint)
+                    )
+                    .exists()
+                )
+            except DatabaseError:
+                # Local storage availability is not a verdict on the supplied
+                # credential. Preserve sealed input for the target's next pass.
+                raise CredentialValidationUnavailable() from None
         if not valid:
             return self._advance(row.pk, "testing", "cleanup_pending", reason="failed")
         self.files.prepare(
@@ -284,7 +292,7 @@ class CredentialInstaller:
     def run_once(self):
         """Bound one queue pass; missing acknowledgements yield rather than sleep."""
         admit_installer_database(self.target)
-        with self.files.lock():
+        with self.files.lock(), ExitStack() as context:
             identifier = self.files.pending_request()
             if identifier is None:
                 identifier = (
@@ -298,6 +306,7 @@ class CredentialInstaller:
                 )
             if identifier is None:
                 return None
+            context.enter_context(installer_request(identifier))
             for _ in range(6):
                 row = self._read(identifier)
                 if row.state not in SECRET_PENDING:

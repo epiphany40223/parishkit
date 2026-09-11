@@ -178,6 +178,34 @@ def test_source_failure_releases_response(tmp_path, channel):
     assert terminal == [False]
 
 
+def test_close_failure_still_records_one_failed_terminal_outcome(
+    tmp_path, channel, monkeypatch
+):
+    """Django suppresses closer exceptions, so final audit must run in finally."""
+    _, campaign, _ = draft_campaign(tmp_path)
+    terminal = []
+    response = campaign_response(
+        channel[0],
+        [campaign.pk],
+        authorize=lambda _: None,
+        open_content=lambda: iter([b"private"]),
+        on_close=terminal.append,
+    )
+    content = response._iterator
+    original = content.response.close
+
+    def failed_close():
+        """Release the genuine SQL guard, then simulate a teardown failure."""
+        original()
+        raise RuntimeError("synthetic teardown failure")
+
+    monkeypatch.setattr(content.response, "close", failed_close)
+    response.close()
+    response.close()
+    assert terminal == [False]
+    assert not connection.in_atomic_block
+
+
 def test_guard_authorization_failure_returns_no_private_bytes(tmp_path, channel):
     """Fresh rejection before guard entry is a retryable nonstreaming response."""
     _, campaign, _ = draft_campaign(tmp_path)

@@ -29,6 +29,8 @@ def validate_installation(document, *, request_id=None):
 
     records = document["sections"].get("campaigns", [])
     runtime = SystemConfiguration.objects.first()
+    if runtime is None and (records or document["sections"].get("schedules")):
+        raise ConfigError("Initial configuration cannot select campaigns or schedules.")
     candidates = {row["id"]: row for row in records}
     existing = {
         str(row.pk): row

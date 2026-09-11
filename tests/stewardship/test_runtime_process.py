@@ -16,9 +16,10 @@ from .bootstrap_factory import bootstrap_fixture
 from .test_runtime_topology import configuration_at
 
 
-def test_web_process_settings_keep_finite_reserved_headroom(tmp_path):
+@pytest.mark.parametrize("production", [False, True])
+def test_web_process_settings_keep_finite_reserved_headroom(tmp_path, production):
     """The supervisor uses the same process budget as downloads and Compose."""
-    configuration = configuration_at(tmp_path)
+    configuration = configuration_at(tmp_path, production=production)
     options = runtime_process.gunicorn_options(configuration)
     assert options["workers"] == 2
     assert options["threads"] == 8
@@ -26,6 +27,9 @@ def test_web_process_settings_keep_finite_reserved_headroom(tmp_path):
     assert options["forwarded_allow_ips"] == ""
     assert options["graceful_timeout"] > configuration.runtime_budget.download_seconds
     assert options["timeout"] < configuration.runtime_budget.proxy_timeout_seconds
+    assert options["reload"] is (not production)
+    assert options["preload_app"] is False
+    assert options["post_worker_init"] is runtime_process.admitted_worker_started
 
 
 def test_runtime_dispatch_holds_real_online_lease_until_runner_exits(

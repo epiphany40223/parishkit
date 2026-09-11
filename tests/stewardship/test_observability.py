@@ -95,8 +95,42 @@ def test_invalid_event_inputs_are_rejected():
         emit(Event.TASK_STARTED, level=123)
     with pytest.raises(ValueError):
         emit(Event.TASK_STARTED, task_id="synthetic-secret")
+    with pytest.raises(ValueError):
+        emit(Event.TASK_FAILED, failure_kind="private-value")
     with pytest.raises(ValueError), correlation("synthetic-secret"):
         pass
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "database_unavailable",
+        "configuration_unavailable",
+        "filesystem_unavailable",
+        "unexpected_failure",
+    ],
+)
+def test_installer_failure_keeps_request_identity_and_safe_category(caplog, kind):
+    """Distinct operational diagnoses retain no exception text or stack secrets."""
+    from django.db import DatabaseError
+
+    from parishkit.config import ConfigError
+    from parishkit.stewardship.observability import installer_request
+
+    error_type = {
+        "database_unavailable": DatabaseError,
+        "configuration_unavailable": ConfigError,
+        "filesystem_unavailable": OSError,
+        "unexpected_failure": RuntimeError,
+    }[kind]
+    identifier = uuid4()
+    with pytest.raises(error_type), installer_request(identifier):
+        raise error_type("private-value-or-path")
+    output = SafeJsonFormatter().format(caplog.records[-1])
+    assert "private-value-or-path" not in output
+    payload = json.loads(output)
+    assert payload["message"] == "installer_request_failed"
+    assert payload["extra"] == {"correlation_id": str(identifier), "failure_kind": kind}
 
 
 @pytest.mark.parametrize(

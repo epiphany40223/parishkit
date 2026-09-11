@@ -2,8 +2,8 @@
 
 OPS-03/OPS-04 must supply STEWARDSHIP_PROXY_HOPS and the validated
 STEWARDSHIP_TRUSTED_PROXY_NETWORKS from the actual private proxy topology.
-browser_settings is the transport/browser projection, not runtime ingress
-assembly. Production startup remains disabled until that owner is integrated.
+browser_settings is the transport/browser projection; runtime_web assembles it
+only after admitting the operational mounts, SQL roles and credentials.
 Internal networks must exclude public ingress peers. Known proxy peers cannot
 use internal routes even when forwarding headers are absent; OPS-03 must retain
 the separate ingress deny rules and must not trust an entire shared network.
@@ -62,6 +62,7 @@ def browser_settings(deployment):
     ):
         raise ValueError("A valid secure canonical production origin is required.")
     return {
+        "STEWARDSHIP_CANONICAL_HOST": origin.hostname,
         "ALLOWED_HOSTS": [
             f"[{origin.hostname}]" if ":" in origin.hostname else origin.hostname
         ],
@@ -164,8 +165,20 @@ class SecurityBoundaryMiddleware:
     def __call__(self, request):
         """Apply a single security envelope even to errors and early denials."""
         try:
-            request.get_host()
+            hostname = urlsplit("//" + request.get_host()).hostname
             resolve_client(request)
+            internal_route = request.path_info in {
+                "/health/live",
+                "/health/ready",
+                "/metrics",
+            }
+            canonical = getattr(settings, "STEWARDSHIP_CANONICAL_HOST", None)
+            if (
+                canonical
+                and hostname != canonical
+                and not (internal_route and request.internal_request)
+            ):
+                raise DisallowedHost("Application routes require the canonical host.")
         except (ValueError, DisallowedHost):
             response = error_response(request, status=400)
         else:

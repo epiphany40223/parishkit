@@ -87,6 +87,23 @@ def valkey_client(configuration):
     )
 
 
+def google_provider_settings(oauth):
+    """Translate the private operator document into allauth's credential contract."""
+    return {
+        "google": {
+            "SCOPE": ["openid", "email"],
+            "OAUTH_PKCE_ENABLED": True,
+            "APPS": [
+                {
+                    "client_id": oauth["client_id"],
+                    "secret": oauth["client_secret"],
+                    "key": "",
+                }
+            ],
+        }
+    }
+
+
 def _download_settings(configuration, ordinary):
     """Keep all server-side timeouts compatible with the finite total stream budget."""
     path = configuration.postgres.download_password_file
@@ -151,13 +168,7 @@ def configure_web(configuration):
         "default": ordinary,
         "download": _download_settings(configuration, ordinary),
     }
-    values["SOCIALACCOUNT_PROVIDERS"] = {
-        "google": {
-            "SCOPE": ["openid", "email"],
-            "OAUTH_PKCE_ENABLED": True,
-            "APPS": [oauth],
-        }
-    }
+    values["SOCIALACCOUNT_PROVIDERS"] = google_provider_settings(oauth)
     values["STEWARDSHIP_PROXY_HOPS"] = configuration.trusted_proxy_hops
     values["STEWARDSHIP_TRUSTED_PROXY_NETWORKS"] = (
         (configuration.runtime_network.caddy + "/32",)

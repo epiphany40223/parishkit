@@ -114,6 +114,9 @@ def _check_role(cursor, name, marker, limit):
 
 def _connection(configuration, name, password):
     """Never construct a password-bearing URL or return libpq error messages."""
+    from .runtime_database import require_internal_database
+
+    require_internal_database(configuration)
     db = configuration.postgres
     return psycopg.connect(
         host=db.host,
@@ -122,6 +125,7 @@ def _connection(configuration, name, password):
         user=name,
         password=password.decode("ascii"),
         connect_timeout=db.connect_timeout,
+        sslmode="disable",
     )
 
 

@@ -22,6 +22,7 @@ from parishkit.stewardship.web.contracts import (
     filters,
 )
 from parishkit.stewardship.web.responses import campaign_response
+from parishkit.stewardship.web.security import error_response
 
 from .authentication import denial, runtime
 from .cryptography import CryptographicError
@@ -41,11 +42,14 @@ def family_codes(request, campaign_id):
         principal = authenticated_admin(request, store=service.store, activity=True)
         if not allows(principal, Capability.FAMILY_CODES):
             return denial()
-        parsed = filters(request.GET, allowed={"page", "size"})
-        window = PageWindow(
-            expected_version(parsed.get("page", "1")),
-            expected_version(parsed.get("size", "50")),
-        )
+        try:
+            parsed = filters(request.GET, allowed={"page", "size"})
+            window = PageWindow(
+                expected_version(parsed.get("page", "1")),
+                expected_version(parsed.get("size", "50")),
+            )
+        except ValueError:
+            return error_response(request, status=400)
         configuration = SystemConfiguration.objects.get()
         if configuration.restore_review_required:
             return denial(status=503, retry=5)
@@ -141,10 +145,10 @@ def family_codes(request, campaign_id):
         LimiterUnavailable,
         UnicodeError,
         DatabaseError,
+        TypeError,
+        ValueError,
     ):
         return denial(status=503, retry=5)
-    except ValueError:
-        return denial(status=400)
     finally:
         # Once returned, the stream owns terminal audit; all earlier exits,
         # including unexpected serializer exceptions, finish here instead.

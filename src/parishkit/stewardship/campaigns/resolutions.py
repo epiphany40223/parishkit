@@ -192,9 +192,7 @@ def resolve_restore_hold(
                 existing.evidence,
                 existing.recovery_occurrence_id,
             ) != (actor_id, state, evidence, recovery_occurrence_id):
-                raise StorageInvariantError(
-                    "Restore hold resolution has different intent."
-                )
+                raise StaleRecordError("Restore hold changed; reload before retrying.")
             return existing
         if hold.version != expected_version:
             raise StaleRecordError("Restore hold changed; reload before retrying.")

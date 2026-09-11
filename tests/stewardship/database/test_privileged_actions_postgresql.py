@@ -179,6 +179,42 @@ def test_sealed_intake_privacy_and_audit_share_real_authentication(
         assert private not in artifacts
 
 
+def test_missing_session_after_actor_lookup_is_a_uniform_secret_denial(
+    auth_service, google, monkeypatch
+):
+    """Session expiry between intake reads is ordinary denial, never a 500."""
+    from parishkit.stewardship.accounts import privileged_actions
+
+    browser, _ = signed_in()
+    request = admitted_request(browser)
+    actor = PortalSession.objects.get(
+        session_id=request.session.session_key
+    ).principal_id
+    PortalSession.objects.filter(session_id=request.session.session_key).delete()
+    monkeypatch.setattr(privileged_actions, "_actor", lambda _: actor)
+    _, intent = secret_intent()
+    with pytest.raises(PermissionError, match="Access is unavailable"):
+        sealed_secret_request(request, **intent)
+    assert not SecretReplacementRequest.objects.exists()
+
+
+def test_legacy_expiry_refuses_sealed_requests_before_sql_mutation(
+    auth_service, google
+):
+    """The target installer, not generic cleanup, owns sealed request expiry."""
+    from parishkit.config import ConfigError
+    from parishkit.stewardship.accounts.secret_requests import expire_secret_request
+
+    browser, _ = signed_in()
+    _, intent = secret_intent()
+    receipt = sealed_secret_request(admitted_request(browser), **intent)
+    with pytest.raises(ConfigError, match="target installer"):
+        expire_secret_request(
+            request_id=receipt.request_id, target="slack", correlation_id=uuid4()
+        )
+    assert SecretReplacementRequest.objects.get(pk=receipt.request_id).state == "staged"
+
+
 def test_secret_intake_rejects_stale_auth_and_client_evidence(
     auth_service,
     google,

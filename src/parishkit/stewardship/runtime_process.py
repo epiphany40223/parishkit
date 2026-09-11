@@ -13,7 +13,13 @@ from .consumer_runtime import (
     publish_worker_receipts,
 )
 from .deployment import DeploymentProfile, ServiceRole, load_deployment
-from .observability import Event, configure_logging, emit
+from .observability import (
+    Event,
+    configure_logging,
+    emit,
+    emit_failure,
+    installer_request,
+)
 from .runtime_paths import RuntimeLayout, private_directory
 from .startup_interlock import StartupLease
 
@@ -143,7 +149,8 @@ def next_configuration_request():
             current_state=Subquery(latest.values("state")[:1])
         )
         .filter(
-            current_state__in=("staged", "validating", "prepared", "yaml_activated")
+            authority="admin",
+            current_state__in=("staged", "validating", "prepared", "yaml_activated"),
         )
         .order_by("created_at", "pk")
         .values_list("pk", flat=True)
@@ -165,8 +172,8 @@ def bounded_loop(run_once, *, lease, stop, wait_seconds=2, heartbeat=None):
         lease.check()
         try:
             run_once()
-        except Exception:
-            emit(Event.TASK_FAILED, level=logging.ERROR)
+        except Exception as error:
+            emit_failure(error)
             delay = min(60, max(wait_seconds, delay * 2))
         else:
             delay = wait_seconds
@@ -197,7 +204,8 @@ def serve_configuration_installer(configuration, lease):
         """The queue selects opaque identities, never caller-specified file paths."""
         identifier = next_configuration_request()
         if identifier is not None:
-            installer.run_request(identifier)
+            with installer_request(identifier):
+                installer.run_request(identifier)
 
     return serve_installer_loop(run_once, lease)
 

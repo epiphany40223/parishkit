@@ -399,7 +399,6 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
                 validate_installation(
                     intent.candidate.document(), request_id=request.pk
                 )
-                materializer._campaign_admission()
                 if (
                     intent.candidate.digest != request.candidate_digest
                     or intent.payload_fingerprint != request.payload_fingerprint
@@ -407,6 +406,10 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
                     raise ConfigError("Configuration request metadata is inconsistent.")
             except ConfigError:
                 failure_code = "invalid_candidate"
+            if failure_code is None:
+                # Owning authorization/readiness refusals are not malformed
+                # candidate content. Leave their durable intent retryable.
+                materializer._campaign_admission()
 
         if current.state == "staged":
             # Recheck cancellation under the row lock after read-only preflight.

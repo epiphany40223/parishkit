@@ -14,6 +14,7 @@ def test_web_acl_contains_only_foundation_keys_and_commands():
     assert "~stewardship:ops:v1:*" in output
     assert "~*" not in output
     assert "+info" in output and "+get" in output
+    assert {"+exists", "+del"} <= set(output.split())
     for forbidden in ("+@all", "+acl", "+config", "+flushall", "+flushdb", "+shutdown"):
         assert forbidden not in output
 

@@ -79,6 +79,11 @@ jobs:
           PARISHKIT_RUN_COMPOSE_SMOKE: "1"
         run: python -m pytest tests/stewardship/test_compose.py -q -s
 
+      - name: Validate operational runtime and provisioning
+        env:
+          PARISHKIT_RUN_RUNTIME_TESTS: "1"
+        run: python -m pytest tests/stewardship/test_operational_compose.py tests/stewardship/test_database_provisioning_container.py tests/stewardship/test_runtime_provisioning_container.py tests/stewardship/test_runtime_ingress_container.py --require-no-skips -q
+
   stewardship-browser:
     runs-on: ubuntu-latest
     steps:

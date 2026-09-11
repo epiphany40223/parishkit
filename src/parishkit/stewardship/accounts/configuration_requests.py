@@ -220,13 +220,19 @@ def request_status(*, request_id, actor_id):
     return _status(request)
 
 
-def cancel_request(*, request_id, actor_id, expected_sequence, correlation_id):
+def cancel_request(
+    *, request_id, actor_id, expected_sequence, correlation_id, admit=None
+):
     """Cancel only staged intake; repeat delivery returns the original checkpoint."""
     _identities(request_id, actor_id, correlation_id)
     if type(expected_sequence) is not int or expected_sequence < 1:
         raise TypeError("An explicit positive sequence is required.")
+    if admit is not None and not callable(admit):
+        raise TypeError("Cancellation admission must be callable.")
     _own_transaction()
     with transaction.atomic(durable=True):
+        if admit is not None and admit() is not True:
+            raise PermissionError("Configuration cancellation is not admitted.")
         request = (
             ConfigurationChangeRequest.objects.select_for_update(of=("self",))
             .select_related("base")

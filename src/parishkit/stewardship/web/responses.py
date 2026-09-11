@@ -106,12 +106,17 @@ class _Content:
     def close(self):
         """WSGI close/disconnect calls this on the owner; repeated calls are safe."""
         self.stopped.set()
-        self.response.close()
-        if not self.finalized:
-            self.finalized = True
-            if self.on_close is not None:
-                with correlation(self.correlation_id):
-                    self.on_close(self.completed)
+        try:
+            self.response.close()
+        except BaseException:
+            self.completed = False
+            raise
+        finally:
+            if not self.finalized:
+                self.finalized = True
+                if self.on_close is not None:
+                    with correlation(self.correlation_id):
+                        self.on_close(self.completed)
 
 
 def campaign_response(

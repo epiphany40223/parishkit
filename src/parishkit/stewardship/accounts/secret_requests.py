@@ -246,6 +246,8 @@ def expire_secret_request(*, request_id, target, correlation_id):
     _target(target)
     with _transaction():
         record = _get(request_id, target=target)
+        if record.required_consumers:
+            raise ConfigError("Sealed request expiry requires its target installer.")
         if record.state != "staged":
             return _receipt(record)
         if record.expires_at > _now():

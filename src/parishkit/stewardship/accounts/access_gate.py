@@ -57,6 +57,16 @@ class AccessGateMiddleware(MiddlewareMixin):
             restored = SystemConfiguration.objects.values_list(
                 "restore_review_required", flat=True
             ).first()
+            if (
+                configured
+                and not restored
+                and request.path_info not in {"/admin/setup", "/admin/maintenance"}
+            ):
+                # Ordinary views own current-policy authentication, including
+                # expiry revocation and privilege-change cookie rotation. This
+                # routing-only middleware must neither repeat that work nor
+                # reject a session before its owning view can rotate it.
+                return None
             if admin:
                 principal = authenticated_admin(request, store=service.store)
                 if principal is None:

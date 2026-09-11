@@ -7,7 +7,7 @@ from parishkit.config import ConfigError
 
 from .deployment import ServiceRole, load_deployment
 from .runtime_paths import RuntimeLayout
-from .startup_interlock import StartupLease
+from .startup_interlock import StartupBusy, StartupLease
 
 
 def health_command(configuration):
@@ -63,6 +63,12 @@ def execute_health(args):
         if args.config is None:
             raise ConfigError("Detailed health requires an explicit configuration.")
         checks = health_command(load_deployment(args.config))
+    except StartupBusy:
+        print(
+            "ERROR: offline maintenance is in progress; retry diagnostics",
+            file=sys.stderr,
+        )
+        return 2
     except Exception:
         print(
             "ERROR: diagnostics unavailable; verify web profile, mount permissions "

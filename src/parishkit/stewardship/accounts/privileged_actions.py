@@ -124,13 +124,17 @@ def sealed_secret_request(request, **intent):
             "Online secret requests require sealed consumer-bound staging."
         )
     actor = _actor(request)
-    authenticated = PortalSession.objects.get(
-        session_id=request.session.session_key, principal_id=actor
-    ).authenticated_at
+    session = PortalSession.objects.filter(
+        session_id=request.session.session_key,
+        principal_id=actor,
+        revoked_at__isnull=True,
+    ).first()
+    if session is None:
+        raise PermissionError("Access is unavailable.")
     return stage_secret_request(
         **intent,
         actor_id=actor,
-        reauthenticated_at=authenticated,
+        reauthenticated_at=session.authenticated_at,
         admit=lambda: admit_admin_action(
             request, actor_id=actor, action=Action.SECRET_REPLACEMENT
         ),

@@ -6,6 +6,7 @@ from django.db.models import F
 
 from parishkit.stewardship.storage import StorageInvariantError
 
+from .admission import CampaignAdmissionUnavailable
 from .lifecycle import Action
 from .models import CampaignBoundaryOccurrence
 from .runtime import _emit, _now, campaign_transaction
@@ -31,10 +32,11 @@ def apply_due_boundaries(
         campaign,
         runtime,
     ):
-        if (
-            runtime.restore_review_required
-            or runtime.current_campaign_id != campaign.pk
-        ):
+        if runtime.restore_review_required:
+            raise CampaignAdmissionUnavailable(
+                "Campaign boundaries are held for restore review."
+            )
+        if runtime.current_campaign_id != campaign.pk:
             raise StorageInvariantError("Campaign boundaries are held.")
         projection = campaign.active_configuration
         results = []

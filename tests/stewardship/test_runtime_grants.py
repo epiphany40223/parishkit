@@ -53,6 +53,11 @@ def test_grant_registry_names_existing_models_and_excludes_unrelated_download_da
         ("unknown", None),
         (ServiceRole.CREDENTIAL_INSTALLER, "unknown"),
         (ServiceRole.WORKER, None),
+        (ServiceRole.WEB, "metrics"),
+        (ServiceRole.CONFIG_INSTALLER, "metrics"),
+        (ServiceRole.BOOTSTRAP, "metrics"),
+        (ServiceRole.ADMIN_RECOVERY, "metrics"),
+        ("download", "metrics"),
     ],
 )
 def test_unknown_grant_identities_fail_closed(role, target):
@@ -61,6 +66,24 @@ def test_unknown_grant_identities_fail_closed(role, target):
         runtime_grants(role, target=target)
     with pytest.raises(ConfigError):
         login_name(role, target=target)
+
+
+@pytest.mark.parametrize("role", [ServiceRole.WEB, ServiceRole.CONFIG_INSTALLER])
+def test_grant_and_login_resolvers_normalize_string_roles_identically(role):
+    """The CLI string form has exactly the enum identity's authority."""
+    assert login_name(role.value) == login_name(role)
+    assert runtime_grants(role.value) == runtime_grants(role)
+
+
+def test_family_runtime_lock_and_activity_grants_do_not_allow_source_writes():
+    """The web login receives only the columns required by locks/activity effects."""
+    tables, columns = runtime_grants(ServiceRole.WEB)
+    assert "UPDATE" not in tables["stewardship_family_campaign"]
+    assert columns["stewardship_family_campaign"] == {
+        "UPDATE": {"last_activity_at", "version"}
+    }
+    assert columns["stewardship_credential_deployment"] == {"UPDATE": {"id"}}
+    assert "INSERT" not in tables["stewardship_family_token"]
 
 
 @pytest.mark.parametrize("actual", [None, (1,), (40,)])

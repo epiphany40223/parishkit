@@ -51,7 +51,7 @@ def admitted_population(campaign):
     return True
 
 
-def populate(campaign, ring, statuses=None, *, generation=1):
+def populate(campaign, ring, statuses=None, *, generation=1, actor_id=None):
     """Outer atomic transaction mirrors the future immutable snapshot promotion."""
     statuses = (
         [FamilyStatus(1, True, True, True, True)] if statuses is None else statuses
@@ -66,6 +66,7 @@ def populate(campaign, ring, statuses=None, *, generation=1):
             mac=ring.mac,
             public=ring.public,
             admit=admitted_population,
+            actor_id=actor_id,
         )
 
 

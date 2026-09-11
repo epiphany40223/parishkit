@@ -189,23 +189,25 @@ def test_precedence_and_relative_paths(tmp_path, monkeypatch):
     assert load_deployment(path, environ={}).paths.root == source / "yaml-root"
 
 
+@pytest.mark.parametrize(
+    "name", ["web", "backup-worker", "credential-installer-general-encryption"]
+)
 def test_named_database_file_overrides_have_closed_names_and_source_relative_paths(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, name
 ):
     """Each SQL identity can override its own file through YAML and environment."""
     source = tmp_path / "source"
     source.mkdir()
-    path = config_file(
-        source, {"postgres": {"password_files": {"web": "web-password"}}}
-    )
+    path = config_file(source, {"postgres": {"password_files": {name: "web-password"}}})
     monkeypatch.chdir(tmp_path)
     parsed = load_deployment(path, environ={})
     assert parsed.configuration_file == path
-    assert parsed.postgres.password_files == {"web": source / "web-password"}
-    parsed = load_deployment(
-        path, environ={"PARISHKIT_STEWARDSHIP_POSTGRES_PASSWORD_FILE_WEB": "env-web"}
+    assert parsed.postgres.password_files == {name: source / "web-password"}
+    variable = "PARISHKIT_STEWARDSHIP_POSTGRES_PASSWORD_FILE_" + name.upper().replace(
+        "-", "_"
     )
-    assert parsed.postgres.password_files == {"web": tmp_path / "env-web"}
+    parsed = load_deployment(path, environ={variable: "env-web"})
+    assert parsed.postgres.password_files == {name: tmp_path / "env-web"}
     invalid = config_file(
         source, {"postgres": {"password_files": {"unexpected": "secret"}}}
     )

@@ -80,6 +80,11 @@ jobs:
           docker compose -f deploy/stewardship/compose.yaml -f deploy/stewardship/compose.development.yaml build web
           python -m pytest tests/stewardship/test_container_isolation.py -q
 
+      - name: Validate operational runtime and provisioning
+        env:
+          PARISHKIT_RUN_RUNTIME_TESTS: "1"
+        run: python -m pytest tests/stewardship/test_operational_compose.py tests/stewardship/test_database_provisioning_container.py tests/stewardship/test_runtime_provisioning_container.py tests/stewardship/test_runtime_ingress_container.py --require-no-skips -q
+
       - uses: actions/setup-node@v4
         with:
           node-version: "24"

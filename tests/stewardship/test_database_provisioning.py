@@ -227,7 +227,7 @@ def test_operator_connection_uses_separate_password_argument(tmp_path, monkeypat
     [
         [[("public", "table", "SELECT")], []],
         [[("public", "table", "UPDATE")], []],
-        [[], [("public", "table", "private", "SELECT")]],
+        [[], [("public", "metadata", "private", "SELECT")]],
         [[], [("public", "metadata", "id", "SELECT")]],
     ],
 )
@@ -246,5 +246,5 @@ def test_grant_provisioning_refuses_excess_table_and_column_authority(rows):
     else:
         with pytest.raises(ConfigError, match="exceed"):
             provisioning._admit_existing_grants(
-                cursor, "web", {}, {"metadata": {"SELECT": {"id"}}}
+                cursor, "web", {"table": {"SELECT"}}, {"metadata": {"SELECT": {"id"}}}
             )

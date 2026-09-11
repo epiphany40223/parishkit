@@ -156,14 +156,30 @@ DOWNLOAD_READ_TABLES = frozenset(
 )
 
 
+def _identity_role(role, target):
+    """Normalize both resolvers identically and reject ignored qualifiers."""
+    from .deployment import SECRET_NAMES
+
+    if role != "download":
+        try:
+            role = ServiceRole(role)
+        except (TypeError, ValueError):
+            raise ConfigError("Unknown runtime database identity.") from None
+    if role is ServiceRole.CREDENTIAL_INSTALLER:
+        if target not in SECRET_NAMES - {"handoff_private"}:
+            raise ConfigError("A recognized installer target is required.")
+    elif target is not None:
+        raise ConfigError("Only credential installers accept a target.")
+    return role
+
+
 def runtime_grants(role, *, target=None):
     """Return fresh table/column maps so callers cannot broaden the shared policy."""
     from .accounts.configuration_service import CONFIGURATION_GRANTS
     from .accounts.credential_database import INSTALLER_GRANTS, INSTALLER_METADATA
     from .accounts.secret_models import SECRET_TARGETS
 
-    if not isinstance(role, ServiceRole) and role != "download":
-        raise ConfigError("Unknown runtime database role.")
+    role = _identity_role(role, target)
 
     if role is ServiceRole.CONFIG_INSTALLER:
         return {
@@ -200,6 +216,25 @@ def runtime_grants(role, *, target=None):
     # guard rejects an id-only update, and the actual stream is READ ONLY.
     columns = {"stewardship_download_policy": {"UPDATE": {"id"}}}
     if role is ServiceRole.WEB:
+        # Login holds these current-epoch/credential rows against rotation and
+        # cleanup. PostgreSQL requires an UPDATE privilege for a row lock;
+        # id-only grants permit locking, not guarded credential mutation.
+        for table in (
+            "stewardship_credential_deployment",
+            "stewardship_campaign_credentials",
+            "stewardship_rehearsal_credential",
+            "stewardship_family_token",
+        ):
+            columns[table] = {"UPDATE": {"id"}}
+        columns["stewardship_family_campaign"] = {
+            "UPDATE": {"last_activity_at", "version"}
+        }
+        # The statement-level Family update trigger executes this UPDATE even
+        # for activity-only changes; eligibility predicates and row guards still
+        # prevent web from changing source-population authority.
+        columns["stewardship_campaign_credentials"]["UPDATE"].update(
+            {"population_dirty", "version"}
+        )
         for privilege, names in (
             ("INSERT", WEB_INSERT_TABLES),
             ("UPDATE", WEB_UPDATE_TABLES),
@@ -217,6 +252,8 @@ def runtime_grants(role, *, target=None):
 def login_name(role, *, target=None):
     """Resolve only implemented runtime identities, never caller-supplied SQL names."""
     from .deployment import SECRET_NAMES
+
+    role = _identity_role(role, target)
 
     if role is ServiceRole.CREDENTIAL_INSTALLER:
         if target not in SECRET_NAMES - {"handoff_private"}:

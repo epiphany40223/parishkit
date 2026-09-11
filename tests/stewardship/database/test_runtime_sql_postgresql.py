@@ -43,6 +43,53 @@ def test_legacy_emitters_and_helpers_have_trusted_search_paths():
     )
 
 
+@pytest.mark.parametrize(
+    "module,operation,names",
+    [
+        (
+            "0006_runtime_guards",
+            "restore_predecessors",
+            [
+                "stewardship_runtime_guard_v1",
+                "stewardship_activation_guard_v1",
+                "stewardship_activation_effects_v1",
+                "stewardship_campaign_pointer_v1",
+                "stewardship_campaign_runtime_v1",
+                "stewardship_campaign_activate_v1",
+            ],
+        ),
+        (
+            "0016_exceptional_abort_guards",
+            "restore_checkpoint",
+            [
+                "stewardship_request_checkpoint_v2",
+            ],
+        ),
+    ],
+)
+def test_partial_downgrade_helpers_preserve_trusted_function_paths(
+    module, operation, names
+):
+    """Historical CREATE OR REPLACE must not erase a still-applied security pin."""
+    migration = import_module("parishkit.stewardship.campaigns.migrations." + module)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT pg_get_functiondef(p.oid) FROM pg_proc p JOIN pg_namespace n "
+            "ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname=ANY(%s)",
+            [names],
+        )
+        originals = [row[0] for row in cursor.fetchall()]
+    assert len(originals) == len(names)
+    try:
+        with connection.schema_editor() as editor:
+            getattr(migration, operation)(None, editor)
+        test_legacy_emitters_and_helpers_have_trusted_search_paths()
+    finally:
+        with connection.cursor() as cursor:
+            for definition in originals:
+                cursor.execute(definition)
+
+
 def test_actual_emitters_ignore_temporary_audit_shadow(tmp_path):
     """Bootstrap, request checkpoints, activation and secrets reach real audit.
 

@@ -83,6 +83,36 @@ def test_retry_cancel_and_status_preserve_intent_and_attribution(intake):
     assert AuditEvent.objects.filter(subject_id=first.request_id).count() == 2
 
 
+def test_cancellation_admission_runs_under_transaction_and_on_retry(intake):
+    """An earlier receipt never bypasses the caller's current authorization."""
+    receipt = record_request(**intake)
+    allowed = False
+    calls = []
+
+    def admit():
+        assert connection.in_atomic_block
+        calls.append(True)
+        return allowed
+
+    arguments = dict(
+        request_id=receipt.request_id,
+        actor_id=intake["actor_id"],
+        expected_sequence=1,
+        correlation_id=uuid4(),
+        admit=admit,
+    )
+    with pytest.raises(PermissionError):
+        cancel_request(**arguments)
+    assert ConfigurationRequestCheckpoint.objects.count() == 1
+    allowed = True
+    assert cancel_request(**arguments).state == "cancelled"
+    allowed = False
+    with pytest.raises(PermissionError):
+        cancel_request(**arguments)
+    assert len(calls) == 3
+    assert ConfigurationRequestCheckpoint.objects.count() == 2
+
+
 def test_key_conflict_and_actor_scoping(intake):
     """A key is unique within its actor and never authorizes another actor's lookup."""
     first = record_request(**intake)

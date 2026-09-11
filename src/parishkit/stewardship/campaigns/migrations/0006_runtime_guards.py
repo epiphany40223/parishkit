@@ -93,6 +93,11 @@ def restore_predecessors(apps, editor):
                 ),
                 params=None,
             )
+            # Historical text predates the trusted-path migration; replacement
+            # must preserve that security boundary even across partial reversal.
+            editor.execute(
+                f"ALTER FUNCTION public.{name}() SET search_path=pg_catalog,public,pg_temp"
+            )
 
 
 SQL = """

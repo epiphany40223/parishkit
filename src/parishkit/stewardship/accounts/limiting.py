@@ -298,7 +298,10 @@ class Limiter:
             )
         except RedisError:
             self.outage = True
-            self._notify("limiter_unavailable", 2, 0, (0, 0, 0, 0))
+            # This reset follows a committed login. A failed incident write must
+            # not turn that success into a 503 that discards its session cookie.
+            with suppress(LimiterUnavailable):
+                self._notify("limiter_unavailable", 2, 0, (0, 0, 0, 0))
 
     def elevated(self, kind):
         """Elevated controls expire with the last observed distributed burst."""

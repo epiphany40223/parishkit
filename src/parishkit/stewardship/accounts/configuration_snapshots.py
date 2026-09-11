@@ -8,6 +8,7 @@ rows alone neither make the application ready nor grant anyone access.
 
 import hashlib
 import json
+from itertools import batched
 from uuid import UUID
 
 from django.db import connection, transaction
@@ -34,6 +35,7 @@ POLICY_SCHEMAS = {
     "campaign-foundation-v3",
     "bootstrap-policy-v1",
 }
+HISTORY_BATCH_SIZE = 64
 
 
 def _normalized(document, schema=None):
@@ -114,11 +116,7 @@ def _stored_projections(snapshot):
 
 
 def _history(snapshot):
-    """Walk immutable ancestry iteratively, rejecting cycles without recursion.
-
-    No fixed depth limit may strand legitimate long-lived autosave history. This
-    storage verification is linear in history, not a per-request readiness API.
-    """
+    """Walk compact immutable ancestry without recursion or a fixed depth cutoff."""
     seen = set()
     while snapshot is not None:
         if snapshot.pk in seen:
@@ -128,12 +126,33 @@ def _history(snapshot):
         snapshot = snapshot.predecessor
 
 
+def _hydrated_history(snapshot):
+    """Verify full ancestry while retaining at most one batch of large documents.
+
+    The lightweight chain has identity/digest metadata only. Canonical documents
+    and their projections are fetched in fixed-size batches, outside write locks.
+    No trust watermark or depth cutoff can silently skip historical verification.
+    """
+    for batch in batched(_history(snapshot), HISTORY_BATCH_SIZE):
+        rows = list(
+            AppliedConfigurationVersion.objects.filter(pk__in=[row.pk for row in batch])
+        )
+        if len(rows) != len(batch):
+            raise ConfigError("Configuration history is incomplete.")
+        _prefetch_history(rows)
+        by_id = {row.pk: row for row in rows}
+        for metadata in batch:
+            row = by_id[metadata.pk]
+            row.predecessor = metadata.predecessor
+            yield row
+
+
 def _load_history(digest):
-    """Load an immutable lineage with bounded query count, independent of depth.
+    """Load only compact ancestry metadata, never the entire document corpus.
 
     UNION deduplicates identity pairs, so even a forged cycle terminates in SQL;
-    the Python verifier then explicitly rejects it. Projection prefetches avoid
-    per-version round trips. Only internal SQL identifiers are interpolated.
+    the Python verifier then explicitly rejects it. Only internal SQL identifiers
+    are interpolated. Full documents/projections are hydrated in separate batches.
     """
     table = connection.ops.quote_name(AppliedConfigurationVersion._meta.db_table)
     rows = list(
@@ -143,7 +162,8 @@ def _load_history(digest):
             UNION
             SELECT parent.id, parent.predecessor_id FROM {table} parent
             JOIN chain child ON parent.id = child.predecessor_id
-        ) SELECT entry.* FROM {table} entry JOIN chain USING (id)""",
+        ) SELECT entry.id,entry.predecessor_id,entry.digest
+        FROM {table} entry JOIN chain USING (id)""",
             [digest],
         )
     )
@@ -155,6 +175,11 @@ def _load_history(digest):
             return None
         # Populate the ordinary FK cache without lazy per-ancestor SELECTs.
         row.predecessor = by_id.get(row.predecessor_id)
+    return next(row for row in rows if row.digest == digest)
+
+
+def _prefetch_history(rows):
+    """Verify and cache one bounded batch's actual normalized projections."""
     prefetch_related_objects(rows, "parish", "integrations")
     policy_rows = [row for row in rows if row.validation_schema in POLICY_SCHEMAS]
     prefetch_related_objects(
@@ -175,8 +200,7 @@ def _load_history(digest):
         from parishkit.stewardship.campaigns.projections import sql_boundaries_match
 
         if not sql_boundaries_match([row.pk for row in campaign_rows]):
-            return None
-    return next(row for row in rows if row.digest == digest)
+            raise ConfigError("Configuration boundaries are invalid.")
 
 
 def _remember_integrations(document, by_kind, by_id):
@@ -235,7 +259,7 @@ def _verify_history(snapshot, candidate=None):
             parish_id = parishes[0]["id"] if parishes else None
             _remember_integrations(candidate, by_kind, by_id)
             newer_policy = _remember_policy(candidate, policy_ids)
-        for entry in _history(snapshot):
+        for entry in _hydrated_history(snapshot):
             predecessor = entry.predecessor.digest if entry.predecessor_id else None
             version = verified_snapshot_version(entry, predecessor_digest=predecessor)
             parishes = version.document()["sections"].get("parish", [])

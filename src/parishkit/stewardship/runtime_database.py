@@ -11,8 +11,27 @@ from .accounts.key_files import read_private
 from .deployment import ServiceRole
 
 
+def require_internal_database(configuration):
+    """This Compose profile has no external SQL/TLS trust configuration.
+
+    Reject a hand-edited runtime document before libpq can negotiate an
+    unverified remote connection. The renderer enforces the same private service
+    address; remote databases require a separate verified-TLS deployment profile.
+    Literal loopback is also admitted for isolated operator/test connections;
+    Compose rendering still requires its exact internal service endpoint.
+    """
+    local = configuration.postgres.host in {"127.0.0.1", "::1"}
+    compose = (
+        configuration.postgres.host == "postgres"
+        and configuration.postgres.port == 5432
+    )
+    if not (local or compose):
+        raise ConfigError("Operational SQL requires the private Compose database.")
+
+
 def database_settings(configuration):
     """Only an individual owner-only password file supplies a database secret."""
+    require_internal_database(configuration)
     db = configuration.postgres
     if db.password_file is None:
         raise ConfigError("An individual database password file is required.")
@@ -31,7 +50,7 @@ def database_settings(configuration):
         "PASSWORD": password,
         "CONN_MAX_AGE": 0,
         "CONN_HEALTH_CHECKS": False,
-        "OPTIONS": {"connect_timeout": db.connect_timeout},
+        "OPTIONS": {"connect_timeout": db.connect_timeout, "sslmode": "disable"},
     }
 
 

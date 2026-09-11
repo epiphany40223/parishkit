@@ -28,6 +28,7 @@ def check_ingress(file, project, configuration, run):
         " timeout=3), server_hostname='parish.example')\n"
         "connection.sendall(('GET ' + sys.argv[2] + ' HTTP/1.1\\r\\n'"
         " 'Host: parish.example\\r\\nAuthorization: Bearer private-header-canary\\r\\n'"
+        " 'X-Forwarded-For: 192.0.2.99, 198.51.100.99\\r\\n'"
         " 'Cookie: private-cookie-canary\\r\\nConnection: close\\r\\n\\r\\n')"
         ".encode())\n"
         "response = http.client.HTTPResponse(connection)\nresponse.begin()\n"

@@ -176,7 +176,12 @@ def test_metrics_reuse_query_failure_cannot_install_candidate(
     metric_installer, monkeypatch
 ):
     """A transient database failure after syntax validation must remain fail-closed."""
+    from django.db import DatabaseError
     from django.db.models.query import QuerySet
+
+    from parishkit.stewardship.accounts.credential_installation import (
+        CredentialValidationUnavailable,
+    )
 
     installer, private, prior, candidate = metric_installer
     stage_metrics(private, prior, candidate)
@@ -190,10 +195,15 @@ def test_metrics_reuse_query_failure_cannot_install_candidate(
             and "resulting_fingerprint" in str(queryset.query)
         ):
             calls.append(True)
-            raise RuntimeError("synthetic database outage")
+            raise DatabaseError("synthetic database outage")
         return original(queryset)
 
     monkeypatch.setattr(QuerySet, "exists", fail_reuse_query)
-    assert run_metrics(installer).state == "failed"
+    with pytest.raises(CredentialValidationUnavailable):
+        run_metrics(installer)
     assert calls == [True]
     assert read_private(installer.files.path) == prior.serialize()
+    assert SecretReplacementRequest.objects.get().state == "testing"
+    monkeypatch.setattr(QuerySet, "exists", original)
+    assert run_metrics(installer).state == "awaiting_ack"
+    assert read_private(installer.files.path) == candidate.serialize()

@@ -22,7 +22,8 @@ def web_acl(password):
     commands = (
         "+ping +evalsha +eval +script|load +script|exists +time "
         "+zremrangebyscore +zadd +expire +zremrangebyrank +zcard "
-        "+hmget +hset +get +set +hincrby +hgetall +select +client|setinfo +info"
+        "+hmget +hset +get +set +exists +del +hincrby +hgetall "
+        "+select +client|setinfo +info"
     )
     return (
         "user default off\nuser web on #"

@@ -143,13 +143,19 @@ def test_admitted_worker_publishes_only_safe_receipts(cohort, monkeypatch, setti
 
 
 @pytest.mark.parametrize("state", ["S", "Z", "X", "x"])
-def test_linux_stat_parser_handles_parentheses_and_zombies(monkeypatch, state):
+@pytest.mark.parametrize("recorded_pid", [123, 124])
+def test_linux_stat_parser_handles_parentheses_and_zombies(
+    monkeypatch, state, recorded_pid
+):
     """Linux comm may contain closing parentheses; starttime is field 22."""
-    value = f"123 (worker ) name) {state} 100 " + "0 " * 17 + "456 0\n"
-    monkeypatch.setattr(
-        consumers.Path, "open", lambda *args, **kwargs: io.StringIO(value)
-    )
-    if state == "S":
+    value = f"{recorded_pid} (worker ) name) {state} 100 " + "0 " * 17 + "456 0\n"
+
+    def open_stat(path, *args, **kwargs):
+        assert str(path) == "/proc/123/stat"
+        return io.StringIO(value)
+
+    monkeypatch.setattr(consumers.Path, "open", open_stat)
+    if state == "S" and recorded_pid == 123:
         assert consumers.process_identity(123) == (100, 456)
     else:
         with pytest.raises(ConfigError):
@@ -166,9 +172,12 @@ def test_invalid_pid_refused_without_reading_proc(pid):
 @pytest.mark.parametrize("value", ["101 102", "101 101", "garbage", "1" * 4097])
 def test_linux_child_inventory_is_bounded_and_unique(monkeypatch, value):
     """The exact supervisor's inventory must be bounded and unambiguous."""
-    monkeypatch.setattr(
-        consumers.Path, "open", lambda *args, **kwargs: io.StringIO(value)
-    )
+
+    def open_children(path, *args, **kwargs):
+        assert str(path) == "/proc/100/task/100/children"
+        return io.StringIO(value)
+
+    monkeypatch.setattr(consumers.Path, "open", open_children)
     if value == "101 102":
         assert consumers._children(100) == (101, 102)
     else:

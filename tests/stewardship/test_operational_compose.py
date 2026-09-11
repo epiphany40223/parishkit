@@ -340,6 +340,18 @@ def test_complete_foundation_bootstrap_and_online_exclusion(tmp_path, production
             str(layout.service_directory / "web.yaml"),
         )
         assert json.loads(diagnosis.stdout)["ready"] is True
+        auth_probe = compose_run(
+            file,
+            project,
+            "exec",
+            "-T",
+            "web",
+            "python",
+            "-c",
+            Path(__file__).with_name("runtime_auth_probe.py").read_text(),
+            str(layout.service_directory / "web.yaml"),
+        )
+        assert auth_probe.stdout.strip() == "RUNTIME_AUTH_CONSUMERS_OK"
         from .runtime_health_checks import check_dependency_failure
 
         check_dependency_failure(

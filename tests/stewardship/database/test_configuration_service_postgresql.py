@@ -17,7 +17,7 @@ from parishkit.stewardship.accounts.configuration_service import (
 from parishkit.stewardship.deployment import ServiceRole, load_deployment
 
 from ..test_request_patch import parish_patch
-from .campaign_builders import initialized
+from .campaign_builders import draft_campaign, initialized
 
 pytestmark = pytest.mark.django_db(transaction=True)
 ROLE = "pk_stewardship_config_installer"
@@ -61,14 +61,32 @@ def as_config_installer():
             cursor.execute("RESET SESSION AUTHORIZATION")
 
 
+@pytest.mark.parametrize("current_campaign", [False, True])
 def test_restricted_installer_applies_real_yaml_and_retries(
-    tmp_path, config_role, monkeypatch
+    tmp_path, config_role, monkeypatch, current_campaign
 ):
     """An admitted service installs an exact digest without private-data reads."""
-    store, root, actor = initialized(tmp_path)
+    if current_campaign:
+        store, campaign, actor = draft_campaign(tmp_path)
+        root = store.active()
+        from parishkit.stewardship.campaigns.models import ScheduleDefinition
+
+        schedule = ScheduleDefinition.objects.get(campaign=campaign)
+        patch = [
+            *parish_patch(root, name="Changed parish"),
+            {
+                "operation": "update",
+                "section": "schedules",
+                "id": str(schedule.pk),
+                "values": {"subject": "Updated invitation"},
+            },
+        ]
+    else:
+        store, root, actor = initialized(tmp_path)
+        patch = parish_patch(root, name="Changed parish")
     request = record_request(
         base_digest=root.digest,
-        patch=parish_patch(root, name="Changed parish"),
+        patch=patch,
         actor_id=actor,
         request_key=uuid4(),
         correlation_id=uuid4(),

@@ -50,7 +50,7 @@ def campaign_transaction(campaign_id, *, correlation_id):
             cursor.execute("SELECT pg_advisory_xact_lock(%s,%s)", [736220, 1])
         runtime = SystemConfiguration.objects.select_for_update().get()
         campaign = (
-            Campaign.objects.select_for_update()
+            Campaign.objects.select_for_update(of=("self",))
             .select_related("active_configuration")
             .get(pk=campaign_id)
         )

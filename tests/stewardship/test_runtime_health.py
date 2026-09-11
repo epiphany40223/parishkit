@@ -117,3 +117,29 @@ def test_metrics_failure_does_not_change_request_behavior(settings, monkeypatch)
     for path in ("/health/live", "/health/ready", "/metrics"):
         assert middleware(RequestFactory().get(path)).status_code == 200
     assert record.call_count == 1
+
+
+def test_inflight_readiness_is_unknown_to_metrics_not_a_false_outage(monkeypatch):
+    """Simultaneous independent probe timers cannot emit fabricated down gauges."""
+    runtime = RuntimeHealth(
+        SimpleNamespace(paths={"reports": "synthetic", "media": "synthetic"}),
+        object(),
+        Mock(),
+        b"t" * 43,
+    )
+    runtime.client.hgetall.return_value = {}
+    runtime._readiness.running = True
+    cursor = Mock()
+    cursor.fetchone.return_value = (1,)
+    database = Mock()
+    database.cursor.return_value.__enter__ = Mock(return_value=cursor)
+    database.cursor.return_value.__exit__ = Mock(return_value=False)
+    monkeypatch.setattr("django.db.connection", database)
+    monkeypatch.setattr(
+        "parishkit.stewardship.runtime_health.shutil.disk_usage",
+        lambda _: SimpleNamespace(free=100),
+    )
+    assert not any(runtime.checks().values())  # HTTP readiness stays fail closed.
+    lines = runtime._metric_lines()
+    assert "stewardship_dependency_up{" not in lines
+    assert "stewardship_database_connections 1" in lines

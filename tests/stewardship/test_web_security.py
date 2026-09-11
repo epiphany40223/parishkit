@@ -77,6 +77,28 @@ def test_host_checked_even_when_view_never_uses_it(client):
     assert b"private-invalid" not in response.content
 
 
+@pytest.mark.parametrize("path", ["/admin/login", "/health/live"])
+@pytest.mark.parametrize("peer", ["127.0.0.1", "203.0.113.1"])
+@override_settings(
+    ALLOWED_HOSTS=["parish.example", "127.0.0.1"],
+    STEWARDSHIP_CANONICAL_HOST="parish.example",
+    STEWARDSHIP_INTERNAL_NETWORKS=("127.0.0.0/8",),
+)
+def test_loopback_host_exception_is_only_for_admitted_internal_probes(path, peer):
+    """Global Django host admission must not expose app routes on a probe alias."""
+    reached = []
+
+    def view(request):
+        reached.append(request.path)
+        return HttpResponse("ok")
+
+    request = RequestFactory().get(path, HTTP_HOST="127.0.0.1", REMOTE_ADDR=peer)
+    response = SecurityBoundaryMiddleware(view)(request)
+    allowed = path == "/health/live" and peer == "127.0.0.1"
+    assert response.status_code == (200 if allowed else 400)
+    assert bool(reached) is allowed
+
+
 def test_untrusted_forwarding_is_not_a_client_identity():
     """Direct peers cannot select the limiter address or request scheme."""
     request = RequestFactory().get(

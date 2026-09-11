@@ -89,6 +89,41 @@ def login(code, client=None):
     return client, response
 
 
+def test_multipart_keepalive_is_a_bad_request_not_a_server_error(family_service):
+    """CSRF may consume multipart input before the empty-body activity boundary."""
+    client, response = login(family_service.code)
+    assert response.status_code == 302
+    response = client.post(
+        "/family/keepalive",
+        {"csrfmiddlewaretoken": client.cookies["csrftoken"].value, "claim": "x"},
+    )
+    assert response.status_code == 400
+
+
+def test_family_login_reuses_only_the_fresh_locked_scope(family_service, monkeypatch):
+    """One unlocked lookup and one lock-protected scope suffice for session minting."""
+    from parishkit.stewardship.accounts import family_authentication as auth
+
+    original, calls = auth._scope, []
+
+    def observed(service):
+        calls.append(True)
+        return original(service)
+
+    client = Client(enforce_csrf_checks=True)
+    assert client.get("/").status_code == 200
+    monkeypatch.setattr(auth, "_scope", observed)
+    response = client.post(
+        "/",
+        {
+            "code": family_service.code,
+            "csrfmiddlewaretoken": client.cookies["csrftoken"].value,
+        },
+    )
+    assert response.status_code == 302
+    assert len(calls) == 2
+
+
 def test_ordered_family_cleanup_preserves_audit_attribution(family_service):
     from django.contrib.sessions.models import Session
 
@@ -185,7 +220,12 @@ def test_production_code_never_authenticates_testing(family_service):
 
 
 def test_invalidation_ends_testing_sessions_before_sensitive_cleanup(family_service):
+    from django.contrib.sessions.models import Session
+
+    from parishkit.stewardship.campaigns.rehearsals import cleanup_rehearsal
+
     client, _ = login(family_service.code)
+    session = FamilySession.objects.get()
     assert client.get("/family/").status_code == 200
     invalidate_rehearsal(
         campaign_id=family_service.campaign.pk, admit=lambda *args: True
@@ -194,6 +234,12 @@ def test_invalidation_ends_testing_sessions_before_sensitive_cleanup(family_serv
     assert client.get("/family/").status_code == 302
     assert FamilySession.objects.get().revoked_at is not None
     assert client.get("/access/" + family_service.token).status_code == 403
+    # A batch of one removes one session and one credential independently;
+    # parent session cleanup follows deletion of its PROTECT metadata child.
+    assert cleanup_rehearsal(session.rehearsal_epoch_id, batch_size=1) == 2
+    assert not FamilySession.objects.filter(pk=session.pk).exists()
+    assert not Session.objects.filter(pk=session.session_id).exists()
+    assert cleanup_rehearsal(session.rehearsal_epoch_id, batch_size=1) == 0
 
 
 def test_keepalive_is_empty_csrf_protected_rate_bounded_and_passive(

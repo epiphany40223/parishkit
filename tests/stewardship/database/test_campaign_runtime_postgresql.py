@@ -33,6 +33,19 @@ from .campaign_builders import (
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
+def test_initial_configuration_cannot_leave_dangling_campaign_selection():
+    """Bootstrap must establish runtime authority before a separate draft selection."""
+    from parishkit.config import ConfigError
+    from parishkit.stewardship.campaigns.admission import validate_installation
+
+    from ..campaign_factory import campaign, schedule
+
+    owner = campaign()
+    for sections in ({"campaigns": [owner]}, {"schedules": [schedule(owner["id"])]}):
+        with pytest.raises(ConfigError, match="Initial configuration"):
+            validate_installation({"sections": sections})
+
+
 def test_activation_and_subsequent_policy_edit_have_independent_versions(tmp_path):
     """Runtime actions cannot create gaps or collisions in YAML activation ordinals."""
     store, campaign, actor = draft_campaign(tmp_path)

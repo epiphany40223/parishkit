@@ -13,6 +13,7 @@ from parishkit.stewardship.accounts.cryptography import (
     TokenPublicKeyring,
     new_code,
 )
+from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .credential_keys import key_set_lock
@@ -55,7 +56,9 @@ class FamilyStatus:
         ):
             raise ValueError("Family status is inconsistent.")
         if any(
-            type(value) is not str or not re.fullmatch(r"[a-z][a-z_]{0,47}", value)
+            type(value) is not str
+            or not re.fullmatch(r"[a-z][a-z_]{0,47}", value)
+            or value == "population_pending"
             for value in (self.status_reason, self.deliverability_reason)
         ):
             raise ValueError("Family status reasons must be bounded identifiers.")
@@ -111,7 +114,8 @@ def _allocate(campaign_id, rows, general, mac):
                 # Identities exist first, still inside the caller's atomic source
                 # promotion. They become eligible only after code assignment.
                 FamilyCampaign.objects.bulk_update(
-                    [item[0] for item in accepted], ["code_ciphertext", "version"]
+                    [item[0] for item in accepted],
+                    ["code_ciphertext", "version", "actor_id", "correlation_id"],
                 )
                 FamilyCodeFingerprint.objects.bulk_create(
                     [
@@ -143,6 +147,7 @@ def reconcile_families(
     mac,
     admit,
     public=None,
+    actor_id=None,
 ):
     """Caller owns an atomic source promotion; no partial corpus can become visible.
 
@@ -170,6 +175,9 @@ def reconcile_families(
         )
     if not isinstance(source_snapshot_id, UUID) or not isinstance(campaign_id, UUID):
         raise TypeError("Campaign and source snapshot identities must be UUIDs.")
+    if actor_id is not None and not isinstance(actor_id, UUID):
+        raise TypeError("Source promotion actor must be a UUID or system identity.")
+    correlation_id = current_correlation()
     statuses = tuple(statuses)
     if any(not isinstance(item, FamilyStatus) for item in statuses) or len(
         {item.duid for item in statuses}
@@ -220,6 +228,8 @@ def reconcile_families(
                     deliverability_reason="population_pending",
                     source_generation=source_generation,
                     eligibility_changed_at=now,
+                    actor_id=actor_id,
+                    correlation_id=correlation_id,
                 )
                 existing[status.duid] = row
                 new.append(row)
@@ -234,6 +244,7 @@ def reconcile_families(
         ]
         for row in missing:
             row.version += 1
+            row.actor_id, row.correlation_id = actor_id, correlation_id
         # Limit statement/candidate memory while preserving one surrounding commit.
         for start in range(0, len(missing), 500):
             _allocate(campaign_id, missing[start : start + 500], general, mac)
@@ -270,6 +281,7 @@ def reconcile_families(
                 row.first_eligible_source_generation = source_generation
             row.source_generation = source_generation
             row.version += 1
+            row.actor_id, row.correlation_id = actor_id, correlation_id
             changed.append(row)
         FamilyCampaign.objects.bulk_update(
             changed,
@@ -280,6 +292,8 @@ def reconcile_families(
                 "first_eligible_source_generation",
                 "source_generation",
                 "version",
+                "actor_id",
+                "correlation_id",
             ],
             batch_size=500,
         )

@@ -68,6 +68,7 @@ def record_incident(kind, severity, window, counts):
     if severity not in {0, 1, 2} or type(window) is not int or window < 0:
         raise ValueError("Invalid authentication incident level/window.")
     with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL lock_timeout='1s'")
         cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [736225, 1])
         cursor.execute("SELECT statement_timestamp()")
         now = cursor.fetchone()[0]

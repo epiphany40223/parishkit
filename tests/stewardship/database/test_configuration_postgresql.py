@@ -511,9 +511,9 @@ def test_integration_readdition_with_same_identity_is_allowed(db):
     assert is_prepared(version.digest)
 
 
-@pytest.mark.parametrize("depth", [1, 40])
+@pytest.mark.parametrize("depth", [1, 40, 130])
 def test_history_reads_are_batched_before_global_lock(db, monkeypatch, depth):
-    """History size changes neither round trips nor parsing inside the write lock."""
+    """Round trips grow per bounded batch, never per version or inside write locks."""
     from django.test.utils import CaptureQueriesContext
 
     from parishkit.stewardship.accounts import configuration_snapshots as snapshots
@@ -525,7 +525,9 @@ def test_history_reads_are_batched_before_global_lock(db, monkeypatch, depth):
         parent = insert_unchecked(version, predecessor=parent)
     with CaptureQueriesContext(connection) as captured:
         assert is_prepared(version.digest)
-    assert len(captured) == 3
+    batches = (depth + snapshots.HISTORY_BATCH_SIZE - 1) // snapshots.HISTORY_BATCH_SIZE
+    assert len(captured) == 1 + 3 * batches
+    assert "canonical_document" not in captured[0]["sql"]
 
     lock_seen = False
     original_parse = snapshots.parse_version

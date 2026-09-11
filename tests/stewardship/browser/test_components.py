@@ -32,6 +32,33 @@ def test_csp_permits_the_fixed_google_form_destination(page, component_origin):
     assert page.get_by_role("heading", name="Synthetic Google sign-in").is_visible()
 
 
+def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
+    """The permitted Google origin must not imply arbitrary cross-origin posting."""
+    requests = []
+
+    def foreign(route):
+        requests.append(route.request.url)
+        route.fulfill(status=200, body="unexpected navigation")
+
+    page.route("https://unrelated.example/**", foreign)
+    page.goto(component_origin + "/login")
+    page.evaluate("""() => {
+        window.formViolations = [];
+        document.addEventListener('securitypolicyviolation', event => {
+            window.formViolations.push(event.effectiveDirective);
+        });
+    }""")
+    page.locator("form").evaluate(
+        "form => form.action = 'https://unrelated.example/collect'"
+    )
+    # Chromium schedules a navigation before CSP cancels it; do not wait for
+    # that nonexistent navigation, but do wait for the actual violation event.
+    page.get_by_role("button", name="Sign in with Google").click(no_wait_after=True)
+    page.wait_for_function("() => window.formViolations.includes('form-action')")
+    assert requests == []
+    assert page.url == component_origin + "/login"
+
+
 @pytest.mark.parametrize(
     "path",
     [

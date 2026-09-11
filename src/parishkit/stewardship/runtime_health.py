@@ -44,9 +44,12 @@ class RuntimeHealth:
             ("database", "migrations", "configuration", "valkey", "private_storage"),
             False,
         )
-        return dict(
-            self._readiness.read(self._check_dependencies, unavailable=unavailable)
-        )
+        observed = self.dependency_observation()
+        return dict(unavailable if observed is None else observed)
+
+    def dependency_observation(self):
+        """Unknown/in-flight observation is not evidence that a dependency failed."""
+        return self._readiness.read(self._check_dependencies, unavailable=None)
 
     def _check_dependencies(self):
         """Probe each independent internal dependency; keep exception values private."""
@@ -126,7 +129,7 @@ class RuntimeHealth:
             "# HELP stewardship_dependency_up Internal readiness dependency.",
             "# TYPE stewardship_dependency_up gauge",
         ]
-        for name, ready in self.checks().items():
+        for name, ready in (self.dependency_observation() or {}).items():
             lines.append(
                 f'stewardship_dependency_up{{dependency="{name}"}} {int(ready)}'
             )
