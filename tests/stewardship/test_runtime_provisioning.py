@@ -75,6 +75,32 @@ def test_interrupted_provisioning_keeps_passwords_and_requires_exact_intent(
     assert read_private(layout.database_password("web")) == before
 
 
+def test_atomic_writer_residue_does_not_strand_exact_provisioning_retry(
+    tmp_path, monkeypatch
+):
+    """A killed writer's private temporary is preserved, never adopted as a password."""
+    config = configuration_at(tmp_path / "runtime")
+    layout = RuntimeLayout(config)
+
+    def interrupted(path, value):
+        raise OSError("simulated interruption")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(provisioning, "_retain", interrupted)
+        with pytest.raises(OSError):
+            provisioning.provision_runtime(config, image=IMAGE)
+    password = read_private(layout.database_password("web"))
+    residue = layout.database_password("web").with_name(
+        "." + layout.database_password("web").name + ".a1234567.tmp"
+    )
+    write_private(residue, b"partial-private-unpublished-bytes")
+    assert provisioning.provision_runtime(config, image=IMAGE)[
+        "runtime_storage_provisioned"
+    ]
+    assert read_private(layout.database_password("web")) == password
+    assert read_private(residue) == b"partial-private-unpublished-bytes"
+
+
 def test_interrupted_provisioning_does_not_overwrite_changed_artifact(
     tmp_path, monkeypatch
 ):

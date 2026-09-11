@@ -10,6 +10,10 @@ from .runtime_paths import RuntimeLayout
 from .startup_interlock import StartupBusy, StartupLease
 
 
+class ObservationUnavailable(Exception):
+    """A bounded observation is incomplete, not evidence of five failed services."""
+
+
 def health_command(configuration):
     """Inspect dependencies inside an admitted web container without serving HTTP.
 
@@ -44,7 +48,9 @@ def health_command(configuration):
                     read_private(configuration.secrets["metrics"])
                 ).token,
             )
-            result = runtime.checks()
+            result = runtime.dependency_observation()
+            if result is None:
+                raise ObservationUnavailable()
             try:
                 admit_runtime_database(configuration)
             except Exception:
@@ -63,6 +69,12 @@ def execute_health(args):
         if args.config is None:
             raise ConfigError("Detailed health requires an explicit configuration.")
         checks = health_command(load_deployment(args.config))
+    except ObservationUnavailable:
+        print(
+            "ERROR: dependency observation incomplete; retry diagnostics",
+            file=sys.stderr,
+        )
+        return 3
     except StartupBusy:
         print(
             "ERROR: offline maintenance is in progress; retry diagnostics",

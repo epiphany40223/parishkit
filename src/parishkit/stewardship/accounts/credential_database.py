@@ -113,7 +113,8 @@ def admit_grants(allowed, *, database=None):
             "AND has_sequence_privilege(current_user,c.oid,'USAGE,SELECT,UPDATE')) OR "
             "EXISTS(SELECT 1 FROM pg_namespace n WHERE n.nspname !~ '^pg_' "
             "AND n.nspname<>'information_schema' "
-            "AND has_schema_privilege(current_user,n.oid,'CREATE'))"
+            "AND has_schema_privilege(current_user,n.oid,'CREATE')) OR "
+            "has_database_privilege(current_user,current_database(),'CREATE')"
         )
         if cursor.fetchone()[0]:
             raise ConfigError("Installer database grants are excessive.")

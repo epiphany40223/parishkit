@@ -53,6 +53,9 @@ def test_rendered_foundation_enforces_individual_mounts_and_profiles(
         assert service["read_only"] is True
         assert service["init"] is True
         assert service["cap_drop"] == ["ALL"]
+        assert service.get("cap_add", []) == (
+            ["NET_BIND_SERVICE"] if name == "caddy" else []
+        )
         assert service["security_opt"] == ["no-new-privileges:true"]
         for mount in service["volumes"]:
             assert mount["bind"]["create_host_path"] is False

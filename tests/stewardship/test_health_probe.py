@@ -34,6 +34,7 @@ def test_probe_caches_success_and_sanitized_failure():
     """A private exception is never retained in or exposed from observations."""
     probe = HealthProbe()
     assert probe.read(lambda: "ready", unavailable="down") == "ready"
+    assert probe.cached() == "ready"
     assert probe.read(lambda: "unexpected", unavailable="down") == "ready"
     failure = HealthProbe()
 
@@ -42,6 +43,16 @@ def test_probe_caches_success_and_sanitized_failure():
 
     assert failure.read(broken, unavailable="down") == "down"
     assert failure.value == "down"
+
+
+def test_cached_observation_does_not_start_or_wait_for_work():
+    """Nested collectors cannot consume each other's bounded refresh deadlines."""
+    probe = HealthProbe()
+    assert probe.cached() is None
+    assert not probe.running
+    probe.running = True
+    assert probe.cached() is None
+    assert probe.running
 
 
 def test_installer_heartbeat_refuses_stale_or_reused_process(tmp_path, monkeypatch):

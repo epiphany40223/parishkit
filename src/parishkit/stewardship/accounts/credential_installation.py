@@ -22,6 +22,7 @@ from parishkit.stewardship.service_boundaries import (
 )
 
 from .credential_database import admit_consumer_database, admit_installer_database
+from .credential_errors import CredentialValidationUnavailable
 from .credential_files import CredentialFiles
 from .credential_handoff import PrivateHandoff
 from .cryptography import CryptographicError
@@ -34,13 +35,6 @@ from .secret_models import (
     SecretReplacementRequest,
 )
 from .secret_requests import _now, _receipt, _transaction, _transition
-
-
-class CredentialValidationUnavailable(Exception):
-    """A provider adapter requests retry without exposing provider error text."""
-
-    def __init__(self):
-        super().__init__("Credential validation is temporarily unavailable.")
 
 
 class CredentialInstaller:

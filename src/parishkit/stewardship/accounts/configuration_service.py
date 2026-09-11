@@ -40,7 +40,7 @@ CONFIGURATION_GRANTS = {
     "stewardship_assignment_overlay": {"SELECT"},
     "stewardship_campaign_configuration": {"SELECT", "INSERT"},
     "stewardship_campaign": {"SELECT", "INSERT", "UPDATE"},
-    "stewardship_campaign_work_gate": {"SELECT", "INSERT", "UPDATE"},
+    "stewardship_campaign_work_gate": {"SELECT"},
     "stewardship_campaign_config_intent": {"SELECT"},
     "stewardship_campaign_config_abort": {"SELECT"},
     "stewardship_campaign_control": {"SELECT"},

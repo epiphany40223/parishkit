@@ -232,7 +232,6 @@ def provision_initial_files(configuration, identity):
     layout = _layout(configuration)
     version = bootstrap_version(identity.deployment_id, identity.admin_email)
     with StartupLease(layout.interlock, offline=True) as lease:
-        _marker(layout, identity)
         store = AuthorityStore(configuration.paths["authority"], validate_sections)
         selected = store.active()
         if selected is not None and selected != version:
@@ -244,8 +243,11 @@ def provision_initial_files(configuration, identity):
             raise ConfigError(
                 "Bootstrap requires operator-provided OAuth and database files."
             )
-        read_private(oauth)
+        from .runtime_web import parse_google_client
+
+        parse_google_client(read_private(oauth))
         read_private(password)
+        _marker(layout, identity)
         deployment_file = layout.deployment_directory / "deployment.yaml"
         _publish(deployment_file, _json(deployment_document(configuration)), lease)
         for path, value in _candidates(layout, identity).items():
@@ -276,7 +278,7 @@ def materialize_initial_files(configuration, identity):
                 raise ConfigError("Bootstrap database identity has changed.")
         else:
             # Revalidate before materialization; this phase creates no missing keys.
-            _candidates(layout, identity, existing=True)
+            candidates = _candidates(layout, identity, existing=True)
             lease.check()
             prepare_initial_configuration(
                 store,
@@ -286,6 +288,20 @@ def materialize_initial_files(configuration, identity):
                 actor_id=uuid5(identity.deployment_id, "bootstrap-operator-v1"),
                 correlation_id=uuid5(identity.deployment_id, "bootstrap-import-v1"),
             )
+            from .campaigns.credential_keys import initialize_key_inventories
+            from .observability import correlation
+
+            # Publish non-secret inventory under the offline bootstrap login.
+            # If interrupted after activation, an exact retry verifies the same
+            # rings; no UPDATE/rotation authority is granted to this login.
+            with correlation(uuid5(identity.deployment_id, "bootstrap-keys-v1")):
+                initialize_key_inventories(
+                    *(
+                        parse_keyring(candidates[layout.credential(target)], target)
+                        for target in INITIAL_TARGETS
+                        if target != "metrics"
+                    )
+                )
             lease.check()
             write_private(
                 marker, _json(identity.document() | {"state": "retiring_journals"})

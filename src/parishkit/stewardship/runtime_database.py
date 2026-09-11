@@ -100,13 +100,16 @@ def offline_grants(role):
 
     Recovery needs INSERT of an operator request and session revocation, which
     the online config-installer explicitly must not possess. Bootstrap adds only
-    creation of the initial singleton; schema migrations use the separate owner.
+    creation of the initial singleton and key inventories; schema migrations use
+    the separate owner. Bootstrap cannot UPDATE or rotate credential inventories.
     """
     from .accounts.configuration_service import CONFIGURATION_GRANTS
 
     grants = {table: set(values) for table, values in CONFIGURATION_GRANTS.items()}
     if role is ServiceRole.BOOTSTRAP:
         grants["stewardship_system_configuration"].add("INSERT")
+        grants["stewardship_credential_key_state"] = {"SELECT", "INSERT"}
+        grants["stewardship_credential_deployment"] = {"SELECT", "INSERT"}
     elif role is ServiceRole.ADMIN_RECOVERY:
         grants["stewardship_config_request"].add("INSERT")
         grants["stewardship_portal_session"] = {"SELECT", "UPDATE"}

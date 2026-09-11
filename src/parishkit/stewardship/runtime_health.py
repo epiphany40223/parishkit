@@ -24,6 +24,7 @@ class RuntimeHealth:
     store: object = field(repr=False)
     client: object = field(repr=False)
     metrics_token: bytes = field(repr=False)
+    telemetry_client: object = field(default=None, repr=False, compare=False)
     _readiness: HealthProbe = field(
         default_factory=HealthProbe, repr=False, compare=False
     )
@@ -129,7 +130,9 @@ class RuntimeHealth:
             "# HELP stewardship_dependency_up Internal readiness dependency.",
             "# TYPE stewardship_dependency_up gauge",
         ]
-        for name, ready in (self.dependency_observation() or {}).items():
+        # A metrics scrape has its own deadline. Never spend it waiting on a
+        # nested readiness refresh; missing/stale observations are omitted.
+        for name, ready in (self._readiness.cached() or {}).items():
             lines.append(
                 f'stewardship_dependency_up{{dependency="{name}"}} {int(ready)}'
             )
@@ -242,5 +245,11 @@ class HttpMetricsMiddleware:
         }:
             # Independent health/admission owners report Valkey outages.
             with suppress(Exception):
-                record_http(runtime.client, response.status_code, monotonic() - start)
+                record_http(
+                    runtime.telemetry_client
+                    if runtime.telemetry_client is not None
+                    else runtime.client,
+                    response.status_code,
+                    monotonic() - start,
+                )
         return response

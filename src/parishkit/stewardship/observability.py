@@ -106,7 +106,7 @@ def emit_failure(error, *, event=Event.TASK_FAILED):
 
     from parishkit.config import ConfigError
 
-    from .accounts.credential_installation import CredentialValidationUnavailable
+    from .accounts.credential_errors import CredentialValidationUnavailable
     from .accounts.cryptography import CryptographicError
 
     kind = next(

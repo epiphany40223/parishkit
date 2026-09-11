@@ -21,6 +21,34 @@ def test_default_budget_accounts_for_all_classes_and_overlap():
         budget.validate_topology(background_processes=17)
 
 
+def test_health_connections_are_already_in_the_auxiliary_reserve():
+    """The web SQL ceiling's observation threads are counted once, not twice."""
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.database_provisioning import role_limit
+    from parishkit.stewardship.deployment import ServiceRole
+
+    budget = RuntimeBudget(download_pool_per_process=4, download_capacity=8)
+    config = SimpleNamespace(runtime_budget=budget)
+    assert (
+        budget.auxiliary_connections
+        == 2 * budget.web_processes * budget.replicas * budget.rollout_overlap
+    )
+    assert (
+        budget.total_connections
+        == (
+            role_limit(config, ServiceRole.WEB)
+            + role_limit(config, "download")
+            + budget.background_connections
+            + budget.operator_connections
+            + budget.database_reserved
+        )
+        == 99
+    )
+    with pytest.raises(ConfigError):
+        replace(budget, auxiliary_connections=7)
+
+
 @pytest.mark.parametrize(
     "changes",
     [

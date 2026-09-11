@@ -61,9 +61,11 @@ def parse_google_client(raw):
         raise ConfigError("The OAuth client file is invalid.") from None
 
 
-def valkey_client(configuration):
+def valkey_client(configuration, *, telemetry=False):
     """Create a finite authenticated pool; never put a password in a broker URL."""
     from redis import Redis
+    from redis.backoff import NoBackoff
+    from redis.retry import Retry
 
     broker = configuration.valkey
     if broker.password_file is None:
@@ -80,10 +82,11 @@ def valkey_client(configuration):
         db=broker.database,
         username="web",
         password=password,
-        socket_connect_timeout=3,
-        socket_timeout=3,
+        socket_connect_timeout=0.05 if telemetry else 3,
+        socket_timeout=0.05 if telemetry else 3,
         max_connections=configuration.runtime_budget.web_threads + 2,
         retry_on_timeout=False,
+        retry=Retry(NoBackoff(), 0),
     )
 
 
@@ -249,7 +252,11 @@ def configure_web(configuration):
         rings["token_public"],
     )
     settings.STEWARDSHIP_HEALTH_RUNTIME = RuntimeHealth(
-        configuration, store, client, metrics_token
+        configuration,
+        store,
+        client,
+        metrics_token,
+        telemetry_client=valkey_client(configuration, telemetry=True),
     )
     # Admission sockets are not idle worker reservations. Runtime opens fresh
     # thread-local connections as needed, bounded by the separately checked roles.

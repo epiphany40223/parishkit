@@ -152,3 +152,19 @@ def test_complete_marker_blocks_pre_migration_reuse(tmp_path):
     with pytest.raises(ConfigError, match="already been initialized"):
         provision_initial_files(configuration, identity)
     assert inventory(configuration) == before
+
+
+def test_invalid_operator_input_does_not_freeze_bootstrap_identity(tmp_path):
+    """Input validation precedes intent publication and permits a corrected retry."""
+    configuration, identity = bootstrap_fixture(tmp_path)
+    layout = RuntimeLayout(configuration)
+    write_private(configuration.secrets["google_oauth"], b"invalid-private-oauth")
+    with pytest.raises(ConfigError):
+        provision_initial_files(configuration, identity)
+    assert not (layout.deployment_directory / "bootstrap.json").exists()
+    write_private(
+        configuration.secrets["google_oauth"],
+        b'{"client_id":"fake","client_secret":"fake"}',
+    )
+    corrected = BootstrapIdentity(uuid4(), "corrected@example.org")
+    assert provision_initial_files(configuration, corrected)

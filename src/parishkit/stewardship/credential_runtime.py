@@ -11,6 +11,7 @@ from uuid import UUID
 from parishkit.config import ConfigError
 
 from .deployment import ServiceRole, load_deployment
+from .observability import Event, configure_logging, emit_failure
 from .runtime_paths import RuntimeLayout
 from .startup_interlock import StartupLease
 
@@ -70,10 +71,13 @@ def acknowledge_web(configuration, request_id):
     finally:
         connections.close_all()
         runtime.client.connection_pool.disconnect()
+        if runtime.telemetry_client is not None:
+            runtime.telemetry_client.connection_pool.disconnect()
 
 
 def execute_acknowledgement(args):
     """Expose a fixed outcome; never echo supplied identities or credential text."""
+    configure_logging()
     try:
         if args.config is None or args.request_id is None:
             raise ConfigError("Configuration and request identity are required.")
@@ -81,7 +85,8 @@ def execute_acknowledgement(args):
         configuration = load_deployment(args.config)
         with StartupLease(RuntimeLayout(configuration).interlock, offline=False):
             acknowledge_web(configuration, identifier)
-    except Exception:
+    except Exception as error:
+        emit_failure(error, event=Event.STARTUP_REJECTED)
         print(
             "ERROR: credential acknowledgement refused; verify the request and "
             "recreate the complete consumer service before retrying",

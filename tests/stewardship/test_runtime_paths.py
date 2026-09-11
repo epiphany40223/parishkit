@@ -197,6 +197,7 @@ def test_writable_credential_parent_must_be_dedicated(tmp_path, kind):
     elif kind == "hardlink":
         target.write_text("value")
         os.link(target, tmp_path / ".replacement.json")
+        target.chmod(0o600)
     else:
         selected = target if kind == "public" else tmp_path / "other"
         selected.write_text("preserve")

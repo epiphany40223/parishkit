@@ -157,6 +157,48 @@ def test_superuser_and_role_impersonation_are_not_admitted(config_role):
             cursor.execute("RESET ROLE")
 
 
+def test_installer_cannot_create_schemas_or_write_purge_gates(config_role):
+    """Unused purge writes and residual database CREATE are not installer authority."""
+    with as_config_installer(), connection.cursor() as cursor:
+        for privilege in ("INSERT", "UPDATE", "DELETE"):
+            cursor.execute(
+                "SELECT has_table_privilege(current_user, "
+                "'stewardship_campaign_work_gate', %s)",
+                [privilege],
+            )
+            assert cursor.fetchone() == (False,)
+    with connection.cursor() as cursor:
+        from psycopg import sql
+
+        cursor.execute(
+            sql.SQL("GRANT CREATE ON DATABASE {} TO {}").format(
+                sql.Identifier(connection.settings_dict["NAME"]), sql.Identifier(ROLE)
+            )
+        )
+    with as_config_installer(), pytest.raises(ConfigError, match="excessive"):
+        admit_configuration_database()
+
+
+def test_installer_has_no_authority_outside_its_closed_registry(config_role):
+    """Every current/future table omitted by the owner stays denied automatically."""
+    with as_config_installer(), connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT c.relname FROM pg_class c "
+            "JOIN pg_namespace n ON n.oid=c.relnamespace "
+            "WHERE n.nspname='public' AND c.relkind IN('r','p') "
+            "AND NOT(c.relname=ANY(%s))",
+            [list(CONFIGURATION_GRANTS)],
+        )
+        excluded = [row[0] for row in cursor.fetchall()]
+        assert "stewardship_family_campaign" in excluded
+        for table in excluded:
+            for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+                cursor.execute(
+                    "SELECT has_table_privilege(current_user,%s,%s)", [table, privilege]
+                )
+                assert cursor.fetchone() == (False,), (table, privilege)
+
+
 @pytest.mark.parametrize("extra", ["table", "definer", "sequence", "schema_create"])
 def test_nonpublic_or_indirect_installer_grants_are_rejected(config_role, extra):
     """An auxiliary schema or definer routine cannot hide privilege expansion."""

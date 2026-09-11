@@ -49,6 +49,36 @@ def test_each_role_has_an_explicit_mount_allowlist(role):
 
 
 @pytest.mark.parametrize(
+    "role", [ServiceRole.WEB, ServiceRole.WORKER, ServiceRole.BACKUP_WORKER]
+)
+def test_data_mounts_retain_backup_read_only_boundary(role):
+    """A data root does not inherit secret authority or backup write privileges."""
+    config, mounts = configured(role)
+    assert (
+        validate_mounts(config, [*mounts, Mount(config.paths["media"], True)]) is role
+    )
+    if role is ServiceRole.BACKUP_WORKER:
+        with pytest.raises(ConfigError, match="Backup service data mounts"):
+            validate_mounts(config, [*mounts, Mount(config.paths["media"], False)])
+
+
+@pytest.mark.parametrize(
+    "role", [ServiceRole.WORKER, ServiceRole.SCHEDULER, ServiceRole.BACKUP_WORKER]
+)
+def test_nonweb_roles_cannot_receive_download_password(role):
+    """The isolated streaming login is never a background-service credential."""
+    config, mounts = configured(role)
+    config = replace(
+        config,
+        postgres=replace(
+            config.postgres, download_password_file=Path("/run/download-password")
+        ),
+    )
+    with pytest.raises(ConfigError, match="Only web"):
+        validate_mounts(config, mounts)
+
+
+@pytest.mark.parametrize(
     "target", ["/proc/self/mountinfo", "/dev/private", "/sys/private"]
 )
 def test_arbitrary_tmpfs_bind_is_not_a_kernel_pseudo_mount(target):

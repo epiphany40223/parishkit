@@ -105,7 +105,7 @@ def test_health_command_admission_lease_and_cleanup(tmp_path, monkeypatch, autho
 
     monkeypatch.setattr(
         "parishkit.stewardship.runtime_health.RuntimeHealth",
-        lambda *args: SimpleNamespace(checks=checks),
+        lambda *args: SimpleNamespace(dependency_observation=checks),
     )
 
     def admit(_configuration):

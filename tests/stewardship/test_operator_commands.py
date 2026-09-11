@@ -9,7 +9,17 @@ from parishkit.stewardship.cli import main
 from parishkit.stewardship.deployment import ServiceRole
 
 
-@pytest.mark.parametrize("command", ["bootstrap", "migrate", "recover-admin"])
+@pytest.mark.parametrize(
+    "command",
+    [
+        "bootstrap",
+        "migrate",
+        "recover-admin",
+        "preview-admin-recovery",
+        "database-roles",
+        "database-grants",
+    ],
+)
 def test_offline_commands_require_config_and_refuse_unmounted_host(command, capsys):
     """A host invocation or configured role label alone grants no operator profile."""
     assert main([command]) == 2
@@ -93,6 +103,114 @@ def test_bootstrap_cannot_run_as_an_online_service(monkeypatch):
             phase="prepare",
             deployment_id="00000000-0000-0000-0000-000000000001",
             admin_email="admin@example.org",
+        )
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["database-roles", "database-grants", "preview-admin-recovery", "recover-admin"],
+)
+def test_remaining_operator_dispatch_is_explicit_and_profile_scoped(
+    tmp_path, monkeypatch, command
+):
+    """All operator branches route confirmed inputs through their named owner."""
+    from dataclasses import replace
+    from unittest.mock import Mock
+    from uuid import uuid4
+
+    from .bootstrap_factory import bootstrap_fixture
+
+    configuration, _ = bootstrap_fixture(tmp_path)
+    configuration = replace(configuration, service_role=ServiceRole.DATABASE_PROVISION)
+    monkeypatch.setattr(operator_commands, "load_deployment", lambda _: configuration)
+    monkeypatch.setattr(
+        operator_commands, "admit_offline_service", lambda _: configuration.service_role
+    )
+    monkeypatch.setattr(
+        operator_commands, "configure_operator_database", lambda _: None
+    )
+    procedure = Mock(return_value={"verified": True})
+    name = {
+        "database-roles": "database_provisioning.provision_roles",
+        "database-grants": "database_provisioning.provision_grants",
+        "preview-admin-recovery": "operator_commands.preview_recovery_command",
+        "recover-admin": "operator_commands.recover_admin_command",
+    }[command]
+    monkeypatch.setattr("parishkit.stewardship." + name, procedure)
+    identifier = str(uuid4())
+    args = [command, "--config", "synthetic", "--confirm-deployment", identifier]
+    if "recovery" in command or command == "recover-admin":
+        args += ["--target-email", "admin@example.org"]
+    if command == "recover-admin":
+        args += [
+            "--operation-id",
+            str(uuid4()),
+            "--confirm-email",
+            "admin@example.org",
+            "--operator-name",
+            "Operator",
+            "--reason",
+            "Synthetic test",
+        ]
+    assert main(args) == 0
+    procedure.assert_called_once()
+    assert procedure.call_args.args[0] is configuration
+
+
+def test_recovery_wrappers_refuse_wrong_identity_and_nonapplied_receipt(
+    tmp_path, monkeypatch
+):
+    """A successful function return alone cannot claim that recovery was applied."""
+    from uuid import uuid4
+
+    from parishkit.config import ConfigError
+
+    from .bootstrap_factory import bootstrap_fixture
+
+    configuration, _ = bootstrap_fixture(tmp_path)
+    values = dict(
+        deployment_id=str(uuid4()),
+        operation_id=str(uuid4()),
+        target_email="admin@example.org",
+        confirmed_email="admin@example.org",
+        operator_name="Operator",
+        reason="Test",
+    )
+    monkeypatch.setattr(
+        operator_commands, "admit_offline_service", lambda _: ServiceRole.WEB
+    )
+    with pytest.raises(ConfigError, match="operator profile"):
+        operator_commands.recover_admin_command(configuration, **values)
+    with pytest.raises(ConfigError, match="operator profile"):
+        operator_commands.preview_recovery_command(
+            configuration,
+            deployment_id=values["deployment_id"],
+            target_email=values["target_email"],
+        )
+    monkeypatch.setattr(
+        operator_commands, "admit_offline_service", lambda _: ServiceRole.ADMIN_RECOVERY
+    )
+    monkeypatch.setattr(
+        operator_commands, "configure_operator_database", lambda _: None
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.runtime_database.admit_offline_database", lambda _: None
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.accounts.operator_recovery.recover_admin",
+        lambda *args, **kwargs: SimpleNamespace(state="failed"),
+    )
+    with pytest.raises(ConfigError, match="applied durable receipt"):
+        operator_commands.recover_admin_command(configuration, **values)
+    monkeypatch.setattr(
+        "parishkit.stewardship.accounts.configuration_installation.coherent_configuration",
+        lambda _: SimpleNamespace(pk=uuid4()),
+    )
+    with pytest.raises(ConfigError, match="deployment does not match"):
+        operator_commands.preview_recovery_command(
+            configuration,
+            deployment_id=values["deployment_id"],
+            target_email=values["target_email"],
         )
 
 

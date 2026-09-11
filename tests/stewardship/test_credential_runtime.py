@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 from types import SimpleNamespace
+from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
@@ -18,6 +19,14 @@ from parishkit.stewardship.deployment import ServiceRole
 from .bootstrap_factory import bootstrap_fixture
 
 
+@pytest.fixture(autouse=True)
+def logging_boundary(monkeypatch):
+    """CLI unit tests must not retain handlers bound to a finished capture stream."""
+    configure = Mock()
+    monkeypatch.setattr(credential_runtime, "configure_logging", configure)
+    return configure
+
+
 def test_only_metrics_has_a_local_complete_validator():
     """Provider tests and retirement evidence cannot be replaced with syntax checks."""
     assert credential_runtime.validate_metrics_candidate(
@@ -27,6 +36,34 @@ def test_only_metrics_has_a_local_complete_validator():
         credential_runtime.validate_metrics_candidate(b"plain-token")
     with pytest.raises(CredentialValidationUnavailable):
         credential_runtime.validation_unavailable(b"private-provider-value")
+
+
+def test_acknowledgement_failure_before_django_setup_is_private():
+    """A fresh CLI process must classify startup errors without importing models."""
+    import json
+    import os
+    import subprocess
+    import sys
+
+    environment = os.environ.copy()
+    environment.pop("DJANGO_SETTINGS_MODULE", None)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from parishkit.stewardship.cli import main; raise SystemExit(main())",
+            "acknowledge-credential",
+        ],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 2, result.stderr
+    assert "Traceback" not in result.stderr
+    assert "credential acknowledgement refused" in result.stderr
+    event = json.loads(result.stderr.splitlines()[0])
+    assert event["extra"]["failure_kind"] == "configuration_unavailable"
 
 
 @pytest.fixture
@@ -46,9 +83,10 @@ def admitted(tmp_path, monkeypatch):
     receipts = {"metrics": credential.receipt}
     acknowledgements, closes = [], []
     runtime = SimpleNamespace(
+        telemetry_client=None,
         client=SimpleNamespace(
             connection_pool=SimpleNamespace(disconnect=lambda: closes.append("valkey"))
-        )
+        ),
     )
     monkeypatch.setattr(
         "parishkit.stewardship.runtime_web.configure_web", lambda config: runtime
@@ -122,9 +160,12 @@ def test_no_acknowledgement_for_incomplete_or_changed_evidence(
         ["--config", "private-path", "--request-id", "private-invalid-value"],
     ],
 )
-def test_acknowledgement_cli_never_echoes_private_input(arguments, capsys):
+def test_acknowledgement_cli_never_echoes_private_input(
+    arguments, capsys, logging_boundary
+):
     """Configuration and request parser failures use fixed safe operator guidance."""
     assert main(["acknowledge-credential", *arguments]) == 2
+    logging_boundary.assert_called_once_with()
     output = capsys.readouterr()
     assert "private" not in output.out + output.err
     assert "acknowledgement refused" in output.err

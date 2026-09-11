@@ -84,6 +84,35 @@ def test_offline_profile_rejects_broad_data_mounts(tmp_path, target):
         )
 
 
+def test_offline_container_infrastructure_and_development_source_are_admitted(tmp_path):
+    """Normal Docker support mounts coexist with the exact offline authority set."""
+    config, mounts = configuration(tmp_path)
+    infrastructure = [
+        Mount(Path(path), True)
+        for path in (
+            "/etc/hosts",
+            "/etc/hostname",
+            "/etc/resolv.conf",
+            "/app/src",
+        )
+    ]
+    infrastructure += [
+        Mount(Path("/tmp"), False, "tmpfs", "/", "tmpfs"),
+        Mount(Path("/proc"), False, "proc", "/", "proc"),
+        Mount(
+            Path("/sbin/docker-init"),
+            True,
+            "overlay",
+            "/usr/libexec/docker/docker-init",
+            "overlay",
+        ),
+    ]
+    assert (
+        validate_offline_mounts(config, [*mounts, *infrastructure])
+        is ServiceRole.BOOTSTRAP
+    )
+
+
 def test_offline_alias_unknown_secret_and_online_role_refuse(tmp_path):
     """Declaration-only role swaps and writable-input aliases cannot pass admission."""
     config, mounts = configuration(tmp_path)

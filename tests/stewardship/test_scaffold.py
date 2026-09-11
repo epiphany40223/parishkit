@@ -124,7 +124,7 @@ def test_production_profile_fails_closed():
         check=False,
     )
     assert result.returncode != 0
-    assert "Production startup is unavailable" in result.stderr
+    assert "use the admitted pk-stewardship runtime entry point" in result.stderr
     assert "development-scaffold-only" not in result.stderr
 
 

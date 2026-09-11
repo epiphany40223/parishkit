@@ -12,9 +12,15 @@ def main():
     configure_web(load_deployment(Path(sys.argv[1])))
     from allauth.socialaccount.adapter import _build_apps_from_settings
     from django.conf import settings
+    from django.db import transaction
     from redis.exceptions import NoPermissionError
 
     from parishkit.stewardship.accounts.limiting import Counter
+    from parishkit.stewardship.campaigns.credential_keys import key_set_lock
+
+    family = settings.STEWARDSHIP_FAMILY_RUNTIME
+    with transaction.atomic(), key_set_lock(family.general, family.mac, family.public):
+        pass
 
     app = _build_apps_from_settings(provider="google")["google"][0]
     assert app.client_id and app.secret and app.key == ""

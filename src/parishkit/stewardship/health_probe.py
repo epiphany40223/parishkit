@@ -37,6 +37,13 @@ class HealthProbe:
         with self.lock:
             return self.value if not self.running else unavailable
 
+    def cached(self, *, unavailable=None):
+        """Read only fresh evidence without starting or waiting for another probe."""
+        with self.lock:
+            return (
+                self.value if monotonic() - self.completed < self.ttl else unavailable
+            )
+
     def _run(self, probe, unavailable):
         """Do not retain exception objects or private values in failed observations."""
         try:

@@ -46,6 +46,19 @@ def _admit_inventory(root, directories, files):
             explicit_path(entry)
             if entry.is_dir() and entry in allowed_directories:
                 continue
+            residue = re.fullmatch(r"\.(.+)\.[a-z0-9_]{8}\.tmp", entry.name)
+            if residue and entry.with_name(residue.group(1)) in files:
+                metadata = entry.stat()
+                if (
+                    stat.S_ISREG(metadata.st_mode)
+                    and stat.S_IMODE(metadata.st_mode) == 0o600
+                    and metadata.st_uid == os.geteuid()
+                    and metadata.st_nlink == 1
+                ):
+                    # A killed atomic writer may leave an unpublished private
+                    # temporary. Never adopt its bytes or delete it as user data;
+                    # resume solely from the committed intent/target protocol.
+                    continue
             if not entry.is_file() or entry not in files:
                 raise ConfigError("Runtime provisioning contains unplanned storage.")
 
