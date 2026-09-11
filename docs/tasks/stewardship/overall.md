@@ -173,6 +173,12 @@ Do not begin Phase 1C until PR CI and human-approved merge are complete.
 
 Source scope: [Phase 1C: Runtime foundation](../../plans/stewardship/overall.md#phase-1-secure-foundation-and-durable-domain).
 
+PR #20 merged at `18a37cb5b6c90bbf2b5f60c5fff37f199cd52201` after passing
+PR and merge-queue CI. The owner authorized continuing directly into Phase 1C.
+Branch `pr/stewardship-phase-1c` starts at that refreshed `origin/main` tip;
+its [execution evidence](../../guides/stewardship-phase-1c.md) tracks the complete
+batch. No Phase 1C completion or Gate 1 release is claimed yet.
+
 1. [OPS-02](operations.md#ops-02-durable-runtime-paths-and-least-privilege-secrets) → [OPS-03](operations.md#ops-03-production-ingress-tls-and-network-security) → [OPS-04](operations.md#ops-04-bootstrap-migrations-startup-and-upgrades) → baseline [OPS-08](operations.md#ops-08-observability-health-and-operational-runbooks).
 2. Complete M1 evidence and G1 before beginning Phase 2.
 

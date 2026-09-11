@@ -68,6 +68,11 @@ The new audit insertion guard protects attribution only once an INSERT reaches
 the real table; it does not resolve those pre-existing emitter paths. See the
 [scope and review disposition](milestones.md#audit-ownership-increment).
 
+Phase 1C prerequisite: forward migration `0033_trusted_trigger_paths` pins the
+legacy emitters and helper guards. Two new temporary-shadow/inventory tests and
+117 existing PostgreSQL integration tests pass. Runtime grants and the remaining
+OPS-02 scope are still in progress; see the [execution evidence](../../guides/stewardship-phase-1c.md).
+
 ## OPS-03: Production ingress, TLS, and network security
 
 Scope and dependencies: [OPS-03 work package](../../plans/stewardship/operations.md#ops-03-production-ingress-tls-and-network-security).
