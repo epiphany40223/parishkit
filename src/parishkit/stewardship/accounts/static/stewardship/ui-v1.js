@@ -67,10 +67,15 @@
       if (response.ok) {
         const result = await response.json();
         const next = Date.parse(result.idle_deadline);
-        if (Number.isFinite(next)) deadline = Math.min(next, absolute);
+        if (!Number.isFinite(next)) throw new Error("Invalid activity response");
+        deadline = Math.min(next, absolute);
+      } else {
+        dirty = true;
       }
     } catch {
-      // Failed transport is not activity and never extends the local deadline.
+      // Retry the unconsumed claim at the next allowed five-minute interval.
+      // Failure never extends the local deadline or bypasses server admission.
+      dirty = true;
     } finally { pending = false; }
   }
   tick();

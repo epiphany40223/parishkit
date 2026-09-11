@@ -149,6 +149,40 @@ def test_activity_keepalive_is_empty_csrf_protected_and_bounded(page, component_
     assert len(attempts) == 1
 
 
+@pytest.mark.parametrize("failure", ["http", "transport"])
+def test_failed_keepalive_retains_activity_for_a_bounded_retry(
+    page, component_origin, failure
+):
+    """No additional keystroke is needed after one failed activity transmission."""
+    page.clock.install(time=NOW)
+    attempts = []
+
+    def reply(route):
+        """The second empty claim succeeds with a synthetic future deadline."""
+        attempts.append(route.request)
+        if len(attempts) == 1:
+            if failure == "transport":
+                route.abort("failed")
+            else:
+                route.fulfill(status=503, body="Unavailable")
+        else:
+            route.fulfill(json={"idle_deadline": "2026-09-10T14:00:00Z"})
+
+    page.route("**/family/keepalive", reply)
+    page.goto(component_origin + "/family")
+    page.keyboard.press("Tab")
+    page.clock.fast_forward(6 * 60 * 1000)
+    page.wait_for_timeout(50)
+    assert len(attempts) == 1
+    page.clock.fast_forward(4 * 60 * 1000)
+    page.wait_for_timeout(50)
+    assert len(attempts) == 1  # Five minutes between attempts, even on failure.
+    page.clock.fast_forward(2 * 60 * 1000)
+    page.wait_for_timeout(50)
+    assert len(attempts) == 2
+    assert all(not request.post_data for request in attempts)
+
+
 def test_admin_activity_never_uses_family_keepalive(page, component_origin):
     """The Admin clock warns and expires without renewing through Family endpoints."""
     page.clock.install(time=NOW)
