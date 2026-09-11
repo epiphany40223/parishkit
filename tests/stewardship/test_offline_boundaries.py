@@ -89,3 +89,18 @@ def test_offline_alias_unknown_secret_and_online_role_refuse(tmp_path):
     ):
         with pytest.raises(ConfigError):
             validate_offline_mounts(bad, mounts)
+
+
+@pytest.mark.parametrize("kind", ["download", "valkey"])
+def test_offline_profile_refuses_online_connection_secrets(tmp_path, kind):
+    """Unused online credential references must not widen an offline profile."""
+    config, _ = configuration(tmp_path)
+    path = tmp_path / "extra-password"
+    if kind == "download":
+        config = replace(
+            config, postgres=replace(config.postgres, download_password_file=path)
+        )
+    else:
+        config = replace(config, valkey=replace(config.valkey, password_file=path))
+    with pytest.raises(ConfigError, match="online connection secrets"):
+        offline_targets(config)

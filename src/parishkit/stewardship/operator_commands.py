@@ -123,6 +123,21 @@ def migrate_command(configuration):
         from .runtime_database import require_current_schema
 
         require_current_schema()
+        # This command has proved there is no configured deployment and holds
+        # offline exclusion. Establish the selected initial budget through the
+        # existing version/active-download SQL guard, never by disabling it.
+        capacity = configuration.runtime_budget.download_capacity
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE public.stewardship_download_policy "
+                "SET capacity=%s,version=version+1 WHERE id=1 AND capacity<>%s",
+                [capacity, capacity],
+            )
+            cursor.execute(
+                "SELECT capacity FROM public.stewardship_download_policy WHERE id=1"
+            )
+            if cursor.fetchone() != (capacity,):
+                raise ConfigError("Initial download capacity was not established.")
         connection.close()
     return {"migrations_current": True}
 

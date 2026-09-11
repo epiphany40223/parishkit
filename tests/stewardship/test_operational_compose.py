@@ -20,6 +20,7 @@ from parishkit.stewardship.runtime_valkey import web_acl
 from parishkit.stewardship.startup_interlock import MARKER
 
 from .test_container_isolation import _fixture_volume
+from .test_runtime_topology import IMAGE as PRODUCTION_IMAGE
 from .test_runtime_topology import configuration_at
 
 pytestmark = pytest.mark.skipif(
@@ -29,16 +30,31 @@ pytestmark = pytest.mark.skipif(
 IMAGE = "parishkit-stewardship:development"
 
 
-def seed_runtime(root):
+def seed_runtime(root, *, production=False):
     """Only synthetic credentials; fixture ownership is translated on native Linux."""
-    configuration = configuration_at(root)
+    configuration = configuration_at(root, production=production)
     configuration = replace(
         configuration,
-        public_origin="http://localhost:8000",
+        public_origin="https://parish.example"
+        if production
+        else "http://localhost:8000",
         valkey=replace(
             configuration.valkey,
             password_file=root / "credentials" / "valkey" / "web",
         ),
+        postgres=replace(
+            configuration.postgres,
+            password_files={
+                name: root / "credentials" / "selected-sql" / name
+                for name in (
+                    "operator",
+                    "web",
+                    "download",
+                    "credential-installer-metrics",
+                )
+            },
+        ),
+        runtime_budget=replace(configuration.runtime_budget, download_capacity=3),
     )
     layout = RuntimeLayout(configuration)
     directories = [
@@ -46,11 +62,15 @@ def seed_runtime(root):
         layout.deployment_directory,
         layout.service_directory,
         layout.database_password("operator").parent,
+        *(layout.database_password(name).parent for name, *_ in database_identities()),
         configuration.valkey.password_file.parent,
         *(layout.credential_directory(name) for name in INITIAL_TARGETS),
         layout.credential_directory("google_oauth"),
         *(layout.credential_directory(name) for name in HANDOFF_TARGETS),
         *(layout.handoff(name).parent for name in HANDOFF_TARGETS),
+        configuration.paths["caddy"] / "data",
+        configuration.paths["caddy"] / "config",
+        configuration.paths["cache"] / "static",
     ]
     for directory in directories:
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -65,16 +85,40 @@ def seed_runtime(root):
         b'{"client_id":"fake-client","client_secret":"fake-secret"}',
     )
     write_private(configuration.valkey.password_file, b"disposable-valkey-only")
+    write_private(
+        configuration.paths["cache"] / "static" / "synthetic.txt",
+        b"Synthetic static fixture",
+    )
     # The fixture uses the same restricted vocabulary needed by limiter/metrics.
     write_private(
         configuration.valkey.password_file.parent / "server.acl",
         web_acl(b"disposable-valkey-only"),
     )
-    compose, documents = render_runtime(configuration, image=IMAGE)
+    compose, documents = render_runtime(
+        configuration, image=PRODUCTION_IMAGE if production else IMAGE
+    )
     for path, document in documents.items():
-        write_private(path, json.dumps(document).encode())
+        if isinstance(document, str):
+            # Test-only local CA: no ACME request, DNS dependency or real TLS key.
+            document = document.replace(
+                "issuer acme {\n"
+                "            dir https://acme-v02.api.letsencrypt.org/directory\n"
+                "        }",
+                "issuer internal",
+            )
+            write_private(path, document.encode())
+        else:
+            write_private(path, json.dumps(document).encode())
+    if production:
+        for service in compose["services"].values():
+            if service["image"] == PRODUCTION_IMAGE:
+                service["image"] = (
+                    IMAGE  # Synthetic local image, never a registry push.
+                )
+        compose["services"]["caddy"]["ports"] = ["127.0.0.1::8080", "127.0.0.1::8443"]
     # A random local port avoids interacting with any developer's running app.
-    compose["services"]["web"]["ports"] = ["127.0.0.1::8000"]
+    else:
+        compose["services"]["web"]["ports"] = ["127.0.0.1::8000"]
     return configuration, compose
 
 
@@ -132,10 +176,11 @@ def compose_run(file, project, *arguments, check=True, timeout=60):
     return result
 
 
-def test_complete_foundation_bootstrap_and_online_exclusion(tmp_path):
+@pytest.mark.parametrize("production", [False, True])
+def test_complete_foundation_bootstrap_and_online_exclusion(tmp_path, production):
     """Use real operator profiles, narrow mounts, SQL identities and native inodes."""
     root = tmp_path / "seed"
-    configuration, compose = seed_runtime(root)
+    configuration, compose = seed_runtime(root, production=production)
     layout = RuntimeLayout(configuration)
     project = "parishkit-runtime-" + uuid4().hex
     volume = project + "-state"
@@ -248,6 +293,10 @@ def test_complete_foundation_bootstrap_and_online_exclusion(tmp_path):
             str(layout.service_directory / "web.yaml"),
         )
         assert json.loads(diagnosis.stdout)["ready"] is True
+        if production:
+            from .runtime_ingress_checks import check_ingress
+
+            check_ingress(file, project, configuration, compose_run)
         cohort_probe = (
             "import json, sys\nfrom pathlib import Path\n"
             "from parishkit.stewardship.deployment import load_deployment\n"

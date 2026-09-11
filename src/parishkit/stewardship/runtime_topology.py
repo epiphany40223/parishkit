@@ -164,6 +164,7 @@ def _online_mounts(configuration):
 
 def render_runtime(configuration, *, image, checkout=None):
     """Build one complete foundation topology, with independent offline profiles."""
+    configuration = resolve_database_files(configuration)
     RuntimeLayout(configuration).validate()
     if (
         configuration.postgres.host != "postgres"
@@ -275,6 +276,32 @@ def render_runtime(configuration, *, image, checkout=None):
             "ingress": {},
         },
     }, documents
+
+
+def resolve_database_files(configuration):
+    """Preserve every individual override across rendering and role provisioning.
+
+    Scalar password_file belongs to the input profile, not every generated role.
+    Canonical per-identity references let the provisioning service read exactly
+    the same files later mounted into independently authenticated consumers.
+    """
+    files = dict(configuration.postgres.password_files)
+    name = configuration.service_role.value
+    if configuration.service_role is ServiceRole.DATABASE_PROVISION:
+        name = "operator"
+    elif configuration.service_role is ServiceRole.CREDENTIAL_INSTALLER:
+        name += "-" + configuration.credential_target.replace("_", "-")
+    for identity, path in (
+        (name, configuration.postgres.password_file),
+        ("download", configuration.postgres.download_password_file),
+    ):
+        if path is not None:
+            if identity in files and files[identity] != path:
+                raise ConfigError("Database password override references disagree.")
+            files[identity] = path
+    return replace(
+        configuration, postgres=replace(configuration.postgres, password_files=files)
+    )
 
 
 def _infrastructure(configuration):

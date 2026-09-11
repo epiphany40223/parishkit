@@ -7,6 +7,9 @@ from pathlib import Path
 def deployment_document(configuration):
     """Serialize validated metadata only; credential values are never opened."""
     postgres, valkey = asdict(configuration.postgres), asdict(configuration.valkey)
+    postgres["password_files"] = {
+        name: str(path) for name, path in configuration.postgres.password_files.items()
+    }
     for values in (postgres, valkey):
         for key in tuple(values):
             if key.endswith("password_file"):

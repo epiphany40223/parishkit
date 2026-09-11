@@ -34,6 +34,13 @@ def offline_targets(configuration):
         raise ConfigError(
             "Offline configuration and database file mounts are required."
         )
+    if (
+        configuration.postgres.download_password_file is not None
+        or configuration.valkey.password_file is not None
+    ):
+        raise ConfigError(
+            "Offline profiles cannot reference online connection secrets."
+        )
     targets = {
         configuration.configuration_file: True,
         configuration.postgres.password_file: True,

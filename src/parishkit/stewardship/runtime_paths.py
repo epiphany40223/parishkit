@@ -118,7 +118,9 @@ class RuntimeLayout:
         }
         if identity not in roles:
             raise ConfigError("Unknown runtime database identity.")
-        return self.configuration.paths["credentials"] / "database" / identity
+        return self.configuration.postgres.password_files.get(
+            identity, self.configuration.paths["credentials"] / "database" / identity
+        )
 
     def validate(self):
         """Reject aliases/overlaps that would expose secrets through data mounts."""
@@ -134,7 +136,10 @@ class RuntimeLayout:
                 "logs",
             )
         ]
-        roots += [explicit_path(self.deployment_directory)]
+        roots += [
+            explicit_path(self.deployment_directory),
+            explicit_path(self.service_directory),
+        ]
         for index, path in enumerate(roots):
             for other in roots[index + 1 :]:
                 if path == other or path in other.parents or other in path.parents:
@@ -148,6 +153,26 @@ class RuntimeLayout:
                     raise ConfigError("Persistent runtime stores overlap.")
         explicit_path(self.interlock)
         self._validate_credential_targets(roots, stores)
+        protected = [root for root in roots if root != paths["credentials"]] + stores
+        inputs = [
+            path
+            for path in (
+                self.interlock,
+                self.configuration.postgres.password_file,
+                self.configuration.postgres.download_password_file,
+                self.configuration.valkey.password_file,
+            )
+            if path is not None
+        ]
+        database_files = self.configuration.postgres.password_files
+        if len(set(database_files.values())) != len(database_files):
+            raise ConfigError("Independent database password files alias each other.")
+        if len(set(inputs)) != len(inputs):
+            raise ConfigError("Independent runtime inputs alias each other.")
+        for path in [*inputs, *database_files.values()]:
+            explicit_path(path)
+            if any(path == root or root in path.parents for root in protected):
+                raise ConfigError("Runtime input overlaps protected storage.")
         return self
 
     def _validate_credential_targets(self, roots, stores):
@@ -176,7 +201,10 @@ class RuntimeLayout:
         for path in (
             self.interlock,
             self.configuration.postgres.password_file,
+            self.configuration.postgres.download_password_file,
             self.configuration.valkey.password_file,
+            self.configuration.configuration_file,
+            *self.configuration.postgres.password_files.values(),
         ):
             if path is not None and any(
                 path == target or target in path.parents for target in targets

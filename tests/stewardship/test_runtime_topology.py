@@ -167,3 +167,59 @@ def test_ingress_has_ordered_denials_bounded_transport_and_no_private_logs(tmp_p
     assert "read_timeout 380s" in output
     assert "health_uri" not in output
     assert "https://acme-v02.api.letsencrypt.org/directory" in output
+
+
+def test_individual_sql_overrides_reach_provisioner_and_only_their_consumers(tmp_path):
+    """A generated profile must not silently return to default password paths."""
+    configuration = configuration_at(tmp_path)
+    selected = tmp_path / "selected-sql"
+    overrides = {
+        "operator": selected / "operator",
+        "config-installer": selected / "configuration",
+        "credential-installer-metrics": selected / "metrics",
+    }
+    configuration = replace(
+        configuration,
+        postgres=replace(
+            configuration.postgres,
+            password_file=selected / "web",
+            download_password_file=selected / "download",
+            password_files=overrides,
+        ),
+    )
+    compose, documents = render_runtime(
+        configuration, image="parishkit-stewardship:development"
+    )
+    expected = overrides | {"web": selected / "web", "download": selected / "download"}
+    services = compose["services"]
+    provisioning_mounts = {
+        Path(mount["source"]) for mount in services["database-provision"]["volumes"]
+    }
+    assert set(expected.values()) <= provisioning_mounts
+    for name in ("web", "config-installer", "credential-installer-metrics"):
+        mounts = {Path(mount["source"]) for mount in services[name]["volumes"]}
+        allowed = {expected[name]}
+        if name == "web":
+            allowed.add(expected["download"])
+        assert mounts & set(expected.values()) == allowed
+    for path, document in documents.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(document))
+        loaded = load_deployment(path, environ={})
+        assert loaded.configuration_file == path
+        assert loaded.postgres.password_files == expected
+
+
+def test_disagreeing_scalar_and_identity_password_overrides_are_refused(tmp_path):
+    """Neither a scalar nor map silently wins when they nominate different files."""
+    configuration = configuration_at(tmp_path)
+    configuration = replace(
+        configuration,
+        postgres=replace(
+            configuration.postgres,
+            password_file=tmp_path / "one",
+            password_files={"web": tmp_path / "two"},
+        ),
+    )
+    with pytest.raises(ConfigError, match="disagree"):
+        render_runtime(configuration, image="parishkit-stewardship:development")

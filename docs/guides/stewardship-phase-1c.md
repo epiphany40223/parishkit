@@ -190,3 +190,45 @@ Validation at this checkpoint:
 This is not Phase 1C completion. Provisioning, production ingress hardening and
 execution, remaining operational runbooks/failure injection, final validation and
 three review/fix rounds remain in the same PR-sized batch.
+
+## Ingress and override integration checkpoint
+
+The explicitly enabled Compose scenario now runs in both development and a
+production-shaped topology. Production tests replace only the application image
+reference with the local build, published ports with random loopback ports, and
+the ACME issuer with a disposable local CA. They do not contact Let's Encrypt,
+publish an image or deploy a production service.
+
+Both scenarios pass with real overridden SQL password-file locations and a
+non-default initial download capacity. The production scenario additionally
+verifies actual HTTPS and standard-port redirect, private health/metrics denial,
+application and static-file reachability, narrow writable Caddy state, read-only
+root/static storage, non-root identity, capability bounding and no-new-privileges.
+A successful Caddy-to-web connection validates the probe before its direct
+PostgreSQL/Valkey connections are required to fail. The local CA root and state
+sentinels survive proxy replacement. Stopping web yields a real proxy error; its
+logs omit cookie/header/path/query canaries just as successful request logs do.
+
+`postgres.password_files` maps closed service identities to independently
+overridden password paths. The input profile's scalar `password_file` and web's
+`download_password_file` are canonicalized into that map; conflicting references
+are refused. Every generated profile and the database provisioner use matching
+paths. YAML-relative paths and the per-identity environment override follow the
+normal deployment precedence, for example
+`PARISHKIT_STEWARDSHIP_POSTGRES_PASSWORD_FILE_WEB`. No password contents are
+serialized into these documents. Offline profiles reject unrelated online
+connection-file references. Protected storage/installer input overlaps and
+duplicate SQL password-file identities are refused.
+
+Initial migration establishes the configured download capacity through the
+existing versioned SQL guard while offline exclusion is held and before any
+deployment singleton exists. It does not authorize an online resize or bypass
+the configured-upgrade backup hold.
+
+Checkpoint validation: 145 focused configuration/path/boundary tests pass; the
+credential-free baseline passes 2,539 tests with 1,033 opt-in skips. The rebuilt
+development and production-shaped Compose cases both pass in approximately
+65 seconds total, including complete sealed metrics rotation and offline
+exclusion. Operator provisioning, operational documentation, final acceptance
+and review rounds remain open; this evidence does not itself enable ingress or
+release Gate 1.

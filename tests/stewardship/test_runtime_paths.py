@@ -100,3 +100,58 @@ def test_file_and_symlink_targets_are_preserved(tmp_path):
             private_directory(path, create=True)
     assert file.read_text() == "preserve"
     assert link.is_symlink()
+
+
+@pytest.mark.parametrize("kind", ["download", "configuration", "ordinary", "valkey"])
+def test_credential_target_cannot_replace_another_runtime_input(tmp_path, kind):
+    """An individual read-only bind is insufficient if its parent is writable."""
+    configuration = load_deployment(environ={"PARISHKIT_ROOT": str(tmp_path)})
+    protected = tmp_path / "credentials" / "metrics" / "other-input"
+    if kind == "download":
+        configuration = replace(
+            configuration,
+            postgres=replace(configuration.postgres, download_password_file=protected),
+        )
+    elif kind == "ordinary":
+        configuration = replace(
+            configuration,
+            postgres=replace(configuration.postgres, password_file=protected),
+        )
+    elif kind == "valkey":
+        configuration = replace(
+            configuration, valkey=replace(configuration.valkey, password_file=protected)
+        )
+    else:
+        configuration = replace(configuration, configuration_file=protected)
+    with pytest.raises(ConfigError, match="unrelated runtime inputs"):
+        RuntimeLayout(configuration).validate()
+
+
+@pytest.mark.parametrize(
+    "storage", ["reports", "cache", "media", "authority", "postgresql"]
+)
+def test_runtime_password_cannot_be_exposed_through_other_storage(tmp_path, storage):
+    """Public/static or independently writable trees cannot contain SQL passwords."""
+    configuration = load_deployment(environ={"PARISHKIT_ROOT": str(tmp_path)})
+    configuration = replace(
+        configuration,
+        postgres=replace(
+            configuration.postgres,
+            download_password_file=configuration.paths[storage] / "password",
+        ),
+    )
+    with pytest.raises(ConfigError, match="protected storage"):
+        RuntimeLayout(configuration).validate()
+
+
+def test_database_and_broker_inputs_cannot_alias(tmp_path):
+    """Independent service authentication needs independent input files."""
+    configuration = load_deployment(environ={"PARISHKIT_ROOT": str(tmp_path)})
+    path = tmp_path / "private-password"
+    configuration = replace(
+        configuration,
+        postgres=replace(configuration.postgres, password_file=path),
+        valkey=replace(configuration.valkey, password_file=path),
+    )
+    with pytest.raises(ConfigError, match="alias"):
+        RuntimeLayout(configuration).validate()

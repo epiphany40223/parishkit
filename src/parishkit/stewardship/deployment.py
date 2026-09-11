@@ -100,6 +100,7 @@ class DatabaseConfiguration:
     password_file: Path | None = field(repr=False)
     connect_timeout: int
     download_password_file: Path | None = field(default=None, repr=False)
+    password_files: dict[str, Path] = field(default_factory=dict, repr=False)
 
 
 @dataclass(frozen=True)
@@ -367,9 +368,27 @@ def load_deployment(
             "password_file",
             "connect_timeout",
             "download_password_file",
+            "password_files",
         },
         "postgres",
     )
+    password_names = {role.value for role in ServiceRole} | {"operator", "download"}
+    password_names |= {
+        "credential-installer-" + target.replace("_", "-")
+        for target in SECRET_NAMES - {"handoff_private"}
+    }
+    password_files = _mapping(
+        postgres.get("password_files", {}), password_names, "database password files"
+    )
+    resolved_passwords = {}
+    for name in sorted(password_names):
+        credential_path = select_path(
+            "POSTGRES_PASSWORD_FILE_" + name.upper().replace("-", "_"),
+            password_files.get(name),
+            None,
+        )
+        if credential_path is not None:
+            resolved_passwords[name] = credential_path
     database = DatabaseConfiguration(
         host=_host(
             select("POSTGRES_HOST", postgres.get("host"), "postgres"), "postgres.host"
@@ -402,6 +421,7 @@ def load_deployment(
             postgres.get("download_password_file"),
             None,
         ),
+        password_files=resolved_passwords,
     )
     valkey = _mapping(
         deployment.get("valkey", {}),
