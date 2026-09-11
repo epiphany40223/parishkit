@@ -771,7 +771,7 @@ replacement, metrics credential rotation, offline exclusion and supervisor crash
 recovery in development/production-shaped environments. All 75 browser cases
 pass. The final affected Google/session/report/SQL regression run passes all
 192 cases, completing M1.01's demonstration. The complete validation repeat passes
-2,704 baseline and 991 PostgreSQL tests, with 92.45% line and 84.50% branch coverage.
+2,710 baseline and 991 PostgreSQL tests, with 92.45% line and 84.50% branch coverage.
 Review dispositions, CI and human approval status are recorded in the
 [Phase 1C ledger](../../guides/stewardship-phase-1c-reviews.md).
 
@@ -1631,7 +1631,7 @@ dependency-ready batch is Phase 1C, starting with OPS-02.
 Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-security).
 Apply the complete [review protocol](../../plans/stewardship/overall.md#review-gate-protocol).
 
-- [ ] G1.01 — Prepare coherent signed commits and pass gate-specific validation.
+- [x] G1.01 — Prepare coherent signed commits and pass gate-specific validation.
 - [x] G1.02 — Obtain two independent reviews of the complete gate diff.
 - [x] G1.03 — Triage findings, implement corrections, and add regression coverage.
 - [x] G1.04 — Repeat validation, the phase demonstration, and independent review.
@@ -1644,8 +1644,11 @@ Both vendors completed rounds two and three, including all Pika-generated
 shards, without degradation. Round three found no High/Critical issues and all
 retained findings have dispositions. Final post-correction local validation
 passes at implementation `e3fed5c`, with signed UI/runtime/storage correction
-commits. G1.01 still awaits native Linux PR CI; G1.06 awaits human merge/gate
-approval. This gate does not authorize Phase 2 yet.
+commits. Native Linux [CI run 34599854275](https://github.com/epiphany40223/parishkit/actions/runs/34599854275)
+passes all four jobs and DCO at `243782d`, including the two documented
+fixture-only corrections. G1.01-.05 are complete. G1.06 still requires human
+merge/gate approval, and every later PR head must pass its required CI checks.
+This gate does not authorize Phase 2 yet.
 
 ## Phase 2: Setup and source truth
 

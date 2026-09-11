@@ -83,15 +83,17 @@ Scope and dependencies: [OPS-03 work package](../../plans/stewardship/operations
 - [x] OPS-03.02 — Redact credentials from access logs.
 - [x] OPS-03.03 — Deny internal health and metrics paths at public ingress.
 - [x] OPS-03.04 — Document DNS, firewall, OAuth, and certificate recovery.
-- [ ] OPS-03.05 — Validate Caddy hardening, writable-state limits, and network/route boundaries before enabling ingress.
+- [x] OPS-03.05 — Validate Caddy hardening, writable-state limits, and network/route boundaries before enabling ingress.
 
 Current evidence: the [operator guide](../../guides/stewardship-runtime.md) and
 real production-shaped Compose regression cover standard-port HTTPS redirects,
 forged forwarding-header normalization, private-route denial, redacted successful
 and failed proxy logs, non-root/restricted-capability execution, writable-state
 limits, certificate persistence and backend-network denial. Tests use a local CA,
-not real ACME issuance. OPS-03.05 awaits native Linux CI and final Gate 1 validation;
-production deployment/issuance is not authorized.
+not real ACME issuance. Native Linux Compose CI passes at `243782d` in
+[run 34599854275](https://github.com/epiphany40223/parishkit/actions/runs/34599854275),
+closing OPS-03.05's technical validation. Human Gate 1/merge approval remains
+separate; production deployment/issuance is not authorized.
 
 ## OPS-04: Bootstrap, migrations, startup, and upgrades
 

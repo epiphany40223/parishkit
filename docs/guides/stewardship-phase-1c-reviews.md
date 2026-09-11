@@ -322,9 +322,9 @@ files remain outside the repository. Earlier failed integration checkpoints
 are superseded, not counted as passing evidence.
 
 All three review/fix rounds are complete, with no High/Critical issue in the
-last round and no unresolved accepted Medium+ findings. Native Linux PR CI and
-human merge/Gate 1 approval remain required; Phase 2 is not released by local
-validation alone.
+last round and no unresolved accepted Medium+ findings. At this local-validation
+checkpoint, native Linux PR CI and human approval remained; subsequent native
+CI evidence is recorded below. Local validation alone does not release Phase 2.
 
 ### Native Linux CI fixture correction
 
@@ -363,3 +363,17 @@ Compose failure; fresh PR-head CI remains required.
 The cohort correction passes all 38 focused consumer/polling tests, both full
 Compose scenarios and the 2,710-test baseline locally. Ruff, formatting,
 Markdown and whitespace checks pass. The application image remains unchanged.
+
+### Native CI acceptance and human gate
+
+[PR #21](https://github.com/epiphany40223/parishkit/pull/21) passes all four
+native Linux CI jobs and DCO at `243782dd3e7a9b5fdaaa6faa0a22644795f5fca5`,
+[run 34599854275](https://github.com/epiphany40223/parishkit/actions/runs/34599854275).
+The final coverage job confirms 2,710 baseline tests, 991 PostgreSQL tests and
+92.45% line/84.50% branch coverage. Browser and operational Compose/provisioning
+checks also pass; neither fixture correction changed application code or grants.
+
+G1.01-.05 and OPS-03.05 technical evidence is complete. The final documentation
+handoff retains mandatory current-head CI checks; it adds no application change.
+G1.06 and M1.05 remain unchecked pending human merge/Gate 1 approval. The next
+dependency-ready work is Phase 2's DAT-03, only after that approval and merge.

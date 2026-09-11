@@ -9,8 +9,9 @@ It starts from PR #20's merged tip,
 `pr/stewardship-phase-1c`. PR and merge-queue CI passed before branching.
 
 Current status: the operational foundation, three integrated review/correction
-rounds and final local validation are complete. Native Linux PR CI and human
-merge/Gate 1 approval remain required. The older checkpoints
+rounds, final local validation and native Linux CI are complete at `243782d`.
+[PR #21](https://github.com/epiphany40223/parishkit/pull/21) requires human
+merge/Gate 1 approval and passing checks on its final head. The older checkpoints
 below describe how it was built, not current missing-work claims. See the
 [runtime operator guide](stewardship-runtime.md),
 [review ledger](stewardship-phase-1c-reviews.md), and owning
