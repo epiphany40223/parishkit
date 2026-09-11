@@ -749,9 +749,9 @@ human merge approval; Phase 1, merge, deployment, and release remain unapproved.
 Scope: [Phase 1](../../plans/stewardship/overall.md#phase-1-secure-foundation-and-durable-domain).
 
 - [ ] M1.01 — Demonstrate fake-provider Google login, denial, and session expiry.
-- [ ] M1.02 — Demonstrate Family access and exact campaign-boundary denial.
-- [ ] M1.03 — Prove single-current-campaign constraints under concurrent requests.
-- [ ] M1.04 — Verify service mounts, configuration activation, and restart durability.
+- [x] M1.02 — Demonstrate Family access and exact campaign-boundary denial.
+- [x] M1.03 — Prove single-current-campaign constraints under concurrent requests.
+- [x] M1.04 — Verify service mounts, configuration activation, and restart durability.
 - [ ] M1.05 — Complete Gate 1 before beginning Phase 2.
 
 Phase 0 handoff: human-approved [PR #8](https://github.com/epiphany40223/parishkit/pull/8)
@@ -763,6 +763,15 @@ including their then-open merge condition; that condition is now satisfied.
 Evidence: Phase 1 has started with the bounded DAT-01.01/.04 storage increment
 described in the [owning checklist](data.md#dat-01-storage-conventions-and-base-records).
 This is not the complete M1 demonstration. No G1 or Phase 2 release is claimed.
+
+Current Phase 1C evidence: seeded Family code/token/session and boundary tests,
+concurrent campaign/lifecycle SQL cases and 48 real-container checks demonstrate
+M1.02-.04. The latter includes restricted identities, atomic authority, durable
+replacement, metrics credential rotation, offline exclusion and supervisor crash
+recovery in development/production-shaped environments. All 69 browser cases
+pass. The integrated review corrections and final Google/session regression
+rerun remain in progress; M1.01 and Gate 1 stay open. Current evidence is in the
+[Phase 1C ledger](../../guides/stewardship-phase-1c-reviews.md).
 
 First storage-increment review: September 8, 2026, reviewed SHA `99b715d`,
 base `509245d`, session `20260908-150154-92d717`. The permission preflight
@@ -1621,13 +1630,17 @@ Scope: [Gate 1](../../plans/stewardship/overall.md#review-gate-1-foundation-and-
 Apply the complete [review protocol](../../plans/stewardship/overall.md#review-gate-protocol).
 
 - [ ] G1.01 — Prepare coherent signed commits and pass gate-specific validation.
-- [ ] G1.02 — Obtain two independent reviews of the complete gate diff.
+- [x] G1.02 — Obtain two independent reviews of the complete gate diff.
 - [ ] G1.03 — Triage findings, implement corrections, and add regression coverage.
 - [ ] G1.04 — Repeat validation, the phase demonstration, and independent review.
 - [ ] G1.05 — Resolve all validated Critical/High/Medium findings; document Low deferrals.
 - [ ] G1.06 — Record reviewed SHA, evidence, and human approval before phase release.
 
-Evidence: Not started.
+Evidence: the [Phase 1C review ledger](../../guides/stewardship-phase-1c-reviews.md)
+records the cumulative Phase 1 review from the Phase 0 merged handoff `509245d`.
+Both vendors completed round two, including all Pika-generated shards, without
+degradation. Corrections, the third round, final validation and human release
+approval remain open. This gate does not authorize Phase 2 yet.
 
 ## Phase 2: Setup and source truth
 

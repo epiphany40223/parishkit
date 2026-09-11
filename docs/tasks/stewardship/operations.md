@@ -49,16 +49,20 @@ mount/queue isolation. No review gate, deployment, or release is claimed.
 
 Scope and dependencies: [OPS-02 work package](../../plans/stewardship/operations.md#ops-02-durable-runtime-paths-and-least-privilege-secrets).
 
-- [ ] OPS-02.01 — Configure durable runtime paths and overrides.
-- [ ] OPS-02.02 — Isolate online and offline-bootstrap configuration/credential mounts.
-- [ ] OPS-02.03 — Enforce secret and service-mount boundaries.
-- [ ] OPS-02.04 — Configure safe temporary storage and file permissions.
-- [ ] OPS-02.05 — Test topology, identity, isolation, and durable replacement.
+- [x] OPS-02.01 — Configure durable runtime paths and overrides.
+- [x] OPS-02.02 — Isolate online and offline-bootstrap configuration/credential mounts.
+- [x] OPS-02.03 — Enforce secret and service-mount boundaries.
+- [x] OPS-02.04 — Configure safe temporary storage and file permissions.
+- [x] OPS-02.05 — Test topology, identity, isolation, and durable replacement.
 
-Evidence: In progress in the [Phase 1C integration batch](../../guides/stewardship-phase-1c.md#operational-integration-checkpoint).
-Path/mount admission, private provisioning primitives and isolated SQL grants
-have focused tests. Complete composed startup, replacement and cross-platform
-operator provisioning are still required before checking these tasks complete.
+Current evidence: [Phase 1C runtime](../../guides/stewardship-runtime.md) and
+[review ledger](../../guides/stewardship-phase-1c-reviews.md). Real native-volume
+provisioning, exact individual mounts, restricted SQL identities, independent
+overrides, ownership, path/symlink refusal, shared/exclusive startup leases and
+durability across consumer/proxy replacement pass the 48-check container suite.
+Linux containers run on Docker Desktop; native Linux-host CI is still required
+at PR handoff, and native Windows execution is not claimed. Reserved later
+services remain denied until their owners land. No production approval is implied.
 
 Before granting runtime database access or releasing Gate 1, harden existing SQL
 checkpoint/activation/secret emitters and their helper guards against caller
@@ -80,33 +84,39 @@ OPS-02 scope are still in progress; see the [execution evidence](../../guides/st
 
 Scope and dependencies: [OPS-03 work package](../../plans/stewardship/operations.md#ops-03-production-ingress-tls-and-network-security).
 
-- [ ] OPS-03.01 — Configure persistent Caddy TLS, trusted forwarding, and ingress hardening prerequisites.
-- [ ] OPS-03.02 — Redact credentials from access logs.
-- [ ] OPS-03.03 — Deny internal health and metrics paths at public ingress.
-- [ ] OPS-03.04 — Document DNS, firewall, OAuth, and certificate recovery.
+- [x] OPS-03.01 — Configure persistent Caddy TLS, trusted forwarding, and ingress hardening prerequisites.
+- [x] OPS-03.02 — Redact credentials from access logs.
+- [x] OPS-03.03 — Deny internal health and metrics paths at public ingress.
+- [x] OPS-03.04 — Document DNS, firewall, OAuth, and certificate recovery.
 - [ ] OPS-03.05 — Validate Caddy hardening, writable-state limits, and network/route boundaries before enabling ingress.
 
-Evidence: In progress in [Phase 1C](../../guides/stewardship-phase-1c.md#operational-integration-checkpoint).
-The generated stock-Caddy configuration adapts successfully under its constrained
-identity. Full network, filesystem, certificate-state and route execution proof
-remains required; template validation does not enable production ingress.
+Current evidence: the [operator guide](../../guides/stewardship-runtime.md) and
+real production-shaped Compose regression cover standard-port HTTPS redirects,
+forged forwarding-header normalization, private-route denial, redacted successful
+and failed proxy logs, non-root/restricted-capability execution, writable-state
+limits, certificate persistence and backend-network denial. Tests use a local CA,
+not real ACME issuance. OPS-03.05 awaits native Linux CI and final Gate 1 validation;
+production deployment/issuance is not authorized.
 
 ## OPS-04: Bootstrap, migrations, startup, and upgrades
 
 Scope and dependencies: [OPS-04 work package](../../plans/stewardship/operations.md#ops-04-bootstrap-migrations-startup-and-upgrades).
 
-- [ ] OPS-04.01 — Integrate bootstrap, offline Admin recovery, startup exclusion, health, and budget validation.
-- [ ] OPS-04.02 — Run migrations once before service rollout.
+- [x] OPS-04.01 — Integrate bootstrap, offline Admin recovery, startup exclusion, health, and budget validation.
+- [x] OPS-04.02 — Run migrations once before service rollout.
 - [ ] OPS-04.03 — Implement backup-aware image upgrades and readiness checks.
-- [ ] OPS-04.04 — Document schema evolution and recovery procedures.
+- [x] OPS-04.04 — Document schema evolution and recovery procedures.
 - [ ] OPS-04.05 — Test bootstrap isolation, startup races, mismatch, crash, and upgrade paths.
 
-Evidence: In progress in [Phase 1C](../../guides/stewardship-phase-1c.md#operational-integration-checkpoint).
-Offline command boundaries and real startup leases are implemented. A disposable
-PostgreSQL scenario provisions restricted roles, migrates with the schema-owner
-login, imports minimal bootstrap authority and admits web's SQL identity.
-Interrupted bootstrap journal retirement is tested. Complete composed runtime
-startup and backup-aware upgrade ownership are not claimed complete.
+Current evidence: [runtime startup and recovery](../../guides/stewardship-runtime.md)
+and the [review ledger](../../guides/stewardship-phase-1c-reviews.md). Development
+and production-shaped tests perform role provisioning, key/bootstrap preparation,
+schema-owner migration, restricted grants, bootstrap activation, configured
+restart, offline recovery preview/confirmation, mutual exclusion and supervisor
+crash recovery. Negative tests cover drift, mismatches, partial provisioning,
+mounts and process/SQL budgets. OPS-04.03 and the upgrade part of .05 remain held
+for OPS-05's verified-backup evidence; configured migrations fail closed instead
+of implementing an unverified upgrade. Initial-install/restart scope is complete.
 
 ## OPS-05: Backup service and purge-triggered backup
 
@@ -151,15 +161,21 @@ Scope and dependencies: [OPS-08 work package](../../plans/stewardship/operations
 
 - [ ] OPS-08.01 — Implement structured operational and audit logging.
 - [ ] OPS-08.02 — Implement internal authenticated metrics and credential rotation.
-- [ ] OPS-08.03 — Implement minimal health and detailed CLI diagnostics.
+- [x] OPS-08.03 — Implement minimal health and detailed CLI diagnostics.
 - [ ] OPS-08.04 — Integrate deduplicated alerts and recovery status.
 - [ ] OPS-08.05 — Write operational failure and recovery runbooks.
 - [ ] OPS-08.06 — Exercise runbooks using controlled failure injection.
 
-Evidence: Baseline implementation is in progress in [Phase 1C](../../guides/stewardship-phase-1c.md#operational-integration-checkpoint).
-Internal readiness, bounded authenticated metrics, protected CLI diagnostics and
-private process-error output have focused tests. Credential rotation, complete
-runtime/runbook failure injection and later feature-owned metrics remain open.
+Foundation evidence: [runtime guide](../../guides/stewardship-runtime.md) and
+[review ledger](../../guides/stewardship-phase-1c-reviews.md). Structured redacted
+runtime/audit events, request-linked installer diagnostics, bounded internal
+dependency metrics, bearer protection, minimal health and protected CLI diagnosis
+are implemented. Real composed metrics replacement verifies old-inode refusal,
+whole-worker-cohort recreation/acknowledgement and final applied state. Controlled
+database/broker, worker-crash, lease and filesystem failures exercise the baseline
+runbooks. Broader feature metrics, durable log ingestion/viewing, Admin/Slack
+delivery and backup/source/mail/purge runbooks retain their later owners; mixed
+tasks .01/.02/.04/.05/.06 therefore remain unchecked.
 
 ## OPS-09: CI, coverage, browser, acceptance, and release pipeline
 

@@ -179,6 +179,13 @@ Branch `pr/stewardship-phase-1c` starts at that refreshed `origin/main` tip;
 its [execution evidence](../../guides/stewardship-phase-1c.md) tracks the complete
 batch. No Phase 1C completion or Gate 1 release is claimed yet.
 
+The operational implementation and its native-volume/production-shaped tests
+are present. Round one reviewed this phase; round two reviewed the complete
+Phase 1 diff from `509245d`, with both vendors completing successfully. Its
+corrections and final validation are in progress before round three and the
+single Phase 1C PR. See the [review ledger](../../guides/stewardship-phase-1c-reviews.md).
+Do not start DAT-03 until Gate 1 and the phase PR receive human approval.
+
 1. [OPS-02](operations.md#ops-02-durable-runtime-paths-and-least-privilege-secrets) → [OPS-03](operations.md#ops-03-production-ingress-tls-and-network-security) → [OPS-04](operations.md#ops-04-bootstrap-migrations-startup-and-upgrades) → baseline [OPS-08](operations.md#ops-08-observability-health-and-operational-runbooks).
 2. Complete M1 evidence and G1 before beginning Phase 2.
 

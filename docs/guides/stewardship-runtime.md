@@ -15,6 +15,13 @@ for each role and credential target. Directories are `0700`, private files `0600
 Online containers never repair ownership or permissions. Do not recursively
 chown an existing deployment to overcome startup refusal.
 
+Operational Compose uses its private PostgreSQL service, with no published SQL
+port and explicit non-TLS transport on that isolated bridge. Runtime/provisioning
+reject remote SQL hosts instead of negotiating libpq's unverified TLS fallback.
+Literal loopback is admitted for isolated operator/test connections; the Compose
+renderer still requires `postgres:5432`. External SQL needs a separately designed
+verified-TLS profile and is not supported by this runtime.
+
 Linux production uses rooted bind mounts by default. Prepare an empty runtime
 root owned by the deployment UID/GID, and run the provisioning command as that
 owner. A host operator may create/chown that explicitly selected **new empty**
@@ -150,11 +157,19 @@ pass, `1` means a dependency check failed, and `2` means diagnostic admission fa
 Do not route traffic away merely because a campaign/business readiness gate closes.
 Runtime and proxy logs omit private request/header/query/error values; preserve
 structured status/correlation evidence instead of enabling raw credential logging.
+Selected installer failures log `installer_request_failed`, using the durable
+request UUID as the correlation ID and a closed database, credential,
+configuration, filesystem or unexpected-failure category. A separate failed-pass
+event records the loop's retry; neither event includes exception text or paths.
 Readiness and metrics observations have short caches and bounded response waits;
 a hung dependency cannot spawn unlimited monitoring threads. Their two possible
 SQL observation connections per web process are included across rollout overlap
 in the deployment's auxiliary reserve and actual web-role connection limit.
 The default total connection budget is now 91, including 8 auxiliary connections.
+Metrics omit dependency samples while no observation is available; readiness
+still fails closed. A missing sample is not manufactured into a dependency-down
+value. Loopback Host aliases are admitted only for internal health/metrics probes,
+not ordinary application routes.
 
 Every long-running service has a liveness check. Installer checks read only private
 PID/start-time and recent-loop heartbeat evidence: a loop stuck beyond 90 seconds
@@ -170,6 +185,14 @@ operator confirmation command inside that container. An old inode, incomplete
 worker cohort or one-off `compose run` container cannot acknowledge. Installers
 cannot restart consumers and receive no Docker socket. Provider/key-retirement
 validators remain unavailable until their owning features supply real validation.
+
+Worker-cohort receipts and the supervisor PID file are intentionally private,
+ephemeral files under `/tmp/stewardship-consumer` in the individual web container's
+tmpfs and PID namespace. They are not durable deployment-root data and must not
+be shared across deployments, mounted from a host directory or backed up.
+Direct host Gunicorn/cohort operation is not a supported deployment profile;
+use the admitted single-container supervisor and command. Durable configuration,
+credentials, data and report paths retain their documented overrides.
 
 If a required path has wrong ownership, unknown contents or a symlink, stop the
 affected rollout and compare it with the intended mount inventory. Do not broaden

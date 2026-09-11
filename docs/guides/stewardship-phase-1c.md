@@ -8,6 +8,16 @@ It starts from PR #20's merged tip,
 `18a37cb5b6c90bbf2b5f60c5fff37f199cd52201`, on
 `pr/stewardship-phase-1c`. PR and merge-queue CI passed before branching.
 
+Current status: the operational foundation is implemented; integrated Gate 1
+review/corrections and final validation are in progress. The older checkpoints
+below describe how it was built, not current missing-work claims. See the
+[runtime operator guide](stewardship-runtime.md),
+[review ledger](stewardship-phase-1c-reviews.md), and owning
+[operations](../tasks/stewardship/operations.md),
+[architecture](../tasks/stewardship/architecture.md) and
+[data](../tasks/stewardship/data.md) checklists for current scope. No Phase 2 work,
+deployment, release or merge is authorized by this implementation checkpoint.
+
 ## Scope and internal checkpoints
 
 1. Harden legacy SQL emitters and provision least-privilege runtime access.
