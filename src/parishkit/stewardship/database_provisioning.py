@@ -42,7 +42,7 @@ def role_limit(configuration, role):
             budget.web_processes
             * budget.replicas
             * budget.rollout_overlap
-            * budget.web_threads
+            * (budget.web_threads + 2)  # Two bounded health-observation threads.
         )
     if role in {ServiceRole.CONFIG_INSTALLER, ServiceRole.CREDENTIAL_INSTALLER}:
         return configuration.runtime_budget.rollout_overlap
@@ -229,6 +229,7 @@ def provision_grants(configuration, deployment_id):
             if role is ServiceRole.MIGRATION:
                 continue
             tables, columns = runtime_grants(role, target=target)
+            _admit_existing_grants(cursor, login, tables, columns)
             for table, privileges in tables.items():
                 cursor.execute(
                     sql.SQL("GRANT {} ON public.{} TO {}").format(
@@ -252,3 +253,42 @@ def provision_grants(configuration, deployment_id):
                         )
                     )
     return {"database_grants_provisioned": True}
+
+
+def _admit_existing_grants(cursor, login, tables, columns):
+    """Refuse superseded grants rather than silently succeeding with excess access.
+
+    Initial provisioning is additive, not an authority-repair command. An operator
+    must investigate unexpected grants; no broad REVOKE mutates unrelated state.
+    """
+    cursor.execute(
+        "SELECT n.nspname,c.relname,p FROM pg_class c "
+        "JOIN pg_namespace n ON n.oid=c.relnamespace "
+        "CROSS JOIN unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE',"
+        "'TRUNCATE','REFERENCES','TRIGGER']) p "
+        "WHERE n.nspname !~ '^pg_' AND n.nspname<>'information_schema' "
+        "AND c.relkind IN('r','p','v','m','f') "
+        "AND has_table_privilege(%s,c.oid,p)",
+        [login],
+    )
+    for schema, table, privilege in cursor.fetchall():
+        if schema != "public" or privilege not in tables.get(table, set()):
+            raise ConfigError("Existing SQL grants exceed initial provisioning intent.")
+    cursor.execute(
+        "SELECT n.nspname,c.relname,a.attname,p FROM pg_class c "
+        "JOIN pg_namespace n ON n.oid=c.relnamespace "
+        "JOIN pg_attribute a ON a.attrelid=c.oid "
+        "CROSS JOIN unnest(ARRAY['SELECT','INSERT','UPDATE','REFERENCES']) p "
+        "WHERE n.nspname !~ '^pg_' AND n.nspname<>'information_schema' "
+        "AND c.relkind IN('r','p','v','m','f') AND a.attnum>0 AND NOT a.attisdropped "
+        "AND has_column_privilege(%s,c.oid,a.attnum,p)",
+        [login],
+    )
+    for schema, table, column, privilege in cursor.fetchall():
+        if schema != "public" or (
+            privilege not in tables.get(table, set())
+            and column not in columns.get(table, {}).get(privilege, set())
+        ):
+            raise ConfigError(
+                "Existing SQL column grants exceed initial provisioning intent."
+            )

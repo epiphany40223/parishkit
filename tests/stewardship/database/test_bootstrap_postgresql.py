@@ -313,3 +313,23 @@ def test_initial_bootstrap_refuses_unrelated_existing_data(tmp_path):
         materialize_initial_files(configuration, identity)
     assert not AppliedConfigurationVersion.objects.exists()
     assert User.objects.filter(username="existing-account").exists()
+
+
+def test_bootstrap_refuses_unreviewed_row_security_even_on_empty_table(tmp_path):
+    """An unknown RLS policy cannot make an occupied table appear harmlessly empty."""
+    from parishkit.stewardship.bootstrap import (
+        materialize_initial_files,
+        provision_initial_files,
+    )
+
+    configuration, identity = bootstrap_fixture(tmp_path)
+    provision_initial_files(configuration, identity)
+    with connection.cursor() as cursor:
+        cursor.execute("ALTER TABLE auth_user ENABLE ROW LEVEL SECURITY")
+    try:
+        with pytest.raises(IntegrityError, match="reviewed row-security"):
+            materialize_initial_files(configuration, identity)
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("ALTER TABLE auth_user DISABLE ROW LEVEL SECURITY")
+    assert not AppliedConfigurationVersion.objects.exists()

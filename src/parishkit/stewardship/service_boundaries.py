@@ -307,4 +307,11 @@ def admit_online_service(configuration):
     """Entry-point admission cannot substitute supplied data for kernel evidence."""
     if os.geteuid() == 0:
         raise ConfigError("Online application services cannot run as root.")
-    return validate_mounts(configuration, kernel_mounts())
+    role = validate_mounts(configuration, kernel_mounts())
+    if role is ServiceRole.CREDENTIAL_INSTALLER:
+        from .runtime_paths import admit_credential_directory
+
+        admit_credential_directory(
+            configuration.secrets[configuration.credential_target]
+        )
+    return role

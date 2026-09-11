@@ -1,12 +1,16 @@
 """Canonical non-secret deployment documents for offline and per-service mounts."""
 
-from dataclasses import asdict
+from dataclasses import asdict, fields
 from pathlib import Path
 
 
 def deployment_document(configuration):
     """Serialize validated metadata only; credential values are never opened."""
-    postgres, valkey = asdict(configuration.postgres), asdict(configuration.valkey)
+    postgres = {
+        item.name: getattr(configuration.postgres, item.name)
+        for item in fields(configuration.postgres)
+    }
+    valkey = asdict(configuration.valkey)
     postgres["password_files"] = {
         name: str(path) for name, path in configuration.postgres.password_files.items()
     }

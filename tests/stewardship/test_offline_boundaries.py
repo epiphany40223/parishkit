@@ -25,6 +25,14 @@ def configuration(tmp_path, role=ServiceRole.BOOTSTRAP):
     )
     if role is not ServiceRole.BOOTSTRAP:
         config = replace(config, service_role=role, secrets={})
+    if role is ServiceRole.DATABASE_PROVISION:
+        config = replace(
+            config,
+            postgres=replace(
+                config.postgres,
+                password_file=RuntimeLayout(config).database_password("operator"),
+            ),
+        )
     mounts = [Mount(Path("/"), True)] + [
         Mount(path, ro) for path, ro in offline_targets(config).items()
     ]
@@ -32,14 +40,20 @@ def configuration(tmp_path, role=ServiceRole.BOOTSTRAP):
 
 
 @pytest.mark.parametrize(
-    "role", [ServiceRole.BOOTSTRAP, ServiceRole.MIGRATION, ServiceRole.ADMIN_RECOVERY]
+    "role",
+    [
+        ServiceRole.BOOTSTRAP,
+        ServiceRole.MIGRATION,
+        ServiceRole.ADMIN_RECOVERY,
+        ServiceRole.DATABASE_PROVISION,
+    ],
 )
 def test_offline_roles_have_distinct_authority(tmp_path, role):
     """Recovery is the config writer only; migration has no config/secret write path."""
     config, mounts = configuration(tmp_path, role)
     assert validate_offline_mounts(config, mounts) is role
     writable = {mount.target for mount in mounts if not mount.read_only}
-    if role is ServiceRole.MIGRATION:
+    if role in {ServiceRole.MIGRATION, ServiceRole.DATABASE_PROVISION}:
         assert not writable
     elif role is ServiceRole.ADMIN_RECOVERY:
         assert writable == {config.paths["authority"]}

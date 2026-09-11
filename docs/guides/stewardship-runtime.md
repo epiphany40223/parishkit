@@ -21,6 +21,11 @@ owner. A host operator may create/chown that explicitly selected **new empty**
 directory before running the non-root helper; no existing application data is
 adopted. Override independent stores and credential paths in the input YAML.
 All destinations must be empty and owner-only at initial provisioning.
+An overridden credential file must have a dedicated private parent containing
+only that target's credential and recognized private protocol files. A shared
+directory is not an acceptable installer write mount, even outside the runtime
+root. The generated Valkey ACL directory is reserved independently of the broker
+password-file override.
 
 Docker Desktop file shares may report unexpected ownership despite host chmod
 or chown. Use a newly created native Docker volume instead. The operator initializes
@@ -72,6 +77,9 @@ An interrupted preparation resumes with the **same** input configuration, image,
 checkout and source mapping. Existing generated passwords are retained; conflicting
 artifacts cause refusal. A completed preparation refuses repetition. Never delete
 its markers to turn a populated deployment into a fresh installation.
+Each retry rechecks the closed planned storage inventory. An empty/partial first
+intent can resume only before any other artifact exists; mismatched or unexpected
+state is preserved and refused, not repaired or deleted.
 
 Collect packaged public assets with a separate fresh non-HTTP process, mounting
 only the empty static destination read-write:
@@ -109,6 +117,7 @@ Generate and retain one deployment UUID and select the initial Admin Google emai
    owner and establishes the configured initial download limit through its guard.
 5. `run --rm database-provision database-grants --config PROVISION_CONFIG --confirm-deployment UUID`
    installs the closed runtime grants. It never grants future tables automatically.
+   Unexpected existing broader grants cause refusal, not automatic revocation.
 6. Repeat the bootstrap command with `--phase import` and the same UUID/email.
    Only exact empty/matching database/YAML/key state can be materialized.
 7. Start `web`, `config-installer` and target credential installers. After readiness
@@ -119,6 +128,12 @@ Initial bootstrap is not the product setup wizard. The initialized minimal Testi
 authority lets the initial Google Admin reach the pre-wizard state; the completed
 parish/campaign setup UX is Phase 2. Existing application data without a matching
 initialized authority is not imported or silently adopted.
+
+Long-running production services use `unless-stopped`; one-shot offline profiles
+and development services do not automatically restart. Explicitly stop online
+services for maintenance so a crash restart cannot keep competing with offline
+exclusion. Docker health status does not itself restart a live-but-unhealthy
+service or authorize ingress. See the [Compose service reference](https://docs.docker.com/reference/compose-file/services/).
 
 ## Health, credentials and incidents
 
@@ -135,6 +150,18 @@ pass, `1` means a dependency check failed, and `2` means diagnostic admission fa
 Do not route traffic away merely because a campaign/business readiness gate closes.
 Runtime and proxy logs omit private request/header/query/error values; preserve
 structured status/correlation evidence instead of enabling raw credential logging.
+Readiness and metrics observations have short caches and bounded response waits;
+a hung dependency cannot spawn unlimited monitoring threads. Their two possible
+SQL observation connections per web process are included across rollout overlap
+in the deployment's auxiliary reserve and actual web-role connection limit.
+The default total connection budget is now 91, including 8 auxiliary connections.
+
+Every long-running service has a liveness check. Installer checks read only private
+PID/start-time and recent-loop heartbeat evidence: a loop stuck beyond 90 seconds
+is unhealthy, while a completed failed pass still proves liveness. Use
+`exec -T SERVICE pk-stewardship installer-healthcheck` for either installer type.
+Valkey liveness requires its ordinary unauthenticated ping denial; proxy liveness
+checks only its local listeners. Neither is external-provider or campaign readiness.
 
 The [credential installer guide](stewardship-credential-installers.md) controls
 rotation and recovery. Metrics uses an independent public receipt, not a stored

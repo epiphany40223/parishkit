@@ -34,10 +34,13 @@ def channel():
 
 
 @pytest.mark.parametrize("download", [False, True])
-def test_http_owns_guard_through_lazy_bytes_and_close(tmp_path, channel, download):
+def test_http_owns_guard_through_lazy_bytes_and_close(
+    tmp_path, channel, download, settings
+):
     """Lazy queries use the response's read-only connection until WSGI closes."""
     _, campaign, _ = draft_campaign(tmp_path)
     observed = []
+    settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool()
 
     def content():
         """A later iteration must still own the same live guarded connection."""

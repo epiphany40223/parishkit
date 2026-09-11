@@ -113,6 +113,9 @@ def migrate_command(configuration):
                     raise ConfigError(
                         "Configured upgrades require verified backup admission."
                     )
+        from .runtime_database import require_role_capacity
+
+        require_role_capacity(configuration)
         loader = MigrationLoader(connection)
         loader.check_consistent_history(connection)
         if set(loader.applied_migrations) - set(loader.disk_migrations):

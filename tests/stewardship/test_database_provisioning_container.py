@@ -205,8 +205,12 @@ def test_migration_owner_and_narrow_runtime_grants(empty_operator_database, tmp_
         if role is ServiceRole.MIGRATION:
             continue
         with connect(configuration, login) as database, database.cursor() as cursor:
-            cursor.execute("SELECT COUNT(*) FROM django_migrations")
-            assert cursor.fetchone()[0] > 0
+            if role == "download":
+                cursor.execute("SELECT COUNT(*) FROM stewardship_campaign")
+                assert cursor.fetchone() == (0,)
+            else:
+                cursor.execute("SELECT COUNT(*) FROM django_migrations")
+                assert cursor.fetchone()[0] > 0
             cursor.execute(
                 "SELECT has_function_privilege(current_user,"
                 "'public.stewardship_bootstrap_empty_database()','EXECUTE')"
@@ -247,6 +251,37 @@ def test_migration_owner_and_narrow_runtime_grants(empty_operator_database, tmp_
         "identity = BootstrapIdentity(UUID(sys.argv[2]), 'admin@example.org')\n"
         "materialize_initial_files(configuration, identity)\n"
     )
+    # Deliberately seed foreign credential history in this UUID-owned disposable
+    # database. Only fixture setup disables triggers; bootstrap itself runs with
+    # all normal guards and a non-superuser SECURITY DEFINER owner.
+    foreign_request = uuid4()
+    with connect(configuration) as database, database.cursor() as cursor:
+        cursor.execute("SET LOCAL session_replication_role=replica")
+        cursor.execute(
+            "INSERT INTO stewardship_secret_request "
+            "(id,version,correlation_id,target,staging_reference,requested_by_id,"
+            "reauthenticated_at,expires_at,required_consumers) VALUES "
+            "(%s,1,%s,'metrics',%s,%s,clock_timestamp()-interval '1 second',"
+            "clock_timestamp()+interval '1 hour','[\"web\"]')",
+            [foreign_request, uuid4(), uuid4(), uuid4()],
+        )
+    with connect(configuration, "pk_stewardship_migration") as database:
+        assert database.execute(
+            "SELECT count(*) FROM stewardship_secret_request"
+        ).fetchone() == (1,)
+    refused = subprocess.run(
+        [sys.executable, str(script), str(bootstrap_file), str(deployment)],
+        text=True,
+        capture_output=True,
+        timeout=60,
+    )
+    assert refused.returncode != 0
+    assert "empty application database" in refused.stderr
+    with connect(configuration) as database, database.cursor() as cursor:
+        cursor.execute("SET LOCAL session_replication_role=replica")
+        cursor.execute(
+            "DELETE FROM stewardship_secret_request WHERE id=%s", [foreign_request]
+        )
     result = subprocess.run(
         [sys.executable, str(script), str(bootstrap_file), str(deployment)],
         text=True,

@@ -10,7 +10,7 @@ from parishkit.stewardship.runtime_budget import RuntimeBudget, parse_budget
 
 def test_default_budget_accounts_for_all_classes_and_overlap():
     budget = RuntimeBudget()
-    assert budget.total_connections == 87
+    assert budget.total_connections == 91
     assert parse_budget({}) == budget
     budget.validate_database(maximum=100, reserved=3)
     budget.validate_database(maximum=200, reserved=2)
@@ -38,6 +38,21 @@ def test_default_budget_accounts_for_all_classes_and_overlap():
         {"drain_seconds": 330},
         {"server_timeout_seconds": 360},
         {"proxy_timeout_seconds": 369},
+        {"download_seconds": 5},
+        {
+            "download_seconds": 4,
+            "download_idle_seconds": 5,
+            "drain_seconds": 6,
+            "server_timeout_seconds": 7,
+            "proxy_timeout_seconds": 8,
+        },
+        {
+            "download_seconds": 30,
+            "download_idle_seconds": 40,
+            "drain_seconds": 60,
+            "server_timeout_seconds": 70,
+            "proxy_timeout_seconds": 80,
+        },
     ],
 )
 def test_inconsistent_budgets_fail_before_service_start(changes):

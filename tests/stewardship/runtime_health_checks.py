@@ -1,6 +1,7 @@
 """Failure injection exercises operator diagnostics without touching real services."""
 
 import json
+import subprocess
 import time
 
 
@@ -51,3 +52,53 @@ def check_dependency_failure(file, project, web_config, run):
         if time.monotonic() >= deadline:
             raise AssertionError("Synthetic broker recovery did not restore readiness")
         time.sleep(0.5)
+
+
+def check_web_crash_recovery(file, project, run):
+    """Kill only the synthetic web supervisor and prove Docker restarts the service."""
+    container = run(file, project, "ps", "--quiet", "web").stdout.strip()
+    assert container and len(container.splitlines()) == 1
+
+    def restart_count():
+        """Inspect only the exact container resolved from this UUID Compose project."""
+        result = subprocess.run(
+            ["docker", "inspect", "--format", "{{.RestartCount}}", container],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10,
+        )
+        return int(result.stdout)
+
+    before = restart_count()
+    run(
+        file,
+        project,
+        "exec",
+        "-T",
+        "web",
+        "python",
+        "-c",
+        "import os, signal; "
+        "from parishkit.stewardship.consumer_runtime import PIDFILE; "
+        "os.kill(int(PIDFILE.read_text()), signal.SIGKILL)",
+        check=False,
+    )
+    deadline = time.monotonic() + 45
+    while time.monotonic() < deadline:
+        health = run(
+            file,
+            project,
+            "exec",
+            "-T",
+            "web",
+            "pk-stewardship",
+            "healthcheck",
+            check=False,
+        )
+        if restart_count() > before and health.returncode == 0:
+            return
+        time.sleep(0.5)
+    raise AssertionError(
+        "Production restart policy did not recover the synthetic web service"
+    )

@@ -7,13 +7,13 @@ import pytest
 
 from parishkit.stewardship.accounts.operator_recovery import recovery_preview
 
-from .policy_factory import address, domain
+from .policy_factory import address, assignment, domain
 
 
 @pytest.mark.parametrize("roles", [None, (), ("staff",), ("administrator",)])
 def test_recovery_preview_normalizes_target_and_preserves_other_roles(roles):
     """An exact deny is explicitly called out instead of looking like no change."""
-    rules = [address(), domain()]
+    rules = [address(), domain(), assignment()]
     if roles is not None:
         rules.append(address("replacement@example.org", roles))
     sections = {

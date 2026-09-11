@@ -100,7 +100,13 @@ class DatabaseConfiguration:
     password_file: Path | None = field(repr=False)
     connect_timeout: int
     download_password_file: Path | None = field(default=None, repr=False)
-    password_files: dict[str, Path] = field(default_factory=dict, repr=False)
+    password_files: Mapping[str, Path] = field(default_factory=dict, repr=False)
+
+    def __post_init__(self):
+        """Copy references so callers cannot mutate paths after admission."""
+        object.__setattr__(
+            self, "password_files", MappingProxyType(dict(self.password_files))
+        )
 
 
 @dataclass(frozen=True)

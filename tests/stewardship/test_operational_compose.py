@@ -211,6 +211,28 @@ def test_complete_foundation_bootstrap_and_online_exclusion(tmp_path, production
         for phase in ("prepare", "import"):
             if phase == "import":
                 compose_run(file, project, "run", "--rm", "migration", timeout=90)
+                policy_command = (
+                    "exec",
+                    "-T",
+                    "postgres",
+                    "psql",
+                    "-U",
+                    "pk_stewardship_operator",
+                    "-d",
+                    configuration.postgres.name,
+                    "-Atc",
+                    "SELECT capacity,version FROM stewardship_download_policy "
+                    "WHERE id=1",
+                )
+                first_policy = compose_run(
+                    file, project, *policy_command
+                ).stdout.strip()
+                assert first_policy.startswith("3|")
+                compose_run(file, project, "run", "--rm", "migration", timeout=90)
+                assert (
+                    compose_run(file, project, *policy_command).stdout.strip()
+                    == first_policy
+                )
                 compose_run(
                     file,
                     project,
@@ -259,6 +281,11 @@ def test_complete_foundation_bootstrap_and_online_exclusion(tmp_path, production
         assert proposed["before_roles"] == []
         assert proposed["after_roles"] == ["administrator"]
         assert proposed["parish_name"] is None
+        # No online process holds the interlock yet: this must be the configured
+        # upgrade hold, not the later online/offline mutual-exclusion assertion.
+        held = compose_run(file, project, "run", "--rm", "migration", check=False)
+        assert held.returncode != 0
+        assert "offline operation refused" in held.stderr
         compose_run(file, project, "up", "--detach", "web", "config-installer")
         deadline = time.monotonic() + 45
         while True:
@@ -460,6 +487,20 @@ def test_complete_foundation_bootstrap_and_online_exclusion(tmp_path, production
                 pytest.fail("Recreated synthetic consumer could not acknowledge")
             time.sleep(0.5)
         wait_for_state("applied")
+        for live_installer in ("config-installer", installer):
+            compose_run(
+                file,
+                project,
+                "exec",
+                "-T",
+                live_installer,
+                "pk-stewardship",
+                "installer-healthcheck",
+            )
+        if production:
+            from .runtime_health_checks import check_web_crash_recovery
+
+            check_web_crash_recovery(file, project, compose_run)
         denied = compose_run(file, project, "run", "--rm", "migration", check=False)
         assert denied.returncode != 0
         assert "offline operation refused" in denied.stderr

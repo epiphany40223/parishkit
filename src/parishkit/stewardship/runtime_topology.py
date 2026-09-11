@@ -166,6 +166,12 @@ def render_runtime(configuration, *, image, checkout=None):
     """Build one complete foundation topology, with independent offline profiles."""
     configuration = resolve_database_files(configuration)
     RuntimeLayout(configuration).validate()
+    from .runtime_paths import admit_credential_directory
+
+    for target in SECRET_NAMES - {"handoff_private"}:
+        admit_credential_directory(
+            RuntimeLayout(configuration).credential(target), allow_missing=True
+        )
     if (
         configuration.postgres.host != "postgres"
         or configuration.postgres.port != 5432
@@ -174,8 +180,8 @@ def render_runtime(configuration, *, image, checkout=None):
     ):
         raise ConfigError("Compose requires internal database and broker addresses.")
     budget, network = configuration.runtime_budget, configuration.runtime_network
-    if budget.replicas > 8:
-        raise ConfigError("The runtime supports at most eight explicit web replicas.")
+    if budget.replicas != 1:
+        raise ConfigError("Operational runtime requires one web container.")
     targets = sorted(SECRET_NAMES - {"handoff_private"})
     budget.validate_topology(background_processes=1 + len(targets))
     image = _image(image, configuration.profile)
@@ -229,6 +235,12 @@ def render_runtime(configuration, *, image, checkout=None):
                 str(selected.configuration_file),
             ]
             service["volumes"] = _online_mounts(selected)
+            service["healthcheck"] = {
+                "test": ["CMD", "pk-stewardship", "installer-healthcheck"],
+                "interval": "10s",
+                "timeout": "4s",
+                "retries": 3,
+            }
             if role is ServiceRole.WEB:
                 service["networks"]["application-egress"] = {}
                 service["healthcheck"] = {
@@ -260,6 +272,9 @@ def render_runtime(configuration, *, image, checkout=None):
         documents[RuntimeLayout(configuration).service_directory / "Caddyfile"] = (
             render_caddy(configuration)
         )
+        for service in services.values():
+            if "profiles" not in service:
+                service["restart"] = "unless-stopped"
     return {
         "name": "parishkit-stewardship",
         "services": services,
@@ -358,6 +373,15 @@ def _infrastructure(configuration):
     }
     valkey = shared | {
         "image": VALKEY_IMAGE,
+        "healthcheck": {
+            "test": [
+                "CMD-SHELL",
+                "valkey-cli ping | grep -qx 'NOAUTH Authentication required.'",
+            ],
+            "interval": "10s",
+            "timeout": "3s",
+            "retries": 3,
+        },
         "command": [
             "valkey-server",
             "--appendonly",
@@ -387,9 +411,20 @@ def _caddy(configuration):
         # exec when that capability is absent from the bounding set, even when
         # this deployment uses high internal ports. Retain only that capability.
         cap_add=["NET_BIND_SERVICE"],
+        healthcheck={
+            "test": [
+                "CMD-SHELL",
+                "nc -z -w 2 127.0.0.1 8080 && nc -z -w 2 127.0.0.1 8443",
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 3,
+        },
         entrypoint=["/bin/sh", "-c"],
         command=[
-            "exec 9</run/stewardship/startup.lock; flock -sn 9 || exit 1; "
+            "exec 9</run/stewardship/startup.lock; "
+            "flock -sn 9 || { echo 'Offline maintenance prevents ingress startup.' "
+            ">&2; exit 1; }; "
             "exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile"
         ],
         ports=["80:8080", "443:8443"],

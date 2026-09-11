@@ -161,3 +161,55 @@ def test_provisioning_cli_never_echoes_private_error_or_input(capsys):
     captured = capsys.readouterr()
     assert "private-input" not in captured.out + captured.err
     assert "owner-only targets" in captured.err
+
+
+@pytest.mark.parametrize("prefix_length", [0, 17])
+def test_initial_intent_partial_write_resumes_only_without_side_effects(
+    tmp_path, monkeypatch, prefix_length
+):
+    """An empty or partially written first marker does not strand a fresh root."""
+    configuration = configuration_at(tmp_path / "runtime")
+    original = provisioning._write_intent
+
+    def interrupt(descriptor, intent):
+        """Model a process exit before the initial intent fsync."""
+        provisioning.os.write(descriptor, intent[:prefix_length])
+        raise OSError("interrupted")
+
+    monkeypatch.setattr(provisioning, "_write_intent", interrupt)
+    with pytest.raises(OSError):
+        provisioning.provision_runtime(configuration, image=IMAGE)
+    monkeypatch.setattr(provisioning, "_write_intent", original)
+    assert provisioning.provision_runtime(configuration, image=IMAGE)[
+        "runtime_storage_provisioned"
+    ]
+
+
+@pytest.mark.parametrize("destination", ["root", "postgresql", "metrics"])
+def test_interrupted_retry_refuses_unplanned_storage(
+    tmp_path, monkeypatch, destination
+):
+    """A matching intent does not authorize adoption of data added after a crash."""
+    configuration = configuration_at(tmp_path / "runtime")
+    original = provisioning._retain
+
+    def interrupt(path, value):
+        """Stop after creating directories/passwords but before completion."""
+        raise OSError("interrupted")
+
+    monkeypatch.setattr(provisioning, "_retain", interrupt)
+    with pytest.raises(OSError):
+        provisioning.provision_runtime(configuration, image=IMAGE)
+    directory = (
+        configuration.paths.root
+        if destination == "root"
+        else RuntimeLayout(configuration).credential_directory("metrics")
+        if destination == "metrics"
+        else configuration.paths["postgresql"]
+    )
+    write_private(directory / "preserve", b"unrelated data")
+    monkeypatch.setattr(provisioning, "_retain", original)
+    with pytest.raises(ConfigError):
+        provisioning.provision_runtime(configuration, image=IMAGE)
+    assert read_private(directory / "preserve") == b"unrelated data"
+    assert not (configuration.paths.root / ".stewardship-provisioned.json").exists()

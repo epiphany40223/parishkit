@@ -62,8 +62,12 @@ def test_rendered_foundation_enforces_individual_mounts_and_profiles(
                 configuration.paths.root,
                 Path("/var/run/docker.sock"),
             }
-        if name in {"bootstrap", "migration", "admin-recovery"}:
+        if name in {"bootstrap", "migration", "admin-recovery", "database-provision"}:
             assert service["profiles"] == [name]
+            assert service["restart"] == "no"
+        else:
+            assert service["restart"] == ("unless-stopped" if production else "no")
+            assert service["healthcheck"]["timeout"]
         if name not in {"caddy", "web"}:
             assert "ports" not in service
     web = services["web"]
@@ -222,4 +226,20 @@ def test_disagreeing_scalar_and_identity_password_overrides_are_refused(tmp_path
         ),
     )
     with pytest.raises(ConfigError, match="disagree"):
+        render_runtime(configuration, image="parishkit-stewardship:development")
+
+
+def test_renderer_refuses_unsupported_multi_container_runtime(tmp_path):
+    """Rendering and provisioning share the same operational support boundary."""
+    configuration = configuration_at(tmp_path)
+    configuration = replace(
+        configuration,
+        runtime_budget=replace(
+            configuration.runtime_budget,
+            replicas=2,
+            auxiliary_connections=16,
+            database_connections=200,
+        ),
+    )
+    with pytest.raises(ConfigError, match="one web container"):
         render_runtime(configuration, image="parishkit-stewardship:development")

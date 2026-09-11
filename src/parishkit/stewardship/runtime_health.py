@@ -12,6 +12,7 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from time import monotonic
 
+from .health_probe import HealthProbe
 from .runtime_paths import private_directory
 
 
@@ -23,6 +24,12 @@ class RuntimeHealth:
     store: object = field(repr=False)
     client: object = field(repr=False)
     metrics_token: bytes = field(repr=False)
+    _readiness: HealthProbe = field(
+        default_factory=HealthProbe, repr=False, compare=False
+    )
+    _metrics: HealthProbe = field(
+        default_factory=HealthProbe, repr=False, compare=False
+    )
 
     def __post_init__(self):
         if (
@@ -32,7 +39,19 @@ class RuntimeHealth:
             raise ValueError("Metrics requires its provisioned bearer credential.")
 
     def checks(self):
+        """Read a short-lived bounded observation, never block all request threads."""
+        unavailable = dict.fromkeys(
+            ("database", "migrations", "configuration", "valkey", "private_storage"),
+            False,
+        )
+        return dict(
+            self._readiness.read(self._check_dependencies, unavailable=unavailable)
+        )
+
+    def _check_dependencies(self):
         """Probe each independent internal dependency; keep exception values private."""
+        from django.db import connection, connections
+
         from .accounts.configuration_installation import coherent_configuration
         from .runtime_database import require_capacity, require_current_schema
 
@@ -44,13 +63,20 @@ class RuntimeHealth:
             "private_storage": self._storage,
         }
         result = {}
-        for name, probe in checks.items():
-            try:
-                probe()
-            except Exception:
-                result[name] = False
-            else:
-                result[name] = True
+        try:
+            # This is the probe thread's own connection, never a response guard's.
+            with connection.cursor() as cursor:
+                cursor.execute("SET statement_timeout='2s'")
+                cursor.execute("SET lock_timeout='1s'")
+            for name, probe in checks.items():
+                try:
+                    probe()
+                except Exception:
+                    result[name] = False
+                else:
+                    result[name] = True
+        finally:
+            connections.close_all()
         return result
 
     def _valkey(self):
@@ -74,6 +100,25 @@ class RuntimeHealth:
         return len(value) == 43 and hmac.compare_digest(value, self.metrics_token)
 
     def metrics(self):
+        """Bound the entire scrape, including disk, SQL and broker observations."""
+        value = self._metrics.read(self._collect_metrics, unavailable=None)
+        if value is None:
+            raise ValueError("Metrics observation is unavailable.")
+        return value
+
+    def _collect_metrics(self):
+        """Probe-owned SQL connections close even when a metric source fails."""
+        from django.db import connection, connections
+
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SET statement_timeout='2s'")
+                cursor.execute("SET lock_timeout='1s'")
+            return self._metric_lines()
+        finally:
+            connections.close_all()
+
+    def _metric_lines(self):
         """Expose finite foundational gauges; later owners add their own metrics."""
         from django.db import connection
 

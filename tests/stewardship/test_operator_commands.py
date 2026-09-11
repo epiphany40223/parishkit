@@ -94,3 +94,58 @@ def test_bootstrap_cannot_run_as_an_online_service(monkeypatch):
             deployment_id="00000000-0000-0000-0000-000000000001",
             admin_email="admin@example.org",
         )
+
+
+@pytest.mark.parametrize(
+    "case", ["wrong-login", "superuser", "configured", "missing-policy", "valid"]
+)
+def test_migration_safety_branches_precede_success(tmp_path, monkeypatch, case):
+    """Fast refusal-path evidence complements actual CLI/SQL Compose migration tests."""
+    from dataclasses import replace
+    from unittest.mock import MagicMock
+
+    from parishkit.config import ConfigError
+
+    from .bootstrap_factory import bootstrap_fixture
+
+    configuration, _ = bootstrap_fixture(tmp_path)
+    configuration = replace(configuration, service_role=ServiceRole.MIGRATION)
+    monkeypatch.setattr(
+        operator_commands, "admit_offline_service", lambda _: ServiceRole.MIGRATION
+    )
+    monkeypatch.setattr(
+        operator_commands, "configure_operator_database", lambda _: None
+    )
+    identity = ["pk_stewardship_migration"] * 2 + [False] * 6
+    if case == "wrong-login":
+        identity[0] = "pk_stewardship_web"
+    if case == "superuser":
+        identity[2] = True
+    rows = [
+        tuple(identity),
+        ("system_configuration",),
+        (case == "configured",),
+        None if case == "missing-policy" else (4,),
+    ]
+    database = MagicMock()
+    database.cursor.return_value.__enter__.return_value.fetchone.side_effect = rows
+    monkeypatch.setattr("django.db.connection", database)
+    loader = MagicMock()
+    loader.applied_migrations = loader.disk_migrations = {}
+    monkeypatch.setattr("django.db.migrations.loader.MigrationLoader", lambda _: loader)
+    monkeypatch.setattr(
+        "parishkit.stewardship.runtime_database.require_current_schema", lambda: None
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.runtime_database.require_role_capacity", lambda _: None
+    )
+    migrate = MagicMock()
+    monkeypatch.setattr("django.core.management.call_command", migrate)
+    if case == "valid":
+        assert operator_commands.migrate_command(configuration) == {
+            "migrations_current": True
+        }
+    else:
+        with pytest.raises(ConfigError):
+            operator_commands.migrate_command(configuration)
+    assert migrate.call_count == int(case in {"missing-policy", "valid"})

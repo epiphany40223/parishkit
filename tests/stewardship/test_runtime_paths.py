@@ -9,6 +9,7 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.deployment import load_deployment
 from parishkit.stewardship.runtime_paths import (
     RuntimeLayout,
+    admit_credential_directory,
     explicit_path,
     private_directory,
 )
@@ -155,3 +156,64 @@ def test_database_and_broker_inputs_cannot_alias(tmp_path):
     )
     with pytest.raises(ConfigError, match="alias"):
         RuntimeLayout(configuration).validate()
+
+
+@pytest.mark.parametrize(
+    "storage", ["reports", "media", "authority", "postgresql", "cache"]
+)
+def test_service_configuration_cannot_live_in_writable_storage(tmp_path, storage):
+    """Read-only metadata mounts cannot be replaced through a broad data mount."""
+    configuration = load_deployment(environ={"PARISHKIT_ROOT": str(tmp_path)})
+    with pytest.raises(ConfigError, match="protected storage"):
+        RuntimeLayout(
+            replace(
+                configuration,
+                configuration_file=configuration.paths[storage] / "web.yaml",
+            )
+        ).validate()
+
+
+def test_valkey_acl_directory_is_reserved_even_with_password_override(tmp_path):
+    """A credential installer never receives write authority over server ACLs."""
+    configuration = load_deployment(environ={"PARISHKIT_ROOT": str(tmp_path)})
+    configuration = replace(
+        configuration,
+        secrets={"metrics": tmp_path / "credentials" / "valkey" / "metrics"},
+    )
+    with pytest.raises(ConfigError, match="protected storage"):
+        RuntimeLayout(configuration).validate()
+
+
+@pytest.mark.parametrize(
+    "kind", ["unrelated", "directory", "symlink", "hardlink", "public"]
+)
+def test_writable_credential_parent_must_be_dedicated(tmp_path, kind):
+    """An external path override cannot grant write access to a shared directory."""
+    target = tmp_path / "metrics.json"
+    if kind == "directory":
+        (tmp_path / "other").mkdir(mode=0o700)
+    elif kind == "symlink":
+        target.symlink_to(tmp_path / "absent")
+    elif kind == "hardlink":
+        target.write_text("value")
+        os.link(target, tmp_path / ".replacement.json")
+    else:
+        selected = target if kind == "public" else tmp_path / "other"
+        selected.write_text("preserve")
+        selected.chmod(0o644 if kind == "public" else 0o600)
+    with pytest.raises(ConfigError):
+        admit_credential_directory(target)
+
+
+def test_dedicated_credential_parent_accepts_only_private_protocol_files(tmp_path):
+    """Interrupted writer temporaries do not widen the accepted namespace."""
+    for name in (
+        "metrics.json",
+        ".replacement.lock",
+        ".replacement.json",
+        ".metrics.json.a1234567.tmp",
+    ):
+        path = tmp_path / name
+        path.write_text("private")
+        path.chmod(0o600)
+    admit_credential_directory(tmp_path / "metrics.json")

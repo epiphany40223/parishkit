@@ -98,7 +98,11 @@ def recovery_preview(version, deployment_id, target_email):
         "parish_name": parishes[0]["values"]["name"] if parishes else None,
         "configuration_digest": version.digest,
         "current_admin_rules": sorted(
-            [rule["email"] for rule in rules if "administrator" in rule["roles"]]
+            [
+                rule["email"]
+                for rule in rules
+                if rule["kind"] == "address" and "administrator" in rule["roles"]
+            ]
         ),
         "target_email": email,
         "before_roles": sorted(before),

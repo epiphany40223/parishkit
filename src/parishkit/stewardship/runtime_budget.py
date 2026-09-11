@@ -22,7 +22,7 @@ class RuntimeBudget:
     download_pool_per_process: int = 2
     background_connections: int = 32
     operator_connections: int = 8
-    auxiliary_connections: int = 4
+    auxiliary_connections: int = 8
     database_connections: int = 100
     database_reserved: int = 3
     download_seconds: int = 300
@@ -46,7 +46,11 @@ class RuntimeBudget:
             or self.download_capacity >= self.web_processes * self.web_threads
             or self.background_connections < 2
             or self.operator_connections < 2
+            or self.auxiliary_connections
+            < 2 * self.web_processes * self.replicas * self.rollout_overlap
             or self.download_seconds > 900
+            or self.download_seconds <= 5
+            or self.drain_seconds <= 60
             or self.download_idle_seconds > 1200
             or self.drain_seconds > 1800
             or self.total_connections > self.database_connections

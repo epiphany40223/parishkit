@@ -62,6 +62,20 @@ def require_capacity(configuration):
     configuration.runtime_budget.validate_database(maximum=maximum, reserved=reserved)
 
 
+def require_role_capacity(configuration):
+    """Refuse a YAML process budget that no longer matches its actual SQL role."""
+    from django.db import connection
+
+    from .database_provisioning import role_limit
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT rolconnlimit FROM pg_roles WHERE rolname=current_user")
+        if cursor.fetchone() != (
+            role_limit(configuration, configuration.service_role),
+        ):
+            raise ConfigError("Runtime SQL connection limit differs from its budget.")
+
+
 def offline_grants(role):
     """The same config-writer engine has narrowly scoped offline SQL identities.
 
@@ -92,6 +106,7 @@ def admit_offline_database(configuration):
     require_no_temporary_authority()
     require_current_schema()
     require_capacity(configuration)
+    require_role_capacity(configuration)
 
 
 def require_no_temporary_authority(database=None):

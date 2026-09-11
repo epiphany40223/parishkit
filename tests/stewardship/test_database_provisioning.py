@@ -187,6 +187,7 @@ def test_grant_provisioning_uses_only_explicit_table_and_column_registry(
     monkeypatch.setattr(provisioning, "_admit_operator", lambda *args, **kwargs: None)
     monkeypatch.setattr(provisioning, "_check_role", lambda *args: True)
     monkeypatch.setattr(provisioning, "_connection", lambda *args: Database(cursor))
+    monkeypatch.setattr(provisioning, "_admit_existing_grants", lambda *args: None)
     assert provisioning.provision_grants(configuration, uuid4())[
         "database_grants_provisioned"
     ]
@@ -219,3 +220,31 @@ def test_operator_connection_uses_separate_password_argument(tmp_path, monkeypat
         provisioning.role_limit(configuration, ServiceRole.MIGRATION)
         == configuration.runtime_budget.operator_connections
     )
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        [[("public", "table", "SELECT")], []],
+        [[("public", "table", "UPDATE")], []],
+        [[], [("public", "table", "private", "SELECT")]],
+        [[], [("public", "metadata", "id", "SELECT")]],
+    ],
+)
+def test_grant_provisioning_refuses_excess_table_and_column_authority(rows):
+    """A narrowed registry cannot leave old broad grants silently accepted."""
+    cursor = Cursor()
+    results = iter(rows)
+    cursor.fetchall = lambda: next(results)
+    if rows in (
+        [[("public", "table", "SELECT")], []],
+        [[], [("public", "metadata", "id", "SELECT")]],
+    ):
+        provisioning._admit_existing_grants(
+            cursor, "web", {"table": {"SELECT"}}, {"metadata": {"SELECT": {"id"}}}
+        )
+    else:
+        with pytest.raises(ConfigError, match="exceed"):
+            provisioning._admit_existing_grants(
+                cursor, "web", {}, {"metadata": {"SELECT": {"id"}}}
+            )

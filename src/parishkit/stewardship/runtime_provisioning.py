@@ -11,6 +11,7 @@ import json
 import os
 import re
 import secrets
+import stat
 from dataclasses import replace
 from pathlib import Path
 
@@ -27,6 +28,38 @@ from .runtime_valkey import web_acl
 from .startup_interlock import MARKER
 
 MAX_DOCUMENT = 1024 * 1024
+
+
+def _admit_inventory(root, directories, files):
+    """On every retry refuse anything outside this intent's closed creation set."""
+    allowed_directories = {root, *directories}
+    for target in tuple(allowed_directories) + tuple(files):
+        for parent in target.parents:
+            if parent == root or any(base in parent.parents for base in directories):
+                allowed_directories.add(parent)
+    for directory in allowed_directories:
+        explicit_path(directory)
+        if not directory.exists():
+            continue
+        private_directory(directory)
+        for entry in directory.iterdir():
+            explicit_path(entry)
+            if entry.is_dir() and entry in allowed_directories:
+                continue
+            if not entry.is_file() or entry not in files:
+                raise ConfigError("Runtime provisioning contains unplanned storage.")
+
+
+def _write_intent(descriptor, intent):
+    """Complete a locked initial marker, including short writes, then sync it."""
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    remaining = memoryview(intent)
+    while remaining:
+        count = os.write(descriptor, remaining)
+        if count == 0:
+            raise OSError("Provisioning intent write made no progress.")
+        remaining = remaining[count:]
+    os.fsync(descriptor)
 
 
 def _json(value):
@@ -166,26 +199,53 @@ def provision_runtime(configuration, *, image, checkout=None, bind_source_root=N
         if not root.exists():
             root.mkdir(mode=0o700)
         private_directory(root)
-        descriptor = os.open(
-            pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600
-        )
-        with os.fdopen(descriptor, "wb") as stream:
-            stream.write(intent)
-            stream.flush()
-            os.fsync(stream.fileno())
-        _sync_directory(root)
     private_directory(root)
-    if read_private(pending, maximum=MAX_DOCUMENT) != intent:
-        raise ConfigError(
-            "Interrupted provisioning belongs to different deployment inputs."
-        )
-    descriptor = os.open(pending, os.O_RDONLY | os.O_NOFOLLOW)
+    descriptor = os.open(
+        pending, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600
+    )
     try:
         fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_uid != os.geteuid()
+            or metadata.st_nlink != 1
+        ):
+            raise ConfigError("Provisioning intent metadata is invalid.")
         if completed.exists():
             raise ConfigError("Runtime provisioning already completed.")
         if os.fstat(descriptor).st_ino != pending.stat().st_ino:
             raise ConfigError("Provisioning intent changed during admission.")
+        existing = os.read(descriptor, MAX_DOCUMENT + 1)
+        if existing != intent:
+            if not intent.startswith(existing):
+                raise ConfigError(
+                    "Interrupted provisioning belongs to different deployment inputs."
+                )
+            # A crash may leave only an empty/prefix marker. No other artifact
+            # may exist until the complete intent is durable, so finishing this
+            # prefix never reinterprets earlier provisioning side effects.
+            for directory in {root, *directories}:
+                if directory.exists():
+                    private_directory(directory)
+                    if any(entry != pending for entry in directory.iterdir()):
+                        raise ConfigError(
+                            "Incomplete provisioning intent has unrelated storage."
+                        )
+            _write_intent(descriptor, intent)
+            _sync_directory(root)
+        _admit_inventory(
+            root,
+            directories,
+            {
+                *passwords,
+                *documents,
+                acl,
+                RuntimeLayout(configuration).interlock,
+                pending,
+            },
+        )
         for directory in sorted(
             directories, key=lambda value: (len(value.parts), str(value))
         ):

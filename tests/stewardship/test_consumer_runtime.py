@@ -117,7 +117,10 @@ def test_one_container_never_acknowledges_multiple_replicas(cohort):
     configuration = replace(
         configuration,
         runtime_budget=replace(
-            configuration.runtime_budget, replicas=2, database_connections=200
+            configuration.runtime_budget,
+            replicas=2,
+            database_connections=200,
+            auxiliary_connections=16,
         ),
     )
     with pytest.raises(ConfigError, match="one supervised"):

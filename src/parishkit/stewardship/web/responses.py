@@ -11,6 +11,7 @@ import socket
 from contextlib import suppress
 from threading import Event, Lock
 
+from django.conf import settings
 from django.http import StreamingHttpResponse
 
 from parishkit.stewardship.campaigns.read_guards import (
@@ -23,8 +24,6 @@ from parishkit.stewardship.observability import correlation, current_correlation
 
 from .exports import download_headers
 from .security import private_response
-
-DOWNLOAD_POOL = DownloadPool()
 
 
 def unavailable():
@@ -123,7 +122,7 @@ def campaign_response(
     open_content,
     filename=None,
     content_type="text/html; charset=utf-8",
-    pool=DOWNLOAD_POOL,
+    pool=None,
     on_close=None,
 ):
     """Authorize before headers; keep guard through bytes and transport disconnect.
@@ -142,6 +141,10 @@ def campaign_response(
         else {"Cache-Control": "no-store", "Content-Type": content_type}
     )
     try:
+        if filename is not None and pool is None:
+            pool = getattr(settings, "STEWARDSHIP_DOWNLOAD_POOL", None)
+            if not isinstance(pool, DownloadPool):
+                raise ReadUnavailable("Operational download admission is unavailable.")
         content = _Content(
             request,
             campaigns,

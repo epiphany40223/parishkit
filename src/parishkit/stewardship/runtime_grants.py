@@ -131,6 +131,30 @@ WEB_UPDATE_TABLES = frozenset(
     ]
 )
 
+# Only response-guard and fresh Admin authorization reads exist in this phase.
+# Report owners add their data explicitly; credential/session-link inventories,
+# audit payloads and worker queues do not belong to the streaming login.
+DOWNLOAD_READ_TABLES = frozenset(
+    {
+        "stewardship_campaign",
+        "stewardship_system_configuration",
+        "stewardship_configuration_version",
+        "stewardship_applied_integration",
+        "stewardship_campaign_configuration",
+        "stewardship_schedule_revision",
+        "stewardship_parish",
+        "stewardship_domain_rule",
+        "stewardship_address_rule",
+        "stewardship_address_grant",
+        "stewardship_ministry_assignment",
+        "stewardship_portal_user",
+        "stewardship_assignment_overlay",
+        "stewardship_policy_epoch",
+        "stewardship_admin_revocation",
+        "stewardship_portal_session",
+    }
+)
+
 
 def runtime_grants(role, *, target=None):
     """Return fresh table/column maps so callers cannot broaden the shared policy."""
@@ -165,7 +189,12 @@ def runtime_grants(role, *, target=None):
         raise ConfigError(
             "This service's runtime database authority is not implemented."
         )
-    tables = {table: {"SELECT"} for table in WEB_READ_TABLES}
+    tables = {
+        table: {"SELECT"}
+        for table in (
+            WEB_READ_TABLES if role is ServiceRole.WEB else DOWNLOAD_READ_TABLES
+        )
+    }
     tables["stewardship_download_policy"] = {"SELECT"}
     # The short pre-stream FOR SHARE claim needs one UPDATE privilege; its SQL
     # guard rejects an id-only update, and the actual stream is READ ONLY.
@@ -225,6 +254,7 @@ def admit_runtime_database(configuration):
         require_capacity,
         require_current_schema,
         require_no_temporary_authority,
+        require_role_capacity,
     )
 
     role = configuration.service_role
@@ -248,6 +278,7 @@ def admit_runtime_database(configuration):
     require_no_temporary_authority()
     require_current_schema()
     require_capacity(configuration)
+    require_role_capacity(configuration)
 
 
 def admit_columns(database, tables, columns):

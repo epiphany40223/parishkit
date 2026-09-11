@@ -131,7 +131,7 @@ class CredentialInstaller:
         except Exception:
             # Provider exceptions can contain the supplied credential. The public
             # outcome is only failed, and the previous file has not been changed.
-            pass
+            valid = False
         if not valid:
             return self._advance(row.pk, "testing", "cleanup_pending", reason="failed")
         self.files.prepare(

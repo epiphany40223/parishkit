@@ -170,3 +170,30 @@ def test_metrics_receipt_cannot_be_reused_from_earlier_history(metric_installer)
     stage_metrics(private, candidate, reused)
     assert run_metrics(installer).state == "failed"
     assert read_private(installer.files.path) == candidate.serialize()
+
+
+def test_metrics_reuse_query_failure_cannot_install_candidate(
+    metric_installer, monkeypatch
+):
+    """A transient database failure after syntax validation must remain fail-closed."""
+    from django.db.models.query import QuerySet
+
+    installer, private, prior, candidate = metric_installer
+    stage_metrics(private, prior, candidate)
+    original = QuerySet.exists
+    calls = []
+
+    def fail_reuse_query(queryset):
+        """Only the reuse lookup fails; later checkpoint persistence can recover."""
+        if (
+            queryset.model is SecretReplacementRequest
+            and "resulting_fingerprint" in str(queryset.query)
+        ):
+            calls.append(True)
+            raise RuntimeError("synthetic database outage")
+        return original(queryset)
+
+    monkeypatch.setattr(QuerySet, "exists", fail_reuse_query)
+    assert run_metrics(installer).state == "failed"
+    assert calls == [True]
+    assert read_private(installer.files.path) == prior.serialize()

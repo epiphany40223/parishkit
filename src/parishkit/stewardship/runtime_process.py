@@ -151,7 +151,7 @@ def next_configuration_request():
     )
 
 
-def bounded_loop(run_once, *, lease, stop, wait_seconds=2):
+def bounded_loop(run_once, *, lease, stop, wait_seconds=2, heartbeat=None):
     """Retry transient work without spinning; SIGTERM stops between bounded passes.
 
     A failed lease is fatal rather than a retryable dependency outage. Database
@@ -172,6 +172,8 @@ def bounded_loop(run_once, *, lease, stop, wait_seconds=2):
             delay = wait_seconds
         finally:
             connections.close_all()
+        if heartbeat is not None:
+            heartbeat()
         stop.wait(delay)
 
 
@@ -241,8 +243,11 @@ def serve_installer_loop(run_once, lease):
         sig: signal.signal(sig, stopping) for sig in (signal.SIGTERM, signal.SIGINT)
     }
     try:
+        from .installer_health import publish_heartbeat
+
         emit(Event.STARTUP_VALIDATED)
-        bounded_loop(run_once, lease=lease, stop=stop)
+        publish_heartbeat()
+        bounded_loop(run_once, lease=lease, stop=stop, heartbeat=publish_heartbeat)
     finally:
         for sig, handler in previous.items():
             signal.signal(sig, handler)

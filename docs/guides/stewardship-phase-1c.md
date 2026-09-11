@@ -1,5 +1,7 @@
 # Stewardship Phase 1C execution
 
+Current review tracking: [Phase 1C review ledger](stewardship-phase-1c-reviews.md).
+
 This batch follows the [controlling plan](../plans/stewardship/overall.md#1c-operational-foundation)
 and [task sequence](../tasks/stewardship/overall.md#phase-1c-runtime-foundation).
 It starts from PR #20's merged tip,

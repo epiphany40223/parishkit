@@ -8,6 +8,7 @@ without broadening modes. SQL identities and mount authority remain distinct.
 """
 
 import os
+import re
 import stat
 from contextlib import suppress
 from dataclasses import dataclass
@@ -52,6 +53,40 @@ def private_directory(value, *, create=False, owner=None):
     except OSError:
         raise ConfigError("Runtime directory is unavailable.") from None
     return path
+
+
+def admit_credential_directory(credential, *, allow_missing=False):
+    """A writable target contains only its credential and private protocol files.
+
+    File overrides may use independent roots, but never adopt a shared parent.
+    Retained atomic-write temporaries are allowed only for these exact targets;
+    symlinks, hardlinks, subdirectories and unrelated files remain forbidden.
+    """
+    credential = explicit_path(credential)
+    directory = credential.parent
+    if allow_missing and not directory.exists():
+        return
+    private_directory(directory)
+    names = {
+        credential.name,
+        ".replacement.lock",
+        ".replacement.json",
+        ".bootstrap-candidate",
+    }
+    for entry in directory.iterdir():
+        metadata = entry.lstat()
+        temporary = any(
+            re.fullmatch(r"\." + re.escape(name) + r"\.[a-z0-9_]{8}\.tmp", entry.name)
+            for name in names - {".replacement.lock"}
+        )
+        if (
+            (entry.name not in names and not temporary)
+            or not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != os.geteuid()
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_nlink != 1
+        ):
+            raise ConfigError("Credential target contains unrelated or unsafe storage.")
 
 
 @dataclass(frozen=True)
@@ -189,6 +224,18 @@ class RuntimeLayout:
             explicit_path(path)
             if any(path == root or root in path.parents for root in protected):
                 raise ConfigError("Runtime input overlaps protected storage.")
+        configuration_file = self.configuration.configuration_file
+        if configuration_file is not None:
+            explicit_path(configuration_file)
+            if configuration_file in inputs:
+                raise ConfigError("Independent runtime inputs alias each other.")
+            # Generated service metadata belongs in services/, unlike secrets.
+            if any(
+                configuration_file == root or root in configuration_file.parents
+                for root in protected
+                if root != self.service_directory
+            ):
+                raise ConfigError("Runtime input overlaps protected storage.")
         return self
 
     def _validate_credential_targets(self, roots, stores):
@@ -203,7 +250,11 @@ class RuntimeLayout:
             for name in sorted(SECRET_NAMES - {"handoff_private"})
         ]
         reserved = [root for root in roots if root != credential_root] + stores
-        reserved += [credential_root / "handoff", credential_root / "database"]
+        reserved += [
+            credential_root / "handoff",
+            credential_root / "database",
+            credential_root / "valkey",
+        ]
         for index, target in enumerate(targets):
             if target == credential_root or target in credential_root.parents:
                 raise ConfigError("Credential target is too broad.")

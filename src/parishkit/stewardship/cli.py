@@ -24,6 +24,7 @@ _COMMAND_OPTIONS = {
     },
     "service": {"profile", "service_role", "bind_all_interfaces"},
     "healthcheck": set(),
+    "installer-healthcheck": set(),
     "health": {"config"},
     "runtime": {"config"},
     "acknowledge-credential": {"config", "request_id"},
@@ -206,6 +207,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if args.command == "healthcheck":
         return healthcheck()
+    if args.command == "installer-healthcheck":
+        from .installer_health import healthcheck as installer_healthcheck
+
+        return installer_healthcheck()
     if args.command == "prepare-development":
         if args.runtime_root is None:
             parser.usage_error(
