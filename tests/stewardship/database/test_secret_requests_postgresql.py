@@ -66,6 +66,55 @@ def clean(intent, callback):
     )
 
 
+def test_sealed_intake_rejects_stale_reauthentication_without_reserving_target(intent):
+    """An unusable sealed request must fail atomically at intake, not during claim."""
+    from parishkit.stewardship.accounts.credential_handoff import PrivateHandoff
+    from parishkit.stewardship.accounts.cryptography import Key
+    from parishkit.stewardship.accounts.key_files import file_fingerprint
+    from parishkit.stewardship.accounts.secret_models import SealedCredentialStaging
+
+    handoff = PrivateHandoff("parishsoft", Key("handoff", "active", b"h" * 32))
+    candidate = b"synthetic-candidate"
+    arguments = intent | {
+        "required_consumers": ("worker",),
+        "sealed_candidate": handoff.public().seal(intent["request_id"], candidate),
+        "candidate_fingerprint": file_fingerprint(candidate),
+    }
+    with pytest.raises(IntegrityError, match="fresh authentication"):
+        stage_secret_request(
+            **(
+                arguments
+                | {"reauthenticated_at": timezone.now() - timedelta(minutes=6)}
+            )
+        )
+    assert not SecretReplacementRequest.objects.exists()
+    assert not SealedCredentialStaging.objects.exists()
+    assert stage_secret_request(**arguments).state == "staged"
+
+
+def test_sql_sealed_payload_cannot_attach_to_legacy_empty_consumer_intent(intent):
+    """Bypassing Python intake cannot wedge the target into incompatible protocols."""
+    from parishkit.stewardship.accounts.credential_handoff import PrivateHandoff
+    from parishkit.stewardship.accounts.cryptography import Key
+    from parishkit.stewardship.accounts.key_files import file_fingerprint
+    from parishkit.stewardship.accounts.secret_models import SealedCredentialStaging
+
+    stage_secret_request(**intent)
+    handoff = PrivateHandoff("parishsoft", Key("handoff", "active", b"h" * 32))
+    with (
+        pytest.raises(IntegrityError, match="installer consumers"),
+        transaction.atomic(),
+    ):
+        SealedCredentialStaging.objects.create(
+            request_id=intent["request_id"],
+            target=intent["target"],
+            reference=intent["staging_reference"],
+            fingerprint=file_fingerprint(b"candidate"),
+            ciphertext=handoff.public().seal(intent["request_id"], b"candidate"),
+        )
+    assert not SealedCredentialStaging.objects.exists()
+
+
 def test_roundtrip_cancel_cleanup_and_idempotent_history(intent):
     """Cleanup is durable, exactly-once in DB, and precedes target reuse."""
     staged = stage_secret_request(**intent)

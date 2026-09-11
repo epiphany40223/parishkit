@@ -190,6 +190,32 @@ def test_precedence_and_relative_paths(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(
+    "name", ["web", "backup-worker", "credential-installer-general-encryption"]
+)
+def test_named_database_file_overrides_have_closed_names_and_source_relative_paths(
+    tmp_path, monkeypatch, name
+):
+    """Each SQL identity can override its own file through YAML and environment."""
+    source = tmp_path / "source"
+    source.mkdir()
+    path = config_file(source, {"postgres": {"password_files": {name: "web-password"}}})
+    monkeypatch.chdir(tmp_path)
+    parsed = load_deployment(path, environ={})
+    assert parsed.configuration_file == path
+    assert parsed.postgres.password_files == {name: source / "web-password"}
+    variable = "PARISHKIT_STEWARDSHIP_POSTGRES_PASSWORD_FILE_" + name.upper().replace(
+        "-", "_"
+    )
+    parsed = load_deployment(path, environ={variable: "env-web"})
+    assert parsed.postgres.password_files == {name: tmp_path / "env-web"}
+    invalid = config_file(
+        source, {"postgres": {"password_files": {"unexpected": "secret"}}}
+    )
+    with pytest.raises(ConfigError):
+        load_deployment(invalid, environ={})
+
+
+@pytest.mark.parametrize(
     "name", [*PATH_DEFAULTS, "authority", "persistent_root", *sorted(PERSISTENT_STORES)]
 )
 def test_every_path_can_be_overridden(tmp_path, name):

@@ -32,6 +32,62 @@ from .campaign_builders import (
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
+def test_owner_admission_error_keeps_valid_end_edit_retryable(tmp_path):
+    """An unavailable owning service is not a permanent rejection of valid intent."""
+    from parishkit.config import ConfigError
+    from parishkit.stewardship.accounts.configuration_requests import request_status
+
+    store, campaign, actor = draft_campaign(tmp_path)
+    with campaign_clock(campaign.active_configuration.starts_at):
+        command(campaign, actor, Action.ACTIVATE)
+        request, _ = end_request(store, campaign, actor, "edit_end")
+
+        def unavailable(*args):
+            raise ConfigError("private-owning-service-input")
+
+        with pytest.raises(ConfigError):
+            install_request(
+                store,
+                request_id=request.request_id,
+                correlation_id=uuid4(),
+                admit_campaign=unavailable,
+            )
+        assert (
+            request_status(request_id=request.request_id, actor_id=actor).state
+            == "staged"
+        )
+        assert (
+            install_request(
+                store,
+                request_id=request.request_id,
+                correlation_id=uuid4(),
+                admit_campaign=admit_test_work,
+            ).state
+            == "applied"
+        )
+
+
+def test_restore_hold_is_a_retryable_boundary_admission_error(tmp_path):
+    """Temporary restore review neither terminalizes work nor inserts occurrences."""
+    from parishkit.stewardship.campaigns.admission import CampaignAdmissionUnavailable
+    from parishkit.stewardship.campaigns.models import CampaignBoundaryOccurrence
+
+    from .campaign_builders import restored_runtime
+
+    _, campaign, actor = draft_campaign(tmp_path)
+    with restored_runtime(campaign.active_configuration.starts_at):
+        with pytest.raises(CampaignAdmissionUnavailable, match="restore review"):
+            apply_due_boundaries(
+                campaign_id=campaign.pk,
+                task_id=uuid4(),
+                fence=1,
+                actor_id=actor,
+                correlation_id=uuid4(),
+                admit=admit_test_work,
+            )
+        assert not CampaignBoundaryOccurrence.objects.exists()
+
+
 def test_exceptional_bind_reports_typed_stale_version(tmp_path):
     """Stale confirmation is a refreshable conflict, not an SQL invariant error."""
     store, campaign, actor = draft_campaign(tmp_path)

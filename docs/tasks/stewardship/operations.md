@@ -49,48 +49,71 @@ mount/queue isolation. No review gate, deployment, or release is claimed.
 
 Scope and dependencies: [OPS-02 work package](../../plans/stewardship/operations.md#ops-02-durable-runtime-paths-and-least-privilege-secrets).
 
-- [ ] OPS-02.01 — Configure durable runtime paths and overrides.
-- [ ] OPS-02.02 — Isolate online and offline-bootstrap configuration/credential mounts.
-- [ ] OPS-02.03 — Enforce secret and service-mount boundaries.
-- [ ] OPS-02.04 — Configure safe temporary storage and file permissions.
-- [ ] OPS-02.05 — Test topology, identity, isolation, and durable replacement.
+- [x] OPS-02.01 — Configure durable runtime paths and overrides.
+- [x] OPS-02.02 — Isolate online and offline-bootstrap configuration/credential mounts.
+- [x] OPS-02.03 — Enforce secret and service-mount boundaries.
+- [x] OPS-02.04 — Configure safe temporary storage and file permissions.
+- [x] OPS-02.05 — Test topology, identity, isolation, and durable replacement.
 
-Evidence: Not started.
+Current evidence: [Phase 1C runtime](../../guides/stewardship-runtime.md) and
+[review ledger](../../guides/stewardship-phase-1c-reviews.md). Real native-volume
+provisioning, exact individual mounts, restricted SQL identities, independent
+overrides, ownership, path/symlink refusal, shared/exclusive startup leases and
+durability across consumer/proxy replacement pass the 48-check container suite.
+Linux containers run on Docker Desktop; native Linux-host CI is still required
+at PR handoff, and native Windows execution is not claimed. Reserved later
+services remain denied until their owners land. No production approval is implied.
 
-Before granting runtime database access or releasing Gate 1, harden existing SQL
-checkpoint/activation/secret emitters and their helper guards against caller
-search-path shadowing. Audit-ownership review round 3 identified unchanged
-unqualified audit INSERT targets in accounts migrations 0010, 0013 and 0015.
-Use forward migrations with fixed trusted paths/schema-qualified targets, respect
-optional migration ordering, restrict schema creation/temporary-object privileges
-as appropriate, and test each real emitter with a temporary shadow audit table.
-The new audit insertion guard protects attribution only once an INSERT reaches
-the real table; it does not resolve those pre-existing emitter paths. See the
-[scope and review disposition](milestones.md#audit-ownership-increment).
+Phase 1C completes the legacy-emitter prerequisite identified by the
+[audit-ownership review](milestones.md#audit-ownership-increment).
+Forward migration `0033_trusted_trigger_paths` pins eleven named legacy
+checkpoint/activation/secret emitters. Temporary-shadow/inventory tests and the
+existing PostgreSQL integration suite verify their real effects. The generic
+mutable/immutable guards do not access application relations; their only
+unqualified call is PostgreSQL's built-in statement clock. Runtime roles cannot
+create schemas or temporary objects. This is not a claim that migration 0033
+changes those generic guards. Runtime grants and OPS-02 implementation are
+complete; final review/CI and human Gate 1 release remain separate requirements.
 
 ## OPS-03: Production ingress, TLS, and network security
 
 Scope and dependencies: [OPS-03 work package](../../plans/stewardship/operations.md#ops-03-production-ingress-tls-and-network-security).
 
-- [ ] OPS-03.01 — Configure persistent Caddy TLS, trusted forwarding, and ingress hardening prerequisites.
-- [ ] OPS-03.02 — Redact credentials from access logs.
-- [ ] OPS-03.03 — Deny internal health and metrics paths at public ingress.
-- [ ] OPS-03.04 — Document DNS, firewall, OAuth, and certificate recovery.
-- [ ] OPS-03.05 — Validate Caddy hardening, writable-state limits, and network/route boundaries before enabling ingress.
+- [x] OPS-03.01 — Configure persistent Caddy TLS, trusted forwarding, and ingress hardening prerequisites.
+- [x] OPS-03.02 — Redact credentials from access logs.
+- [x] OPS-03.03 — Deny internal health and metrics paths at public ingress.
+- [x] OPS-03.04 — Document DNS, firewall, OAuth, and certificate recovery.
+- [x] OPS-03.05 — Validate Caddy hardening, writable-state limits, and network/route boundaries before enabling ingress.
 
-Evidence: Not started.
+Current evidence: the [operator guide](../../guides/stewardship-runtime.md) and
+real production-shaped Compose regression cover standard-port HTTPS redirects,
+forged forwarding-header normalization, private-route denial, redacted successful
+and failed proxy logs, non-root/restricted-capability execution, writable-state
+limits, certificate persistence and backend-network denial. Tests use a local CA,
+not real ACME issuance. Native Linux Compose CI passes at `243782d` in
+[run 34599854275](https://github.com/epiphany40223/parishkit/actions/runs/34599854275),
+closing OPS-03.05's technical validation. Human Gate 1/merge approval remains
+separate; production deployment/issuance is not authorized.
 
 ## OPS-04: Bootstrap, migrations, startup, and upgrades
 
 Scope and dependencies: [OPS-04 work package](../../plans/stewardship/operations.md#ops-04-bootstrap-migrations-startup-and-upgrades).
 
-- [ ] OPS-04.01 — Integrate bootstrap, offline Admin recovery, startup exclusion, health, and budget validation.
-- [ ] OPS-04.02 — Run migrations once before service rollout.
+- [x] OPS-04.01 — Integrate bootstrap, offline Admin recovery, startup exclusion, health, and budget validation.
+- [x] OPS-04.02 — Run migrations once before service rollout.
 - [ ] OPS-04.03 — Implement backup-aware image upgrades and readiness checks.
-- [ ] OPS-04.04 — Document schema evolution and recovery procedures.
+- [x] OPS-04.04 — Document schema evolution and recovery procedures.
 - [ ] OPS-04.05 — Test bootstrap isolation, startup races, mismatch, crash, and upgrade paths.
 
-Evidence: Not started.
+Current evidence: [runtime startup and recovery](../../guides/stewardship-runtime.md)
+and the [review ledger](../../guides/stewardship-phase-1c-reviews.md). Development
+and production-shaped tests perform role provisioning, key/bootstrap preparation,
+schema-owner migration, restricted grants, bootstrap activation, configured
+restart, offline recovery preview/confirmation, mutual exclusion and supervisor
+crash recovery. Negative tests cover drift, mismatches, partial provisioning,
+mounts and process/SQL budgets. OPS-04.03 and the upgrade part of .05 remain held
+for OPS-05's verified-backup evidence; configured migrations fail closed instead
+of implementing an unverified upgrade. Initial-install/restart scope is complete.
 
 ## OPS-05: Backup service and purge-triggered backup
 
@@ -135,12 +158,21 @@ Scope and dependencies: [OPS-08 work package](../../plans/stewardship/operations
 
 - [ ] OPS-08.01 — Implement structured operational and audit logging.
 - [ ] OPS-08.02 — Implement internal authenticated metrics and credential rotation.
-- [ ] OPS-08.03 — Implement minimal health and detailed CLI diagnostics.
+- [x] OPS-08.03 — Implement minimal health and detailed CLI diagnostics.
 - [ ] OPS-08.04 — Integrate deduplicated alerts and recovery status.
 - [ ] OPS-08.05 — Write operational failure and recovery runbooks.
 - [ ] OPS-08.06 — Exercise runbooks using controlled failure injection.
 
-Evidence: Not started.
+Foundation evidence: [runtime guide](../../guides/stewardship-runtime.md) and
+[review ledger](../../guides/stewardship-phase-1c-reviews.md). Structured redacted
+runtime/audit events, request-linked installer diagnostics, bounded internal
+dependency metrics, bearer protection, minimal health and protected CLI diagnosis
+are implemented. Real composed metrics replacement verifies old-inode refusal,
+whole-worker-cohort recreation/acknowledgement and final applied state. Controlled
+database/broker, worker-crash, lease and filesystem failures exercise the baseline
+runbooks. Broader feature metrics, durable log ingestion/viewing, Admin/Slack
+delivery and backup/source/mail/purge runbooks retain their later owners; mixed
+tasks .01/.02/.04/.05/.06 therefore remain unchecked.
 
 ## OPS-09: CI, coverage, browser, acceptance, and release pipeline
 

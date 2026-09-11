@@ -7,6 +7,7 @@ Provider-specific tests and whole-consumer recreation are supplied by the owning
 runtime/provider integrations; this module never controls the Docker socket.
 """
 
+from contextlib import ExitStack
 from functools import partial
 from uuid import UUID, uuid4
 
@@ -14,16 +15,19 @@ from django.db import transaction
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.observability import installer_request
 from parishkit.stewardship.service_boundaries import (
     ALLOWED_SECRETS,
     admit_online_service,
 )
 
 from .credential_database import admit_consumer_database, admit_installer_database
+from .credential_errors import CredentialValidationUnavailable
 from .credential_files import CredentialFiles
 from .credential_handoff import PrivateHandoff
 from .cryptography import CryptographicError
 from .key_files import file_fingerprint, load_keyring
+from .metrics_credentials import credential_receipt
 from .secret_models import (
     SECRET_PENDING,
     CredentialConsumerAcknowledgement,
@@ -31,13 +35,6 @@ from .secret_models import (
     SecretReplacementRequest,
 )
 from .secret_requests import _now, _receipt, _transaction, _transition
-
-
-class CredentialValidationUnavailable(Exception):
-    """A provider adapter requests retry without exposing provider error text."""
-
-    def __init__(self):
-        super().__init__("Credential validation is temporarily unavailable.")
 
 
 class CredentialInstaller:
@@ -108,7 +105,7 @@ class CredentialInstaller:
             value = self.files.private.open(row.pk, staged.ciphertext)
             value.decode("utf-8")
             valid = (
-                file_fingerprint(value) == staged.fingerprint
+                credential_receipt(value, self.target) == staged.fingerprint
                 and self.validate(value) is True
             )
         except CredentialValidationUnavailable:
@@ -118,13 +115,31 @@ class CredentialInstaller:
         except Exception:
             # Provider exceptions can contain the supplied credential. The public
             # outcome is only failed, and the previous file has not been changed.
-            pass
+            valid = False
+        if valid and self.target == "metrics":
+            from django.db import DatabaseError
+            from django.db.models import Q
+
+            try:
+                valid = staged.fingerprint != row.expected_fingerprint and not (
+                    SecretReplacementRequest.objects.filter(target=self.target)
+                    .exclude(pk=row.pk)
+                    .filter(
+                        Q(expected_fingerprint=staged.fingerprint)
+                        | Q(resulting_fingerprint=staged.fingerprint)
+                    )
+                    .exists()
+                )
+            except DatabaseError:
+                # Local storage availability is not a verdict on the supplied
+                # credential. Preserve sealed input for the target's next pass.
+                raise CredentialValidationUnavailable() from None
         if not valid:
             return self._advance(row.pk, "testing", "cleanup_pending", reason="failed")
         self.files.prepare(
             request_id=row.pk,
             candidate=staged.ciphertext,
-            expected_fingerprint=row.expected_fingerprint,
+            expected_fingerprint=self._private_predecessor(row),
             consumers=tuple(row.required_consumers),
             expires_at=row.expires_at,
             now=_now(),
@@ -133,6 +148,16 @@ class CredentialInstaller:
         return self._advance(
             row.pk, "testing", "installing", fingerprint=staged.fingerprint
         )
+
+    def _private_predecessor(self, row):
+        """Keep metrics byte hashes in the isolated file journal, never PostgreSQL."""
+        selected = self.files._selected()
+        public = (
+            credential_receipt(selected, self.target) if selected is not None else None
+        )
+        if public != row.expected_fingerprint:
+            raise CryptographicError("Working credential identity has changed.")
+        return file_fingerprint(selected) if selected is not None else None
 
     def _acknowledged(self, row):
         """Commit the all-consumer decision before discarding rollback material.
@@ -182,6 +207,20 @@ class CredentialInstaller:
                     if row.cleanup_reason == "applied"
                     else row.expected_fingerprint
                 )
+                if self.target == "metrics":
+                    selected = self.files._selected()
+                    public = (
+                        credential_receipt(selected, self.target)
+                        if selected is not None
+                        else None
+                    )
+                    if public != expected:
+                        raise CryptographicError(
+                            "Credential terminal identity disagrees."
+                        )
+                    expected = (
+                        file_fingerprint(selected) if selected is not None else None
+                    )
                 if (
                     file_receipt.request_id != identifier
                     or file_receipt.state != expected_state
@@ -203,13 +242,25 @@ class CredentialInstaller:
         """Failure/expiry restores the prior file before recording completion."""
         if self.files.pending_request() is not None:
             if row.cleanup_reason == "applied":
+                acknowledgements = dict(
+                    CredentialConsumerAcknowledgement.objects.filter(
+                        request_id=row.pk
+                    ).values_list("consumer", "fingerprint")
+                )
+                if self.target == "metrics":
+                    if any(
+                        acknowledgements.get(name) != row.resulting_fingerprint
+                        for name in row.required_consumers
+                    ):
+                        raise CryptographicError("Metrics consumer identity disagrees.")
+                    # The durable decision already validated public receipts.
+                    # The file protocol independently verifies the exact loaded
+                    # bytes before destroying its sealed rollback material.
+                    digest = self.files._read(row.pk)["candidate_fingerprint"]
+                    acknowledgements = {name: digest for name in row.required_consumers}
                 self.files.acknowledge(
                     row.pk,
-                    fingerprints=dict(
-                        CredentialConsumerAcknowledgement.objects.filter(
-                            request_id=row.pk
-                        ).values_list("consumer", "fingerprint")
-                    ),
+                    fingerprints=acknowledgements,
                     now=row.acknowledged_at,
                 )
             else:
@@ -222,7 +273,11 @@ class CredentialInstaller:
             if row.cleanup_reason == "applied":
                 raise CryptographicError("Applied credential file evidence is missing.")
             selected = self.files._selected()
-            actual = file_fingerprint(selected) if selected is not None else None
+            actual = (
+                credential_receipt(selected, self.target)
+                if selected is not None
+                else None
+            )
             if actual != row.expected_fingerprint:
                 raise CryptographicError("Working credential fingerprint has changed.")
             self._terminal(row.pk)
@@ -231,7 +286,7 @@ class CredentialInstaller:
     def run_once(self):
         """Bound one queue pass; missing acknowledgements yield rather than sleep."""
         admit_installer_database(self.target)
-        with self.files.lock():
+        with self.files.lock(), ExitStack() as context:
             identifier = self.files.pending_request()
             if identifier is None:
                 identifier = (
@@ -245,6 +300,7 @@ class CredentialInstaller:
                 )
             if identifier is None:
                 return None
+            context.enter_context(installer_request(identifier))
             for _ in range(6):
                 row = self._read(identifier)
                 if row.state not in SECRET_PENDING:
@@ -290,11 +346,11 @@ def acknowledge_loaded_credential(*, request_id, consumer, loaded_value):
     if not isinstance(request_id, UUID):
         raise TypeError("A credential request UUID is required.")
     admit_consumer_database(consumer)
-    fingerprint = file_fingerprint(loaded_value)
     with transaction.atomic(durable=True):
         row = SecretReplacementRequest.objects.get(pk=request_id)
         if row.target not in ALLOWED_SECRETS[ServiceRole(consumer)]:
             raise ConfigError("Credential consumer target is not authorized.")
+        fingerprint = credential_receipt(loaded_value, row.target)
         existing = CredentialConsumerAcknowledgement.objects.filter(
             request_id=request_id, consumer=consumer
         ).first()

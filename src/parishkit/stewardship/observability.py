@@ -22,8 +22,19 @@ class Event(StrEnum):
     TASK_STARTED = "task_started"
     TASK_COMPLETED = "task_completed"
     TASK_FAILED = "task_failed"
+    INSTALLER_REQUEST_FAILED = "installer_request_failed"
     AUTHENTICATION_LIMITS_WEAKENED = "authentication_limits_weakened"
     UNSTRUCTURED = "unstructured_log_suppressed"
+
+
+class FailureKind(StrEnum):
+    """Safe operational categories, never exception text or credential values."""
+
+    DATABASE = "database_unavailable"
+    CREDENTIAL = "credential_unavailable"
+    CONFIGURATION = "configuration_unavailable"
+    FILESYSTEM = "filesystem_unavailable"
+    UNEXPECTED = "unexpected_failure"
 
 
 _correlation: ContextVar[UUID | None] = ContextVar(
@@ -55,6 +66,7 @@ def emit(
     level: int = logging.INFO,
     task_id: UUID | None = None,
     authentication_limits: tuple[str, ...] = (),
+    failure_kind: FailureKind | None = None,
 ) -> None:
     """Emit only typed identifiers and an allowlisted event; accept no free text."""
     if not isinstance(event, Event) or level not in {
@@ -67,6 +79,8 @@ def emit(
         raise ValueError("event and severity must be recognized logging values")
     if task_id is not None and not isinstance(task_id, UUID):
         raise ValueError("task_id must be an internal UUID")
+    if failure_kind is not None and not isinstance(failure_kind, FailureKind):
+        raise ValueError("Failure categories must be reviewed values.")
     if authentication_limits and (
         event is not Event.AUTHENTICATION_LIMITS_WEAKENED
         or not _safe_thresholds(authentication_limits)
@@ -80,9 +94,47 @@ def emit(
                 "correlation_id": _correlation.get(),
                 "task_id": task_id,
                 "authentication_limits": authentication_limits,
+                "failure_kind": failure_kind,
             }
         ),
     )
+
+
+def emit_failure(error, *, event=Event.TASK_FAILED):
+    """Classify a failure without serializing any exception-controlled field."""
+    from django.db import DatabaseError
+
+    from parishkit.config import ConfigError
+
+    from .accounts.credential_errors import CredentialValidationUnavailable
+    from .accounts.cryptography import CryptographicError
+
+    kind = next(
+        (
+            kind
+            for cls, kind in (
+                (DatabaseError, FailureKind.DATABASE),
+                (CredentialValidationUnavailable, FailureKind.CREDENTIAL),
+                (CryptographicError, FailureKind.CREDENTIAL),
+                (ConfigError, FailureKind.CONFIGURATION),
+                (OSError, FailureKind.FILESYSTEM),
+            )
+            if isinstance(error, cls)
+        ),
+        FailureKind.UNEXPECTED,
+    )
+    emit(event, level=logging.ERROR, failure_kind=kind)
+
+
+@contextmanager
+def installer_request(identifier):
+    """Correlate a selected durable request's failures before unwinding its scope."""
+    with correlation(identifier):
+        try:
+            yield
+        except Exception as error:
+            emit_failure(error, event=Event.INSTALLER_REQUEST_FAILED)
+            raise
 
 
 def _safe_thresholds(value):
@@ -130,6 +182,10 @@ class SafeJsonFormatter(JsonLogFormatter):
             for key in ("correlation_id", "task_id")
             if isinstance(context, dict) and isinstance(context.get(key), UUID)
         }
+        if isinstance(context, dict) and isinstance(
+            context.get("failure_kind"), FailureKind
+        ):
+            safe.extra["failure_kind"] = context["failure_kind"].value
         if (
             record.msg is Event.AUTHENTICATION_LIMITS_WEAKENED
             and isinstance(context, dict)

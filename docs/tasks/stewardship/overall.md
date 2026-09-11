@@ -173,6 +173,28 @@ Do not begin Phase 1C until PR CI and human-approved merge are complete.
 
 Source scope: [Phase 1C: Runtime foundation](../../plans/stewardship/overall.md#phase-1-secure-foundation-and-durable-domain).
 
+PR #20 merged at `18a37cb5b6c90bbf2b5f60c5fff37f199cd52201` after passing
+PR and merge-queue CI. The owner authorized continuing directly into Phase 1C.
+Branch `pr/stewardship-phase-1c` starts at that refreshed `origin/main` tip;
+its [execution evidence](../../guides/stewardship-phase-1c.md) tracks the complete
+batch. Implementation, review and native Linux CI validation are complete.
+Human merge/Gate 1 release remains required, with passing CI on the final PR head.
+
+The operational implementation and its native-volume/production-shaped tests
+are present. Round one reviewed this phase; round two reviewed the complete
+Phase 1 diff from `509245d`, and round three repeated that cumulative scope.
+Both vendors completed all three reviews successfully; round three found no
+High/Critical issues. All retained findings have corrections or evidence-backed
+rejections. Corrected implementation `e3fed5c`, with the fixture-only CI fixes
+through `243782d`, passes 2,710 baseline tests,
+991 PostgreSQL tests, 48 rebuilt-container checks and 75 browser checks, with
+92.45% line and 84.50% branch coverage. See the
+[review ledger](../../guides/stewardship-phase-1c-reviews.md) for the single
+Phase 1C [PR #21](https://github.com/epiphany40223/parishkit/pull/21) handoff.
+All native Linux CI jobs pass at `243782d`; final-head CI and human approval
+remain mandatory before merging or beginning Phase 2.
+Do not start DAT-03 until Gate 1 and the phase PR receive human approval.
+
 1. [OPS-02](operations.md#ops-02-durable-runtime-paths-and-least-privilege-secrets) → [OPS-03](operations.md#ops-03-production-ingress-tls-and-network-security) → [OPS-04](operations.md#ops-04-bootstrap-migrations-startup-and-upgrades) → baseline [OPS-08](operations.md#ops-08-observability-health-and-operational-runbooks).
 2. Complete M1 evidence and G1 before beginning Phase 2.
 

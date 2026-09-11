@@ -9,6 +9,7 @@ campaign and mode changes are not. Request IDs are references, never credentials
 
 import re
 from contextlib import contextmanager
+from uuid import UUID
 
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
@@ -42,6 +43,7 @@ class DatabaseMaterializer:
         correlation_id,
         request=None,
         testing_recipient=None,
+        deployment_id=None,
         admit_campaign=None,
     ):
         """Bind one request, or an initial recipient committed only at activation."""
@@ -54,6 +56,9 @@ class DatabaseMaterializer:
         self.store, self.actor_id, self.correlation_id = store, actor_id, correlation_id
         self.request = request
         self.testing_recipient = testing_recipient
+        if deployment_id is not None and not isinstance(deployment_id, UUID):
+            raise ConfigError("An explicit deployment UUID is required.")
+        self.deployment_id = deployment_id
         self.admit_campaign = admit_campaign
         self._guard = None
 
@@ -170,6 +175,7 @@ class DatabaseMaterializer:
                 if self.request is not None or self.testing_recipient is None:
                     raise ConfigError("Runtime configuration is not initialized.")
                 runtime = SystemConfiguration.objects.create(
+                    **({"id": self.deployment_id} if self.deployment_id else {}),
                     testing_recipient=self.testing_recipient,
                     actor_id=self.actor_id,
                     correlation_id=self.correlation_id,
@@ -249,7 +255,7 @@ class DatabaseMaterializer:
 
 
 def prepare_initial_configuration(
-    store, version, *, testing_recipient, actor_id, correlation_id
+    store, version, *, testing_recipient, actor_id, correlation_id, deployment_id=None
 ):
     """Internal empty-runtime setup, not the operational bootstrap command.
 
@@ -274,15 +280,24 @@ def prepare_initial_configuration(
         actor_id=actor_id,
         correlation_id=correlation_id,
         testing_recipient=testing_recipient,
+        deployment_id=deployment_id,
     )
     with materializer.lock():
         runtime = SystemConfiguration.objects.first()
-        if runtime is not None and runtime.testing_recipient != testing_recipient:
+        if runtime is not None and (
+            runtime.testing_recipient != testing_recipient
+            or (deployment_id is not None and runtime.pk != deployment_id)
+        ):
             raise ConfigError(
                 "Existing runtime configuration does not match initialization."
             )
         selected = store.active()
         if selected is not None and selected.digest == version.digest:
+            if runtime is None:
+                # Offline pre-migration bootstrap may have selected the exact
+                # root before application tables existed. Only this confirmed
+                # empty-runtime path may prepare it before ordinary recovery.
+                materializer.prepare(version)
             recover_active(store, materializer)
         apply_version(store, materializer, version)
 
@@ -384,7 +399,6 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
                 validate_installation(
                     intent.candidate.document(), request_id=request.pk
                 )
-                materializer._campaign_admission()
                 if (
                     intent.candidate.digest != request.candidate_digest
                     or intent.payload_fingerprint != request.payload_fingerprint
@@ -392,6 +406,10 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
                     raise ConfigError("Configuration request metadata is inconsistent.")
             except ConfigError:
                 failure_code = "invalid_candidate"
+            if not failure_code:
+                # Owning authorization/readiness refusals are not malformed
+                # candidate content. Leave their durable intent retryable.
+                materializer._campaign_admission()
 
         if current.state == "staged":
             # Recheck cancellation under the row lock after read-only preflight.

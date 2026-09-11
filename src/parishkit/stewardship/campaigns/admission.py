@@ -17,6 +17,7 @@ def validate_installation(document, *, request_id=None):
     from django.db.models import Q
 
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+    from parishkit.stewardship.jobs.models import NONTERMINAL_STATES
 
     from .models import (
         Campaign,
@@ -72,7 +73,7 @@ def validate_installation(document, *, request_id=None):
                 campaign=row,
                 kind="close",
                 state="pending",
-                task__state__in=["running", "abandoned"],
+                task__state__in=NONTERMINAL_STATES,
             ).exists()
             or CampaignWorkGate.objects.filter(
                 state__in=["preparing", "running"]
@@ -163,14 +164,7 @@ def validate_installation(document, *, request_id=None):
                     Q(state="pending")
                     & (
                         Q(outbox_id__isnull=False)
-                        | Q(
-                            task__state__in=[
-                                "queued",
-                                "running",
-                                "retry_wait",
-                                "abandoned",
-                            ]
-                        )
+                        | Q(task__state__in=NONTERMINAL_STATES)
                     )
                 )
             )

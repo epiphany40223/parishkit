@@ -1,6 +1,6 @@
 {% load stewardship %}<section class="panel" aria-labelledby="progress-title">
   <h2 id="progress-title">{{ progress_title }}</h2>
   <p role="status" aria-live="polite">{{ progress_summary }}</p>
-  {% if progress_total > 0 and progress_count >= 0 %}<progress max="{{ progress_total }}" value="{{ progress_count }}" aria-label="{{ progress_title }}">{{ progress_count|number }}</progress>{% endif %}
+  {% with total=progress_total|progress_integer count=progress_count|progress_integer %}{% if total > 0 and count >= 0 %}<progress max="{{ total }}" value="{{ count }}" aria-label="{{ progress_title }}">{{ count|number }}</progress>{% endif %}{% endwith %}
   <p>{{ progress_description }}</p>
 </section>

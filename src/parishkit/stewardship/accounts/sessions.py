@@ -285,6 +285,29 @@ def cleanup_admin_sessions(*, batch_size=500):
         return len(rows)
 
 
+def revoke_family_sessions(rows, *, now):
+    """End locked Family rows and their audit envelopes in the owner's transaction."""
+    from parishkit.stewardship.campaigns.credential_models import FamilySession
+
+    if not connection.in_atomic_block:
+        raise RuntimeError("Family revocation requires its owning transaction.")
+    pending = [row for row in rows if row.revoked_at is None]
+    FamilySession.objects.filter(pk__in=[row.pk for row in pending]).update(
+        revoked_at=Greatest(Value(now), F("last_activity_at"), F("authenticated_at")),
+        version=F("version") + 1,
+    )
+    AuditEvent.objects.bulk_create(
+        [
+            AuditEvent(
+                event_type="family_session_ended",
+                subject_id=row.pk,
+                actor_id=row.family_id,
+            )
+            for row in pending
+        ]
+    )
+
+
 def cleanup_family_sessions(*, batch_size=500):
     """Expire Family authority before removing protected metadata and parent rows."""
     from parishkit.stewardship.campaigns.credential_models import FamilySession
@@ -302,23 +325,7 @@ def cleanup_family_sessions(*, batch_size=500):
             )
             .order_by("expires_at", "pk")[:batch_size]
         )
-        pending = [row for row in rows if row.revoked_at is None]
-        FamilySession.objects.filter(pk__in=[row.pk for row in pending]).update(
-            revoked_at=Greatest(
-                Value(now), F("last_activity_at"), F("authenticated_at")
-            ),
-            version=F("version") + 1,
-        )
-        AuditEvent.objects.bulk_create(
-            [
-                AuditEvent(
-                    event_type="family_session_ended",
-                    subject_id=row.pk,
-                    actor_id=row.family_id,
-                )
-                for row in pending
-            ]
-        )
+        revoke_family_sessions(rows, now=now)
         identifiers = [row.pk for row in rows]
         keys = [row.session_id for row in rows]
         FamilySession.objects.filter(pk__in=identifiers).delete()

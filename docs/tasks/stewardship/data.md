@@ -12,11 +12,11 @@ Follow the [execution and completion rules](README.md#execution-and-completion).
 Scope and dependencies: [DAT-01 work package](../../plans/stewardship/data.md#dat-01-storage-conventions-and-base-records).
 
 - [x] DAT-01.01 — Implement durable record and ownership conventions.
-- [ ] DAT-01.02 — Implement configuration, parish, and secret-request records.
-- [ ] DAT-01.03 — Enforce YAML-version, singleton, and installer constraints.
+- [x] DAT-01.02 — Implement configuration, parish, and secret-request records.
+- [x] DAT-01.03 — Enforce YAML-version, singleton, and installer constraints.
 - [x] DAT-01.04 — Configure durable sessions and audit correlation.
 - [x] DAT-01.05 — Implement TaskRun claims, retry-chain constraints, and attempt history.
-- [ ] DAT-01.06 — Test base constraints, recovery, and privacy.
+- [x] DAT-01.06 — Test base constraints, recovery, and privacy.
 
 Evidence: Phase 1 storage increment, September 8, 2026. `storage.py` defines
 UUID/UTC/actor/correlation records, row-lock plus expected-version mutation,
@@ -120,6 +120,17 @@ Phase 1A portions of DAT-01 are now present and tested; these mixed-phase task
 checkboxes remain open only for ARC-04/ARC-06 session/secret consumer enforcement
 and ARC-02/OPS-04 operational installation/startup. They do not block Phase 1B.
 See the [completion evidence and integration contracts](../../guides/stewardship-phase-1a-completion.md).
+
+Phase 1C integration completes DAT-01's remaining foundation contracts: durable
+operational SQL sessions, guarded authority installation/recovery, actual isolated
+credential queues, private staging/consumer evidence and coherent startup. Forward
+guards and real restricted-login tests cover invoker privileges, sealed-intake
+admission, downgrade search-path preservation and empty bootstrap isolation.
+Full lineage/projection verification now loads bounded document batches before
+writer admission. Product wizard fields, provider validation and operational
+backup/restore remain their later owners, not missing DAT-01 records. See the
+[runtime guide](../../guides/stewardship-runtime.md) and
+[integrated review evidence](../../guides/stewardship-phase-1c-reviews.md).
 
 ## DAT-02: Campaign lifecycle and schedule schema
 

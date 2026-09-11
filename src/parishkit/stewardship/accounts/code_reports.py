@@ -5,7 +5,9 @@ This bounded foundation lists existing campaign identities, never a shadow sourc
 """
 
 from django.db import DatabaseError, transaction
+from django.shortcuts import render
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_safe
 
@@ -41,11 +43,21 @@ def family_codes(request, campaign_id):
         principal = authenticated_admin(request, store=service.store, activity=True)
         if not allows(principal, Capability.FAMILY_CODES):
             return denial()
-        parsed = filters(request.GET, allowed={"page", "size"})
-        window = PageWindow(
-            expected_version(parsed.get("page", "1")),
-            expected_version(parsed.get("size", "50")),
-        )
+        try:
+            parsed = filters(request.GET, allowed={"page", "size"})
+            window = PageWindow(
+                expected_version(parsed.get("page", "1")),
+                expected_version(parsed.get("size", "50")),
+            )
+        except ValueError:
+            response = render(
+                request,
+                "stewardship/invalid_report.html",
+                {"retry_path": reverse("admin:family_codes", args=[campaign_id])},
+                status=400,
+            )
+            response.stewardship_safe_error = True
+            return response
         configuration = SystemConfiguration.objects.get()
         if configuration.restore_review_required:
             return denial(status=503, retry=5)
@@ -141,10 +153,10 @@ def family_codes(request, campaign_id):
         LimiterUnavailable,
         UnicodeError,
         DatabaseError,
+        TypeError,
+        ValueError,
     ):
         return denial(status=503, retry=5)
-    except ValueError:
-        return denial(status=400)
     finally:
         # Once returned, the stream owns terminal audit; all earlier exits,
         # including unexpected serializer exceptions, finish here instead.

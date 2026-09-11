@@ -320,6 +320,28 @@ def test_health_network_io_holds_no_database_transaction(auth_service, monkeypat
     assert not auth_service.limiter.check_health(force=True)
 
 
+@pytest.mark.parametrize("key", [736225, 736227])
+def test_authentication_observation_lock_wait_is_bounded(auth_service, key):
+    """A stalled independent observer cannot pin an HTTP thread indefinitely."""
+    from time import monotonic
+
+    from django.db import DatabaseError, connection
+
+    other = connection.copy(alias="synthetic_observer_lock")
+    try:
+        with other.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_lock(%s,1)", [key])
+        start = monotonic()
+        with pytest.raises((DatabaseError, LimiterUnavailable)):
+            if key == 736225:
+                record_incident("limiter_unavailable", 2, 0, (0, 0, 0, 0))
+            else:
+                auth_service.limiter.check_health(force=True)
+        assert monotonic() - start < 5
+    finally:
+        other.close()
+
+
 def test_older_health_sample_cannot_overwrite_concurrent_baseline(
     auth_service, monkeypatch
 ):

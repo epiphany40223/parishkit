@@ -58,6 +58,36 @@ def test_no_email_family_still_gets_stable_manual_code(tmp_path):
     assert FamilyCampaign.objects.get().code_ciphertext
 
 
+def test_eligibility_history_uses_the_current_source_promotion_attribution(tmp_path):
+    """A second promotion must not reuse the initial allocation correlation."""
+    from parishkit.stewardship.observability import correlation
+
+    _, campaign, _, ring = family_campaign(tmp_path)
+    actor, correlation_id = uuid4(), uuid4()
+    with correlation(correlation_id):
+        populate(campaign, ring, [], generation=2, actor_id=actor)
+    change = FamilyEligibilityChange.objects.get(source_generation=2)
+    assert change.actor_id == actor
+    assert change.correlation_id == correlation_id
+    with correlation(correlation_id):
+        populate(
+            campaign,
+            ring,
+            [FamilyStatus(2, True, True, True, True)],
+            generation=3,
+            actor_id=actor,
+        )
+    change = FamilyEligibilityChange.objects.get(family__family_duid=2)
+    assert change.actor_id == actor and change.correlation_id == correlation_id
+
+
+@pytest.mark.parametrize("field", ["status_reason", "deliverability_reason"])
+def test_source_status_cannot_use_internal_history_suppression_sentinel(field):
+    """The allocator's pre-eligibility placeholder is never valid source input."""
+    with pytest.raises(ValueError, match="reasons"):
+        FamilyStatus(1, True, True, True, True, **{field: "population_pending"})
+
+
 def test_corpus_population_rolls_back_as_one_source_commit(tmp_path):
     _, campaign, _, ring = family_campaign(tmp_path, count=0)
     with pytest.raises(ValueError), transaction.atomic():

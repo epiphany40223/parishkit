@@ -12,7 +12,7 @@ verification. Do not substitute SQLite for constraint or concurrency evidence.
 
 The coverage gate runs the baseline and then the required PostgreSQL suite into
 one fresh coverage database, measuring the same complete scope and separate 80%
-line/branch floors. After starting the disposable server below, run:
+line/branch floors. After starting both disposable services below, run:
 
 ```sh
 python -m parishkit.stewardship.quality --postgresql \
@@ -45,6 +45,20 @@ Wait until `pg_isready` reports accepting connections before running tests.
 The documented password is synthetic, intentionally public, and used only for
 this disposable loopback server. Never reuse it in a deployment.
 
+Authentication tests also require the pinned disposable Valkey service used by
+CI. Its fixture port is fixed at `127.0.0.1:56379`; do not substitute a real
+deployment or stop an unrelated service already using that port.
+
+```sh
+docker run --detach --name parishkit-auth-tests \
+  --publish 127.0.0.1:56379:6379 --tmpfs /data \
+  valkey/valkey:9.1.2@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
+docker exec parishkit-auth-tests valkey-cli ping
+```
+
+Wait for `PONG`. Missing Valkey fails authentication verification rather than
+skipping it. No real provider credentials are required.
+
 ```sh
 python -m pytest tests/stewardship/database \
   --ds=parishkit.stewardship.settings.database_test --require-postgresql-tests -q
@@ -63,6 +77,8 @@ After testing, stop and remove only the disposable container you created:
 ```sh
 docker stop parishkit-storage-tests
 docker rm parishkit-storage-tests
+docker stop parishkit-auth-tests
+docker rm parishkit-auth-tests
 ```
 
 Stopping the container discards its synthetic tmpfs data. There is no retained

@@ -31,6 +31,7 @@ class ConfigurationChangeRequest(ImmutableRecord):
                         "foundation-policy-patch-v2",
                         "operator-recovery-patch-v1",
                         "operator-recovery-patch-v2",
+                        "operator-recovery-bootstrap-v1",
                         "campaign-foundation-patch-v3",
                     ]
                 ),
@@ -53,6 +54,7 @@ class ConfigurationChangeRequest(ImmutableRecord):
                         request_schema__in=[
                             "operator-recovery-patch-v1",
                             "operator-recovery-patch-v2",
+                            "operator-recovery-bootstrap-v1",
                         ]
                     )
                     | models.Q(
@@ -65,6 +67,7 @@ class ConfigurationChangeRequest(ImmutableRecord):
                         request_schema__in=[
                             "operator-recovery-patch-v1",
                             "operator-recovery-patch-v2",
+                            "operator-recovery-bootstrap-v1",
                         ],
                     )
                 ),

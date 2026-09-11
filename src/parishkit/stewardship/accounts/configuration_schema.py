@@ -21,6 +21,8 @@ from parishkit.stewardship.schema_primitives import (
     typed,
 )
 
+from .bootstrap_schema import BOOTSTRAP_SCHEMA, validate_bootstrap_sections
+
 VALIDATION_SCHEMA = "parish-integrations-v1"
 FINGERPRINT_PATTERN = r"[0-9a-f]{64}"
 INTEGRATION_FIELDS = {
@@ -135,6 +137,7 @@ VALIDATORS = MappingProxyType(
         "parish-integrations-v1": _validate_v1_sections,
         "foundation-policy-v2": _validate_v2_sections,
         "campaign-foundation-v3": _validate_v3_sections,
+        BOOTSTRAP_SCHEMA: validate_bootstrap_sections,
     }
 )
 
@@ -154,6 +157,8 @@ def validate_sections(document):
 
 def schema_for(document):
     """Keep legacy documents on their retained schema until new policy is present."""
+    if set(document["sections"]) == {"login_rules"}:
+        return BOOTSTRAP_SCHEMA
     if any(document["sections"].get(name) for name in ("campaigns", "schedules")):
         return "campaign-foundation-v3"
     return (

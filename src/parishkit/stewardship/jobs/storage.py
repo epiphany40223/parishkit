@@ -64,10 +64,11 @@ def _uuid(value, *, optional=False):
 
 
 def _admit(callback, action, status):
-    """Require the owning verifier, which must raise on any failed prerequisite."""
+    """Require explicit True from the owning verifier; exceptions also deny."""
     if not callable(callback):
         raise TypeError("Task admission callback is required.")
-    callback(action, status)
+    if callback(action, status) is not True:
+        raise PermissionError("Task operation is not admitted.")
 
 
 @contextmanager

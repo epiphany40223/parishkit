@@ -71,6 +71,30 @@ database acknowledgement instant, so later expiry cannot reverse an already
 approved replacement. A scrubbed file journal is released only after the terminal
 database receipt is durable; restart reconciles any remaining journal first.
 
+## Metrics receipt privacy
+
+Phase 1C implements the operations specification's
+[metrics credential privacy contract](../specs/stewardship/operations/spec.md#observability-and-health)
+with a versioned private `metrics-bearer` JSON file. Its bearer token and public
+receipt are generated independently. `credential_receipt(value, "metrics")`
+returns that opaque receipt, not a hash of the token or credential document.
+Intake, durable status and consumer acknowledgements use this receipt; current
+and previously used metrics receipt identifiers cannot be reused for a replacement.
+
+The isolated local file journal still verifies exact working bytes and seals
+rollback material. Its private byte hashes never cross the metrics database
+boundary and are excluded with credential storage from logs, support bundles and
+ordinary backups. The installer checks both the public durable receipt and the
+private file receipt before cleanup. This avoids weakening atomic-rename or
+rollback verification to a comparison of public labels alone. Consumers parse
+the file and use only its token for bearer authentication.
+
+Real restricted-role tests cover application, receipt-reuse refusal and expiry
+rollback, and inspect durable request/checkpoint/staging/acknowledgement/audit
+rows for token and token/file-hash leakage. Whole-consumer recreation and
+operational acknowledgement are now covered by the
+[Phase 1C consumer checkpoint](stewardship-phase-1c.md#credential-consumer-integration-checkpoint).
+
 ## Interrupted-installer recovery
 
 OPS-04 must continually poll every configured target queue, including staged
@@ -112,6 +136,18 @@ a validator but does not supply a production always-successful validator.
 No new web credential endpoint or enabled production service exists here.
 Keyring retirement additionally needs the separate online-migration and retained-
 backup compatibility workflow; successful file replacement does not retire keys.
+
+Phase 1C now supplies the target-specific process loop and metrics validation,
+plus an operator-only whole-web acknowledgement command. For the supported
+single-container web topology, stop/remove and recreate the complete service
+using `docker compose up --detach --force-recreate web`, then execute
+`pk-stewardship acknowledge-credential --config <web-config> --request-id <UUID>`
+inside that service with `docker compose exec -T web`. Preserve the deployment's
+explicit Compose file/project arguments. Do not use `compose run` for this
+confirmation: its new process namespace has no live service cohort. All workers
+must have completed admission with the replacement loaded. The command refuses
+multi-container replica configurations; no partial service acknowledgement is
+inferred. Later provider/consumer integrations remain pending as described above.
 
 ## Verification
 

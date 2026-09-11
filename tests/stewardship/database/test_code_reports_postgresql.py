@@ -21,8 +21,9 @@ pytestmark = pytest.mark.django_db(transaction=True)
 @pytest.mark.parametrize(
     "role,expected", [("administrator", 200), ("staff", 200), ("ministry_leader", 403)]
 )
+@pytest.mark.parametrize("failure", [None, "query", ValueError, TypeError])
 def test_role_bound_code_report_and_safe_audit(
-    auth_service, google, settings, role, expected
+    auth_service, google, settings, role, expected, failure, monkeypatch
 ):
     """Testing reports retain Production codes rather than rehearsal credentials."""
     store = auth_service.store
@@ -53,9 +54,39 @@ def test_role_bound_code_report_and_safe_audit(
     assert signed.status_code == 302
     server, client = socket.socketpair()
     try:
+        if failure in (ValueError, TypeError):
+
+            def broken(*args, **kwargs):
+                raise failure("private server-side formatting error")
+
+            monkeypatch.setattr(
+                "parishkit.stewardship.accounts.code_reports.render_to_string", broken
+            )
         response = browser.get(
-            f"/admin/campaign/{campaign.pk}/family-codes", **{"gunicorn.socket": server}
+            f"/admin/campaign/{campaign.pk}/family-codes",
+            data={"page": "invalid"} if failure == "query" else {},
+            **{"gunicorn.socket": server},
         )
+        if expected == 200 and failure is not None:
+            assert response.status_code == (400 if failure == "query" else 503)
+            assert b"private server-side" not in response.content
+            if failure == "query":
+                assert b"Invalid request" in response.content
+                assert not AuditEvent.objects.filter(
+                    event_type="family_codes_viewed"
+                ).exists()
+            else:
+                assert response["Retry-After"] == "5"
+                outcomes = list(
+                    AuditContext.objects.filter(event__event_type="family_codes_viewed")
+                    .order_by("event__created_at")
+                    .values_list("context", flat=True)
+                )
+                assert outcomes == [
+                    {"outcome": "started"},
+                    {"outcome": "failed", "count": 0},
+                ]
+            return
         assert response.status_code == expected
         if expected == 200:
             assert code in b"".join(response.streaming_content)

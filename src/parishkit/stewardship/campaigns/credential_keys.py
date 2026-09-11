@@ -7,6 +7,7 @@ who may publish inventories; possession of a digest never grants that authority.
 import hashlib
 import json
 from contextlib import contextmanager
+from uuid import uuid4
 
 from django.db import connection, transaction
 from django.db.models import F
@@ -16,6 +17,7 @@ from parishkit.stewardship.accounts.cryptography import (
     independent_keyrings,
 )
 from parishkit.stewardship.audit.models import AuditEvent
+from parishkit.stewardship.observability import current_correlation
 
 from .credential_models import CredentialKeyState, DeploymentCredentialState
 
@@ -74,9 +76,16 @@ def initialize_key_inventories(*rings):
             if not created and row.inventory_digest != inventory_digest(ring):
                 raise CryptographicError("Existing keys require a reviewed rotation.")
             if created:
-                AuditEvent.objects.create(
-                    event_type="credential_key_initialized", subject_id=row.pk
-                )
+                # Bootstrap can append audit evidence, not read parish history.
+                # ORM INSERT ... RETURNING database-default fields would require
+                # SELECT authority even though no caller needs the returned row.
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "INSERT INTO public.stewardship_audit_event "
+                        "(id,event_type,subject_id,correlation_id) "
+                        "VALUES (%s,'credential_key_initialized',%s,%s)",
+                        [uuid4(), row.pk, current_correlation()],
+                    )
 
 
 def add_rotation_key(previous, replacement):

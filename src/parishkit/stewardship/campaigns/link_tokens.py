@@ -50,6 +50,29 @@ def coverage(campaign_id):
     )
 
 
+def _lock_runtime_epoch():
+    """Pin restore state before epoch/campaign locks, matching lifecycle order.
+
+    A shared runtime lock lets independent preparation work coexist but excludes
+    lifecycle/restore transactions before they can hold a campaign row. This
+    avoids the campaign-versus-deployment inversion at final verification.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT id FROM stewardship_system_configuration FOR SHARE")
+    return DeploymentCredentialState.objects.select_for_update().get()
+
+
+def _locked_generation(identifier):
+    """Lock the campaign before its generation; never implicitly lock projections."""
+    campaign_id = FamilyAccessTokenGeneration.objects.values_list(
+        "campaign_id", flat=True
+    ).get(pk=identifier)
+    campaign = Campaign.objects.select_for_update().get(pk=campaign_id)
+    row = FamilyAccessTokenGeneration.objects.select_for_update().get(pk=identifier)
+    row.campaign = campaign
+    return row
+
+
 def extend_active_generation(campaign, *, public):
     """Population-owner hook: missing links join only the current live generation.
 
@@ -161,8 +184,8 @@ def begin_generation(
     if type(source_generation) is not int or source_generation < 1:
         raise ValueError("Token preparation requires a positive source generation.")
     with transaction.atomic(), key_set_lock(public):
-        deployment = DeploymentCredentialState.objects.select_for_update().get()
-        campaign = Campaign.objects.get(pk=campaign_id)
+        deployment = _lock_runtime_epoch()
+        campaign = Campaign.objects.select_for_update().get(pk=campaign_id)
         CampaignCredentialState.objects.get_or_create(campaign=campaign)
         CampaignCredentialState.objects.select_for_update().get(campaign=campaign)
         if admit(campaign, deployment, None) is not True:
@@ -201,10 +224,19 @@ def begin_generation(
             operation_id=operation_id
         ).first()
         if existing:
-            if any(getattr(existing, key) != value for key, value in inputs.items()):
+            caller_fields = (
+                "campaign",
+                "source_snapshot_id",
+                "source_generation",
+                "configuration_request_id",
+                "actor_id",
+                "task_id",
+            )
+            if any(getattr(existing, key) != inputs[key] for key in caller_fields):
                 raise StorageInvariantError(
                     "Token operation identity already has different inputs."
                 )
+            _current_inputs(existing, campaign, deployment, public)
             return existing
         generation = FamilyAccessTokenGeneration.objects.create(
             operation_id=operation_id, **inputs
@@ -229,12 +261,8 @@ def prepare_generation_batch(*, generation_id, public, admit, batch_size=500):
             "Token preparation requires bounded batches and owning admission."
         )
     with transaction.atomic(), key_set_lock(public):
-        deployment = DeploymentCredentialState.objects.select_for_update().get()
-        generation = (
-            FamilyAccessTokenGeneration.objects.select_for_update()
-            .select_related("campaign")
-            .get(pk=generation_id)
-        )
+        deployment = _lock_runtime_epoch()
+        generation = _locked_generation(generation_id)
         campaign = generation.campaign
         CampaignCredentialState.objects.select_for_update().get(campaign=campaign)
         if admit(campaign, deployment, generation) is not True:
@@ -308,7 +336,7 @@ def verify_generation(generation_id, *, campaign, public):
     Family rows in the final confirmation transaction.
     """
     with key_set_lock(public):
-        deployment = DeploymentCredentialState.objects.get()
+        deployment = _lock_runtime_epoch()
         generation = FamilyAccessTokenGeneration.objects.select_for_update().get(
             pk=generation_id, campaign=campaign
         )
@@ -325,15 +353,9 @@ def verify_generation(generation_id, *, campaign, public):
 def cancel_generation(*, generation_id, admit):
     """Stop admission first; later bounded cleanup cannot resurrect cancelled work."""
     with transaction.atomic():
-        row = (
-            FamilyAccessTokenGeneration.objects.select_for_update()
-            .select_related("campaign")
-            .get(pk=generation_id)
-        )
-        if (
-            admit(row.campaign, DeploymentCredentialState.objects.get(), row)
-            is not True
-        ):
+        deployment = _lock_runtime_epoch()
+        row = _locked_generation(generation_id)
+        if admit(row.campaign, deployment, row) is not True:
             raise PermissionError("Token cancellation is not admitted.")
         if row.state in {"cancelled", "superseded"}:
             return row
@@ -356,11 +378,8 @@ def scrub_generation(generation_id, *, batch_size=500):
     if type(batch_size) is not int or not 1 <= batch_size <= 1000:
         raise ValueError("Token cleanup requires a bounded batch size.")
     with transaction.atomic():
-        row = (
-            FamilyAccessTokenGeneration.objects.select_for_update()
-            .select_related("campaign")
-            .get(pk=generation_id)
-        )
+        _lock_runtime_epoch()
+        row = _locked_generation(generation_id)
         if (
             row.state not in {"failed", "cancelled", "superseded"}
             or row.campaign.active_token_generation_id == row.pk

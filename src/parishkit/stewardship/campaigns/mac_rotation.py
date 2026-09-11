@@ -80,6 +80,19 @@ def backfill_mac_batch(*, campaign_id, general, mac, admit, batch_size=500):
                 )
             )
         RehearsalCodeFingerprint.objects.bulk_create(rows)
+        if families or rehearsals:
+            from parishkit.stewardship.audit.schemas import Action, ActorKind
+            from parishkit.stewardship.audit.services import record_action
+
+            record_action(
+                Action.FAMILY_MAC_BACKFILLED,
+                actor_kind=ActorKind.SYSTEM,
+                subject_id=campaign_id,
+                context={
+                    "count": len(families) + len(rehearsals),
+                    "source_fingerprint": mac.active.fingerprint,
+                },
+            )
         return len(families) + len(rehearsals)
 
 
@@ -109,6 +122,10 @@ def collision_only(previous, replacement, *, admit):
             raise CryptographicError(
                 "Only lookup-only to collision-only demotion is allowed."
             )
+    if all(
+        old.usage == replacement.keys[old.id].usage for old in previous.keys.values()
+    ):
+        raise CryptographicError("MAC demotion requires a changed key usage.")
     with transaction.atomic(), key_set_lock(previous, exclusive=True):
         if admit() is not True:
             raise PermissionError("MAC demotion is not admitted.")

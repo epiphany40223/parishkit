@@ -113,6 +113,7 @@ def _probe(tmp_path, image, role, *, target=None):
         "docker",
         "run",
         "--rm",
+        "--init",
         "--network",
         "none",
         "--read-only",
@@ -195,7 +196,7 @@ def _cleanup_probe(name, volume, *, body_failed):
         warnings.warn("Disposable isolation fixture cleanup failed.", stacklevel=2)
 
 
-def _fixture_volume(root, image, name):
+def _fixture_volume(root, image, name, *, owner=None):
     """Provision owner-only Linux inodes inside one disposable named volume.
 
     Some Docker Desktop host-file shares report root ownership in every new
@@ -215,7 +216,7 @@ from pathlib import Path
 root = Path('/fixture')
 shutil.copytree('/seed', root, dirs_exist_ok=True)
 paths = sorted(root.rglob('*'), key=lambda path: len(path.parts), reverse=True)
-for path in paths:
+for path in [*paths, root]:
     assert not path.is_symlink()
     os.chmod(path, 0o700 if path.is_dir() else 0o600)
     os.chown(path, int(os.environ['UID_TARGET']), int(os.environ['GID_TARGET']))
@@ -245,9 +246,9 @@ for path in paths:
             "--mount",
             f"type=volume,src={name},dst=/fixture",
             "--env",
-            f"UID_TARGET={os.getuid()}",
+            f"UID_TARGET={os.getuid() if owner is None else owner}",
             "--env",
-            f"GID_TARGET={os.getgid()}",
+            f"GID_TARGET={os.getgid() if owner is None else owner}",
             "--entrypoint",
             "python",
             image,

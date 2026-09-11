@@ -371,6 +371,7 @@ class RehearsalCodeReservation(models.Model):
 class FamilySession(MutableRecord):
     """Separate PostgreSQL authority with fixed mode/epoch and absolute deadline."""
 
+    immutable_fields = MutableRecord.immutable_fields + ("credential_epoch",)
     session = models.OneToOneField("sessions.Session", on_delete=models.PROTECT)
     family = models.ForeignKey(FamilyCampaign, on_delete=models.PROTECT)
     mode = models.CharField(max_length=16)
@@ -386,6 +387,9 @@ class FamilySession(MutableRecord):
 
     class Meta(MutableRecord.Meta):
         db_table = "stewardship_family_session"
+        indexes = [
+            models.Index(fields=["expires_at", "id"], name="family_session_expiry")
+        ]
         constraints = MutableRecord.Meta.constraints + [
             models.CheckConstraint(
                 condition=models.Q(mode="production", rehearsal_epoch__isnull=True)

@@ -224,6 +224,9 @@ def release_rehearsal_gate(*, campaign_id, admit):
         if scope.go_live_gate:
             scope.go_live_gate, scope.version = False, scope.version + 1
             scope.save()
+            AuditEvent.objects.create(
+                event_type="rehearsal_gate_released", subject_id=scope.pk
+            )
 
 
 def cleanup_rehearsal(epoch_id, *, batch_size=500):
@@ -238,12 +241,15 @@ def cleanup_rehearsal(epoch_id, *, batch_size=500):
         ):
             raise StorageInvariantError("An active rehearsal cannot be cleaned up.")
         sessions = list(
-            FamilySession.objects.filter(rehearsal_epoch=epoch)
-            .order_by("pk")
-            .values_list("pk", "session_id")[:batch_size]
+            FamilySession.objects.select_for_update(skip_locked=True)
+            .filter(rehearsal_epoch=epoch)
+            .order_by("pk")[:batch_size]
         )
-        FamilySession.objects.filter(pk__in=[item[0] for item in sessions]).delete()
-        Session.objects.filter(pk__in=[item[1] for item in sessions]).delete()
+        from parishkit.stewardship.accounts.sessions import revoke_family_sessions
+
+        revoke_family_sessions(sessions, now=_now())
+        FamilySession.objects.filter(pk__in=[item.pk for item in sessions]).delete()
+        Session.objects.filter(pk__in=[item.session_id for item in sessions]).delete()
         ids = list(
             RehearsalCredential.objects.filter(epoch=epoch)
             .order_by("pk")

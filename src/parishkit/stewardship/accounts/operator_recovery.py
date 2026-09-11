@@ -1,10 +1,11 @@
-"""Internal offline recovery protocol; no web, queue or CLI exposure.
+"""Internal offline recovery protocol; no web or queue exposure.
 
-OPS-04 must supply a real offline/startup interlock and operator confirmation
-UI before exposing this service. The required trusted context manager must
+Operational commands supply a real offline/startup interlock and explicit
+operator confirmation. The required trusted context manager must
 verify that all online services are stopped and prevent concurrent startup for
 its full duration. A plain UUID, boolean or ordinary Admin identity is not that
-authority. Tests supply only a synthetic interlock over disposable storage.
+authority. Unit/database tests may supply a synthetic interlock over disposable
+storage; composed operator tests exercise the actual kernel lease.
 """
 
 from uuid import UUID, uuid4
@@ -77,6 +78,41 @@ def _patch(version, email, operation_id):
     ]
 
 
+def recovery_preview(version, deployment_id, target_email):
+    """Describe only the additive address grant, without creating an intent or user."""
+    email = normalized_email(target_email)
+    sections = version.document()["sections"]
+    rules = [record["values"] for record in sections.get("login_rules", [])]
+    existing = next(
+        (
+            rule
+            for rule in rules
+            if rule["kind"] == "address" and rule["email"] == email
+        ),
+        None,
+    )
+    before = existing["roles"] if existing is not None else []
+    parishes = sections.get("parish", [])
+    return {
+        "deployment_id": str(deployment_id),
+        "parish_name": parishes[0]["values"]["name"] if parishes else None,
+        "configuration_digest": version.digest,
+        "current_admin_rules": sorted(
+            [
+                rule["email"]
+                for rule in rules
+                if rule["kind"] == "address" and "administrator" in rule["roles"]
+            ]
+        ),
+        "target_email": email,
+        "before_roles": sorted(before),
+        "after_roles": sorted(set(before) | {"administrator"}),
+        "adds_access_to_explicit_deny": existing is not None and not before,
+        "already_granted": "administrator" in before,
+        "provenance": "manual",
+    }
+
+
 def recover_admin(
     store,
     *,
@@ -88,6 +124,7 @@ def recover_admin(
     confirmed_email,
     correlation_id,
     offline_interlock,
+    before_apply=None,
 ):
     """Resume one confirmed offline operation through the ordinary checkpoint engine.
 
@@ -114,6 +151,8 @@ def recover_admin(
         raise ConfigError("Recovery target confirmation does not match.")
     if not callable(offline_interlock):
         raise ConfigError("An offline interlock is required.")
+    if before_apply is not None and not callable(before_apply):
+        raise TypeError("Recovery preview output requires a callable.")
     _own_transaction()
     with offline_interlock():
         try:
@@ -142,7 +181,9 @@ def recover_admin(
             runtime = coherent_configuration(store)
             base, version = intake_base(runtime.active_configuration.digest)
             schema = (
-                "operator-recovery-patch-v2"
+                "operator-recovery-bootstrap-v1"
+                if base.validation_schema == "bootstrap-policy-v1"
+                else "operator-recovery-patch-v2"
                 if base.validation_schema == "campaign-foundation-v3"
                 else "operator-recovery-patch-v1"
             )
@@ -169,6 +210,12 @@ def recover_admin(
                     confirmed_deployment_id=deployment_id,
                     recovery_target=email,
                 )
+        if before_apply is not None:
+            # The selected SQL policy remains authoritative during a resumable
+            # YAML/DB activation window. Do not require a newly coherent YAML
+            # manifest here and thereby prevent replay of this exact operation.
+            _, current = intake_base(runtime.active_configuration.digest)
+            before_apply(recovery_preview(current, deployment_id, email))
         result = _install_request(store, request=request, correlation_id=correlation_id)
         if result.state == "applied":
             from .policy_models import AdminRevocation

@@ -48,6 +48,50 @@ def test_each_role_has_an_explicit_mount_allowlist(role):
     assert validate_mounts(config, mounts) is role
 
 
+def test_tmpfs_cannot_be_a_broad_ancestor_of_private_runtime_storage():
+    """A host /tmp staging path must never become a consumer deployment root."""
+    config = replace(
+        load_deployment(environ={"PARISHKIT_ROOT": "/tmp/synthetic-deployment"}),
+        service_role=ServiceRole.WEB,
+    )
+    mounts = [Mount(Path("/"), True), Mount(config.paths["authority"], True)]
+    assert validate_mounts(config, mounts) is ServiceRole.WEB
+    with pytest.raises(ConfigError, match="broad or unrelated privileged mount"):
+        validate_mounts(
+            config, [*mounts, Mount(Path("/tmp"), False, "tmpfs", "/", "tmpfs")]
+        )
+
+
+@pytest.mark.parametrize(
+    "role", [ServiceRole.WEB, ServiceRole.WORKER, ServiceRole.BACKUP_WORKER]
+)
+def test_data_mounts_retain_backup_read_only_boundary(role):
+    """A data root does not inherit secret authority or backup write privileges."""
+    config, mounts = configured(role)
+    assert (
+        validate_mounts(config, [*mounts, Mount(config.paths["media"], True)]) is role
+    )
+    if role is ServiceRole.BACKUP_WORKER:
+        with pytest.raises(ConfigError, match="Backup service data mounts"):
+            validate_mounts(config, [*mounts, Mount(config.paths["media"], False)])
+
+
+@pytest.mark.parametrize(
+    "role", [ServiceRole.WORKER, ServiceRole.SCHEDULER, ServiceRole.BACKUP_WORKER]
+)
+def test_nonweb_roles_cannot_receive_download_password(role):
+    """The isolated streaming login is never a background-service credential."""
+    config, mounts = configured(role)
+    config = replace(
+        config,
+        postgres=replace(
+            config.postgres, download_password_file=Path("/run/download-password")
+        ),
+    )
+    with pytest.raises(ConfigError, match="Only web"):
+        validate_mounts(config, mounts)
+
+
 @pytest.mark.parametrize(
     "target", ["/proc/self/mountinfo", "/dev/private", "/sys/private"]
 )
@@ -71,6 +115,23 @@ def test_pseudo_mount_source_and_root_are_checked_without_disclosure():
     with pytest.raises(ConfigError, match="unrecognized") as error:
         validate_mounts(config, mounts + [mount])
     assert "private" not in str(error.value)
+
+
+@pytest.mark.parametrize("path", ["/sbin/docker-init", "/usr/sbin/docker-init"])
+def test_stock_init_executable_is_read_only_and_exact(path):
+    """Compose init is allowed; an arbitrary file or writable init is not."""
+    config, mounts = configured(ServiceRole.WEB)
+    mount = Mount(
+        Path(path), True, "overlay", "/usr/libexec/docker/docker-init", "overlay"
+    )
+    assert validate_mounts(config, [*mounts, mount]) is ServiceRole.WEB
+    for invalid in (
+        replace(mount, read_only=False),
+        replace(mount, root="/private/docker-init"),
+        replace(mount, root="/usr/libexec/docker"),
+    ):
+        with pytest.raises(ConfigError, match="unrecognized"):
+            validate_mounts(config, [*mounts, invalid])
 
 
 def test_authority_override_is_the_only_admitted_authority_mount():

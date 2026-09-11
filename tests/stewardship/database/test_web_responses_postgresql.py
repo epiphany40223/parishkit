@@ -34,10 +34,13 @@ def channel():
 
 
 @pytest.mark.parametrize("download", [False, True])
-def test_http_owns_guard_through_lazy_bytes_and_close(tmp_path, channel, download):
+def test_http_owns_guard_through_lazy_bytes_and_close(
+    tmp_path, channel, download, settings
+):
     """Lazy queries use the response's read-only connection until WSGI closes."""
     _, campaign, _ = draft_campaign(tmp_path)
     observed = []
+    settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool()
 
     def content():
         """A later iteration must still own the same live guarded connection."""
@@ -149,6 +152,47 @@ def test_timeout_interrupts_real_socket_before_releasing_download(tmp_path, chan
     pool.release()
 
 
+def test_stalled_producer_keeps_capacity_until_owner_closes(tmp_path, channel):
+    """A closed transport/SQL handle is insufficient while the producer is locked."""
+    from parishkit.stewardship.campaigns.read_guards import DownloadBusy
+
+    _, campaign, _ = draft_campaign(tmp_path)
+    pool, failures = DownloadPool(ReadLimits(process_pool_size=1)), []
+    response = campaign_response(
+        channel[0],
+        [campaign.pk],
+        authorize=lambda _: None,
+        open_content=lambda: iter([b"private"]),
+        filename="report.csv",
+        content_type="text/csv",
+        pool=pool,
+    )
+    content = response._iterator
+
+    def deadline():
+        """The real abort deadline cannot acquire a producer stalled in its step."""
+        try:
+            content.guard._expire()
+        except ReadUnavailable as error:
+            failures.append(str(error))
+
+    try:
+        with content.producing:
+            thread = Thread(target=deadline)
+            thread.start()
+            thread.join(timeout=5)
+            assert not thread.is_alive()
+            assert failures == ["The response producer has not stopped."]
+            with pytest.raises(DownloadBusy):
+                pool.acquire()
+        with pytest.raises(DownloadBusy):
+            pool.acquire()
+    finally:
+        response.close()
+    pool.acquire()
+    pool.release()
+
+
 def test_source_failure_releases_response(tmp_path, channel):
     """Failed lazy serialization cannot retain the guarded transaction."""
     _, campaign, _ = draft_campaign(tmp_path)
@@ -173,6 +217,34 @@ def test_source_failure_releases_response(tmp_path, channel):
     response.close()
     assert not connection.in_atomic_block
     assert terminal == [False]
+
+
+def test_close_failure_still_records_one_failed_terminal_outcome(
+    tmp_path, channel, monkeypatch
+):
+    """Django suppresses closer exceptions, so final audit must run in finally."""
+    _, campaign, _ = draft_campaign(tmp_path)
+    terminal = []
+    response = campaign_response(
+        channel[0],
+        [campaign.pk],
+        authorize=lambda _: None,
+        open_content=lambda: iter([b"private"]),
+        on_close=terminal.append,
+    )
+    content = response._iterator
+    original = content.response.close
+
+    def failed_close():
+        """Release the genuine SQL guard, then simulate a teardown failure."""
+        original()
+        raise RuntimeError("synthetic teardown failure")
+
+    monkeypatch.setattr(content.response, "close", failed_close)
+    response.close()
+    response.close()
+    assert terminal == [False]
+    assert not connection.in_atomic_block
 
 
 def test_guard_authorization_failure_returns_no_private_bytes(tmp_path, channel):

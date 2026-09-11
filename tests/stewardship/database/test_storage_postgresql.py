@@ -400,6 +400,9 @@ def test_all_concrete_mutable_records_have_enabled_guard(db):
 
 def test_all_concrete_immutable_records_have_enabled_guard(db):
     """Inherited ORM protection must always have its SQL counterpart."""
+    # ARC-05 intentionally deletes invalidated rehearsal detail, retaining the
+    # separate anonymous code reservation forever. It is not append-only data.
+    retention_exceptions = {"stewardship_rehearsal_code_mac": "retention"}
     models = [
         model for model in apps.get_models() if issubclass(model, ImmutableRecord)
     ]
@@ -407,18 +410,23 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
     with connection.cursor() as cursor:
         for model in models:
             table = model._meta.db_table
+            contract = retention_exceptions.get(table, "immutable")
             cursor.execute(
                 "SELECT p.proname, t.tgtype, pg_get_functiondef(p.oid) "
                 "FROM pg_trigger t "
                 "JOIN pg_proc p ON p.oid = t.tgfoid "
                 "WHERE t.tgrelid = %s::regclass AND t.tgname = %s "
                 "AND t.tgenabled = 'O' AND NOT t.tgisinternal",
-                [table, f"{table}_immutable_guard_v1"],
+                [table, f"{table}_{contract}_guard_v1"],
             )
             row = cursor.fetchone()
             assert row is not None, table
-            assert row[:2] == (f"{table}_immutable_v1", 27), table
+            assert row[:2] == (f"{table}_{contract}_v1", 27), table
             assert "USING ERRCODE = '23514'" in row[2]
+            if contract == "immutable":
+                assert "RETURN OLD" not in row[2]
+            else:
+                assert "state='invalidated'" in row[2]
 
 
 def test_subjectless_audit_event_passes_full_validation(db):

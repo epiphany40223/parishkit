@@ -27,8 +27,8 @@ class CampaignConfiguration(ImmutableRecord):
     timezone = models.CharField(max_length=254)
     start_date = models.DateField()
     end_date = models.DateField()
-    starts_at = models.DateTimeField()
-    ends_at = models.DateTimeField()
+    starts_at = UTCDateTimeField()
+    ends_at = UTCDateTimeField()
     values = models.JSONField()
 
     class Meta:
@@ -131,7 +131,7 @@ class ScheduleRevision(ImmutableRecord):
     record_id = models.UUIDField(db_index=True)
     campaign_id = models.UUIDField(db_index=True)
     kind = models.CharField(max_length=24)
-    due_at = models.DateTimeField(null=True)
+    due_at = UTCDateTimeField(null=True)
     values = models.JSONField()
 
     class Meta:

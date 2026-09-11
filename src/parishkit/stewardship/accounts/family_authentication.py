@@ -8,7 +8,7 @@ from importlib import import_module
 from django.conf import settings
 from django.db import connection, transaction
 from django.db.models import F, Q
-from django.http import HttpResponseRedirect, JsonResponse
+from django.http import HttpResponseRedirect, JsonResponse, RawPostDataException
 from django.middleware.csrf import rotate_token
 from django.shortcuts import render
 from django.views.decorators.http import (
@@ -47,7 +47,7 @@ from .cryptography import (
 )
 from .limiting import Counter, Limiter, LimiterUnavailable
 from .policy import Principal
-from .sessions import FAMILY_ABSOLUTE, FAMILY_IDLE, database_now
+from .sessions import FAMILY_ABSOLUTE, FAMILY_IDLE, database_now, revoke_family_sessions
 
 
 @dataclass(frozen=True)
@@ -107,10 +107,10 @@ def _scope(service):
     return configuration, campaign, scope, deployment
 
 
-def lookup(service, *, code=None, token=None, lock=False):
+def lookup(service, *, code=None, token=None, lock=False, current=None):
     """Indexed lookup only, with no decryption scans or cross-mode fallback."""
     with transaction.atomic():
-        current = _scope(service)
+        current = _scope(service) if current is None else current
         if current is None:
             return None
         configuration, campaign, scope, deployment = current
@@ -190,11 +190,14 @@ def issue_family(request, service, identity, *, code=None, token=None):
                 "WHERE campaign_id=%s FOR SHARE",
                 [identity[1]],
             )
-            if lookup(service, code=code, token=token, lock=True) != identity:
+            current = _scope(service)
+            if current is None:
                 return False
-        current = _scope(service)
-        if current is None:
-            return False
+            if (
+                lookup(service, code=code, token=token, lock=True, current=current)
+                != identity
+            ):
+                return False
         configuration, campaign, scope, deployment = current
         family_id, campaign_id, mode, epoch, credential_epoch = identity
         if (
@@ -208,9 +211,12 @@ def issue_family(request, service, identity, *, code=None, token=None):
         ):
             return False
         now = database_now()
-        FamilySession.objects.filter(
-            session_id=request.session.session_key, revoked_at__isnull=True
-        ).update(revoked_at=now, version=F("version") + 1)
+        prior = list(
+            FamilySession.objects.select_for_update().filter(
+                session_id=request.session.session_key, revoked_at__isnull=True
+            )
+        )
+        revoke_family_sessions(prior, now=now)
         request.session = import_module(settings.SESSION_ENGINE).SessionStore()
         request.session["family"] = str(family_id)
         request.session.set_expiry(now + FAMILY_ABSOLUTE)
@@ -394,7 +400,13 @@ def portal(request):
 @require_POST
 def keepalive(request):
     """An explicitly untrusted, empty CSRF-valid activity claim may refresh idle."""
-    if request.body:
+    try:
+        nonempty = bool(request.body)
+    except RawPostDataException:
+        # CSRF processing can already have consumed a multipart stream.
+        # Such a request cannot be the required empty activity claim.
+        nonempty = True
+    if nonempty:
         return denied(status=400)
     try:
         principal = authenticated_family(request, service=runtime(), keepalive=True)

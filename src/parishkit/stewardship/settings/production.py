@@ -1,13 +1,13 @@
-"""Fail closed until production configuration and admission gates are wired."""
+"""Refuse standalone settings imports that bypass operational admission."""
 
 from django.core.exceptions import ImproperlyConfigured
 
 from .base import *  # noqa: F403
 
 # A fixed developer key or an ad hoc environment flag must never make this
-# incomplete scaffold production-runnable. ARC-02 owns validated deployment
-# settings; later admission packages own safe setup and campaign availability.
+# settings module production-runnable. Runtime assembly owns validated deployment
+# settings and enforces mount, credential, SQL and configuration admission.
 raise ImproperlyConfigured(
-    "Production startup is unavailable: Stewardship deployment validation "
-    "has not been implemented (ARC-02)."
+    "Standalone production settings are unavailable: use the admitted "
+    "pk-stewardship runtime entry point with explicit deployment configuration."
 )

@@ -18,6 +18,8 @@ from parishkit.config import ConfigError, load_yaml_config
 from parishkit.paths import runtime_root
 
 from .authentication_policy import AuthenticationLimits
+from .runtime_budget import RuntimeBudget, parse_budget
+from .runtime_network import RuntimeNetwork, parse_network
 
 
 class DeploymentProfile(StrEnum):
@@ -41,6 +43,8 @@ class ServiceRole(StrEnum):
     TOKEN_KEY_ROTATION = "token-key-rotation"
     BOOTSTRAP = "bootstrap"
     MIGRATION = "migration"
+    ADMIN_RECOVERY = "admin-recovery"
+    DATABASE_PROVISION = "database-provision"
 
 
 # The keys are stable configuration names; all paths, including derived stores,
@@ -95,6 +99,14 @@ class DatabaseConfiguration:
     user: str
     password_file: Path | None = field(repr=False)
     connect_timeout: int
+    download_password_file: Path | None = field(default=None, repr=False)
+    password_files: Mapping[str, Path] = field(default_factory=dict, repr=False)
+
+    def __post_init__(self):
+        """Copy references so callers cannot mutate paths after admission."""
+        object.__setattr__(
+            self, "password_files", MappingProxyType(dict(self.password_files))
+        )
 
 
 @dataclass(frozen=True)
@@ -123,6 +135,9 @@ class DeploymentConfiguration:
     authentication_limits: AuthenticationLimits = field(
         default_factory=AuthenticationLimits
     )
+    configuration_file: Path | None = field(default=None, repr=False)
+    runtime_budget: RuntimeBudget = field(default_factory=RuntimeBudget)
+    runtime_network: RuntimeNetwork = field(default_factory=RuntimeNetwork)
 
 
 def _mapping(value: object, keys: set[str] | frozenset[str], label: str) -> dict:
@@ -278,6 +293,8 @@ def load_deployment(
             "secrets",
             "credential_target",
             "authentication_limits",
+            "runtime_budget",
+            "runtime_network",
         },
         "deployment",
     )
@@ -349,9 +366,35 @@ def load_deployment(
     paths = RuntimePaths(root, MappingProxyType(resolved))
     postgres = _mapping(
         deployment.get("postgres", {}),
-        {"host", "port", "name", "user", "password_file", "connect_timeout"},
+        {
+            "host",
+            "port",
+            "name",
+            "user",
+            "password_file",
+            "connect_timeout",
+            "download_password_file",
+            "password_files",
+        },
         "postgres",
     )
+    password_names = {role.value for role in ServiceRole} | {"operator", "download"}
+    password_names |= {
+        "credential-installer-" + target.replace("_", "-")
+        for target in SECRET_NAMES - {"handoff_private"}
+    }
+    password_files = _mapping(
+        postgres.get("password_files", {}), password_names, "database password files"
+    )
+    resolved_passwords = {}
+    for name in sorted(password_names):
+        credential_path = select_path(
+            "POSTGRES_PASSWORD_FILE_" + name.upper().replace("-", "_"),
+            password_files.get(name),
+            None,
+        )
+        if credential_path is not None:
+            resolved_passwords[name] = credential_path
     database = DatabaseConfiguration(
         host=_host(
             select("POSTGRES_HOST", postgres.get("host"), "postgres"), "postgres.host"
@@ -379,6 +422,12 @@ def load_deployment(
             1,
             60,
         ),
+        download_password_file=select_path(
+            "POSTGRES_DOWNLOAD_PASSWORD_FILE",
+            postgres.get("download_password_file"),
+            None,
+        ),
+        password_files=resolved_passwords,
     )
     valkey = _mapping(
         deployment.get("valkey", {}),
@@ -474,4 +523,7 @@ def load_deployment(
         MappingProxyType(secrets),
         target,
         limits,
+        path.expanduser().absolute() if path is not None else None,
+        parse_budget(deployment.get("runtime_budget", {})),
+        parse_network(deployment.get("runtime_network", {})),
     )

@@ -42,6 +42,7 @@ ROLES = (
     "pk_stewardship_backup_worker",
     "pk_stewardship_credential_slack",
     "pk_stewardship_credential_parishsoft",
+    "pk_stewardship_credential_metrics",
 )
 
 
@@ -95,6 +96,10 @@ def isolated_roles():
                         f'TO "{role}"'
                     )
                 if role == "pk_stewardship_web":
+                    cursor.execute(
+                        "GRANT INSERT ON stewardship_credential_consumer_ack "
+                        f'TO "{role}"'
+                    )
                     cursor.execute(
                         f'GRANT INSERT ON stewardship_secret_request TO "{role}"'
                     )

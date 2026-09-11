@@ -41,6 +41,7 @@ def observe_store(client, namespace):
         raise RedisError("Limiter health evidence is unavailable.")
     marker = client.get(marker_key)
     with transaction.atomic(durable=True), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL lock_timeout='1s'")
         cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [736227, 1])
         row = LimiterStoreHealth.objects.filter(
             namespace_fingerprint=fingerprint

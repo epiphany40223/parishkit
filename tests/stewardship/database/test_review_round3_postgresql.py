@@ -86,7 +86,7 @@ def test_changed_authority_can_immediately_open_guarded_report(report, monkeypat
     [
         (UnicodeDecodeError("ascii", b"\xff", 0, 1, "synthetic"), 503),
         (DatabaseError("synthetic private query"), 503),
-        (ValueError("synthetic template"), 400),
+        (ValueError("synthetic template"), 503),
         (RuntimeError("synthetic renderer"), 500),
     ],
 )

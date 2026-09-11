@@ -36,11 +36,11 @@ Scope and dependencies: [ARC-02 work package](../../plans/stewardship/architectu
 
 - [ ] ARC-02.01 — Integrate shared ParishKit helpers.
 - [x] ARC-02.02 — Define deployment configuration and precedence.
-- [ ] ARC-02.03 — Define versioned YAML authority and materialization interfaces.
+- [x] ARC-02.03 — Define versioned YAML authority and materialization interfaces.
 - [x] ARC-02.04 — Apply common runtime roots and path overrides.
-- [ ] ARC-02.05 — Validate production configuration and service prerequisites.
+- [x] ARC-02.05 — Validate production configuration and service prerequisites.
 - [x] ARC-02.06 — Configure redacted correlated logging.
-- [ ] ARC-02.07 — Test YAML recovery, precedence, startup, and redaction.
+- [x] ARC-02.07 — Test YAML recovery, precedence, startup, and redaction.
 
 Evidence: Shared-helper commit `cbdc391` and deployment/authority-contract commit
 `b5851a3`, followed by logging/evidence commit `20330dd`, all on
@@ -55,30 +55,30 @@ Markdown checks passed.
 
 ARC-02.01 is partial: shared CLI, configuration, runtime roots, strict YAML, and
 logging are integrated; provider/retry integration belongs with the actual
-provider-using services. ARC-02.03 has canonical envelopes, stable IDs, immutable
-files, atomic manifests, and a tested materializer protocol, but only synthetic
-product validation/materialization in tests. ARC-02.05 remains unimplemented;
-production settings deliberately reject all startup. ARC-02.07 covers pure
-precedence, invalid input, strict parsing, redaction, and fake-backed activation
-failure/recovery, not actual PostgreSQL durability or runtime prerequisite checks.
+provider-using services. Phase 1C completes ARC-02.03/.05/.07 with concrete
+PostgreSQL materialization, crash recovery, digest/mode agreement and actual
+isolated runtime admission. See the [runtime guide](../../guides/stewardship-runtime.md)
+and [review evidence](../../guides/stewardship-phase-1c-reviews.md). Production
+starts through the admitted `pk-stewardship runtime` entry point; importing
+standalone Django production settings deliberately cannot bypass that boundary.
 
 Phase split approved by the human on September 7, 2026 and recorded in the
 controlling plan: Phase 0 supplies configuration contracts and safe scaffold
 rejection. Concrete database materialization/digest/mode checks follow DAT-01 in
 Phase 1; credential/mount/service checks and PostgreSQL-backed recovery complete
-with ARC-06 and OPS-02/OPS-04 before Gate 1. No durable integration, Compose
-milestone, or review gate is claimed complete. Tasks with remaining scope stay
-unchecked; do not introduce shadow tables to bypass the dependency.
+with ARC-06 and OPS-02/OPS-04 before Gate 1. That integration is now implemented;
+human Gate 1 release remains pending. Tasks with later provider scope stay
+unchecked; no shadow tables bypass the dependency.
 
 ## ARC-03: Django web foundation and security middleware
 
 Scope and dependencies: [ARC-03 work package](../../plans/stewardship/architecture.md#arc-03-django-web-foundation-and-security-middleware).
 
-- [ ] ARC-03.01 — Configure Django request and browser security controls.
-- [ ] ARC-03.02 — Separate public and internal routes.
+- [x] ARC-03.01 — Configure Django request and browser security controls.
+- [x] ARC-03.02 — Separate public and internal routes.
 - [x] ARC-03.03 — Implement safe graphic upload and variant processing.
 - [x] ARC-03.04 — Implement rich-text sanitization and template validation.
-- [ ] ARC-03.05 — Implement safe CSV cells, download headers, and response-lifetime read guards.
+- [x] ARC-03.05 — Implement safe CSV cells, download headers, and response-lifetime read guards.
 - [x] ARC-03.06 — Test malicious requests, content, files, and error paths.
 
 Evidence: Phase 1B implementation on `pr/stewardship-phase-1b`, including backup
@@ -87,6 +87,17 @@ Graphic, rich-text, template and hostile-input tests pass. ARC-03.01/.02/.05
 have tested middleware, production settings policy and WSGI response-lifetime
 adapters; production startup, actual proxy isolation and deployment headroom
 verification remain with Phase 1C. Package completion and reviews are pending.
+
+Current Phase 1C evidence supersedes those runtime deferrals: concrete web
+assembly uses the installed allauth secret contract, operational SQL/Valkey
+identities, isolated download pools and validated process/connection budgets.
+Middleware enforces canonical Host and one admitted proxy hop; health aliases
+cannot access application routes. Restricted-role HTTP tests and real composed
+runtime probes cover the integration. ARC-02's materializer, durable recovery,
+mount/schema/budget admission and startup tests are complete for the foundation;
+its .01 provider-helper integration remains with provider owners. See the
+[runtime guide](../../guides/stewardship-runtime.md) and
+[review ledger](../../guides/stewardship-phase-1c-reviews.md). Gate 1 is still open.
 
 ## ARC-04: Google identity, authorization sessions, and denial paths
 
@@ -141,7 +152,7 @@ See [Phase 1B evidence](../../guides/stewardship-phase-1b.md).
 Scope and dependencies: [ARC-06 work package](../../plans/stewardship/architecture.md#arc-06-enforceable-cryptographic-service-boundary).
 
 - [x] ARC-06.01 — Define independent versioned keyrings.
-- [ ] ARC-06.02 — Implement isolated configuration activation and recovery.
+- [x] ARC-06.02 — Implement isolated configuration activation and recovery.
 - [ ] ARC-06.03 — Implement target-specific sealed credential replacement.
 - [ ] ARC-06.04 — Configure mail-dispatch and token-key-rotation services.
 - [ ] ARC-06.05 — Restrict general services to token public keys.
@@ -162,6 +173,15 @@ production provisioning, consumer recreation and command assembly; later backup
 owners supply actual catalog/escrow evidence. These mixed-phase tasks remain
 open rather than claiming production readiness. See the
 [remaining owner contracts](../../guides/stewardship-phase-1b.md#installer-and-retirement-handoff).
+
+Phase 1C closes configuration-installer command/mount/SQL integration and offline
+recovery. Every target installer has an isolated runtime queue and handoff; metrics
+rotation is demonstrated with the complete recreated web cohort. Provider-specific
+validation, operational mail/rotation workers and actual backup/escrow retirement
+still belong to their feature phases. Their reserved profiles remain unavailable,
+not broadly credentialed placeholders. ARC-06.03-.07 remain mixed-scope tasks;
+their foundation mount/isolation checks now have real-container evidence in the
+[review ledger](../../guides/stewardship-phase-1c-reviews.md).
 
 ## ARC-07: Application-level privacy and audit primitives
 

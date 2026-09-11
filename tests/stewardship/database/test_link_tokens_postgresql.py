@@ -3,7 +3,7 @@
 from uuid import uuid4
 
 import pytest
-from django.db import IntegrityError, connection, transaction
+from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.db.models import F
 from django.test.utils import CaptureQueriesContext
 
@@ -46,6 +46,59 @@ def begin(campaign, actor, ring, *, operation_id=None):
         actor_id=actor,
         admit=admit,
     )
+
+
+def assert_credential_inputs_locked(campaign):
+    """A distinct SQL connection cannot change the epoch, campaign or runtime."""
+    database = connection.copy()
+    try:
+        for table, identifier in (
+            ("stewardship_campaign", campaign.pk),
+            ("stewardship_credential_deployment", None),
+            ("stewardship_system_configuration", None),
+        ):
+            with pytest.raises(DatabaseError), database.cursor() as cursor:
+                clause = " WHERE id=%s" if identifier is not None else ""
+                cursor.execute(
+                    f'SELECT id FROM "{table}"{clause} FOR UPDATE NOWAIT',
+                    [identifier] if identifier is not None else [],
+                )
+            database.rollback()
+    finally:
+        database.close()
+
+
+def test_preparation_verification_and_cancellation_pin_live_inputs(tmp_path):
+    """Every admission callback observes inputs that restore cannot replace."""
+    _, campaign, actor, ring = family_campaign(tmp_path)
+    population = CampaignCredentialState.objects.get(campaign=campaign)
+
+    def checked_admit(row, deployment, generation):
+        assert_credential_inputs_locked(row)
+        return True
+
+    generation = begin_generation(
+        campaign_id=campaign.pk,
+        operation_id=uuid4(),
+        source_snapshot_id=population.source_snapshot_id,
+        source_generation=population.source_generation,
+        public=ring.public,
+        actor_id=actor,
+        admit=checked_admit,
+    )
+    prepare_generation_batch(
+        generation_id=generation.pk, public=ring.public, admit=checked_admit
+    )
+    with transaction.atomic():
+        # Final activation owns the runtime/campaign locks before verification.
+        from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+        from parishkit.stewardship.campaigns.models import Campaign
+
+        SystemConfiguration.objects.select_for_update().get()
+        locked = Campaign.objects.select_for_update().get(pk=campaign.pk)
+        verify_generation(generation.pk, campaign=locked, public=ring.public)
+        assert_credential_inputs_locked(locked)
+    cancel_generation(generation_id=generation.pk, admit=checked_admit)
 
 
 def test_preparation_checkpoints_and_verification_have_no_final_family_scan(tmp_path):

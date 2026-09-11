@@ -47,6 +47,7 @@ def admit_test_work(action, campaign, runtime, subject):
 
 def admit_task_work(action, status):
     """TaskRun has a separate fixed-arity verifier; never mask campaign arity drift."""
+    return True
 
 
 def draft_campaign(tmp_path, row=None):

@@ -90,6 +90,34 @@ def test_pause_is_orthogonal_and_withdrawal_unlocks_only_never_active(tmp_path):
     assert SystemConfiguration.objects.get().mode == "testing"
 
 
+def test_resume_and_next_pause_cannot_predate_prior_control(tmp_path):
+    """Scheduled production may pause before start, but its history cannot regress."""
+    _, campaign, actor = draft_campaign(tmp_path)
+    instant = campaign.active_configuration.starts_at - timedelta(days=1)
+    with campaign_clock(instant):
+        command(campaign, actor, Action.ACTIVATE)
+        complete_empty_catchup(campaign, actor)
+        for action in ("pause", "resume", "pause"):
+            campaign.refresh_from_db()
+            arguments = dict(
+                campaign_id=campaign.pk,
+                request_id=uuid4(),
+                action=action,
+                expected_version=campaign.version,
+                expected_runtime_version=SystemConfiguration.objects.get().version,
+                actor_id=actor,
+                correlation_id=uuid4(),
+                admit=admit_test_work,
+                reason="Reviewed delivery control",
+            )
+            if campaign.paused_at:
+                with pytest.raises(IntegrityError, match="cannot regress"):
+                    change_control(
+                        **arguments, occurred_at=instant - timedelta(seconds=1)
+                    )
+            change_control(**arguments, occurred_at=instant)
+
+
 def test_archive_return_testing_and_purge_reservation_serialize_successor(tmp_path):
     """History and the global work gate survive clearing the current pointer."""
     store, campaign, actor = draft_campaign(tmp_path)
@@ -233,6 +261,10 @@ def test_restore_assumption_never_becomes_fulfillment(tmp_path):
     )
     first = resolve_restore_hold(**arguments)
     assert resolve_restore_hold(**arguments).pk == first.pk
+    with pytest.raises(StaleRecordError, match="reload"):
+        resolve_restore_hold(**(arguments | {"actor_id": uuid4()}))
+    with pytest.raises(StaleRecordError, match="reload"):
+        resolve_restore_hold(**(arguments | {"state": "not_applicable"}))
     hold.refresh_from_db()
     assert (
         hold.state == "assumed_delivered" and not ScheduleFulfillment.objects.exists()

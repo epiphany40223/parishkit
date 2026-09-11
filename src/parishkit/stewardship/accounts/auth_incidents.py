@@ -2,7 +2,7 @@
 
 from datetime import timedelta
 
-from django.db import connection, transaction
+from django.db import DatabaseError, connection, transaction
 from django.db.models import F
 
 from parishkit.stewardship.audit.models import AuditEvent
@@ -13,6 +13,16 @@ from .auth_models import AuthenticationIncident
 
 
 def record_login_rejection(event_type):
+    """Unavailable sampled evidence yields the same typed, private auth outage."""
+    from .limiting import LimiterUnavailable
+
+    try:
+        _record_login_rejection(event_type)
+    except DatabaseError:
+        raise LimiterUnavailable() from None
+
+
+def _record_login_rejection(event_type):
     """At most one signal per public login class per deployment per five minutes.
 
     Per-attempt keyed source/candidate telemetry belongs only to the ephemeral
@@ -68,6 +78,7 @@ def record_incident(kind, severity, window, counts):
     if severity not in {0, 1, 2} or type(window) is not int or window < 0:
         raise ValueError("Invalid authentication incident level/window.")
     with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL lock_timeout='1s'")
         cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [736225, 1])
         cursor.execute("SELECT statement_timestamp()")
         now = cursor.fetchone()[0]

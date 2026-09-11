@@ -122,13 +122,15 @@ def test_family_shell_has_no_inline_assets_and_keeps_noscript_fallback():
     assert 'href="#main"' in html
 
 
-@pytest.mark.parametrize("count", [None, "bad", 0, 1000])
+@pytest.mark.parametrize(
+    "count", [None, "bad", 0, 1000, 1.5, True, 10**30, Decimal("1e-99")]
+)
 def test_progress_component_handles_missing_count_without_render_failure(count):
     """Future progress consumers get a safe empty state or exact grouped count."""
     context = {"progress_total": 2000, "progress_title": "Progress"}
     if count is not None:
         context["progress_count"] = count
     html = render_to_string("stewardship/components/progress.html", context)
-    assert ("<progress " in html) == isinstance(count, int)
+    assert ("<progress " in html) == (type(count) is int and count in (0, 1000))
     if count == 1000:
         assert ">1,000</progress>" in html

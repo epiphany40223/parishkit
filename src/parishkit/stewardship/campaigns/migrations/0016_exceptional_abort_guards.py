@@ -44,6 +44,11 @@ def restore_checkpoint(apps, editor):
         script[start:end].replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1),
         params=None,
     )
+    # CREATE OR REPLACE resets proconfig. A downgrade must not silently remove
+    # the trusted path installed by a later accounts migration still applied.
+    editor.execute(
+        "ALTER FUNCTION public.stewardship_request_checkpoint_v2() SET search_path=pg_catalog,public,pg_temp"
+    )
 
 
 SQL = """

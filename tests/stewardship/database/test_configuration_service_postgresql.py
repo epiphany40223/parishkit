@@ -17,7 +17,7 @@ from parishkit.stewardship.accounts.configuration_service import (
 from parishkit.stewardship.deployment import ServiceRole, load_deployment
 
 from ..test_request_patch import parish_patch
-from .campaign_builders import initialized
+from .campaign_builders import draft_campaign, initialized
 
 pytestmark = pytest.mark.django_db(transaction=True)
 ROLE = "pk_stewardship_config_installer"
@@ -61,14 +61,32 @@ def as_config_installer():
             cursor.execute("RESET SESSION AUTHORIZATION")
 
 
+@pytest.mark.parametrize("current_campaign", [False, True])
 def test_restricted_installer_applies_real_yaml_and_retries(
-    tmp_path, config_role, monkeypatch
+    tmp_path, config_role, monkeypatch, current_campaign
 ):
     """An admitted service installs an exact digest without private-data reads."""
-    store, root, actor = initialized(tmp_path)
+    if current_campaign:
+        store, campaign, actor = draft_campaign(tmp_path)
+        root = store.active()
+        from parishkit.stewardship.campaigns.models import ScheduleDefinition
+
+        schedule = ScheduleDefinition.objects.get(campaign=campaign)
+        patch = [
+            *parish_patch(root, name="Changed parish"),
+            {
+                "operation": "update",
+                "section": "schedules",
+                "id": str(schedule.pk),
+                "values": {"subject": "Updated invitation"},
+            },
+        ]
+    else:
+        store, root, actor = initialized(tmp_path)
+        patch = parish_patch(root, name="Changed parish")
     request = record_request(
         base_digest=root.digest,
-        patch=parish_patch(root, name="Changed parish"),
+        patch=patch,
         actor_id=actor,
         request_key=uuid4(),
         correlation_id=uuid4(),
@@ -137,6 +155,48 @@ def test_superuser_and_role_impersonation_are_not_admitted(config_role):
     finally:
         with connection.cursor() as cursor:
             cursor.execute("RESET ROLE")
+
+
+def test_installer_cannot_create_schemas_or_write_purge_gates(config_role):
+    """Unused purge writes and residual database CREATE are not installer authority."""
+    with as_config_installer(), connection.cursor() as cursor:
+        for privilege in ("INSERT", "UPDATE", "DELETE"):
+            cursor.execute(
+                "SELECT has_table_privilege(current_user, "
+                "'stewardship_campaign_work_gate', %s)",
+                [privilege],
+            )
+            assert cursor.fetchone() == (False,)
+    with connection.cursor() as cursor:
+        from psycopg import sql
+
+        cursor.execute(
+            sql.SQL("GRANT CREATE ON DATABASE {} TO {}").format(
+                sql.Identifier(connection.settings_dict["NAME"]), sql.Identifier(ROLE)
+            )
+        )
+    with as_config_installer(), pytest.raises(ConfigError, match="excessive"):
+        admit_configuration_database()
+
+
+def test_installer_has_no_authority_outside_its_closed_registry(config_role):
+    """Every current/future table omitted by the owner stays denied automatically."""
+    with as_config_installer(), connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT c.relname FROM pg_class c "
+            "JOIN pg_namespace n ON n.oid=c.relnamespace "
+            "WHERE n.nspname='public' AND c.relkind IN('r','p') "
+            "AND NOT(c.relname=ANY(%s))",
+            [list(CONFIGURATION_GRANTS)],
+        )
+        excluded = [row[0] for row in cursor.fetchall()]
+        assert "stewardship_family_campaign" in excluded
+        for table in excluded:
+            for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
+                cursor.execute(
+                    "SELECT has_table_privilege(current_user,%s,%s)", [table, privilege]
+                )
+                assert cursor.fetchone() == (False,), (table, privilege)
 
 
 @pytest.mark.parametrize("extra", ["table", "definer", "sequence", "schema_create"])

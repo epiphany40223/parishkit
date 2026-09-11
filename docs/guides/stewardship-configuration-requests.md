@@ -35,11 +35,13 @@ still traverses ancestry, but never loads historical canonical JSON into intake.
 Removals and settings-only updates require no ancestry query. A remove/add pair
 cannot replace a historical kind's ID, and a retired ID cannot name another kind.
 
-Each request retains `parish-integrations-patch-v1` as its request-schema name.
-Its frozen builder selects `parish-integrations-v1` validation, including that
-schema's frozen timezone catalog. Introduce a new builder and database-admitted
-name for a future format; keep historical builders available. Identical retries
-dispatch the stored name even after the current builder changes.
+Each request retains the schema selected by `default_schema` from its base and
+patch sections. The [policy](stewardship-authorization-foundation.md) and
+[campaign](stewardship-campaign-foundation.md) owners define the newer admitted
+formats; the original parish/integration-only format remains available for
+historical dispatch. Introduce a new builder and database-admitted name for a
+future format; keep historical builders available. Identical retries dispatch
+the stored name even after the current selector changes.
 The per-key lock is acquired before selecting the schema and validating the
 patch, so a concurrent winner's stored format governs the retry, including
 during a schema upgrade. Base verification and cheap container checks precede
@@ -87,13 +89,15 @@ integration neither deletes a credential file nor attests to its absence.
 
 The [activation boundary](stewardship-configuration-activation.md) documents the
 implemented installer checkpoints, matching YAML/database activation, historical
-applied receipts, and Testing runtime. Session/security effects, full runtime
-state, credential validation, and operational service integration remain pending.
-Merely recording an intent cannot release startup.
-SecretReplacementRequest and target-sealed handoff remain DAT-01/ARC-06 work.
-Offline recovery remains OPS-04/DAT-05: no fabricated PortalUser or caller-supplied
-operator bypass is accepted by intake. Login-rule, campaign, schedule, and content
-patches require their owning concrete schemas/policies before admission.
+applied receipts, and Testing runtime. The later
+[authorization foundation](stewardship-authorization-foundation.md),
+[credential installers](stewardship-credential-installers.md) and
+[runtime integration](stewardship-runtime.md) now supply their respective
+session/security, credential and offline-recovery boundaries. Merely recording
+an intent cannot release startup; no fabricated PortalUser or caller-supplied
+operator bypass is accepted by intake. Login-rule, campaign and schedule patches
+now use the linked policy/campaign schemas. Content patches remain refused until
+their owning schema and workflow land.
 
 Use the [disposable PostgreSQL profile](stewardship-database-tests.md) to verify
 constraints, migrations, concurrency, committed receipts, and rollback. The

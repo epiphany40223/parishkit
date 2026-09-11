@@ -1,8 +1,12 @@
 """No caller can use a nominal counter field to retain raw private values."""
 
-import pytest
+from unittest.mock import Mock
 
-from parishkit.stewardship.accounts.limiting import Counter, LocalBuckets
+import pytest
+from django.db import DatabaseError
+from redis.exceptions import RedisError
+
+from parishkit.stewardship.accounts.limiting import Counter, Limiter, LocalBuckets
 
 
 @pytest.mark.parametrize(
@@ -55,3 +59,14 @@ def test_local_token_buckets_have_fixed_memory_and_refill():
     now[0] += 121
     assert buckets.consume("three") == 0
     assert len(buckets.entries) == 1
+
+
+def test_post_login_counter_cleanup_cannot_fail_the_committed_login():
+    """Even simultaneous broker/incident outages leave post-commit success intact."""
+    client = Mock()
+    client.delete.side_effect = RedisError("synthetic broker failure")
+    incident = Mock(side_effect=DatabaseError("synthetic incident failure"))
+    limiter = Limiter(client, b"s" * 32, incident=incident)
+    limiter.clear(Counter("family_pair", "f" * 64, 5, 900))
+    assert limiter.outage is True
+    incident.assert_called_once()

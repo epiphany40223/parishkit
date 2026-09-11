@@ -368,3 +368,18 @@ def test_read_guard_never_rotates_privilege_transition(
     assert PortalSession.objects.count() == 1
     row.refresh_from_db()
     assert row.revoked_at is None
+
+
+def test_normal_admin_routing_does_not_repeat_session_authorization(
+    auth_service, google, monkeypatch
+):
+    """The availability gate leaves normal expiry/rotation to the owning view."""
+    from unittest.mock import Mock
+
+    from parishkit.stewardship.accounts import sessions
+
+    browser, _ = signed_in()
+    checked = Mock(wraps=sessions.current_principal)
+    monkeypatch.setattr(sessions, "current_principal", checked)
+    assert browser.get("/admin/").status_code == 200
+    assert checked.call_count == 1

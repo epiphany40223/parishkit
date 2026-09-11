@@ -26,7 +26,7 @@ def intake_base(digest):
             return snapshot, verified_snapshot_version(
                 snapshot, predecessor_digest=predecessor
             )
-    except ConfigError:
+    except (ConfigError, AppliedConfigurationVersion.DoesNotExist):
         pass
     raise ConfigError("A complete prepared base configuration is required.")
 
@@ -104,10 +104,41 @@ def _check_policy_additions(base_id, patch):
     _remember_policy({"sections": {"login_rules": additions}}, identities)
     quote, meta = connection.ops.quote_name, AppliedConfigurationVersion._meta
     table = quote(meta.db_table)
-    pk, predecessor, document = (
-        quote(meta.get_field(field).column)
-        for field in ("id", "predecessor", "canonical_document")
+    pk, predecessor = (
+        quote(meta.get_field(field).column) for field in ("id", "predecessor")
     )
+    # The immutable projections retain exactly the frozen policy bindings.
+    # Filter IDs before comparing them: no historical canonical JSON is loaded,
+    # expanded or returned while the intake/installer serialization lock is held.
+    import json
+
+    from .policy_models import AddressRule, DomainRule, MinistryAssignment
+
+    sources = []
+    parameters = [base_id]
+    for model, kind, fields in (
+        (DomainRule, "domain", ("domain",)),
+        (AddressRule, "address", ("email", "creation_origin", "creation_operation")),
+        (
+            MinistryAssignment,
+            "assignment",
+            ("email", "ministry_duid", "source", "operation_id"),
+        ),
+    ):
+        columns = ",".join(
+            "p." + quote(model._meta.get_field(name).column) for name in fields
+        )
+        sources.append(
+            f"SELECT p.record_id, jsonb_build_array(%s::text,{columns}) AS identity "
+            f"FROM {quote(model._meta.db_table)} p "
+            "JOIN chain c ON c.id=p.configuration_id "
+            "WHERE p.record_id=ANY(%s::uuid[])"
+        )
+        parameters.extend([kind, list(identities)])
+    predicates = []
+    for identifier, identity in identities.items():
+        predicates.append("(record_id=%s AND identity IS DISTINCT FROM %s::jsonb)")
+        parameters.extend([identifier, json.dumps(identity)])
     with connection.cursor() as cursor:
         cursor.execute(
             f"""
@@ -117,16 +148,14 @@ def _check_policy_additions(base_id, patch):
                 UNION
                 SELECT p.{pk}, p.{predecessor}
                 FROM {table} p JOIN chain c ON p.{pk} = c.predecessor_id
-            ) SELECT record FROM chain JOIN {table} p ON p.{pk} = chain.id,
-              jsonb_array_elements(p.{document}->'sections'->'login_rules') record
-              WHERE record->>'id' = ANY(%s)
-            """,
-            [base_id, [item["id"] for item in additions]],
+            ), bindings AS ("""
+            + " UNION ALL ".join(sources)
+            + ") SELECT 1 FROM bindings WHERE "
+            + " OR ".join(predicates)
+            + " LIMIT 1",
+            parameters,
         )
-        import json
-
-        records = [
-            json.loads(row[0]) if isinstance(row[0], str) else row[0]
-            for row in cursor.fetchall()
-        ]
-    _remember_policy({"sections": {"login_rules": records}}, identities)
+        if cursor.fetchone() is not None:
+            raise ConfigError(
+                "Policy record identities must remain stable across history."
+            )

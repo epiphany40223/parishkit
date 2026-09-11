@@ -24,7 +24,27 @@ _COMMAND_OPTIONS = {
     },
     "service": {"profile", "service_role", "bind_all_interfaces"},
     "healthcheck": set(),
+    "installer-healthcheck": set(),
+    "health": {"config"},
+    "runtime": {"config"},
+    "acknowledge-credential": {"config", "request_id"},
+    "collect-static": {"destination"},
+    "provision-runtime": {"config", "image", "checkout", "bind_source_root"},
     "prepare-development": {"runtime_root"},
+    "bootstrap": {"config", "phase", "deployment_id", "admin_email"},
+    "migrate": {"config"},
+    "database-roles": {"config", "confirm_deployment"},
+    "database-grants": {"config", "confirm_deployment"},
+    "recover-admin": {
+        "config",
+        "confirm_deployment",
+        "operation_id",
+        "target_email",
+        "confirm_email",
+        "operator_name",
+        "reason",
+    },
+    "preview-admin-recovery": {"config", "confirm_deployment", "target_email"},
 }
 
 
@@ -62,6 +82,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--service-role", choices=list(ServiceRole))
     parser.add_argument("--public-origin")
     parser.add_argument("--runtime-root")
+    parser.add_argument("--destination")
+    parser.add_argument("--image")
+    parser.add_argument("--checkout")
+    parser.add_argument("--bind-source-root")
+    parser.add_argument("--phase", choices=["prepare", "import"])
+    for option in (
+        "deployment-id",
+        "admin-email",
+        "confirm-deployment",
+        "operation-id",
+        "target-email",
+        "confirm-email",
+        "operator-name",
+        "reason",
+        "request-id",
+    ):
+        parser.add_argument("--" + option)
     parser.add_argument(
         "--bind-all-interfaces",
         action="store_true",
@@ -90,6 +127,70 @@ def main(argv: Sequence[str] | None = None) -> int:
         # option names only: the values may contain credential paths or URLs.
         names = ", ".join("--" + name.replace("_", "-") for name in sorted(unsupported))
         parser.usage_error(f"options not supported by {args.command}: {names}")
+    if args.command in {
+        "bootstrap",
+        "migrate",
+        "recover-admin",
+        "preview-admin-recovery",
+        "database-roles",
+        "database-grants",
+    }:
+        from .operator_commands import execute_operator
+
+        return execute_operator(args)
+    if args.command == "runtime":
+        from .runtime_process import execute_runtime
+
+        return execute_runtime(args)
+    if args.command == "acknowledge-credential":
+        from .credential_runtime import execute_acknowledgement
+
+        return execute_acknowledgement(args)
+    if args.command == "health":
+        from .runtime_diagnostics import execute_health
+
+        return execute_health(args)
+    if args.command == "collect-static":
+        from .static_assets import collect_static
+
+        try:
+            if args.destination is None:
+                raise ConfigError("An explicit static destination is required.")
+            result = collect_static(args.destination)
+        except Exception:
+            print(
+                "ERROR: static collection refused or failed; use a fresh process "
+                "and an empty owner-only destination",
+                file=sys.stderr,
+            )
+            return 2
+        print(json.dumps(result, sort_keys=True))
+        return 0
+    if args.command == "provision-runtime":
+        from .runtime_provisioning import provision_runtime
+
+        try:
+            if args.config is None or args.image is None:
+                raise ConfigError(
+                    "Explicit deployment configuration and image required."
+                )
+            result = provision_runtime(
+                load_deployment(args.config),
+                image=args.image,
+                checkout=Path(args.checkout) if args.checkout is not None else None,
+                bind_source_root=Path(args.bind_source_root)
+                if args.bind_source_root is not None
+                else None,
+            )
+        except Exception:
+            print(
+                "ERROR: runtime provisioning refused or interrupted; use empty "
+                "owner-only targets or resume the exact original inputs",
+                file=sys.stderr,
+            )
+            return 2
+        print(json.dumps(result, sort_keys=True))
+        return 0
     if args.command == "service":
         if args.bind_all_interfaces and (
             args.profile != DeploymentProfile.DEVELOPMENT
@@ -106,6 +207,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     if args.command == "healthcheck":
         return healthcheck()
+    if args.command == "installer-healthcheck":
+        from .installer_health import healthcheck as installer_healthcheck
+
+        return installer_healthcheck()
     if args.command == "prepare-development":
         if args.runtime_root is None:
             parser.usage_error(

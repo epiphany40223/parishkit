@@ -12,6 +12,7 @@ from django.utils import timezone
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.configuration_installation import install_request
+from parishkit.stewardship.accounts.configuration_requests import record_request
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.operator_recovery import recover_admin
 from parishkit.stewardship.accounts.policy_models import (
@@ -71,7 +72,11 @@ def test_additive_recovery_is_attributed_revoking_and_idempotent(tmp_path):
     store, initial, _ = initialized(tmp_path, [address(), seed])
     portal = session()
     kwargs = arguments()
-    result = recover_admin(store, **kwargs)
+    previews = []
+    result = recover_admin(store, **kwargs, before_apply=previews.append)
+    assert previews[0]["current_admin_rules"] == ["admin@example.org"]
+    assert previews[0]["before_roles"] == ["ministry_leader"]
+    assert previews[0]["after_roles"] == ["administrator", "ministry_leader"]
     assert result.state == "applied"
     request = ConfigurationChangeRequest.objects.get(pk=result.request_id)
     assert request.actor_id is None and request.authority == "operator_recovery"
@@ -101,7 +106,8 @@ def test_additive_recovery_is_attributed_revoking_and_idempotent(tmp_path):
     )
     runtime = SystemConfiguration.objects.get()
     assert runtime.mode == "testing" and not runtime.restore_review_required
-    assert recover_admin(store, **kwargs) == result
+    assert recover_admin(store, **kwargs, before_apply=previews.append) == result
+    assert previews[-1]["already_granted"] is True
     portal.refresh_from_db()
     assert portal.version == 2
     checkpoints = list(
@@ -113,6 +119,28 @@ def test_additive_recovery_is_attributed_revoking_and_idempotent(tmp_path):
         list(request.checkpoints.order_by("sequence").values_list("id", "state"))
         == checkpoints
     )
+
+
+def test_online_queue_does_not_claim_interrupted_offline_recovery(tmp_path):
+    """An older offline-owned intent cannot starve subsequent Admin requests."""
+    from parishkit.stewardship.runtime_process import next_configuration_request
+
+    store, root, actor = initialized(tmp_path)
+
+    def interrupted(_preview):
+        raise RuntimeError("synthetic operator interruption")
+
+    with pytest.raises(RuntimeError, match="interruption"):
+        recover_admin(store, **arguments(), before_apply=interrupted)
+    assert next_configuration_request() is None
+    request = record_request(
+        base_digest=root.digest,
+        patch=parish_patch(root, name="Updated parish"),
+        actor_id=actor,
+        request_key=uuid4(),
+        correlation_id=uuid4(),
+    )
+    assert next_configuration_request() == request.request_id
 
 
 @pytest.mark.parametrize(

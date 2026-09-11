@@ -49,6 +49,7 @@ class AppliedConfigurationVersion(ImmutableRecord):
                         "parish-integrations-v1",
                         "foundation-policy-v2",
                         "campaign-foundation-v3",
+                        "bootstrap-policy-v1",
                     ]
                 ),
                 name="configuration_validation_schema",

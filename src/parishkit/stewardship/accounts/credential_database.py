@@ -6,12 +6,30 @@ from parishkit.config import ConfigError
 
 from .secret_models import SECRET_TARGETS
 
+INSTALLER_GRANTS = {
+    "django_migrations": {"SELECT"},
+    "stewardship_secret_request": {"SELECT", "UPDATE"},
+    "stewardship_secret_checkpoint": {"SELECT", "INSERT"},
+    "stewardship_sealed_credential_staging": {"SELECT", "UPDATE"},
+    "stewardship_credential_consumer_ack": {"SELECT"},
+    "stewardship_audit_event": {"INSERT"},
+    "stewardship_system_configuration": {"SELECT"},
+    "stewardship_parish": {"SELECT"},
+    "stewardship_configuration_version": {"SELECT"},
+}
+INSTALLER_METADATA = {
+    "stewardship_system_configuration": {"active_configuration_id"},
+    "stewardship_parish": {"id", "configuration_id"},
+    "stewardship_configuration_version": {"id", "validation_schema"},
+}
 
-def _identity(expected):
+
+def _identity(expected, *, database=None):
     """Reject superusers, SET ROLE impersonation and any inherited role authority."""
-    if connection.vendor != "postgresql":
+    database = connection if database is None else database
+    if database.vendor != "postgresql":
         raise ConfigError("Credential services require PostgreSQL isolation.")
-    with connection.cursor() as cursor:
+    with database.cursor() as cursor:
         cursor.execute(
             "SELECT current_user, session_user, rolsuper, rolbypassrls, rolcreatedb, "
             "rolcreaterole, rolreplication, rolinherit, "
@@ -34,16 +52,7 @@ def admit_installer_database(target):
     if type(target) is not str or target not in SECRET_TARGETS:
         raise ConfigError("Unknown credential target.")
     _identity("pk_stewardship_credential_" + target)
-    allowed = {
-        "stewardship_secret_request": {"SELECT", "UPDATE"},
-        "stewardship_secret_checkpoint": {"SELECT", "INSERT"},
-        "stewardship_sealed_credential_staging": {"SELECT", "UPDATE"},
-        "stewardship_credential_consumer_ack": {"SELECT"},
-        "stewardship_audit_event": {"INSERT"},
-        "stewardship_system_configuration": {"SELECT"},
-        "stewardship_parish": {"SELECT"},
-    }
-    admit_grants(allowed)
+    admit_grants(INSTALLER_GRANTS)
     with connection.cursor() as cursor:
         # Metadata attribution is deliberately column-scoped. No full YAML,
         # testing recipient, configuration content or provider settings are needed.
@@ -51,28 +60,29 @@ def admit_installer_database(target):
             "SELECT c.relname,a.attname FROM pg_class c "
             "JOIN pg_namespace n ON n.oid=c.relnamespace "
             "JOIN pg_attribute a ON a.attrelid=c.oid "
-            "WHERE n.nspname='public' AND c.relname IN "
-            "('stewardship_system_configuration','stewardship_parish') "
+            "WHERE n.nspname='public' AND c.relname=ANY(%s) "
             "AND a.attnum>0 AND NOT a.attisdropped "
-            "AND has_column_privilege(current_user,c.oid,a.attnum,'SELECT')"
+            "AND has_column_privilege(current_user,c.oid,a.attnum,'SELECT')",
+            [list(INSTALLER_METADATA)],
         )
         permitted = {
-            ("stewardship_system_configuration", "active_configuration_id"),
-            ("stewardship_parish", "id"),
-            ("stewardship_parish", "configuration_id"),
+            (table, column)
+            for table, columns in INSTALLER_METADATA.items()
+            for column in columns
         }
         if set(cursor.fetchall()) - permitted:
             raise ConfigError("Credential installer metadata grants are excessive.")
 
 
-def admit_grants(allowed):
+def admit_grants(allowed, *, database=None):
     """Inspect all application schemas, including indirect definer authority.
 
     System routines and ordinary SECURITY INVOKER helpers do not add authority:
     their table access is checked as this same restricted login. Definer routines,
     sequence privileges, schema creation and relations outside public are denied.
     """
-    with connection.cursor() as cursor:
+    database = connection if database is None else database
+    with database.cursor() as cursor:
         cursor.execute(
             "SELECT n.nspname,c.relname,p,c.relowner=(SELECT oid FROM pg_roles "
             "WHERE rolname=current_user) FROM pg_class c "
@@ -103,7 +113,8 @@ def admit_grants(allowed):
             "AND has_sequence_privilege(current_user,c.oid,'USAGE,SELECT,UPDATE')) OR "
             "EXISTS(SELECT 1 FROM pg_namespace n WHERE n.nspname !~ '^pg_' "
             "AND n.nspname<>'information_schema' "
-            "AND has_schema_privilege(current_user,n.oid,'CREATE'))"
+            "AND has_schema_privilege(current_user,n.oid,'CREATE')) OR "
+            "has_database_privilege(current_user,current_database(),'CREATE')"
         )
         if cursor.fetchone()[0]:
             raise ConfigError("Installer database grants are excessive.")

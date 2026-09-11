@@ -21,6 +21,7 @@ from .credential_database import _identity, admit_grants
 # No DELETE/TRUNCATE/DDL, secret-staging, Family, source, response or session grants
 # belong to this process. New projection owners extend this registry explicitly.
 CONFIGURATION_GRANTS = {
+    "django_migrations": {"SELECT"},
     "stewardship_configuration_version": {"SELECT", "INSERT"},
     "stewardship_parish": {"SELECT", "INSERT"},
     "stewardship_applied_integration": {"SELECT", "INSERT"},
@@ -39,11 +40,16 @@ CONFIGURATION_GRANTS = {
     "stewardship_assignment_overlay": {"SELECT"},
     "stewardship_campaign_configuration": {"SELECT", "INSERT"},
     "stewardship_campaign": {"SELECT", "INSERT", "UPDATE"},
-    "stewardship_campaign_work_gate": {"SELECT", "INSERT", "UPDATE"},
+    "stewardship_campaign_work_gate": {"SELECT"},
     "stewardship_campaign_config_intent": {"SELECT"},
     "stewardship_campaign_config_abort": {"SELECT"},
     "stewardship_campaign_control": {"SELECT"},
     "stewardship_campaign_transition": {"SELECT"},
+    # Every current-campaign activation executes the stale-boundary UPDATE,
+    # even when its predicate matches no rows. Exceptional reopen writes stay
+    # with the later ADM-06 owner, whose admission is not implemented here.
+    "stewardship_campaign_boundary": {"SELECT", "UPDATE"},
+    "stewardship_task_run": {"SELECT"},
     "stewardship_schedule_revision": {"SELECT", "INSERT"},
     "stewardship_schedule_definition": {"SELECT", "INSERT", "UPDATE"},
     "stewardship_schedule_selection": {"SELECT", "INSERT"},
