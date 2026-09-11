@@ -27,6 +27,8 @@ _COMMAND_OPTIONS = {
     "health": {"config"},
     "runtime": {"config"},
     "acknowledge-credential": {"config", "request_id"},
+    "collect-static": {"destination"},
+    "provision-runtime": {"config", "image", "checkout", "bind_source_root"},
     "prepare-development": {"runtime_root"},
     "bootstrap": {"config", "phase", "deployment_id", "admin_email"},
     "migrate": {"config"},
@@ -41,6 +43,7 @@ _COMMAND_OPTIONS = {
         "operator_name",
         "reason",
     },
+    "preview-admin-recovery": {"config", "confirm_deployment", "target_email"},
 }
 
 
@@ -78,6 +81,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--service-role", choices=list(ServiceRole))
     parser.add_argument("--public-origin")
     parser.add_argument("--runtime-root")
+    parser.add_argument("--destination")
+    parser.add_argument("--image")
+    parser.add_argument("--checkout")
+    parser.add_argument("--bind-source-root")
     parser.add_argument("--phase", choices=["prepare", "import"])
     for option in (
         "deployment-id",
@@ -123,6 +130,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "bootstrap",
         "migrate",
         "recover-admin",
+        "preview-admin-recovery",
         "database-roles",
         "database-grants",
     }:
@@ -141,6 +149,47 @@ def main(argv: Sequence[str] | None = None) -> int:
         from .runtime_diagnostics import execute_health
 
         return execute_health(args)
+    if args.command == "collect-static":
+        from .static_assets import collect_static
+
+        try:
+            if args.destination is None:
+                raise ConfigError("An explicit static destination is required.")
+            result = collect_static(args.destination)
+        except Exception:
+            print(
+                "ERROR: static collection refused or failed; use a fresh process "
+                "and an empty owner-only destination",
+                file=sys.stderr,
+            )
+            return 2
+        print(json.dumps(result, sort_keys=True))
+        return 0
+    if args.command == "provision-runtime":
+        from .runtime_provisioning import provision_runtime
+
+        try:
+            if args.config is None or args.image is None:
+                raise ConfigError(
+                    "Explicit deployment configuration and image required."
+                )
+            result = provision_runtime(
+                load_deployment(args.config),
+                image=args.image,
+                checkout=Path(args.checkout) if args.checkout is not None else None,
+                bind_source_root=Path(args.bind_source_root)
+                if args.bind_source_root is not None
+                else None,
+            )
+        except Exception:
+            print(
+                "ERROR: runtime provisioning refused or interrupted; use empty "
+                "owner-only targets or resume the exact original inputs",
+                file=sys.stderr,
+            )
+            return 2
+        print(json.dumps(result, sort_keys=True))
+        return 0
     if args.command == "service":
         if args.bind_all_interfaces and (
             args.profile != DeploymentProfile.DEVELOPMENT

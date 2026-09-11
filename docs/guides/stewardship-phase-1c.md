@@ -232,3 +232,31 @@ development and production-shaped Compose cases both pass in approximately
 exclusion. Operator provisioning, operational documentation, final acceptance
 and review rounds remain open; this evidence does not itself enable ingress or
 release Gate 1.
+
+## Operator preparation checkpoint
+
+The [runtime operator guide](stewardship-runtime.md) now covers fresh private
+storage provisioning, individual file overrides, Docker-native source mapping,
+static collection, exact initial database/bootstrap order, diagnostics and held
+upgrade/recovery boundaries. `provision-runtime` opens no database or provider
+connection and does not start services. Its private immutable intent permits only
+matching interrupted preparation; generated passwords are retained and differing
+metadata files are refused. Completed or populated storage is not adopted.
+
+`collect-static` runs in a fresh non-HTTP process with a dummy database and no
+deployment credential. The public code-owned tree has private on-disk modes and
+is later mounted read-only by Caddy. Unsafe/nonempty destinations are refused,
+not cleared or repaired.
+
+The native Docker test runs both real commands as UID/GID `10001:10001`, without
+network access, capabilities or a writable root filesystem. It verifies ownership,
+file/directory modes, static output and exact daemon-side source mapping. This
+test exposed a fixture root-directory ownership omission; the helper now assigns
+the root of only its newly created disposable volume, in addition to its contents.
+Application consumers continue to receive only narrow individual mounts.
+
+Admin recovery now provides a read-only coherent preview command and prints the
+SQL-authoritative minimal diff before applying a confirmed request. Exact-operation
+replay still tolerates its own recoverable YAML/database activation window.
+The final composed preview/recovery and complete regression checks are in progress;
+no task completion, review exit or production authorization is claimed here.

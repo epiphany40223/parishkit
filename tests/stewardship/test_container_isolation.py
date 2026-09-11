@@ -216,7 +216,7 @@ from pathlib import Path
 root = Path('/fixture')
 shutil.copytree('/seed', root, dirs_exist_ok=True)
 paths = sorted(root.rglob('*'), key=lambda path: len(path.parts), reverse=True)
-for path in paths:
+for path in [*paths, root]:
     assert not path.is_symlink()
     os.chmod(path, 0o700 if path.is_dir() else 0o600)
     os.chown(path, int(os.environ['UID_TARGET']), int(os.environ['GID_TARGET']))

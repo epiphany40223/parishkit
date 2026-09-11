@@ -239,6 +239,26 @@ def test_complete_foundation_bootstrap_and_online_exclusion(tmp_path, production
                 "--admin-email",
                 "admin@example.org",
             )
+        preview = compose_run(
+            file,
+            project,
+            "run",
+            "--rm",
+            "admin-recovery",
+            "preview-admin-recovery",
+            "--config",
+            str(layout.service_directory / "admin-recovery.yaml"),
+            "--confirm-deployment",
+            deployment,
+            "--target-email",
+            "Replacement@Example.org",
+        )
+        proposed = json.loads(preview.stdout)["recovery_preview"]
+        assert proposed["current_admin_rules"] == ["admin@example.org"]
+        assert proposed["target_email"] == "replacement@example.org"
+        assert proposed["before_roles"] == []
+        assert proposed["after_roles"] == ["administrator"]
+        assert proposed["parish_name"] is None
         compose_run(file, project, "up", "--detach", "web", "config-installer")
         deadline = time.monotonic() + 45
         while True:
@@ -293,6 +313,11 @@ def test_complete_foundation_bootstrap_and_online_exclusion(tmp_path, production
             str(layout.service_directory / "web.yaml"),
         )
         assert json.loads(diagnosis.stdout)["ready"] is True
+        from .runtime_health_checks import check_dependency_failure
+
+        check_dependency_failure(
+            file, project, layout.service_directory / "web.yaml", compose_run
+        )
         if production:
             from .runtime_ingress_checks import check_ingress
 
@@ -329,8 +354,13 @@ def test_complete_foundation_bootstrap_and_online_exclusion(tmp_path, production
         }
         # A newly launched one-off container may reopen the same files but has
         # no admitted supervisor/worker cohort, and cannot attest for the service.
+        one_off_document = json.loads(file.read_text())
+        for network in one_off_document["services"]["web"]["networks"].values():
+            network.pop("ipv4_address", None)
+        one_off_file = file.with_name("one-off.json")
+        one_off_file.write_text(json.dumps(one_off_document))
         one_off = compose_run(
-            file,
+            one_off_file,
             project,
             "run",
             "--rm",
@@ -343,6 +373,7 @@ def test_complete_foundation_bootstrap_and_online_exclusion(tmp_path, production
             check=False,
         )
         assert one_off.returncode != 0
+        assert "Runtime directory is unavailable" in one_off.stderr
         rotation_script = (
             Path(__file__).with_name("runtime_rotation_probe.py").read_text()
         )

@@ -167,6 +167,22 @@ class RuntimeLayout:
         database_files = self.configuration.postgres.password_files
         if len(set(database_files.values())) != len(database_files):
             raise ConfigError("Independent database password files alias each other.")
+        from .runtime_identities import database_identities
+
+        selected_sql = [
+            self.database_password(name)
+            for name in ("operator", *(entry[0] for entry in database_identities()))
+        ]
+        if len(set(selected_sql)) != len(selected_sql) or any(
+            path in selected_sql
+            for path in (
+                self.interlock,
+                self.configuration.valkey.password_file,
+                self.configuration.configuration_file,
+            )
+            if path is not None
+        ):
+            raise ConfigError("Independent SQL and other runtime inputs alias.")
         if len(set(inputs)) != len(inputs):
             raise ConfigError("Independent runtime inputs alias each other.")
         for path in [*inputs, *database_files.values()]:

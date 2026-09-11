@@ -176,6 +176,9 @@ def recover_admin_command(
         offline_interlock=lambda: StartupLease(
             RuntimeLayout(configuration).interlock, offline=True
         ),
+        before_apply=lambda preview: print(
+            json.dumps({"recovery_preview": preview}, sort_keys=True)
+        ),
     )
     if result.state != "applied":
         raise ConfigError("Admin recovery did not reach an applied durable receipt.")
@@ -184,6 +187,29 @@ def recover_admin_command(
         "operation_id": operation_id,
         "ordinary_google_login_required": True,
     }
+
+
+def preview_recovery_command(configuration, *, deployment_id, target_email):
+    """Display coherent current rules and the exact proposed change without writing."""
+    if admit_offline_service(configuration) is not ServiceRole.ADMIN_RECOVERY:
+        raise ConfigError("Recovery preview requires its explicit operator profile.")
+    with StartupLease(RuntimeLayout(configuration).interlock, offline=True):
+        configure_operator_database(configuration)
+        from .accounts.authority import AuthorityStore
+        from .accounts.configuration_installation import coherent_configuration
+        from .accounts.configuration_schema import validate_sections
+        from .accounts.operator_recovery import recovery_preview
+        from .accounts.request_admission import intake_base
+        from .runtime_database import admit_offline_database
+
+        admit_offline_database(configuration)
+        runtime = coherent_configuration(
+            AuthorityStore(configuration.paths["authority"], validate_sections)
+        )
+        if runtime.pk != _uuid(deployment_id):
+            raise ConfigError("The confirmed deployment does not match.")
+        _, version = intake_base(runtime.active_configuration.digest)
+        return {"recovery_preview": recovery_preview(version, runtime.pk, target_email)}
 
 
 def execute_operator(args):
@@ -221,6 +247,12 @@ def execute_operator(args):
                     else provision_grants
                 )
                 result = procedure(configuration, _uuid(args.confirm_deployment))
+        elif args.command == "preview-admin-recovery":
+            result = preview_recovery_command(
+                configuration,
+                deployment_id=args.confirm_deployment,
+                target_email=args.target_email,
+            )
         elif args.command == "recover-admin":
             result = recover_admin_command(
                 configuration,
