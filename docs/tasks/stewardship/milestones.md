@@ -748,7 +748,7 @@ human merge approval; Phase 1, merge, deployment, and release remain unapproved.
 
 Scope: [Phase 1](../../plans/stewardship/overall.md#phase-1-secure-foundation-and-durable-domain).
 
-- [ ] M1.01 — Demonstrate fake-provider Google login, denial, and session expiry.
+- [x] M1.01 — Demonstrate fake-provider Google login, denial, and session expiry.
 - [x] M1.02 — Demonstrate Family access and exact campaign-boundary denial.
 - [x] M1.03 — Prove single-current-campaign constraints under concurrent requests.
 - [x] M1.04 — Verify service mounts, configuration activation, and restart durability.
@@ -769,8 +769,9 @@ concurrent campaign/lifecycle SQL cases and 48 real-container checks demonstrate
 M1.02-.04. The latter includes restricted identities, atomic authority, durable
 replacement, metrics credential rotation, offline exclusion and supervisor crash
 recovery in development/production-shaped environments. All 69 browser cases
-pass. The integrated review corrections and final Google/session regression
-rerun remain in progress; M1.01 and Gate 1 stay open. Current evidence is in the
+pass. The final affected Google/session/report/SQL regression run passes all
+192 cases, completing M1.01's demonstration. The complete validation repeat,
+third review and Gate 1 approval remain open. Current evidence is in the
 [Phase 1C ledger](../../guides/stewardship-phase-1c-reviews.md).
 
 First storage-increment review: September 8, 2026, reviewed SHA `99b715d`,

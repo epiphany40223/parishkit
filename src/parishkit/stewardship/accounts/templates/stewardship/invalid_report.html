@@ -1,0 +1,7 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Invalid request" %}{% endblock %}
+{% block content %}<section class="flow panel">
+  <h1>{% translate "Invalid request" %}</h1>
+  <p>{% translate "Check the page and page-size values and try again." %}</p>
+  <p><a href="{{ retry_path }}">{% translate "Return to the report" %}</a></p>
+</section>{% endblock %}

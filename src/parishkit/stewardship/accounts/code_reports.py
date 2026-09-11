@@ -5,7 +5,9 @@ This bounded foundation lists existing campaign identities, never a shadow sourc
 """
 
 from django.db import DatabaseError, transaction
+from django.shortcuts import render
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_safe
 
@@ -22,7 +24,6 @@ from parishkit.stewardship.web.contracts import (
     filters,
 )
 from parishkit.stewardship.web.responses import campaign_response
-from parishkit.stewardship.web.security import error_response
 
 from .authentication import denial, runtime
 from .cryptography import CryptographicError
@@ -49,7 +50,14 @@ def family_codes(request, campaign_id):
                 expected_version(parsed.get("size", "50")),
             )
         except ValueError:
-            return error_response(request, status=400)
+            response = render(
+                request,
+                "stewardship/invalid_report.html",
+                {"retry_path": reverse("admin:family_codes", args=[campaign_id])},
+                status=400,
+            )
+            response.stewardship_safe_error = True
+            return response
         configuration = SystemConfiguration.objects.get()
         if configuration.restore_review_required:
             return denial(status=503, retry=5)

@@ -71,7 +71,7 @@ merged Phase 1A/1B work. Round one alone is not the complete integrated gate
 review. The gate remains pending until those reviews, corrections, demonstrations
 and final validation pass and the human approves release.
 
-## Round two: integrated review in progress
+## Round two: integrated review corrections
 
 Reviewed implementation: `15a82b0985212112f00cb9b8a6519086d9808828`.
 The cumulative base is the Phase 0 handoff above. Session
@@ -167,8 +167,12 @@ Remaining finalized findings and dispositions:
   tests: runtime settings already admitted loopback probes, and pinned Caddy
   redirects to the standard public HTTPS port, not its internal 8443 listener.
   Docker restart policy is not a health-triggered restart mechanism.
-- C44: initial authority cannot contain campaign/schedule selection before its
-  runtime singleton exists; later draft selection remains a separate operation.
+- C44: reject after the existing real-SQL bootstrap regression disproved the
+  premise. Initial singleton INSERT is empty, then atomic activation UPDATE
+  creates the campaign and selects its pointer. A complete legacy root therefore
+  cannot leave the alleged dangling projection. Operational bootstrap still
+  generates only its minimal login-rule document. The proposed extra restriction
+  was removed rather than breaking the supported complete-root storage path.
 - C46: preserve pinned Caddy's default untrusted-client XFF normalization;
   add forged multi-hop XFF to the real TLS ingress regression rather than
   changing the application to trust arbitrary chains.
@@ -193,3 +197,12 @@ tests, and 97 PostgreSQL authentication/response/recovery/incident cases.
 Further findings, migration tests, composed validation and the complete
 post-correction suite remain in progress. This does not complete round two or
 the Gate 1 review cycle.
+
+Final correction checkpoint: all 55 retained findings have dispositions above;
+none require a new product decision. The complete regression run exposed the
+C6 session-precheck regression, C9 HTML-error compatibility, C34 SQL event
+vocabulary and C44 false premise. Those are corrected; all 192 affected
+PostgreSQL cases now pass. The latest baseline passes 2,658 tests; all 69 browser
+checks and two complete 48-check container runs pass. The final rebuilt image
+and complete PostgreSQL/coverage repeat remain required, and run alongside the
+third independent review. No gate release is implied by these corrections.
