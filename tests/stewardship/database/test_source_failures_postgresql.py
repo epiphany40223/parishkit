@@ -1,11 +1,10 @@
 """Failed read cleanup is atomic and cannot become a new-work gate bypass."""
 
 from dataclasses import replace
-from importlib import import_module
 from uuid import uuid4
 
 import pytest
-from django.db import IntegrityError, connection, transaction
+from django.db import IntegrityError, transaction
 
 from parishkit.parishsoft import ParishSoftAPIError
 from parishkit.parishsoft_transport import SourceTransportDrainFailure
@@ -54,22 +53,6 @@ def test_event_registry_and_database_allowlist_agree():
         OperationalLog.objects.create(
             event="PRIVATE-UNREGISTERED", level="INFO", schema="task", context={}
         )
-
-
-def test_failure_history_prevents_destructive_migration_downgrade():
-    """A failed downgrade keeps both history and the current event constraint."""
-    migration = import_module(
-        "parishkit.stewardship.audit.migrations.0010_source_failure_events"
-    )
-    operational(Event.SOURCE_INVALID)
-    with (
-        pytest.raises(IntegrityError),
-        transaction.atomic(),
-        connection.cursor() as cur,
-    ):
-        cur.execute(migration.constraint(migration.PREVIOUS))
-    operational(Event.SOURCE_PROVIDER_FAILED)
-    assert OperationalLog.objects.count() == 2
 
 
 @pytest.mark.parametrize("ready", [False, True])

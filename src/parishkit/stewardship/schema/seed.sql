@@ -1,0 +1,4 @@
+-- Fresh singleton identities/timestamps; no captured database content.
+INSERT INTO public.stewardship_download_policy (id, capacity, version, updated_at) VALUES (1, 4, 1, CURRENT_TIMESTAMP);
+INSERT INTO public.stewardship_source_current (id, created_at, actor_id, correlation_id, updated_at, version, singleton, generation, organization_id, snapshot_id) VALUES (gen_random_uuid(), CURRENT_TIMESTAMP, NULL, gen_random_uuid(), CURRENT_TIMESTAMP, 1, true, 0, NULL, NULL);
+INSERT INTO public.stewardship_source_lease (id, created_at, actor_id, correlation_id, updated_at, version, singleton, task_fence, worker_id, fence, phase, acquired_at, heartbeat_at, expires_at, external_deadline, owner_id) VALUES (gen_random_uuid(), CURRENT_TIMESTAMP, NULL, gen_random_uuid(), CURRENT_TIMESTAMP, 1, true, 0, NULL, 0, 'idle', NULL, NULL, NULL, NULL, NULL);

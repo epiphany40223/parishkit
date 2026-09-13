@@ -4,7 +4,6 @@ from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection, transaction
-from django.db.migrations.executor import MigrationExecutor
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.credential_handoff import PrivateHandoff
@@ -158,20 +157,3 @@ def test_bootstrap_cannot_adopt_an_existing_publication(handoff_roles):
             actor_id=uuid4(),
             correlation_id=uuid4(),
         )
-
-
-def test_handoff_guard_migration_roundtrip_and_populated_downgrade(handoff_roles):
-    """Empty reversal works; published identities cannot lose their ownership fence."""
-    executor = MigrationExecutor(connection)
-    leaves = executor.loader.graph.leaf_nodes()
-    try:
-        executor.migrate([("stewardship_accounts", "0050_credential_handoff_public")])
-        MigrationExecutor(connection).migrate(leaves)
-        with identity("pk_stewardship_credential_slack"):
-            publish_handoff(key())
-        with pytest.raises(DatabaseError):
-            MigrationExecutor(connection).migrate(
-                [("stewardship_accounts", "0050_credential_handoff_public")]
-            )
-    finally:
-        MigrationExecutor(connection).migrate(leaves)

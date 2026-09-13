@@ -1,8 +1,7 @@
 """Real staged-corpus validation, deduplication and all-or-nothing source truth."""
 
 import pytest
-from django.db import IntegrityError, connection, transaction
-from django.db.migrations.executor import MigrationExecutor
+from django.db import IntegrityError, transaction
 from django.db.models import F
 
 from parishkit.stewardship.audit.models import AuditContext
@@ -234,18 +233,3 @@ def test_current_and_protected_corpora_cannot_be_marked_compacted():
             version=F("version") + 1, compacted_at=_now()
         )
     assert reconstruct_snapshot() == source_corpus()
-
-
-def test_source_migrations_reverse_and_reapply_with_idle_singletons():
-    """Each source migration reverses its own guards, models and initialization."""
-    executor = MigrationExecutor(connection)
-    target = executor.loader.graph.leaf_nodes()
-    try:
-        executor.migrate([("stewardship_source", None)])
-        assert (
-            "stewardship_source_snapshot" not in connection.introspection.table_names()
-        )
-    finally:
-        MigrationExecutor(connection).migrate(target)
-    assert SourceCurrent.objects.get().snapshot_id is None
-    assert SourceMutationLease.objects.get().fence == 0

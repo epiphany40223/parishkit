@@ -346,7 +346,7 @@ def test_cancel_fails_closed_for_revoked_original_session_and_unrelated_manifest
 def test_restricted_config_installer_consumes_setup_expiry_proof(
     setup_service, config_role
 ):
-    """No session, source payload or setup UPDATE privileges are needed to recover."""
+    """Narrow session metadata, not private session/source reads, permits recovery."""
     from parishkit.stewardship.accounts.configuration_service import (
         admit_configuration_database,
     )

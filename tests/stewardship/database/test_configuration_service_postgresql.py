@@ -144,7 +144,12 @@ def test_restricted_installer_applies_real_yaml_and_retries(
 
 @pytest.mark.parametrize(
     "grant",
-    ["SELECT ON stewardship_family_campaign", "INSERT ON stewardship_config_request"],
+    [
+        "SELECT ON stewardship_family_campaign",
+        "INSERT ON stewardship_config_request",
+        "SELECT ON stewardship_portal_session",
+        "SELECT (session_id) ON stewardship_portal_session",
+    ],
 )
 def test_excess_grants_rejected_before_any_install(config_role, grant):
     """Even unused excess authority fails closed before selecting a request."""

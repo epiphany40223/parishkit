@@ -2,7 +2,6 @@
 
 from copy import deepcopy
 from datetime import timedelta
-from importlib import import_module
 from uuid import uuid4
 
 import pytest
@@ -166,25 +165,6 @@ def test_cadence_preparation_retains_nonempty_projection_families():
     assert row.ministry_activity.get().active is False
     assert row.content_versions.get().slot == "welcome"
     assert is_prepared(version.digest)
-    migration = import_module(
-        "parishkit.stewardship.accounts.migrations.0096_source_cadence_schema"
-    )
-    with (
-        pytest.raises(IntegrityError, match="Cadence history"),
-        connection.schema_editor() as editor,
-    ):
-        migration.backward(None, editor)
-    assert is_prepared(version.digest)
-
-
-def test_empty_cadence_projection_guards_reverse_and_reapply():
-    """Restore predecessor predicates only with no retained v8 configurations."""
-    migration = import_module(
-        "parishkit.stewardship.accounts.migrations.0096_source_cadence_schema"
-    )
-    with connection.schema_editor() as editor:
-        migration.backward(None, editor)
-        migration.forward(None, editor)
 
 
 def test_retired_revision_identity_is_immutable_at_intake(tmp_path):
@@ -376,25 +356,6 @@ def test_content_reordering_is_a_noop_even_without_current_or_during_work_hold(
         ),
     ):
         _validate_content_installation(document, runtime, target_id=campaign.pk)
-
-
-def test_populated_downgrade_preserves_guards():
-    """Refuse a downgrade before removing any guard protecting retained content."""
-    prepare(configuration_version(content_document()))
-    migration = import_module(
-        "parishkit.stewardship.accounts.migrations.0049_content_guards"
-    )
-    with (
-        pytest.raises(IntegrityError, match="downgrade"),
-        connection.schema_editor() as editor,
-    ):
-        migration.backward(None, editor)
-    with (
-        pytest.raises(IntegrityError),
-        transaction.atomic(),
-        connection.cursor() as cursor,
-    ):
-        cursor.execute("UPDATE stewardship_content_version SET text='Changed'")
 
 
 def test_restricted_installer_can_prepare_content_without_private_reads(

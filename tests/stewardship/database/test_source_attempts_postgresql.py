@@ -5,7 +5,6 @@ from uuid import uuid4
 
 import pytest
 from django.db import IntegrityError, connection, transaction
-from django.db.migrations.executor import MigrationExecutor
 
 from parishkit.stewardship.accounts.authority import AuthorityStore
 from parishkit.stewardship.accounts.configuration_installation import (
@@ -311,8 +310,8 @@ def test_sql_rejects_wrong_attempt_bindings_even_inside_work_scope(tmp_path, cha
     assert not SourceRefreshAttempt.objects.exists()
 
 
-def test_attempt_history_cannot_be_rewritten_or_downgraded(tmp_path):
-    """Retained input evidence is immutable and blocks destructive downgrade."""
+def test_attempt_history_cannot_be_rewritten_or_deleted(tmp_path):
+    """Retained input evidence is immutable under both raw update and delete."""
     credential, execution, source_claim, *_ = setup(tmp_path)
     attempt = begin_refresh_attempt(execution, source_claim, credential)
     with (
@@ -333,14 +332,6 @@ def test_attempt_history_cannot_be_rewritten_or_downgraded(tmp_path):
         sql.execute(
             "DELETE FROM stewardship_source_refresh_attempt WHERE id=%s", (attempt.pk,)
         )
-    targets = MigrationExecutor(connection).loader.graph.leaf_nodes()
-    try:
-        with pytest.raises(IntegrityError):
-            MigrationExecutor(connection).migrate(
-                [("stewardship_source", "0011_sourcerefreshattempt")]
-            )
-    finally:
-        MigrationExecutor(connection).migrate(targets)
     assert (
         SourceRefreshAttempt.objects.get(pk=attempt.pk).credential_fingerprint
         == credential.fingerprint

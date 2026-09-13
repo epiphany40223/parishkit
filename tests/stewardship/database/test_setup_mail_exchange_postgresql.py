@@ -173,7 +173,12 @@ def test_sql_cannot_rebind_mail_exchange(
 ):
     """Even a schema-owner update cannot rewrite retained original claim metadata."""
     preparing(setup_service, monkeypatch, tmp_path)
-    with pytest.raises(DatabaseError), work_transaction():
+    with (
+        pytest.raises(
+            DatabaseError, match="identity|binding|original ownership|reply once"
+        ),
+        work_transaction(),
+    ):
         SetupMailExchange.objects.update(**mutation, version=F("version") + 1)
 
 

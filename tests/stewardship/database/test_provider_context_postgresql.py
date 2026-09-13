@@ -5,7 +5,6 @@ from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection, transaction
-from django.db.migrations.executor import MigrationExecutor
 from django.utils import timezone
 
 from parishkit.config import ConfigError
@@ -176,28 +175,6 @@ def test_installer_receives_exact_request_and_candidate(request):
             arguments["provider_settings"],
         )
     ]
-
-
-def test_context_migration_roundtrip_and_populated_downgrade():
-    """Empty reversal is supported; request scope cannot silently lose its fence."""
-    leaves = MigrationExecutor(connection).loader.graph.leaf_nodes()
-    target = [("stewardship_accounts", "0052_providervalidationcontext")]
-    try:
-        MigrationExecutor(connection).migrate(target)
-        MigrationExecutor(connection).migrate(leaves)
-        # Recreated tables lose this disposable fixture's explicit consumer grant.
-        # Production upgrades reapply runtime grants after the migration phase.
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "GRANT SELECT ON stewardship_setup_credential_install "
-                "TO pk_stewardship_web"
-            )
-        with identity("pk_stewardship_web"):
-            stage_secret_request(**intent())
-        with pytest.raises(DatabaseError):
-            MigrationExecutor(connection).migrate(target)
-    finally:
-        MigrationExecutor(connection).migrate(leaves)
 
 
 def test_request_validator_closes_sql_before_provider_io(monkeypatch):

@@ -1,7 +1,6 @@
 """Scheduler-owned refresh slots are atomic, replayable and scope-bound."""
 
 from datetime import UTC, datetime, timedelta
-from importlib import import_module
 from uuid import uuid4
 
 import pytest
@@ -243,8 +242,8 @@ def test_raw_tick_requires_scheduler_and_no_future_due_time(tmp_path):
         )
 
 
-def test_tick_is_immutable_and_history_blocks_downgrade(tmp_path):
-    """Tick history cannot be edited, deleted or lost during migration rollback."""
+def test_tick_is_immutable_and_cannot_be_deleted(tmp_path):
+    """Tick history cannot be edited or deleted through raw SQL."""
     configured(tmp_path)
     with scheduler_session() as guard:
         produce_refreshes(guard)
@@ -260,15 +259,6 @@ def test_tick_is_immutable_and_history_blocks_downgrade(tmp_path):
             connection.cursor() as cur,
         ):
             cur.execute(sql, values)
-    migration = import_module(
-        "parishkit.stewardship.source.migrations.0016_refresh_tick_guards"
-    )
-    with (
-        pytest.raises(IntegrityError),
-        transaction.atomic(),
-        connection.cursor() as cur,
-    ):
-        cur.execute(migration.REVERSE)
     assert SourceRefreshTick.objects.count() == 2
 
 

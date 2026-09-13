@@ -115,4 +115,7 @@ def test_current_campaign_without_content_has_read_only_empty_catalog(
     assert response.status_code == 200
     assert b"No content was configured" in response.content
     with restored_runtime(campaign.active_configuration.starts_at):
-        assert browser.get(path).status_code != 200
+        response = browser.get(path)
+        assert response.status_code == 302
+        assert response["Location"] == "/admin/maintenance"
+        assert response["Cache-Control"] == "no-store"

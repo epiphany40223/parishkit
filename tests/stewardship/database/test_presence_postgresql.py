@@ -143,7 +143,7 @@ def test_presence_is_admin_only_even_for_direct_json(
 ):
     """Staff access to codes does not imply presence or observation access."""
     store = auth_service.store
-    change(
+    result = change(
         store,
         store.active(),
         uuid4(),
@@ -155,8 +155,11 @@ def test_presence_is_admin_only_even_for_direct_json(
             }
         ],
     )
+    assert result.state == "applied"
     google[0]["email"] = "observer@example.org"
+    google[0]["sub"] = f"observer-{role}"
     browser, _ = signed_in()
+    assert browser.get("/admin/").status_code == 200
     assert browser.get(ADMIN).status_code == 403
     assert browser.get(ADMIN + "?format=json").status_code == 403
     assert b"data-presence-indicator" not in browser.get("/admin/").content

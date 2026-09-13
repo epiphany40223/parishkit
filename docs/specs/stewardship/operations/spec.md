@@ -190,6 +190,12 @@ Documented first deployment order is:
 5. Start web/worker/scheduler/installers/proxy.
 6. Complete the first-Admin wizard.
 
+Before production compatibility is declared, explicitly approved consolidation
+of unreleased migration history may establish a fresh-install baseline. This
+does not authorize deleting development databases, faking migration state or
+claiming compatibility with discarded development schemas. See the
+[schema baseline guide](../../../guides/stewardship-schema.md).
+
 Application containers do not race to run migrations. A production upgrade
 requires a successful recent backup, pulls pinned images, runs migration checks
 and migrations, then restarts services. Migrations must be forward-safe for the

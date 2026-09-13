@@ -249,3 +249,7 @@ def test_new_campaign_content_cannot_change_historical_content(auth_service, goo
     )
     assert result.state == "failed"
     assert Campaign.objects.count() == 1
+    # The exact same creation proposal succeeds without the historical edit;
+    # unrelated clone validation must not make the rejection test pass.
+    assert change(store, store.active(), uuid4(), intent["patch"]).state == "applied"
+    assert Campaign.objects.count() == 2

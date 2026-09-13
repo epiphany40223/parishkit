@@ -5,7 +5,6 @@ from uuid import uuid4, uuid5
 
 import pytest
 from django.db import DatabaseError, connection, transaction
-from django.db.migrations.executor import MigrationExecutor
 from django.db.models import F
 from django.utils import timezone
 
@@ -229,18 +228,3 @@ def test_asset_history_and_bundle_bindings_are_immutable(tmp_path):
             connection.cursor() as cursor,
         ):
             cursor.execute(statement)
-
-
-def test_branding_migration_empty_roundtrip_and_populated_refusal(tmp_path):
-    """Retained asset ownership cannot silently lose its database cleanup fence."""
-    leaves = MigrationExecutor(connection).loader.graph.leaf_nodes()
-    previous = [("stewardship_accounts", "0054_brandingbundle_brandingasset_and_more")]
-    try:
-        MigrationExecutor(connection).migrate(previous)
-        MigrationExecutor(connection).migrate(leaves)
-        _, version, actor = initialized(tmp_path)
-        ready(version, actor)
-        with pytest.raises(DatabaseError):
-            MigrationExecutor(connection).migrate(previous)
-    finally:
-        MigrationExecutor(connection).migrate(leaves)

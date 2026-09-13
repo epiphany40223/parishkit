@@ -1,6 +1,5 @@
 """Confirmed seed identity cannot be guessed, rebound, or rewritten by refresh."""
 
-from importlib import import_module
 from uuid import uuid4
 
 import pytest
@@ -113,28 +112,6 @@ def test_sql_rejects_unproven_or_misbound_identity(tmp_path, defect):
             with work_transaction():
                 ChairSeedEvidence.objects.create(**values)
     assert not ChairSeedEvidence.objects.exists()
-
-
-def test_populated_downgrade_keeps_original_binding_and_guards(tmp_path):
-    """Retained identity cannot be dropped by silently reversing this schema."""
-    values = inputs(tmp_path)
-    with work_transaction():
-        ChairSeedEvidence.objects.create(**values)
-    migration = import_module(
-        "parishkit.stewardship.accounts.migrations.0041_chair_seed_evidence_guards"
-    )
-    with (
-        pytest.raises(IntegrityError, match="downgrade"),
-        transaction.atomic(),
-        connection.cursor() as cursor,
-    ):
-        cursor.execute(migration.REVERSE)
-    with (
-        pytest.raises(IntegrityError, match="append-only"),
-        transaction.atomic(),
-        connection.cursor() as cursor,
-    ):
-        cursor.execute("UPDATE stewardship_chair_seed_evidence SET member_duid=6")
 
 
 @pytest.mark.usefixtures("config_role")

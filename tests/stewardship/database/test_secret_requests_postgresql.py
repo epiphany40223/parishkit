@@ -483,30 +483,6 @@ def test_target_vocabulary_matches_reserved_deployment_services():
     assert set(SECRET_TARGETS) == SECRET_NAMES - {"handoff_private"}
 
 
-def test_populated_downgrade_preserves_guards_and_history(intent):
-    """Refuse downgrade before any guard removal when request history exists."""
-    from django.db.migrations.executor import MigrationExecutor
-    from django.db.migrations.recorder import MigrationRecorder
-
-    stage_secret_request(**intent)
-    leaves = MigrationExecutor(connection).loader.graph.leaf_nodes()
-    try:
-        with pytest.raises(IntegrityError, match="prevents downgrade"):
-            MigrationExecutor(connection).migrate(
-                [("stewardship_accounts", "0014_secret_request_records")]
-            )
-        assert MigrationRecorder.Migration.objects.filter(
-            app="stewardship_accounts", name="0015_secret_request_guards"
-        ).exists()
-        assert (
-            SecretRequestCheckpoint.objects.count() == AuditEvent.objects.count() == 1
-        )
-        with pytest.raises(IntegrityError), transaction.atomic():
-            SecretReplacementRequest.objects.update(state="expired", version=2)
-    finally:
-        MigrationExecutor(connection).migrate(leaves)
-
-
 @pytest.mark.parametrize("transition", ["expiry", "cancelled", "expired"])
 def test_sql_denies_fabricated_human_cleanup_attribution(intent, transition):
     """Expiry and both terminal outcomes cannot forge immutable human audit."""

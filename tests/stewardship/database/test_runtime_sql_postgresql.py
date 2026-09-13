@@ -1,7 +1,6 @@
 """Operational prerequisite: callers cannot redirect durable trigger effects."""
 
 from datetime import timedelta
-from importlib import import_module
 from uuid import uuid4
 
 import pytest
@@ -25,69 +24,32 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 def test_legacy_emitters_and_helpers_have_trusted_search_paths():
     """Every named legacy function pins catalog/public before temporary objects."""
-    migration = import_module(
-        "parishkit.stewardship.accounts.migrations.0033_trusted_trigger_paths"
+    names = (
+        "stewardship_request_checkpoint_v1",
+        "stewardship_request_stage_v1",
+        "stewardship_request_audit_v1",
+        "stewardship_request_checkpoint_v2",
+        "stewardship_runtime_guard_v1",
+        "stewardship_runtime_activation_required_v1",
+        "stewardship_activation_guard_v1",
+        "stewardship_activation_effects_v1",
+        "stewardship_secret_state_v1",
+        "stewardship_secret_checkpoint_v1",
+        "stewardship_secret_history_v1",
     )
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT p.proname,p.proconfig FROM pg_proc p "
             "JOIN pg_namespace n ON n.oid=p.pronamespace "
             "WHERE n.nspname='public' AND p.proname=ANY(%s)",
-            [list(migration.FUNCTIONS)],
+            [list(names)],
         )
         rows = dict(cursor.fetchall())
-    assert rows.keys() == set(migration.FUNCTIONS)
+    assert rows.keys() == set(names)
     assert all(
         "search_path=pg_catalog, public, pg_temp" in options
         for options in rows.values()
     )
-
-
-@pytest.mark.parametrize(
-    "module,operation,names",
-    [
-        (
-            "0006_runtime_guards",
-            "restore_predecessors",
-            [
-                "stewardship_runtime_guard_v1",
-                "stewardship_activation_guard_v1",
-                "stewardship_activation_effects_v1",
-                "stewardship_campaign_pointer_v1",
-                "stewardship_campaign_runtime_v1",
-                "stewardship_campaign_activate_v1",
-            ],
-        ),
-        (
-            "0016_exceptional_abort_guards",
-            "restore_checkpoint",
-            [
-                "stewardship_request_checkpoint_v2",
-            ],
-        ),
-    ],
-)
-def test_partial_downgrade_helpers_preserve_trusted_function_paths(
-    module, operation, names
-):
-    """Historical CREATE OR REPLACE must not erase a still-applied security pin."""
-    migration = import_module("parishkit.stewardship.campaigns.migrations." + module)
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT pg_get_functiondef(p.oid) FROM pg_proc p JOIN pg_namespace n "
-            "ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname=ANY(%s)",
-            [names],
-        )
-        originals = [row[0] for row in cursor.fetchall()]
-    assert len(originals) == len(names)
-    try:
-        with connection.schema_editor() as editor:
-            getattr(migration, operation)(None, editor)
-        test_legacy_emitters_and_helpers_have_trusted_search_paths()
-    finally:
-        with connection.cursor() as cursor:
-            for definition in originals:
-                cursor.execute(definition)
 
 
 def test_actual_emitters_ignore_temporary_audit_shadow(tmp_path):

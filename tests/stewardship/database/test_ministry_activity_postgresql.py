@@ -1,7 +1,6 @@
 """Real configuration requests, retained overrides and PostgreSQL forgery checks."""
 
 from datetime import timedelta
-from importlib import import_module
 from uuid import uuid4
 
 import pytest
@@ -222,25 +221,6 @@ def test_sql_preserves_binding_even_if_ancestry_preflight_is_bypassed(
     with pytest.raises(IntegrityError, match="stable"):
         prepare(configuration_version(document))
     assert AppliedConfigurationVersion.objects.count() == 1
-
-
-def test_populated_downgrade_preserves_guards():
-    """A downgrade fails atomically before weakening retained configuration history."""
-    prepare(configuration_version(policy_document(activity())))
-    migration = import_module(
-        "parishkit.stewardship.accounts.migrations.0039_ministry_activity_guards"
-    )
-    with (
-        pytest.raises(IntegrityError, match="downgrade"),
-        connection.schema_editor() as editor,
-    ):
-        migration.backward(None, editor)
-    with (
-        pytest.raises(IntegrityError),
-        transaction.atomic(),
-        connection.cursor() as cursor,
-    ):
-        cursor.execute("UPDATE stewardship_ministry_activity SET active=true")
 
 
 def test_operator_recovery_preserves_applied_activity_and_replays(tmp_path):

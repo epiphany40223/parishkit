@@ -9,6 +9,12 @@ validation is never sufficient.
 
 ## Migration policy
 
+- Before production compatibility is declared, the approved
+  [fresh-install baseline](../../guides/stewardship-schema.md) may replace
+  unreleased development history. It does not upgrade existing development
+  databases and must not delete or reset them automatically. Preserve current
+  schema protections and prove fresh-install equivalence instead of testing
+  transitions through discarded intermediate schemas.
 - Add models in dependency-sized migrations, with explicit constraints and
   indexes in the same work package that depends on them.
 - Prove forward and reverse behavior where Django supports it; document any

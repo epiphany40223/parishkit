@@ -349,32 +349,9 @@ def test_closed_send_rejects_unreviewed_or_expired_commands(
     assert not CampaignMailTest.objects.exists()
 
 
-def test_campaign_mail_guard_reversal_and_reapplication():
-    """Empty-history rollback/reapply preserves the exact installed SQL boundary."""
-    from importlib import import_module
-
-    migration = import_module(
-        "parishkit.stewardship.accounts.migrations.0091_campaign_mail_guards"
-    )
-    with transaction.atomic(), connection.cursor() as cursor:
-        cursor.execute(migration.BACKWARD)
-        cursor.execute(migration.FORWARD)
-
-
-def test_campaign_mail_history_prevents_downgrade_and_delete(campaign_test):
-    """A retained test cannot lose its no-replay owner through a schema rollback."""
-    from importlib import import_module
-
+def test_campaign_mail_history_prevents_delete(campaign_test):
+    """A retained test cannot lose its no-replay owner through ordinary deletion."""
     row, _ = queue(campaign_test)
-    migration = import_module(
-        "parishkit.stewardship.accounts.migrations.0091_campaign_mail_guards"
-    )
-    with (
-        pytest.raises(IntegrityError, match="prevents downgrade"),
-        transaction.atomic(),
-        connection.cursor() as cursor,
-    ):
-        cursor.execute(migration.BACKWARD)
     with pytest.raises(IntegrityError, match="retained"), work_transaction():
         CampaignMailTest.objects.filter(pk=row.pk).delete()
 

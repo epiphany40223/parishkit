@@ -6,7 +6,6 @@ from uuid import uuid4
 
 import pytest
 from django.db import IntegrityError, connection, connections, transaction
-from django.db.migrations.executor import MigrationExecutor
 from django.db.models import F
 
 from parishkit.stewardship.audit.models import AuditContext
@@ -188,20 +187,3 @@ def test_rejection_and_promotion_have_one_atomic_winner():
     snapshot.refresh_from_db()
     current = SourceCurrent.objects.get()
     assert (current.snapshot_id == snapshot.pk) == (snapshot.state == "promoted")
-
-
-def test_rejection_guard_migration_round_trip_preserves_populated_evidence():
-    """Old readers can retain rejected manifests without re-enabling stale writes."""
-    snapshot, old = prepared()
-    release_source(old)
-    claim = acquire_source(**running_source_task(), phase="full")
-    reject_snapshot(snapshot.pk, claim, admit=permit)
-    targets = MigrationExecutor(connection).loader.graph.leaf_nodes()
-    try:
-        MigrationExecutor(connection).migrate(
-            [("stewardship_source", "0009_refresh_request_guards")]
-        )
-        assert SourceSnapshot.objects.get(pk=snapshot.pk).state == "rejected"
-    finally:
-        MigrationExecutor(connection).migrate(targets)
-    assert SourceSnapshot.objects.get(pk=snapshot.pk).source_fence == old.fence

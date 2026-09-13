@@ -368,39 +368,6 @@ def test_second_replacement_requires_selection_of_the_installed_predecessor(
     assert read_private(value.installer.files.path) == CANDIDATE
 
 
-def test_selection_migration_roundtrip_and_populated_refusal(replacement):
-    """Retained requests cannot lose the parser discriminator required for replay."""
-    from django.db.migrations.executor import MigrationExecutor
-
-    leaves = MigrationExecutor(connection).loader.graph.leaf_nodes()
-    previous = [("stewardship_accounts", "0056_configuration_credential_receipts")]
-    try:
-        MigrationExecutor(connection).migrate(previous)
-        MigrationExecutor(connection).migrate(leaves)
-        # Downgrading drops the later setup table, including its runtime ACL.
-        # As in a real upgrade, reapply this fixture's consumer grant after DDL;
-        # migration ownership does not implicitly authorize the target installer.
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "GRANT SELECT ON stewardship_setup_credential_install "
-                "TO pk_stewardship_credential_parishsoft"
-            )
-        complete(replacement)
-        preview = hidden(replacement.browser.get(replacement.url), "preview")
-        assert (
-            post(
-                replacement.browser,
-                replacement.url,
-                {"action": "confirm", "preview": preview},
-            ).status_code
-            == 302
-        )
-        with pytest.raises(DatabaseError, match="selection history prevents downgrade"):
-            MigrationExecutor(connection).migrate(previous)
-    finally:
-        MigrationExecutor(connection).migrate(leaves)
-
-
 def test_pending_replacement_holds_selection_and_latest_receipt_is_required(
     replacement,
 ):

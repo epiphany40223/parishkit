@@ -7,8 +7,6 @@ from uuid import uuid4
 
 import pytest
 from django.db import IntegrityError, connection, connections, transaction
-from django.db.migrations.executor import MigrationExecutor
-from django.db.migrations.recorder import MigrationRecorder
 from django.db.models.deletion import Collector, ProtectedError
 from django.utils import timezone
 
@@ -17,8 +15,6 @@ from parishkit.stewardship.accounts.authority import AuthorityStore
 from parishkit.stewardship.accounts.configuration_models import Parish
 from parishkit.stewardship.accounts.configuration_requests import record_request
 from parishkit.stewardship.accounts.configuration_schema import validate_sections
-from parishkit.stewardship.accounts.request_models import ConfigurationRequestCheckpoint
-from parishkit.stewardship.accounts.request_patch import build_candidate
 from parishkit.stewardship.accounts.runtime_models import ConfigurationActivation
 from parishkit.stewardship.accounts.secret_requests import stage_secret_request
 from parishkit.stewardship.audit.models import AuditEvent
@@ -27,8 +23,6 @@ from ..configuration_factory import configuration_version, successor_document
 from ..test_request_patch import parish_patch
 
 pytestmark = pytest.mark.django_db(transaction=True)
-PREVIOUS = ("stewardship_audit", "0005_alter_auditevent_subject_id")
-CURRENT = ("stewardship_audit", "0006_parish_ownership")
 
 
 def initialize(tmp_path):
@@ -43,31 +37,6 @@ def initialize(tmp_path):
         correlation_id=uuid4(),
     )
     return store, root, actor
-
-
-def initialize_legacy(executor):
-    """Create legacy activation with historical models, not newer runtime columns."""
-    root, actor = configuration_version(), uuid4()
-    correlation_id = uuid4()
-    installer.prepare_snapshot(root, actor_id=actor, correlation_id=correlation_id)
-    apps = executor.loader.project_state(
-        [PREVIOUS, ("stewardship_accounts", "0015_secret_request_guards")]
-    ).apps
-    with transaction.atomic():
-        apps.get_model("stewardship_accounts", "SystemConfiguration").objects.create(
-            testing_recipient="test@example.org",
-            actor_id=actor,
-            correlation_id=correlation_id,
-        )
-        apps.get_model(
-            "stewardship_accounts", "ConfigurationActivation"
-        ).objects.create(
-            configuration_id=root.version_id,
-            sequence=1,
-            actor_id=actor,
-            correlation_id=correlation_id,
-        )
-    return root
 
 
 @pytest.fixture
@@ -324,208 +293,6 @@ def test_missing_projection_fails_closed_and_rolls_back(initialized):
             ["stewardship_parish_immutable_guard_v1"],
         )
         assert cursor.fetchone()[0] == "O"
-
-
-def test_deployment_history_survives_downgrade_roundtrip(tmp_path):
-    """Nonempty deployment history can reverse without losing original values."""
-    event = AuditEvent.objects.create(event_type="bootstrap_check")
-    before = AuditEvent.objects.values().get(pk=event.pk)
-    executor = MigrationExecutor(connection)
-    leaves = executor.loader.graph.leaf_nodes()
-    try:
-        executor.migrate([PREVIOUS])
-        old_model = executor.loader.project_state([PREVIOUS]).apps.get_model(
-            "stewardship_audit", "AuditEvent"
-        )
-        older = old_model.objects.values().get(pk=event.pk)
-        assert older == {key: before[key] for key in older}
-        assert "ownership_scope" not in older
-        MigrationExecutor(connection).migrate(leaves)
-        assert AuditEvent.objects.values().get(pk=event.pk) == before
-        _, root, _ = initialize(tmp_path)
-        assert AuditEvent.objects.get(pk=event.pk).ownership_scope == "deployment"
-        assert (
-            AuditEvent.objects.create(
-                event_type="restored_guard"
-            ).parish.configuration_id
-            == root.version_id
-        )
-    finally:
-        MigrationExecutor(connection).migrate(leaves)
-
-
-@pytest.mark.parametrize("configured", [False, True])
-def test_secret_downgrade_cannot_remove_audit_ownership(tmp_path, configured):
-    """An unrelated secret-schema refusal leaves audit columns and guard intact."""
-    if configured:
-        initialize(tmp_path)
-    stage_secret_request(
-        request_id=uuid4(),
-        target="parishsoft",
-        staging_reference=uuid4(),
-        actor_id=uuid4(),
-        reauthenticated_at=timezone.now() - timedelta(minutes=1),
-        expires_at=timezone.now() + timedelta(minutes=10),
-        expected_fingerprint=None,
-        correlation_id=uuid4(),
-    )
-    before = list(AuditEvent.objects.order_by("id").values())
-    leaves = MigrationExecutor(connection).loader.graph.leaf_nodes()
-    try:
-        with pytest.raises(
-            IntegrityError, match="Secret request history prevents downgrade"
-        ):
-            MigrationExecutor(connection).migrate(
-                [("stewardship_accounts", "0014_secret_request_records")]
-            )
-        assert MigrationRecorder.Migration.objects.filter(
-            app=CURRENT[0], name=CURRENT[1]
-        ).exists()
-        assert list(AuditEvent.objects.order_by("id").values()) == before
-        new = AuditEvent.objects.create(event_type="secret_downgrade_refused")
-        assert new.ownership_scope == ("parish" if configured else "deployment")
-    finally:
-        MigrationExecutor(connection).migrate(leaves)
-
-
-def test_legacy_upgrade_preserves_original_rows_without_guessing(tmp_path):
-    """ADD COLUMN defaults label legacy history without updating immutable rows."""
-    executor = MigrationExecutor(connection)
-    leaves = executor.loader.graph.leaf_nodes()
-    try:
-        executor.migrate([PREVIOUS])
-        root = initialize_legacy(executor)
-        old_model = executor.loader.project_state(
-            [PREVIOUS, ("stewardship_accounts", "0015_secret_request_guards")]
-        ).apps.get_model("stewardship_audit", "AuditEvent")
-        before = old_model.objects.values().get()
-        MigrationExecutor(connection).migrate(leaves)
-        after = AuditEvent.objects.values().get(pk=before["id"])
-        assert {key: after[key] for key in before} == before
-        assert after["ownership_scope"] == "deployment" and after["parish_id"] is None
-        new = AuditEvent.objects.create(event_type="after_upgrade")
-        assert new.parish.configuration_id == root.version_id
-    finally:
-        MigrationExecutor(connection).migrate(leaves)
-
-
-@pytest.mark.parametrize("history", ["activation", "secret", "checkpoint"])
-def test_broad_downgrade_preserves_upgraded_legacy_ownership(tmp_path, history):
-    """An older accounts guard must not strand an already-reversed audit schema."""
-    executor = MigrationExecutor(connection)
-    leaves = executor.loader.graph.leaf_nodes()
-    try:
-        executor.migrate([PREVIOUS])
-        if history == "activation":
-            initialize_legacy(executor)
-        elif history == "checkpoint":
-            root, actor = configuration_version(), uuid4()
-            installer.prepare_snapshot(root, actor_id=actor, correlation_id=uuid4())
-            intent = build_candidate(
-                root, parish_patch(root, name="Next Parish"), candidate_id=uuid4()
-            )
-            # Historical fixtures must use historical models: current request
-            # services now include offline-recovery columns absent at this leaf.
-            request_model = executor.loader.project_state(
-                [PREVIOUS, ("stewardship_accounts", "0015_secret_request_guards")]
-            ).apps.get_model("stewardship_accounts", "ConfigurationChangeRequest")
-            request = request_model.objects.create(
-                base_id=root.version_id,
-                patch=intent.patch(),
-                actor_id=actor,
-                request_key=uuid4(),
-                correlation_id=uuid4(),
-                request_schema="parish-integrations-patch-v1",
-                payload_fingerprint=intent.payload_fingerprint,
-                candidate_version_id=intent.candidate.version_id,
-                candidate_digest=intent.candidate.digest,
-            )
-            ConfigurationRequestCheckpoint.objects.create(
-                request_id=request.pk,
-                actor_id=actor,
-                state="validating",
-                sequence=2,
-            )
-            assert not ConfigurationActivation.objects.exists()
-        else:
-            secret_model = executor.loader.project_state(
-                [PREVIOUS, ("stewardship_accounts", "0015_secret_request_guards")]
-            ).apps.get_model("stewardship_accounts", "SecretReplacementRequest")
-            actor = uuid4()
-            secret_model.objects.create(
-                id=uuid4(),
-                target="parishsoft",
-                staging_reference=uuid4(),
-                actor_id=actor,
-                requested_by_id=actor,
-                reauthenticated_at=timezone.now() - timedelta(minutes=1),
-                expires_at=timezone.now() + timedelta(minutes=10),
-                expected_fingerprint=None,
-                correlation_id=uuid4(),
-            )
-        MigrationExecutor(connection).migrate(leaves)
-        before = list(AuditEvent.objects.order_by("id").values())
-        assert all(row["ownership_scope"] == "deployment" for row in before)
-        with pytest.raises(IntegrityError, match="history prevents"):
-            MigrationExecutor(connection).migrate(
-                [("stewardship_accounts", "0010_request_intake_guards")]
-            )
-        assert MigrationRecorder.Migration.objects.filter(
-            app=CURRENT[0], name=CURRENT[1]
-        ).exists()
-        assert list(AuditEvent.objects.order_by("id").values()) == before
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT tgenabled FROM pg_trigger WHERE tgname = %s",
-                ["stewardship_audit_ownership_v1"],
-            )
-            assert cursor.fetchone()[0] == "O"
-        event = AuditEvent.objects.create(event_type="after_refusal")
-        assert event.ownership_scope == (
-            "parish" if history == "activation" else "deployment"
-        )
-    finally:
-        MigrationExecutor(connection).migrate(leaves)
-
-
-def test_reverse_without_optional_secret_schema():
-    """The minimum supported dependency graph has no secret table to inspect."""
-    leaves = MigrationExecutor(connection).loader.graph.leaf_nodes()
-    try:
-        MigrationExecutor(connection).migrate(
-            [("stewardship_accounts", "0013_activation_guards")]
-        )
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT to_regclass('public.stewardship_secret_request')")
-            assert cursor.fetchone()[0] is None
-        assert MigrationRecorder.Migration.objects.filter(
-            app=CURRENT[0], name=CURRENT[1]
-        ).exists()
-        MigrationExecutor(connection).migrate([PREVIOUS])
-        assert not MigrationRecorder.Migration.objects.filter(
-            app=CURRENT[0], name=CURRENT[1]
-        ).exists()
-    finally:
-        MigrationExecutor(connection).migrate(leaves)
-
-
-def test_populated_downgrade_preserves_ownership_and_guard(initialized):
-    """Refusal precedes trigger/field removal and is not hidden by restoration."""
-    before = AuditEvent.objects.values().get()
-    leaves = MigrationExecutor(connection).loader.graph.leaf_nodes()
-    try:
-        with pytest.raises(IntegrityError, match="Parish audit history prevents"):
-            MigrationExecutor(connection).migrate([PREVIOUS])
-        assert MigrationRecorder.Migration.objects.filter(
-            app=CURRENT[0], name=CURRENT[1]
-        ).exists()
-        assert AuditEvent.objects.values().get() == before
-        assert (
-            AuditEvent.objects.create(event_type="guard_survived").parish_id
-            == before["parish_id"]
-        )
-    finally:
-        MigrationExecutor(connection).migrate(leaves)
 
 
 def test_concurrent_activation_never_reassigns_prior_event(initialized):

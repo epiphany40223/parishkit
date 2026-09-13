@@ -1,7 +1,6 @@
 """Minimal pre-wizard authority through real preparation, activation and recovery."""
 
 from contextlib import nullcontext
-from importlib import import_module
 from uuid import uuid4
 
 import pytest
@@ -187,19 +186,6 @@ def test_sql_rejects_bad_bootstrap_without_python_parser(damage):
             actor_id=uuid4(),
             correlation_id=uuid4(),
         )
-
-
-def test_populated_schema_downgrade_retains_protections(bootstrapped):
-    """Preflight runs before any destructive backward operation."""
-    migration = import_module(
-        "parishkit.stewardship.accounts.migrations.0034_bootstrap_configuration_schema"
-    )
-    with (
-        pytest.raises(IntegrityError, match="prevents schema downgrade"),
-        connection.schema_editor() as editor,
-    ):
-        migration.backward(None, editor)
-    assert is_prepared(bootstrapped[1].digest)
 
 
 def test_complete_offline_file_and_database_protocol(tmp_path):

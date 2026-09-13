@@ -258,28 +258,3 @@ def test_late_failures_roll_back_every_effect_and_allow_same_live_owner_retry(
         finalize=finalize,
     )
     assert SetupCompletion.objects.get() == completed
-
-
-def test_completion_guards_reverse_and_reapply_before_completed_history():
-    """Empty-history reversal restores all earlier restrictions and can reapply."""
-    from importlib import import_module
-
-    migration = import_module(
-        "parishkit.stewardship.accounts.migrations.0089_setup_completion_guards"
-    )
-    consumers = import_module(
-        "parishkit.stewardship.accounts.migrations.0095_setup_completion_consumer_freshness"
-    )
-    with connection.schema_editor() as editor:
-        consumers.backward(None, editor)
-        migration.restore_owners(None, editor)
-        editor.execute(migration.REVERSE)
-        editor.execute(migration.SQL)
-        migration.extend_owners(None, editor)
-        consumers.forward(None, editor)
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT pg_get_functiondef("
-            "'public.stewardship_setup_attempt_guard_v1()'::regprocedure)"
-        )
-        assert "atomic finalization receipt" in cursor.fetchone()[0]

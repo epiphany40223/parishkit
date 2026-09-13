@@ -445,37 +445,3 @@ def test_completed_command_replay_does_not_create_fresh_work(tmp_path):
     claim(receipt).transition("permanent_failure")
     assert command(actor_id=actor, command_id=identifier) == receipt
     assert SourceRefreshRequest.objects.count() == 1
-
-
-def test_populated_history_refuses_schema_downgrade_before_removing_guards(tmp_path):
-    """A downgrade cannot silently discard accepted request/coalescing evidence."""
-    from django.db.migrations.executor import MigrationExecutor
-
-    initialized(tmp_path)
-    command()
-    executor = MigrationExecutor(connection)
-    targets = executor.loader.graph.leaf_nodes()
-    try:
-        with pytest.raises(IntegrityError, match="Refresh history prevents"):
-            executor.migrate(
-                [
-                    (
-                        "stewardship_source",
-                        "0008_sourcerefreshrequest_sourcerefreshcommand_and_more",
-                    )
-                ]
-            )
-        assert (
-            "stewardship_source",
-            "0009_refresh_request_guards",
-        ) in MigrationExecutor(connection).loader.applied_migrations
-        with (
-            pytest.raises(IntegrityError),
-            transaction.atomic(),
-            connection.cursor() as sql,
-        ):
-            sql.execute("DELETE FROM stewardship_source_refresh_command")
-    finally:
-        # Later empty migrations may have reversed successfully before the
-        # populated-history refusal. Restore every leaf with a fresh executor.
-        MigrationExecutor(connection).migrate(targets)

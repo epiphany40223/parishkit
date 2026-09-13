@@ -268,9 +268,10 @@ def test_claim_and_cleanup_serialize_then_next_effect_rechecks_gate(tmp_path):
     assert TaskRun.objects.get(pk=task.run_id).state == "running"
 
 
-def test_task_claim_takes_lifecycle_order_before_calling_its_domain(tmp_path):
+def test_task_enqueue_takes_lifecycle_order_before_calling_its_domain(tmp_path):
     """The shared lock covers the callback and its full durable mutation."""
     draft_campaign(tmp_path)
+    observations = []
 
     def admit(action, status):
         """Check actual server ownership, not a process-local held-lock flag."""
@@ -279,7 +280,7 @@ def test_task_claim_takes_lifecycle_order_before_calling_its_domain(tmp_path):
                 "SELECT EXISTS(SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid() "
                 "AND locktype='advisory' AND classid=736220 AND objid=1 AND granted)"
             )
-            assert cursor.fetchone() == (True,)
+            observations.append((action, cursor.fetchone()))
         return True
 
     with work_transaction():
@@ -290,6 +291,8 @@ def test_task_claim_takes_lifecycle_order_before_calling_its_domain(tmp_path):
             correlation_id=uuid4(),
             admit=admit,
         )
+    assert observations
+    assert all(held == (True,) for _, held in observations)
 
 
 def test_admission_rejects_missing_lock_order_instead_of_late_acquisition(tmp_path):

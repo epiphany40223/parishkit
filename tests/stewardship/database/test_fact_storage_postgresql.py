@@ -6,7 +6,6 @@ from uuid import uuid4
 
 import pytest
 from django.db import IntegrityError, connection, transaction
-from django.db.migrations.executor import MigrationExecutor
 
 from parishkit.stewardship.jobs.ownership import TaskClaim, TaskOwnershipLost
 from parishkit.stewardship.reports.facts import (
@@ -222,19 +221,3 @@ def test_historical_generation_can_record_a_pre_source_unavailable_day(tmp_path)
     stage_fact_days(record.pk, owner, days=days, admit=permit)
     assert publish_fact_set(record.pk, owner, admit=permit).state == "ready"
     assert not SourceSnapshotPin.objects.filter(parent_id=record.pk).exists()
-
-
-def test_fact_migrations_reverse_and_reapply_all_guards():
-    """Offline schema rollback/reapply restores all state and protection functions."""
-    executor = MigrationExecutor(connection)
-    leaves = executor.loader.graph.leaf_nodes()
-    try:
-        executor.migrate([("stewardship_reports", None)])
-        assert (
-            "stewardship_daily_fact_set" not in connection.introspection.table_names()
-        )
-    finally:
-        MigrationExecutor(connection).migrate(leaves)
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT to_regprocedure('stewardship_fact_disposable(uuid)')")
-        assert cursor.fetchone()[0] is not None

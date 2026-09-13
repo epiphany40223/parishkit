@@ -1,9 +1,7 @@
 """Timezone-only cadence changes retain SQL admission and rollback protections."""
 
-from importlib import import_module
-
 import pytest
-from django.db import IntegrityError, connection
+from django.db import IntegrityError
 
 from parishkit.stewardship.campaigns.admission import CampaignAdmissionUnavailable
 from parishkit.stewardship.campaigns.models import ScheduleDefinition
@@ -58,39 +56,3 @@ def test_timezone_only_change_cannot_bypass_running_schedule_work(
     row.refresh_from_db()
     assert campaign.active_configuration.timezone == "America/New_York"
     assert definition.current_revision_id == prior and row.state == "running"
-
-
-def test_empty_window_guard_roundtrip_and_populated_downgrade(tmp_path):
-    """Empty rollback is repeatable; retained schedule selections prevent downgrade."""
-    migration = import_module(
-        "parishkit.stewardship.campaigns.migrations.0035_schedule_window_selections"
-    )
-    with connection.schema_editor() as editor:
-        migration.backward(None, editor)
-        migration.forward(None, editor)
-    store, campaign, actor = draft_campaign(tmp_path)
-    with (
-        pytest.raises(IntegrityError, match="downgrade"),
-        connection.schema_editor() as editor,
-    ):
-        migration.backward(None, editor)
-    assert (
-        change(
-            store,
-            store.active(),
-            actor,
-            [
-                {
-                    "operation": "update",
-                    "section": "campaigns",
-                    "id": str(campaign.pk),
-                    "values": {"timezone": "America/Los_Angeles"},
-                }
-            ],
-        ).state
-        == "applied"
-    )
-    revision = ScheduleDefinition.objects.get().current_revision
-    assert revision.configuration_id == store.active().version_id
-    assert revision.actor_id == actor
-    assert revision.correlation_id == revision.configuration.correlation_id

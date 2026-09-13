@@ -7,7 +7,6 @@ from uuid import UUID, uuid4
 
 import pytest
 from django.db import IntegrityError, close_old_connections, connection, transaction
-from django.db.migrations.executor import MigrationExecutor
 from django.db.models import F
 
 from parishkit.stewardship.accounts.configuration_installation import install_request
@@ -318,37 +317,6 @@ def test_activation_failure_rolls_back_pointer_and_campaign(tmp_path):
         == "applied"
     )
     assert Campaign.objects.count() == 1
-
-
-def test_empty_reverse_and_reapply_and_populated_refusal(tmp_path):
-    """Reversal works on an empty subset and refuses loss of durable campaign
-    history.
-    """
-    leaves = MigrationExecutor(connection).loader.graph.leaf_nodes()
-    target = [("stewardship_campaigns", "0001_initial")]
-    MigrationExecutor(connection).migrate(target)
-    MigrationExecutor(connection).migrate(leaves)
-    store, root, actor = initialized(tmp_path)
-    add_draft(store, root, actor)
-    from importlib import import_module
-
-    guard = import_module(
-        "parishkit.stewardship.campaigns.migrations.0002_campaign_guards"
-    )
-    with (
-        pytest.raises(IntegrityError, match="Campaign history prevents"),
-        transaction.atomic(),
-        connection.schema_editor() as editor,
-    ):
-        guard.restore_policy_schema(None, editor)
-    try:
-        with pytest.raises(IntegrityError, match="Schedule history prevents"):
-            MigrationExecutor(connection).migrate(target)
-        assert Campaign.objects.count() == 1
-        with pytest.raises(IntegrityError), transaction.atomic():
-            Campaign.objects.update(state="active", version=F("version") + 1)
-    finally:
-        MigrationExecutor(connection).migrate(leaves)
 
 
 def test_offline_recovery_preserves_campaign_schema(tmp_path):

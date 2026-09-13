@@ -18,7 +18,6 @@ from django.db import (
     connections,
     transaction,
 )
-from django.db.migrations.executor import MigrationExecutor
 from django.db.models import F
 from django.db.models.deletion import ProtectedError
 from django.test.utils import CaptureQueriesContext
@@ -313,26 +312,6 @@ def test_new_connection_retains_session_and_audit(portal_session):
     assert PortalSession.objects.get(pk=identifier).session_id == key
     assert SessionStore(session_key=key).load()["principal_id"]
     assert AuditEvent.objects.get(pk=event_id).subject_id == identifier
-
-
-@pytest.mark.django_db(transaction=True)
-def test_migrations_reverse_and_reapply():
-    """Empty disposable tables reverse cleanly and reapply the audit guard."""
-    executor = MigrationExecutor(connection)
-    leaves = executor.loader.graph.leaf_nodes()
-    try:
-        executor.migrate([("stewardship_accounts", None), ("stewardship_audit", None)])
-        tables = connection.introspection.table_names()
-        assert "stewardship_portal_session" not in tables
-        assert "stewardship_audit_event" not in tables
-    finally:
-        MigrationExecutor(connection).migrate(leaves)
-    event = AuditEvent.objects.create(event_type="after_migration")
-    with (
-        pytest.raises(IntegrityError, match="append-only"),
-        connection.cursor() as cursor,
-    ):
-        cursor.execute("DELETE FROM stewardship_audit_event WHERE id = %s", [event.pk])
 
 
 @pytest.mark.django_db(transaction=True)

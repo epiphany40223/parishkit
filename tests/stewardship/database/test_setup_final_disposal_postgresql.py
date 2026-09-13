@@ -6,7 +6,6 @@ from threading import Event
 from uuid import uuid4
 
 import pytest
-from django.db import DatabaseError, connection, transaction
 
 from parishkit.stewardship.accounts.configuration_installation import install_request
 from parishkit.stewardship.accounts.setup_cancellation import cancel_finalizing_setup
@@ -104,52 +103,3 @@ def test_cancel_cleans_catalog_and_its_final_load_but_keeps_bound_receipts(
     assert SetupAttempt.objects.get().state == "expired"
     assert SourceCurrent.objects.get().snapshot_id is None
     assert not setup_service.configured()
-
-
-def test_final_cleanup_guard_reverses_and_reapplies_on_empty_history():
-    """The frozen predecessor remains recoverable before finalization Tasks exist."""
-    from importlib import import_module
-
-    migration = import_module(
-        "parishkit.stewardship.source.migrations.0022_setup_final_source_cleanup"
-    )
-    operation = migration.Migration.operations[0]
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT pg_get_functiondef("
-            "'public.stewardship_setup_disposable_snapshot_v1(uuid)'::regprocedure)"
-        )
-        original = cursor.fetchone()[0]
-        try:
-            cursor.execute(operation.reverse_sql)
-            cursor.execute(
-                "SELECT pg_get_functiondef("
-                "'public.stewardship_setup_disposable_snapshot_v1(uuid)'::regprocedure)"
-            )
-            assert "setup_finalize" not in cursor.fetchone()[0]
-        finally:
-            cursor.execute(original)
-        cursor.execute(
-            "SELECT pg_get_functiondef("
-            "'public.stewardship_setup_disposable_snapshot_v1(uuid)'::regprocedure)"
-        )
-        assert "setup_finalize" in cursor.fetchone()[0]
-
-
-def test_final_task_history_prevents_removing_its_only_cleanup_owner(
-    setup_service, monkeypatch, tmp_path, config_role
-):
-    """Even queued finalization history cannot be downgraded into stranded staging."""
-    from importlib import import_module
-
-    migration = import_module(
-        "parishkit.stewardship.source.migrations.0022_setup_final_source_cleanup"
-    )
-    _, _, identifier = prepared(setup_service, monkeypatch, tmp_path)
-    queued(setup_service, identifier)
-    with (
-        pytest.raises(DatabaseError, match="prevents cleanup downgrade"),
-        transaction.atomic(),
-        connection.cursor() as cursor,
-    ):
-        cursor.execute(migration.Migration.operations[0].reverse_sql)
