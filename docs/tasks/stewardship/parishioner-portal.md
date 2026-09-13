@@ -49,7 +49,10 @@ Scope and dependencies: [FAM-03 work package](../../plans/stewardship/parishione
 - [ ] FAM-03.04 — Build changed-field and review summaries.
 - [ ] FAM-03.05 — Test invalid addresses and disabled census.
 
-Evidence: Not started.
+Evidence: [Family census increment](../../guides/stewardship-family-census.md)
+started from PR #23's verified merge. Its field/source/validation contract,
+atomic proposal integration and mobile review/revisit checks are in progress;
+no FAM-03 item is claimed complete yet.
 
 ## FAM-04: Existing and proposed Member steps
 

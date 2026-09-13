@@ -190,3 +190,17 @@ round count. The new absent-dependency collection regression passes; all 45
 Family browser tests pass in 54 seconds, and all 4,535 default tests pass in
 41 seconds. Ruff check/format and Markdown lint pass. Full current-head CI
 remains required before merge.
+
+## Final protected merge
+
+PR #23 passed every final-head CI check at
+`c440e5b1bd11651637cef2a947a88190b3106bcf` in
+[run 34780332769](https://github.com/epiphany40223/parishkit/actions/runs/34780332769).
+All 2,220 database tests were accounted for across eight isolated shards;
+coverage was 93.93% statements and 85.18% branches. All 492 browser tests,
+baseline validation, core Compose, eight operational profiles and DCO passed.
+The normal protected queue merged the PR on September 13, 2026 as
+`4051b4a5250cdbfa4a8f41d23d9fab800f252b84`. Its complete
+[merge-group run](https://github.com/epiphany40223/parishkit/actions/runs/34781078965)
+also passed. The merge was verified on refreshed `origin/main` before branching
+the next increment. No deployment, release or real provider write occurred.

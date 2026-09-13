@@ -257,8 +257,11 @@ findings and both Medium corrections have passing regression tests. See the
 [review ledger](../../guides/stewardship-phase-3a-reviews.md#round-3).
 Final targeted local validation passes, including the complete 492-test browser
 suite. The ledger retains the earlier broad database run's clock-regression
-failure and passing recheck; clean full-suite protected CI remains required
-before merge. The owning checklists retain partial scope for packages whose
+failure and passing recheck. PR #23 then passed clean final-head CI, including
+all 2,220 database tests and coverage of 93.93% statements / 85.18% branches,
+and merged through the protected queue as
+`4051b4a5250cdbfa4a8f41d23d9fab800f252b84` on September 13, 2026.
+The owning checklists retain partial scope for packages whose
 remaining fields, modules or downstream consumers belong to later increments.
 
 1. [DAT-06](data.md#dat-06-immutable-submissions-and-proposal-overlay) → submission/follow-up slice of [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) → [DAT-08](data.md#dat-08-merge-and-source-reconciliation-services).
@@ -268,6 +271,12 @@ remaining fields, modules or downstream consumers belong to later increments.
 ## Phase 3B: Complete Family flow
 
 Source scope: [Phase 3B: Complete Family flow](../../plans/stewardship/overall.md#phase-3-complete-family-response-vertical-slice).
+
+Branch `pr/stewardship-family-census` starts at the verified PR #23 merge on
+refreshed `origin/main`. Its first coherent outcome is the FAM-03 household
+census step; see the [increment checkpoints](../../guides/stewardship-family-census.md).
+The controlling plan records why remaining Member and stewardship-module
+work follows separately. Gate 2 is not released by this subdivision.
 
 1. Finish [FAM-03](parishioner-portal.md#fam-03-family-census-step); complete [FAM-04](parishioner-portal.md#fam-04-existing-and-proposed-member-steps), [FAM-05](parishioner-portal.md#fam-05-ministry-and-financial-stewardship-steps), [FAM-06](parishioner-portal.md#fam-06-additional-information-review-and-atomic-submit), and [FAM-07](parishioner-portal.md#fam-07-repeat-visits-and-source-change-merge).
 2. Exercise representative [FAM-08](parishioner-portal.md#fam-08-responsive-accessibility-privacy-and-browser-completion) cases continuously.

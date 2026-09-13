@@ -52,8 +52,9 @@ The flow is a single guided response, not a general Family dashboard.
 3. Support mailing-same-as-home without losing an explicitly distinct prior
    mailing address until confirmed.
 4. Add field-level changed indicators and review summaries.
-5. Test empty/partial/internationally malformed input against the specified US
-   rules and census-disabled omission.
+5. Test empty/partial/malformed input against the specified country-aware
+   address rules, including US state/ZIP checks without imposing those formats
+   on international addresses, and census-disabled omission.
 
 ### FAM-04: Existing and proposed Member steps
 
