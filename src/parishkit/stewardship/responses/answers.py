@@ -1,0 +1,139 @@
+"""Complete final-answer validation for the versioned census vertical slice.
+
+This is deliberately a pure function. Neither malformed nor valid input can
+create a draft; the final-submit owner calls it inside its locked transaction.
+Unknown fields and household identities are rejected rather than silently
+discarded, so a forged/stale browser cannot choose the scope of validation.
+"""
+
+import unicodedata
+
+from parishkit.config import ConfigError
+from parishkit.parishsoft import split_email_addresses
+from parishkit.stewardship.accounts.policy_schema import normalized_email
+
+from .inputs import ADDITIONAL_MAX_LENGTH, FORM_SCHEMA, MEMBER_FIELDS, CensusInputs
+
+
+class InvalidAnswers(ValueError):
+    """Static messages keyed only by server-known fields, never raw private input."""
+
+    def __init__(self, fields):
+        """Keep private input out of exception strings, logs and traceback arguments."""
+        self.fields = dict(fields)
+        super().__init__("Please review the indicated Family form fields.")
+
+
+def _text(value, limit):
+    """Normalize accepted Unicode while rejecting controls and oversized raw input."""
+    if (
+        type(value) is not str
+        or len(value) > limit
+        or any(
+            (ord(character) < 32 and character not in "\n\r\t")
+            or 0xD800 <= ord(character) <= 0xDFFF
+            or ord(character) == 127
+            for character in value
+        )
+    ):
+        return None
+    return unicodedata.normalize("NFC", value).strip()
+
+
+def validate_answers(payload, inputs, *, additional_enabled, testing):
+    """Validate all active Members and explicit test consent without persisting.
+
+    Text limits are part of the server-owned form definition. Known source
+    multiple-address email fields remain usable; every nonblank address must
+    pass the shared syntax validator. No browser-supplied Family identity,
+    source field map, ignored key or disabled-module answer is accepted.
+    """
+    if (
+        not isinstance(inputs, CensusInputs)
+        or type(additional_enabled) is not bool
+        or type(testing) is not bool
+    ):
+        raise TypeError("Trusted form definition and namespace are required.")
+    if type(payload) is not dict or set(payload) != {
+        "members",
+        "additional_information",
+        "testing_acknowledged",
+    }:
+        raise InvalidAnswers(
+            {"form": "Reload the authorized form and review its fields."}
+        )
+    members = payload["members"]
+    if type(members) is not dict or set(members) != {
+        str(identifier) for identifier in inputs.member_duids
+    }:
+        raise InvalidAnswers({"members": "Review the current household members."})
+    errors, normalized = {}, {}
+    source_fields = {
+        (item.identity, item.field): item.source
+        for item in inputs.fields
+        if item.entity == "member"
+    }
+    if (
+        type(payload["testing_acknowledged"]) is not bool
+        or payload["testing_acknowledged"] != testing
+    ):
+        errors["testing_acknowledged"] = (
+            "Confirm the displayed response mode before submitting."
+        )
+    for identifier in inputs.member_duids:
+        key, member = str(identifier), members[str(identifier)]
+        if type(member) is not dict or set(member) != {
+            field.name for field in MEMBER_FIELDS
+        }:
+            errors[f"members.{key}"] = "Review every field for this household member."
+            continue
+        normalized[key] = {}
+        for field in MEMBER_FIELDS:
+            path = f"members.{key}.{field.name}"
+            value = _text(member[field.name], field.max_length)
+            if (
+                value is None
+                or (field.required and not value)
+                or any(character in value for character in "\n\r\t")
+            ):
+                errors[path] = "Enter a valid value within the displayed length limit."
+                continue
+            if field.name == "email" and value:
+                try:
+                    addresses = {
+                        normalized_email(address)
+                        for address in split_email_addresses(value)
+                    }
+                except ConfigError:
+                    addresses = set()
+                if not addresses:
+                    errors[path] = (
+                        "Enter valid email addresses or leave this field blank."
+                    )
+                    continue
+                value = ", ".join(sorted(addresses))
+            source = source_fields.get((identifier, field.name))
+            # The UI renders optional known-null/unavailable inputs as blank.
+            # Preserve that value rather than manufacture a no-change proposal
+            # from an untouched blank. Explicit availability remains in baseline
+            # metadata, not inferred from the answer's nullable representation.
+            normalized[key][field.name] = (
+                None
+                if not field.required
+                and value == ""
+                and source is not None
+                and (not source.available or source.value is None)
+                else value
+            )
+    additional = _text(payload["additional_information"], ADDITIONAL_MAX_LENGTH)
+    if additional is None or (not additional_enabled and additional):
+        errors["additional_information"] = (
+            "Review the additional information field and its length limit."
+        )
+    if errors:
+        raise InvalidAnswers(errors)
+    return {
+        "schema": FORM_SCHEMA,
+        "members": normalized,
+        "additional_information": additional,
+    }

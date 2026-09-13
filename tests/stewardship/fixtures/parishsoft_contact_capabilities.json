@@ -1,0 +1,271 @@
+{
+  "source": "https://ps-fs-external-api-prod.azurewebsites.net/swagger/v2/swagger.json",
+  "captured_on": "2026-09-13",
+  "note": "Public schema-only excerpt; no provider or parish records, descriptions, examples or credentials.",
+  "schemas": {
+    "FamilyContactUpdateRequestModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "firstName": {
+          "maxLength": 30,
+          "type": "string",
+          "nullable": true
+        },
+        "lastName": {
+          "maxLength": 50,
+          "type": "string",
+          "nullable": true
+        },
+        "mailingName": {
+          "maxLength": 100,
+          "type": "string",
+          "nullable": true
+        },
+        "informalMailingName": {
+          "maxLength": 100,
+          "type": "string",
+          "nullable": true
+        },
+        "formalSalutation": {
+          "maxLength": 100,
+          "type": "string",
+          "nullable": true
+        },
+        "informalSalutation": {
+          "maxLength": 100,
+          "type": "string",
+          "nullable": true
+        },
+        "emailAddress": {
+          "type": "string",
+          "nullable": true
+        },
+        "primaryPhone": {
+          "type": "string",
+          "nullable": true
+        },
+        "emergencyPhone": {
+          "type": "string",
+          "nullable": true
+        },
+        "primaryAddress": {
+          "type": "string",
+          "nullable": true
+        },
+        "homeAddressLine1": {
+          "type": "string",
+          "nullable": true
+        },
+        "homeAddressLine2": {
+          "type": "string",
+          "nullable": true
+        },
+        "homeCity": {
+          "type": "string",
+          "nullable": true
+        },
+        "homeState": {
+          "type": "string",
+          "nullable": true
+        },
+        "homeCountry": {
+          "type": "string",
+          "nullable": true
+        },
+        "homePostalCode": {
+          "type": "string",
+          "nullable": true
+        },
+        "homePostalCodePlus4": {
+          "type": "string",
+          "nullable": true
+        },
+        "homeAddressPhone": {
+          "type": "string",
+          "nullable": true
+        },
+        "mailingAddressLine1": {
+          "type": "string",
+          "nullable": true
+        },
+        "mailingAddressLine2": {
+          "type": "string",
+          "nullable": true
+        },
+        "mailingCity": {
+          "type": "string",
+          "nullable": true
+        },
+        "mailingState": {
+          "type": "string",
+          "nullable": true
+        },
+        "mailingCountry": {
+          "type": "string",
+          "nullable": true
+        },
+        "mailingPostalCode": {
+          "type": "string",
+          "nullable": true
+        },
+        "mailingPostalCodePlus4": {
+          "type": "string",
+          "nullable": true
+        },
+        "mailingAddressPhone": {
+          "type": "string",
+          "nullable": true
+        },
+        "otherAddressLine1": {
+          "type": "string",
+          "nullable": true
+        },
+        "otherAddressLine2": {
+          "type": "string",
+          "nullable": true
+        },
+        "otherCity": {
+          "type": "string",
+          "nullable": true
+        },
+        "otherState": {
+          "type": "string",
+          "nullable": true
+        },
+        "otherCountry": {
+          "type": "string",
+          "nullable": true
+        },
+        "otherPostalCode": {
+          "type": "string",
+          "nullable": true
+        },
+        "otherPostalCodePlus4": {
+          "type": "string",
+          "nullable": true
+        },
+        "otherAddressPhone": {
+          "type": "string",
+          "nullable": true
+        },
+        "otherAddressFromDate": {
+          "type": "string",
+          "nullable": true
+        },
+        "otherAddressToDate": {
+          "type": "string",
+          "nullable": true
+        },
+        "sdiocesanId": {
+          "type": "string",
+          "nullable": true
+        }
+      }
+    },
+    "MemberContactUpdateRequestModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "firstName": {
+          "maxLength": 30,
+          "type": "string",
+          "nullable": true
+        },
+        "nickName": {
+          "maxLength": 30,
+          "type": "string",
+          "nullable": true
+        },
+        "middleName": {
+          "maxLength": 30,
+          "type": "string",
+          "nullable": true
+        },
+        "lastName": {
+          "maxLength": 50,
+          "type": "string",
+          "nullable": true
+        },
+        "maidenName": {
+          "maxLength": 50,
+          "type": "string",
+          "nullable": true
+        },
+        "dateOfBirth": {
+          "type": "string",
+          "format": "date",
+          "nullable": true
+        },
+        "dateOfDeath": {
+          "type": "string",
+          "format": "date",
+          "nullable": true
+        },
+        "language": {
+          "maxLength": 50,
+          "type": "string",
+          "nullable": true
+        },
+        "emailAddress": {
+          "maxLength": 150,
+          "type": "string",
+          "nullable": true
+        },
+        "homePhone": {
+          "maxLength": 25,
+          "minLength": 10,
+          "type": "string",
+          "nullable": true
+        },
+        "cellPhone": {
+          "maxLength": 25,
+          "minLength": 10,
+          "type": "string",
+          "nullable": true
+        },
+        "workPhone": {
+          "maxLength": 25,
+          "minLength": 10,
+          "type": "string",
+          "nullable": true
+        },
+        "pager": {
+          "maxLength": 25,
+          "minLength": 10,
+          "type": "string",
+          "nullable": true
+        },
+        "fax": {
+          "maxLength": 25,
+          "minLength": 10,
+          "type": "string",
+          "nullable": true
+        },
+        "gender": {
+          "maxLength": 1,
+          "type": "string",
+          "nullable": true
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/v2/families/{familyId}/contact": {
+      "put": {
+        "operationId": "FamilyUpdateContactInfo",
+        "schema": {
+          "$ref": "#/components/schemas/FamilyContactUpdateRequestModel"
+        }
+      }
+    },
+    "/api/v2/members/{memberId}/contact": {
+      "put": {
+        "operationId": "MemberUpdateContact",
+        "schema": {
+          "$ref": "#/components/schemas/MemberContactUpdateRequestModel"
+        }
+      }
+    }
+  }
+}
