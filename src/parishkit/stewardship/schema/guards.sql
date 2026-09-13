@@ -4320,6 +4320,9 @@ AS $$
 DECLARE
     response public.stewardship_submission;
     predecessor public.stewardship_proposed_change;
+    source_field jsonb;
+    expected_baseline jsonb;
+    carries_intent boolean;
 BEGIN
     IF TG_OP='DELETE' THEN
         SELECT * INTO response FROM public.stewardship_submission WHERE id=OLD.submission_id;
@@ -4357,19 +4360,31 @@ BEGIN
             IF NEW.execution NOT IN ('pending','conflict') OR NEW.superseded_by_id IS NOT NULL THEN
                 RAISE EXCEPTION 'New proposal cannot mint execution outcomes' USING ERRCODE='23514';
             END IF;
-            IF NEW.decision <> 'unreviewed' OR NEW.admin_value_set OR NEW.admin_value IS NOT NULL THEN
-                SELECT * INTO predecessor FROM public.stewardship_proposed_change
-                WHERE submission_id=response.prior_submission_id
-                  AND ROW(entity_kind,entity_key,field)=ROW(NEW.entity_kind,NEW.entity_key,NEW.field)
-                  AND execution NOT IN ('published','resolved_upstream','resolved_external','cancelled','superseded');
-                IF NOT FOUND
-                   OR NOT (NEW.submitted_value IS NOT DISTINCT FROM predecessor.submitted_value
-                       OR (NEW.field='email' AND lower(NEW.submitted_value#>>'{}')=lower(predecessor.submitted_value#>>'{}')) IS TRUE)
-                   OR ROW(NEW.baseline_available,NEW.baseline_value,NEW.decision,NEW.admin_value_set,NEW.admin_value)
-                       IS DISTINCT FROM ROW(predecessor.baseline_available,predecessor.baseline_value,predecessor.decision,predecessor.admin_value_set,predecessor.admin_value)
-                THEN
+            source_field := public.stewardship_response_field_source_v1(
+                response.validation_source_id,response.family_id,NEW.entity_key,NEW.field);
+            IF source_field IS NULL OR source_field IS DISTINCT FROM
+                jsonb_build_object('available',NEW.current_available,'value',NEW.current_value)
+            THEN
+                RAISE EXCEPTION 'Proposal comparison differs from its validation source' USING ERRCODE='23514';
+            END IF;
+            SELECT * INTO predecessor FROM public.stewardship_proposed_change
+            WHERE submission_id=response.prior_submission_id
+              AND ROW(entity_kind,entity_key,field)=ROW(NEW.entity_kind,NEW.entity_key,NEW.field)
+              AND execution NOT IN ('published','resolved_upstream','resolved_external','cancelled','superseded');
+            carries_intent := FOUND AND (NEW.submitted_value IS NOT DISTINCT FROM predecessor.submitted_value
+                OR (NEW.field='email' AND lower(NEW.submitted_value#>>'{}')=lower(predecessor.submitted_value#>>'{}')) IS TRUE);
+            expected_baseline := source_field;
+            IF carries_intent THEN
+                expected_baseline := jsonb_build_object('available',predecessor.baseline_available,'value',predecessor.baseline_value);
+                IF ROW(NEW.decision,NEW.admin_value_set,NEW.admin_value)
+                    IS DISTINCT FROM ROW(predecessor.decision,predecessor.admin_value_set,predecessor.admin_value) THEN
                     RAISE EXCEPTION 'Proposal review state requires the same prior intent' USING ERRCODE='23514';
                 END IF;
+            ELSIF NEW.decision <> 'unreviewed' OR NEW.admin_value_set OR NEW.admin_value IS NOT NULL THEN
+                RAISE EXCEPTION 'New proposal review state must be unreviewed' USING ERRCODE='23514';
+            END IF;
+            IF expected_baseline IS DISTINCT FROM jsonb_build_object('available',NEW.baseline_available,'value',NEW.baseline_value) THEN
+                RAISE EXCEPTION 'Proposal baseline requires exact source or prior intent' USING ERRCODE='23514';
             END IF;
         ELSE
             IF OLD.execution IN ('published','resolved_upstream','resolved_external','cancelled','superseded')

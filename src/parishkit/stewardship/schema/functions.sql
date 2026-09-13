@@ -7639,7 +7639,7 @@ AS $$
         JOIN public.stewardship_source_lease lease ON lease.owner_id=source.task_id
             AND lease.fence=source.source_fence
         JOIN public.stewardship_task_run task ON task.id=lease.owner_id
-        WHERE source.id=snapshot_id AND source.state='promoted'
+        WHERE source.id=stewardship_response_source_owner_v1.snapshot_id AND source.state='promoted'
           AND source.compacted_at IS NULL AND lease.phase IN ('full','delta')
           AND lease.expires_at>clock_timestamp() AND task.state='running'
           AND task.fence=lease.task_fence AND task.worker_id=lease.worker_id
@@ -7657,11 +7657,52 @@ CREATE FUNCTION public.stewardship_response_pin_required_v1(response_id uuid, so
 AS $$
     SELECT EXISTS (
         SELECT 1 FROM public.stewardship_submission response
-        WHERE response.id=response_id
-          AND (source_id IN (response.reviewed_source_id,response.validation_source_id)
+        WHERE response.id=stewardship_response_pin_required_v1.response_id
+          AND (stewardship_response_pin_required_v1.source_id IN (response.reviewed_source_id,response.validation_source_id)
             OR EXISTS (SELECT 1 FROM public.stewardship_proposed_change
-                WHERE submission_id=response.id AND current_source_id=source_id))
+                WHERE submission_id=response.id AND current_source_id=stewardship_response_pin_required_v1.source_id))
     )
+$$;
+
+-- Independent SQL reconstruction of the closed Phase 3A field vocabulary.
+-- New proposals must match this scoped validation source, not browser values.
+CREATE FUNCTION public.stewardship_response_field_source_v1(
+    input_snapshot uuid, input_family uuid, input_member text, input_field text)
+    RETURNS jsonb LANGUAGE plpgsql STABLE
+    SET search_path TO pg_catalog, public, pg_temp
+AS $$
+DECLARE
+    member_value jsonb;
+    contact_value jsonb;
+    source_name text;
+    email_value text;
+BEGIN
+    SELECT member.canonical::jsonb INTO member_value
+    FROM public.stewardship_snapshot_member membership
+    JOIN public.stewardship_source_member member ON member.id=membership.payload_id
+    JOIN public.stewardship_family_campaign family ON member.family_key=family.family_duid::text
+    WHERE membership.snapshot_id=input_snapshot AND membership.source_key=input_member
+      AND family.id=input_family AND member.canonical::jsonb->'active'='true'::jsonb
+      AND member.canonical::jsonb->'deceased'='false'::jsonb;
+    IF NOT FOUND THEN RETURN NULL; END IF;
+    IF input_field='email' THEN
+        SELECT contact.canonical::jsonb INTO contact_value
+        FROM public.stewardship_snapshot_contact membership
+        JOIN public.stewardship_source_contact contact ON contact.id=membership.payload_id
+        WHERE membership.snapshot_id=input_snapshot
+          AND contact.owner_kind='member' AND contact.owner_key=input_member;
+        IF contact_value IS NULL OR NOT (contact_value->'available' ? 'email') THEN
+            RETURN jsonb_build_object('available',false,'value',NULL);
+        END IF;
+        SELECT coalesce(string_agg(item->>'value',', ' ORDER BY (item->>'value') COLLATE "C"),'')
+            INTO email_value FROM jsonb_array_elements(contact_value->'emails') item;
+        RETURN jsonb_build_object('available',true,'value',email_value);
+    END IF;
+    source_name := CASE input_field WHEN 'first_name' THEN 'firstName'
+        WHEN 'middle_name' THEN 'middleName' WHEN 'last_name' THEN 'lastName' END;
+    IF source_name IS NULL THEN RETURN NULL; END IF;
+    RETURN jsonb_build_object('available',member_value ? source_name,'value',member_value->source_name);
+END;
 $$;
 
 CREATE FUNCTION public.stewardship_source_pin_guard() RETURNS trigger

@@ -64,7 +64,7 @@
       headers: {"Content-Type": "application/json", "X-CSRFToken": csrf,
         "Accept": "application/json"}, body: JSON.stringify(body)
     });
-    if (response.status === 403) { expired(); return null; }
+    if (response.status === 403) { submissionAttempted = false; expired(); return null; }
     if (!response.headers.get("Content-Type")?.includes("application/json")) {
       throw new Error("Unavailable response");
     }
@@ -112,19 +112,21 @@
   function conflictChoice(path, input, parent) {
     const conflict = conflicts.get(path);
     if (!conflict) return;
-    input.disabled = true;
+    input.disabled = conflict.choice === undefined;
     const group = node("fieldset", null, parent, {"data-conflict": path});
     node("legend", "Choose which value to keep before continuing", group);
-    [["Use my edit", conflict.edited], ["Use updated records", conflict.refreshed]].forEach(([label, value]) => {
+    [["Use my edit", conflict.edited], ["Use updated records", conflict.refreshed]].forEach(([label, value], index) => {
       const wrapper = node("label", null, group);
       const radio = node("input", null, wrapper, {type: "radio", name: "resolve-" + path});
+      radio.checked = conflict.choice === index;
       wrapper.append(document.createTextNode(" " + label + ": " + (value || "Blank")));
       radio.addEventListener("change", () => {
         input.value = value;
         input.disabled = false;
-        conflicts.delete(path);
+        conflict.choice = index;
         input.dispatchEvent(new Event("input"));
-        group.remove(); input.focus();
+        // Keep both values available while arrows/mouse change the selection.
+        // Only the explicit Review action commits the choice and leaves here.
       });
     });
   }
@@ -235,13 +237,13 @@
     node("button", "Review response", editor, {type: "submit"});
     editor.addEventListener("submit", (event) => {
       event.preventDefault();
-      if (conflicts.size) {
+      if ([...conflicts.values()].some((conflict) => conflict.choice === undefined)) {
         say("Choose a value for every changed record before reviewing your response.");
         root.querySelector("[data-conflict] input")?.focus();
         return;
       }
       fields.forEach(([input, definition]) => validateField(input, definition));
-      if (editor.reportValidity()) review();
+      if (editor.reportValidity()) { conflicts.clear(); review(); }
     });
   }
   function review() {
@@ -276,9 +278,10 @@
       label.append(document.createTextNode(" I understand this submits a disposable test response, not a live campaign response."));
       ack.addEventListener("change", () => { answers.testing_acknowledged = ack.checked; });
     }
-    const back = node("button", "Back to edit", confirmation, {type: "button"});
+    const actions = node("div", null, confirmation, {class: "actions"});
+    const back = node("button", "Back to edit", actions, {type: "button"});
     back.addEventListener("click", edit);
-    const submit = node("button", "Submit response", confirmation, {type: "submit"});
+    const submit = node("button", "Submit response", actions, {type: "submit"});
     confirmation.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (busy || !confirmation.reportValidity()) return;
@@ -288,6 +291,7 @@
       try {
         const result = await send("/family/submit", {baseline: form.baseline, answers});
         if (!result) return;
+        if (!result.accepted) submissionAttempted = false;
         if (result.accepted) {
           accepted = true;
           document.dispatchEvent(new Event("stewardship:family-finished"));
@@ -298,6 +302,7 @@
             "Your response was submitted. You are now signed out.", root);
           if (submittedThankYou) node("div", null, root).innerHTML = submittedThankYou;
         } else if (finished) {
+          expired();
           return;
         } else if (result.error === "review_required") {
           accept(result.form, true);

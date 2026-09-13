@@ -42,6 +42,8 @@ def derive_proposals(submission, validated):
         if not unchanged:
             same_intent = (
                 old is not None
+                and old.execution
+                not in RESOLVED_EXECUTIONS | {"cancelled", "superseded"}
                 and canonical_value(field.kind, old.submitted_value) == key
             )
             baseline = (
@@ -52,11 +54,7 @@ def derive_proposals(submission, validated):
             merge = merge_value(
                 field.kind, field.source, PriorChange(baseline, submitted)
             )
-            carry_decision = (
-                same_intent
-                and old.execution
-                not in RESOLVED_EXECUTIONS | {"cancelled", "superseded"}
-            )
+            carry_decision = same_intent
             new = ProposedChange.objects.create(
                 submission=submission,
                 entity_kind=field.entity,

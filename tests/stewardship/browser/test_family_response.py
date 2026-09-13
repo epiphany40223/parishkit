@@ -281,13 +281,67 @@ def test_competing_member_and_additional_edits_need_explicit_choices(
     expect(page.locator("[data-conflict]")).to_have_count(2)
     page.get_by_role("button", name="Review response").click()
     assert page.get_by_role("button", name="Submit response").count() == 0
-    # Choosing resolves/removes the control, so assert the retained value below
-    # rather than asking Playwright to verify a now-detached checked element.
-    page.get_by_role("radio", name="Use updated records: Updated record").click()
-    page.get_by_role("radio", name="Use my edit: My proposed note").click()
+    page.get_by_role("radio", name="Use updated records: Updated record").check()
+    page.get_by_role("radio", name="Use my edit: My proposed note").check()
     expect(page.get_by_label("First name (required)")).to_have_value("Updated record")
     expect(page.get_by_label("Additional information (optional)")).to_have_value(
         "My proposed note"
     )
     page.get_by_role("button", name="Review response").click()
     expect(page.get_by_role("button", name="Submit response")).to_be_visible()
+
+
+def test_conflict_arrows_keep_both_values_until_explicit_review(page, component_origin):
+    """Keyboard exploration must not destroy the edit or the alternative value."""
+    fresh = form_payload()
+    fresh["members"][0]["fields"][0]["value"] = "Updated records"
+    prepare(
+        page,
+        component_origin,
+        submit=lambda route: route.fulfill(
+            status=409, json={"error": "review_required", "form": fresh}
+        ),
+    )
+    page.get_by_role("button", name="Begin reviewing").click()
+    page.get_by_label("First name (required)").fill("My edit")
+    page.get_by_role("button", name="Review response").click()
+    page.get_by_role("button", name="Submit response").click()
+    mine = page.get_by_role("radio", name="Use my edit: My edit")
+    records = page.get_by_role("radio", name="Use updated records: Updated records")
+    mine.focus()
+    page.keyboard.press("ArrowDown")
+    expect(records).to_be_checked()
+    expect(mine).to_be_visible()
+    page.keyboard.press("ArrowUp")
+    expect(mine).to_be_checked()
+    expect(records).to_be_visible()
+    expect(page.get_by_label("First name (required)")).to_have_value("My edit")
+    page.get_by_role("button", name="Review response").click()
+    expect(page.get_by_role("button", name="Submit response")).to_be_visible()
+    assert "My edit" in page.locator("main").inner_text()
+
+
+@pytest.mark.parametrize("error", ["validation", "review_required"])
+def test_expiry_after_definite_rejection_warns_changes_were_not_saved(
+    page, component_origin, error
+):
+    """Only an indeterminate/in-flight request uses the ambiguous status warning."""
+    payload = {
+        "error": error,
+        "form": form_payload(),
+        "fields": {"members.3.first_name": "Enter a valid name."},
+    }
+    prepare(
+        page,
+        component_origin,
+        submit=lambda route: route.fulfill(status=409, json=payload),
+    )
+    page.get_by_role("button", name="Begin reviewing").click()
+    page.get_by_role("button", name="Review response").click()
+    page.get_by_role("button", name="Submit response").click()
+    expect(page.get_by_role("button", name="Review response")).to_be_visible()
+    page.clock.fast_forward(3_700_000)
+    expect(page.locator("#family-flow-message")).to_contain_text(
+        "Unsubmitted changes have not been saved"
+    )
+    assert "check your last submission time" not in page.locator("main").inner_text()
