@@ -224,14 +224,13 @@ High/Critical issues and all retained findings are resolved. The
 [acceptance index](../../guides/stewardship-phase-2-acceptance.md) records all
 demonstrations, test counts and coverage. DAT-03, BG-01, BG-05, ADM-02, ADM-03,
 ADM-04 and M2 are complete for this phase; DAT-04/DAT-05 retain only their named
-later consumers. PR #22 is open; its post-consolidation CI passes, and the
+later consumers. PR #22's post-consolidation CI passes, and the
 [supplemental review gate](../../guides/stewardship-phase-2-consolidation-review.md)
 is complete with a second successful dual-source round, no High/Critical
-findings and passing correction tests. The human has authorized merging after
-final-head validation passes. After that merge lands on `origin/main`, the next
-dependency-ready package is Phase 3A DAT-06; do not start the Family slice before
-then. The pre-consolidation SHAs above remain historical evidence, not acceptance
-of subsequent corrections.
+findings and passing correction tests. The authorized merge landed on
+`origin/main` as recorded in Phase 3A below, after final-head and merge-group CI
+passed. The pre-consolidation SHAs above remain historical evidence, not
+acceptance of subsequent corrections.
 
 1. [DAT-03](data.md#dat-03-versioned-parishsoft-source-corpus) → [BG-01](background-processing.md#bg-01-durable-task-scheduler-lease-and-recovery-substrate) → [BG-05](background-processing.md#bg-05-parishsoft-delta-and-full-refresh) → [ADM-02](admin-portal.md#adm-02-bootstrap-command-and-transactional-setup-wizard) → [ADM-03](admin-portal.md#adm-03-navigation-dashboard-indicators-and-configuration) → [ADM-04](admin-portal.md#adm-04-campaign-editor-content-schedules-and-previews).
 2. Complete source-promotion integration for [DAT-04](data.md#dat-04-family-campaign-identity-and-credentials) population and [DAT-05](data.md#dat-05-portal-users-and-authorization-policy-records) chair suggestions.
@@ -249,6 +248,16 @@ from that tip. The [Phase 3A checkpoint](../../guides/stewardship-phase-3a.md)
 tracks the minimal Family response increment, beginning with DAT-06's trusted
 baseline/submission contract. Gate 2 remains open until Phase 3B completes its
 integrated review; this branch does not include all remaining Family modules.
+
+The minimal flow and DOM-05 executable scenario are implemented, including
+restricted-role SQL guards, source reconciliation, real connection races,
+mobile browser navigation and final-submit/revisit handling. All three
+dual-model review rounds are complete; round three had no High/Critical
+findings and both Medium corrections have passing regression tests. See the
+[review ledger](../../guides/stewardship-phase-3a-reviews.md#round-3).
+Broader final validation and protected CI remain pending before this increment
+can merge. The owning checklists retain partial scope for packages whose
+remaining fields, modules or downstream consumers belong to later increments.
 
 1. [DAT-06](data.md#dat-06-immutable-submissions-and-proposal-overlay) → submission/follow-up slice of [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) → [DAT-08](data.md#dat-08-merge-and-source-reconciliation-services).
 2. [FAM-01](parishioner-portal.md#fam-01-availability-code-entry-and-secure-link-exchange) → [FAM-02](parishioner-portal.md#fam-02-in-memory-form-engine-and-navigation) → minimal [FAM-03](parishioner-portal.md#fam-03-family-census-step) and [FAM-06](parishioner-portal.md#fam-06-additional-information-review-and-atomic-submit) response flow.

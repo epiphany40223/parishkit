@@ -72,10 +72,12 @@ default profile passes 4,533 tests in 44 seconds (2,674 explicit opt-in skips).
 The first real cross-domain Family acceptance node now marks scenario 5 as
 partial in the [acceptance manifest](../development/stewardship-acceptance.yaml).
 
-Broader validation and the remaining dual-model review rounds are in progress;
-[review/correction evidence](stewardship-phase-3a-reviews.md) records the first
-two completed reviews and their regression checks. No review gate or whole Family/data package
-is claimed complete; remaining census fields/modules belong to Phase 3B.
+Three dual-model review/correction rounds are complete; the final round found
+no High/Critical issues and both accepted Medium findings have passing focused
+regressions. [Review/correction evidence](stewardship-phase-3a-reviews.md)
+records the reviewed commits and results. Broader validation remains in
+progress. No whole Family/data package or Gate 2 is claimed complete; remaining
+census fields/modules belong to Phase 3B.
 
 ## Schema audit
 
@@ -84,12 +86,12 @@ SQL and first verified against the pre-change checked-in fingerprint. A fresh
 current installation was then compared per catalog object. No old object was
 removed; no existing column, constraint, index, relation/ACL, or row policy
 changed. The delta is five response tables, 80 columns, 124 constraints,
-36 indexes, 12 response functions, and 11 triggers. Only two existing
+36 indexes, 13 response functions, and 11 triggers. Only two existing
 functions change: source-pin admission/protection and activation's requirement
 that invalidated Testing response details have been removed. Current model DDL
 independently matches the fresh SQL tables, including types/defaults/constraints
 and indexes; the fingerprint was updated only after reviewing this delta.
 
 The current inventory totals 128 relations, 1,467 columns, 2,098 constraints,
-660 indexes, 298 functions, 309 triggers and 28 unchanged policies. Existing
+660 indexes, 299 functions, 309 triggers and 28 unchanged policies. Existing
 retained development databases were neither upgraded nor deleted.

@@ -106,3 +106,54 @@ inventory is now 298; all other catalog counts are unchanged. No upgrade or
 deletion of retained databases occurred. Full validation and the third review
 remain required; this round's High finding means the review loop cannot exit
 at this point.
+
+## Round 3
+
+The correction review covered `844d01a439372effd1c52cf641b1d72a423fcbbd`
+through `b4c95ecf984cd414d79e9653deb8aad3346d56e2`, clean tree
+`f6a785324349293f043b7e9eb29fc7a251be2786`. Session
+`20260913-153455-d4362d` completed one Claude and one Codex reviewer without
+sharding, failed agents, degradation, mismatch or salvage. Verdict: **COMMENT**;
+two validated Medium findings from 13 raw findings, and no High/Critical
+finding. The finalized artifact SHA-256 is
+`366ad007bf3cb019ab056015257399c9a624e3945c5a2514d6f38e82fc7a9b43`.
+
+| # | Source | Severity | Disposition |
+| --- | --- | --- | --- |
+| 1 | Claude | Medium | Accept: a rejected retry cannot establish whether an earlier ambiguous Submit committed; preserve that uncertainty through rejection and expiry. |
+| 2 | Codex | Medium | Accept: SQL must derive pending/conflict/no-change relationships from authenticated, canonically compared values, not merely validate each value independently. |
+
+Both corrections are implemented and their focused tests pass. The browser
+keeps a sticky uncertainty flag until explicit acceptance, with a neutral shared
+expiry heading. Six new regressions cover retry denial/validation rejection
+after a lost response across Chromium, Firefox and WebKit; all 45 Family browser
+tests pass in 58 seconds.
+
+The SQL insert guard now rejects unchanged actionable proposals and execution
+states inconsistent with the actual baseline/current/proposed relationship.
+A closed comparison helper matches the supported Python text/email rules,
+including Unicode normalization, whitespace and case folding. The final
+authority/revisit/concurrency/comparison/schema-audit batch passes 65 tests in
+65 seconds. The audited fresh-install catalog adds only that helper; the
+inventory is 299 functions, with all other counts unchanged and no retained
+database upgrade or deletion.
+
+After applying both corrections and updating the independently audited schema
+fingerprint, the complete Family-response/schema batch passes 142 PostgreSQL
+tests in 137 seconds. The final default profile passes 4,534 tests in 47 seconds
+(2,761 explicit opt-in skips and two existing Valkey-client deprecation
+warnings). Ruff check/format, repository Markdown lint, and Django model drift
+checks pass.
+
+Before these final corrections, the complete response/schema batch passed 121
+tests in 129 seconds, the default profile passed 4,534 tests in 46 seconds
+(2,734 explicit opt-in skips), and the broad shared-component/Family browser
+suite passed 456 tests in 530 seconds. These are scoped pre-correction results,
+not claims of a final-head full-suite pass. The broader database run is still
+being evaluated; its setup-exchange failure requires diagnosis despite all 30
+tests in that file passing an isolated rerun.
+
+The required three-round review loop has satisfied its final-round severity
+and focused-fix conditions. Final validation and current-head protected CI
+remain required before merging; an extra clean review solely because final
+round corrections were verified is not required by the controlling workflow.
