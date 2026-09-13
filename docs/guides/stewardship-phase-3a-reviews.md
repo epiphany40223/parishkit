@@ -62,3 +62,47 @@ constraint, index, policy or trigger definitions changed. Only the already
 documented source-pin and token-activation functions differ from merged main;
 new response guards were tightened. No retained development database was
 upgraded or deleted.
+
+## Round 2
+
+The correction review covered `dbe1bf0e531941105eb83dd709c2f51ca5219e24`
+through `844d01a439372effd1c52cf641b1d72a423fcbbd`, clean tree
+`00ed8a18de43e1f45b6f087fd28b76fba387c140`. Session
+`20260913-151606-ed11f1` used one Claude and one Codex reviewer, with no
+sharding, failed agents, degradation, mismatch or salvage. Verdict:
+**REQUEST_CHANGES**; five validated findings from 15 raw findings. The finalized
+artifact SHA-256 is
+`a799cbf3c57bfb56bd0db7337b645ae0e7e5fc63d2d6250c13a106a6b907d31d`.
+
+| # | Source | Severity | Disposition |
+| --- | --- | --- | --- |
+| 1 | Claude | High | Accept: explicitly qualify the SQL helper's snapshot argument; otherwise a same-named column shadows it. |
+| 2 | Claude | Medium | Duplicate/coverage of 1: probe an obsolete snapshot under an actually live source owner, for both pin insertion and proposal update. |
+| 3 | Claude | Medium | Accept: definite rejected submissions clear the ambiguous in-flight flag before later session expiry. |
+| 4 | Claude | Medium | Accept: keyboard/mouse conflict choices remain visible and reversible until explicit Review. |
+| 5 | Codex | Medium | Accept: authenticate every inserted proposal's comparison provenance against the protected source or same pending intent, including default unreviewed proposals. |
+
+The source-field SQL helper independently reconstructs the four supported
+Member fields from the exact validation snapshot and active household. Default
+review state cannot bypass comparison validation, and a terminal old proposal
+does not donate its obsolete baseline to a new request. Regression tests probe
+forged availability/values and real live-worker non-current snapshot attempts.
+Field-by-field SQL/Python parity covers ordinary, multiple, null and missing
+emails and missing middle names. The focused authority/field/schema-audit batch
+passes 24 tests in 33 seconds; the earlier integrated correction batch passes
+59 tests in 70 seconds. Browser corrections pass 39 tests across all three
+engines, including arrow-key exploration and expiry after definite rejection.
+
+Nine additional real-connection concurrency tests pass: either ordering of
+relevant/unrelated promotion and Submit; simultaneous duplicate Submit; both
+baseline/promotion orderings; and compaction racing Submit/cancellation of a
+real expiring form pin. Tests observe actual blocked database locks and have
+bounded failure paths. They were prototyped against a separate idle disposable
+PostgreSQL instance, then added to the maintained suite and rerun there.
+
+The repeated fresh-install audit adds one closed field-source helper and
+changes only the previously documented response functions. The function
+inventory is now 298; all other catalog counts are unchanged. No upgrade or
+deletion of retained databases occurred. Full validation and the third review
+remain required; this round's High finding means the review loop cannot exit
+at this point.
