@@ -1688,13 +1688,21 @@ remain required before Phase 3A; Gate 2 remains after the Family response slice.
 
 Scope: [Phase 3](../../plans/stewardship/overall.md#phase-3-complete-family-response-vertical-slice).
 
-- [ ] M3.01 — Demonstrate the minimal login-to-submit-to-repeat-visit vertical slice.
+- [x] M3.01 — Demonstrate the minimal login-to-submit-to-repeat-visit vertical slice.
 - [ ] M3.02 — Exercise every enabled-module combination and all Family response fields.
 - [ ] M3.03 — Prove in-memory drafts, atomic submission, and stale/duplicate protection.
 - [ ] M3.04 — Demonstrate upstream merge, proposal provenance, and follow-up supersession.
 - [ ] M3.05 — Complete representative mobile/accessibility/privacy evidence and Gate 2.
 
-Evidence: Not started.
+Evidence: Phase 3A's minimal census-only flow is demonstrated at implementation
+`eaefbf3`. The real HTTP/database DOM-05 node covers source-backed login,
+no-change and changed submissions, logout and effective revisit. Final focused
+validation passes 142 response/schema PostgreSQL tests and 45 Family browser
+tests across three engines; the [scope evidence](../../guides/stewardship-phase-3a.md)
+and [three-round review ledger](../../guides/stewardship-phase-3a-reviews.md)
+record boundaries and results. M3.02–.05 remain incomplete until the full
+Phase 3B module/field and integrated gate demonstrations. This is not Gate 2
+release or a claim that the remaining Family task packages are complete.
 
 ## Gate 2: Data, privacy, and Family UX
 

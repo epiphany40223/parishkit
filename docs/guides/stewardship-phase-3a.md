@@ -75,8 +75,12 @@ partial in the [acceptance manifest](../development/stewardship-acceptance.yaml)
 Three dual-model review/correction rounds are complete; the final round found
 no High/Critical issues and both accepted Medium findings have passing focused
 regressions. [Review/correction evidence](stewardship-phase-3a-reviews.md)
-records the reviewed commits and results. Broader validation remains in
-progress. No whole Family/data package or Gate 2 is claimed complete; remaining
+records the reviewed commits and results. Final local checks pass 142
+response/schema PostgreSQL tests, 492 complete browser tests and 4,534 default
+tests. The ledger separately documents a diagnosed backward-clock failure in
+the earlier broad database run and its 51-test passing same-server recheck;
+clean current-head full-suite CI is required before merge. No whole Family/data
+package or Gate 2 is claimed complete; remaining
 census fields/modules belong to Phase 3B.
 
 ## Schema audit

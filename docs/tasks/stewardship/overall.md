@@ -255,8 +255,10 @@ mobile browser navigation and final-submit/revisit handling. All three
 dual-model review rounds are complete; round three had no High/Critical
 findings and both Medium corrections have passing regression tests. See the
 [review ledger](../../guides/stewardship-phase-3a-reviews.md#round-3).
-Broader final validation and protected CI remain pending before this increment
-can merge. The owning checklists retain partial scope for packages whose
+Final targeted local validation passes, including the complete 492-test browser
+suite. The ledger retains the earlier broad database run's clock-regression
+failure and passing recheck; clean full-suite protected CI remains required
+before merge. The owning checklists retain partial scope for packages whose
 remaining fields, modules or downstream consumers belong to later increments.
 
 1. [DAT-06](data.md#dat-06-immutable-submissions-and-proposal-overlay) → submission/follow-up slice of [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) → [DAT-08](data.md#dat-08-merge-and-source-reconciliation-services).

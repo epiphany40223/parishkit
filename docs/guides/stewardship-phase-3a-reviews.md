@@ -149,11 +149,27 @@ Before these final corrections, the complete response/schema batch passed 121
 tests in 129 seconds, the default profile passed 4,534 tests in 46 seconds
 (2,734 explicit opt-in skips), and the broad shared-component/Family browser
 suite passed 456 tests in 530 seconds. These are scoped pre-correction results,
-not claims of a final-head full-suite pass. The broader database run is still
-being evaluated; its setup-exchange failure requires diagnosis despite all 30
-tests in that file passing an isolated rerun.
+not claims of a final-head full-suite pass.
+
+The broader serial database run completed with 2,178 passes and one failure in
+48 minutes, with measured coverage of 93.76% statements and 85.01% branches.
+It began before the later corrections and is not final-head passing gate
+evidence. Its one setup-exchange failure occurred while acquiring the fixture's
+source lease, before the cancellation behavior: the disposable PostgreSQL log
+timestamps the rejection at `2026-09-13T19:43:00.320Z`, but the preceding
+database-clock read supplied heartbeat `2026-09-13T19:43:00.321864Z`. The clock
+had stepped backward; the existing guard correctly rejected a future heartbeat.
+The task/lease expiry was five minutes later, not a slow-test timeout. All 30
+exchange tests passed separately. The final same-server source/exchange/worker
+authority rerun then passed all 51 tests in 43 seconds. No time guard or test
+assertion was weakened, and no automatic retry or skipped failure was introduced.
+The final complete browser suite passes 492 tests in 563 seconds across all
+three engines, including the shared components as well as the Family flow.
+CI's existing eight isolated
+shards must provide the clean full-suite, final-head coverage gate before merge.
 
 The required three-round review loop has satisfied its final-round severity
-and focused-fix conditions. Final validation and current-head protected CI
-remain required before merging; an extra clean review solely because final
+and focused-fix conditions. Final targeted local validation passes; the
+current-head protected full-suite CI gate remains required before merging.
+An extra clean review solely because final
 round corrections were verified is not required by the controlling workflow.
