@@ -7664,19 +7664,45 @@ AS $$
     )
 $$;
 
--- SQL parity with the closed text/email portion of family-comparison-v1.
+-- SQL parity with the closed census portion of family-comparison-v1.
 -- Explicit Unicode whitespace and default case folding avoid database-locale
 -- changes turning a no-change answer into a pending/conflicting proposal.
 CREATE FUNCTION public.stewardship_response_comparison_v1(input_field text, input_value jsonb)
     RETURNS text LANGUAGE plpgsql IMMUTABLE
     SET search_path TO pg_catalog, public, pg_temp
 AS $$
-DECLARE normalized_value text;
+DECLARE normalized_value text; component text; normalized_address jsonb;
 BEGIN
-    IF input_field NOT IN ('first_name','middle_name','last_name','email') THEN
+    IF input_field IS NULL OR input_field NOT IN (
+        'first_name','middle_name','last_name','email',
+        'home_address','mailing_address','email_opt_out') THEN
         RAISE EXCEPTION 'Unsupported response comparison field' USING ERRCODE='23514';
     END IF;
     IF input_value IS NULL OR input_value='null'::jsonb THEN RETURN NULL; END IF;
+    IF input_field='email_opt_out' THEN
+        IF jsonb_typeof(input_value) <> 'boolean' THEN
+            RAISE EXCEPTION 'Invalid response boolean value' USING ERRCODE='23514';
+        END IF;
+        RETURN input_value::text;
+    END IF;
+    IF input_field IN ('home_address','mailing_address') THEN
+        IF jsonb_typeof(input_value) <> 'object' THEN
+            RAISE EXCEPTION 'Invalid response address value' USING ERRCODE='23514';
+        END IF;
+        IF NOT (input_value ?& ARRAY['line1','line2','city','region','postal_code','country'])
+           OR input_value-ARRAY['line1','line2','city','region','postal_code','country'] <> '{}'::jsonb THEN
+            RAISE EXCEPTION 'Invalid response address components' USING ERRCODE='23514';
+        END IF;
+        normalized_address := '{}'::jsonb;
+        FOREACH component IN ARRAY ARRAY['line1','line2','city','region','postal_code','country'] LOOP
+            IF jsonb_typeof(input_value->component) <> 'string' THEN
+                RAISE EXCEPTION 'Invalid response address component' USING ERRCODE='23514';
+            END IF;
+            normalized_address := normalized_address || jsonb_build_object(component,
+                public.stewardship_response_comparison_v1('email',input_value->component));
+        END LOOP;
+        RETURN normalized_address::text;
+    END IF;
     IF jsonb_typeof(input_value) <> 'string' OR length(input_value#>>'{}')>8192 THEN
         RAISE EXCEPTION 'Invalid response comparison value' USING ERRCODE='23514';
     END IF;
@@ -7687,6 +7713,59 @@ BEGIN
     END IF;
     RETURN normalized_value;
 END;
+$$;
+
+-- Guard the normalized persisted address as well as its comparison type. The
+-- ISO/US vocabularies mirror the pinned Python dataset; exhaustive parity tests
+-- make a dependency update fail until both closed schemas are deliberately updated.
+CREATE FUNCTION public.stewardship_response_address_guard_v1(input_value jsonb)
+    RETURNS void LANGUAGE plpgsql IMMUTABLE
+    SET search_path TO pg_catalog, public, pg_temp
+AS $$
+DECLARE component text; value text; maximum integer;
+BEGIN
+    IF input_value IS NULL THEN
+        RAISE EXCEPTION 'Missing response address' USING ERRCODE='23514';
+    END IF;
+    IF input_value='null'::jsonb THEN RETURN; END IF;
+    PERFORM public.stewardship_response_comparison_v1('home_address',input_value);
+    FOR component,value IN SELECT * FROM jsonb_each_text(input_value) LOOP
+        maximum := CASE component WHEN 'line1' THEN 200 WHEN 'line2' THEN 200
+            WHEN 'city' THEN 100 WHEN 'region' THEN 100 WHEN 'postal_code' THEN 32
+            WHEN 'country' THEN 2 END;
+        IF length(value)>maximum
+           OR value IS DISTINCT FROM public.stewardship_response_comparison_v1('first_name',to_jsonb(value))
+           OR value ~ U&'[\0001-\001F\007F\0085\2028\2029]' THEN
+            RAISE EXCEPTION 'Invalid normalized response address' USING ERRCODE='23514';
+        END IF;
+    END LOOP;
+    IF input_value->>'line1'='' OR input_value->>'city'=''
+       OR NOT (input_value->>'country'=ANY(string_to_array(
+           'AD,AE,AF,AG,AI,AL,AM,AO,AQ,AR,AS,AT,AU,AW,AX,AZ,BA,BB,BD,BE,BF,BG,BH,BI,BJ,BL,BM,BN,BO,BQ,BR,BS,BT,BV,BW,BY,BZ,CA,CC,CD,CF,CG,CH,CI,CK,CL,CM,CN,CO,CR,CU,CV,CW,CX,CY,CZ,DE,DJ,DK,DM,DO,DZ,EC,EE,EG,EH,ER,ES,ET,FI,FJ,FK,FM,FO,FR,GA,GB,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GR,GS,GT,GU,GW,GY,HK,HM,HN,HR,HT,HU,ID,IE,IL,IM,IN,IO,IQ,IR,IS,IT,JE,JM,JO,JP,KE,KG,KH,KI,KM,KN,KP,KR,KW,KY,KZ,LA,LB,LC,LI,LK,LR,LS,LT,LU,LV,LY,MA,MC,MD,ME,MF,MG,MH,MK,ML,MM,MN,MO,MP,MQ,MR,MS,MT,MU,MV,MW,MX,MY,MZ,NA,NC,NE,NF,NG,NI,NL,NO,NP,NR,NU,NZ,OM,PA,PE,PF,PG,PH,PK,PL,PM,PN,PR,PS,PT,PW,PY,QA,RE,RO,RS,RU,RW,SA,SB,SC,SD,SE,SG,SH,SI,SJ,SK,SL,SM,SN,SO,SR,SS,ST,SV,SX,SY,SZ,TC,TD,TF,TG,TH,TJ,TK,TL,TM,TN,TO,TR,TT,TV,TW,TZ,UA,UG,UM,US,UY,UZ,VA,VC,VE,VG,VI,VN,VU,WF,WS,YE,YT,ZA,ZM,ZW',',')))
+       OR (input_value->>'country'='US' AND (
+           NOT (input_value->>'region'=ANY(string_to_array(
+               'AA,AE,AK,AL,AP,AR,AS,AZ,CA,CO,CT,DC,DE,FL,GA,GU,HI,IA,ID,IL,IN,KS,KY,LA,MA,MD,ME,MI,MN,MO,MP,MS,MT,NC,ND,NE,NH,NJ,NM,NV,NY,OH,OK,OR,PA,PR,RI,SC,SD,TN,TX,UM,UT,VA,VI,VT,WA,WI,WV,WY',',')))
+           OR input_value->>'postal_code' !~ '^[0-9]{5}(-[0-9]{4})?$')) THEN
+        RAISE EXCEPTION 'Incomplete or invalid country-aware response address' USING ERRCODE='23514';
+    END IF;
+END;
+$$;
+
+-- The verified loader does not establish separate home/mailing or all-parish
+-- email suppression semantics. Prove the exact Family/snapshot identity and
+-- retain explicit unavailability, never reinterpret a primary address or flag.
+CREATE FUNCTION public.stewardship_response_household_source_v1(
+    input_snapshot uuid, input_family uuid, input_key text, input_field text)
+    RETURNS jsonb LANGUAGE sql STABLE
+    SET search_path TO pg_catalog, public, pg_temp
+AS $$
+    SELECT jsonb_build_object('available',false,'value',NULL)
+    FROM public.stewardship_snapshot_family membership
+    JOIN public.stewardship_family_campaign family ON membership.source_key=family.family_duid::text
+    WHERE membership.snapshot_id=stewardship_response_household_source_v1.input_snapshot
+      AND family.id=stewardship_response_household_source_v1.input_family
+      AND family.family_duid::text=stewardship_response_household_source_v1.input_key
+      AND stewardship_response_household_source_v1.input_field IN ('home_address','mailing_address','email_opt_out')
 $$;
 
 -- Independent SQL reconstruction of the closed Phase 3A field vocabulary.

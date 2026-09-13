@@ -278,6 +278,12 @@ census step; see the [increment checkpoints](../../guides/stewardship-family-cen
 The controlling plan records why remaining Member and stewardship-module
 work follows separately. Gate 2 is not released by this subdivision.
 
+The household implementation and its three review/correction rounds are
+complete with [recorded evidence](../../guides/stewardship-family-census-reviews.md);
+final-head CI and protected merge remain pending. FAM-03.01 through .04 are
+complete. The remaining FAM-03.05 non-census omission integration accompanies
+FAM-05.06 rather than blocking the next Member-census increment.
+
 1. Finish [FAM-03](parishioner-portal.md#fam-03-family-census-step); complete [FAM-04](parishioner-portal.md#fam-04-existing-and-proposed-member-steps), [FAM-05](parishioner-portal.md#fam-05-ministry-and-financial-stewardship-steps), [FAM-06](parishioner-portal.md#fam-06-additional-information-review-and-atomic-submit), and [FAM-07](parishioner-portal.md#fam-07-repeat-visits-and-source-change-merge).
 2. Exercise representative [FAM-08](parishioner-portal.md#fam-08-responsive-accessibility-privacy-and-browser-completion) cases continuously.
 3. Complete [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) follow-up derivation and required [RPT-02](reports.md#rpt-02-population-and-calculation-library) calculations.

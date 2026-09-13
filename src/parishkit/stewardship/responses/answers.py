@@ -6,12 +6,12 @@ Unknown fields and household identities are rejected rather than silently
 discarded, so a forged/stale browser cannot choose the scope of validation.
 """
 
-import unicodedata
-
 from parishkit.config import ConfigError
 from parishkit.parishsoft import split_email_addresses
 from parishkit.stewardship.accounts.policy_schema import normalized_email
 
+from .census import HOUSEHOLD_FIELDS, InvalidHousehold, validate_household
+from .census import clean_text as _text
 from .inputs import ADDITIONAL_MAX_LENGTH, FORM_SCHEMA, MEMBER_FIELDS, CensusInputs
 
 
@@ -22,22 +22,6 @@ class InvalidAnswers(ValueError):
         """Keep private input out of exception strings, logs and traceback arguments."""
         self.fields = dict(fields)
         super().__init__("Please review the indicated Family form fields.")
-
-
-def _text(value, limit):
-    """Normalize accepted Unicode while rejecting controls and oversized raw input."""
-    if (
-        type(value) is not str
-        or len(value) > limit
-        or any(
-            (ord(character) < 32 and character not in "\n\r\t")
-            or 0xD800 <= ord(character) <= 0xDFFF
-            or ord(character) == 127
-            for character in value
-        )
-    ):
-        return None
-    return unicodedata.normalize("NFC", value).strip()
 
 
 def validate_answers(payload, inputs, *, additional_enabled, testing):
@@ -55,6 +39,7 @@ def validate_answers(payload, inputs, *, additional_enabled, testing):
     ):
         raise TypeError("Trusted form definition and namespace are required.")
     if type(payload) is not dict or set(payload) != {
+        "family",
         "members",
         "additional_information",
         "testing_acknowledged",
@@ -68,6 +53,22 @@ def validate_answers(payload, inputs, *, additional_enabled, testing):
     }:
         raise InvalidAnswers({"members": "Review the current household members."})
     errors, normalized = {}, {}
+    try:
+        household = validate_household(
+            payload["family"],
+            {
+                field.field: field.source
+                for field in inputs.fields
+                if field.entity == "family" and field.field in HOUSEHOLD_FIELDS
+            },
+        )
+    except InvalidHousehold as error:
+        errors.update(
+            {
+                "family" if field == "family" else f"family.{field}": message
+                for field, message in error.fields.items()
+            }
+        )
     source_fields = {
         (item.identity, item.field): item.source
         for item in inputs.fields
@@ -134,6 +135,7 @@ def validate_answers(payload, inputs, *, additional_enabled, testing):
         raise InvalidAnswers(errors)
     return {
         "schema": FORM_SCHEMA,
+        "family": household,
         "members": normalized,
         "additional_information": additional,
     }

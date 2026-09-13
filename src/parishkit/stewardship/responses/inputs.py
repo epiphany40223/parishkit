@@ -11,11 +11,12 @@ import hashlib
 import json
 from dataclasses import dataclass
 
+from .census import ADDRESS_LIMITS, FAMILY_FIELDS, country_choices, us_regions
 from .comparison import COMPARISON_VERSION, ValueKind, canonical_value
 from .merge import KnownValue
 
-FORM_SCHEMA = "family-census-slice-v1"
-PROJECTION_VERSION = "family-inputs-v1"
+FORM_SCHEMA = "family-census-household-v1"
+PROJECTION_VERSION = "family-inputs-v2"
 ADDITIONAL_MAX_LENGTH = 5000
 
 
@@ -131,6 +132,12 @@ def definition_digest(configuration):
                 )
                 for field in MEMBER_FIELDS
             ],
+            "household_fields": [
+                (field.name, field.kind.value, field.label) for field in FAMILY_FIELDS
+            ],
+            "address_limits": dict(ADDRESS_LIMITS),
+            "country_choices": country_choices(),
+            "us_regions": sorted(us_regions()),
             "name": configuration["name"],
             "start_date": configuration["start_date"],
             "end_date": configuration["end_date"],
@@ -171,6 +178,19 @@ def member_field_value(member, contact, field):
     return KnownValue(field.source_name in member, member.get(field.source_name))
 
 
+def family_field_value(field):
+    """Keep unsupported source semantics unavailable rather than invent mappings.
+
+    The verified normalized source has a primary contact address, not separate
+    home/mailing addresses or their country. Its sendNoMail flag is not email
+    opt-out. A future verified read adapter must change this shared projection
+    and its independent SQL reconstruction together before claiming availability.
+    """
+    if field not in FAMILY_FIELDS:
+        _unavailable()
+    return KnownValue(False)
+
+
 def census_inputs(family, members, contacts, *, configuration):
     """Build the complete active-household projection from trusted scoped payloads.
 
@@ -203,6 +223,23 @@ def census_inputs(family, members, contacts, *, configuration):
             )
         )
     active, seen = [], set()
+    # Registration date is read-only but the current verified loader does not
+    # supply it. Its explicit unknown still belongs to the displayed projection.
+    fields.append(
+        FieldInput(
+            "family",
+            family_duid,
+            "registration_date",
+            ValueKind.DATE,
+            KnownValue(False),
+        )
+    )
+    fields.extend(
+        FieldInput(
+            "family", family_duid, field.name, field.kind, family_field_value(field)
+        )
+        for field in FAMILY_FIELDS
+    )
     for member in members:
         identifier = member.get("memberDUID")
         if (

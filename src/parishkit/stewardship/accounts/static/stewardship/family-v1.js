@@ -11,6 +11,7 @@
   let form = null, answers = null, initial = null, busy = false, finished = false;
   let accepted = false, submissionAttempted = false;
   let uncertainSubmission = false;
+  let separateMailing = null;
   const conflicts = new Map();
 
   function node(tag, text, parent, attributes = {}) {
@@ -32,13 +33,17 @@
     element.innerHTML = form.content[slot];
   }
   function canonical(value, name) {
+    if (value === null || typeof value === "boolean") return JSON.stringify(value);
+    if (typeof value === "object") return JSON.stringify(Object.keys(value).sort().map(
+      (key) => [key, canonical(value[key], key)]));
     const result = value.normalize("NFC").trim();
     return name === "email" ? result.toLowerCase().split(/[,;]/).map(
       (address) => address.trim()).filter(Boolean).sort().join(",") : result;
   }
   function dirty() {
     if (!answers || !initial) return false;
-    return canonical(answers.additional_information, "additional") !==
+    return canonical(answers.family, "family") !== canonical(initial.family, "family") ||
+      canonical(answers.additional_information, "additional") !==
       canonical(initial.additional_information, "additional") ||
       Object.entries(answers.members).some(([id, fields]) =>
         Object.entries(fields).some(([name, value]) => canonical(value, name) !==
@@ -46,6 +51,7 @@
   }
   function clear() {
     form = answers = initial = null;
+    separateMailing = null;
     conflicts.clear();
     root.replaceChildren();
   }
@@ -73,16 +79,40 @@
   }
   function accept(next, preserve) {
     const previous = answers, before = initial;
+    const mailingDraft = separateMailing;
     form = next;
     conflicts.clear();
-    answers = {members: {}, additional_information: next.additional_enabled ? next.additional_information : "",
+    answers = {family: Object.fromEntries(next.household.fields.map(
+      (field) => [field.name, structuredClone(field.value)])),
+      members: {}, additional_information: next.additional_enabled ? next.additional_information : "",
       testing_acknowledged: false};
+    answers.family.mailing_same_as_home = next.household.mailing_same_as_home;
+    separateMailing = null;
     next.members.forEach((member) => {
       answers.members[member.id] = Object.fromEntries(member.fields.map(
         (field) => [field.name, field.value]));
     });
     initial = structuredClone(answers);
     if (preserve && previous && before) {
+      next.household.fields.forEach(({name}) => {
+        if (canonical(previous.family[name], name) !== canonical(before.family[name], name)) {
+          answers.family[name] = structuredClone(previous.family[name]);
+          if (canonical(before.family[name], name) !== canonical(initial.family[name], name) &&
+              canonical(previous.family[name], name) !== canonical(initial.family[name], name)) {
+            conflicts.set("family." + name, {edited: previous.family[name], refreshed: initial.family[name]});
+          }
+        }
+      });
+      // Refresh never uses a convenience flag to overwrite a competing address.
+      const requestedSame = previous.family.mailing_same_as_home !== before.family.mailing_same_as_home ?
+        previous.family.mailing_same_as_home : initial.family.mailing_same_as_home;
+      const addressChoice = conflicts.has("family.home_address") || conflicts.has("family.mailing_address") ||
+        canonical(answers.family.home_address, "address") !== canonical(answers.family.mailing_address, "address");
+      answers.family.mailing_same_as_home = requestedSame && !addressChoice;
+      if (requestedSame && addressChoice) {
+        conflicts.set("family.mailing_same_as_home", {edited: true, refreshed: false});
+      }
+      separateMailing = mailingDraft;
       // Only actual edits survive. A removed person/field is never rendered or
       // resent; untouched fields adopt the newly admitted effective values.
       Object.entries(answers.members).forEach(([id, fields]) => {
@@ -144,7 +174,9 @@
     const list = node("ul", null, message);
     Object.entries(errors).forEach(([path, text]) => {
       const match = /^members\.([0-9]+)\.([a-z_]+)$/.exec(path);
+      const household = /^family\.([a-z_]+)(?:\.([a-z0-9_]+))?$/.exec(path);
       const id = match ? "member-" + match[1] + "-" + match[2] :
+        household ? "family-" + household[1] + (household[2] ? "-" + household[2] : "") :
         path === "additional_information" ? "additional-information" : null;
       const input = id ? document.getElementById(id) : null;
       const item = node("li", null, list);
@@ -171,6 +203,7 @@
     const panel = node("div", null, root, {class: "panel"});
     node("p", form.family.mailingName || form.family.lastName || "Your Family", panel);
     node("p", "Envelope number: " + (form.family.envelopeNumber ?? "Not available"), panel);
+    node("p", "Registration date: " + (form.family.registration_date ?? "Not available"), panel);
     if (form.last_submitted_at) {
       node("p", "Last submitted: " + new Date(form.last_submitted_at).toLocaleString(), panel);
     }
@@ -192,14 +225,240 @@
     input.setAttribute("aria-invalid", String(!input.checkValidity()));
     return input.checkValidity();
   }
+  function householdDisplay(value) {
+    if (value === null) return "Not provided";
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    return [value.line1, value.line2, value.city, value.region, value.postal_code,
+      value.country].filter(Boolean).join(", ") || "Not provided";
+  }
+  function householdEditor(editor) {
+    const section = node("section", null, editor);
+    node("h3", "Family census", section);
+    const controls = new Map(), validators = [];
+    let reviewRequested = false;
+    const labels = {line1: "Address line 1", line2: "Address line 2",
+      city: "City or locality", region: "State, province or region",
+      postal_code: "ZIP or postal code", country: "Country"};
+    function status(definition, output) {
+      const changed = definition.changed || canonical(answers.family[definition.name], definition.name) !==
+        canonical(initial.family[definition.name], definition.name);
+      output.textContent = definition.conflict ? "Your requested change is awaiting parish review." :
+        changed ? "Changed from parish records." : !definition.available ? "Not available in parish records." : "";
+    }
+    function stopMailingCopy(restore = answers.family.mailing_same_as_home) {
+      // Restore before applying a newly selected conflict value. The abandoned
+      // copy is never allowed to become a new "separate" mailing draft.
+      if (restore && separateMailing) {
+        answers.family.mailing_address = structuredClone(separateMailing);
+      }
+      answers.family.mailing_same_as_home = false;
+      document.getElementById("family-mailing_same_as_home").checked = false;
+      controls.get("mailing_address").group.disabled = false;
+      controls.get("mailing_address").repaint();
+    }
+    form.household.fields.forEach((definition) => {
+      const name = definition.name, path = "family." + name;
+      const group = node("fieldset", null, section);
+      node("legend", definition.label, group);
+      const output = node("p", "", group, {id: "family-" + name + "-status", class: "muted"});
+      const inputs = {};
+      const touched = new Set();
+      function repaint() {
+        Object.entries(inputs).forEach(([component, input]) => {
+          const value = answers.family[name];
+          input.value = name === "email_opt_out" ? value === null ? "" : String(value) : value[component];
+          input.setCustomValidity("");
+          const explanation = document.getElementById(input.id + "-constraint");
+          if (explanation) { explanation.textContent = ""; explanation.hidden = true; }
+          input.setAttribute("aria-invalid", "false");
+        });
+        status(definition, output);
+      }
+      if (name === "email_opt_out") {
+        const id = "family-" + name;
+        node("label", "Opt out of all parish emails", group, {for: id});
+        const input = node("select", null, group, {id, "aria-describedby": output.id});
+        if (initial.family[name] === null) node("option", "Not provided", input, {value: ""});
+        node("option", "No", input, {value: "false"});
+        node("option", "Yes", input, {value: "true"});
+        inputs.value = input;
+        input.addEventListener("change", () => {
+          answers.family[name] = input.value === "" ? null : input.value === "true";
+          status(definition, output);
+        });
+        node("p", "The parish will follow up on this request. This does not change campaign email delivery.", group);
+      } else {
+        Object.entries(labels).forEach(([component, label]) => {
+          const id = "family-" + name + "-" + component;
+          node("label", label, group, {for: id});
+          const input = node(component === "country" ? "select" : "input", null, group,
+            {id, autocomplete: "off", "aria-describedby": output.id + " " + id + "-constraint"});
+          const error = node("p", "", group, {id: id + "-constraint"});
+          error.hidden = true;
+          if (component === "country") {
+            node("option", "Select a country", input, {value: ""});
+            form.household.countries.forEach(([code, title]) => node("option", title, input, {value: code}));
+          } else {
+            input.type = "text";
+            input.maxLength = form.household.address_limits[component];
+          }
+          inputs[component] = input;
+          input.addEventListener("input", () => {
+            answers.family[name][component] = input.value;
+            if (name === "mailing_address") separateMailing = structuredClone(answers.family[name]);
+            input.setCustomValidity("");
+            validate();
+            document.getElementById("family-mailing_same_as_home")?.setCustomValidity("");
+            status(definition, output);
+            if (name === "home_address" && answers.family.mailing_same_as_home) {
+              answers.family.mailing_address = structuredClone(answers.family.home_address);
+              controls.get("mailing_address").repaint();
+            }
+          });
+          input.addEventListener("blur", () => { touched.add(component); validate(); });
+          if (component === "country") input.addEventListener("change", () => { touched.add(component); validate(); });
+        });
+      }
+      function validate() {
+        if (name === "email_opt_out") return;
+        const value = Object.fromEntries(Object.entries(answers.family[name]).map(
+          ([key, text]) => [key, text.normalize("NFC").trim()]));
+        const nonblank = Object.values(value).some(Boolean), usa = value.country === "US";
+        Object.entries(inputs).forEach(([key, input]) => {
+          let error = /[\u0000-\u001f\u007f\u0085\u2028\u2029]/.test(value[key]) ? "Use a single line of text." : "";
+          if (nonblank && ["line1", "city", "country"].includes(key) && !value[key]) error = "Complete this address field.";
+          if (nonblank && usa && key === "region" && !form.household.us_regions.includes(value.region.toUpperCase())) {
+            error = "Enter a US state, territory or military abbreviation.";
+          }
+          if (nonblank && usa && key === "postal_code" && !/^\d{5}(-\d{4})?$/.test(value.postal_code)) {
+            error = "Enter a five-digit ZIP or ZIP+4 code.";
+          }
+          input.setCustomValidity(error);
+          const show = touched.has(key) || reviewRequested;
+          input.setAttribute("aria-invalid", String(show && !input.checkValidity()));
+          const explanation = document.getElementById(input.id + "-constraint");
+          explanation.textContent = show ? error : "";
+          explanation.hidden = !show || !error;
+        });
+      }
+      validators.push(validate);
+      controls.set(name, {group, repaint});
+      repaint();
+      const conflict = conflicts.get(path);
+      if (conflict) {
+        group.disabled = conflict.choice === undefined;
+        const choices = node("fieldset", null, section, {"data-conflict": path});
+        node("legend", definition.label + ": choose which value to keep", choices);
+        [["Use my edit", conflict.edited], ["Use updated records", conflict.refreshed]].forEach(([label, value], index) => {
+          const wrapper = node("label", null, choices);
+          const radio = node("input", null, wrapper, {type: "radio", name: "resolve-" + path});
+          radio.checked = conflict.choice === index;
+          wrapper.append(document.createTextNode(" " + label + ": " + householdDisplay(value)));
+          radio.addEventListener("change", () => {
+            if (name !== "email_opt_out" && answers.family.mailing_same_as_home) stopMailingCopy();
+            answers.family[name] = structuredClone(value);
+            if (name === "mailing_address") separateMailing = structuredClone(value);
+            conflict.choice = index;
+            group.disabled = false;
+            repaint();
+            const mailingChoice = conflicts.get("family.mailing_same_as_home");
+            if (mailingChoice && name !== "email_opt_out") {
+              mailingChoice.choice = undefined;
+              answers.family.mailing_same_as_home = false;
+              document.getElementById("family-mailing_same_as_home").checked = false;
+              root.querySelectorAll('[name="resolve-mailing-choice"]').forEach((radio) => { radio.checked = false; });
+              controls.get("mailing_address").group.disabled = conflicts.has("family.mailing_address") &&
+                conflicts.get("family.mailing_address").choice === undefined;
+            }
+          });
+        });
+      }
+    });
+    const wrapper = node("label", null, section);
+    section.insertBefore(wrapper, controls.get("mailing_address").group);
+    const same = node("input", null, wrapper, {type: "checkbox", id: "family-mailing_same_as_home"});
+    wrapper.append(document.createTextNode(" Mailing address is the same as home address"));
+    same.checked = answers.family.mailing_same_as_home;
+    // Resolve competing records independently before offering an address copy.
+    same.disabled = ["home_address", "mailing_address"].some((name) => conflicts.has("family." + name));
+    controls.get("mailing_address").group.disabled ||= same.checked;
+    same.addEventListener("change", () => {
+      same.setCustomValidity("");
+      if (same.checked) {
+        const distinct = canonical(answers.family.home_address, "address") !== canonical(answers.family.mailing_address, "address");
+        if (distinct && Object.values(answers.family.mailing_address).some(Boolean) &&
+            !window.confirm("Replace the mailing address with the home address? Unchecking this option restores your separate mailing address in this tab.")) {
+          same.checked = false;
+          return;
+        }
+        if (!separateMailing || distinct) separateMailing = structuredClone(answers.family.mailing_address);
+        answers.family.mailing_address = structuredClone(answers.family.home_address);
+      } else stopMailingCopy();
+      answers.family.mailing_same_as_home = same.checked;
+      controls.get("mailing_address").group.disabled = same.checked;
+      controls.get("mailing_address").repaint();
+    });
+    const sameConflict = conflicts.get("family.mailing_same_as_home");
+    if (sameConflict) {
+      const choices = node("fieldset", null, section, {"data-conflict": "family.mailing_same_as_home"});
+      node("legend", "Addresses changed: choose how to use the mailing address", choices);
+      node("p", "Keeping addresses separate restores the separate mailing value you last entered or selected.", choices);
+      ["Keep addresses separate", "Copy home to mailing"].forEach((label, index) => {
+        const wrapper = node("label", null, choices);
+        const radio = node("input", null, wrapper, {type: "radio", name: "resolve-mailing-choice"});
+        radio.checked = sameConflict.choice === index;
+        wrapper.append(document.createTextNode(" " + label));
+        radio.addEventListener("change", () => {
+          if (["home_address", "mailing_address"].some((name) =>
+            conflicts.get("family." + name)?.choice === undefined && conflicts.has("family." + name))) {
+            radio.checked = false;
+            say("Choose both address values before deciding whether to copy the home address.");
+            return;
+          }
+          // Both final choices begin from the same explicitly retained value,
+          // regardless of intermediate copies or address-radio exploration.
+          stopMailingCopy(true);
+          if (index === 1) {
+            same.checked = true;
+            same.dispatchEvent(new Event("change"));
+            if (!same.checked) { radio.checked = false; return; }
+          }
+          sameConflict.choice = index;
+        });
+      });
+    }
+    if (separateMailing && !same.checked && !same.disabled &&
+        canonical(separateMailing, "address") !== canonical(answers.family.mailing_address, "address")) {
+      const restore = node("button", "Restore separate mailing draft", section, {type: "button"});
+      restore.addEventListener("click", () => {
+        if (!window.confirm("Replace the displayed mailing address with your separate mailing draft?")) return;
+        same.checked = answers.family.mailing_same_as_home = false;
+        controls.get("mailing_address").group.disabled = false;
+        if (sameConflict) {
+          sameConflict.choice = 0;
+          root.querySelectorAll('[name="resolve-mailing-choice"]').forEach((radio, index) => { radio.checked = index === 0; });
+        }
+        answers.family.mailing_address = structuredClone(separateMailing);
+        controls.get("mailing_address").repaint();
+        restore.remove();
+      });
+    }
+    return () => {
+      reviewRequested = true;
+      validators.forEach((validate) => validate());
+      same.setCustomValidity(same.checked && !Object.values(answers.family.home_address).some((text) => text.trim()) ?
+        "Provide a home address before selecting same as home." : "");
+    };
+  }
   function edit() {
     heading("Step 1 of 2: Review your household", "census");
     node("progress", "50%", root, {max: "2", value: "1", "aria-label": "Response progress"});
     block("welcome", root);
     block("census", root);
     familySummary();
-    const editor = node("form", null, root, {autocomplete: "off"});
+    const editor = node("form", null, root, {autocomplete: "off", novalidate: ""});
     const fields = [];
+    const validateHousehold = householdEditor(editor);
     form.members.forEach((member, index) => {
       const group = node("fieldset", null, editor);
       node("legend", "Household member " + (index + 1).toLocaleString("en-US"), group);
@@ -244,6 +503,7 @@
         return;
       }
       fields.forEach(([input, definition]) => validateField(input, definition));
+      validateHousehold();
       if (editor.reportValidity()) { conflicts.clear(); review(); }
     });
   }
@@ -253,6 +513,19 @@
     block("review", root);
     node("p", "Nothing is saved until you select Submit response.", root);
     familySummary();
+    const household = node("section", null, root, {class: "panel"});
+    node("h3", "Family census", household);
+    const householdList = node("dl", null, household);
+    form.household.fields.forEach((definition) => {
+      node("dt", definition.label, householdList);
+      const value = answers.family[definition.name];
+      const display = node("dd", householdDisplay(value), householdList);
+      if (definition.changed || canonical(value, definition.name) !==
+          canonical(initial.family[definition.name], definition.name)) {
+        display.classList.add("changed");
+        node("span", " — Changed from parish records", display);
+      }
+    });
     form.members.forEach((member, index) => {
       const panel = node("section", null, root, {class: "panel"});
       node("h3", "Household member " + (index + 1).toLocaleString("en-US"), panel);

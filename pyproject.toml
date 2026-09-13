@@ -37,6 +37,7 @@ stewardship = [
   "django-allauth[socialaccount]==65.19.2",
   "Pillow>=12.3.0,<13",
   "nh3>=0.3.7,<0.4",
+  "pycountry>=26.2.16,<27",
 ]
 google = [
   "google-api-python-client>=2.139.0",

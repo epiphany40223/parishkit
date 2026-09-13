@@ -9,12 +9,25 @@ from parishkit.stewardship.responses.answers import (
     InvalidAnswers,
     validate_answers,
 )
-from parishkit.stewardship.responses.inputs import FORM_SCHEMA, CensusInputs
+from parishkit.stewardship.responses.census import FAMILY_FIELDS
+from parishkit.stewardship.responses.inputs import FORM_SCHEMA, CensusInputs, FieldInput
+from parishkit.stewardship.responses.merge import KnownValue
+
+from .census_factory import household
+
+
+def family_fields():
+    """Represent the same explicit unavailable source fields as the input owner."""
+    return tuple(
+        FieldInput("family", 10, field.name, field.kind, KnownValue(False))
+        for field in FAMILY_FIELDS
+    )
 
 
 @pytest.fixture
 def answers():
     return {
+        "family": household(),
         "members": {
             "1": {
                 "first_name": " First ",
@@ -30,7 +43,7 @@ def answers():
 
 def validate(payload, **kwargs):
     """Use a trusted issued household list, not one taken from the submitted keys."""
-    inputs = CensusInputs(10, (1,), (), "d" * 64)
+    inputs = CensusInputs(10, (1,), family_fields(), "d" * 64)
     return validate_answers(
         payload, inputs, **({"additional_enabled": True, "testing": False} | kwargs)
     )
@@ -41,6 +54,12 @@ def test_complete_answer_is_normalized_without_mutating_input(answers):
     result = validate(answers)
     assert result == {
         "schema": FORM_SCHEMA,
+        "family": {
+            "home_address": None,
+            "mailing_address": None,
+            "mailing_same_as_home": False,
+            "email_opt_out": None,
+        },
         "members": {
             "1": {
                 "first_name": "First",
@@ -155,7 +174,7 @@ def test_empty_active_household_is_not_an_invented_member(answers):
     answers["members"] = {}
     result = validate_answers(
         answers,
-        CensusInputs(10, (), (), "d" * 64),
+        CensusInputs(10, (), family_fields(), "d" * 64),
         additional_enabled=True,
         testing=False,
     )

@@ -21,6 +21,7 @@ from parishkit.stewardship.responses.models import (
 from parishkit.stewardship.responses.submission import submit_family
 from parishkit.stewardship.source.models import SourceSnapshotPin
 
+from ..census_factory import household
 from .response_builders import response_source
 from .test_source_families_postgresql import prepare, promote
 
@@ -37,6 +38,7 @@ def form_and_answers(harness):
                 field.source.value or ""
             )
     return form, {
+        "family": household(),
         "members": members,
         "additional_information": "",
         "testing_acknowledged": True,
