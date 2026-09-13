@@ -2,13 +2,12 @@
 
 import json
 from datetime import timedelta
-from importlib import import_module
 from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
 from django.contrib.sessions.models import Session
-from django.db import DatabaseError, IntegrityError, connection, transaction
+from django.db import DatabaseError, connection, transaction
 from django.http import HttpResponse
 from django.test import Client, RequestFactory
 
@@ -172,39 +171,6 @@ def test_web_ciphertext_grant_admission_rejects_excess():
         )
     with identity("pk_stewardship_web"), pytest.raises(ConfigError, match="ciphertext"):
         admit_web_staging_grants()
-
-
-@pytest.mark.usefixtures("isolated_roles")
-def test_downgrade_history_guard_sees_rows_as_non_superuser_owner():
-    """FORCE RLS cannot hide retained history from a schema owner's downgrade."""
-    stage()
-    migration = import_module(
-        "parishkit.stewardship.accounts.migrations.0031_credential_installer_guards"
-    )
-    tables = (
-        "stewardship_secret_request",
-        "stewardship_sealed_credential_staging",
-        "stewardship_credential_consumer_ack",
-    )
-    role = "review_owner_" + uuid4().hex
-    with transaction.atomic(), connection.cursor() as cursor:
-        cursor.execute(f'CREATE ROLE "{role}" NOSUPERUSER NOBYPASSRLS NOINHERIT')
-        cursor.execute(f'GRANT USAGE,CREATE ON SCHEMA public TO "{role}"')
-        for table in tables:
-            cursor.execute(f'ALTER TABLE "{table}" OWNER TO "{role}"')
-        with (
-            pytest.raises(IntegrityError, match="history prevents downgrade"),
-            transaction.atomic(),
-        ):
-            cursor.execute(f'SET LOCAL ROLE "{role}"')
-            cursor.execute(migration.Migration.operations[-1].reverse_sql)
-        cursor.execute(
-            "SELECT relforcerowsecurity FROM pg_class WHERE relname=ANY(%s)",
-            [list(tables)],
-        )
-        assert cursor.fetchall() == [(True,), (True,), (True,)]
-        # Roll back only this test's role, temporary ownership and schema grant.
-        transaction.set_rollback(True)
 
 
 def test_contended_health_probe_does_not_block_counter_admission(auth_service):

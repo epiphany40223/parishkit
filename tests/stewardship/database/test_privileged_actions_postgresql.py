@@ -198,6 +198,31 @@ def test_missing_session_after_actor_lookup_is_a_uniform_secret_denial(
     assert not SecretReplacementRequest.objects.exists()
 
 
+@pytest.mark.parametrize("stale", [False, True])
+def test_sealed_intake_rechecks_previewed_configuration_under_lock(
+    auth_service, google, stale
+):
+    """A changed applied digest rolls back both receipt and sealed staging."""
+    from parishkit.stewardship.accounts.secret_models import SealedCredentialStaging
+
+    browser, _ = signed_in()
+    _, intent = secret_intent()
+    digest = auth_service.store.active().digest
+    if stale:
+        with pytest.raises(PermissionError, match="configuration has changed"):
+            sealed_secret_request(
+                admitted_request(browser), configuration_digest="0" * 64, **intent
+            )
+        assert not SecretReplacementRequest.objects.exists()
+        assert not SealedCredentialStaging.objects.exists()
+    else:
+        result = sealed_secret_request(
+            admitted_request(browser), configuration_digest=digest, **intent
+        )
+        assert SecretReplacementRequest.objects.get().pk == result.request_id
+        assert SealedCredentialStaging.objects.count() == 1
+
+
 def test_legacy_expiry_refuses_sealed_requests_before_sql_mutation(
     auth_service, google
 ):

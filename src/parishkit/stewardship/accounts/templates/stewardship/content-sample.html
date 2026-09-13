@@ -1,0 +1,1 @@
+{% load i18n %}{% if sample %}{% if sample.subject %}<h3>{{ sample.subject }}</h3>{% endif %}<div class="content-sample">{{ sample.html|safe }}</div><details><summary>{% translate "Plain-text version" %}</summary><pre>{{ sample.text }}</pre></details>{% else %}<p>{% translate "Empty — no content will be shown in this slot." %}</p>{% endif %}

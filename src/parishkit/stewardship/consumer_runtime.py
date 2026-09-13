@@ -110,6 +110,12 @@ def _children(supervisor):
 
 def loaded_service_receipts(configuration):
     """Refuse partial startup, stale PIDs, disagreement or unsupported replicas."""
+    if configuration.service_role in {
+        ServiceRole.WORKER,
+        ServiceRole.SCHEDULER,
+        ServiceRole.MAIL_DISPATCH,
+    }:
+        return _single_process_receipts(configuration)
     if (
         configuration.service_role is not ServiceRole.WEB
         or configuration.runtime_budget.replicas != 1
@@ -169,3 +175,54 @@ def loaded_service_receipts(configuration):
         raise ConfigError(
             "Not every live consumer worker has matching loaded credentials."
         ) from None
+
+
+def publish_single_process_receipts(configuration, receipts):
+    """Record actual loaded bytes only for an admitted single-process background app."""
+    if configuration.service_role not in {
+        ServiceRole.WORKER,
+        ServiceRole.SCHEDULER,
+        ServiceRole.MAIL_DISPATCH,
+    }:
+        raise ConfigError("Single-process receipts require an isolated background app.")
+    private_directory(DIRECTORY, create=True)
+    _, started = process_identity(os.getpid())
+    write_private(
+        DIRECTORY / "background.json",
+        json.dumps(
+            {
+                "version": 1,
+                "pid": os.getpid(),
+                "started": started,
+                "service": configuration.service_role.value,
+                "receipts": _receipts(receipts, configuration.secrets),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("ascii"),
+    )
+
+
+def _single_process_receipts(configuration):
+    """Reject stale process identities or inventories without rereading keys."""
+    if configuration.runtime_budget.replicas != 1:
+        raise ConfigError("Background acknowledgement requires one container.")
+    private_directory(DIRECTORY)
+    try:
+        value = json.loads(
+            read_private(DIRECTORY / "background.json"),
+            object_pairs_hook=_unique_object,
+        )
+        if (
+            type(value) is not dict
+            or set(value) != {"version", "pid", "started", "service", "receipts"}
+            or type(value["version"]) is not int
+            or value["version"] != 1
+            or type(value["started"]) is not int
+            or value["service"] != configuration.service_role.value
+            or process_identity(value["pid"])[1] != value["started"]
+        ):
+            raise ValueError
+        return _receipts(value["receipts"], configuration.secrets)
+    except (ValueError, TypeError, UnicodeError, RecursionError):
+        raise ConfigError("Background consumer evidence is unavailable.") from None

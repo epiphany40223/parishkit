@@ -1,0 +1,13 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Clone archived campaign" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Clone archived campaign" %}</h1><p>{{ source.active_configuration.name }}</p>
+<p class="notice">{% translate "This copies content, share options and mail schedule structures into a new draft. It never copies Family codes, responses, deliveries or workflow state. Enter every new date and explicitly select current funds. The historical campaign is unchanged." %}</p>
+<p>{% translate "The new campaign starts in the Parish timezone. One-time mail dates are blank; enter new dates or explicitly delete those schedules. Digest times and weekdays are retained. All copied content is shown in the next preview. This form expires in 15 minutes." %}</p>
+<form method="post" data-campaign-form data-new-campaign>{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="clone_seed" value="{{ clone_seed }}">
+<div class="panel">{% include 'stewardship/campaign-fields.html' %}</div>
+<h2>{% translate "New mail schedules" %}</h2>{{ schedules.management_form }}{{ schedules.non_form_errors }}
+{% for schedule in schedules %}<fieldset class="panel"><legend>{% translate "Schedule" %} {{ forloop.counter|number }}</legend>{{ schedule.as_div }}</fieldset>{% endfor %}
+<button type="submit">{% translate "Preview new campaign" %}</button></form>
+<p><a href="{% url 'admin:campaign_new' %}">{% translate "Start empty instead" %}</a></p>
+{% endblock %}

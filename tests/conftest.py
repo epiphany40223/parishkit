@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+pytest_plugins = ("parishkit.stewardship.quality_pytest",)
+
 
 def pytest_addoption(parser):
     """Expose collection evidence without changing normal test selection."""

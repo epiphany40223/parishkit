@@ -11,6 +11,7 @@ from parishkit.google.auth import (
     build_service,
     execute_google_request,
     load_service_account_credentials,
+    load_service_account_info,
     load_user_credentials,
     run_user_oauth_flow,
 )
@@ -107,6 +108,73 @@ def test_user_credential_load_errors_are_config_errors(monkeypatch):
 
     with pytest.raises(ConfigError, match="user credential file.*invalid"):
         load_user_credentials("bad-token.json", scopes=["scope"])
+
+
+@pytest.mark.parametrize("subject", [None, "mailbox@example.org"])
+def test_in_memory_service_account_loading_is_local_and_delegates(monkeypatch, subject):
+    """Staged credentials need not create a temporary plaintext file."""
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    credentials = Mock()
+    factory = Mock(return_value=credentials)
+    monkeypatch.setattr(
+        "parishkit.google.auth._import_google_auth",
+        lambda: (
+            SimpleNamespace(
+                Credentials=SimpleNamespace(from_service_account_info=factory)
+            ),
+            object(),
+        ),
+    )
+    info = {"private_key": "synthetic-key"}
+    result = load_service_account_info(info, scopes=["scope"], subject=subject)
+    factory.assert_called_once_with(info, scopes=["scope"])
+    assert factory.call_args.args[0] is not info
+    if subject:
+        credentials.with_subject.assert_called_once_with(subject)
+        assert result is credentials.with_subject.return_value
+    else:
+        credentials.with_subject.assert_not_called()
+        assert result is credentials
+    credentials.refresh.assert_not_called()
+
+
+@pytest.mark.parametrize("stage", ["construct", "delegate"])
+def test_staged_google_errors_never_echo_private_material(monkeypatch, stage):
+    """Both key parsing and delegation errors may include secret values."""
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    failure = ValueError("synthetic-private-key")
+    credentials = Mock()
+    credentials.with_subject.side_effect = failure if stage == "delegate" else None
+    factory = Mock(
+        return_value=credentials, side_effect=failure if stage == "construct" else None
+    )
+    monkeypatch.setattr(
+        "parishkit.google.auth._import_google_auth",
+        lambda: (
+            SimpleNamespace(
+                Credentials=SimpleNamespace(from_service_account_info=factory)
+            ),
+            object(),
+        ),
+    )
+    with pytest.raises(ConfigError) as error:
+        load_service_account_info(
+            {"private_key": "synthetic-private-key"},
+            scopes=["scope"],
+            subject="mailbox@example.org",
+        )
+    assert "synthetic-private-key" not in str(error.value)
+    assert error.value.__suppress_context__
+
+
+def test_staged_google_input_requires_a_mapping():
+    """An arbitrary path or credential string never becomes a file lookup."""
+    with pytest.raises(ConfigError):
+        load_service_account_info("not-a-file", scopes=["scope"])
 
 
 def test_execute_google_request_retries_transient_errors():

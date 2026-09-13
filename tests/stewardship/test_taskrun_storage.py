@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 
+from parishkit.stewardship.jobs.phases import TaskPhase
 from parishkit.stewardship.jobs.storage import change_run, enqueue, retry_failed
 
 
@@ -50,6 +51,10 @@ def test_invalid_enqueue_never_reaches_database(changes):
         {"action": "complete", "lease_seconds": 60},
         {"retry_seconds": 1},
         {"progress": (1, 2)},
+        {"phase": TaskPhase.FETCHING},
+        {"action": "progress", "phase": "private value"},
+        {"action": "progress", "phase": True},
+        {"action": "progress", "phase": TaskPhase.UNSPECIFIED},
         {"action": "progress", "lease_seconds": None, "progress": [1, 2]},
         {"action": "progress", "lease_seconds": None, "progress": (2, 1)},
         {"action": "progress", "lease_seconds": None, "progress": (False, 1)},

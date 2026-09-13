@@ -1,0 +1,14 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Mail schedules and campaign dates" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Mail schedules and campaign dates" %}</h1><p>{{ campaign.active_configuration.name }}</p>
+{% if window.proposed %}<p class="notice">{% translate "The proposed dates below have not been saved. Resolve the schedules and review the complete change before confirming." %}</p>{% endif %}
+<p>{% translate "Dates and times below use the campaign timezone, not your browser timezone. Preview validates all schedules together; changes take effect only when the installer marks the request Applied." %}</p>
+<p>{% translate "Change or explicitly delete every mailing that would fall outside new campaign dates. Reminders must follow the initial invitation. Daily and weekly digests have no one-time date." %}</p>
+<p><a href="{% url 'admin:content_catalog' campaign.pk %}">{% translate "Create or edit email templates and their subjects" %}</a></p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}">
+<fieldset class="panel"><legend>{% translate "Campaign window" %}</legend>{% if not editable %}<p>{% translate "Structural dates and timezone are locked. This editor can still change future schedules. Exceptional live end-date changes require the campaign lifecycle workflow." %}</p>{% endif %}{{ window.as_div }}</fieldset>
+{% include 'stewardship/schedule-fields.html' %}
+<button type="submit">{% translate "Preview changes and affected work" %}</button></form>
+<p><a href="{% url 'admin:campaign_settings' campaign.pk %}">{% translate "Return to campaign settings" %}</a></p>
+{% endblock %}

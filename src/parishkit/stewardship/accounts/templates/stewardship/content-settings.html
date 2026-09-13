@@ -1,0 +1,11 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{{ label }}{% endblock %}
+{% block content %}
+<h1>{{ label }}</h1><p>{{ campaign.active_configuration.name }}</p>
+<p>{% translate "Use a placeholder name inside double braces. Only these names are supported:" %} {% for name in placeholders %}<code>{{ name }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
+<p>{% translate "Preview uses fictional sample data and nonfunctional sample links. No email is sent by this editor." %}</p>
+<form method="post" data-content-form>{% csrf_token %}<input type="hidden" name="action" value="preview">
+{% include 'stewardship/content-fields.html' %}
+<button type="submit">{% translate "Preview changes" %}</button></form>
+<p><a href="{% url 'admin:content_catalog' campaign.pk %}">{% translate "Return to content and templates" %}</a></p>
+{% endblock %}

@@ -7,6 +7,10 @@ Each task maps to the same numbered item in its linked work package. Read that
 item in full: the short label below does not replace its requirements or tests.
 Follow the [execution and completion rules](README.md#execution-and-completion).
 
+Apply the [current migration policy](../../plans/stewardship/data.md#migration-policy)
+to remaining work. References to legacy upgrade or migration reversal below are
+historical evidence, not a requirement to retain obsolete compatibility tests.
+
 ## DAT-01: Storage conventions and base records
 
 Scope and dependencies: [DAT-01 work package](../../plans/stewardship/data.md#dat-01-storage-conventions-and-base-records).
@@ -162,15 +166,30 @@ credential, submission/outbox, readiness, restore and purge integration.
 
 Scope and dependencies: [DAT-03 work package](../../plans/stewardship/data.md#dat-03-versioned-parishsoft-source-corpus).
 
-- [ ] DAT-03.01 — Implement normalized source snapshot records.
-- [ ] DAT-03.02 — Implement immutable payload digests and deduplication.
-- [ ] DAT-03.03 — Implement atomic source promotion and current indexes.
-- [ ] DAT-03.04 — Implement fenced SourceMutationLease.
-- [ ] DAT-03.05 — Implement compaction metadata and retention anchors.
-- [ ] DAT-03.06 — Implement daily facts, rebuild-demand constraints, and compaction guards.
-- [ ] DAT-03.07 — Test staging, promotion, facts, references, and compaction.
+- [x] DAT-03.01 — Implement normalized source snapshot records.
+- [x] DAT-03.02 — Implement immutable payload digests and deduplication.
+- [x] DAT-03.03 — Implement atomic source promotion and current indexes.
+- [x] DAT-03.04 — Implement fenced SourceMutationLease.
+- [x] DAT-03.05 — Implement compaction metadata and retention anchors.
+- [x] DAT-03.06 — Implement daily facts, rebuild-demand constraints, and compaction guards.
+- [x] DAT-03.07 — Test staging, promotion, facts, references, and compaction.
 
-Evidence: Not started.
+Evidence: the [Phase 2 internal checkpoints](../../guides/stewardship-phase-2.md)
+implement typed immutable payload/membership tables, SQL-verified digests and
+relationships, atomic current-pointer promotion, task/source fencing and
+protected retention primitives. All 63 source PostgreSQL tests and 44 pure
+source tests pass, including migration reversal and both pin/compaction race
+orders; the final audit integration repeat passes 34 PostgreSQL cases. The
+latest baseline passes 2,788 tests. Daily-fact storage adds 38 PostgreSQL tests
+for complete immutable graphs, exact inputs, demand/recovery fencing, source
+input protection, compaction and both late-pin race orders. The final combined
+source, fact and TaskRun regression pass covers 165 cases; pure fact/lease input
+validation passes 47 cases. DAT-03 is complete for its storage scope.
+BG-05 owns provider completeness/threshold checks and actual refresh;
+DAT-04/DAT-05 retain concrete Family/chair promotion integration. Later retained
+parents must register their input pins through the tested shared guard. No
+runtime refresh, destructive job scheduling, or later-phase report capability
+is enabled by this storage checkpoint.
 
 ## DAT-04: Family campaign identity and credentials
 
@@ -185,12 +204,17 @@ Scope and dependencies: [DAT-04 work package](../../plans/stewardship/data.md#da
 Evidence: Phase 1B implements Family identities and eligibility/cohort provenance,
 stable encrypted manual codes, versioned MAC lookup/collision constraints,
 population reconciliation, sealed token generations, rehearsal epochs/reservations
-and isolated sessions. Actual source promotion and submission/mail-state pointers
-remain with DAT-03/DAT-06/DAT-07; do not fabricate those later tables. Additional
-credential lifecycle/reactivation and retirement cases now pass; actual source
-promotion and backup-catalog integration retain their named later owners. See
+and isolated sessions. Phase 2 now connects normalized promoted source data to
+the Family allocator in the same transaction, with explicit suppression inputs,
+stable reactivation codes, rollback and rotation-contention tests. The complete
+BG-05 runtime promotion handler and initial configured-marker transaction now
+consume that allocator. Submission/mail-state pointers remain with DAT-06/DAT-07;
+do not fabricate those later tables. Additional
+credential lifecycle/reactivation and retirement cases now pass; invitation
+evaluation and backup-catalog integration retain their named later owners. See
 [Phase 1B evidence](../../guides/stewardship-phase-1b.md); the mixed-phase tasks stay
-unchecked rather than claiming complete integration from the storage foundation.
+unchecked rather than claiming completion of later consumers. The source-owned
+Family effect is recorded in [Phase 2 evidence](../../guides/stewardship-phase-2.md).
 
 ## DAT-05: Portal users and authorization policy records
 
@@ -199,9 +223,23 @@ Scope and dependencies: [DAT-05 work package](../../plans/stewardship/data.md#da
 - [ ] DAT-05.01 — Implement portal users, login rules, and assignments.
 - [x] DAT-05.02 — Materialize policy from applied YAML versions.
 - [x] DAT-05.03 — Enforce rule precedence and last-Administrator guards.
-- [ ] DAT-05.04 — Implement provenance-aware chair seeds and runtime suspension overlays.
+- [ ] DAT-05.04 — Implement Ministry activity policy, provenance-aware chair seeds, and runtime suspension overlays.
 - [x] DAT-05.05 — Index login and Ministry authorization queries.
 - [ ] DAT-05.06 — Test policy activation, source transitions, and idempotent autosave races.
+
+Phase 2 Ministry activity storage is implemented: v4 YAML/patch and recovery
+formats, exact immutable PostgreSQL projections, retained tenant/DUID/record-ID
+bindings, current-catalog activity selection and narrow runtime grants. The
+source suggestion calculator groups exact Member relationships and flags shared
+email ambiguity without granting access. Exact retained Member selections,
+source-promotion/configuration reconciliation receipts, suspension overlays and
+durable review episodes now have owning services and PostgreSQL guards. Activity
+activation uses the restricted installer and the same source predicate; missing
+source still holds seeded activity edits. The Admin Ministry activity screen and
+complete refresh-worker wiring now consume these services. The Admin-confirmed
+seed creator/autosave workflow remains with ADM-07 in Phase 5; Family submission
+enforcement remains with Phase 3.
+See the [Phase 2 checkpoint](../../guides/stewardship-phase-2.md).
 
 Evidence: The Phase 1A policy batch adds immutable normalized rule/grant/
 assignment projections, explicit provenance, verified identity metadata, runtime
@@ -209,9 +247,11 @@ overlays, lookup indexes, strict v2 schema/patch dispatch, last-Admin protection
 and immediate exact-address/hosted-domain decisions. High-impact activation
 commits security-notification intent and denial-namespace evidence atomically.
 See the [foundation boundary](../../guides/stewardship-authorization-foundation.md).
-DAT-05.01/.04/.06 remain partial: source-backed suggestions/review tasks,
-Admin-confirmed seeds, promotion integration, actual login/audit/session
-enforcement, and autosave/service admission races require Phase 1B/2 consumers.
+DAT-05.01/.04/.06 remain partial for the Admin-confirmed seed creator, user-rule
+UI and end-to-end autosave/source races owned by ADM-07, not missing Phase 2
+activity editing or refresh integration.
+Phase 1B supplies actual login/audit/session enforcement; Phase 2 supplies the
+source-backed reconciliation services described above.
 The Phase 1A policy-schema portion is complete; these mixed-phase checkboxes
 do not represent additional Phase 1A PRs.
 

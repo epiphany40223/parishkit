@@ -1,0 +1,12 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Review integration changes" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Review integration changes" %}: {{ label }}</h1>
+<div class="table-scroll"><table><caption>{% translate "Public settings only; credential fingerprint is unchanged" %}</caption>
+<thead><tr><th scope="col">{% translate "Setting" %}</th><th scope="col">{% translate "Current" %}</th><th scope="col">{% translate "Proposed" %}</th></tr></thead>
+<tbody>{% for change in changes %}<tr><th scope="row">{{ change.label }}</th><td>{{ change.before }}</td><td>{{ change.after }}</td></tr>{% endfor %}</tbody></table></div>
+<p>{% translate "This preview expires in fifteen minutes. Confirmation queues a versioned YAML change; it does not test the integration." %}</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}">
+<button type="submit">{% translate "Confirm changes" %}</button></form>
+<p><a href="{% url 'admin:integration_settings' target %}">{% translate "Back to settings" %}</a></p>
+{% endblock %}

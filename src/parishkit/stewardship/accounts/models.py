@@ -9,14 +9,24 @@ from .auth_models import (  # noqa: F401
     LimiterStoreHealth,
     OAuthStateConsumption,
 )
+from .branding_models import BrandingAsset, BrandingBundle  # noqa: F401
+from .campaign_mail_models import CampaignMailTest  # noqa: F401
+from .chair_models import (  # noqa: F401
+    ChairAssignmentReview,
+    ChairReconciliation,
+    ChairSeedEvidence,
+)
 
 # Django discovers these models through this module; keep session and immutable
 # configuration contracts in separate source files for maintainability.
 from .configuration_models import (  # noqa: F401
     AppliedConfigurationVersion,
     AppliedIntegration,
+    MinistryActivity,
     Parish,
 )
+from .content_models import ContentVersion  # noqa: F401
+from .handoff_models import PublicCredentialHandoff  # noqa: F401
 from .policy_models import (  # noqa: F401
     AddressRoleGrant,
     AddressRule,
@@ -28,6 +38,7 @@ from .policy_models import (  # noqa: F401
     PolicySecurityEvent,
     PortalUser,
 )
+from .provider_models import ProviderValidationContext  # noqa: F401
 from .request_models import (  # noqa: F401
     ConfigurationChangeRequest,
     ConfigurationRequestCheckpoint,
@@ -39,6 +50,23 @@ from .secret_models import (  # noqa: F401
     SecretReplacementRequest,
     SecretRequestCheckpoint,
 )
+from .setup_delivery_models import SetupMailDelivery  # noqa: F401
+from .setup_exchange_models import SetupSourceExchange, SetupSourceResult  # noqa: F401
+from .setup_install_models import (
+    SetupCompletion,  # noqa: F401
+    SetupCredentialInstallation,  # noqa: F401
+    SetupPreparationReceipt,  # noqa: F401
+)
+from .setup_mail_exchange_models import SetupMailExchange  # noqa: F401
+from .setup_models import (  # noqa: F401
+    SetupAttempt,
+    SetupConfigurationAbort,
+    SetupConfigurationIntent,
+    SetupDraftSection,
+)
+from .setup_notification_models import SetupSlackDelivery  # noqa: F401
+from .setup_readiness_models import SetupReadinessBinding  # noqa: F401
+from .setup_secret_models import SetupSealedCredential  # noqa: F401
 
 
 class PortalSession(MutableRecord):

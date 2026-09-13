@@ -9,10 +9,15 @@ validation is never sufficient.
 
 ## Migration policy
 
-- Add models in dependency-sized migrations, with explicit constraints and
-  indexes in the same work package that depends on them.
-- Prove forward and reverse behavior where Django supports it; document any
-  intentionally irreversible data migration.
+- Follow the standing
+  [pre-production policy](../../specs/stewardship/operations/spec.md#pre-production-development-policy).
+  Update the [fresh-install baseline](../../guides/stewardship-schema.md) and
+  Django model state together; do not accumulate historical development
+  upgrade/downgrade paths or tests. Retain constraints and indexes in the same
+  work package as the functionality that depends on them.
+- Only after production-readiness work is explicitly activated, add reviewed
+  forward migrations and prove supported upgrade/reverse behavior, documenting
+  intentional irreversibility. This is not a current phase-delivery requirement.
 - Run migration drift checks and PostgreSQL integration tests for every package.
 - Use factories/builders instead of shared mutable fixture dumps.
 
@@ -133,6 +138,8 @@ validation is never sufficient.
    chairperson suggestions, suspension/review tasks, and login/audit history.
 2. Materialize configured rules/manual assignments from exact YAML versions and
    keep source suspension/reactivation as a fail-closed runtime overlay.
+   Materialize the [Ministry activity policy](../../specs/stewardship/data/spec.md#ministry-activity-policy)
+   alongside those versions; source refresh must never rewrite its overrides.
    Persist rule creation origin, AddressRoleGrant origin sets and operation
    references in YAML and materialized rows; validate exact role/grant parity
    and reject missing or inconsistent provenance rather than inferring it.
@@ -141,6 +148,9 @@ validation is never sufficient.
 4. Implement Admin-confirmed chair-seed configuration requests and snapshot-
    driven suspension/reactivation while preserving manual assignments and
    unrelated roles.
+   Use the same effective Ministry-activity predicate on source promotion and
+   activity-policy activation; atomically reevaluate suggestions/review overlays
+   on either event.
    Apply the explicit provenance predicate and preserve manual origins across
    seed refreshes, unrelated edits, and immutable configuration versions.
 5. Add indexes for normalized email/domain and Ministry row-scope queries.

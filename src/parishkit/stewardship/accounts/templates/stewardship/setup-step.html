@@ -1,0 +1,15 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{{ step_label }} — {% translate "Initial setup" %}{% endblock %}
+{% block content %}
+<p><a href="{% url 'admin:setup' %}">{% translate "Setup overview" %}</a></p>
+<h1>{{ step_label }}</h1>
+<p class="notice">{% translate "Testing mode. These settings remain temporary until final setup completes. Do not enter API tokens, passwords or service-account JSON here." %}</p>
+{% if step == 'access' %}<p>{% translate "The bootstrap Administrator is always preserved. Domains may grant Staff or Ministry-leader roles, never Administrator. Ministry access also requires a Ministry assignment." %}</p>{% endif %}
+{% if step == 'mail' %}<p>{% translate "These are public sender settings only. Credential verification and test delivery are separate required checks." %}</p>{% endif %}
+{% include 'stewardship/setup-deadlines.html' %}
+<form method="post" class="panel">
+{% csrf_token %}<input type="hidden" name="version" value="{{ draft.status.version }}">
+{{ form.as_div }}
+<button type="submit">{% translate "Save temporary settings" %}</button>
+</form>
+{% endblock %}

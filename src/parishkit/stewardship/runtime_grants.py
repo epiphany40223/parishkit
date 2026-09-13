@@ -13,6 +13,24 @@ from .deployment import ServiceRole
 # Explicit snapshot/read vocabulary; no wildcard over future application tables.
 WEB_READ_TABLES = frozenset(
     [
+        "stewardship_setup_completion",
+        "stewardship_campaign_mail_test",
+        "stewardship_setup_prepared",
+        "stewardship_setup_attempt",
+        "stewardship_setup_draft_section",
+        "stewardship_setup_config_intent",
+        "stewardship_setup_config_abort",
+        "stewardship_branding_bundle",
+        "stewardship_branding_asset",
+        "stewardship_provider_context",
+        "stewardship_public_credential_handoff",
+        "stewardship_source_current",
+        "stewardship_snapshot_ministry",
+        "stewardship_source_ministry",
+        "stewardship_snapshot_fund",
+        "stewardship_source_fund",
+        "stewardship_snapshot_family",
+        "stewardship_source_family",
         "django_migrations",
         "django_session",
         "socialaccount_socialapp",
@@ -26,6 +44,8 @@ WEB_READ_TABLES = frozenset(
         "stewardship_address_rule",
         "stewardship_address_grant",
         "stewardship_ministry_assignment",
+        "stewardship_ministry_activity",
+        "stewardship_content_version",
         "stewardship_portal_user",
         "stewardship_assignment_overlay",
         "stewardship_policy_security_event",
@@ -83,13 +103,17 @@ WEB_READ_TABLES = frozenset(
 
 WEB_INSERT_TABLES = frozenset(
     [
+        "stewardship_setup_attempt",
+        "stewardship_setup_draft_section",
+        "stewardship_branding_bundle",
+        "stewardship_branding_asset",
+        "stewardship_provider_context",
         "django_session",
         "stewardship_oauth_consumption",
         "stewardship_auth_incident",
         "stewardship_limiter_health",
         "stewardship_portal_user",
         "stewardship_portal_session",
-        "stewardship_assignment_overlay",
         "stewardship_config_request",
         "stewardship_config_checkpoint",
         "stewardship_secret_request",
@@ -113,12 +137,14 @@ WEB_INSERT_TABLES = frozenset(
 
 WEB_UPDATE_TABLES = frozenset(
     [
+        "stewardship_setup_attempt",
+        "stewardship_setup_draft_section",
+        "stewardship_branding_bundle",
         "django_session",
         "stewardship_auth_incident",
         "stewardship_limiter_health",
         "stewardship_portal_user",
         "stewardship_portal_session",
-        "stewardship_assignment_overlay",
         "stewardship_config_request",
         "stewardship_secret_request",
         "stewardship_family_session",
@@ -147,6 +173,8 @@ DOWNLOAD_READ_TABLES = frozenset(
         "stewardship_address_rule",
         "stewardship_address_grant",
         "stewardship_ministry_assignment",
+        "stewardship_ministry_activity",
+        "stewardship_content_version",
         "stewardship_portal_user",
         "stewardship_assignment_overlay",
         "stewardship_policy_epoch",
@@ -175,26 +203,39 @@ def _identity_role(role, target):
 
 def runtime_grants(role, *, target=None):
     """Return fresh table/column maps so callers cannot broaden the shared policy."""
-    from .accounts.configuration_service import CONFIGURATION_GRANTS
-    from .accounts.credential_database import INSTALLER_GRANTS, INSTALLER_METADATA
+    from .accounts.configuration_service import (
+        CONFIGURATION_COLUMNS,
+        CONFIGURATION_GRANTS,
+    )
+    from .accounts.credential_database import installer_permissions
     from .accounts.secret_models import SECRET_TARGETS
 
     role = _identity_role(role, target)
 
+    if role is ServiceRole.MAIL_DISPATCH:
+        from .accounts.setup_mail_grants import mail_runtime_grants
+
+        return mail_runtime_grants()
+    if role in {ServiceRole.WORKER, ServiceRole.SCHEDULER}:
+        from .jobs.grants import task_runtime_grants
+
+        return task_runtime_grants(role)
     if role is ServiceRole.CONFIG_INSTALLER:
-        return {
-            table: set(grants) for table, grants in CONFIGURATION_GRANTS.items()
-        }, {}
+        return {table: set(grants) for table, grants in CONFIGURATION_GRANTS.items()}, {
+            table: {privilege: set(names) for privilege, names in columns.items()}
+            for table, columns in CONFIGURATION_COLUMNS.items()
+        }
     if role is ServiceRole.CREDENTIAL_INSTALLER:
         if target not in SECRET_TARGETS:
             raise ConfigError("A recognized installer target is required.")
+        installer_tables, installer_metadata = installer_permissions(target)
         tables = {
             table: set(grants)
-            for table, grants in INSTALLER_GRANTS.items()
-            if table not in INSTALLER_METADATA
+            for table, grants in installer_tables.items()
+            if table not in installer_metadata
         }
         columns = {
-            table: {"SELECT": set(names)} for table, names in INSTALLER_METADATA.items()
+            table: {"SELECT": set(names)} for table, names in installer_metadata.items()
         }
         return tables, columns
     if role in {ServiceRole.BOOTSTRAP, ServiceRole.ADMIN_RECOVERY}:
@@ -216,6 +257,18 @@ def runtime_grants(role, *, target=None):
     # guard rejects an id-only update, and the actual stream is READ ONLY.
     columns = {"stewardship_download_policy": {"UPDATE": {"id"}}}
     if role is ServiceRole.WEB:
+        # Setup progress observes live source ownership, never mutates the lease.
+        columns["stewardship_source_lease"] = {
+            "SELECT": {
+                "owner_id",
+                "task_fence",
+                "worker_id",
+                "expires_at",
+                "heartbeat_at",
+            }
+        }
+        # Dashboard timestamps need no source cursor, validation or payload access.
+        columns["stewardship_source_snapshot"] = {"SELECT": {"id", "promoted_at"}}
         # Login holds these current-epoch/credential rows against rotation and
         # cleanup. PostgreSQL requires an UPDATE privilege for a row lock;
         # id-only grants permit locking, not guarded credential mutation.
@@ -246,6 +299,47 @@ def runtime_grants(role, *, target=None):
         columns["stewardship_sealed_credential_staging"] = {
             "SELECT": {"reference", "request_id", "target", "fingerprint"}
         }
+        tables["stewardship_setup_sealed_credential"] = {"INSERT"}
+        columns["stewardship_setup_sealed_credential"] = {
+            "SELECT": {
+                "id",
+                "created_at",
+                "updated_at",
+                "version",
+                "actor_id",
+                "correlation_id",
+                "attempt_id",
+                "target",
+                "fingerprint",
+                "settings",
+                "scrubbed_at",
+            },
+            "UPDATE": {
+                "ciphertext",
+                "fingerprint",
+                "settings",
+                "scrubbed_at",
+                "actor_id",
+                "correlation_id",
+                "version",
+            },
+        }
+        from .accounts.setup_exchange_grants import (
+            add_exchange_cleanup_grants,
+            add_web_setup_catalog_grants,
+        )
+
+        add_exchange_cleanup_grants(columns)
+        add_web_setup_catalog_grants(tables, columns)
+        from .accounts.setup_mail_grants import add_setup_mail_cleanup_grants
+
+        add_setup_mail_cleanup_grants(tables, columns, read_payload=True)
+        tables["stewardship_setup_mail_delivery"].add("INSERT")
+        tables["stewardship_campaign_mail_test"].add("INSERT")
+        tables["stewardship_setup_slack_delivery"].add("INSERT")
+        tables["stewardship_setup_config_intent"].add("INSERT")
+        tables["stewardship_setup_readiness_binding"] = {"SELECT", "INSERT"}
+        tables["stewardship_setup_credential_install"] = {"SELECT"}
     return tables, columns
 
 
@@ -262,6 +356,9 @@ def login_name(role, *, target=None):
         role
         not in {
             ServiceRole.WEB,
+            ServiceRole.WORKER,
+            ServiceRole.SCHEDULER,
+            ServiceRole.MAIL_DISPATCH,
             ServiceRole.CONFIG_INSTALLER,
             ServiceRole.BOOTSTRAP,
             ServiceRole.ADMIN_RECOVERY,
@@ -299,14 +396,20 @@ def admit_runtime_database(configuration):
         admit_installer_database(configuration.credential_target)
     elif role is ServiceRole.CONFIG_INSTALLER:
         admit_configuration_database()
-    elif role is ServiceRole.WEB:
+    elif role in {
+        ServiceRole.WEB,
+        ServiceRole.WORKER,
+        ServiceRole.SCHEDULER,
+        ServiceRole.MAIL_DISPATCH,
+    }:
         _identity(login_name(role))
         tables, columns = runtime_grants(role)
         allowed = {table: set(grants) for table, grants in tables.items()}
         for table, grants in columns.items():
             allowed.setdefault(table, set()).update(grants)
         admit_grants(allowed)
-        admit_web_staging_grants()
+        if role is ServiceRole.WEB:
+            admit_web_staging_grants()
         from django.db import connection
 
         admit_columns(connection, tables, columns)

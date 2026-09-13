@@ -108,12 +108,45 @@ def test_rendered_foundation_enforces_individual_mounts_and_profiles(
     assert layout.credential("token_private") not in mounts
     assert layout.credential("google_workspace") not in mounts
     assert layout.interlock in mounts
+    for name in ("worker", "scheduler", "mail-dispatch"):
+        background = services[name]
+        selected = documents[layout.service_directory / f"{name}.yaml"]
+        mounts = {Path(item["source"]): item for item in background["volumes"]}
+        assert background["command"] == [
+            "runtime",
+            "--config",
+            str(layout.service_directory / f"{name}.yaml"),
+        ]
+        assert mounts[layout.valkey_password(name)]["read_only"]
+        assert mounts[layout.database_password(name)]["read_only"]
+        assert mounts[configuration.paths["authority"]]["read_only"]
+        assert layout.database_password("web") not in mounts
+        assert layout.valkey_password("web") not in mounts
+        assert (layout.credential("token_private") in mounts) is (
+            name == "mail-dispatch"
+        )
+        assert (layout.credential("google_workspace") in mounts) is (
+            name == "mail-dispatch"
+        )
+        assert layout.credential("token_public") in mounts
+        if name == "worker":
+            assert mounts[configuration.paths["media"]]["read_only"] is False
+        else:
+            assert configuration.paths["media"] not in mounts
+        assert selected["deployment"]["service_role"] == name
+        assert set(background["networks"]) == (
+            {"backend", "application-egress"} if name != "scheduler" else {"backend"}
+        )
+        assert (layout.credential("parishsoft") in mounts) is (name == "worker")
     for target in SECRET_NAMES - {"handoff_private"}:
         name = "credential-installer-" + target.replace("_", "-")
         mounts = services[name]["volumes"]
         writable = [item["source"] for item in mounts if not item["read_only"]]
         assert writable == [str(layout.credential_directory(target))]
         assert str(layout.handoff(target)) in [item["source"] for item in mounts]
+        assert ("application-egress" in services[name]["networks"]) is (
+            target in {"parishsoft", "google_workspace", "slack"}
+        )
     for path, document in documents.items():
         if path.suffix != ".yaml":
             continue
@@ -134,6 +167,52 @@ def test_rendered_foundation_enforces_individual_mounts_and_profiles(
     else:
         assert "caddy" not in services
         assert web["ports"] == ["127.0.0.1:8010:8000"]
+
+
+@pytest.mark.parametrize("mode", ["initial", "configured", "configured-slack"])
+def test_provider_modes_keep_service_identity_and_individual_mounts(tmp_path, mode):
+    """Initial startup needs no provider file; recreation selects only owned files."""
+    configuration = configuration_at(tmp_path)
+    compose, documents = render_runtime(
+        configuration, image="parishkit-stewardship:development", provider_mode=mode
+    )
+    layout = RuntimeLayout(configuration)
+    assert {"worker", "mail-dispatch"} <= compose["services"].keys()
+    for name, providers in (
+        ("worker", {"parishsoft", "slack"}),
+        ("mail-dispatch", {"google_workspace"}),
+    ):
+        service = compose["services"][name]
+        mounted = {Path(item["target"]): item for item in service["volumes"]}
+        document = documents[Path(service["command"][-1])]["deployment"]
+        assert document["service_role"] == name
+        assert document["postgres"]["user"] == "pk_stewardship_" + name.replace(
+            "-", "_"
+        )
+        expected = set() if mode == "initial" else providers - {"slack"}
+        if mode == "configured-slack" and name == "worker":
+            expected.add("slack")
+        assert (
+            set(document["secrets"]) & {"parishsoft", "slack", "google_workspace"}
+            == expected
+        )
+        for provider in providers:
+            path = layout.credential(provider)
+            assert (path in mounted) is (provider in expected)
+            assert path.parent not in mounted
+            if provider in expected:
+                assert mounted[path]["read_only"] is True
+
+
+@pytest.mark.parametrize("mode", [True, None, "all", "../../worker"])
+def test_provider_mode_is_closed_before_rendering(tmp_path, mode):
+    """A caller cannot invent a service/configuration-path mode."""
+    with pytest.raises(ConfigError, match="mount mode"):
+        render_runtime(
+            configuration_at(tmp_path),
+            image="parishkit-stewardship:development",
+            provider_mode=mode,
+        )
 
 
 def test_development_source_is_read_only_and_live(tmp_path):

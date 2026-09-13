@@ -15,3 +15,8 @@
 !src/**/*.svg
 !src/**/*.png
 !src/**/*.ico
+!src/parishkit/stewardship/accounts/timezone_names_v1.txt
+!src/parishkit/stewardship/schema/functions.sql
+!src/parishkit/stewardship/schema/tables.sql
+!src/parishkit/stewardship/schema/seed.sql
+!src/parishkit/stewardship/schema/guards.sql

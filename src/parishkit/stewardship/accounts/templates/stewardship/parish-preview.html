@@ -1,0 +1,18 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Review Parish changes" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Review Parish changes" %}</h1>
+{% if timezone_changed %}<p class="notice">{% translate "This timezone change is prospective. Existing campaign timezones, boundaries, schedules and report buckets remain unchanged." %}</p>{% endif %}
+{% for change in changes %}
+<section class="panel"><h2>{{ change.label }}</h2>
+  <p>{% translate "Applied:" %} {{ change.before }}</p>
+  <p>{% translate "Proposed:" %} {{ change.after }}</p>
+</section>
+{% endfor %}
+<p>{% translate "This preview expires in 15 minutes. Confirmation requests installation; settings change only after the request is Applied." %}</p>
+<form method="post">
+  {% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}">
+  <button type="submit">{% translate "Apply changes" %}</button>
+  <a href="{% url 'admin:parish_settings' %}">{% translate "Cancel" %}</a>
+</form>
+{% endblock %}

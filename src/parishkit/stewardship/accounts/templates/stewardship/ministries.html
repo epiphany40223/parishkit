@@ -1,0 +1,35 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Ministry activity" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Ministry activity" %}</h1>
+<p>{% translate "Inactive Ministries are hidden from parishioners. Existing participation, earlier requests and manual leader assignments are preserved. Campaign selection is managed separately." %}</p>
+<form method="get" class="panel">
+  <label for="ministry-query">{% translate "Search Ministries" %}</label>
+  <input id="ministry-query" name="q" value="{{ query }}" maxlength="200">
+  <label for="ministry-state">{% translate "Activity" %}</label>
+  <select id="ministry-state" name="state">
+    <option value="all" {% if state == 'all' %}selected{% endif %}>{% translate "All" %}</option>
+    <option value="active" {% if state == 'active' %}selected{% endif %}>{% translate "Active" %}</option>
+    <option value="inactive" {% if state == 'inactive' %}selected{% endif %}>{% translate "Inactive" %}</option>
+  </select>
+  <button type="submit">{% translate "Filter" %}</button>
+</form>
+{% for ministry in ministries %}
+<section class="panel" aria-labelledby="ministry-{{ ministry.duid }}">
+  <h2 id="ministry-{{ ministry.duid }}">{{ ministry.name }}</h2>
+  <p>DUID: {{ ministry.duid|number }} · {% if ministry.active %}{% translate "Active" %}{% else %}{% translate "Inactive" %}{% endif %}</p>
+  <p>{% if ministry.included %}{% translate "Selected for the current campaign" %}{% else %}{% translate "Not selected for the current campaign" %}{% endif %}</p>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="preview">
+    <input type="hidden" name="ministry_duid" value="{{ ministry.duid }}">
+    <input type="hidden" name="active" value="{% if ministry.active %}no{% else %}yes{% endif %}">
+    <button type="submit">{% if ministry.active %}{% translate "Preview inactivation" %}{% else %}{% translate "Preview reactivation" %}{% endif %}</button>
+  </form>
+</section>
+{% empty %}<p role="status">{% translate "No Ministries match these filters." %}</p>{% endfor %}
+<nav aria-label="Ministry pages">
+  {% if page.has_previous %}<a href="?q={{ query|urlencode }}&amp;state={{ state }}&amp;page={{ page.previous_page_number }}">{% translate "Previous" %}</a>{% endif %}
+  {% if page.has_next %}<a href="?q={{ query|urlencode }}&amp;state={{ state }}&amp;page={{ page.next_page_number }}">{% translate "Next" %}</a>{% endif %}
+</nav>
+{% endblock %}

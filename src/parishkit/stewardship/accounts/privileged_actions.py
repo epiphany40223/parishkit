@@ -110,7 +110,7 @@ def configuration_request(request, *, base_digest, patch, request_key, correlati
     )
 
 
-def sealed_secret_request(request, **intent):
+def sealed_secret_request(request, *, configuration_digest=None, **intent):
     """Stage an already target-sealed candidate, deriving freshness server-side.
 
     ARC-06's public handoff seals the value immediately in the receiving view.
@@ -131,11 +131,22 @@ def sealed_secret_request(request, **intent):
     ).first()
     if session is None:
         raise PermissionError("Access is unavailable.")
+
+    def admit():
+        """Keep previewed public settings bound while locked intake commits."""
+        admit_admin_action(request, actor_id=actor, action=Action.SECRET_REPLACEMENT)
+        if (
+            configuration_digest is not None
+            and not SystemConfiguration.objects.filter(
+                active_configuration__digest=configuration_digest
+            ).exists()
+        ):
+            raise PermissionError("Credential configuration has changed.")
+        return True
+
     return stage_secret_request(
         **intent,
         actor_id=actor,
         reauthenticated_at=session.authenticated_at,
-        admit=lambda: admit_admin_action(
-            request, actor_id=actor, action=Action.SECRET_REPLACEMENT
-        ),
+        admit=admit,
     )

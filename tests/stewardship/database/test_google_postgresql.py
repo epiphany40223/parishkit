@@ -381,5 +381,9 @@ def test_normal_admin_routing_does_not_repeat_session_authorization(
     browser, _ = signed_in()
     checked = Mock(wraps=sessions.current_principal)
     monkeypatch.setattr(sessions, "current_principal", checked)
+    version = PortalSession.objects.get().version
     assert browser.get("/admin/").status_code == 200
-    assert checked.call_count == 1
+    # The dashboard has one ordinary admission and one post-query read guard.
+    # The availability middleware and presentation context do neither again.
+    assert checked.call_count == 2
+    assert PortalSession.objects.get().version == version + 1

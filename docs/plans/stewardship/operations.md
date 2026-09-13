@@ -79,6 +79,11 @@ the end.
 
 ### OPS-04: Bootstrap, migrations, startup, and upgrades
 
+Apply the [pre-production policy](../../specs/stewardship/operations/spec.md#pre-production-development-policy):
+items 3–4 and the historical upgrade/rollout portion of item 5 are deferred until
+production-readiness work is explicitly activated. This does not defer current
+fresh-install, restart, ownership, failure or persistence checks.
+
 1. Integrate bootstrap/config validation/migration/health entry commands with
    Compose and deployment documentation. Provision the metrics bearer credential
    alongside required keyrings before web startup; OPS-08 consumes and rotates

@@ -4,7 +4,6 @@ from uuid import UUID, uuid4
 
 import pytest
 from django.db import IntegrityError, connection, transaction
-from django.db.migrations.executor import MigrationExecutor
 from django.db.models import F
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
@@ -169,6 +168,27 @@ def test_last_admin_removal_is_rejected_before_intake(tmp_path):
     assert store.active().digest == version.digest
 
 
+@pytest.mark.parametrize("operation", ["UPDATE", "DELETE"])
+def test_policy_security_history_is_append_only(tmp_path, operation):
+    """Current SQL guards preserve alerts independently of migration history."""
+    initialized(tmp_path)
+    event = PolicySecurityEvent.objects.first()
+    assert event is not None
+    statement = (
+        "UPDATE stewardship_policy_security_event SET correlation_id=%s WHERE id=%s"
+        if operation == "UPDATE"
+        else "DELETE FROM stewardship_policy_security_event WHERE id=%s"
+    )
+    params = [uuid4(), event.pk] if operation == "UPDATE" else [event.pk]
+    with (
+        pytest.raises(IntegrityError, match="append-only"),
+        transaction.atomic(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(statement, params)
+    assert PolicySecurityEvent.objects.filter(pk=event.pk).exists()
+
+
 def test_policy_notification_failure_rolls_back_activation(tmp_path):
     """A failed durable intent cannot leave expanded authority silently active."""
     store, version, actor = initialized(tmp_path)
@@ -230,26 +250,6 @@ def test_partial_policy_cannot_commit(tmp_path):
             validation_schema="foundation-policy-v2",
         )
     assert not AppliedConfigurationVersion.objects.exists()
-
-
-def test_policy_downgrade_refuses_before_removing_guards(tmp_path):
-    """Populated policy evidence survives a refused historical schema rollback."""
-    store, version, _ = initialized(tmp_path)
-    leaves = MigrationExecutor(connection).loader.graph.leaf_nodes()
-    try:
-        with pytest.raises(IntegrityError, match="Policy security history"):
-            MigrationExecutor(connection).migrate(
-                [("stewardship_accounts", "0018_policy_activation_evidence")]
-            )
-        assert is_prepared(version.digest)
-        with (
-            pytest.raises(IntegrityError),
-            transaction.atomic(),
-            connection.cursor() as cursor,
-        ):
-            cursor.execute("DELETE FROM stewardship_policy_security_event")
-    finally:
-        MigrationExecutor(connection).migrate(leaves)
 
 
 def test_legacy_preparation_can_introduce_policy(tmp_path):

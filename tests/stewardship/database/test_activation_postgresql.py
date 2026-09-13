@@ -7,8 +7,6 @@ from uuid import uuid4
 
 import pytest
 from django.db import IntegrityError, connection, connections, transaction
-from django.db.migrations.executor import MigrationExecutor
-from django.db.migrations.recorder import MigrationRecorder
 from django.db.models import F
 
 from parishkit.config import ConfigError
@@ -424,48 +422,6 @@ def test_failed_corruption_probe_rolls_back_guard_ddl(initialized):
             ["stewardship_parish_immutable_guard_v1"],
         )
         assert cursor.fetchone()[0] == "O"
-
-
-@pytest.mark.parametrize("activated_request", [False, True])
-@pytest.mark.parametrize("direct_preflight", [False, True])
-def test_downgrade_with_history_preserves_guards_and_migration_marker(
-    initialized, activated_request, direct_preflight
-):
-    """Reject before removing protections, including bootstrap-only history."""
-    store, root, actor = initialized
-    if activated_request:
-        install(store, stage(root, actor))
-    before = SystemConfiguration.objects.get().active_configuration_id
-    leaves = MigrationExecutor(connection).loader.graph.leaf_nodes()
-    try:
-        with pytest.raises(IntegrityError, match="prevents this schema downgrade"):
-            if direct_preflight:
-                # A newer dependent migration can refuse first. Also exercise
-                # 0013's own frozen preflight so that coverage is not masked.
-                migration = MigrationExecutor(connection).loader.disk_migrations[
-                    ("stewardship_accounts", "0013_activation_guards")
-                ]
-                with transaction.atomic(), connection.cursor() as cursor:
-                    cursor.execute(migration.operations[-1].reverse_sql)
-            else:
-                MigrationExecutor(connection).migrate(
-                    [("stewardship_accounts", "0010_request_intake_guards")]
-                )
-        assert MigrationRecorder.Migration.objects.filter(
-            app="stewardship_accounts", name="0013_activation_guards"
-        ).exists()
-        assert (
-            SystemConfiguration.objects.values_list(
-                "active_configuration_id", flat=True
-            ).get()
-            == before
-        )
-        with pytest.raises(IntegrityError), transaction.atomic():
-            SystemConfiguration.objects.update(version=F("version") + 1)
-    finally:
-        # Newer independent migrations may reverse before 0013 refuses. Restore
-        # the whole graph so this historical test cannot strand subsequent tests.
-        MigrationExecutor(connection).migrate(leaves)
 
 
 def test_request_activation_status_and_historical_retry(initialized):

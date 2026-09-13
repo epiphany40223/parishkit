@@ -1,0 +1,9 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Campaign content and templates" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Campaign content and templates" %}</h1><p>{{ campaign.active_configuration.name }}</p>
+<p>{% translate "Page slots have one selected revision. Email schedules may use different templates of the same kind. Changes create immutable revisions; earlier configuration versions retain their content." %}</p>
+<section class="panel"><h2>{% translate "Family pages" %}</h2><ul>{% for page in pages %}<li><a href="{{ page.url }}">{{ page.label }}</a> — {% if page.configured %}{% translate "configured" %}{% else %}{% translate "empty" %}{% endif %}</li>{% endfor %}</ul></section>
+<section class="panel"><h2>{% translate "Email templates" %}</h2>{% for email in emails %}<h3>{{ email.label }}</h3><ul>{% for revision in email.revisions %}<li><a href="{{ revision.url }}">{{ revision.subject }}</a>{% if revision.test_url %} — <a href="{{ revision.test_url }}">{% translate "Preview and send test" %}</a>{% endif %}</li>{% empty %}<li>{% translate "No template configured." %}</li>{% endfor %}</ul><p><a href="{{ email.url }}">{% translate "Create template" %}</a></p>{% endfor %}</section>
+<p><a href="{% url 'admin:campaign_settings' campaign.pk %}">{% translate "Campaign settings" %}</a></p>
+{% endblock %}

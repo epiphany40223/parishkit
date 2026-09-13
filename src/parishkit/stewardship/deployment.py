@@ -47,6 +47,11 @@ class ServiceRole(StrEnum):
     DATABASE_PROVISION = "database-provision"
 
 
+VALKEY_IDENTITIES = frozenset(
+    {"web", "worker", "scheduler", "mail-dispatch", "backup-worker"}
+)
+
+
 # The keys are stable configuration names; all paths, including derived stores,
 # can be overridden. Never traverse persistent_root during temporary cleanup.
 PATH_DEFAULTS = {
@@ -117,6 +122,13 @@ class ValkeyConfiguration:
     port: int
     database: int
     password_file: Path | None = field(repr=False)
+    password_files: Mapping[str, Path] = field(default_factory=dict, repr=False)
+
+    def __post_init__(self):
+        """Keep independently overridable credential references immutable."""
+        object.__setattr__(
+            self, "password_files", MappingProxyType(dict(self.password_files))
+        )
 
 
 @dataclass(frozen=True)
@@ -431,9 +443,21 @@ def load_deployment(
     )
     valkey = _mapping(
         deployment.get("valkey", {}),
-        {"host", "port", "database", "password_file"},
+        {"host", "port", "database", "password_file", "password_files"},
         "valkey",
     )
+    valkey_files = _mapping(
+        valkey.get("password_files", {}), VALKEY_IDENTITIES, "Valkey password files"
+    )
+    resolved_valkey_files = {}
+    for name in sorted(VALKEY_IDENTITIES):
+        reference = select_path(
+            "VALKEY_PASSWORD_FILE_" + name.upper().replace("-", "_"),
+            valkey_files.get(name),
+            None,
+        )
+        if reference is not None:
+            resolved_valkey_files[name] = reference
     broker = ValkeyConfiguration(
         host=_host(select("VALKEY_HOST", valkey.get("host"), "valkey"), "valkey.host"),
         port=_integer(
@@ -448,6 +472,7 @@ def load_deployment(
         password_file=select_path(
             "VALKEY_PASSWORD_FILE", valkey.get("password_file"), None
         ),
+        password_files=resolved_valkey_files,
     )
     secret_config = _mapping(deployment.get("secrets", {}), SECRET_NAMES, "secrets")
     secrets = {}

@@ -104,7 +104,9 @@ def validate_mounts(configuration, mounts):
     if configuration.secrets.keys() - allowed:
         raise ConfigError("Service configuration contains forbidden secret paths.")
     required = {
-        ServiceRole.MAIL_DISPATCH: {"token_private", "google_workspace"},
+        # Bootstrap setup uses an ephemeral Workspace relay before installation.
+        # Runtime DB/coherence admission requires the working file thereafter.
+        ServiceRole.MAIL_DISPATCH: {"token_private", "token_public"},
         ServiceRole.TOKEN_KEY_ROTATION: {"token_private", "token_public"},
         ServiceRole.BACKUP_WORKER: {"backup_target", "backup_data"},
     }.get(

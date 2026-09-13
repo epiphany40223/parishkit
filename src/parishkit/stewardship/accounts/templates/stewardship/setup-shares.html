@@ -1,0 +1,11 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "How Families will share" %} — {% translate "Initial setup" %}{% endblock %}
+{% block content %}
+<p><a href="{% url 'admin:setup' %}">{% translate "Initial setup" %}</a></p>
+<h1>{% translate "How Families will share" %}</h1><p>{{ campaign_name }}</p>
+<p class="notice">{% translate "Testing mode. Saving changes only this temporary wizard draft." %}</p>
+{% include 'stewardship/setup-deadlines.html' %}
+<form method="post">{% csrf_token %}<input type="hidden" name="version" value="{{ draft.status.version }}">
+{% include 'stewardship/share-fields.html' %}
+<button type="submit">{% translate "Save temporary share options" %}</button></form>
+{% endblock %}

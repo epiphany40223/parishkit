@@ -10,12 +10,14 @@ from django.db import DatabaseError, connection
 from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.configuration_requests import record_request
 from parishkit.stewardship.accounts.configuration_service import (
+    CONFIGURATION_COLUMNS,
     CONFIGURATION_GRANTS,
     ConfigurationInstaller,
     admit_configuration_database,
 )
 from parishkit.stewardship.deployment import ServiceRole, load_deployment
 
+from ..test_ministry_activity import activity
 from ..test_request_patch import parish_patch
 from .campaign_builders import draft_campaign, initialized
 
@@ -41,6 +43,12 @@ def config_role():
                 cursor.execute(
                     f'GRANT {", ".join(sorted(grants))} ON "{table}" TO "{ROLE}"'
                 )
+            for table, privileges in CONFIGURATION_COLUMNS.items():
+                for privilege, columns in privileges.items():
+                    cursor.execute(
+                        f"GRANT {privilege} ({', '.join(sorted(columns))}) "
+                        f'ON "{table}" TO "{ROLE}"'
+                    )
         yield
     finally:
         with connection.cursor() as cursor:
@@ -62,8 +70,9 @@ def as_config_installer():
 
 
 @pytest.mark.parametrize("current_campaign", [False, True])
+@pytest.mark.parametrize("local_activity", [False, True])
 def test_restricted_installer_applies_real_yaml_and_retries(
-    tmp_path, config_role, monkeypatch, current_campaign
+    tmp_path, config_role, monkeypatch, current_campaign, local_activity
 ):
     """An admitted service installs an exact digest without private-data reads."""
     if current_campaign:
@@ -84,6 +93,8 @@ def test_restricted_installer_applies_real_yaml_and_retries(
     else:
         store, root, actor = initialized(tmp_path)
         patch = parish_patch(root, name="Changed parish")
+    if local_activity:
+        patch.append({"operation": "add", "section": "ministries", **activity()})
     request = record_request(
         base_digest=root.digest,
         patch=patch,
@@ -133,7 +144,12 @@ def test_restricted_installer_applies_real_yaml_and_retries(
 
 @pytest.mark.parametrize(
     "grant",
-    ["SELECT ON stewardship_family_campaign", "INSERT ON stewardship_config_request"],
+    [
+        "SELECT ON stewardship_family_campaign",
+        "INSERT ON stewardship_config_request",
+        "SELECT ON stewardship_portal_session",
+        "SELECT (session_id) ON stewardship_portal_session",
+    ],
 )
 def test_excess_grants_rejected_before_any_install(config_role, grant):
     """Even unused excess authority fails closed before selecting a request."""

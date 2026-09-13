@@ -1,0 +1,10 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "First-campaign content" %}{% endblock %}
+{% block content %}
+<p><a href="{% url 'admin:setup' %}">{% translate "Setup overview" %}</a></p>
+<h1>{% translate "First-campaign content" %}</h1><p>{{ campaign_name }}</p>
+<p class="notice">{% translate "These page blocks and email templates are temporary until final setup completes. Preview uses fictional sample data and sends no email." %}</p>
+{% for group in groups %}<h2>{% if group.kind == 'page' %}{% translate "Family pages" %}{% else %}{% translate "Email templates" %}{% endif %}</h2>
+<ul>{% for entry in group.entries %}<li><a href="{{ entry.url }}">{{ entry.label }}</a> — {% if entry.saved %}{% translate "Saved temporarily" %}{% else %}{% translate "Empty" %}{% endif %}</li>{% endfor %}</ul>
+{% endfor %}
+{% endblock %}

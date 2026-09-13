@@ -11,8 +11,6 @@ from uuid import uuid4
 
 import pytest
 from django.db import IntegrityError, connection, connections, transaction
-from django.db.migrations.executor import MigrationExecutor
-from django.db.migrations.recorder import MigrationRecorder
 from django.db.models import F
 from django.db.models.deletion import ProtectedError
 
@@ -604,26 +602,6 @@ def test_composed_domain_writes_share_task_correlation(action):
     assert TaskRun.objects.get(pk=result.run_id).correlation_id == identifier
 
 
-def test_empty_migrations_roundtrip_restores_guards():
-    """The documented empty downgrade/reapply restores the actual SQL protection."""
-    leaves = MigrationExecutor(connection).loader.graph.leaf_nodes()
-    try:
-        MigrationExecutor(connection).migrate([("stewardship_jobs", None)])
-        assert "stewardship_task_run" not in connection.introspection.table_names()
-    finally:
-        MigrationExecutor(connection).migrate(leaves)
-    identifier = uuid4()
-    with pytest.raises(IntegrityError), transaction.atomic():
-        TaskRun.objects.create(
-            id=identifier,
-            root_id=identifier,
-            task_type="storage_probe",
-            state="succeeded",
-        )
-    status = act(new(), "claim")
-    assert TaskRunEvent.objects.filter(run_id=status.run_id).count() == 2
-
-
 @pytest.mark.parametrize(
     "values",
     [
@@ -684,24 +662,6 @@ def test_task_audit_ownership_uses_existing_insert_guard(configured, tmp_path):
     )
     assert set(events.values_list("ownership_scope", "parish_id")) == {expected}
     assert set(events.values_list("campaign_reference", flat=True)) == {None}
-
-
-def test_populated_downgrade_refuses_before_guard_removal():
-    """A refused downgrade leaves the schema marker, history and guards intact."""
-    status = new()
-    leaves = MigrationExecutor(connection).loader.graph.leaf_nodes()
-    try:
-        with pytest.raises(IntegrityError, match="Task history prevents"):
-            MigrationExecutor(connection).migrate(
-                [("stewardship_jobs", "0001_taskrun_storage")]
-            )
-        assert MigrationRecorder.Migration.objects.filter(
-            app="stewardship_jobs", name="0002_taskrun_guards"
-        ).exists()
-        assert TaskRunEvent.objects.count() == AuditEvent.objects.count() == 1
-        assert act(status, "claim").state == "running"
-    finally:
-        MigrationExecutor(connection).migrate(leaves)
 
 
 def test_emitter_ignores_temporary_audit_and_context_tables():

@@ -14,6 +14,8 @@ from parishkit.stewardship.storage import (
     UTCDateTimeField,
 )
 
+from .phases import PHASE_VALUES
+
 TASK_STATES = (
     "queued",
     "running",
@@ -83,6 +85,9 @@ class TaskRun(MutableRecord):
     not_before = UTCDateTimeField(db_default=Now())
     progress_current = models.PositiveBigIntegerField(default=0, db_default=0)
     progress_total = models.PositiveBigIntegerField(default=0, db_default=0)
+    phase = models.CharField(
+        max_length=32, default="unspecified", db_default="unspecified"
+    )
 
     class Meta(MutableRecord.Meta):
         db_table = "stewardship_task_run"
@@ -124,6 +129,9 @@ class TaskRun(MutableRecord):
                 name="task_progress_bounds",
             ),
             models.CheckConstraint(
+                condition=models.Q(phase__in=PHASE_VALUES), name="task_phase_known"
+            ),
+            models.CheckConstraint(
                 condition=models.Q(fence__gte=models.F("attempt")),
                 name="task_fence_bounds",
             ),
@@ -163,6 +171,9 @@ class TaskRunEvent(ImmutableRecord):
     not_before = UTCDateTimeField()
     progress_current = models.PositiveBigIntegerField()
     progress_total = models.PositiveBigIntegerField()
+    phase = models.CharField(
+        max_length=32, default="unspecified", db_default="unspecified"
+    )
 
     class Meta:
         db_table = "stewardship_task_event"
@@ -172,5 +183,9 @@ class TaskRunEvent(ImmutableRecord):
             ),
             models.CheckConstraint(
                 condition=models.Q(version__gte=1), name="task_event_positive"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(phase__in=PHASE_VALUES),
+                name="task_event_phase_known",
             ),
         ]

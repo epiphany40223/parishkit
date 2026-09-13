@@ -190,15 +190,47 @@ Documented first deployment order is:
 5. Start web/worker/scheduler/installers/proxy.
 6. Complete the first-Admin wizard.
 
-Application containers do not race to run migrations. A production upgrade
-requires a successful recent backup, pulls pinned images, runs migration checks
+### Pre-production development policy
+
+Human decision, September 13, 2026: all remaining stewardship implementation is
+pre-production until the human explicitly activates production-readiness work.
+Maintain a current fresh-install schema baseline. Do not build or test database
+or application upgrade/downgrade paths, preserve intermediate development schema
+compatibility, or add legacy compatibility code solely for old development
+installations. Update the baseline and its model state as functionality evolves,
+with fresh-install and current-functionality regression evidence. This standing
+policy supersedes upgrade-related acceptance work elsewhere in the plans and
+tasks while pre-production continues; do not block phase delivery on it.
+
+Fresh installation, model/schema agreement, current constraints and permissions,
+transactions, restart/persistence, failure recovery and current-format backup/
+restore tests remain relevant. Business workflows such as campaign transitions,
+credential rotation, configuration versioning and cancelling an unapplied setup
+are current application behavior, not obsolete software upgrade paths.
+
+This policy never authorizes deleting existing development databases, faking
+migration state or claiming compatibility with discarded development schemas.
+Keep existing databases/volumes intact and use separately selected empty ones
+when required. See the [schema baseline guide](../../../guides/stewardship-schema.md).
+
+Application containers do not race to run migrations. Current startup refuses
+an unsupported schema or missing credential file and reports a sanitized,
+actionable error. These fresh-install and restart protections remain required
+throughout pre-production.
+
+### Production upgrades (deferred)
+
+The following requirements become implementation/acceptance work only when the
+human explicitly activates production-readiness work. At that point declare the
+supported baseline and compatibility policy before adding forward upgrades.
+
+A production upgrade requires a successful recent backup, pulls pinned images, runs migration checks
 and migrations, then restarts services. Migrations must be forward-safe for the
 declared rollout; destructive column removal follows expand/migrate/contract
 across releases.
 
 Rollback instructions distinguish application rollback (only when schema is
-compatible) from database restore. Startup refuses an unsupported newer schema
-or missing credential file and reports a sanitized actionable error.
+compatible) from database restore.
 
 ### Offline bootstrap profile
 

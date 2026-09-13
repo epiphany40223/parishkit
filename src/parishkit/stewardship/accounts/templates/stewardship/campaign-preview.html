@@ -1,0 +1,13 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Review campaign changes" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Review campaign changes" %}</h1>
+{% if creating %}<p>{% translate "This creates a new draft, not a live campaign. No Family emails are sent by this action." %}</p>{% endif %}
+{% if removes_share_options %}<p class="notice" role="note">{% translate "Disabling financial stewardship removes this draft's sharing options. Re-enabling it starts with the default options, not your customized labels. The previous configuration remains in retained history." %}</p>{% endif %}
+{% for change in changes %}<section class="panel"><h2>{{ change.label }}</h2>
+<p>{% translate "Applied:" %} {{ change.before|default_if_none:'—'|linebreaksbr }}</p>
+<p>{% translate "Proposed:" %} {{ change.after|default_if_none:'—'|linebreaksbr }}</p></section>{% endfor %}
+<p>{% translate "This exact preview expires in 15 minutes. Confirmation requests installation; settings change only after the request is Applied. A campaign or source change requires a fresh preview." %}</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}">
+<button type="submit">{% translate "Apply changes" %}</button></form>
+{% endblock %}

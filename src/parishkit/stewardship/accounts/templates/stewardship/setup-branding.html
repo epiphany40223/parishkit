@@ -1,0 +1,15 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Parish logo — Initial setup" %}{% endblock %}
+{% block content %}
+<p><a href="{% url 'admin:setup' %}">{% translate "Setup overview" %}</a></p>
+<h1>{% translate "Parish logo" %}</h1>
+<p class="notice">{% translate "Testing mode. This logo is private to this setup login until final activation." %}</p>
+{% include 'stewardship/setup-deadlines.html' %}
+{% if assets %}<section class="panel"><h2>{% translate "Generated display sizes" %}</h2>
+<div class="branding-preview">{% for asset in assets %}<figure><img src="{% url 'admin:setup_branding_asset' asset.pk %}" alt="{{ asset.label|capfirst }}"><figcaption>{{ asset.label|capfirst }} — {{ asset.width }} × {{ asset.height }}</figcaption></figure>{% endfor %}</div>
+</section>{% endif %}
+<form method="post" enctype="multipart/form-data" class="panel">
+{% csrf_token %}<input type="hidden" name="version" value="{{ draft.status.version }}">
+{{ form.as_div }}<button type="submit">{% translate "Upload and preview logo" %}</button>
+</form>
+{% endblock %}

@@ -1,16 +1,31 @@
 {% extends 'stewardship/base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Campaign administration" %}{% endblock %}
 {% block content %}
-  <div data-admin-session data-server-now="{{ server_now|instant }}" data-idle-deadline="{{ deadline|instant }}" data-absolute-deadline="{{ absolute_deadline|instant }}">
-  <p id="session-warning" class="notice" role="status" aria-live="polite" hidden>{% translate "Your session ends in less than five minutes. Finish your current action or sign in again." %}</p>
-  <p id="session-expired" class="notice notice-error" role="alert" hidden>{% translate "Your session has ended." %} <a href="/admin/login">{% translate "Sign in again" %}</a></p>
   <h1>{% translate "Campaign administration" %}</h1>
   <section class="panel">
-    <p>{{ configuration.active_configuration.parish.name }}</p>
-    <p>{% translate "You are signed in. Campaign workflows will appear here as they become available." %}</p>
+    {% if dashboard.campaign %}
+    <h2>{{ dashboard.campaign.active_configuration.name }}</h2>
+    <p>{% translate "State:" %} {{ dashboard.campaign.state|capfirst }}</p>
+    <p>{{ dashboard.campaign.active_configuration.start_date|parish_date }} – {{ dashboard.campaign.active_configuration.end_date|parish_date }} ({{ dashboard.campaign.active_configuration.timezone }})</p>
+    {% else %}<p>{% translate "No current campaign has been configured." %}</p>{% endif %}
+    <p>{% translate "Latest successful source refresh:" %}
+      {% if dashboard.refreshed_at %}<time datetime="{{ dashboard.refreshed_at|instant }}" data-local-instant>{{ dashboard.refreshed_at|instant }}</time>{% else %}{% translate "Not yet refreshed" %}{% endif %}
+    </p>
+    {% if dashboard.next_mail %}<p>{% translate "Next planned Family mailing:" %} <time datetime="{{ dashboard.next_mail.due_at|instant }}" data-local-instant>{{ dashboard.next_mail.due_at|instant }}</time></p>{% endif %}
   </section>
+  {% if dashboard.families %}<section class="panel">
+    <h2>{% translate "Family participation" %}</h2>
+    <p>{% translate "Active Families:" %} {{ dashboard.families.active|number }}</p>
+    <p>{% translate "Responses among currently portal-eligible Families:" %} {{ dashboard.families.participation|out_of }}</p>
+    <p>{% translate "All Families with a live response:" %} {{ dashboard.families.responded|number }}</p>
+    {% if configuration.mode == 'testing' %}<p>{% translate "Testing rehearsals are not live campaign responses." %}</p>{% endif %}
+  </section>{% endif %}
+  {% if dashboard.recent_failures %}<section class="panel">
+    <h2>{% translate "Recent failed background tasks" %}</h2>
+    <p>{% translate "Latest five failures recorded in the past 24 hours." %}</p>
+    <ul>{% for task in dashboard.recent_failures %}<li><a href="{% url 'admin:background_task_page' task.id %}">{{ task.task_type }}</a> — <time datetime="{{ task.updated_at|instant }}" data-local-instant>{{ task.updated_at|instant }}</time></li>{% endfor %}</ul>
+  </section>{% endif %}
   <form method="post" action="{% url 'admin:logout' %}">
     {% csrf_token %}<button type="submit">{% translate "Sign out" %}</button>
   </form>
-  </div>
 {% endblock %}

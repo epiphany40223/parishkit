@@ -20,7 +20,7 @@ class RuntimeBudget:
     rollout_overlap: int = 2
     download_capacity: int = 4
     download_pool_per_process: int = 2
-    background_connections: int = 32
+    background_connections: int = 36
     operator_connections: int = 8
     auxiliary_connections: int = 8
     database_connections: int = 100

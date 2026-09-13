@@ -6,23 +6,31 @@ the task-level navigation companion to the
 owns dependency ordering, allowed phase scope, and gate exit requirements.
 Use [milestones](milestones.md) for demonstration and review status.
 
+Standing scope override: follow the
+[pre-production development policy](../../specs/stewardship/operations/spec.md#pre-production-development-policy)
+for all remaining work. Historical upgrade/downgrade implementation and tests
+are not dependency-ready requirements until production-readiness work is
+explicitly activated; older evidence describes what was tested then, not work
+to recreate after baseline consolidation.
+
 ## How to select the next work
 
 1. Find the earliest incomplete phase whose preceding review gate has passed and
    whose preceding phase PR has merged. Follow the controlling plan's
    [automated phase delivery cycle](../../plans/stewardship/overall.md#automated-phase-delivery-cycle)
-   for branch creation, delegated decisions, review rounds, CI, and merge approval.
+   for branch creation, delegated decisions, review rounds, CI, and standing merge authority.
 2. Follow the ordered package links below; within a package, inspect its full
    plan item, task evidence, and dependencies before selecting work.
-3. Deliver a coherent phase/subphase batch, verify it, and update its owning task lists.
+3. Deliver a coherent subphase/vertical slice, verify it, and update its owning task lists.
    Record partial scope when a package spans phases; do not mark a whole package
    done because its first consumer works. Continue through dependency-ready tasks
    within the batch without routine approval stops. Individual storage records,
    migrations and helpers are internal checkpoints, not default PR boundaries.
 4. Complete the phase demonstration and required review/fix rounds, then create
    or update its PR and correct CI failures. At a formal gate, also validate and
-   review the complete integrated gate scope. Stop for human merge approval with
-   the applicable gate evidence before proceeding to the next phase.
+   review the complete integrated gate scope. Follow the controlling cycle's
+   standing merge authority and remaining explicit approval boundaries; wait for
+   the merge to land on `origin/main` before branching the next increment.
 5. On handoff, record active phase, completed task IDs, implementation SHA,
    validation evidence, remaining scope, and the next dependency-ready task.
 
@@ -201,6 +209,29 @@ Do not start DAT-03 until Gate 1 and the phase PR receive human approval.
 ## Phase 2: Source, setup, and preparation
 
 Source scope: [Phase 2: Source, setup, and preparation](../../plans/stewardship/overall.md#phase-2-source-truth-initial-setup-and-campaign-preparation).
+
+September 11, 2026: PR #21 merged as
+`48be3666f0c89cc15586cb67465cd1ba0504203c` after passing merge-queue CI. The owner
+authorized automatic continuation upon that merge, releasing Gate 1. Branch
+`pr/stewardship-phase-2` starts from the refreshed `origin/main` tip and targets
+the complete Phase 2 batch below, not a separate PR per storage component.
+Its [execution checkpoints](../../guides/stewardship-phase-2.md) track scope,
+tests and the required three-round review/fix cycle. DAT-03 storage and the
+background/source pipeline, complete initial setup and Admin campaign preparation
+have been implemented. Integrated validation and three full-phase review/fix
+rounds pass at corrected implementation `ea2d5cb`; the final round found no
+High/Critical issues and all retained findings are resolved. The
+[acceptance index](../../guides/stewardship-phase-2-acceptance.md) records all
+demonstrations, test counts and coverage. DAT-03, BG-01, BG-05, ADM-02, ADM-03,
+ADM-04 and M2 are complete for this phase; DAT-04/DAT-05 retain only their named
+later consumers. PR #22 is open; its post-consolidation CI passes, and the
+[supplemental review gate](../../guides/stewardship-phase-2-consolidation-review.md)
+is complete with a second successful dual-source round, no High/Critical
+findings and passing correction tests. The human has authorized merging after
+final-head validation passes. After that merge lands on `origin/main`, the next
+dependency-ready package is Phase 3A DAT-06; do not start the Family slice before
+then. The pre-consolidation SHAs above remain historical evidence, not acceptance
+of subsequent corrections.
 
 1. [DAT-03](data.md#dat-03-versioned-parishsoft-source-corpus) → [BG-01](background-processing.md#bg-01-durable-task-scheduler-lease-and-recovery-substrate) → [BG-05](background-processing.md#bg-05-parishsoft-delta-and-full-refresh) → [ADM-02](admin-portal.md#adm-02-bootstrap-command-and-transactional-setup-wizard) → [ADM-03](admin-portal.md#adm-03-navigation-dashboard-indicators-and-configuration) → [ADM-04](admin-portal.md#adm-04-campaign-editor-content-schedules-and-previews).
 2. Complete source-promotion integration for [DAT-04](data.md#dat-04-family-campaign-identity-and-credentials) population and [DAT-05](data.md#dat-05-portal-users-and-authorization-policy-records) chair suggestions.

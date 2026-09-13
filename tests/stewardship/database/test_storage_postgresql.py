@@ -18,7 +18,6 @@ from django.db import (
     connections,
     transaction,
 )
-from django.db.migrations.executor import MigrationExecutor
 from django.db.models import F
 from django.db.models.deletion import ProtectedError
 from django.test.utils import CaptureQueriesContext
@@ -316,26 +315,6 @@ def test_new_connection_retains_session_and_audit(portal_session):
 
 
 @pytest.mark.django_db(transaction=True)
-def test_migrations_reverse_and_reapply():
-    """Empty disposable tables reverse cleanly and reapply the audit guard."""
-    executor = MigrationExecutor(connection)
-    leaves = executor.loader.graph.leaf_nodes()
-    try:
-        executor.migrate([("stewardship_accounts", None), ("stewardship_audit", None)])
-        tables = connection.introspection.table_names()
-        assert "stewardship_portal_session" not in tables
-        assert "stewardship_audit_event" not in tables
-    finally:
-        MigrationExecutor(connection).migrate(leaves)
-    event = AuditEvent.objects.create(event_type="after_migration")
-    with (
-        pytest.raises(IntegrityError, match="append-only"),
-        connection.cursor() as cursor,
-    ):
-        cursor.execute("DELETE FROM stewardship_audit_event WHERE id = %s", [event.pk])
-
-
-@pytest.mark.django_db(transaction=True)
 def test_concurrent_mutations_have_one_winner(portal_session):
     """Independent PostgreSQL connections serialize the row and detect staleness."""
     barrier = Barrier(2, timeout=10)
@@ -403,6 +382,31 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
     # ARC-05 intentionally deletes invalidated rehearsal detail, retaining the
     # separate anonymous code reservation forever. It is not append-only data.
     retention_exceptions = {"stewardship_rehearsal_code_mac": "retention"}
+    from parishkit.stewardship.reports.models import CampaignDailyFact
+    from parishkit.stewardship.source.version_models import ENTITY_MODELS
+
+    # Source detail is immutable during use, but the compaction owner may delete
+    # retired payloads/memberships. Check its actual UPDATE/DELETE/INSERT guards,
+    # rather than exempting these tables from the inventory or demanding a
+    # blanket append-only trigger that would prohibit the specified retention.
+    compaction_contracts = {
+        CampaignDailyFact: (
+            "fact_day_guard",
+            "stewardship_fact_day_guard",
+            "Fact rows are protected from compaction",
+        ),
+    }
+    for kind, (payload, membership) in ENTITY_MODELS.items():
+        compaction_contracts[payload] = (
+            f"source_{kind}_payload",
+            "stewardship_source_payload_guard",
+            "Source deletion requires compaction ownership",
+        )
+        compaction_contracts[membership] = (
+            f"snapshot_{kind}_membership",
+            "stewardship_source_membership_guard",
+            "Reconstructable snapshot membership is protected",
+        )
     models = [
         model for model in apps.get_models() if issubclass(model, ImmutableRecord)
     ]
@@ -410,6 +414,21 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
     with connection.cursor() as cursor:
         for model in models:
             table = model._meta.db_table
+            if model in compaction_contracts:
+                trigger, function, evidence = compaction_contracts[model]
+                cursor.execute(
+                    "SELECT p.proname,t.tgtype,pg_get_functiondef(p.oid) "
+                    "FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid "
+                    "WHERE t.tgrelid=%s::regclass AND t.tgname=%s "
+                    "AND t.tgenabled='O' AND NOT t.tgisinternal",
+                    [table, trigger],
+                )
+                row = cursor.fetchone()
+                assert row is not None, table
+                assert row[:2] == (function, 31), table
+                assert "IFTG_OP='UPDATE'THEN" in "".join(row[2].split()), table
+                assert "RAISE EXCEPTION" in row[2] and evidence in row[2], table
+                continue
             contract = retention_exceptions.get(table, "immutable")
             cursor.execute(
                 "SELECT p.proname, t.tgtype, pg_get_functiondef(p.oid) "

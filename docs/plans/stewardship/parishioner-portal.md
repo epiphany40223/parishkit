@@ -72,7 +72,10 @@ The flow is a single guided response, not a general Family dashboard.
 
 1. Show deterministic current Ministries per Member, leave choices, and an
    on-demand searchable/sorted join list excluding current participation.
-2. Apply the campaign Ministry set and create no source roster mutation.
+2. Apply the campaign Ministry set and the
+   [Admin-managed activity policy](../../specs/stewardship/admin-portal/spec.md#ministry-activity-management)
+   to both current memberships and choices, and create no source roster mutation.
+   Preserve hidden prior requests and recheck policy at final submission.
 3. Display prior pledge/current contribution with mapped period/source-as-of,
    collect nonnegative annual pledge and frequency, and calculate per-period
    amount deterministically.
@@ -85,6 +88,9 @@ The flow is a single guided response, not a general Family dashboard.
    decimal rounding/display, zero pledge, and option-version changes. Cover
    zero/one/many Member labels, terminal/proposed Member counting, and navigating
    back to mark all Members terminal without losing financial answers.
+   Cover inactivation during an open form, hidden existing memberships and
+   pending requests, explicit reactivation, and rejection of forged inactive
+   Ministry actions without erasing prior accepted work.
 
 ### FAM-06: Additional information, review, and atomic submit
 

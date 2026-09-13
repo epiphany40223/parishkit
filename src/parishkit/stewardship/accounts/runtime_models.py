@@ -19,7 +19,6 @@ class SystemConfiguration(MutableRecord):
     # OPS-06 will replace this freeze with its journalled restore/release owner.
     # Ordinary campaign/configuration writers must never change the safety gate.
     immutable_fields = MutableRecord.immutable_fields + (
-        "testing_recipient",
         "restore_review_required",
         "restore_id",
         "restore_backup_at",

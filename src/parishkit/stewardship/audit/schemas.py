@@ -47,6 +47,23 @@ class Action(StrEnum):
     DESTRUCTIVE_CONFIRMATION = "destructive_confirmation"
     INVALID_LINK = "family_link_invalid"
     FAMILY_MAC_BACKFILLED = "family_mac_backfilled"
+    SOURCE_COMPACTED = "source_compacted"
+    FACTS_COMPACTED = "facts_compacted"
+    SOURCE_PROMOTED = "source_promoted"
+    CHAIR_RECONCILED = "chair_reconciled"
+    SOURCE_REJECTED = "source_rejected"
+    SOURCE_SUPERSEDED = "source_superseded"
+    SOURCE_FALLBACK = "source_fallback_requested"
+    BACKGROUND_VIEWED = "background_viewed"
+    DASHBOARD_VIEWED = "dashboard_viewed"
+    PRESENCE_VIEWED = "family_presence_viewed"
+    SETUP_STARTED = "setup_started"
+    SETUP_SOURCE_STARTED = "setup_source_started"
+    SETUP_SOURCE_COMPLETED = "setup_source_completed"
+    SETUP_FROZEN = "setup_frozen"
+    SETUP_EXPIRED = "setup_expired"
+    SETUP_CREDENTIAL_STAGED = "setup_credential_staged"
+    SETUP_CREDENTIAL_SCRUBBED = "setup_credential_scrubbed"
 
 
 FIELDS = {

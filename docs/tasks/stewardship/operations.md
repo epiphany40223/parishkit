@@ -101,9 +101,9 @@ Scope and dependencies: [OPS-04 work package](../../plans/stewardship/operations
 
 - [x] OPS-04.01 — Integrate bootstrap, offline Admin recovery, startup exclusion, health, and budget validation.
 - [x] OPS-04.02 — Run migrations once before service rollout.
-- [ ] OPS-04.03 — Implement backup-aware image upgrades and readiness checks.
+- [ ] OPS-04.03 — Deferred until explicitly activated production-readiness work: backup-aware image upgrades and upgrade readiness checks.
 - [x] OPS-04.04 — Document schema evolution and recovery procedures.
-- [ ] OPS-04.05 — Test bootstrap isolation, startup races, mismatch, crash, and upgrade paths.
+- [ ] OPS-04.05 — Test bootstrap isolation, startup races, mismatch and crash; upgrade-path tests are deferred by the pre-production policy.
 
 Current evidence: [runtime startup and recovery](../../guides/stewardship-runtime.md)
 and the [review ledger](../../guides/stewardship-phase-1c-reviews.md). Development

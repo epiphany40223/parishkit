@@ -1,0 +1,6 @@
+{% load i18n %}
+<section class="panel" aria-label="{% translate 'Setup deadlines' %}">
+<p>{% translate "Idle deadline:" %} <time data-local-instant datetime="{{ draft.idle_at|date:'c' }}">{{ draft.idle_at|date:'c' }}</time></p>
+<p>{% translate "Absolute session deadline:" %} <time data-local-instant datetime="{{ draft.absolute_at|date:'c' }}">{{ draft.absolute_at|date:'c' }}</time></p>
+{% if draft.watchdog_at %}<p>{% translate "Source-load hard deadline:" %} <time data-local-instant datetime="{{ draft.watchdog_at|date:'c' }}">{{ draft.watchdog_at|date:'c' }}</time></p>{% endif %}
+</section>

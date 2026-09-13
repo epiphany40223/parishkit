@@ -14,12 +14,33 @@ from uuid import UUID
 
 from parishkit.config import ConfigError
 
+from . import source_cadence_schema as cadence
 from .authority import ConfigurationVersion, parse_version
 from .configuration_schema import validator_for
+from .content_schema import RECOVERY_SCHEMA as CONTENT_RECOVERY_SCHEMA
+from .content_schema import REQUEST_SCHEMA as CONTENT_REQUEST_SCHEMA
+from .content_schema import SCHEMA as CONTENT_SCHEMA
+from .content_schema import validate_content_change
+from .ministry_activity import RECOVERY_SCHEMA as MINISTRY_RECOVERY_SCHEMA
+from .ministry_activity import REQUEST_SCHEMA as MINISTRY_REQUEST_SCHEMA
+from .ministry_activity import SCHEMA as MINISTRY_SCHEMA
+from .ministry_activity import remember_records
+from .setup_configuration import REQUEST_SCHEMA as SETUP_REQUEST_SCHEMA
+from .setup_configuration import build_setup_candidate
 
 REQUEST_SCHEMA = "parish-integrations-patch-v1"
 POLICY_REQUEST_SCHEMA = "foundation-policy-patch-v2"
 CAMPAIGN_REQUEST_SCHEMA = "campaign-foundation-patch-v3"
+CREDENTIAL_REQUEST_SCHEMA = "integration-credential-patch-v6"
+MANUAL_POLICY_REQUEST_SCHEMAS = frozenset(
+    {
+        POLICY_REQUEST_SCHEMA,
+        CAMPAIGN_REQUEST_SCHEMA,
+        MINISTRY_REQUEST_SCHEMA,
+        CONTENT_REQUEST_SCHEMA,
+        cadence.REQUEST_SCHEMA,
+    }
+)
 
 
 def _invalid():
@@ -95,7 +116,127 @@ def _build_v3_candidate(base, patch, *, candidate_id):
     return result
 
 
-def _build_records(base, patch, *, candidate_id, schema, sections):
+def _build_v4_candidate(base, patch, *, candidate_id):
+    """Add local activity without weakening campaign or policy change validation."""
+    from parishkit.stewardship.campaigns.configuration import validate_campaign_change
+
+    from .policy_schema import validate_policy_change
+
+    result = _build_records(
+        base,
+        patch,
+        candidate_id=candidate_id,
+        schema=MINISTRY_SCHEMA,
+        sections={
+            "parish",
+            "integrations",
+            "login_rules",
+            "campaigns",
+            "schedules",
+            "ministries",
+        },
+    )
+    old, new = base.document(), result.candidate.document()
+    validate_policy_change(
+        old["sections"].get("login_rules", []),
+        new["sections"].get("login_rules", []),
+    )
+    validate_campaign_change(old, new)
+    by_id, by_identity = {}, {}
+    remember_records(old, by_id, by_identity)
+    remember_records(new, by_id, by_identity)
+    return result
+
+
+def _build_v5_candidate(base, patch, *, candidate_id, schema=CONTENT_SCHEMA):
+    """Add immutable content while retaining policy, campaign and Ministry fences."""
+    from parishkit.stewardship.campaigns.configuration import validate_campaign_change
+
+    from .policy_schema import validate_policy_change
+
+    result = _build_records(
+        base,
+        patch,
+        candidate_id=candidate_id,
+        schema=schema,
+        sections={
+            "parish",
+            "integrations",
+            "login_rules",
+            "campaigns",
+            "schedules",
+            "ministries",
+            "content",
+        },
+    )
+    old, new = base.document(), result.candidate.document()
+    validate_policy_change(
+        old["sections"].get("login_rules", []),
+        new["sections"].get("login_rules", []),
+    )
+    validate_campaign_change(old, new)
+    by_id, by_identity = {}, {}
+    remember_records(old, by_id, by_identity)
+    remember_records(new, by_id, by_identity)
+    validate_content_change(old, new)
+    return result
+
+
+def _credential_schema_v6(document):
+    """Freeze v6 receipt replay against its original five supported public schemas."""
+    sections = document["sections"]
+    if "content" in sections:
+        return "campaign-content-v5"
+    if sections.get("ministries"):
+        return "ministry-activity-v4"
+    if any(sections.get(name) for name in ("campaigns", "schedules")):
+        return "campaign-foundation-v3"
+    if sections.get("login_rules"):
+        return "foundation-policy-v2"
+    return "parish-integrations-v1"
+
+
+def _build_credential_candidate(base, patch, *, candidate_id, schema=None):
+    """A separate explicit format changes one fingerprint, never public settings.
+
+    Parsing binds immutable intent, not installed-credential authority. The
+    selection owner and installer verify target receipts/ACKs independently.
+    Default and retained v1-v5 parsers continue to reject fingerprint edits.
+    """
+    if not isinstance(base, ConfigurationVersion):
+        raise TypeError("An explicit configuration version is required.")
+    if (
+        type(patch) is not list
+        or len(patch) != 1
+        or type(patch[0]) is not dict
+        or patch[0].get("operation") != "update"
+        or patch[0].get("section") != "integrations"
+        or type(patch[0].get("values")) is not dict
+        or set(patch[0]["values"]) != {"credential_fingerprint"}
+        or patch[0]["values"]["credential_fingerprint"] is None
+    ):
+        _invalid()
+    result = _build_records(
+        base,
+        patch,
+        candidate_id=candidate_id,
+        schema=schema or _credential_schema_v6(base.document()),
+        sections={"integrations"},
+        credential_reference=True,
+    )
+    record = next(
+        row
+        for row in result.candidate.document()["sections"]["integrations"]
+        if row["id"] == patch[0]["id"]
+    )
+    if record["values"]["kind"] not in {"parishsoft", "google_workspace", "slack"}:
+        _invalid()
+    return result
+
+
+def _build_records(
+    base, patch, *, candidate_id, schema, sections, credential_reference=False
+):
     """Shared mechanical patch application; each stored parser chooses its schema."""
     if not isinstance(base, ConfigurationVersion) or not isinstance(candidate_id, UUID):
         raise TypeError("Explicit configuration and candidate identities are required.")
@@ -151,7 +292,9 @@ def _build_records(base, patch, *, candidate_id, schema, sections):
                 if action == "add":
                     if values.get("credential_fingerprint") is not None:
                         _invalid()
-                elif "kind" in values or "credential_fingerprint" in values:
+                elif "kind" in values or (
+                    "credential_fingerprint" in values and not credential_reference
+                ):
                     # These are identity/installer evidence, not Admin-editable
                     # settings. Even resubmitting an unchanged value is refused.
                     _invalid()
@@ -246,11 +389,64 @@ def _build_recovery_bootstrap_candidate(base, patch, *, candidate_id):
     )
 
 
+def _build_recovery_ministry_candidate(base, patch, *, candidate_id):
+    """Retain local activity during additive-only offline Admin recovery."""
+    return _build_recovery_candidate(
+        base, patch, candidate_id=candidate_id, schema=MINISTRY_SCHEMA
+    )
+
+
+def _build_recovery_content_candidate(base, patch, *, candidate_id):
+    """Preserve selected content during additive-only offline Admin recovery."""
+    return _build_recovery_candidate(
+        base, patch, candidate_id=candidate_id, schema=CONTENT_SCHEMA
+    )
+
+
+def _build_cadence_candidate(base, patch, *, candidate_id):
+    """Preserve every content, campaign and policy edit rule with nightly settings."""
+    return _build_v5_candidate(
+        base, patch, candidate_id=candidate_id, schema=cadence.SCHEMA
+    )
+
+
+def _build_recovery_cadence_candidate(base, patch, *, candidate_id):
+    """Offline recovery remains additive-only without dropping selected cadence."""
+    return _build_recovery_candidate(
+        base, patch, candidate_id=candidate_id, schema=cadence.SCHEMA
+    )
+
+
+def _build_credential_cadence_candidate(base, patch, *, candidate_id):
+    """Fingerprint-only selection retains public cadence and frozen v6 replay."""
+    return _build_credential_candidate(
+        base, patch, candidate_id=candidate_id, schema=cadence.SCHEMA
+    )
+
+
+def credential_request_schema(document):
+    """Select the new receipt parser only for configuration containing cadence."""
+    return (
+        cadence.CREDENTIAL_SCHEMA
+        if cadence.uses_cadence(document)
+        else CREDENTIAL_REQUEST_SCHEMA
+    )
+
+
 BUILDERS = MappingProxyType(
     {
         "parish-integrations-patch-v1": _build_v1_candidate,
         POLICY_REQUEST_SCHEMA: _build_v2_candidate,
         CAMPAIGN_REQUEST_SCHEMA: _build_v3_candidate,
+        MINISTRY_REQUEST_SCHEMA: _build_v4_candidate,
+        MINISTRY_RECOVERY_SCHEMA: _build_recovery_ministry_candidate,
+        CONTENT_REQUEST_SCHEMA: _build_v5_candidate,
+        CONTENT_RECOVERY_SCHEMA: _build_recovery_content_candidate,
+        CREDENTIAL_REQUEST_SCHEMA: _build_credential_candidate,
+        SETUP_REQUEST_SCHEMA: build_setup_candidate,
+        cadence.REQUEST_SCHEMA: _build_cadence_candidate,
+        cadence.RECOVERY_SCHEMA: _build_recovery_cadence_candidate,
+        cadence.CREDENTIAL_SCHEMA: _build_credential_cadence_candidate,
         "operator-recovery-patch-v1": _build_recovery_candidate,
         "operator-recovery-patch-v2": _build_recovery_v2_candidate,
         "operator-recovery-bootstrap-v1": _build_recovery_bootstrap_candidate,
@@ -271,6 +467,40 @@ def build_candidate(base, patch, *, candidate_id, request_schema=None):
 
 def default_schema(base, patch):
     """Choose a new intent schema while keeping every stored retry discriminator."""
+    if (
+        isinstance(base, ConfigurationVersion) and cadence.uses_cadence(base.document())
+    ) or (
+        type(patch) is list
+        and any(
+            type(item) is dict
+            and item.get("section") == "integrations"
+            and type(item.get("values")) is dict
+            and type(item["values"].get("settings")) is dict
+            and "nightly_time" in item["values"]["settings"]
+            for item in patch
+        )
+    ):
+        return cadence.REQUEST_SCHEMA
+    if (
+        isinstance(base, ConfigurationVersion)
+        and "content" in base.document()["sections"]
+    ) or (
+        type(patch) is list
+        and any(
+            type(item) is dict and item.get("section") == "content" for item in patch
+        )
+    ):
+        return CONTENT_REQUEST_SCHEMA
+    if (
+        isinstance(base, ConfigurationVersion)
+        and base.document()["sections"].get("ministries")
+    ) or (
+        type(patch) is list
+        and any(
+            type(item) is dict and item.get("section") == "ministries" for item in patch
+        )
+    ):
+        return MINISTRY_REQUEST_SCHEMA
     if (
         isinstance(base, ConfigurationVersion)
         and any(

@@ -1,0 +1,1 @@
+{% load i18n %}{% if value %}<p>{{ value.subject }}</p><p>{% if value.date %}{{ value.date }}{% else %}{% translate "Recurring" %}{% endif %} {{ value.time }}{% if value.weekday_label %} — {{ value.weekday_label }}{% endif %}</p>{% else %}<p>{% translate "None (not scheduled)" %}</p>{% endif %}

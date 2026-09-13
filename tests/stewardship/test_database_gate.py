@@ -79,17 +79,27 @@ def test_ci_explicitly_requires_postgresql_verification():
         step.get("run", "")
         for step in workflow["jobs"]["stewardship-postgresql"]["steps"]
     )
-    assert "parishkit.stewardship.quality --postgresql" in commands
-    release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
-    assert (
-        release["jobs"]["validate-build"]["services"]
-        == workflow["jobs"]["stewardship-postgresql"]["services"]
+    assert "parishkit.stewardship.quality_ci combine --count 8" in commands
+    shards = workflow["jobs"]["stewardship-postgresql-shard"]
+    gate = workflow["jobs"]["stewardship-postgresql"]
+    assert shards["strategy"]["matrix"]["shard"] == list(range(1, 9))
+    assert shards["strategy"]["fail-fast"] is False
+    assert gate["needs"] == "stewardship-postgresql-shard"
+    assert gate["if"] == "${{ always() }}"
+    assert gate["steps"][0]["run"] == 'test "$SHARD_RESULT" = success'
+    assert shards["timeout-minutes"] == 25
+    assert gate["timeout-minutes"] == 10
+    assert any(
+        "quality_ci shard --index ${{ matrix.shard }} --count 8" in step.get("run", "")
+        for step in shards["steps"]
     )
+    release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
+    assert release["jobs"]["validate-build"]["services"] == shards["services"]
 
 
 @pytest.mark.parametrize(
     "filename,job",
-    [("ci.yml", "stewardship-compose"), ("release.yml", "validate-build")],
+    [("ci.yml", "stewardship-compose-core"), ("release.yml", "validate-build")],
 )
 def test_ci_requires_every_operational_container_module(filename, job):
     """Runtime coverage cannot silently disappear from either required pipeline."""
@@ -102,12 +112,88 @@ def test_ci_requires_every_operational_container_module(filename, job):
     assert step["env"]["PARISHKIT_RUN_RUNTIME_TESTS"] == "1"
     assert "--require-no-skips" in step["run"]
     for module in (
-        "test_operational_compose",
         "test_database_provisioning_container",
         "test_runtime_provisioning_container",
         "test_runtime_ingress_container",
     ):
         assert f"tests/stewardship/{module}.py" in step["run"]
+    if filename == "release.yml":
+        assert "tests/stewardship/test_operational_compose.py" in step["run"]
+
+
+def test_compose_matrix_and_required_gate_cover_all_scenarios():
+    """Isolated runners retain all eight scenarios and fail closed as one check."""
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    jobs = workflow["jobs"]
+    operational = jobs["stewardship-operational"]
+    assert operational["strategy"] == {
+        "fail-fast": False,
+        "matrix": {
+            "provider": ["configured", "initial", "complete", "abort"],
+            "production": ["False", "True"],
+        },
+    }
+    step = operational["steps"][-1]
+    assert step["env"] == {
+        "PARISHKIT_RUN_RUNTIME_TESTS": "1",
+        "PROVIDER_MODE": "${{ matrix.provider }}",
+        "PRODUCTION": "${{ matrix.production }}",
+    }
+    assert step["run"] == (
+        'python -m pytest "tests/stewardship/test_operational_compose.py::'
+        "test_complete_foundation_bootstrap_and_online_exclusion"
+        '[$PROVIDER_MODE-$PRODUCTION]" --require-no-skips '
+        "--ci-progress --durations=10 -q"
+    )
+    # Compare against pytest itself, not another copy of today's parameters.
+    # A new parameter or second test must not silently disappear from PR CI.
+    collected = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "tests/stewardship/test_operational_compose.py",
+            "--collect-only",
+            "-q",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    )
+    actual = {
+        line
+        for line in collected.stdout.splitlines()
+        if line.startswith("tests/stewardship/test_operational_compose.py::")
+    }
+    matrix = operational["strategy"]["matrix"]
+    expected = {
+        "tests/stewardship/test_operational_compose.py::"
+        f"test_complete_foundation_bootstrap_and_online_exclusion[{provider}-{production}]"
+        for provider in matrix["provider"]
+        for production in matrix["production"]
+    }
+    assert actual == expected, collected.stdout + collected.stderr
+    gate = jobs["stewardship-compose"]
+    assert gate["needs"] == ["stewardship-compose-core", "stewardship-operational"]
+    assert gate["if"] == "${{ always() }}"
+    assert gate["steps"] == [
+        {
+            "name": "Require all container scenarios",
+            "env": {
+                "CORE_RESULT": "${{ needs.stewardship-compose-core.result }}",
+                "OPERATIONAL_RESULT": "${{ needs.stewardship-operational.result }}",
+            },
+            "run": "\n".join(
+                [
+                    'test "$CORE_RESULT" = success',
+                    'test "$OPERATIONAL_RESULT" = success',
+                    "",
+                ]
+            ),
+        }
+    ]
 
 
 @pytest.mark.parametrize("filename", ["ci.yml", "release.yml"])

@@ -7,6 +7,11 @@ Each task maps to the same numbered item in its linked work package. Read that
 item in full: the short label below does not replace its requirements or tests.
 Follow the [execution and completion rules](README.md#execution-and-completion).
 
+Phase 2 results at `ea2d5cb` below are pre-consolidation evidence, retained on
+the named backup branch. Follow the
+[consolidation record](../../guides/stewardship-phase-2-simplification.md) for
+current baseline/review/CI acceptance; old counts do not certify the current tree.
+
 ## ADM-01: Login, denial, and unconfigured-state routing
 
 Scope and dependencies: [ADM-01 work package](../../plans/stewardship/admin-portal.md#adm-01-login-denial-and-unconfigured-state-routing).
@@ -29,41 +34,77 @@ marker providers fail closed. See [Phase 1B evidence](../../guides/stewardship-p
 
 Scope and dependencies: [ADM-02 work package](../../plans/stewardship/admin-portal.md#adm-02-bootstrap-command-and-transactional-setup-wizard).
 
-- [ ] ADM-02.01 — Implement bootstrap configuration and every required keyring.
-- [ ] ADM-02.02 — Implement isolated temporary setup staging.
-- [ ] ADM-02.03 — Implement heartbeat-aware setup progress and watchdog.
-- [ ] ADM-02.04 — Expire aborted staging and reject late worker completion.
-- [ ] ADM-02.05 — Finalize secrets, YAML, source, and campaign setup coherently.
-- [ ] ADM-02.06 — Test wizard aborts, concurrency, and installer recovery.
+- [x] ADM-02.01 — Implement bootstrap configuration and every required keyring.
+- [x] ADM-02.02 — Implement isolated temporary setup staging.
+- [x] ADM-02.03 — Implement heartbeat-aware setup progress and watchdog.
+- [x] ADM-02.04 — Expire aborted staging and reject late worker completion.
+- [x] ADM-02.05 — Finalize secrets, YAML, source, and campaign setup coherently.
+- [x] ADM-02.06 — Test wizard aborts, concurrency, and installer recovery.
 
-Evidence: Not started.
+Evidence: Implemented and accepted locally at `ea2d5cb`, including all three
+full-phase review/fix rounds. Bootstrap/keyring preparation, original-login
+temporary wizard
+staging, isolated credential intake, logo/content/schedule previews, source
+progress, explicit email/optional Slack checks, consumer installation/ACKs and
+final confirmation are connected. Atomic completion publishes fresh source,
+Family codes, prepared YAML/database configuration, the first Testing draft and
+the configured marker together. Cancellation/expiry scrubs temporary artifacts;
+the owner-approved journaled rollback applies only before activation, never to
+an applied configuration. Real restricted PostgreSQL, three-engine browser and
+both complete initial-setup Compose profiles exercise these paths. The
+[integrated acceptance index](../../guides/stewardship-phase-2-acceptance.md)
+tracks the current validation and remaining gate work; the
+[review ledger](../../guides/stewardship-phase-2-reviews.md) preserves historical
+checkpoints. PR CI and human merge approval remain required.
 
 ## ADM-03: Navigation, dashboard, indicators, and configuration
 
 Scope and dependencies: [ADM-03 work package](../../plans/stewardship/admin-portal.md#adm-03-navigation-dashboard-indicators-and-configuration).
 
-- [ ] ADM-03.01 — Build role-filtered navigation and dashboard.
-- [ ] ADM-03.02 — Build persistent operational-state banners.
-- [ ] ADM-03.03 — Build presence and background-task indicators.
-- [ ] ADM-03.04 — Build durable configuration and credential editors.
-- [ ] ADM-03.05 — Keep Parish-timezone edits prospective.
-- [ ] ADM-03.06 — Build branding previews and variant handling.
-- [ ] ADM-03.07 — Test configuration UI, concurrency, and timezone isolation.
+- [x] ADM-03.01 — Build role-filtered navigation and dashboard.
+- [x] ADM-03.02 — Build persistent operational-state banners.
+- [x] ADM-03.03 — Build presence and background-task indicators.
+- [x] ADM-03.04 — Build durable configuration, Ministry activity, and credential editors.
+- [x] ADM-03.05 — Keep Parish-timezone edits prospective.
+- [x] ADM-03.06 — Build branding previews and variant handling.
+- [x] ADM-03.07 — Test configuration UI, Ministry activity, concurrency, and timezone isolation.
 
-Evidence: Not started.
+Evidence: Implemented with passing integrated acceptance and review closure. Navigation,
+Testing/operational banners, passive presence/task indicators, task history,
+Parish/Ministry/integration editors and sealed credential replacement use current
+role checks, exact previews and durable installer receipts. Parish-timezone
+edits leave existing campaign timezones unchanged. Logo variants, immutable
+branding and bounded cleanup preserve retained references. Explicit readiness
+delivery and wizard finalization are implemented under ADM-02/ADM-04, not missing
+ADM-03 dependencies. Real PostgreSQL grants/concurrency cases and three-engine
+browser cases are indexed in
+[Phase 2 acceptance](../../guides/stewardship-phase-2-acceptance.md); current
+[review corrections](../../guides/stewardship-phase-2-reviews.md) include
+audit timing, passive polling, provider classification and scoped media cleanup.
 
 ## ADM-04: Campaign editor, content, schedules, and previews
 
 Scope and dependencies: [ADM-04 work package](../../plans/stewardship/admin-portal.md#adm-04-campaign-editor-content-schedules-and-previews).
 
-- [ ] ADM-04.01 — Build guarded campaign creation and cloning.
-- [ ] ADM-04.02 — Build structural campaign configuration forms.
-- [ ] ADM-04.03 — Build named content and email-template editors.
-- [ ] ADM-04.04 — Build page previews and readiness-test emails.
-- [ ] ADM-04.05 — Build atomic schedule reconciliation previews.
-- [ ] ADM-04.06 — Test campaign editing, previews, and schedule races.
+- [x] ADM-04.01 — Build guarded campaign creation and cloning.
+- [x] ADM-04.02 — Build structural campaign configuration forms.
+- [x] ADM-04.03 — Build named content and email-template editors.
+- [x] ADM-04.04 — Build page previews and readiness-test emails.
+- [x] ADM-04.05 — Build atomic schedule reconciliation previews.
+- [x] ADM-04.06 — Test campaign editing, previews, and schedule races.
 
-Evidence: Not started.
+Evidence: Implemented with passing integrated acceptance and review closure. Guarded
+draft creation, archived cloning, structural forms, current-source Ministry/fund
+selection, named rich-text/page/email editing and atomic schedule reconciliation
+use exact previews and immutable Applied receipts. Retained page previews keep
+the selected campaign's Parish/branding configuration. Applied-template test
+mail uses fictional content, Testing routing, the compiled isolated consumer
+and non-retrying uncertain-delivery recovery. PostgreSQL race/grant tests and
+three-engine browser tests cover these boundaries; see
+[Phase 2 acceptance](../../guides/stewardship-phase-2-acceptance.md) and the
+[review ledger](../../guides/stewardship-phase-2-reviews.md) for evidence.
+Production transitions and live campaign delivery remain with their later
+phase owners, not this preparation package.
 
 ## ADM-05: Production transition and pre-start withdrawal
 

@@ -1,0 +1,25 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "First-campaign setup preview" %}{% endblock %}
+{% block content %}
+<p><a href="{% url 'admin:setup' %}">{% translate "Initial setup" %}</a></p>
+<h1>{% translate "First-campaign setup preview" %}</h1>
+<p class="notice">{% translate "Testing mode. This is a read-only preview of temporary settings, not configured or active service. All samples are fictional; no email is sent." %}</p>
+{% include 'stewardship/setup-deadlines.html' %}
+<section class="panel"><h2>{% translate "Parish and campaign" %}</h2>
+<p>{{ parish.name }} — {{ campaign.name }}</p><p>{{ parish.website }} — {{ parish.phone }}</p>
+<p>{{ campaign.start_date }} – {{ campaign.end_date }} ({{ campaign.timezone }})</p>
+<p>{% translate "Enabled modules" %}: {{ campaign.modules|join:', ' }}</p>
+<p>{% translate "All test emails go to" %}: {{ testing_recipient }}</p>
+<p>{% translate "Draft revision" %}: {{ draft.status.version|number }}</p></section>
+<section class="panel"><h2>{% translate "Readiness" %}</h2>
+<p>{% translate "The complete public configuration is valid and bound to this login's source load, staged logo and credential settings. Successful tests of this exact revision are required before confirmation. Credential installation, consumer acknowledgements and the final source load then run in the background." %}</p>
+<p><a href="{% url 'admin:setup_confirmation' %}">{% translate "Check readiness and finish setup" %}</a></p>
+<p><a href="{% url 'admin:setup_mail' %}">{% translate "Send and check a setup email test" %}</a></p>
+{% if draft.sections.slack.enabled %}<p><a href="{% url 'admin:setup_notification' %}">{% translate "Send and check a Slack test" %}</a></p>{% endif %}</section>
+<h2>{% translate "Named pages and email samples" %}</h2>
+{% for entry in samples %}<section class="panel"><h3>{{ entry.label }}</h3>
+{% with sample=entry.sample %}{% include 'stewardship/content-sample.html' %}{% endwith %}</section>{% endfor %}
+<details><summary>{% translate "Exact proposed public configuration" %}</summary>
+<p>{% translate "Credential fingerprints identify staged inputs; no private credential values are included." %}</p>
+<p>{% translate "Configuration digest" %}: <code>{{ candidate_digest }}</code></p><pre>{{ document }}</pre></details>
+{% endblock %}

@@ -18,13 +18,21 @@ TAGS = {"p", "br", "strong", "em", "ul", "ol", "li", "h2", "h3", "blockquote", "
 PLACEHOLDERS = frozenset(
     {
         "parish_name",
+        "parish_website",
+        "parish_phone",
         "family_name",
         "family_member_names",
         "family_code",
         "family_url",
         "generic_family_url",
         "campaign_name",
+        "campaign_start",
+        "campaign_end",
+        "campaign_timezone",
+        "campaign_year",
         "financial_period",
+        "financial_start",
+        "financial_end",
         "pronoun",
     }
 )

@@ -25,7 +25,8 @@ from parishkit.stewardship.storage import StaleRecordError, StorageInvariantErro
 from .request_admission import check_historical_additions, intake_base
 from .request_models import ConfigurationChangeRequest, ConfigurationRequestCheckpoint
 from .request_patch import (
-    POLICY_REQUEST_SCHEMA,
+    CREDENTIAL_REQUEST_SCHEMA,
+    MANUAL_POLICY_REQUEST_SCHEMAS,
     build_candidate,
     default_schema,
 )
@@ -136,7 +137,14 @@ def _checkpoint(request, *, sequence, state, actor_id, correlation_id):
 
 
 def record_request(
-    *, base_digest, patch, actor_id, request_key, correlation_id, admit=None
+    *,
+    base_digest,
+    patch,
+    actor_id,
+    request_key,
+    correlation_id,
+    admit=None,
+    request_schema=None,
 ):
     """Persist one validated intent; identical actor/key retries return its state.
 
@@ -147,6 +155,13 @@ def record_request(
     """
     _identities(actor_id, request_key, correlation_id)
     _own_transaction()
+    from .source_cadence_schema import CREDENTIAL_SCHEMA
+
+    if request_schema is not None and request_schema not in {
+        CREDENTIAL_REQUEST_SCHEMA,
+        CREDENTIAL_SCHEMA,
+    }:
+        raise ConfigError("Unsupported explicit configuration request schema.")
     if (
         type(base_digest) is not str
         or re.fullmatch(r"[0-9a-f]{64}", base_digest) is None
@@ -170,7 +185,13 @@ def record_request(
             .filter(actor_id=actor_id, request_key=request_key)
             .first()
         )
-        selected_schema = default_schema(version, patch)
+        selected_schema = request_schema or default_schema(version, patch)
+        if (
+            existing is not None
+            and request_schema is not None
+            and existing.request_schema != request_schema
+        ):
+            raise ConfigError("Configuration request format changed on retry.")
         schema = existing.request_schema if existing is not None else selected_schema
         intent = build_candidate(
             version, patch, candidate_id=uuid4(), request_schema=schema
@@ -178,7 +199,7 @@ def record_request(
         identifier = (
             existing.pk if existing else policy_operation_id(actor_id, request_key)
         )
-        if schema in {POLICY_REQUEST_SCHEMA, "campaign-foundation-patch-v3"}:
+        if schema in MANUAL_POLICY_REQUEST_SCHEMAS:
             from .policy_schema import validate_manual_operation
 
             validate_manual_operation(

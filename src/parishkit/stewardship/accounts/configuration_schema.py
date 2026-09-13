@@ -21,7 +21,12 @@ from parishkit.stewardship.schema_primitives import (
     typed,
 )
 
+from . import source_cadence_schema
 from .bootstrap_schema import BOOTSTRAP_SCHEMA, validate_bootstrap_sections
+from .content_schema import SCHEMA as CONTENT_SCHEMA
+from .content_schema import validate_content_records
+from .ministry_activity import SCHEMA as MINISTRY_SCHEMA
+from .ministry_activity import validate_records as validate_ministry_records
 
 VALIDATION_SCHEMA = "parish-integrations-v1"
 FINGERPRINT_PATTERN = r"[0-9a-f]{64}"
@@ -132,12 +137,41 @@ def _validate_v3_sections(document):
     validate_campaign_sections(document)
 
 
+def _validate_v4_sections(document):
+    """Add local Ministry overrides without changing any retained v1-v3 meaning."""
+    base = document | {
+        "sections": {
+            name: records
+            for name, records in document["sections"].items()
+            if name != "ministries"
+        }
+    }
+    _validate_v3_sections(base)
+    validate_ministry_records(document["sections"].get("ministries", []))
+
+
+def _validate_v5_sections(document):
+    """Add canonical content without relaxing the frozen prior configuration schemas."""
+    base = document | {
+        "sections": {
+            name: rows
+            for name, rows in document["sections"].items()
+            if name != "content"
+        }
+    }
+    _validate_v4_sections(base)
+    validate_content_records(document)
+
+
 VALIDATORS = MappingProxyType(
     {
         "parish-integrations-v1": _validate_v1_sections,
         "foundation-policy-v2": _validate_v2_sections,
         "campaign-foundation-v3": _validate_v3_sections,
+        MINISTRY_SCHEMA: _validate_v4_sections,
         BOOTSTRAP_SCHEMA: validate_bootstrap_sections,
+        CONTENT_SCHEMA: _validate_v5_sections,
+        source_cadence_schema.SCHEMA: source_cadence_schema.validate_sections,
     }
 )
 
@@ -157,8 +191,14 @@ def validate_sections(document):
 
 def schema_for(document):
     """Keep legacy documents on their retained schema until new policy is present."""
+    if source_cadence_schema.uses_cadence(document):
+        return source_cadence_schema.SCHEMA
     if set(document["sections"]) == {"login_rules"}:
         return BOOTSTRAP_SCHEMA
+    if "content" in document["sections"]:
+        return CONTENT_SCHEMA
+    if document["sections"].get("ministries"):
+        return MINISTRY_SCHEMA
     if any(document["sections"].get(name) for name in ("campaigns", "schedules")):
         return "campaign-foundation-v3"
     return (

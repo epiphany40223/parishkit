@@ -349,6 +349,11 @@ def test_build_context_excludes_synthetic_private_files(tmp_path, ignore_kind):
         "src/parishkit/app.py",
         "src/parishkit/static/logo.svg",
         "src/parishkit/templates/page.html",
+        "src/parishkit/stewardship/accounts/timezone_names_v1.txt",
+        "src/parishkit/stewardship/schema/functions.sql",
+        "src/parishkit/stewardship/schema/tables.sql",
+        "src/parishkit/stewardship/schema/seed.sql",
+        "src/parishkit/stewardship/schema/guards.sql",
     }
     denied = {
         ".git/config",
@@ -359,6 +364,9 @@ def test_build_context_excludes_synthetic_private_files(tmp_path, ignore_kind):
         "credentials/token",
         "opt/parishkit/credentials/key",
         "src/parishkit/private.yaml",
+        "src/parishkit/stewardship/accounts/private.txt",
+        "src/parishkit/stewardship/schema/private.sql",
+        "src/parishkit/private.sql",
         "src/parishkit/__pycache__/app.pyc",
         "requirements/local.txt",
         "new-unlisted-directory/private.py",

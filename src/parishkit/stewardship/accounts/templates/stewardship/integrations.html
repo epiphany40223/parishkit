@@ -1,0 +1,10 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Integrations" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Integrations" %}</h1>
+<p>{% translate "These are applied settings. A connection check does not prove email or notification delivery." %}</p>
+<ul>{% for integration in integrations %}<li>
+{% if integration.configured %}<a href="{% url 'admin:integration_settings' integration.target %}">{{ integration.label }}</a>
+{% else %}{{ integration.label }} — {% translate "Not configured" %}{% endif %}
+</li>{% endfor %}</ul>
+{% endblock %}

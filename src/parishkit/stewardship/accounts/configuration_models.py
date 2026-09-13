@@ -50,6 +50,9 @@ class AppliedConfigurationVersion(ImmutableRecord):
                         "foundation-policy-v2",
                         "campaign-foundation-v3",
                         "bootstrap-policy-v1",
+                        "ministry-activity-v4",
+                        "campaign-content-v5",
+                        "source-cadence-v8",
                     ]
                 ),
                 name="configuration_validation_schema",
@@ -62,6 +65,41 @@ class AppliedConfigurationVersion(ImmutableRecord):
             models.CheckConstraint(
                 condition=~models.Q(predecessor_id=models.F("id")),
                 name="configuration_not_own_predecessor",
+            ),
+        ]
+
+
+class MinistryActivity(ImmutableRecord):
+    """Versioned local policy; a refresh never edits or replaces these records."""
+
+    configuration = models.ForeignKey(
+        AppliedConfigurationVersion,
+        on_delete=models.PROTECT,
+        related_name="ministry_activity",
+    )
+    record_id = models.UUIDField()
+    organization_id = models.PositiveBigIntegerField()
+    ministry_duid = models.PositiveBigIntegerField()
+    active = models.BooleanField()
+
+    class Meta:
+        db_table = "stewardship_ministry_activity"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["configuration", "record_id"], name="ministry_activity_record"
+            ),
+            models.UniqueConstraint(
+                fields=["configuration", "organization_id", "ministry_duid"],
+                name="ministry_activity_identity",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    organization_id__gt=0,
+                    organization_id__lt=2**31,
+                    ministry_duid__gt=0,
+                    ministry_duid__lt=2**31,
+                ),
+                name="ministry_activity_duids",
             ),
         ]
 

@@ -1,0 +1,23 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Campaign settings" %}{% endblock %}
+{% block content %}
+<h1>{% if campaign %}{% translate "Campaign settings" %}{% else %}{% translate "Create campaign draft" %}{% endif %}</h1>
+{% if campaign %}<p>{{ campaign.active_configuration.name }} — {{ campaign.state|capfirst }}</p>{% endif %}
+{% if campaign.state == 'archived' %}<p><a href="{% url 'admin:campaign_clone' campaign.pk %}">{% translate "Clone into a new draft" %}</a></p>{% endif %}
+{% if clone_sources %}<section class="panel"><h2>{% translate "Or start from an archived campaign" %}</h2><ul>{% for source in clone_sources %}<li><a href="{% url 'admin:campaign_clone' source.pk %}">{{ source.active_configuration.name }}</a></li>{% endfor %}</ul></section>{% endif %}
+{% if campaign %}{% if campaign.state != 'archived' %}<p><a href="{% url 'admin:content_catalog' campaign.pk %}">{% translate "Edit campaign pages and email templates" %}</a></p>{% endif %}<p><a href="{% url 'admin:content_history' campaign.pk %}">{% translate "View retained campaign content" %}</a></p>{% endif %}
+{% if campaign %}<p><a href="{% url 'admin:schedule_settings' campaign.pk %}">{% translate "Edit mail schedules and reconcile campaign dates" %}</a></p>{% endif %}
+<p class="notice">{% translate "These are structural settings. They lock when the campaign goes live or is scheduled for Production. Dates and mail schedules use this campaign's timezone, not your browser timezone." %}</p>
+{% if not campaign %}<p>{% translate "A new draft starts with the Parish timezone. Its timezone can be changed after the draft is created. Creating a successor ends the opportunity to purge earlier campaigns until the next Return to Testing." %}</p>{% endif %}
+{% if editable %}
+{% if campaign and form.financial_enabled.value %}<p><a href="{% url 'admin:share_settings' campaign.pk %}">{% translate "Edit how Families will share" %}</a></p>{% endif %}
+<form method="post" class="panel" data-campaign-form{% if not campaign %} data-new-campaign{% endif %}>
+{% csrf_token %}<input type="hidden" name="action" value="preview">
+{% include 'stewardship/campaign-fields.html' %}
+<button type="submit">{% translate "Preview changes" %}</button>
+</form>
+{% else %}
+<p role="status">{% translate "Structural editing is unavailable for this campaign or while an operation holds its configuration." %}</p>
+<div class="panel"><fieldset disabled><legend>{% translate "Saved structural settings (read-only)" %}</legend>{{ form.as_div }}</fieldset></div>
+{% endif %}
+{% endblock %}

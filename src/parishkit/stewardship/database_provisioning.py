@@ -46,6 +46,10 @@ def role_limit(configuration, role):
         )
     if role in {ServiceRole.CONFIG_INSTALLER, ServiceRole.CREDENTIAL_INSTALLER}:
         return configuration.runtime_budget.rollout_overlap
+    if role in {ServiceRole.WORKER, ServiceRole.MAIL_DISPATCH, ServiceRole.SCHEDULER}:
+        # Execution retains main and independent renewal SQL connections;
+        # the scheduler pins exactly one singleton session.
+        return budget.rollout_overlap * (1 if role is ServiceRole.SCHEDULER else 2)
     return configuration.runtime_budget.operator_connections
 
 

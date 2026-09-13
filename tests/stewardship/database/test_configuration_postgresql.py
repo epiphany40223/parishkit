@@ -80,9 +80,21 @@ def test_forged_successor_cannot_extend_invalid_history(db, defect):
     if defect == "different_parish":
         document["sections"]["parish"][0]["id"] = str(uuid4())
     child = configuration_version(document)
-    child_row = insert_unchecked(child, predecessor=parent)
     grandchild = configuration_version(successor_document(child))
-    insert_unchecked(grandchild, predecessor=child_row)
+    # Model corrupt historical projections, not an admitted branding upload.
+    # Restore the precise insert guard before exercising all production readers.
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(
+            "ALTER TABLE stewardship_parish "
+            "DISABLE TRIGGER stewardship_parish_branding_v1"
+        )
+        child_row = insert_unchecked(child, predecessor=parent)
+        insert_unchecked(grandchild, predecessor=child_row)
+        cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+        cursor.execute(
+            "ALTER TABLE stewardship_parish "
+            "ENABLE TRIGGER stewardship_parish_branding_v1"
+        )
     assert not is_prepared(child.digest)
     assert not is_prepared(grandchild.digest)
     with pytest.raises(ConfigError, match="immutable"):

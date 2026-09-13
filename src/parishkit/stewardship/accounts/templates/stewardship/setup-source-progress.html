@@ -1,0 +1,21 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Initial source load" %}{% endblock %}
+{% block content %}
+<p><a href="{% url 'admin:setup' %}">{% translate "Setup overview" %}</a></p>
+<h1>{% translate "Initial source load" %}</h1>
+<p>{% translate "A normal complete load takes about two to three minutes. The hard two-hour watchdog cannot be extended. If it expires, diagnose the problem before starting a new setup attempt." %}</p>
+<p class="notice">{% translate "Keep this page visible while the load runs. Closing or hiding it stops idle renewal. Only a live, correlated worker can renew this login; its absolute deadline never changes." %}</p>
+<p>{% translate "If the task state is failed, this attempt cannot resume or accept a replacement credential. Return to Setup overview, cancel setup, and sign out. Correct the reported problem before signing in to start a new attempt. Cancellation clears the temporary settings; it does not change an applied configuration." %}</p>
+<section class="panel" data-setup-progress data-progress-now="{{ progress.server_now }}" data-progress-url="{% url 'admin:setup_source_progress' progress.task_id %}?format=json" data-progress-task="{{ progress.task_id }}" data-progress-active="{{ progress.active|yesno:'true,false' }}">
+<p>{% translate "Task:" %} <span>{{ progress.task_id }}</span></p>
+<p>{% translate "State:" %} <span data-task-state>{{ progress.task_state }}</span></p>
+<p>{% translate "Setup state:" %} <span data-setup-state>{{ progress.setup_state }}</span></p>
+<p>{% translate "Phase:" %} <span data-task-phase>{{ progress.phase }}</span></p>
+<p data-task-counts>{{ progress.current|number }} {% translate "out of" %} {{ progress.total|number }} {% if progress.total %}({% widthratio progress.current progress.total 100 %}%){% else %}(0%){% endif %}</p>
+<p>{% translate "Idle deadline:" %} <time data-progress-deadline="idle_at" data-local-instant datetime="{{ progress.idle_at }}">{{ progress.idle_at }}</time></p>
+<p>{% translate "Source-load hard deadline:" %} <time data-progress-deadline="watchdog_at" data-local-instant datetime="{{ progress.watchdog_at }}">{{ progress.watchdog_at }}</time></p>
+<p>{% translate "Absolute session deadline:" %} <time data-progress-deadline="absolute_at" data-local-instant datetime="{{ progress.absolute_at }}">{{ progress.absolute_at }}</time></p>
+<p data-progress-unavailable hidden role="status">{% translate "Progress is temporarily unavailable. Idle renewal is not confirmed. Reload or sign in again if needed." %}</p>
+<form method="post">{% csrf_token %}<button type="submit">{% translate "Check source progress" %}</button></form>
+</section>
+{% endblock %}

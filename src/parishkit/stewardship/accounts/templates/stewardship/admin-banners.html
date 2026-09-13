@@ -1,0 +1,17 @@
+{% load i18n stewardship %}
+{% if admin_chrome.testing %}
+<aside class="{% if admin_chrome.admin %}notice{% else %}testing-indicator{% endif %}" aria-label="{% translate 'Testing mode' %}">
+  <strong>{% translate "Testing mode" %}</strong>
+  {% if admin_chrome.admin %}<p>{% translate "All outgoing email is redirected to:" %} {{ admin_chrome.testing_recipient }}. <a href="{% url 'admin:parish_settings' %}#testing-mode">{% translate "Mode configuration" %}</a></p>{% endif %}
+</aside>
+{% endif %}
+{% if admin_chrome.restored %}<aside class="notice notice-error">{% translate "Restore review is required. Normal campaign activity is unavailable." %}</aside>{% endif %}
+{% if admin_chrome.paused %}<aside class="notice">{% translate "Family email delivery is paused." %}</aside>{% endif %}
+{% if admin_chrome.go_live %}<aside class="notice">{% translate "Production preparation is in progress. Rehearsal access is unavailable while cleanup completes." %}</aside>{% endif %}
+{% if admin_chrome.admin and admin_chrome.critical_count %}<aside class="notice notice-error" role="alert">{% translate "Critical events recorded in the past 24 hours:" %} {{ admin_chrome.critical_count|number }}. {% translate "Review the operator logs and urgent notifications." %}</aside>{% endif %}
+{% if not suppress_admin_session_chrome %}
+<div data-admin-session data-server-now="{{ admin_chrome.server_now|instant }}" data-idle-deadline="{{ admin_chrome.idle_deadline|instant }}" data-absolute-deadline="{{ admin_chrome.absolute_deadline|instant }}">
+  <p id="session-warning" class="notice" role="status" aria-live="polite" hidden>{% translate "Your session ends in less than five minutes. Finish your current action or sign in again." %}</p>
+  <p id="session-expired" class="notice notice-error" role="alert" hidden>{% translate "Your session has ended." %} <a href="{% url 'admin:login' %}">{% translate "Sign in again" %}</a></p>
+</div>
+{% endif %}

@@ -1,0 +1,15 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Campaign email test" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Campaign email test" %}</h1><p>{{ campaign.active_configuration.name }}</p>
+<p class="notice">{% translate "TEST — fictional sample, not a live Family message. This explicit test is available before the campaign starts. It cannot fulfill scheduled mail or allow access outside campaign dates." %}</p>
+<p>{% translate "The message will have a prominent TEST banner and will be sent only to" %} {{ testing_recipient }}.</p>
+<p>{% translate "Provider acceptance does not guarantee inbox delivery. Check the Testing mailbox to verify the result." %}</p>
+<section class="panel"><h2>{% translate "Reviewed email sample" %}</h2>{% include 'stewardship/content-sample.html' %}</section>
+{% if pending %}<p role="status">{% translate "A test is pending. Refresh to check its result; another test cannot be queued yet." %}</p>{% endif %}
+{% if unknown %}<p role="alert">{% translate "A previous delivery is uncertain and may have arrived. It will not be retried automatically. A new send requires your acknowledgement below." %}</p>{% endif %}
+<form method="post" class="panel">{% csrf_token %}{{ form.preview_token }}{{ form.preview_token.errors }}{{ form.non_field_errors }}{% if unknown %}<p>{{ form.acknowledge_unknown }}<label for="{{ form.acknowledge_unknown.id_for_label }}">{{ form.acknowledge_unknown.label }}</label>{{ form.acknowledge_unknown.errors }}</p>{% endif %}<button type="submit"{% if pending %} disabled{% endif %}>{% translate "Send this test email" %}</button></form>
+<section class="panel"><h2>{% translate "Recent test results" %}</h2><ul>{% for item in items %}<li>{{ item.label }} — <time data-local-instant datetime="{{ item.created_at|date:'c' }}">{{ item.created_at|date:'c' }}</time>{% if not item.current %} ({% translate "earlier configuration or template" %}){% endif %}<br>{% translate "Test reference" %}: <code>{{ item.id }}</code></li>{% empty %}<li>{% translate "No tests have been requested." %}</li>{% endfor %}</ul></section>
+<p><a href="">{% translate "Refresh test results" %}</a></p>
+<p><a href="{% url 'admin:content_catalog' campaign.pk %}">{% translate "Return to content and templates" %}</a></p>
+{% endblock %}

@@ -126,6 +126,31 @@ def load_service_account_credentials(
     return credentials
 
 
+def load_service_account_info(
+    info: Mapping[str, Any],
+    *,
+    scopes: Sequence[str],
+    subject: str | None = None,
+) -> Any:
+    """Load staged service-account material without writing a plaintext key file.
+
+    This performs local credential construction, not authentication or a network
+    request. Callers own input size, provider endpoint policy and secret lifetime.
+    Error messages deliberately exclude submitted values and parser exceptions.
+    Existing file-based loading behavior is unchanged.
+    """
+    if not isinstance(info, Mapping):
+        raise ConfigError("Google service-account information must be a mapping")
+    service_account, _ = _import_google_auth()
+    try:
+        credentials = service_account.Credentials.from_service_account_info(
+            dict(info), scopes=list(scopes)
+        )
+        return credentials.with_subject(subject) if subject else credentials
+    except Exception:
+        raise ConfigError("Could not load Google service-account information") from None
+
+
 def load_user_credentials(
     token_file: str | Path,
     *,

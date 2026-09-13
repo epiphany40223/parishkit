@@ -171,29 +171,40 @@ def test_acknowledgement_cli_never_echoes_private_input(
     assert "acknowledgement refused" in output.err
 
 
+@pytest.mark.parametrize("role", [ServiceRole.WEB, ServiceRole.MAIL_DISPATCH])
 def test_acknowledgement_cli_success_requires_lifecycle_lease(
-    tmp_path, monkeypatch, capsys
+    tmp_path, monkeypatch, capsys, role
 ):
     """A shared real lease covers the whole admitted durable acknowledgement."""
     from parishkit.stewardship.runtime_paths import RuntimeLayout
     from parishkit.stewardship.startup_interlock import StartupLease
 
     configuration, _ = bootstrap_fixture(tmp_path)
+    configuration = replace(configuration, service_role=role)
     monkeypatch.setattr(
         credential_runtime, "load_deployment", lambda path: configuration
     )
     calls = []
 
-    def acknowledge(config, identifier):
+    def acknowledge(kind, config, identifier, *, lease=None):
         """Migration remains excluded while this consumer confirmation is active."""
         with (
             pytest.raises(ConfigError),
             StartupLease(RuntimeLayout(config).interlock, offline=True),
         ):
             pass
-        calls.append(identifier)
+        calls.append((kind, identifier))
 
-    monkeypatch.setattr(credential_runtime, "acknowledge_web", acknowledge)
+    monkeypatch.setattr(
+        credential_runtime,
+        "acknowledge_web",
+        lambda *args, **kwargs: acknowledge("web", *args, **kwargs),
+    )
+    monkeypatch.setattr(
+        credential_runtime,
+        "acknowledge_background",
+        lambda *args, **kwargs: acknowledge("background", *args, **kwargs),
+    )
     identifier = uuid4()
     assert (
         main(
@@ -207,5 +218,92 @@ def test_acknowledgement_cli_success_requires_lifecycle_lease(
         )
         == 0
     )
-    assert calls == [identifier]
+    assert calls == [("web" if role is ServiceRole.WEB else "background", identifier)]
     assert "acknowledgement recorded" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "role,target",
+    [
+        (ServiceRole.WORKER, "parishsoft"),
+        (ServiceRole.SCHEDULER, "token_public"),
+        (ServiceRole.MAIL_DISPATCH, "google_workspace"),
+    ],
+)
+@pytest.mark.parametrize("failure", [None, "admission", "cohort", "mounted", "state"])
+def test_background_ack_requires_live_original_process_and_cleans_resources(
+    admitted, monkeypatch, role, target, failure
+):
+    """Admission cannot create replacement process evidence to acknowledge itself."""
+    configuration, row, receipts, acknowledgements, closes = admitted
+    configuration = replace(
+        configuration,
+        service_role=role,
+        secrets={target: configuration.secrets["metrics"]},
+    )
+    row.target = target
+    receipt = row.resulting_fingerprint
+    receipts.clear()
+    receipts[target] = receipt
+    broker, lease = Mock(), Mock()
+    stopped = []
+
+    def configure(config, *, stop, heartbeat):
+        """No queue or receipt publisher is started during acknowledgement admission."""
+        assert config is configuration and heartbeat == lease.check
+        stopped.append(stop)
+        if failure == "admission":
+            raise ConfigError("Synthetic admission refusal")
+        return SimpleNamespace(broker=broker)
+
+    monkeypatch.setattr(
+        "parishkit.stewardship.runtime_background.configure_background", configure
+    )
+    publisher = Mock(side_effect=AssertionError("Command must not publish readiness"))
+    monkeypatch.setattr(
+        "parishkit.stewardship.consumer_runtime.publish_single_process_receipts",
+        publisher,
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.accounts.metrics_credentials.credential_receipt",
+        lambda value, name: "0" * 64 if failure == "mounted" else receipt,
+    )
+    if failure == "cohort":
+        evidence = iter([receipts, {}])
+        monkeypatch.setattr(
+            "parishkit.stewardship.consumer_runtime.loaded_service_receipts",
+            lambda config: next(evidence),
+        )
+    if failure == "state":
+        row.state = "failed"
+    if failure:
+        with pytest.raises(ConfigError):
+            credential_runtime.acknowledge_background(
+                configuration, uuid4(), lease=lease
+            )
+        assert not acknowledgements
+    else:
+        identifier = uuid4()
+        credential_runtime.acknowledge_background(
+            configuration, identifier, lease=lease
+        )
+        assert acknowledgements[0]["consumer"] == role.value
+        assert acknowledgements[0]["request_id"] == identifier
+    assert closes == ["sql"]
+    assert stopped[0].is_set()
+    publisher.assert_not_called()
+    if failure != "admission":
+        broker.app.close.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "role", [ServiceRole.WEB, ServiceRole.BACKUP_WORKER, ServiceRole.CONFIG_INSTALLER]
+)
+def test_background_ack_does_not_admit_unimplemented_or_wrong_runtime(admitted, role):
+    """An unrelated or unimplemented service cannot borrow consumer proof."""
+    configuration, _, _, acknowledgements, _ = admitted
+    with pytest.raises(ConfigError):
+        credential_runtime.acknowledge_background(
+            replace(configuration, service_role=role), uuid4(), lease=Mock()
+        )
+    assert not acknowledgements
