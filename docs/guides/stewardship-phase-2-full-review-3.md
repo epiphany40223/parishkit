@@ -6,6 +6,12 @@
 
 ## Reviewed input and delivery
 
+This is the historical third review, before migration/CI consolidation. Its
+implementation commits remain on the preserved backup branch. Later work is not
+documentation-only: the [consolidation record](stewardship-phase-2-simplification.md)
+tracks additional review and full acceptance required for the replacement
+baseline. Results below do not certify that later tree.
+
 Both vendors reviewed `03527493496b9c45bc57fefb45f65cc7dca0e48c` against
 `48be3666f0c89cc15586cb67465cd1ba0504203c`. Pika session
 `20260913-014009-7631d0` finalized with COMMENT: 39 validated Medium findings,

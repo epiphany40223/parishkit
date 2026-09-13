@@ -15,6 +15,12 @@ refreshed `origin/main` tip.
 
 ## Active checkpoint
 
+The results below describe the pre-consolidation implementation, retained on
+`jsq/backup/stewardship-phase-2-before-consolidation-20260913`. The
+[consolidation record](stewardship-phase-2-simplification.md) supersedes their
+handoff status for the new baseline, test inventory and CI layout. Current
+review and full final-head acceptance must pass before merge.
+
 All Phase 2 implementation scope is connected: source storage and full/delta
 refresh, restricted background owners, complete original-login setup, selected
 financial loading, atomic configured-marker completion, journaled pre-activation

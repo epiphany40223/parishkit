@@ -9,6 +9,13 @@ This index identifies executable acceptance evidence for the complete Phase 2
 batch. The chronological review ledger remains the record of earlier component
 checks and corrections; those checkpoints alone do not close this phase.
 
+Current status after the September 13 consolidation: the integrated results
+below are **pre-consolidation evidence**, preserved on
+`jsq/backup/stewardship-phase-2-before-consolidation-20260913`. They do not certify
+the replacement baseline, changed test inventory or sharded CI. The
+[consolidation record](stewardship-phase-2-simplification.md) owns current review,
+fresh-install and final-head CI evidence; that work must pass before merge.
+
 ## Demonstration and isolation
 
 The `complete` cases in

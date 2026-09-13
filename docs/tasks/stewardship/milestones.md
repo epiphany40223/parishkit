@@ -1658,6 +1658,12 @@ release, or merging the next PR.
 
 ## Phase 2: Setup and source truth
 
+The checked demonstrations and numbers below describe pre-consolidation
+acceptance on the preserved backup branch. The
+[consolidation record](../../guides/stewardship-phase-2-simplification.md) supersedes
+their handoff status: review and complete final-head acceptance of the fresh
+baseline and sharded CI remain required before merge.
+
 Scope: [Phase 2](../../plans/stewardship/overall.md#phase-2-source-truth-initial-setup-and-campaign-preparation).
 
 - [x] M2.01 — Demonstrate empty deployment through a configured Testing campaign.

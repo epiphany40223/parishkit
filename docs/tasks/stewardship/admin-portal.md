@@ -7,6 +7,11 @@ Each task maps to the same numbered item in its linked work package. Read that
 item in full: the short label below does not replace its requirements or tests.
 Follow the [execution and completion rules](README.md#execution-and-completion).
 
+Phase 2 results at `ea2d5cb` below are pre-consolidation evidence, retained on
+the named backup branch. Follow the
+[consolidation record](../../guides/stewardship-phase-2-simplification.md) for
+current baseline/review/CI acceptance; old counts do not certify the current tree.
+
 ## ADM-01: Login, denial, and unconfigured-state routing
 
 Scope and dependencies: [ADM-01 work package](../../plans/stewardship/admin-portal.md#adm-01-login-denial-and-unconfigured-state-routing).

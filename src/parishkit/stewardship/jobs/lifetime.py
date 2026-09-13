@@ -14,6 +14,9 @@ from django.db import connection, connections, transaction
 
 from parishkit.stewardship.observability import emit_failure
 
+# Any unconfirmed renewal stops new work, including a transient SQL error.
+# Do not infer continuing ownership from a previously observed lease deadline;
+# the durable bounded retry/reconciliation workflow owns recovery instead.
 PULSE_SECONDS = 20
 # This is a process-drain budget, not a promise that multiple independently
 # timed SQL statements finish within one statement timeout. Exhaustion must

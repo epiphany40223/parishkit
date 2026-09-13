@@ -48,8 +48,9 @@ jobs:
           DJANGO_SETTINGS_MODULE: parishkit.stewardship.settings.test
         run: python -m django makemigrations --check --dry-run
 
-  stewardship-compose:
+  stewardship-compose-core:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -82,7 +83,49 @@ jobs:
       - name: Validate operational runtime and provisioning
         env:
           PARISHKIT_RUN_RUNTIME_TESTS: "1"
-        run: python -m pytest tests/stewardship/test_operational_compose.py tests/stewardship/test_database_provisioning_container.py tests/stewardship/test_runtime_provisioning_container.py tests/stewardship/test_runtime_ingress_container.py --require-no-skips -q
+        run: python -m pytest tests/stewardship/test_database_provisioning_container.py tests/stewardship/test_runtime_provisioning_container.py tests/stewardship/test_runtime_ingress_container.py tests/stewardship/test_broker_valkey_container.py --require-no-skips --durations=10 -q
+
+  stewardship-operational:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [configured, initial, complete, abort]
+        production: ["False", "True"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements/stewardship-build.txt
+          python -m pip install --no-build-isolation -r requirements.txt
+      - name: Build development application image
+        run: docker build -f deploy/stewardship/Dockerfile -t parishkit-stewardship:development .
+      - name: Validate isolated operational scenario
+        env:
+          PARISHKIT_RUN_RUNTIME_TESTS: "1"
+          PROVIDER_MODE: ${{ matrix.provider }}
+          PRODUCTION: ${{ matrix.production }}
+        run: python -m pytest "tests/stewardship/test_operational_compose.py::test_complete_foundation_bootstrap_and_online_exclusion[$PROVIDER_MODE-$PRODUCTION]" --require-no-skips --ci-progress --durations=10 -q
+
+  # Preserve the branch-protection check name, and fail on cancellation too.
+  stewardship-compose:
+    needs: [stewardship-compose-core, stewardship-operational]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require all container scenarios
+        env:
+          CORE_RESULT: ${{ needs.stewardship-compose-core.result }}
+          OPERATIONAL_RESULT: ${{ needs.stewardship-operational.result }}
+        run: |
+          test "$CORE_RESULT" = success
+          test "$OPERATIONAL_RESULT" = success
 
   stewardship-browser:
     runs-on: ubuntu-latest
@@ -108,8 +151,13 @@ jobs:
           PARISHKIT_RUN_BROWSER_TESTS: "1"
         run: python -m pytest tests/stewardship/browser --require-no-skips -q
 
-  stewardship-postgresql:
+  stewardship-postgresql-shard:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     services:
       valkey:
         image: valkey/valkey:9.1.2@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
@@ -139,5 +187,48 @@ jobs:
         run: |
           python -m pip install -r requirements/stewardship-build.txt
           python -m pip install --no-build-isolation -r requirements.txt
+      - name: Measure isolated database partition
+        run: python -m parishkit.stewardship.quality_ci shard --index ${{ matrix.shard }} --count 8 --output "$RUNNER_TEMP/stewardship-shard"
+      - name: Retain successful shard evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: stewardship-coverage-${{ matrix.shard }}
+          path: ${{ runner.temp }}/stewardship-shard/
+          if-no-files-found: error
+          retention-days: 7
+
+  # Preserve the required check name. Missing/failed/cancelled shards must make
+  # this gate fail, rather than skipping it and accidentally permitting merge.
+  stewardship-postgresql:
+    needs: stewardship-postgresql-shard
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Require all database shards
+        env:
+          SHARD_RESULT: ${{ needs.stewardship-postgresql-shard.result }}
+        run: test "$SHARD_RESULT" = success
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements/stewardship-build.txt
+          python -m pip install --no-build-isolation -r requirements.txt
+      - name: Download this run's coverage evidence
+        uses: actions/download-artifact@v5
+        with:
+          pattern: stewardship-coverage-*
+          path: ${{ runner.temp }}/stewardship-shards
       - name: Scoped line and branch coverage
-        run: python -m parishkit.stewardship.quality --postgresql --report "$RUNNER_TEMP/stewardship-coverage.json"
+        run: python -m parishkit.stewardship.quality_ci combine --count 8 --input "$RUNNER_TEMP/stewardship-shards" --report "$RUNNER_TEMP/stewardship-coverage.json"
+      - name: Retain combined coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: stewardship-coverage-combined
+          path: ${{ runner.temp }}/stewardship-coverage.json
+          if-no-files-found: error
+          retention-days: 7

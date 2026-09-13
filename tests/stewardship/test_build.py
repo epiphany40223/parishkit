@@ -116,6 +116,32 @@ def locked_requirements(name):
     return requirements
 
 
+def test_shared_http_dependency_requires_bounded_streaming():
+    """Unpinned package installs require the patched streaming implementation too."""
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    dependency = next(
+        Requirement(value)
+        for value in project["dependencies"]
+        if Requirement(value).name == "urllib3"
+    )
+    assert "2.6.3" not in dependency.specifier
+    assert "2.7.0" in dependency.specifier
+    assert "3.0.0" not in dependency.specifier
+
+
+def test_ci_runs_real_broker_acl_tests():
+    """The opt-in Valkey/Kombu tests are mandatory in the runtime CI profile."""
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    step = next(
+        step
+        for step in workflow["jobs"]["stewardship-compose-core"]["steps"]
+        if step.get("name") == "Validate operational runtime and provisioning"
+    )
+    assert "tests/stewardship/test_broker_valkey_container.py" in step["run"]
+    assert "--require-no-skips" in step["run"]
+    assert step["env"]["PARISHKIT_RUN_RUNTIME_TESTS"] == "1"
+
+
 def test_dev_extra_includes_runtime_extras_without_duplicating_dependencies():
     """The dev extra supplies Django and Google libraries through owned extras."""
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
@@ -143,7 +169,8 @@ def test_dev_extra_includes_runtime_extras_without_duplicating_dependencies():
     ("workflow", "job"),
     [
         ("ci.yml", "validate"),
-        ("ci.yml", "stewardship-compose"),
+        ("ci.yml", "stewardship-compose-core"),
+        ("ci.yml", "stewardship-operational"),
         ("release.yml", "validate-build"),
     ],
 )
@@ -185,8 +212,20 @@ def test_release_requires_ci_quality_gates_before_build(step_name):
     )
     steps = release["jobs"]["validate-build"]["steps"]
     matches = [step for step in steps if step.get("name") == step_name]
-    # Compare the complete step, including environment and failure/skip policy.
-    assert matches == [expected]
+    # Release retains the serial complete-suite equivalent; PR CI combines
+    # isolated shards through the same manifest and independent coverage floors.
+    if step_name == "Scoped line and branch coverage":
+        assert len(matches) == 1
+        assert matches[0] == {
+            "name": step_name,
+            "run": (
+                "python -m parishkit.stewardship.quality --postgresql "
+                '--report "$RUNNER_TEMP/stewardship-coverage.json"'
+            ),
+        }
+        assert "quality_ci combine --count 8" in expected["run"]
+    else:
+        assert matches == [expected]
     build = next(step for step in steps if step.get("name") == "Build artifacts")
     assert steps.index(matches[0]) < steps.index(build)
 
@@ -251,6 +290,10 @@ def test_checkout_instructions_match_ci_installation(document):
 def test_readme_documents_ci_validation_commands(step_name):
     """Local validation includes CI's coverage gates and test-settings drift check."""
     definition = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    if step_name == "Scoped line and branch coverage":
+        definition = yaml.safe_load(
+            (ROOT / ".github/workflows/release.yml").read_text()
+        )
     step = next(
         step
         for job in definition["jobs"].values()

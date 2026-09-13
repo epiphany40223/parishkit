@@ -5,11 +5,17 @@ and [Phase 2 scope](stewardship-phase-2.md). Raw review outputs remain local,
 not repository content. Neither a correction checkpoint nor an interim review
 completes Phase 2 acceptance or authorizes merging.
 
-Current handoff: all three complete-phase review/fix rounds and final local
+Pre-consolidation handoff: all three complete-phase review/fix rounds and local
 acceptance pass at corrected implementation `ea2d5cb`. See the
 [acceptance index](stewardship-phase-2-acceptance.md) for final test/coverage
 evidence. Earlier sections below are chronological checkpoints, not unresolved
-work. PR CI and human merge approval remain required.
+work. Those results are preserved on the named backup branch and do not certify
+the subsequent SQL baseline or CI rewrite. See the
+[consolidation record](stewardship-phase-2-simplification.md) for current review
+and validation status. Final-head CI and human merge approval remain required.
+
+The [supplemental consolidation review](stewardship-phase-2-consolidation-review.md)
+records all 37 findings and their dispositions after the history rewrite.
 
 ## Round one: interim source/setup correction pass
 
