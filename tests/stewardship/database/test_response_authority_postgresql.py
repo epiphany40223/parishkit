@@ -29,6 +29,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
         {"admin_value_set": True, "admin_value": "Invented review"},
         {"execution": "published"},
         {"execution": "resolved_external"},
+        {"execution": "conflict"},
         {"baseline_available": False},
         {"baseline_value": "Requested name"},
         {"current_available": False},
@@ -254,3 +255,99 @@ def test_terminal_old_intent_starts_from_current_source(live_response_service):
     proposal = ProposedChange.objects.get(submission=second)
     assert proposal.baseline_value == "Updated source"
     assert proposal.decision == "unreviewed" and proposal.execution == "pending"
+
+
+def test_web_cannot_label_a_carried_conflict_pending(
+    live_response_service, monkeypatch
+):
+    """Authentic input values still require their actual derived conflict state."""
+    harness = live_response_service
+    form, answers = form_and_answers(harness)
+    answers["testing_acknowledged"] = False
+    answers["members"]["3"]["first_name"] = "Family edit"
+    submit(harness, form, answers)
+    data = response_source()
+    data.members[3]["firstName"] = "Source edit"
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    harness, form, answers, _ = revisit(harness)
+    manager = ProposedChange.objects
+    original = manager.create
+
+    def altered(**values):
+        """Keep all genuine provenance and change only the execution label."""
+        assert values["execution"] == "conflict"
+        return original(**(values | {"execution": "pending"}))
+
+    monkeypatch.setattr(manager, "create", altered)
+    with web_login(), pytest.raises(IntegrityError, match="derived merge state"):
+        submit(harness, form, answers)
+    assert Submission.objects.count() == 1
+    assert ProposedChange.objects.get().execution == "conflict"
+
+
+def test_web_cannot_insert_an_unchanged_proposal(response_service, monkeypatch):
+    """A complete no-change answer cannot manufacture actionable parish work."""
+    from parishkit.stewardship.responses import submission
+
+    form, answers = form_and_answers(response_service)
+
+    def invented(response, validated):
+        """Simulate a faulty derivation while retaining all genuine source values."""
+        field = next(
+            item
+            for item in validated.current.fields
+            if item.entity == "member" and item.field == "first_name"
+        )
+        return [
+            ProposedChange.objects.create(
+                submission=response,
+                entity_kind="member",
+                entity_key="3",
+                field="first_name",
+                baseline_available=field.source.available,
+                baseline_value=field.source.value,
+                submitted_value=response.answers["members"]["3"]["first_name"],
+                current_available=field.source.available,
+                current_value=field.source.value,
+                current_source_id=validated.validation_snapshot_id,
+                handling="api",
+                decision="unreviewed",
+                execution="pending",
+                actor_id=response.family_id,
+            )
+        ]
+
+    monkeypatch.setattr(submission, "derive_proposals", invented)
+    with web_login(), pytest.raises(IntegrityError, match="Unchanged values"):
+        submit(response_service, form, answers)
+    assert not Submission.objects.exists()
+
+
+@pytest.mark.parametrize("field", ["first_name", "email"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        "",
+        "  Exact name  ",
+        "\u00a0e\u0301\u3000",
+        "\u001cVALUE\u0085",
+        "Straße@EXAMPLE.ORG",
+        "Σίσυφος",
+        "ﬃ",
+        "keep\u200b",
+    ],
+)
+def test_sql_text_email_comparisons_match_shared_python_registry(db, field, value):
+    """Case expansion, normalization and Unicode outer whitespace agree exactly."""
+    from parishkit.stewardship.responses.comparison import ValueKind, canonical_value
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT stewardship_response_comparison_v1(%s,%s::jsonb)",
+            [field, json.dumps(value)],
+        )
+        assert cursor.fetchone()[0] == canonical_value(
+            ValueKind.EMAIL if field == "email" else ValueKind.TEXT, value
+        )

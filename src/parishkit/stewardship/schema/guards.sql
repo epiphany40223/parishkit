@@ -4323,6 +4323,10 @@ DECLARE
     source_field jsonb;
     expected_baseline jsonb;
     carries_intent boolean;
+    submitted_key text;
+    baseline_key text;
+    current_key text;
+    expected_execution text;
 BEGIN
     IF TG_OP='DELETE' THEN
         SELECT * INTO response FROM public.stewardship_submission WHERE id=OLD.submission_id;
@@ -4371,8 +4375,9 @@ BEGIN
             WHERE submission_id=response.prior_submission_id
               AND ROW(entity_kind,entity_key,field)=ROW(NEW.entity_kind,NEW.entity_key,NEW.field)
               AND execution NOT IN ('published','resolved_upstream','resolved_external','cancelled','superseded');
-            carries_intent := FOUND AND (NEW.submitted_value IS NOT DISTINCT FROM predecessor.submitted_value
-                OR (NEW.field='email' AND lower(NEW.submitted_value#>>'{}')=lower(predecessor.submitted_value#>>'{}')) IS TRUE);
+            carries_intent := FOUND AND (
+                public.stewardship_response_comparison_v1(NEW.field,NEW.submitted_value)
+                IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(NEW.field,predecessor.submitted_value));
             expected_baseline := source_field;
             IF carries_intent THEN
                 expected_baseline := jsonb_build_object('available',predecessor.baseline_available,'value',predecessor.baseline_value);
@@ -4385,6 +4390,21 @@ BEGIN
             END IF;
             IF expected_baseline IS DISTINCT FROM jsonb_build_object('available',NEW.baseline_available,'value',NEW.baseline_value) THEN
                 RAISE EXCEPTION 'Proposal baseline requires exact source or prior intent' USING ERRCODE='23514';
+            END IF;
+            submitted_key := public.stewardship_response_comparison_v1(NEW.field,NEW.submitted_value);
+            baseline_key := public.stewardship_response_comparison_v1(NEW.field,NEW.baseline_value);
+            current_key := public.stewardship_response_comparison_v1(NEW.field,NEW.current_value);
+            IF (NEW.current_available AND submitted_key IS NOT DISTINCT FROM current_key)
+               OR (NOT NEW.current_available AND submitted_key IS NULL)
+               OR (NEW.baseline_available AND submitted_key IS NOT DISTINCT FROM baseline_key)
+            THEN
+                RAISE EXCEPTION 'Unchanged values cannot create actionable proposals' USING ERRCODE='23514';
+            END IF;
+            expected_execution := CASE
+                WHEN NEW.current_available AND (NOT NEW.baseline_available OR current_key IS DISTINCT FROM baseline_key)
+                THEN 'conflict' ELSE 'pending' END;
+            IF NEW.execution <> expected_execution THEN
+                RAISE EXCEPTION 'Proposal execution differs from its derived merge state' USING ERRCODE='23514';
             END IF;
         ELSE
             IF OLD.execution IN ('published','resolved_upstream','resolved_external','cancelled','superseded')

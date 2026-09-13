@@ -7664,6 +7664,31 @@ AS $$
     )
 $$;
 
+-- SQL parity with the closed text/email portion of family-comparison-v1.
+-- Explicit Unicode whitespace and default case folding avoid database-locale
+-- changes turning a no-change answer into a pending/conflicting proposal.
+CREATE FUNCTION public.stewardship_response_comparison_v1(input_field text, input_value jsonb)
+    RETURNS text LANGUAGE plpgsql IMMUTABLE
+    SET search_path TO pg_catalog, public, pg_temp
+AS $$
+DECLARE normalized_value text;
+BEGIN
+    IF input_field NOT IN ('first_name','middle_name','last_name','email') THEN
+        RAISE EXCEPTION 'Unsupported response comparison field' USING ERRCODE='23514';
+    END IF;
+    IF input_value IS NULL OR input_value='null'::jsonb THEN RETURN NULL; END IF;
+    IF jsonb_typeof(input_value) <> 'string' OR length(input_value#>>'{}')>8192 THEN
+        RAISE EXCEPTION 'Invalid response comparison value' USING ERRCODE='23514';
+    END IF;
+    normalized_value := btrim(normalize(input_value#>>'{}',NFC),
+        U&'\0009\000A\000B\000C\000D\001C\001D\001E\001F\0020\0085\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000');
+    IF input_field='email' THEN
+        RETURN casefold(normalized_value COLLATE pg_catalog.pg_unicode_fast);
+    END IF;
+    RETURN normalized_value;
+END;
+$$;
+
 -- Independent SQL reconstruction of the closed Phase 3A field vocabulary.
 -- New proposals must match this scoped validation source, not browser values.
 CREATE FUNCTION public.stewardship_response_field_source_v1(
