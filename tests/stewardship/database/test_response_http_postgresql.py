@@ -42,6 +42,10 @@ def load_form(harness):
 def answers_for(form):
     """Construct the complete declared aggregate exactly as the in-memory UI does."""
     return {
+        "family": {
+            **{field["name"]: field["value"] for field in form["household"]["fields"]},
+            "mailing_same_as_home": form["household"]["mailing_same_as_home"],
+        },
         "members": {
             member["id"]: {field["name"]: field["value"] for field in member["fields"]}
             for member in form["members"]

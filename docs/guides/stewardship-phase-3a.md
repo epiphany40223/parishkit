@@ -79,7 +79,8 @@ records the reviewed commits and results. Final local checks pass 142
 response/schema PostgreSQL tests, 492 complete browser tests and 4,534 default
 tests. The ledger separately documents a diagnosed backward-clock failure in
 the earlier broad database run and its 51-test passing same-server recheck;
-clean current-head full-suite CI is required before merge. No whole Family/data
+The subsequent [final protected merge](stewardship-phase-3a-reviews.md#final-protected-merge)
+passed clean final-head and merge-group CI and landed as PR #23. No whole Family/data
 package or Gate 2 is claimed complete; remaining
 census fields/modules belong to Phase 3B.
 

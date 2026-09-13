@@ -5,6 +5,7 @@ from copy import deepcopy
 import pytest
 
 from parishkit.stewardship.responses.inputs import (
+    FAMILY_FIELDS,
     MEMBER_FIELDS,
     FormInputsUnavailable,
     census_inputs,
@@ -66,6 +67,47 @@ def inputs():
 def digest(inputs):
     """Use the same complete builder as issuance and final-validation adapters."""
     return census_inputs(**inputs).projection_digest
+
+
+def test_household_fields_preserve_explicit_unavailable_source(inputs):
+    """Primary/postal fields cannot establish home, mailing or email intent."""
+    before = digest(inputs)
+    inputs["family"].update(
+        primaryAddress1="Private source contact",
+        primaryCity="A locality",
+        sendNoMail=True,
+        registrationDate="2020-01-01",
+        homeAddressLine1="unverified",
+    )
+    assert digest(inputs) == before
+    fields = {
+        field.field: field
+        for field in census_inputs(**inputs).fields
+        if field.entity == "family"
+    }
+    for name in [*(field.name for field in FAMILY_FIELDS), "registration_date"]:
+        assert not fields[name].source.available and fields[name].source.value is None
+
+
+@pytest.mark.parametrize("change", ["country", "limit", "region"])
+def test_household_validation_definitions_are_relevant_dependencies(
+    inputs, monkeypatch, change
+):
+    """An open form must re-review changes to offered countries or address rules."""
+    from parishkit.stewardship.responses import inputs as owner
+
+    before = digest(inputs)
+    if change == "country":
+        choices = owner.country_choices()
+        monkeypatch.setattr(owner, "country_choices", lambda: choices[:-1])
+    elif change == "limit":
+        monkeypatch.setattr(
+            owner, "ADDRESS_LIMITS", dict(owner.ADDRESS_LIMITS) | {"line1": 201}
+        )
+    else:
+        regions = owner.us_regions()
+        monkeypatch.setattr(owner, "us_regions", lambda: regions - {"KY"})
+    assert digest(inputs) != before
 
 
 @pytest.mark.parametrize("field", MEMBER_FIELDS, ids=lambda field: field.name)

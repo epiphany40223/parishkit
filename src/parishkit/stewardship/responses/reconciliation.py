@@ -8,8 +8,9 @@ from parishkit.stewardship.source.snapshot_models import SourceSnapshotPin
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .baselines import _pin_admission
+from .census import FAMILY_FIELDS
 from .comparison import canonical_value
-from .inputs import MEMBER_FIELDS, member_field_value
+from .inputs import MEMBER_FIELDS, family_field_value, member_field_value
 from .merge import KnownValue, MergeState, PriorChange, merge_value
 from .models import ProposedChange, Submission
 
@@ -25,12 +26,27 @@ def reconcile_proposals(snapshot, corpus, *, campaign_id):
     """
     require_work_order()
     definitions = {field.name: field for field in MEMBER_FIELDS}
+    household_definitions = {field.name: field for field in FAMILY_FIELDS}
     proposals = ProposedChange.objects.filter(
         submission__campaign_id=campaign_id,
         execution__in=["pending", "conflict", "queued", "failed"],
     ).annotate(family_duid=F("submission__family__family_duid"))
     count = 0
     for row in proposals.iterator(chunk_size=500):
+        if row.entity_kind == "family" and row.field in household_definitions:
+            # No verified source read exists for these semantics yet. Retain
+            # submitted household intent even if the Family becomes inactive;
+            # loss of portal eligibility revokes access, not its prior history.
+            field = household_definitions[row.field]
+            current = family_field_value(field)
+            if (row.current_available, row.current_value) != (
+                current.available,
+                current.value,
+            ):
+                raise StorageInvariantError(
+                    "The household source comparison requires a verified adapter."
+                )
+            continue
         if row.entity_kind != "member" or row.field not in definitions:
             raise StorageInvariantError(
                 "The response reconciliation schema is unavailable."

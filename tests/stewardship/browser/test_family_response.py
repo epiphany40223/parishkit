@@ -5,6 +5,13 @@ from uuid import uuid4
 
 import pytest
 
+from parishkit.stewardship.responses.census import (
+    ADDRESS_LIMITS,
+    FAMILY_FIELDS,
+    blank_address,
+    country_choices,
+    us_regions,
+)
 from parishkit.stewardship.responses.inputs import MEMBER_FIELDS
 
 from .conftest import NOW
@@ -33,6 +40,24 @@ def form_payload(*, testing=False):
         "baseline": str(uuid4()),
         "testing": testing,
         "family": {"mailingName": "Sample Family", "envelopeNumber": "123"},
+        "household": {
+            "fields": [
+                {
+                    "name": field.name,
+                    "label": field.label,
+                    "kind": field.kind.value,
+                    "value": None if field.name == "email_opt_out" else blank_address(),
+                    "available": False,
+                    "changed": False,
+                    "conflict": False,
+                }
+                for field in FAMILY_FIELDS
+            ],
+            "mailing_same_as_home": False,
+            "address_limits": dict(ADDRESS_LIMITS),
+            "countries": country_choices(),
+            "us_regions": sorted(us_regions()),
+        },
         "members": [
             {
                 "id": "3",

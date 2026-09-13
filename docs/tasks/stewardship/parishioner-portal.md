@@ -43,13 +43,22 @@ accessibility/privacy acceptance remain open.
 
 Scope and dependencies: [FAM-03 work package](../../plans/stewardship/parishioner-portal.md#fam-03-family-census-step).
 
-- [ ] FAM-03.01 — Build Family identity, addresses, and email opt-out fields.
-- [ ] FAM-03.02 — Apply shared census validation and normalization.
-- [ ] FAM-03.03 — Implement mailing-same-as-home with preservation.
-- [ ] FAM-03.04 — Build changed-field and review summaries.
+- [x] FAM-03.01 — Build Family identity, addresses, and email opt-out fields.
+- [x] FAM-03.02 — Apply shared census validation and normalization.
+- [x] FAM-03.03 — Implement mailing-same-as-home with preservation.
+- [x] FAM-03.04 — Build changed-field and review summaries.
 - [ ] FAM-03.05 — Test invalid addresses and disabled census.
 
-Evidence: Not started.
+Evidence: [Family census increment](../../guides/stewardship-family-census.md)
+implements identity/availability, typed complete household answers, guarded
+proposals and mobile review/revisit. Its [three-round review ledger](../../guides/stewardship-family-census-reviews.md)
+records eight accepted/resolved Medium findings, passing 182 database tests,
+4,656 default tests and 93 final Family browser cases. Final-head CI and merge
+remain pending. FAM-03.05's malformed/country-aware cases pass; its integrated
+census-disabled omission case completes alongside FAM-05.06 when non-census
+forms are admitted. The current census-only version rejects unsupported module
+sets instead of exposing an incomplete response. FAM-04 is the next ready
+implementation increment after this PR merges; Gate 2 remains open.
 
 ## FAM-04: Existing and proposed Member steps
 

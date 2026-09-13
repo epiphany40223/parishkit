@@ -5,6 +5,7 @@ from django.db.models import F
 from parishkit.stewardship.campaigns.work_locks import require_work_order
 
 from .capabilities import capability
+from .census import HOUSEHOLD_FIELDS
 from .comparison import canonical_value
 from .effective import RESOLVED_EXECUTIONS, proposal_index
 from .merge import KnownValue, MergeState, PriorChange, merge_value
@@ -24,11 +25,15 @@ def derive_proposals(submission, validated):
     previous = proposal_index(validated.prior_submission)
     created = []
     for field in validated.current.fields:
-        if field.entity != "member":
+        if field.entity == "family" and field.field not in HOUSEHOLD_FIELDS:
             continue
         identity = (field.entity, str(field.identity), field.field)
         old = previous.pop(identity, None)
-        submitted = submission.answers["members"][str(field.identity)][field.field]
+        submitted = (
+            submission.answers["family"][field.field]
+            if field.entity == "family"
+            else submission.answers["members"][str(field.identity)][field.field]
+        )
         key = canonical_value(field.kind, submitted)
         current_key = (
             canonical_value(field.kind, field.source.value)

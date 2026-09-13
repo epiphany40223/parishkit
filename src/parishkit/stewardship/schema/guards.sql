@@ -4222,7 +4222,7 @@ BEGIN
         OR NEW.prior_submission_id IS DISTINCT FROM baseline.prior_submission_id
         OR NEW.reviewed_source_id IS DISTINCT FROM baseline.source_id
         OR NEW.form_schema IS DISTINCT FROM baseline.form_schema
-        OR NEW.form_schema <> 'family-census-slice-v1'
+        OR NEW.form_schema <> 'family-census-household-v1'
         OR NEW.configuration_id IS DISTINCT FROM runtime_row.active_configuration_id
         OR runtime_row.restore_review_required OR session_row.mode <> runtime_row.mode
         OR NEW.campaign_id IS DISTINCT FROM runtime_row.current_campaign_id
@@ -4258,14 +4258,31 @@ BEGIN
         OR NEW.family_version <> coalesce(previous_version,0)+1
         OR NEW.campaign_sequence <> last_sequence+1
         OR jsonb_typeof(NEW.answers) <> 'object'
-        OR NOT (NEW.answers ?& ARRAY['schema','members','additional_information'])
-        OR NEW.answers - ARRAY['schema','members','additional_information'] <> '{}'::jsonb
+        OR NOT (NEW.answers ?& ARRAY['schema','family','members','additional_information'])
+        OR NEW.answers - ARRAY['schema','family','members','additional_information'] <> '{}'::jsonb
         OR NEW.answers->>'schema' IS DISTINCT FROM NEW.form_schema
+        OR jsonb_typeof(NEW.answers->'family') <> 'object'
         OR jsonb_typeof(NEW.answers->'members') <> 'object'
         OR jsonb_typeof(NEW.answers->'additional_information') <> 'string'
         OR length(NEW.answers->>'additional_information') > 5000
     THEN
         RAISE EXCEPTION 'Submission aggregate or sequence is invalid' USING ERRCODE='23514';
+    END IF;
+    IF NOT ((NEW.answers->'family') ?& ARRAY['home_address','mailing_address','email_opt_out','mailing_same_as_home'])
+       OR (NEW.answers->'family')-ARRAY['home_address','mailing_address','email_opt_out','mailing_same_as_home'] <> '{}'::jsonb
+       OR jsonb_typeof(NEW.answers#>'{family,mailing_same_as_home}') IS DISTINCT FROM 'boolean'
+    THEN
+        RAISE EXCEPTION 'Submission household aggregate is invalid' USING ERRCODE='23514';
+    END IF;
+    PERFORM public.stewardship_response_address_guard_v1(NEW.answers#>'{family,home_address}');
+    PERFORM public.stewardship_response_address_guard_v1(NEW.answers#>'{family,mailing_address}');
+    PERFORM public.stewardship_response_comparison_v1('email_opt_out',NEW.answers#>'{family,email_opt_out}');
+    IF (NEW.answers#>>'{family,mailing_same_as_home}')::boolean
+       AND (NEW.answers#>'{family,home_address}'='null'::jsonb
+            OR public.stewardship_response_comparison_v1('home_address',NEW.answers#>'{family,home_address}')
+               IS DISTINCT FROM public.stewardship_response_comparison_v1('mailing_address',NEW.answers#>'{family,mailing_address}'))
+    THEN
+        RAISE EXCEPTION 'Submission mailing choice requires matching addresses' USING ERRCODE='23514';
     END IF;
     RETURN NEW;
 END;
@@ -4327,6 +4344,8 @@ DECLARE
     baseline_key text;
     current_key text;
     expected_execution text;
+    expected_submitted jsonb;
+    expected_handling text;
 BEGIN
     IF TG_OP='DELETE' THEN
         SELECT * INTO response FROM public.stewardship_submission WHERE id=OLD.submission_id;
@@ -4354,18 +4373,29 @@ BEGIN
     END IF;
     IF TG_TABLE_NAME='stewardship_proposed_change' THEN
         IF TG_OP='INSERT' THEN
-            IF NEW.entity_kind <> 'member' OR NEW.field NOT IN ('first_name','middle_name','last_name','email')
-                OR NOT ((response.answers->'members') ? NEW.entity_key)
-                OR coalesce(NEW.submitted_value,'null'::jsonb) IS DISTINCT FROM response.answers #> ARRAY['members',NEW.entity_key,NEW.field]
+            IF NEW.entity_kind='member' AND NEW.field IN ('first_name','middle_name','last_name','email')
+               AND (response.answers->'members') ? NEW.entity_key THEN
+                expected_submitted := response.answers#>ARRAY['members',NEW.entity_key,NEW.field];
+                expected_handling := 'api';
+                source_field := public.stewardship_response_field_source_v1(
+                    response.validation_source_id,response.family_id,NEW.entity_key,NEW.field);
+            ELSIF NEW.entity_kind='family' AND NEW.field IN ('home_address','mailing_address','email_opt_out') THEN
+                expected_submitted := response.answers#>ARRAY['family',NEW.field];
+                expected_handling := CASE WHEN NEW.field='email_opt_out' THEN 'manual' ELSE 'api' END;
+                source_field := public.stewardship_response_household_source_v1(
+                    response.validation_source_id,response.family_id,NEW.entity_key,NEW.field);
+            ELSE
+                RAISE EXCEPTION 'Proposal field has no admitted response owner' USING ERRCODE='23514';
+            END IF;
+            IF coalesce(NEW.submitted_value,'null'::jsonb) IS DISTINCT FROM expected_submitted
+                OR NEW.actor_id IS DISTINCT FROM response.family_id
                 OR NEW.current_source_id IS DISTINCT FROM response.validation_source_id
-                OR NEW.handling <> 'api' THEN
+                OR NEW.handling IS DISTINCT FROM expected_handling THEN
                 RAISE EXCEPTION 'Proposal differs from its immutable response' USING ERRCODE='23514';
             END IF;
             IF NEW.execution NOT IN ('pending','conflict') OR NEW.superseded_by_id IS NOT NULL THEN
                 RAISE EXCEPTION 'New proposal cannot mint execution outcomes' USING ERRCODE='23514';
             END IF;
-            source_field := public.stewardship_response_field_source_v1(
-                response.validation_source_id,response.family_id,NEW.entity_key,NEW.field);
             IF source_field IS NULL OR source_field IS DISTINCT FROM
                 jsonb_build_object('available',NEW.current_available,'value',NEW.current_value)
             THEN

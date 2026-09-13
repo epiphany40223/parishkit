@@ -8,6 +8,15 @@ from parishkit.stewardship.campaigns.work_locks import require_work_order
 from parishkit.stewardship.web.content import PLACEHOLDERS, render_template
 from parishkit.stewardship.web.presentation import parish_date
 
+from .census import (
+    ADDRESS_LIMITS,
+    FAMILY_FIELDS,
+    HOUSEHOLD_FIELDS,
+    blank_address,
+    country_choices,
+    us_regions,
+)
+from .comparison import ValueKind, canonical_value
 from .effective import effective_fields
 from .inputs import ADDITIONAL_MAX_LENGTH, MEMBER_FIELDS
 from .models import Submission
@@ -31,7 +40,7 @@ def form_presentation(form):
     family = {
         field.field: field.effective.value.value
         for field in values
-        if field.entity == "family"
+        if field.entity == "family" and field.field not in HOUSEHOLD_FIELDS
     }
     indexed = {
         (field.identity, field.field): field.effective
@@ -64,6 +73,7 @@ def form_presentation(form):
         "baseline": str(baseline.pk),
         "testing": baseline.mode == "test",
         "family": family,
+        "household": _household_presentation(values, prior),
         "members": members,
         "additional_enabled": campaign.values["additional_information"],
         "additional_max_length": ADDITIONAL_MAX_LENGTH,
@@ -74,6 +84,49 @@ def form_presentation(form):
         if prior and prior.mode == "live"
         else None,
         "content": _page_content(baseline, campaign, family, members),
+    }
+
+
+def _household_presentation(values, prior):
+    """Expose effective household values once, without raw competing source data."""
+    indexed = {
+        field.field: field.effective for field in values if field.entity == "family"
+    }
+    fields = []
+    for definition in FAMILY_FIELDS:
+        effective = indexed[definition.name]
+        value = effective.value.value
+        fields.append(
+            {
+                "name": definition.name,
+                "label": definition.label,
+                "kind": definition.kind.value,
+                "value": blank_address()
+                if definition.kind is ValueKind.ADDRESS and value is None
+                else value,
+                "available": effective.value.available,
+                "changed": effective.changed,
+                "conflict": effective.conflict,
+            }
+        )
+    home = indexed["home_address"].value.value
+    mailing = indexed["mailing_address"].value.value
+    # A historical convenience flag cannot copy a newly changed home address
+    # over an independently merged mailing value during an otherwise no-change
+    # revisit. Only retain that flag when the effective addresses still agree.
+    same = bool(
+        prior
+        and prior.answers["family"]["mailing_same_as_home"]
+        and home is not None
+        and canonical_value(ValueKind.ADDRESS, home)
+        == canonical_value(ValueKind.ADDRESS, mailing)
+    )
+    return {
+        "fields": fields,
+        "mailing_same_as_home": same,
+        "address_limits": dict(ADDRESS_LIMITS),
+        "countries": country_choices(),
+        "us_regions": sorted(us_regions()),
     }
 
 

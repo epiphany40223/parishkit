@@ -9,6 +9,7 @@ from parishkit.stewardship.responses.baselines import (
     effective_submission,
     issue_baseline,
 )
+from parishkit.stewardship.responses.census import blank_address
 from parishkit.stewardship.responses.effective import effective_fields
 from parishkit.stewardship.responses.models import (
     AdditionalInformationItem,
@@ -137,6 +138,21 @@ def revisit(harness):
         harness,
         form,
         {
+            "family": {
+                **{
+                    field.field: (
+                        blank_address()
+                        if field.field.endswith("_address")
+                        and field.effective.value.value is None
+                        else field.effective.value.value
+                    )
+                    for field in fields
+                    if field.entity == "family"
+                    and field.field
+                    in {"home_address", "mailing_address", "email_opt_out"}
+                },
+                "mailing_same_as_home": False,
+            },
             "members": members,
             "additional_information": prior.answers["additional_information"]
             if prior

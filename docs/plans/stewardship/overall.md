@@ -309,6 +309,14 @@ once atomically, revisit, and see a correct source/response merge.
 
 ### 3B: Complete the Family specification
 
+Delivery subdivision after PR #23 (September 13, 2026): first deliver the
+Family census household step as one coherent increment, including its typed
+answers, guarded proposals, source projection, mobile review/revisit UX and
+tests. Existing/proposed/terminal Member expansion and Ministry/financial
+steps follow in subsequent coherent increments. This boundary makes household
+contact updates independently demonstrable and keeps reviews smaller; it does
+not remove any package or weaken the integrated Gate 2 scope below.
+
 1. Finish **FAM-03** and implement **FAM-04**, **FAM-05**, **FAM-06**, and
    **FAM-07** for all census, proposed Member, Ministry, financial, additional,
    submit, and repeat-merge behavior.
