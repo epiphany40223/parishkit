@@ -9,16 +9,15 @@ validation is never sufficient.
 
 ## Migration policy
 
-- Before production compatibility is declared, the approved
-  [fresh-install baseline](../../guides/stewardship-schema.md) may replace
-  unreleased development history. It does not upgrade existing development
-  databases and must not delete or reset them automatically. Preserve current
-  schema protections and prove fresh-install equivalence instead of testing
-  transitions through discarded intermediate schemas.
-- Add models in dependency-sized migrations, with explicit constraints and
-  indexes in the same work package that depends on them.
-- Prove forward and reverse behavior where Django supports it; document any
-  intentionally irreversible data migration.
+- Follow the standing
+  [pre-production policy](../../specs/stewardship/operations/spec.md#pre-production-development-policy).
+  Update the [fresh-install baseline](../../guides/stewardship-schema.md) and
+  Django model state together; do not accumulate historical development
+  upgrade/downgrade paths or tests. Retain constraints and indexes in the same
+  work package as the functionality that depends on them.
+- Only after production-readiness work is explicitly activated, add reviewed
+  forward migrations and prove supported upgrade/reverse behavior, documenting
+  intentional irreversibility. This is not a current phase-delivery requirement.
 - Run migration drift checks and PostgreSQL integration tests for every package.
 - Use factories/builders instead of shared mutable fixture dumps.
 

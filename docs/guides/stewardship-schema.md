@@ -42,7 +42,11 @@ old volume. Data transfer, if desired, is a separate explicitly authorized job.
 This pre-production exception is not a promise that future production databases
 can be discarded. Once production compatibility is declared, use reviewed
 forward migrations and the upgrade/backup procedures in the operations spec.
-Do not rewrite this baseline silently after deployments depend on it.
+During the remaining pre-production phases, update this baseline and model
+state together under the
+[standing policy](../specs/stewardship/operations/spec.md#pre-production-development-policy)
+instead of adding obsolete development upgrade paths. Do not rewrite it after
+production compatibility is explicitly declared.
 
 ## Equivalence and regression evidence
 

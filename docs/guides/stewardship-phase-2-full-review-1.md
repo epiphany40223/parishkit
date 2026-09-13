@@ -3,6 +3,13 @@
 [Phase acceptance](stewardship-phase-2-acceptance.md) ·
 [Review ledger](stewardship-phase-2-reviews.md)
 
+Historical, pre-consolidation evidence: the SHAs and numbered migrations below
+are retained on `jsq/backup/stewardship-phase-2-before-consolidation-20260913`,
+not the rewritten implementation branch. Upgrade/downgrade claims are retired
+by the pre-production policy. The
+[consolidation record](stewardship-phase-2-simplification.md) owns current
+acceptance and supersedes this round's historical pending-work statements.
+
 Reviewed commit: `0b9677f4825d2dac51a1639626a79f6a5a595bab`.
 Base: `48be3666f0c89cc15586cb67465cd1ba0504203c`.
 Pika session: `20260912-231556-6bf86a`.

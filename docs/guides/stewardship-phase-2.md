@@ -957,8 +957,9 @@ final Compose demonstration remain incomplete.
 ### Acknowledged credential reference selection
 
 After target installation and all required consumer acknowledgements, the
-original Admin can review/select the non-secret fingerprint from the replacement
-status page. Fresh Google authentication, current provider settings, the latest
+any current Admin can review/select the non-secret fingerprint from Integration
+settings using their own signed preview. The original requester also has a link
+from their private replacement status page. Fresh Google authentication, current provider settings, the latest
 applied target receipt, complete matching consumer evidence and absence of a
 pending replacement are required. An already-selected reference is displayed
 read-only; exact confirmation retries return the original YAML request.

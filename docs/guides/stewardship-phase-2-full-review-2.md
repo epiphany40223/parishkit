@@ -4,6 +4,13 @@
 [Review ledger](stewardship-phase-2-reviews.md) ·
 [Round 1](stewardship-phase-2-full-review-1.md)
 
+Historical, pre-consolidation evidence: the SHAs and numbered migrations below
+are retained on `jsq/backup/stewardship-phase-2-before-consolidation-20260913`,
+not the rewritten implementation branch. Upgrade/downgrade claims are retired
+by the pre-production policy. The
+[consolidation record](stewardship-phase-2-simplification.md) owns current
+acceptance and supersedes this round's historical pending-work statements.
+
 ## Reviewed input and delivery
 
 Both vendors reviewed `58e7a8c8e99d1ff82af8e6a796cd5fac1b6d566a` against

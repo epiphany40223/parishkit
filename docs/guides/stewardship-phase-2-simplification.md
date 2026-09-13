@@ -11,8 +11,9 @@ commits and updating its branch with `--force-with-lease`.
 
 The preserved reference is `5f686e37de238761a7fb09bad802db1f6ef231fa`, pushed to
 `jsq/backup/stewardship-phase-2-before-consolidation-20260913`. It contains all
-106 original Phase 2 commits. Later simplification work remains in progress;
-this record is not new acceptance evidence.
+106 original Phase 2 commits. The later checkpoint `003f786` is preserved on
+`jsq/backup/stewardship-phase-2-before-five-groups-20260913`. The current PR has
+five logical signed-off commits; regrouping preserved the complete source tree.
 
 ## Required work
 
@@ -25,16 +26,20 @@ this record is not new acceptance evidence.
 - [x] Distribute all database tests across isolated CI runners, prove complete
   test accounting and aggregate the existing independent coverage floors.
 - [x] Add timestamped test progress, slow-test diagnostics and finite job limits.
-- [ ] Measure the resulting CI wall-clock improvement, retaining all required
+- [x] Measure the resulting CI wall-clock improvement, retaining all required
   browser, container, database and baseline verification.
-- [ ] Review and correct material changes, then consolidate logical commits,
+- [x] Review and correct material changes, then consolidate logical commits,
   preserve sign-offs, verify the final tree and update the existing PR safely.
-- [ ] Pass final-head CI and hand the open PR back for human merge approval.
+- [ ] Pass final-head CI after the final corrections and merge under the human's
+  standing authority, then wait for the merge to land on `origin/main`.
 
 The full serial database command remains a developer/release equivalent. No
-real provider credentials, production deployment, release or PR merge is
-authorized by this consolidation. Existing developer databases are not reset
-automatically; the new baseline is for fresh installations.
+real provider credentials, production deployment or release is authorized by
+this consolidation. The human separately authorized merging PR #22 when its
+review and validation gates pass and continuing with smaller increments; see
+the [delivery cycle](../plans/stewardship/overall.md#automated-phase-delivery-cycle).
+Existing developer databases are not reset automatically; the new baseline is
+for fresh installations.
 
 ## Local consolidation evidence
 
@@ -57,4 +62,23 @@ The [supplemental review](stewardship-phase-2-consolidation-review.md) records
 the missing SQL image assets reported by the first rewritten-head Compose CI
 run; the rebuilt local operational group passed all 12 tests in 751.32 seconds.
 That CI run also had cancelled database/browser jobs and is not acceptance.
-Final-head CI timing and the next independent review remain pending.
+
+## CI timing after partitioning
+
+[CI run 34756500835](https://github.com/epiphany40223/parishkit/actions/runs/34756500835)
+passed all checks at `4aee4cdec37453f7872bb44154d4dee201c17faa`. From the first
+job start to the final required aggregate, the run took 10 minutes 46 seconds,
+down from 18 minutes 52 seconds in the preceding complete run. The Compose path
+fell to approximately 4 minutes 15 seconds by running all eight operational
+scenarios on isolated runners. The browser job took 10 minutes 22 seconds;
+PostgreSQL plus aggregation took 10 minutes 46 seconds, down from 11 minutes
+32 seconds. The database improvement is modest; the main gain is Compose.
+
+All 2,076 database tests were accounted for; scoped aggregate coverage was
+93.84% lines and 85.16% branches. Lease waits, safety windows and representative
+test populations were not reduced. The credential-free local baseline passed
+4,343 tests in 37.33 seconds, with 2,572 explicit opt-in profile skips and two
+existing warnings. Ruff, formatting and Markdown checks passed. Later changes
+still require final-head CI. The completed second supplemental dual-source round
+and its passing correction tests close the independent review gate; see the
+[final round evidence](stewardship-phase-2-consolidation-review.md#supplemental-round-2-completed-correction-review).

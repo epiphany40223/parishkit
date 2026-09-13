@@ -7,6 +7,10 @@ Each task maps to the same numbered item in its linked work package. Read that
 item in full: the short label below does not replace its requirements or tests.
 Follow the [execution and completion rules](README.md#execution-and-completion).
 
+Apply the [current migration policy](../../plans/stewardship/data.md#migration-policy)
+to remaining work. References to legacy upgrade or migration reversal below are
+historical evidence, not a requirement to retain obsolete compatibility tests.
+
 ## DAT-01: Storage conventions and base records
 
 Scope and dependencies: [DAT-01 work package](../../plans/stewardship/data.md#dat-01-storage-conventions-and-base-records).

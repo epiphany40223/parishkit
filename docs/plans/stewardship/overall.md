@@ -35,8 +35,8 @@ Execution tracking: [top-level task plan](../../tasks/stewardship/overall.md),
 ## Phase and gate summary
 
 Every phase follows the [automated phase delivery cycle](#automated-phase-delivery-cycle),
-including a human-approved PR merge before the next phase. The formal gates
-below add integrated checks; they do not replace each phase's review cycle.
+including a reviewed, validated PR merge before the next increment. The formal
+gates below add integrated checks; they do not replace each PR's review cycle.
 
 | Phase | Integrated outcome | Mandatory pause |
 | --- | --- | --- |
@@ -51,24 +51,44 @@ below add integrated checks; they do not replace each phase's review cycle.
 
 ## Automated phase delivery cycle
 
-Human-approved workflow, September 8, 2026, with larger delivery batches and
-continued delegated execution confirmed September 9, 2026:
+All remaining phases follow the standing
+[pre-production development policy](../../specs/stewardship/operations/spec.md#pre-production-development-policy).
+Database/application upgrade compatibility and upgrade/downgrade tests are
+deferred until the human explicitly activates production-readiness work,
+including where older package/gate wording lists those deliverables. Fresh
+installation and current-functionality checks remain required.
 
-1. After the preceding phase's PR is merged and its applicable gate is released,
-   fetch `origin` and create a new `pr/stewardship-phase-N` topic branch from the
-   current tip of `origin/main`. Do not branch the next phase from an unmerged
-   implementation branch. Preserve existing work; Phase 0 continues on its
-   already established `pr/stewardship-implementation` branch.
-2. Implement all dependency-ready work admitted to that phase, including new
+Human-approved workflow, updated September 13, 2026: finish PR #22 as-is, then
+prefer smaller coherent, independently testable increments to reduce review
+cost and latency. This supersedes the earlier larger-phase batching and routine
+human merge-approval stops, including historical checkpoint wording below.
+
+1. After the preceding increment's PR is merged and its applicable gate is
+   released, fetch `origin`, verify the merge has landed on `origin/main`, and
+   create a new `pr/stewardship-<slice>` topic branch from that tip. Do not branch
+   the next increment from an unmerged implementation branch. Preserve existing
+   work and unrelated changes.
+2. Implement all dependency-ready work admitted to that increment, including new
    tests, documentation, and task evidence. Packages spanning phases retain
    their documented scope split. Run repository and phase-specific checks and
    correct failures until all required checks pass.
-3. Complete at least three independent review-and-fix rounds per phase, normally
+3. Complete at least three independent review-and-fix rounds per PR, normally
    using `local-review` followed by `local-review-triage`. A round comprises a
    completed dual-source review, evidence-based disposition of its findings,
    applicable fixes/regression tests, and passing post-fix validation. Existing
-   completed Phase 0 rounds count; a failed or degraded review is not a completed
-   round. A round finding no actionable issues still counts.
+   completed rounds on the current PR count; a failed or degraded review is not
+   a completed round. A round finding no actionable issues still counts. The
+   first round reviews the complete PR diff. Correction rounds may review the
+   delta from the preceding completed review's SHA, together with unresolved
+   findings and sufficient surrounding code/specification context. Record both
+   endpoints and broaden scope for cross-component changes. This project-local
+   scope override applies to `local-review`'s default diff base, not its exact
+   permission preflight, dual-source roster, finalization or failure rules.
+   After squashing, preserve the prior reviewed tree and verify the actual
+   correction diff: a triple-dot comparison to an unrelated old SHA may expand
+   back to the full PR. A separate review-only snapshot may preserve the old
+   parentage if its tree is verified identical to the implementation head;
+   record that mapping and never merge the review-only history.
 4. Fix every accepted Medium, High, and Critical finding. Push back on or discard
    inaccurate, duplicate, already-handled, or out-of-phase findings only with
    concrete evidence and a recorded rationale; use an existing later-phase owner
@@ -83,13 +103,14 @@ continued delegated execution confirmed September 9, 2026:
    a finding-free final review. Record raw
    reviewer severities as well as any evidence-backed rejected findings; never
    treat an incomplete review as a clean round.
-6. Use one PR per named phase or subphase by default. Group dependency-ready
-   schema, policy, services, integration and tests into a coherent demonstrable
+6. Use one PR per coherent subphase or vertical slice by default. Group
+   dependency-ready schema, policy, services, integration and tests into a coherent demonstrable
    outcome. Do not routinely end a PR at an individual model, migration, helper
    or checklist item. Use logical commits and internal test checkpoints within
    the batch; these do not require human approval or a separate three-round
-   review loop. Split only when a substantive independently testable outcome or
-   reviewability boundary justifies it, and record why. Each resulting PR follows
+   review loop. For example, deliver Phase 3A and Phase 3B separately; subdivide
+   further when an independently testable outcome or reviewability boundary
+   justifies it, and record why. Each resulting PR follows
    the full review/fix cycle. Formal gates still review the complete integrated
    scope since the previous gate, including already merged changes. Create each
    subsequent branch from refreshed `origin/main` after its predecessor merges.
@@ -100,11 +121,14 @@ continued delegated execution confirmed September 9, 2026:
    already completed round count. Record phase/task scope, reviewed SHA, round
    evidence, findings/dispositions, validation, and any permitted Low deferrals
    in the PR handoff and owning task evidence.
-8. Stop for explicit human approval before merging. Do not enable auto-merge or
-   merge merely because CI passes. At a formal gate, present its required
-   evidence with this same approval request; no extra routine approval stop is
-   needed earlier in the development cycle. Record gate approval when granted,
-   merge only as authorized, then begin the next phase from updated `origin/main`.
+8. The human has granted standing authority to merge these implementation PRs
+   through the normal protected workflow once the review loop, final-head CI
+   and all applicable gate evidence pass. Record that authority and evidence;
+   do not bypass branch protection or treat CI alone as approval. Merge (or
+   enter the merge queue), wait for the result to land on `origin/main`, then
+   continue with the next dependency-ready increment without a routine approval
+   stop. Formal implementation gates may advance under this same authority;
+   the explicit product/security/operations approval at Gate 5 remains required.
 
 Autonomously investigate failures, implement specification-consistent fixes,
 commit with sign-off, push backups, run reviews, and correct CI. Ask during the
@@ -542,14 +566,15 @@ Every formal gate uses this sequence:
    against current `origin/main` alone may omit that scope. Preserve the gate
    baseline and evidence alongside the current phase's reviewed SHA.
 7. Gate exit requires no unresolved validated Critical, High, or Medium finding
-   and explicit human approval of the evidence, requested with PR merge
-   approval rather than as an additional routine mid-cycle stop. A Low
+   and all gate-specific evidence. Routine implementation-gate advancement uses
+   the standing human delegation in the phase delivery cycle; Gate 5 retains
+   its explicit product/security/operations approval. A Low
    finding may be deferred only with a written rationale, owner, and target
    phase; correctness/security/data-loss issues are never deferred merely to
    preserve schedule.
 8. Record the reviewed commit SHA, validation results, deferred Low items, and
-   human approval in the pull request or implementation-status document before
-   Phase work resumes.
+   applicable human approval or standing delegation in the pull request or
+   implementation-status document before phase work resumes.
 
 Review tools produce evidence and recommendations; they do not themselves grant
 authority for destructive smoke tests, real external writes, deployment, merge,
