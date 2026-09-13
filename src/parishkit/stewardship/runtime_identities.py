@@ -9,6 +9,8 @@ def database_identities():
     result = [("migration", "pk_stewardship_migration", ServiceRole.MIGRATION, None)]
     for role in (
         ServiceRole.WEB,
+        ServiceRole.WORKER,
+        ServiceRole.SCHEDULER,
         ServiceRole.CONFIG_INSTALLER,
         ServiceRole.BOOTSTRAP,
         ServiceRole.ADMIN_RECOVERY,

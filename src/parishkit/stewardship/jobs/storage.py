@@ -21,6 +21,7 @@ from parishkit.stewardship.observability import correlation
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
 from .models import TaskRun
+from .phases import TaskPhase
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,7 @@ class TaskStatus:
     worker_id: UUID | None
     parent_id: UUID | None
     retry_sequence: int
+    phase: TaskPhase = TaskPhase.UNSPECIFIED
 
 
 def _status(run):
@@ -54,6 +56,7 @@ def _status(run):
         run.worker_id,
         run.parent_id,
         run.retry_sequence,
+        TaskPhase(run.phase),
     )
 
 
@@ -209,6 +212,7 @@ def change_run(
     lease_seconds=None,
     retry_seconds=None,
     progress=None,
+    phase=None,
 ):
     """Apply one fenced metadata transition after domain-specific verification.
 
@@ -220,6 +224,12 @@ def change_run(
     _uuid(run_id)
     _uuid(actor_id, optional=True)
     _uuid(correlation_id)
+    if phase is not None and (
+        not isinstance(phase, TaskPhase)
+        or phase is TaskPhase.UNSPECIFIED
+        or action != "progress"
+    ):
+        raise ValueError("Only progress accepts a known typed task phase.")
     actions = {
         "claim": "running",
         "heartbeat": "running",
@@ -283,6 +293,7 @@ def change_run(
             run.fence += 1
             run.attempt += 1
             run.progress_current = run.progress_total = 0
+            run.phase = TaskPhase.STARTING.value
         elif action == "lease_expired":
             run.fence += 1
         if action in ("claim", "heartbeat"):
@@ -296,6 +307,8 @@ def change_run(
             run.not_before = Now() + timedelta(seconds=retry_seconds)
         if progress is not None:
             run.progress_current, run.progress_total = progress
+        if phase is not None:
+            run.phase = phase.value
         run.state, run.action = actions[action], action
         run.actor_id, run.correlation_id = actor_id, correlation_id
         run.version += 1

@@ -89,7 +89,8 @@ class ParishSoftConfig:
 
     Bundles the API key, on-disk cache location, request timeout, and the
     optional expected organization name used to guard against pointing at the
-    wrong ParishSoft tenant.
+    wrong ParishSoft tenant. Set cache_enabled=False for coherent reads that
+    must neither reuse cached responses nor leave private response files.
     """
 
     api_key: str
@@ -98,6 +99,7 @@ class ParishSoftConfig:
     cache_limit: float | None = None
     api_base_url: str = DEFAULT_API_BASE_URL
     timeout: float = 30.0
+    cache_enabled: bool = True
 
     def __post_init__(self) -> None:
         """Validate field types and value ranges, raising ConfigError on bad input."""
@@ -115,6 +117,8 @@ class ParishSoftConfig:
             raise ConfigError("ParishSoft timeout must be a number")
         if self.timeout <= 0:
             raise ConfigError("ParishSoft timeout must be positive")
+        if type(self.cache_enabled) is not bool:
+            raise ConfigError("ParishSoft cache_enabled must be boolean")
 
 
 class ParishSoftClient:
@@ -136,16 +140,17 @@ class ParishSoftClient:
 
         A caller-supplied session or retry policy may be injected (useful for
         testing); otherwise sensible defaults are created. The cache directory
-        is created if needed and locked down to owner-only (0o700) because
-        cached responses can contain personal contact information.
+        is created if caching is enabled and locked down to owner-only (0o700)
+        because cached responses can contain personal contact information.
         """
         self.config = config
         self.session = session or requests.Session()
         self.session.headers.update({"x-api-key": config.api_key})
         self.retry_policy = retry_policy or RetryPolicy(attempts=3, initial_delay=0.2)
         self._organization_id: int | None = None
-        self.config.cache_dir.mkdir(parents=True, exist_ok=True)
-        self.config.cache_dir.chmod(0o700)
+        if self.config.cache_enabled:
+            self.config.cache_dir.mkdir(parents=True, exist_ok=True)
+            self.config.cache_dir.chmod(0o700)
 
     def validate_organization(self) -> int:
         """Confirm the API key maps to exactly one organization and return its ID.
@@ -188,15 +193,19 @@ class ParishSoftClient:
         cached = self._load_cache(endpoint, params)
         if cached is not None:
             return cached
+        data = self.get_uncached(endpoint, params)
+        self._save_cache(endpoint, params, data)
+        return data
+
+    def get_uncached(self, endpoint: str, params: dict[str, Any] | None = None) -> Any:
+        """Read current provider state without consulting or populating the cache."""
         url = self._url(endpoint)
         LOGGER.debug("Fetching ParishSoft GET %s", endpoint)
         response = self._request(
             lambda: self.session.get(url, params=params, timeout=self.config.timeout)
         )
         # An empty response body is normalized to [] so callers always get JSON.
-        data = _response_json(response, endpoint)
-        self._save_cache(endpoint, params, data)
-        return data
+        return _response_json(response, endpoint)
 
     def post(self, endpoint: str, payload: dict[str, Any] | None = None) -> Any:
         """Send a POST request, returning cached data when a fresh copy exists.
@@ -437,6 +446,8 @@ class ParishSoftClient:
         When ``cache_limit`` is set, a file whose modification time predates
         the limit window is treated as a miss so callers re-fetch fresh data.
         """
+        if not self.config.cache_enabled:
+            return None
         cache_path = self._cache_path(endpoint, params)
         if not cache_path.exists():
             LOGGER.debug("ParishSoft cache miss for %s", endpoint)
@@ -465,6 +476,8 @@ class ParishSoftClient:
         Uses an atomic write so a partial file is never left behind, and sorts
         keys so cached files are stable and diff-friendly.
         """
+        if not self.config.cache_enabled:
+            return
         cache_path = self._cache_path(endpoint, params)
         LOGGER.debug("Writing ParishSoft cache for %s", endpoint)
         atomic_write_text(
@@ -1024,6 +1037,7 @@ def load_families_and_members(
     parishioners_only: bool = True,
     include_deceased: bool = False,
     load_contributions: bool | str = False,
+    retain_empty_families: bool = False,
 ) -> ParishSoftData:
     """Load, cross-link, and filter a full ParishSoft dataset for one org.
 
@@ -1036,6 +1050,9 @@ def load_families_and_members(
       - ``active_only``: drop inactive families and members.
       - ``parishioners_only``: keep only families registered at this org.
       - ``include_deceased``: retain deceased members when True.
+      - ``retain_empty_families``: retain Families without remaining Members;
+        source reconciliation needs these inactive identities, while ordinary
+        recipient-oriented tools keep the historical default of dropping them.
       - ``load_contributions``: when truthy, also load funds, pledges, and
         contributions; a string value is used as the contribution start date,
         otherwise giving from one year ago is loaded.
@@ -1044,6 +1061,8 @@ def load_families_and_members(
     individual load and link steps explicit for easier operational
     troubleshooting.
     """
+    if type(retain_empty_families) is not bool:
+        raise ConfigError("ParishSoft retain_empty_families must be boolean")
     LOGGER.info("Loading full ParishSoft family/member dataset")
     org_id = client.validate_organization()
     funds: dict[int, dict[str, Any]] = {}
@@ -1097,6 +1116,7 @@ def load_families_and_members(
         active_only=active_only,
         parishioners_only=parishioners_only,
         include_deceased=include_deceased,
+        retain_empty_families=retain_empty_families,
     )
     LOGGER.info(
         "Loaded full ParishSoft dataset: %s families, %s members",
@@ -1277,6 +1297,7 @@ def _filter_families_and_members(
     active_only: bool,
     parishioners_only: bool,
     include_deceased: bool,
+    retain_empty_families: bool,
 ) -> None:
     """Prune out-of-scope members and families and their dangling memberships.
 
@@ -1317,7 +1338,7 @@ def _filter_families_and_members(
             member.get("py active") for member in family.get("py members", [])
         )
         remove_family = (
-            not retained_members
+            (not retained_members and not retain_empty_families)
             or (active_only and not family_is_active(family))
             or (parishioners_only and not family_is_parishioner(family, org_id))
         )

@@ -202,6 +202,16 @@ Do not start DAT-03 until Gate 1 and the phase PR receive human approval.
 
 Source scope: [Phase 2: Source, setup, and preparation](../../plans/stewardship/overall.md#phase-2-source-truth-initial-setup-and-campaign-preparation).
 
+September 11, 2026: PR #21 merged as
+`48be3666f0c89cc15586cb67465cd1ba0504203c` after passing merge-queue CI. The owner
+authorized automatic continuation upon that merge, releasing Gate 1. Branch
+`pr/stewardship-phase-2` starts from the refreshed `origin/main` tip and targets
+the complete Phase 2 batch below, not a separate PR per storage component.
+Its [execution checkpoints](../../guides/stewardship-phase-2.md) track scope,
+tests and the required three-round review/fix cycle. DAT-03 storage is complete;
+BG-01 is the next dependency-ready package. No Phase 3 work or next PR merge
+is authorized yet.
+
 1. [DAT-03](data.md#dat-03-versioned-parishsoft-source-corpus) → [BG-01](background-processing.md#bg-01-durable-task-scheduler-lease-and-recovery-substrate) → [BG-05](background-processing.md#bg-05-parishsoft-delta-and-full-refresh) → [ADM-02](admin-portal.md#adm-02-bootstrap-command-and-transactional-setup-wizard) → [ADM-03](admin-portal.md#adm-03-navigation-dashboard-indicators-and-configuration) → [ADM-04](admin-portal.md#adm-04-campaign-editor-content-schedules-and-previews).
 2. Complete source-promotion integration for [DAT-04](data.md#dat-04-family-campaign-identity-and-credentials) population and [DAT-05](data.md#dat-05-portal-users-and-authorization-policy-records) chair suggestions.
 3. Complete M2 evidence and the focused setup/import correction pass.

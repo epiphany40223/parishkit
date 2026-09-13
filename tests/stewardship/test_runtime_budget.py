@@ -49,6 +49,33 @@ def test_health_connections_are_already_in_the_auxiliary_reserve():
         replace(budget, auxiliary_connections=7)
 
 
+def test_background_inventory_includes_worker_renewal_and_rollout_overlap():
+    """The SQL role ceilings consume only their reserved background connection pool."""
+    from parishkit.stewardship.database_provisioning import role_limit
+    from parishkit.stewardship.deployment import ServiceRole, load_deployment
+    from parishkit.stewardship.runtime_identities import database_identities
+
+    config = load_deployment(environ={})
+    roles = {
+        ServiceRole.WORKER,
+        ServiceRole.SCHEDULER,
+        ServiceRole.CONFIG_INSTALLER,
+        ServiceRole.CREDENTIAL_INSTALLER,
+    }
+    used = sum(
+        role_limit(config, role)
+        for _, _, role, _ in database_identities()
+        if role in roles
+    )
+    assert used == config.runtime_budget.background_connections == 32
+    assert role_limit(config, ServiceRole.WORKER) == 4
+    assert role_limit(config, ServiceRole.SCHEDULER) == 2
+    doubled = replace(
+        config, runtime_budget=replace(config.runtime_budget, rollout_overlap=1)
+    )
+    assert role_limit(doubled, ServiceRole.WORKER) == 2
+
+
 @pytest.mark.parametrize(
     "changes",
     [

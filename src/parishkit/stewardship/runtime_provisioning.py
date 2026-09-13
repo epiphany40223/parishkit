@@ -12,7 +12,6 @@ import os
 import re
 import secrets
 import stat
-from dataclasses import replace
 from pathlib import Path
 
 from parishkit.config import ConfigError
@@ -23,11 +22,19 @@ from .bootstrap import HANDOFF_TARGETS
 from .deployment_documents import deployment_document
 from .runtime_identities import database_identities
 from .runtime_paths import RuntimeLayout, explicit_path, private_directory
-from .runtime_topology import render_runtime, resolve_database_files
-from .runtime_valkey import web_acl
+from .runtime_topology import (
+    render_runtime,
+    resolve_database_files,
+    resolve_valkey_files,
+)
+from .runtime_valkey import server_acl
 from .startup_interlock import MARKER
 
 MAX_DOCUMENT = 1024 * 1024
+
+# This phase provisions only implemented limiter and background transport users.
+# Queue ACLs are not startup or domain authority; no consumer starts here.
+VALKEY_SERVICES = ("web", "worker", "scheduler")
 
 
 def _admit_inventory(root, directories, files):
@@ -121,14 +128,7 @@ def provisioning_plan(configuration, *, image, checkout=None, bind_source_root=N
     """Resolve every target before creating any filesystem or runtime authority."""
     if configuration.runtime_budget.replicas != 1:
         raise ConfigError("Operational provisioning requires one web container.")
-    configuration = replace(
-        configuration,
-        valkey=replace(
-            configuration.valkey,
-            password_file=configuration.valkey.password_file
-            or configuration.paths["credentials"] / "valkey" / "web",
-        ),
-    )
+    configuration = resolve_valkey_files(configuration)
     configuration = resolve_database_files(configuration)
     layout = RuntimeLayout(configuration).validate()
     compose, documents = render_runtime(configuration, image=image, checkout=checkout)
@@ -155,7 +155,7 @@ def provisioning_plan(configuration, *, image, checkout=None, bind_source_root=N
         layout.database_password(name)
         for name in ("operator", *(entry[0] for entry in database_identities()))
     }
-    passwords.add(configuration.valkey.password_file)
+    passwords.update(layout.valkey_password(name) for name in VALKEY_SERVICES)
     acl = configuration.paths["credentials"] / "valkey" / "server.acl"
     directories.update(path.parent for path in passwords | {acl, layout.interlock})
     documents = {
@@ -265,7 +265,18 @@ def provision_runtime(configuration, *, image, checkout=None, bind_source_root=N
             _mkdir(directory)
         for path in sorted(passwords):
             _password(path)
-        _retain(acl, web_acl(_password(configuration.valkey.password_file)))
+        from .deployment import ServiceRole
+
+        layout = RuntimeLayout(configuration)
+        _retain(
+            acl,
+            server_acl(
+                {
+                    ServiceRole(name): _password(layout.valkey_password(name))
+                    for name in VALKEY_SERVICES
+                }
+            ),
+        )
         _retain(RuntimeLayout(configuration).interlock, MARKER)
         for path, value in documents.items():
             _retain(path, value)

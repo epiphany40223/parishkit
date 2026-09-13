@@ -73,12 +73,15 @@ For native volumes add `--bind-source-root DAEMON_RUNTIME_ROOT`. For development
 reload add `--checkout ABSOLUTE_HOST_CHECKOUT`; the generated consumer source mount
 is read-only and only its `src` subtree is exposed. Do not put secrets in source.
 
-This creates independent SQL and web-Valkey passwords, the restricted server ACL,
+This creates independent SQL and web/worker/scheduler Valkey passwords, the restricted server ACL,
 the stable startup inode, exact per-service YAML, and `config/services/compose.json`.
 It creates empty provider/key/handoff/storage directories, but does not connect
 to a database, initialize an application, start services, or generate provider
 credentials. The private provisioning intent/completion markers are not ordinary
 application config and must not be edited to bypass refusal.
+The broker identities prepare the Phase 2 transport boundary; they do not launch
+workers or grant domain operations. Per-identity Valkey overrides follow the
+[deployment reference](../development/stewardship-deployment.md).
 
 An interrupted preparation resumes with the **same** input configuration, image,
 checkout and source mapping. Existing generated passwords are retained; conflicting

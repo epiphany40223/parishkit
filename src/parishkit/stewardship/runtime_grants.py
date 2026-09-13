@@ -181,6 +181,10 @@ def runtime_grants(role, *, target=None):
 
     role = _identity_role(role, target)
 
+    if role in {ServiceRole.WORKER, ServiceRole.SCHEDULER}:
+        from .jobs.grants import task_runtime_grants
+
+        return task_runtime_grants(role)
     if role is ServiceRole.CONFIG_INSTALLER:
         return {
             table: set(grants) for table, grants in CONFIGURATION_GRANTS.items()
@@ -262,6 +266,8 @@ def login_name(role, *, target=None):
         role
         not in {
             ServiceRole.WEB,
+            ServiceRole.WORKER,
+            ServiceRole.SCHEDULER,
             ServiceRole.CONFIG_INSTALLER,
             ServiceRole.BOOTSTRAP,
             ServiceRole.ADMIN_RECOVERY,
@@ -299,14 +305,15 @@ def admit_runtime_database(configuration):
         admit_installer_database(configuration.credential_target)
     elif role is ServiceRole.CONFIG_INSTALLER:
         admit_configuration_database()
-    elif role is ServiceRole.WEB:
+    elif role in {ServiceRole.WEB, ServiceRole.WORKER, ServiceRole.SCHEDULER}:
         _identity(login_name(role))
         tables, columns = runtime_grants(role)
         allowed = {table: set(grants) for table, grants in tables.items()}
         for table, grants in columns.items():
             allowed.setdefault(table, set()).update(grants)
         admit_grants(allowed)
-        admit_web_staging_grants()
+        if role is ServiceRole.WEB:
+            admit_web_staging_grants()
         from django.db import connection
 
         admit_columns(connection, tables, columns)

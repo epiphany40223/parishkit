@@ -1,5 +1,6 @@
 """Fresh storage creation is resumable without adopting data or changing secrets."""
 
+import hashlib
 import json
 from dataclasses import replace
 
@@ -73,6 +74,60 @@ def test_interrupted_provisioning_keeps_passwords_and_requires_exact_intent(
         "runtime_storage_provisioned"
     ]
     assert read_private(layout.database_password("web")) == before
+
+
+def test_independent_broker_credentials_survive_exact_resume_and_document_roundtrip(
+    tmp_path, monkeypatch
+):
+    """The ACL contains hashes; web mounts none of the consumer passwords."""
+    configuration = configuration_at(tmp_path / "runtime")
+    selected = tmp_path / "broker-passwords"
+    overrides = {name: selected / name for name in provisioning.VALKEY_SERVICES}
+    configuration = replace(
+        configuration, valkey=replace(configuration.valkey, password_files=overrides)
+    )
+    original = provisioning._retain
+
+    def interrupt(path, value):
+        """Stop after password allocation without publishing the server ACL."""
+        raise OSError("synthetic interruption")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(provisioning, "_retain", interrupt)
+        with pytest.raises(OSError):
+            provisioning.provision_runtime(configuration, image=IMAGE)
+    before = {name: read_private(path) for name, path in overrides.items()}
+    assert len(set(before.values())) == 3
+    changed = replace(
+        configuration,
+        valkey=replace(
+            configuration.valkey,
+            password_files=overrides | {"worker": selected / "changed"},
+        ),
+    )
+    with pytest.raises(ConfigError, match="different deployment inputs"):
+        provisioning.provision_runtime(changed, image=IMAGE)
+    assert provisioning._retain is original
+    provisioning.provision_runtime(configuration, image=IMAGE)
+    assert before == {name: read_private(path) for name, path in overrides.items()}
+    layout = RuntimeLayout(configuration)
+    acl = read_private(configuration.paths["credentials"] / "valkey" / "server.acl")
+    assert acl.startswith(b"user default off\n")
+    for name, password in before.items():
+        assert password not in acl
+        assert (
+            f"user {name} on #" + hashlib.sha256(password).hexdigest()
+        ).encode() in acl
+    assert b"user mail-dispatch" not in acl and b"user backup-worker" not in acl
+    loaded = load_deployment(layout.service_directory / "web.yaml", environ={})
+    assert loaded.valkey.password_files == overrides
+    assert loaded.valkey.password_file == overrides["web"]
+    compose = json.loads(read_private(layout.service_directory / "compose.json"))
+    mounts = {item["source"] for item in compose["services"]["web"]["volumes"]}
+    assert mounts & {str(path) for path in overrides.values()} == {
+        str(overrides["web"])
+    }
+    assert not RuntimeLayout(configuration).valkey_password("mail-dispatch").exists()
 
 
 def test_atomic_writer_residue_does_not_strand_exact_provisioning_retry(

@@ -86,12 +86,23 @@ the CLI exposes the profile, role, origin, and root options initially.
 | `valkey.port` | `VALKEY_PORT` | `6,379`; integer 1–65,535 |
 | `valkey.database` | `VALKEY_DATABASE` | Zero; integer 0–15 |
 | `valkey.password_file` | `VALKEY_PASSWORD_FILE` | No fallback credential |
+| `valkey.password_files.<identity>` | `VALKEY_PASSWORD_FILE_<IDENTITY>` | Individual broker/limiter file override; hyphens become underscores in environment names |
 | `credential_target` | `CREDENTIAL_TARGET` | Required only for `credential-installer` |
 
 Public origins cannot include user information, paths other than `/`, queries,
 fragments, whitespace, or invalid ports/hosts. Local profiles use loopback HTTP;
 production uses HTTPS. Deployment profile does not set Testing/Production
 campaign mode; that remains database-authoritative.
+
+Valkey file-map identities are `web`, `worker`, `scheduler`, `mail-dispatch`
+and `backup-worker`. The scalar reference belongs only to the input profile's
+identity; disagreeing scalar and map references are rejected. Fresh runtime
+provisioning defaults these individual paths below `credentials/valkey/`,
+creates only the implemented web/worker/scheduler credentials, and puts only
+password hashes in the server-only ACL. Each consumer receives only its own
+file mount. Independent credentials cannot alias SQL files, writable application
+storage, credential-installer targets, each other or the ACL itself. Declaring a
+future identity does not provision it or enable its runtime.
 
 Service identities are `web`, `worker`, `scheduler`, `config-installer`,
 `credential-installer`, `backup-worker`, `mail-dispatch`, `token-key-rotation`,

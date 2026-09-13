@@ -157,6 +157,27 @@ class RuntimeLayout:
             identity, self.configuration.paths["credentials"] / "database" / identity
         )
 
+    def valkey_password(self, identity):
+        """An individual broker/limiter credential, never shared with another role."""
+        from .deployment import VALKEY_IDENTITIES
+
+        if identity not in VALKEY_IDENTITIES:
+            raise ConfigError("Unknown Valkey identity.")
+        selected = self.configuration.valkey
+        scalar = (
+            selected.password_file
+            if identity == self.configuration.service_role
+            else None
+        )
+        mapped = selected.password_files.get(identity)
+        if scalar is not None and mapped is not None and scalar != mapped:
+            raise ConfigError("Valkey password override references disagree.")
+        return (
+            scalar
+            or mapped
+            or self.configuration.paths["credentials"] / "valkey" / identity
+        )
+
     def validate(self):
         """Reject aliases/overlaps that would expose secrets through data mounts."""
         paths = self.configuration.paths
@@ -200,13 +221,27 @@ class RuntimeLayout:
             if path is not None
         ]
         database_files = self.configuration.postgres.password_files
+        from .deployment import VALKEY_IDENTITIES
+
+        valkey_files = [
+            self.valkey_password(name) for name in sorted(VALKEY_IDENTITIES)
+        ]
+        if len(set(valkey_files)) != len(valkey_files):
+            raise ConfigError("Independent Valkey password files alias each other.")
         if len(set(database_files.values())) != len(database_files):
             raise ConfigError("Independent database password files alias each other.")
-        from .runtime_identities import database_identities
+        from .deployment import SECRET_NAMES, ServiceRole
 
         selected_sql = [
             self.database_password(name)
-            for name in ("operator", *(entry[0] for entry in database_identities()))
+            for name in sorted(
+                {role.value for role in ServiceRole}
+                | {"operator", "download"}
+                | {
+                    "credential-installer-" + target.replace("_", "-")
+                    for target in SECRET_NAMES - {"handoff_private"}
+                }
+            )
         ]
         if len(set(selected_sql)) != len(selected_sql) or any(
             path in selected_sql
@@ -218,9 +253,18 @@ class RuntimeLayout:
             if path is not None
         ):
             raise ConfigError("Independent SQL and other runtime inputs alias.")
+        if set(valkey_files) & {
+            *selected_sql,
+            self.interlock,
+            self.configuration.configuration_file,
+            self.configuration.postgres.password_file,
+            self.configuration.postgres.download_password_file,
+            self.configuration.paths["credentials"] / "valkey" / "server.acl",
+        }:
+            raise ConfigError("Independent Valkey and other runtime inputs alias.")
         if len(set(inputs)) != len(inputs):
             raise ConfigError("Independent runtime inputs alias each other.")
-        for path in [*inputs, *database_files.values()]:
+        for path in [*inputs, *database_files.values(), *valkey_files]:
             explicit_path(path)
             if any(path == root or root in path.parents for root in protected):
                 raise ConfigError("Runtime input overlaps protected storage.")
@@ -272,6 +316,7 @@ class RuntimeLayout:
             self.configuration.valkey.password_file,
             self.configuration.configuration_file,
             *self.configuration.postgres.password_files.values(),
+            *self.configuration.valkey.password_files.values(),
         ):
             if path is not None and any(
                 path == target or target in path.parents for target in targets

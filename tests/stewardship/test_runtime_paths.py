@@ -26,6 +26,8 @@ def test_every_runtime_default_relocates_with_root(tmp_path):
         layout.credential("metrics"),
         layout.handoff("metrics"),
         layout.database_password("web"),
+        layout.valkey_password("worker"),
+        layout.valkey_password("scheduler"),
     ]
     assert all(path == tmp_path or tmp_path in path.parents for path in paths)
 
@@ -156,6 +158,30 @@ def test_database_and_broker_inputs_cannot_alias(tmp_path):
     )
     with pytest.raises(ConfigError, match="alias"):
         RuntimeLayout(configuration).validate()
+
+
+@pytest.mark.parametrize(
+    "kind", ["web", "sql", "interlock", "acl", "reports", "credential", "disagreement"]
+)
+def test_named_broker_overrides_cannot_alias_or_escape_isolation(tmp_path, kind):
+    """Named paths receive the same boundary checks as existing scalar credentials."""
+    configuration = load_deployment(environ={"PARISHKIT_ROOT": str(tmp_path)})
+    layout = RuntimeLayout(configuration)
+    protected = {
+        "web": layout.valkey_password("web"),
+        "sql": layout.database_password("worker"),
+        "interlock": layout.interlock,
+        "acl": configuration.paths["credentials"] / "valkey" / "server.acl",
+        "reports": configuration.paths["reports"] / "password",
+        "credential": layout.credential_directory("parishsoft") / "other",
+        "disagreement": tmp_path / "one",
+    }[kind]
+    name = "web" if kind == "disagreement" else "worker"
+    selected = replace(configuration.valkey, password_files={name: protected})
+    if kind == "disagreement":
+        selected = replace(selected, password_file=tmp_path / "two")
+    with pytest.raises(ConfigError):
+        RuntimeLayout(replace(configuration, valkey=selected)).validate()
 
 
 @pytest.mark.parametrize(

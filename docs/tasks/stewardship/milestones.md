@@ -752,7 +752,7 @@ Scope: [Phase 1](../../plans/stewardship/overall.md#phase-1-secure-foundation-an
 - [x] M1.02 — Demonstrate Family access and exact campaign-boundary denial.
 - [x] M1.03 — Prove single-current-campaign constraints under concurrent requests.
 - [x] M1.04 — Verify service mounts, configuration activation, and restart durability.
-- [ ] M1.05 — Complete Gate 1 before beginning Phase 2.
+- [x] M1.05 — Complete Gate 1 before beginning Phase 2.
 
 Phase 0 handoff: human-approved [PR #8](https://github.com/epiphany40223/parishkit/pull/8)
 merged on September 8, 2026, at 18:48:21 UTC. Its final head `259863b` passed
@@ -1636,7 +1636,7 @@ Apply the complete [review protocol](../../plans/stewardship/overall.md#review-g
 - [x] G1.03 — Triage findings, implement corrections, and add regression coverage.
 - [x] G1.04 — Repeat validation, the phase demonstration, and independent review.
 - [x] G1.05 — Resolve all validated Critical/High/Medium findings; document Low deferrals.
-- [ ] G1.06 — Record reviewed SHA, evidence, and human approval before phase release.
+- [x] G1.06 — Record reviewed SHA, evidence, and human approval before phase release.
 
 Evidence: the [Phase 1C review ledger](../../guides/stewardship-phase-1c-reviews.md)
 records the cumulative Phase 1 review from the Phase 0 merged handoff `509245d`.
@@ -1648,7 +1648,13 @@ commits. Native Linux [CI run 34599854275](https://github.com/epiphany40223/pari
 passes all four jobs and DCO at `243782d`, including the two documented
 fixture-only corrections. G1.01-.05 are complete. G1.06 still requires human
 merge/gate approval, and every later PR head must pass its required CI checks.
-This gate does not authorize Phase 2 yet.
+September 11, 2026 release: the owner authorized continuing when PR #21 merged
+and placed it in the merge queue. Final-head CI passed at `0b1d295`, and
+[merge-queue run 34605469838](https://github.com/epiphany40223/parishkit/actions/runs/34605469838)
+passed all four jobs. PR #21 merged at 13:54:50 UTC as
+`48be3666f0c89cc15586cb67465cd1ba0504203c`. This satisfies the previously pending
+human merge/Gate 1 approval and releases Phase 2; it does not authorize deployment,
+release, or merging the next PR.
 
 ## Phase 2: Setup and source truth
 

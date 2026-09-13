@@ -4,6 +4,7 @@ from django.urls import include, path
 
 from . import views
 from .accounts import access_gate, authentication, code_reports, family_authentication
+from .jobs import views as job_views
 
 public_patterns = [
     path("", family_authentication.entry, name="entry"),
@@ -15,6 +16,12 @@ family_patterns = [
     path("logout", family_authentication.logout, name="logout"),
 ]
 admin_patterns = [
+    path("background/tasks", job_views.task_list, name="background_tasks"),
+    path(
+        "background/tasks/<uuid:task_id>",
+        job_views.task_detail,
+        name="background_task",
+    ),
     path("setup", access_gate.setup, name="setup"),
     path("maintenance", access_gate.maintenance, name="maintenance"),
     path(

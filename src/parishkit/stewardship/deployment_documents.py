@@ -10,11 +10,17 @@ def deployment_document(configuration):
         item.name: getattr(configuration.postgres, item.name)
         for item in fields(configuration.postgres)
     }
-    valkey = asdict(configuration.valkey)
+    valkey = {
+        item.name: getattr(configuration.valkey, item.name)
+        for item in fields(configuration.valkey)
+    }
     postgres["password_files"] = {
         name: str(path) for name, path in configuration.postgres.password_files.items()
     }
     for values in (postgres, valkey):
+        values["password_files"] = {
+            name: str(path) for name, path in values["password_files"].items()
+        }
         for key in tuple(values):
             if key.endswith("password_file"):
                 path = values[key]

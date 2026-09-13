@@ -17,7 +17,22 @@ Scope and dependencies: [BG-01 work package](../../plans/stewardship/background-
 - [ ] BG-01.04 — Expose authorized task progress and status.
 - [ ] BG-01.05 — Test all state transitions, admission guards, retries, crashes, and leases.
 
-Evidence: Not started.
+Evidence: In progress after DAT-03 storage. The
+[Phase 2 checkpoints](../../guides/stewardship-phase-2.md) include internal
+UUID-only hint dispatch, queue/type isolation, repeated owning admission,
+explicit verified outcomes, abandoned-work fencing/recovery and bounded fair
+lost-hint scanning, plus session-pinned singleton ownership and a closed
+Celery/Valkey transport factory, exact broker ACLs, finite task/source heartbeat
+renewal and closed worker/scheduler process loops. Thirty PostgreSQL tests and
+nine real disposable-Valkey transport/controller tests pass, including SIGTERM
+shutdown. Fresh campaign/restore/purge/go-live/mode/epoch/pause gates now use
+compiled owning scopes; the combined source/fact/task/admission/race regression
+passes 255 PostgreSQL cases. Closed progress phases and Admin-only passive
+status/history APIs now pass 90 PostgreSQL task/status/migration tests. No item
+is complete yet: enabling the runtime with isolated mounts/grants/ACLs,
+concrete durable request bindings and integration/fault tests remain.
+Source-specific handlers arrive with BG-05;
+the generic dispatcher does not enable unimplemented provider operations.
 
 ## BG-02: Campaign boundary occurrences
 
@@ -67,7 +82,42 @@ Scope and dependencies: [BG-05 work package](../../plans/stewardship/background-
 - [ ] BG-05.05 — Coalesce manual refresh and exclude concurrent publication.
 - [ ] BG-05.06 — Test invalid corpora, retries, takeover, and reconciliation.
 
-Evidence: Not started.
+Evidence: Shared v2 feed adapter in progress alongside final BG-01 runtime
+integration. The [Phase 2 checkpoints](../../guides/stewardship-phase-2.md)
+now include concrete attempt-bound HTTP and full/delta observation through
+bounded staging, plus source-owned atomic Family reconciliation. The combined
+pipeline/transport/Family integration run passes 37 PostgreSQL cases; owning
+metadata now proves historical completion, drained crash recovery and safe
+superseded-window cancellation. The expanded combined run passes 58 PostgreSQL
+cases, with 21 outcome/supersession cases passing again after final hint wiring.
+Immutable full-fallback dependencies and parent wait/completion/failure semantics
+now pass 14 cases; the entire source PostgreSQL regression passes 193 tests.
+The compiled executor now connects actual hint/renewal, observation, promotion,
+required reconciliation and verified outcomes. Immutable scheduled ticks,
+session-owned bounded production/supersession and pre-claim contention holds
+now pass the 237-case source/scheduler PostgreSQL regression. Drained-staging
+cleanup then passes the 32-case executor/producer/process rerun. Eleven pure
+cadence cases cover restart identity, bounded catch-up and DST. Required chair
+effects, the Admin-editable nightly-time schema and isolated runtime enablement
+remain; see the linked checkpoint for the outstanding Ministry-policy question.
+Earlier checkpoints
+record the public contract verification, uncached Family indication parser and
+66 passing shared ParishSoft tests. Immutable task-root/tenant/window requests
+and append-only coalesced command evidence now pass 47 selected PostgreSQL
+request/admission cases. Bounded isolated HTTP transport and strict coherent
+pagination are implemented internally. Typed core normalization now preserves
+empty/inactive Families and source-field availability; 30 pure cases and an
+actual PostgreSQL round-trip/deduplication case pass. Complete-load orchestration
+and scoped exact-decimal giving now pass 92 selected client/loading/giving cases
+and two PostgreSQL core/financial round trips. Scoped household delta replacement,
+pre-read watermark metadata and fenced old-staging rejection now pass 26 selected
+household/delta tests, 21 cursor cases and 35 combined PostgreSQL
+delta/rejection/corpus/snapshot cases. Immutable concrete attempt/credential
+bindings and SQL completion-cursor guards now pass twelve pure credential tests
+and the combined 89-case PostgreSQL source regression. No item is complete:
+runtime integration, configurable nightly-time UI/schema and required
+source-driven chair reconciliation remain; Family integration is exercised
+by the compiled executor.
 
 ## BG-06: Family invitations and reminders
 

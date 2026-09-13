@@ -30,6 +30,7 @@ from .family_identity import collision_query
 from .lifecycle import CampaignWorkKind, campaign_work_admitted
 from .models import Campaign
 from .runtime import _now, campaign_facts
+from .work_locks import work_transaction
 
 
 def code_context(identifier):
@@ -63,7 +64,7 @@ def prepare_rehearsals(
         raise ValueError(
             "Rehearsal preparation requires bounded identities and owning admission."
         )
-    with transaction.atomic(), key_set_lock(general, mac, public):
+    with work_transaction(), key_set_lock(general, mac, public):
         runtime = SystemConfiguration.objects.select_for_update().get()
         campaign = Campaign.objects.get(pk=campaign_id)
         scope = CampaignCredentialState.objects.select_for_update().get(
@@ -183,7 +184,7 @@ def prepare_rehearsals(
 
 def invalidate_rehearsal(*, campaign_id, admit):
     """Go-live admission clears authority before any asynchronous cleanup starts."""
-    with transaction.atomic():
+    with work_transaction():
         campaign = Campaign.objects.get(pk=campaign_id)
         scope = CampaignCredentialState.objects.select_for_update().get(
             campaign=campaign
@@ -210,7 +211,7 @@ def invalidate_rehearsal(*, campaign_id, admit):
 
 def release_rehearsal_gate(*, campaign_id, admit):
     """Cancellation/withdrawal can allow a new epoch, never revive the previous one."""
-    with transaction.atomic():
+    with work_transaction():
         campaign = Campaign.objects.get(pk=campaign_id)
         scope = CampaignCredentialState.objects.select_for_update().get(
             campaign=campaign

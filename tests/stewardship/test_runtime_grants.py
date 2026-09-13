@@ -52,7 +52,7 @@ def test_grant_registry_names_existing_models_and_excludes_unrelated_download_da
     [
         ("unknown", None),
         (ServiceRole.CREDENTIAL_INSTALLER, "unknown"),
-        (ServiceRole.WORKER, None),
+        (ServiceRole.MAIL_DISPATCH, None),
         (ServiceRole.WEB, "metrics"),
         (ServiceRole.CONFIG_INSTALLER, "metrics"),
         (ServiceRole.BOOTSTRAP, "metrics"),
@@ -68,11 +68,42 @@ def test_unknown_grant_identities_fail_closed(role, target):
         login_name(role, target=target)
 
 
-@pytest.mark.parametrize("role", [ServiceRole.WEB, ServiceRole.CONFIG_INSTALLER])
+@pytest.mark.parametrize(
+    "role",
+    [
+        ServiceRole.WEB,
+        ServiceRole.CONFIG_INSTALLER,
+        ServiceRole.WORKER,
+        ServiceRole.SCHEDULER,
+    ],
+)
 def test_grant_and_login_resolvers_normalize_string_roles_identically(role):
     """The CLI string form has exactly the enum identity's authority."""
     assert login_name(role.value) == login_name(role)
     assert runtime_grants(role.value) == runtime_grants(role)
+
+
+@pytest.mark.parametrize("role", [ServiceRole.WORKER, ServiceRole.SCHEDULER])
+def test_background_grants_exclude_web_secrets_and_campaign_write_authority(role):
+    """Reserved producer/consumer identities cannot inherit web or future tables."""
+    tables, columns = runtime_grants(role)
+    for table in (
+        "stewardship_secret_request",
+        "stewardship_portal_session",
+        "stewardship_family_session",
+        "stewardship_family_token",
+        "stewardship_source_lease",
+        "stewardship_domain_rule",
+    ):
+        assert table not in tables and table not in columns
+    assert tables["stewardship_campaign"] == {"SELECT"}
+    assert columns["stewardship_campaign"] == {"UPDATE": {"id"}}
+    assert tables["stewardship_audit_event"] == {"INSERT"}
+    if role is ServiceRole.WORKER:
+        assert tables["stewardship_task_run"] == {"SELECT", "INSERT", "UPDATE"}
+    else:
+        assert tables["stewardship_task_run"] == {"SELECT", "INSERT"}
+        assert columns["stewardship_task_run"] == {"UPDATE": {"id"}}
 
 
 def test_family_runtime_lock_and_activity_grants_do_not_allow_source_writes():

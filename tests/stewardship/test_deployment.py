@@ -216,6 +216,35 @@ def test_named_database_file_overrides_have_closed_names_and_source_relative_pat
 
 
 @pytest.mark.parametrize(
+    "name", ["web", "worker", "scheduler", "mail-dispatch", "backup-worker"]
+)
+def test_named_valkey_credentials_have_closed_names_and_source_precedence(
+    tmp_path, monkeypatch, name
+):
+    """Individual paths survive YAML, environment and CLI resolution."""
+    source = tmp_path / "source"
+    source.mkdir()
+    path = config_file(source, {"valkey": {"password_files": {name: "password"}}})
+    monkeypatch.chdir(tmp_path)
+    parsed = load_deployment(path, environ={})
+    assert parsed.valkey.password_files == {name: source / "password"}
+    variable = "PARISHKIT_STEWARDSHIP_VALKEY_PASSWORD_FILE_" + name.upper().replace(
+        "-", "_"
+    )
+    assert load_deployment(
+        path, environ={variable: "environment"}
+    ).valkey.password_files == {name: tmp_path / "environment"}
+    assert load_deployment(
+        path, environ={variable: "environment"}, overrides={variable: "cli"}
+    ).valkey.password_files == {name: tmp_path / "cli"}
+    with pytest.raises(TypeError):
+        parsed.valkey.password_files[name] = tmp_path / "changed"
+    invalid = config_file(source, {"valkey": {"password_files": {"unknown": "secret"}}})
+    with pytest.raises(ConfigError):
+        load_deployment(invalid, environ={})
+
+
+@pytest.mark.parametrize(
     "name", [*PATH_DEFAULTS, "authority", "persistent_root", *sorted(PERSISTENT_STORES)]
 )
 def test_every_path_can_be_overridden(tmp_path, name):
