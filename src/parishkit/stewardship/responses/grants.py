@@ -18,10 +18,12 @@ def add_response_web_grants(tables, columns):
     # The source-pin trigger additionally restricts this login to form pins.
     tables["stewardship_source_pin"] = {"SELECT", "INSERT", "DELETE"}
     columns["stewardship_source_current"] = {"UPDATE": {"id"}}
-    columns["stewardship_source_snapshot"] = {
-        "SELECT": {"id", "promoted_at", "state", "compacted_at", "generation"},
-        "UPDATE": {"id"},
-    }
+    # Extend, never replace, the setup catalog's task/fence metadata reads.
+    snapshot = columns.setdefault("stewardship_source_snapshot", {})
+    snapshot.setdefault("SELECT", set()).update(
+        {"id", "promoted_at", "state", "compacted_at", "generation"}
+    )
+    snapshot.setdefault("UPDATE", set()).add("id")
     for table in (
         "stewardship_submission",
         "stewardship_submission_receipt",

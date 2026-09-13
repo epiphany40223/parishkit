@@ -4128,6 +4128,18 @@ AS $$
 DECLARE
     baseline public.stewardship_family_form_baseline;
 BEGIN
+    IF current_user='pk_stewardship_worker' THEN
+        -- Workers can release only superseded comparison pins, never invoke the
+        -- separate privileged rehearsal-retention exception or read its data.
+        IF public.stewardship_response_pin_required_v1(OLD.parent_id,OLD.snapshot_id)
+           AND NOT EXISTS (SELECT 1 FROM public.stewardship_source_pin
+               WHERE parent_kind='submission' AND parent_id=OLD.parent_id
+                 AND snapshot_id=OLD.snapshot_id AND expires_at IS NULL)
+        THEN
+            RAISE EXCEPTION 'Retained response requires its source protection' USING ERRCODE='23514';
+        END IF;
+        RETURN NULL;
+    END IF;
     IF OLD.parent_kind='submission' AND EXISTS (
         SELECT 1 FROM public.stewardship_submission response
         WHERE response.id=OLD.parent_id
@@ -4305,7 +4317,9 @@ CREATE CONSTRAINT TRIGGER stewardship_submission_effects
 CREATE FUNCTION public.stewardship_response_derived_guard_v1() RETURNS trigger
     LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp
 AS $$
-DECLARE response public.stewardship_submission;
+DECLARE
+    response public.stewardship_submission;
+    predecessor public.stewardship_proposed_change;
 BEGIN
     IF TG_OP='DELETE' THEN
         SELECT * INTO response FROM public.stewardship_submission WHERE id=OLD.submission_id;
@@ -4340,12 +4354,53 @@ BEGIN
                 OR NEW.handling <> 'api' THEN
                 RAISE EXCEPTION 'Proposal differs from its immutable response' USING ERRCODE='23514';
             END IF;
+            IF NEW.execution NOT IN ('pending','conflict') OR NEW.superseded_by_id IS NOT NULL THEN
+                RAISE EXCEPTION 'New proposal cannot mint execution outcomes' USING ERRCODE='23514';
+            END IF;
+            IF NEW.decision <> 'unreviewed' OR NEW.admin_value_set OR NEW.admin_value IS NOT NULL THEN
+                SELECT * INTO predecessor FROM public.stewardship_proposed_change
+                WHERE submission_id=response.prior_submission_id
+                  AND ROW(entity_kind,entity_key,field)=ROW(NEW.entity_kind,NEW.entity_key,NEW.field)
+                  AND execution NOT IN ('published','resolved_upstream','resolved_external','cancelled','superseded');
+                IF NOT FOUND
+                   OR NOT (NEW.submitted_value IS NOT DISTINCT FROM predecessor.submitted_value
+                       OR (NEW.field='email' AND lower(NEW.submitted_value#>>'{}')=lower(predecessor.submitted_value#>>'{}')) IS TRUE)
+                   OR ROW(NEW.baseline_available,NEW.baseline_value,NEW.decision,NEW.admin_value_set,NEW.admin_value)
+                       IS DISTINCT FROM ROW(predecessor.baseline_available,predecessor.baseline_value,predecessor.decision,predecessor.admin_value_set,predecessor.admin_value)
+                THEN
+                    RAISE EXCEPTION 'Proposal review state requires the same prior intent' USING ERRCODE='23514';
+                END IF;
+            END IF;
         ELSE
             IF OLD.execution IN ('published','resolved_upstream','resolved_external','cancelled','superseded')
                 OR (to_jsonb(NEW)-ARRAY['current_available','current_value','current_source_id','admin_value_set','admin_value','decision','execution','superseded_by_id','version','updated_at'])
                     IS DISTINCT FROM (to_jsonb(OLD)-ARRAY['current_available','current_value','current_source_id','admin_value_set','admin_value','decision','execution','superseded_by_id','version','updated_at'])
             THEN
                 RAISE EXCEPTION 'Proposal history and terminal outcomes are immutable' USING ERRCODE='23514';
+            END IF;
+            IF current_user='pk_stewardship_worker' THEN
+                IF NEW.execution NOT IN ('pending','conflict','resolved_upstream','cancelled')
+                   OR NEW.current_source_id=OLD.current_source_id
+                   OR NOT public.stewardship_response_source_owner_v1(NEW.current_source_id)
+                   OR NOT EXISTS (SELECT 1 FROM public.stewardship_source_pin
+                       WHERE snapshot_id=NEW.current_source_id AND parent_kind='submission'
+                         AND parent_id=NEW.submission_id AND expires_at IS NULL)
+                THEN
+                    RAISE EXCEPTION 'Proposal reconciliation requires fenced protected source' USING ERRCODE='23514';
+                END IF;
+            ELSIF current_user='pk_stewardship_web' THEN
+                IF NEW.execution NOT IN ('superseded','cancelled','resolved_upstream')
+                   OR NOT EXISTS (
+                       SELECT 1 FROM public.stewardship_submission later
+                       JOIN public.stewardship_family_form_baseline baseline ON baseline.id=later.baseline_id
+                       WHERE later.prior_submission_id=OLD.submission_id AND baseline.state='open'
+                         AND (NEW.execution <> 'superseded' OR EXISTS (
+                             SELECT 1 FROM public.stewardship_proposed_change successor
+                             WHERE successor.id=NEW.superseded_by_id AND successor.submission_id=later.id))
+                   )
+                THEN
+                    RAISE EXCEPTION 'Proposal replacement requires a new final Family response' USING ERRCODE='23514';
+                END IF;
             END IF;
         END IF;
     ELSIF TG_TABLE_NAME='stewardship_additional_information' THEN
@@ -4422,6 +4477,14 @@ AS $$
 DECLARE actual record;
 BEGIN
     IF TG_TABLE_NAME='stewardship_proposed_change' THEN
+        IF EXISTS (SELECT 1 FROM public.stewardship_proposed_change proposal
+            WHERE proposal.id=NEW.id AND NOT EXISTS (
+                SELECT 1 FROM public.stewardship_source_pin
+                WHERE snapshot_id=proposal.current_source_id AND parent_kind='submission'
+                  AND parent_id=proposal.submission_id AND expires_at IS NULL))
+        THEN
+            RAISE EXCEPTION 'Proposal comparison requires retained source protection' USING ERRCODE='23514';
+        END IF;
         SELECT execution,superseded_by_id INTO actual FROM public.stewardship_proposed_change WHERE id=NEW.id;
         IF NOT FOUND THEN RETURN NULL; END IF;
         IF (actual.execution='superseded') IS DISTINCT FROM (actual.superseded_by_id IS NOT NULL) THEN

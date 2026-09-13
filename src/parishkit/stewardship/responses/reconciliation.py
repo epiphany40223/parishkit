@@ -3,14 +3,15 @@
 from django.db.models import F
 
 from parishkit.stewardship.campaigns.work_locks import require_work_order
-from parishkit.stewardship.source.pins import pin_snapshot
+from parishkit.stewardship.source.pins import pin_snapshot, release_snapshot_pin
+from parishkit.stewardship.source.snapshot_models import SourceSnapshotPin
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .baselines import _pin_admission
 from .comparison import canonical_value
 from .inputs import MEMBER_FIELDS, member_field_value
 from .merge import KnownValue, MergeState, PriorChange, merge_value
-from .models import ProposedChange
+from .models import ProposedChange, Submission
 
 
 def reconcile_proposals(snapshot, corpus, *, campaign_id):
@@ -36,7 +37,11 @@ def reconcile_proposals(snapshot, corpus, *, campaign_id):
             )
         field = definitions[row.field]
         member = corpus["member"].get(row.entity_key)
-        if member is not None and member["family_key"] != str(row.family_duid):
+        if member is not None and (
+            member["family_key"] != str(row.family_duid)
+            or not member["active"]
+            or member["deceased"]
+        ):
             member = None
         current = member_field_value(
             member, corpus["contact"].get("member:" + row.entity_key), field
@@ -49,7 +54,10 @@ def reconcile_proposals(snapshot, corpus, *, campaign_id):
         new_key = (
             canonical_value(field.kind, current.value) if current.available else None
         )
-        if (row.current_available, old_key) == (current.available, new_key):
+        if member is not None and (row.current_available, old_key) == (
+            current.available,
+            new_key,
+        ):
             continue
         result = merge_value(
             field.kind,
@@ -60,7 +68,9 @@ def reconcile_proposals(snapshot, corpus, *, campaign_id):
             ),
         )
         execution = (
-            "resolved_upstream"
+            "cancelled"
+            if member is None
+            else "resolved_upstream"
             if result.state is MergeState.UPSTREAM_CAUGHT_UP
             else "conflict"
             if result.conflict
@@ -79,5 +89,34 @@ def reconcile_proposals(snapshot, corpus, *, campaign_id):
             execution=execution,
             version=F("version") + 1,
         )
+        _release_unused_source(row.submission_id, row.current_source_id)
         count += 1
     return count
+
+
+def _release_unused_source(submission_id, snapshot_id):
+    """Drop only an intermediate comparison pin, retaining all provenance inputs.
+
+    The ordered promotion transaction holds the source owner and serializes
+    sibling proposals. Their references are checked after each change, so the
+    last user releases a shared pin and no retained reference loses protection.
+    """
+    response = Submission.objects.only(
+        "reviewed_source_id", "validation_source_id"
+    ).get(pk=submission_id)
+    if snapshot_id in (response.reviewed_source_id, response.validation_source_id):
+        return
+    if ProposedChange.objects.filter(
+        submission_id=submission_id, current_source_id=snapshot_id
+    ).exists():
+        return
+    pin = SourceSnapshotPin.objects.filter(
+        parent_kind="submission", parent_id=submission_id, snapshot_id=snapshot_id
+    ).first()
+    if pin is not None:
+        release_snapshot_pin(
+            pin.pk,
+            parent_kind="submission",
+            parent_id=submission_id,
+            admit=_pin_admission,
+        )

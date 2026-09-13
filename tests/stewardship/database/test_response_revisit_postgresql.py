@@ -25,6 +25,72 @@ from .test_source_families_postgresql import prepare, promote
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
+@pytest.mark.parametrize("change", ["moved", "removed", "inactive", "deceased"])
+def test_promotion_cancels_inaccessible_member_proposals(live_response_service, change):
+    """A disappeared person keeps history, never actionable or foreign values."""
+    from parishkit.stewardship.deployment import ServiceRole
+
+    from .test_background_grants_postgresql import task_login
+
+    harness = live_response_service
+    form, answers = form_and_answers(harness)
+    answers["testing_acknowledged"] = False
+    answers["members"]["3"]["first_name"] = "Requested change"
+    response = submit(harness, form, answers).submission
+    data = response_source()
+    if change == "removed":
+        del data.members[3]
+        data.ministry_type_memberships.clear()
+        data.member_contactinfos.clear()
+    elif change == "moved":
+        data.members[3]["familyDUID"] = 2
+    else:
+        data.members[3]["memberStatus"] = (
+            "Inactive" if change == "inactive" else "Deceased"
+        )
+    snapshot, claim = prepare(data)
+    with task_login(ServiceRole.WORKER, exact=True):
+        promote(snapshot, claim, harness.campaign, harness.rings)
+    proposal = ProposedChange.objects.get(submission=response)
+    assert proposal.execution == "cancelled"
+    assert proposal.current_available is False and proposal.current_value is None
+    assert proposal.submitted_value == "Requested change"
+    assert proposal.current_source_id == snapshot.pk
+
+
+def test_changed_promotions_release_only_unused_comparison_pins(live_response_service):
+    """Three refreshes retain immutable inputs plus the final shared comparison."""
+    from parishkit.stewardship.deployment import ServiceRole
+
+    from .test_background_grants_postgresql import task_login
+
+    harness = live_response_service
+    form, answers = form_and_answers(harness)
+    answers["testing_acknowledged"] = False
+    answers["members"]["3"].update(
+        first_name="Requested first", last_name="Requested last"
+    )
+    response = submit(harness, form, answers).submission
+    for index in range(3):
+        data = response_source()
+        data.members[3].update(
+            firstName=f"Source first {index}", lastName=f"Source last {index}"
+        )
+        snapshot, claim = prepare(data)
+        with task_login(ServiceRole.WORKER, exact=True):
+            promote(snapshot, claim, harness.campaign, harness.rings)
+        assert set(
+            SourceSnapshotPin.objects.filter(
+                parent_kind="submission", parent_id=response.pk
+            ).values_list("snapshot_id", flat=True)
+        ) == {response.reviewed_source_id, snapshot.pk}
+        assert set(
+            ProposedChange.objects.filter(submission=response).values_list(
+                "current_source_id", flat=True
+            )
+        ) == {snapshot.pk}
+
+
 def test_response_reconciliation_uses_exact_restricted_worker(live_response_service):
     """Existing pending responses must not force broad worker answer-read authority."""
     from parishkit.stewardship.deployment import ServiceRole

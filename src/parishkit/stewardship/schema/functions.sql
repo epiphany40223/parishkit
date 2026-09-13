@@ -7627,6 +7627,43 @@ AS $$
           WHERE rehearsal_epoch_id=epoch_id)
 $$;
 
+-- Reconciliation shares the refresh owner's two live fences and work ordering.
+-- This is invoker-rights metadata, not a capability to impersonate another role.
+CREATE FUNCTION public.stewardship_response_source_owner_v1(snapshot_id uuid)
+    RETURNS boolean LANGUAGE sql STABLE
+    SET search_path TO pg_catalog, public, pg_temp
+AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.stewardship_source_current current_source
+        JOIN public.stewardship_source_snapshot source ON source.id=current_source.snapshot_id
+        JOIN public.stewardship_source_lease lease ON lease.owner_id=source.task_id
+            AND lease.fence=source.source_fence
+        JOIN public.stewardship_task_run task ON task.id=lease.owner_id
+        WHERE source.id=snapshot_id AND source.state='promoted'
+          AND source.compacted_at IS NULL AND lease.phase IN ('full','delta')
+          AND lease.expires_at>clock_timestamp() AND task.state='running'
+          AND task.fence=lease.task_fence AND task.worker_id=lease.worker_id
+          AND task.lease_expires_at>clock_timestamp()
+    ) AND EXISTS (
+        SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+          AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
+          AND mode='ExclusiveLock' AND granted
+    )
+$$;
+
+CREATE FUNCTION public.stewardship_response_pin_required_v1(response_id uuid, source_id uuid)
+    RETURNS boolean LANGUAGE sql STABLE
+    SET search_path TO pg_catalog, public, pg_temp
+AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.stewardship_submission response
+        WHERE response.id=response_id
+          AND (source_id IN (response.reviewed_source_id,response.validation_source_id)
+            OR EXISTS (SELECT 1 FROM public.stewardship_proposed_change
+                WHERE submission_id=response.id AND current_source_id=source_id))
+    )
+$$;
+
 CREATE FUNCTION public.stewardship_source_pin_guard() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -7635,6 +7672,16 @@ BEGIN
     -- Separate role branches before planning their private table queries.
     -- A boolean AND does not prevent PostgreSQL privilege checks on subqueries.
     IF current_user='pk_stewardship_worker' THEN
+      IF TG_OP='DELETE' THEN
+        IF OLD.parent_kind <> 'submission'
+           OR NOT public.stewardship_response_source_owner_v1(
+               (SELECT snapshot_id FROM public.stewardship_source_current))
+           OR public.stewardship_response_pin_required_v1(OLD.parent_id,OLD.snapshot_id)
+        THEN
+            RAISE EXCEPTION 'Worker may release only unused response comparison inputs'
+                USING ERRCODE='23514';
+        END IF;
+      ELSE
       IF (
         TG_OP <> 'INSERT' OR NEW.parent_kind <> 'submission' OR NEW.expires_at IS NOT NULL
         OR NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
@@ -7643,16 +7690,14 @@ BEGIN
         OR NOT EXISTS (
             SELECT 1 FROM public.stewardship_proposed_change change
             JOIN public.stewardship_submission response ON response.id=change.submission_id
-            JOIN public.stewardship_source_current current_source ON current_source.snapshot_id=NEW.snapshot_id
-            JOIN public.stewardship_source_snapshot source ON source.id=current_source.snapshot_id
-            JOIN public.stewardship_source_lease lease ON lease.owner_id=source.task_id
-                AND lease.fence=source.source_fence AND lease.expires_at>clock_timestamp()
             WHERE response.id=NEW.parent_id
               AND change.execution IN ('pending','conflict','queued','failed')
         )
+        OR NOT public.stewardship_response_source_owner_v1(NEW.snapshot_id)
     ) THEN
         RAISE EXCEPTION 'Worker source protection requires current response reconciliation'
             USING ERRCODE='23514';
+      END IF;
       END IF;
     END IF;
     IF current_user='pk_stewardship_web' THEN

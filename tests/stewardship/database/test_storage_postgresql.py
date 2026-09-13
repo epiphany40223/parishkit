@@ -1,5 +1,6 @@
 """PostgreSQL constraints, sessions, rollback, and concurrent writers."""
 
+import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta, timezone
 from threading import Barrier
@@ -348,10 +349,49 @@ def test_concurrent_mutations_have_one_winner(portal_session):
 def test_all_concrete_mutable_records_have_enabled_guard(db):
     """New model subclasses cannot silently omit the migration-side contract."""
     models = [model for model in apps.get_models() if issubclass(model, MutableRecord)]
+    response_contracts = {
+        "stewardship_family_form_baseline": (
+            "stewardship_family_baseline_guard",
+            "stewardship_family_baseline_guard_v1",
+        ),
+        "stewardship_proposed_change": (
+            "stewardship_proposed_change_guard",
+            "stewardship_response_derived_guard_v1",
+        ),
+        "stewardship_additional_information": (
+            "stewardship_additional_information_guard",
+            "stewardship_response_derived_guard_v1",
+        ),
+    }
     assert models
     with connection.cursor() as cursor:
         for model in models:
             table = model._meta.db_table
+            if table in response_contracts:
+                trigger, function = response_contracts[table]
+                cursor.execute(
+                    "SELECT p.proname,t.tgtype,pg_get_functiondef(p.oid) "
+                    "FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid "
+                    "WHERE t.tgrelid=%s::regclass AND t.tgname=%s "
+                    "AND t.tgenabled='O' AND NOT t.tgisinternal",
+                    [table, trigger],
+                )
+                row = cursor.fetchone()
+                assert row is not None and row[:2] == (function, 31), table
+                compact = "".join(row[2].split())
+                assert "NEW.version<>OLD.version+1" in compact
+                assert "to_jsonb(NEW)" in compact and "to_jsonb(OLD)" in compact
+                assert "ISDISTINCTFROM" in compact and "RAISEEXCEPTION" in compact
+                # Full-row comparisons exclude only editable columns. Every
+                # inherited/model identity must remain inside that comparison.
+                exclusions = re.findall(
+                    r"to_jsonb\(NEW\)\s*-\s*ARRAY\[([^]]*)\]", row[2]
+                )
+                assert exclusions, table
+                for name in model.immutable_fields + model.write_once_fields:
+                    column = model._meta.get_field(name).column
+                    assert all(f"'{column}'" not in values for values in exclusions)
+                continue
             cursor.execute(
                 "SELECT p.proname, t.tgtype, pg_get_functiondef(p.oid) "
                 "FROM pg_trigger t "
@@ -382,6 +422,18 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
     # ARC-05 intentionally deletes invalidated rehearsal detail, retaining the
     # separate anonymous code reservation forever. It is not append-only data.
     retention_exceptions = {"stewardship_rehearsal_code_mac": "retention"}
+    response_contracts = {
+        "stewardship_submission": (
+            "stewardship_submission_guard",
+            "stewardship_submission_guard_v1",
+            "Submission history is immutable",
+        ),
+        "stewardship_submission_receipt": (
+            "stewardship_submission_receipt_guard",
+            "stewardship_response_derived_guard_v1",
+            "Receipt intent is immutable",
+        ),
+    }
     from parishkit.stewardship.reports.models import CampaignDailyFact
     from parishkit.stewardship.source.version_models import ENTITY_MODELS
 
@@ -414,6 +466,22 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
     with connection.cursor() as cursor:
         for model in models:
             table = model._meta.db_table
+            if table in response_contracts:
+                trigger, function, evidence = response_contracts[table]
+                cursor.execute(
+                    "SELECT p.proname,t.tgtype,pg_get_functiondef(p.oid) "
+                    "FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid "
+                    "WHERE t.tgrelid=%s::regclass AND t.tgname=%s "
+                    "AND t.tgenabled='O' AND NOT t.tgisinternal",
+                    [table, trigger],
+                )
+                row = cursor.fetchone()
+                assert row is not None and row[:2] == (function, 31), table
+                assert evidence in row[2] and "RAISE EXCEPTION" in row[2]
+                assert "stewardship_test_response_cleanup_v1" in row[2]
+                assert "TG_OP='DELETE'" in "".join(row[2].split())
+                assert "TG_OP<>'INSERT'" in "".join(row[2].split())
+                continue
             if model in compaction_contracts:
                 trigger, function, evidence = compaction_contracts[model]
                 cursor.execute(
