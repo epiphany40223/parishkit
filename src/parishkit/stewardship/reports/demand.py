@@ -23,6 +23,19 @@ from .facts import (
 from .inputs import FactInputs
 from .models import CampaignDailyFactSet, CampaignFactRebuildDemand
 
+REQUEST_UPDATE_FIELDS = (
+    "requested_source",
+    "requested_source_generation",
+    "requested_submission_watermark",
+    "requested_timezone_configuration",
+    "requested_through_date",
+    "pending_revision",
+    "pending_first_at",
+    "pending_last_at",
+    "pending_due_at",
+    "version",
+)
+
 
 def requested_inputs(demand):
     """The latest pending tuple is independent of the currently claimed build."""
@@ -45,7 +58,9 @@ def request_rebuild(inputs, *, admit):
     campaign = Campaign.objects.select_for_update().get(pk=inputs.campaign_id)
     if campaign.active_configuration_id != inputs.timezone_configuration_id:
         raise FactUnavailable("Interactive demand requires current campaign inputs.")
-    source = SourceSnapshot.objects.get(pk=inputs.source_id, state="promoted")
+    source = SourceSnapshot.objects.only("id", "generation").get(
+        pk=inputs.source_id, state="promoted"
+    )
     row = (
         CampaignFactRebuildDemand.objects.select_for_update()
         .filter(
@@ -86,7 +101,8 @@ def request_rebuild(inputs, *, admit):
     row.pending_due_at = min(
         now + timedelta(seconds=5), row.pending_first_at + timedelta(seconds=30)
     )
-    row.save()
+    # Event producers cannot write background claim ownership, even unchanged.
+    row.save(update_fields=None if row._state.adding else REQUEST_UPDATE_FIELDS)
     return row
 
 

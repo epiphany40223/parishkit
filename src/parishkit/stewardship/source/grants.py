@@ -113,6 +113,18 @@ def add_refresh_scheduler_grants(tables, columns):
 def add_refresh_worker_grants(tables, columns):
     """Extend fresh task maps with only implemented source/population effects."""
     add_configuration_reads(tables)
+    tables["stewardship_proposed_change"] = {"SELECT"}
+    columns["stewardship_proposed_change"] = {
+        "UPDATE": {
+            "current_available",
+            "current_value",
+            "current_source_id",
+            "execution",
+            "version",
+        }
+    }
+    columns["stewardship_submission"] = {"SELECT": {"id", "campaign_id", "family_id"}}
+    tables["stewardship_source_pin"] = {"SELECT", "INSERT"}
     for table in SOURCE_READ:
         tables.setdefault(table, set()).add("SELECT")
     for table in SOURCE_APPEND:

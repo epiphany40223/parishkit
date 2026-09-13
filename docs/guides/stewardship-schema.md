@@ -16,6 +16,11 @@ eight migrations: one atomic SQL installation and seven model-state migrations
 across six Django apps. The extra accounts state step resolves cross-app foreign
 keys. Django's own migrations are unchanged.
 
+Phase 3A adds the responses app's initial model-state migration and five tables
+directly to the fresh-install SQL. This is still a baseline, not an upgrade of
+retained development databases. The audited delta and new object counts are in
+the [Phase 3A evidence](stewardship-phase-3a.md#schema-audit).
+
 The SQL files under `src/parishkit/stewardship/schema/` install the final function
 definitions, tables, seed sentinels and guards directly. Only function-body
 validation is temporarily deferred within the installation transaction because

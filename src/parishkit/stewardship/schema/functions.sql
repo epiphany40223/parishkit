@@ -7612,16 +7612,81 @@ END;
 $$;
 
 -- FUNCTION: stewardship_source_pin_guard()
+-- Narrow retention authority for disposable responses after epoch invalidation.
+CREATE FUNCTION public.stewardship_test_response_cleanup_v1(response_mode text, epoch_id uuid)
+    RETURNS boolean LANGUAGE sql STABLE
+    SET search_path TO pg_catalog, public, pg_temp
+AS $$
+    SELECT response_mode='test' AND epoch_id IS NOT NULL
+      AND EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+          AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
+          AND mode='ExclusiveLock' AND granted)
+      AND EXISTS (SELECT 1 FROM public.stewardship_rehearsal_epoch
+          WHERE id=epoch_id AND state='invalidated')
+      AND NOT EXISTS (SELECT 1 FROM public.stewardship_campaign_credentials
+          WHERE rehearsal_epoch_id=epoch_id)
+$$;
+
 CREATE FUNCTION public.stewardship_source_pin_guard() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
-DECLARE snapshot stewardship_source_snapshot%ROWTYPE;
+DECLARE snapshot record;
 BEGIN
+    -- Separate role branches before planning their private table queries.
+    -- A boolean AND does not prevent PostgreSQL privilege checks on subqueries.
+    IF current_user='pk_stewardship_worker' THEN
+      IF (
+        TG_OP <> 'INSERT' OR NEW.parent_kind <> 'submission' OR NEW.expires_at IS NOT NULL
+        OR NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+            AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
+            AND mode='ExclusiveLock' AND granted)
+        OR NOT EXISTS (
+            SELECT 1 FROM public.stewardship_proposed_change change
+            JOIN public.stewardship_submission response ON response.id=change.submission_id
+            JOIN public.stewardship_source_current current_source ON current_source.snapshot_id=NEW.snapshot_id
+            JOIN public.stewardship_source_snapshot source ON source.id=current_source.snapshot_id
+            JOIN public.stewardship_source_lease lease ON lease.owner_id=source.task_id
+                AND lease.fence=source.source_fence AND lease.expires_at>clock_timestamp()
+            WHERE response.id=NEW.parent_id
+              AND change.execution IN ('pending','conflict','queued','failed')
+        )
+    ) THEN
+        RAISE EXCEPTION 'Worker source protection requires current response reconciliation'
+            USING ERRCODE='23514';
+      END IF;
+    END IF;
+    IF current_user='pk_stewardship_web' THEN
+      IF (
+        (TG_OP <> 'INSERT' AND OLD.parent_kind <> 'form_baseline') OR
+        (TG_OP <> 'DELETE' AND NEW.parent_kind NOT IN ('form_baseline','submission'))
+    ) THEN
+        RAISE EXCEPTION 'Web source protection is limited to Family forms'
+            USING ERRCODE='23514';
+    END IF;
+    IF TG_OP='INSERT' AND NEW.parent_kind='form_baseline' AND NOT EXISTS (
+        SELECT 1 FROM stewardship_family_form_baseline
+        WHERE id=NEW.parent_id AND source_id=NEW.snapshot_id AND state='open'
+          AND expires_at=NEW.expires_at
+    ) THEN
+        RAISE EXCEPTION 'Web form protection requires its owned baseline'
+            USING ERRCODE='23514';
+    END IF;
+    IF TG_OP='INSERT' AND NEW.parent_kind='submission' AND NOT EXISTS (
+        SELECT 1 FROM stewardship_submission response
+        JOIN stewardship_family_form_baseline baseline ON baseline.id=response.baseline_id
+        WHERE response.id=NEW.parent_id AND baseline.state='open'
+          AND NEW.snapshot_id IN (response.reviewed_source_id,response.validation_source_id)
+          AND NEW.expires_at IS NULL
+    ) THEN
+        RAISE EXCEPTION 'Web response protection requires its final submission'
+            USING ERRCODE='23514';
+    END IF;
+    END IF;
     IF TG_OP='DELETE' THEN
         PERFORM 1 FROM stewardship_source_snapshot WHERE id=OLD.snapshot_id FOR UPDATE;
         RETURN OLD;
     END IF;
-    SELECT * INTO snapshot FROM stewardship_source_snapshot WHERE id=NEW.snapshot_id
+    SELECT state, compacted_at INTO snapshot FROM stewardship_source_snapshot WHERE id=NEW.snapshot_id
         FOR UPDATE;
     IF NOT FOUND OR snapshot.state <> 'promoted'
        OR snapshot.compacted_at IS NOT NULL THEN
@@ -8459,7 +8524,11 @@ BEGIN
        OR generation.source_snapshot_id IS DISTINCT FROM population.source_snapshot_id
        OR generation.source_generation IS DISTINCT FROM population.source_generation
        OR EXISTS(SELECT 1 FROM stewardship_rehearsal_credential c
-                 JOIN stewardship_rehearsal_epoch e ON e.id=c.epoch_id WHERE e.campaign_id=NEW.id) THEN
+                 JOIN stewardship_rehearsal_epoch e ON e.id=c.epoch_id WHERE e.campaign_id=NEW.id)
+       OR EXISTS(SELECT 1 FROM stewardship_submission WHERE campaign_id=NEW.id AND mode='test')
+       OR EXISTS(SELECT 1 FROM stewardship_family_form_baseline baseline
+                 JOIN stewardship_family_campaign family ON family.id=baseline.family_id
+                 WHERE family.campaign_id=NEW.id AND baseline.mode='test') THEN
         RAISE EXCEPTION 'Campaign requires a complete current token generation and rehearsal cleanup' USING ERRCODE='23514'; END IF;
     IF generation.configuration_request_id IS NULL THEN
         IF generation.configuration_id IS DISTINCT FROM NEW.active_configuration_id THEN

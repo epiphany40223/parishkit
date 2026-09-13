@@ -33,6 +33,7 @@ from parishkit.stewardship.campaigns.credential_models import (
 )
 from parishkit.stewardship.campaigns.lifecycle import portal_admitted
 from parishkit.stewardship.campaigns.runtime import _now, campaign_facts
+from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.web.security import login_denial
 
 from .auth_incidents import record_link_rejection, record_login_rejection
@@ -313,9 +314,18 @@ def _ip_counter(service, source):
 @require_http_methods(["GET", "HEAD", "POST"])
 def entry(request):
     """Eight-letter manual entry; code values never enter a URL, log or audit."""
+    from parishkit.stewardship.responses.availability import unavailable_message
+
     try:
         service = runtime()
         if request.method != "POST":
+            message = unavailable_message(service)
+            if message:
+                return render(
+                    request,
+                    "stewardship/family-unavailable.html",
+                    {"availability_message": message},
+                )
             return render(request, "stewardship/family-login.html")
         ip = _ip_counter(service, request.client_address)
         delay = service.limiter.counters([ip])
@@ -376,7 +386,7 @@ def access(request, token):
 
 @require_safe
 def portal(request):
-    """The authenticated flow shell does not expose future census/financial data."""
+    """Render an answer-free shell; Testing consent precedes private form loading."""
     try:
         principal = authenticated_family(request, service=runtime(), activity=True)
         if principal is None:
@@ -385,6 +395,7 @@ def portal(request):
             request,
             "stewardship/family.html",
             {
+                "testing": request.family_session.mode == "testing",
                 "server_now": database_now(),
                 "absolute_deadline": request.family_session.expires_at,
                 "deadline": min(
@@ -428,7 +439,9 @@ def keepalive(request):
 @require_POST
 def logout(request):
     """Keep the Admin cookie untouched while ending this Family's authority."""
-    with transaction.atomic():
+    from parishkit.stewardship.responses.baselines import cancel_session_baselines
+
+    with work_transaction():
         row = (
             FamilySession.objects.select_for_update()
             .filter(session_id=request.session.session_key)
@@ -442,5 +455,7 @@ def logout(request):
             AuditEvent.objects.create(
                 event_type="family_logout", subject_id=row.pk, actor_id=row.family_id
             )
+        if row is not None:
+            cancel_session_baselines([row.pk])
     request.session = import_module(settings.SESSION_ENGINE).SessionStore()
     return HttpResponseRedirect("/")

@@ -336,6 +336,7 @@
   let dirty = false;
   let pending = false;
   let lastAttempt = Date.now();
+  let expiryAnnounced = false;
   if (![offset, deadline, absolute].every(Number.isFinite)) return;
 
   let familyPresencePending = false;
@@ -369,6 +370,10 @@
     const remaining = Math.min(deadline, absolute) - now;
     warning.hidden = remaining > 300000 || remaining <= 0;
     expired.hidden = remaining > 0;
+    if (remaining <= 0 && !expiryAnnounced && session.hasAttribute("data-family-session")) {
+      expiryAnnounced = true;
+      document.dispatchEvent(new Event("stewardship:family-expired"));
+    }
     if (!session.hasAttribute("data-family-session") || remaining <= 0 ||
         !dirty || pending || document.hidden || !csrf ||
         Date.now() - lastAttempt < 300000) return;

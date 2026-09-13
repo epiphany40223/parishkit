@@ -219,7 +219,12 @@ def test_family_runtime_lock_and_activity_grants_do_not_allow_source_writes():
     tables, columns = runtime_grants(ServiceRole.WEB)
     assert "UPDATE" not in tables["stewardship_family_campaign"]
     assert columns["stewardship_family_campaign"] == {
-        "UPDATE": {"last_activity_at", "version"}
+        "UPDATE": {
+            "last_activity_at",
+            "version",
+            "first_live_submission_id",
+            "effective_submission_id",
+        }
     }
     assert columns["stewardship_credential_deployment"] == {"UPDATE": {"id"}}
     assert "INSERT" not in tables["stewardship_family_token"]

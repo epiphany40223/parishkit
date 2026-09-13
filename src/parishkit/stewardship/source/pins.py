@@ -16,7 +16,11 @@ def pin_snapshot(snapshot_id, *, parent_kind, parent_id, admit, expires_at=None)
     if not isinstance(parent_id, UUID):
         raise ValueError("Source protection requires a parent UUID.")
     with transaction.atomic():
-        snapshot = SourceSnapshot.objects.select_for_update().get(pk=snapshot_id)
+        snapshot = (
+            SourceSnapshot.objects.select_for_update()
+            .only("id", "state", "compacted_at")
+            .get(pk=snapshot_id)
+        )
         _admit(admit, "pin", snapshot)
         if snapshot.state != "promoted" or snapshot.compacted_at is not None:
             raise InvalidSourcePayload("The source input is no longer reconstructable.")
@@ -59,6 +63,8 @@ def release_snapshot_pin(pin_id, *, parent_kind, parent_id, admit):
         if existing is None:
             _admit(admit, "unpin", None)
             return False
-        SourceSnapshot.objects.select_for_update().get(pk=existing.snapshot_id)
+        SourceSnapshot.objects.select_for_update().only("id").get(
+            pk=existing.snapshot_id
+        )
         _admit(admit, "unpin", existing)
         return selected.delete()[0] == 1

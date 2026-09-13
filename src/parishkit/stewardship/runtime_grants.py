@@ -340,6 +340,9 @@ def runtime_grants(role, *, target=None):
         tables["stewardship_setup_config_intent"].add("INSERT")
         tables["stewardship_setup_readiness_binding"] = {"SELECT", "INSERT"}
         tables["stewardship_setup_credential_install"] = {"SELECT"}
+        from .responses.grants import add_response_web_grants
+
+        add_response_web_grants(tables, columns)
     return tables, columns
 
 

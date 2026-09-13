@@ -37,7 +37,12 @@ changes presentation. These helpers do not resolve campaign boundaries or
 authorize lifecycle transitions; DOM-02 owns those rules. Manual clocks are
 explicit test dependencies, never deployment-configurable time overrides.
 
-DAT-01 will introduce database-backed factories and the transaction-authoritative
-clock integration needed for concurrency. The current harness is deliberately
-database-free. All ten full scenarios remain planned until their vertical
-slices exist, and final acceptance is required in Phase 7.
+DAT-01 introduced database-backed factories and transaction-authoritative clocks.
+Phase 3A adds the first partial Family scenario: real source promotion and code
+login, complete no-change submission, changed submission, logout, and effective
+revisit without rewriting prior answers. Its exact node is recorded under
+scenario 5 in the manifest. Component-browser checks separately exercise the
+same response schema and real shipped assets; they do not claim a live-browser
+database integration by substituting component responses. Remaining modules
+and full browser/database integration belong to Phase 3B and Gate 2. No complete
+normative scenario is claimed yet; final acceptance remains required in Phase 7.

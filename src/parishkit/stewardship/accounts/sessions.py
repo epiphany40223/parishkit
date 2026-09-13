@@ -320,10 +320,12 @@ def revoke_family_sessions(rows, *, now):
 def cleanup_family_sessions(*, batch_size=500):
     """Expire Family authority before removing protected metadata and parent rows."""
     from parishkit.stewardship.campaigns.credential_models import FamilySession
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+    from parishkit.stewardship.responses.baselines import cancel_session_baselines
 
     if type(batch_size) is not int or not 1 <= batch_size <= 1000:
         raise ValueError("Session cleanup requires a bounded batch size.")
-    with transaction.atomic():
+    with work_transaction():
         now = database_now()
         rows = list(
             FamilySession.objects.select_for_update(skip_locked=True)
@@ -337,6 +339,7 @@ def cleanup_family_sessions(*, batch_size=500):
         revoke_family_sessions(rows, now=now)
         identifiers = [row.pk for row in rows]
         keys = [row.session_id for row in rows]
+        cancel_session_baselines(identifiers)
         FamilySession.objects.filter(pk__in=identifiers).delete()
         Session.objects.filter(pk__in=keys).delete()
         return len(rows)

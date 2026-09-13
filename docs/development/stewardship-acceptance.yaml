@@ -149,8 +149,9 @@ scenarios:
     tests: []
   5:
     owners: [FAM-01, FAM-02, FAM-03, FAM-04, FAM-05, FAM-06, FAM-07, FAM-08, DAT-06]
-    status: planned
-    tests: []
+    status: partial
+    tests:
+      - tests/stewardship/database/test_response_http_postgresql.py::test_minimal_family_acceptance_from_source_to_no_change_change_and_revisit
   6:
     owners: [DAT-08, DAT-09, ADM-09, BG-09]
     status: planned

@@ -1,13 +1,20 @@
-{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% extends 'stewardship/base.html' %}{% load static i18n stewardship %}
 {% block title %}{% translate "Family campaign" %}{% endblock %}
+{% block head %}<script src="{% static 'stewardship/family-v1.js' %}" defer></script>{% endblock %}
 {% block content %}<section class="flow" data-family-session data-presence-section="welcome" data-server-now="{{ server_now|instant }}" data-idle-deadline="{{ deadline|instant }}" data-absolute-deadline="{{ absolute_deadline|instant }}">
   <h1>{% translate "Family campaign" %}</h1>
   <noscript><p class="notice">{% translate "To complete the Family response flow, enable JavaScript in a current or previous major version of Chrome, Edge, Firefox or Safari." %}</p></noscript>
   <p id="session-warning" class="notice" role="status" aria-live="polite" hidden>{% translate "Your session ends in less than five minutes. Changes that have not been submitted will be lost. The session cannot extend beyond its four-hour limit." %}</p>
   <p id="session-expired" class="notice notice-error" role="alert" hidden>{% translate "Your session has ended. Unsubmitted changes have not been saved." %} <a href="/">{% translate "Sign in again" %}</a></p>
-  <div class="panel">
-    <p>{% translate "Your Family is signed in. The campaign response flow is not yet available." %}</p>
-    <p>{% translate "Session deadline:" %} <time datetime="{{ deadline|instant }}" data-local-instant>{{ deadline|instant }} UTC</time></p>
+  <p>{% translate "Session deadline:" %} <time datetime="{{ deadline|instant }}" data-local-instant>{{ deadline|instant }} UTC</time></p>
+  {% if testing %}<p class="notice" role="status">{% translate "Testing mode: this is a disposable rehearsal, not a live Family response." %}</p>{% endif %}
+  <div id="family-flow-message" class="notice" role="status" aria-live="polite" tabindex="-1" hidden></div>
+  <div id="family-flow" data-testing="{{ testing|yesno:'true,false' }}">
+    <div class="panel" id="family-entry">
+      {% if testing %}<p>{% translate "Before viewing household information, confirm that you understand this rehearsal will not count as a response to the campaign. Test answers will be discarded before the live campaign." %}</p>
+      <label><input type="checkbox" id="testing-entry-ack"> {% translate "I understand that I am entering Testing mode." %}</label>{% endif %}
+      <button type="button" id="family-start">{% translate "Begin reviewing our information" %}</button>
+    </div>
   </div>
-  <form method="post" action="{% url 'family:logout' %}">{% csrf_token %}<button type="submit">{% translate "Sign out" %}</button></form>
+  <form method="post" action="{% url 'family:logout' %}" id="family-cancel">{% csrf_token %}<button type="submit">{% translate "Cancel and sign out" %}</button></form>
 </section>{% endblock %}

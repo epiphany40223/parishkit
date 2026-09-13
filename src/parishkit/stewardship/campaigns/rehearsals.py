@@ -234,13 +234,16 @@ def cleanup_rehearsal(epoch_id, *, batch_size=500):
     """Delete only sensitive invalidated-epoch detail; anonymous reservations stay."""
     if type(batch_size) is not int or not 1 <= batch_size <= 1000:
         raise ValueError("Rehearsal cleanup requires a bounded batch size.")
-    with transaction.atomic():
+    with work_transaction():
         epoch = RehearsalEpoch.objects.select_for_update().get(pk=epoch_id)
         if (
             epoch.state != "invalidated"
             or CampaignCredentialState.objects.filter(rehearsal_epoch=epoch).exists()
         ):
             raise StorageInvariantError("An active rehearsal cannot be cleaned up.")
+        from parishkit.stewardship.responses.cleanup import cleanup_test_responses
+
+        response_count = cleanup_test_responses(epoch_id, batch_size=batch_size)
         sessions = list(
             FamilySession.objects.select_for_update(skip_locked=True)
             .filter(rehearsal_epoch=epoch)
@@ -260,4 +263,4 @@ def cleanup_rehearsal(epoch_id, *, batch_size=500):
         # not an ordinary immutable-record API; the SQL cleanup guard agrees.
         RehearsalCodeFingerprint._base_manager.filter(credential_id__in=ids).delete()
         RehearsalCredential.objects.filter(pk__in=ids).delete()
-        return len(ids) + len(sessions)
+        return len(ids) + len(sessions) + response_count

@@ -265,7 +265,13 @@ Scope and dependencies: [DAT-06 work package](../../plans/stewardship/data.md#da
 - [ ] DAT-06.04 — Implement proposal states, writability, and supersession.
 - [ ] DAT-06.05 — Test response variants, stale writes, and rollback.
 
-Evidence: Not started.
+Evidence: In progress in the
+[Phase 3A implementation record](../../guides/stewardship-phase-3a.md).
+Typed comparisons/capabilities, source-backed answer-free baselines, immutable
+final responses, proposal supersession, and atomic local effects are implemented
+for the minimal census schema. Tests include exact web/source-worker grants,
+two-session stale review and late-owner rollback. Remaining enabled-module
+schemas and the review gate keep this mixed-phase package open.
 
 ## DAT-07: Follow-up, content, templates, jobs, and audit
 
@@ -277,7 +283,11 @@ Scope and dependencies: [DAT-07 work package](../../plans/stewardship/data.md#da
 - [ ] DAT-07.04 — Enforce append-only history and terminal secret scrubbing.
 - [ ] DAT-07.05 — Test corrections, terminal states, and audit privacy.
 
-Evidence: Not started.
+Evidence: The [Phase 3A record](../../guides/stewardship-phase-3a.md) implements
+live additional-information replacement/withdrawal, immutable confirmation
+intent stubs, response audit, and bounded invalidated-Testing detail cleanup.
+Staff note versions, Ministry workflows, real delivery/outbox and later-phase
+transition/export/publication owners remain incomplete; the package stays open.
 
 ## DAT-08: Merge and source reconciliation services
 
@@ -289,7 +299,13 @@ Scope and dependencies: [DAT-08 work package](../../plans/stewardship/data.md#da
 - [ ] DAT-08.04 — Reconcile source promotions into derived workflows.
 - [ ] DAT-08.05 — Test all merge branches and downstream effects.
 
-Evidence: Not started.
+Evidence: In progress in the
+[Phase 3A implementation record](../../guides/stewardship-phase-3a.md).
+The pure three-way merge has 32 passing branch/provenance/typed-comparison
+tests. The census slice also integrates source promotion, caught-up/conflicting
+proposals, source pins and effective revisit under actual restricted roles.
+Ministry/financial and publication workflow integrations remain incomplete;
+the package stays open pending those phases and integrated review.
 
 ## DAT-09: Publication, retention, and purge schema behavior
 

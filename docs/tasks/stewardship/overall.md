@@ -241,6 +241,15 @@ of subsequent corrections.
 
 Source scope: [Phase 3A: Minimal Family slice](../../plans/stewardship/overall.md#phase-3-complete-family-response-vertical-slice).
 
+September 13, 2026: PR #22 merged as
+`7b2b1dd4478ae4014b167d6c0c203127c9a0ceb9`, verified on refreshed `origin/main`.
+Final-head and merge-group CI passed, and the completed supplemental reviews
+closed Phase 2's correction gate. Branch `pr/stewardship-family-response` starts
+from that tip. The [Phase 3A checkpoint](../../guides/stewardship-phase-3a.md)
+tracks the minimal Family response increment, beginning with DAT-06's trusted
+baseline/submission contract. Gate 2 remains open until Phase 3B completes its
+integrated review; this branch does not include all remaining Family modules.
+
 1. [DAT-06](data.md#dat-06-immutable-submissions-and-proposal-overlay) → submission/follow-up slice of [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) → [DAT-08](data.md#dat-08-merge-and-source-reconciliation-services).
 2. [FAM-01](parishioner-portal.md#fam-01-availability-code-entry-and-secure-link-exchange) → [FAM-02](parishioner-portal.md#fam-02-in-memory-form-engine-and-navigation) → minimal [FAM-03](parishioner-portal.md#fam-03-family-census-step) and [FAM-06](parishioner-portal.md#fam-06-additional-information-review-and-atomic-submit) response flow.
 3. Land the first executable [DOM-05](campaign-domain.md#dom-05-cross-domain-acceptance-harness) Family scenario before expanding fields.
