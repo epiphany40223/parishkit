@@ -54,6 +54,16 @@ def test_complete_answer_is_normalized_without_mutating_input(answers):
     assert answers == before
 
 
+def test_multiple_addresses_round_trip_through_normalized_browser_representation(
+    answers,
+):
+    """The validator must accept its own comma-joined prefill on a later visit."""
+    first = validate(answers)
+    answers["members"] = first["members"]
+    answers["additional_information"] = first["additional_information"]
+    assert validate(answers) == first
+
+
 @pytest.mark.parametrize(
     "operation",
     [

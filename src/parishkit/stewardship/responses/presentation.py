@@ -68,7 +68,7 @@ def form_presentation(form):
         "additional_enabled": campaign.values["additional_information"],
         "additional_max_length": ADDITIONAL_MAX_LENGTH,
         "additional_information": prior.answers["additional_information"]
-        if prior
+        if prior and campaign.values["additional_information"]
         else "",
         "last_submitted_at": prior.submitted_at.isoformat()
         if prior and prior.mode == "live"

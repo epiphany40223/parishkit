@@ -102,7 +102,7 @@ def validate_answers(payload, inputs, *, additional_enabled, testing):
                 try:
                     addresses = {
                         normalized_email(address)
-                        for address in split_email_addresses(value)
+                        for address in split_email_addresses(value.replace(",", ";"))
                     }
                 except ConfigError:
                     addresses = set()

@@ -2,6 +2,7 @@
 
 from contextlib import nullcontext
 from datetime import timedelta
+from uuid import uuid4
 
 import pytest
 
@@ -12,6 +13,7 @@ from parishkit.stewardship.responses.models import (
 )
 
 from .campaign_builders import campaign_clock
+from .campaign_builders import change as change_configuration
 from .response_builders import response_source
 from .test_family_auth_postgresql import login
 from .test_runtime_auth_grants_postgresql import web_login
@@ -47,6 +49,53 @@ def answers_for(form):
         "additional_information": form["additional_information"],
         "testing_acknowledged": form["testing"],
     }
+
+
+def test_disabled_additional_field_does_not_replay_prior_text(response_service):
+    """A real configuration change suppresses hidden text and permits Submit."""
+    harness = response_service
+    form = load_form(harness)
+    answers = answers_for(form)
+    answers["additional_information"] = "Previously requested note"
+    result = post(
+        harness.client,
+        "/family/submit",
+        {"baseline": form["baseline"], "answers": answers},
+    )
+    assert result.status_code == 200, result.content
+    store = harness.service.store
+    changed = change_configuration(
+        store,
+        store.active(),
+        uuid4(),
+        [
+            {
+                "operation": "update",
+                "section": "campaigns",
+                "id": str(harness.campaign.pk),
+                "values": {"additional_information": False},
+            }
+        ],
+    )
+    assert changed.state == "applied"
+    harness.client, response = login(harness.code)
+    assert response.status_code == 302
+    form = load_form(harness)
+    assert form["additional_enabled"] is False
+    assert form["additional_information"] == ""
+    assert "Previously requested note" not in str(form)
+    result = post(
+        harness.client,
+        "/family/submit",
+        {"baseline": form["baseline"], "answers": answers_for(form)},
+    )
+    assert result.status_code == 200, result.content
+    assert (
+        Submission.objects.order_by("-family_version")
+        .first()
+        .answers["additional_information"]
+        == ""
+    )
 
 
 def test_shell_and_testing_ack_reveal_no_household_data(response_service):
@@ -256,3 +305,27 @@ def test_revisit_never_serializes_hidden_conflicting_source_value(
         "changed",
         "conflict",
     }
+
+
+def test_multiple_source_addresses_submit_unchanged_and_revisit(live_response_service):
+    """R1-01/02: source and saved comma-joined email prefill remain usable."""
+    harness = live_response_service
+    data = response_source()
+    data.members[3]["emailAddress"] = "second@example.org; first@example.org"
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    form = load_form(harness)
+    answers = answers_for(form)
+    assert answers["members"]["3"]["email"] == "first@example.org, second@example.org"
+    response = post(
+        harness.client,
+        "/family/submit",
+        {
+            "baseline": form["baseline"],
+            "answers": answers,
+        },
+    )
+    assert response.status_code == 200
+    assert not ProposedChange.objects.exists()
+    harness.client, _ = login(harness.code)
+    assert answers_for(load_form(harness)) == answers

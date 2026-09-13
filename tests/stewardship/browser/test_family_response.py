@@ -204,3 +204,90 @@ def test_invalid_email_blur_and_answer_markup_stays_text(page, component_origin)
     expect(page.get_by_role("button", name="Submit response")).to_be_visible()
     assert page.locator("#family-flow img").count() == 0
     assert "<img src=x onerror=alert(1)>" in page.locator("#family-flow").inner_text()
+
+
+@pytest.mark.parametrize("in_flight", [False, True])
+def test_accepted_submission_wins_over_local_expiry(page, component_origin, in_flight):
+    """R1-03: the authoritative accepted result must survive a local timer race."""
+    pending = []
+
+    def submit(route):
+        if in_flight:
+            pending.append(route)
+        else:
+            route.fulfill(json={"accepted": True})
+
+    prepare(page, component_origin, submit=submit)
+    page.get_by_role("button", name="Begin reviewing").click()
+    page.get_by_role("button", name="Review response").click()
+    page.get_by_role("button", name="Submit response").click()
+    if in_flight:
+        expect(page.get_by_role("button", name="Submit response")).to_be_disabled()
+        page.clock.fast_forward(4 * 60 * 60 * 1000)
+        assert pending
+        pending[0].fulfill(json={"accepted": True})
+    expect(page.get_by_role("heading", name="Thank you!", exact=True)).to_be_visible()
+    page.clock.fast_forward(5 * 60 * 60 * 1000)
+    expect(page.get_by_role("heading", name="Thank you!", exact=True)).to_be_visible()
+    assert page.locator("#session-warning").is_hidden()
+    assert page.locator("#session-expired").is_hidden()
+    assert "not been saved" not in page.locator("main").inner_text()
+
+
+def test_disabled_additional_data_cannot_be_replayed_from_old_response(
+    page, component_origin
+):
+    """R1-04/05: tolerate old hidden text without sending a disabled answer."""
+    prepare(page, component_origin)
+    form = form_payload()
+    form["additional_enabled"] = False
+    form["additional_information"] = "Old text that is no longer enabled"
+    submissions = []
+    page.route("**/family/form", lambda route: route.fulfill(json={"form": form}))
+
+    def submit(route):
+        submissions.append(route.request.post_data_json)
+        route.fulfill(json={"accepted": True})
+
+    page.route("**/family/submit", submit)
+    page.get_by_role("button", name="Begin reviewing").click()
+    assert page.locator("#additional-information").count() == 0
+    page.get_by_role("button", name="Review response").click()
+    page.get_by_role("button", name="Submit response").click()
+    expect(page.get_by_role("heading", name="Thank you!", exact=True)).to_be_visible()
+    assert submissions[0]["answers"]["additional_information"] == ""
+
+
+def test_competing_member_and_additional_edits_need_explicit_choices(
+    page, component_origin
+):
+    """R1-10: the tab cannot silently replace newly refreshed competing values."""
+    form = form_payload()
+    form["members"][0]["fields"][0]["value"] = "Updated record"
+    form["additional_information"] = "Another adult's note"
+    prepare(
+        page,
+        component_origin,
+        submit=lambda route: route.fulfill(
+            status=409,
+            json={"error": "review_required", "form": form},
+        ),
+    )
+    page.get_by_role("button", name="Begin reviewing").click()
+    page.get_by_label("First name (required)").fill("My proposed name")
+    page.get_by_label("Additional information (optional)").fill("My proposed note")
+    page.get_by_role("button", name="Review response").click()
+    page.get_by_role("button", name="Submit response").click()
+    expect(page.locator("[data-conflict]")).to_have_count(2)
+    page.get_by_role("button", name="Review response").click()
+    assert page.get_by_role("button", name="Submit response").count() == 0
+    # Choosing resolves/removes the control, so assert the retained value below
+    # rather than asking Playwright to verify a now-detached checked element.
+    page.get_by_role("radio", name="Use updated records: Updated record").click()
+    page.get_by_role("radio", name="Use my edit: My proposed note").click()
+    expect(page.get_by_label("First name (required)")).to_have_value("Updated record")
+    expect(page.get_by_label("Additional information (optional)")).to_have_value(
+        "My proposed note"
+    )
+    page.get_by_role("button", name="Review response").click()
+    expect(page.get_by_role("button", name="Submit response")).to_be_visible()

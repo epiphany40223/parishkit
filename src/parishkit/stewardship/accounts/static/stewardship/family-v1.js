@@ -9,6 +9,8 @@
   const csrf = cancel.querySelector('[name="csrfmiddlewaretoken"]').value;
   const testing = root.dataset.testing === "true";
   let form = null, answers = null, initial = null, busy = false, finished = false;
+  let accepted = false, submissionAttempted = false;
+  const conflicts = new Map();
 
   function node(tag, text, parent, attributes = {}) {
     const element = document.createElement(tag);
@@ -43,13 +45,17 @@
   }
   function clear() {
     form = answers = initial = null;
+    conflicts.clear();
     root.replaceChildren();
   }
   function expired() {
+    if (accepted) return;
     clear();
     finished = true;
     cancel.hidden = true;
-    say("Your session has ended. Unsubmitted changes have not been saved. Sign in again to continue.");
+    say(submissionAttempted ?
+      "Your session has ended. If you just submitted, sign in again to check your last submission time." :
+      "Your session has ended. Unsubmitted changes have not been saved. Sign in again to continue.");
     node("a", "Sign in again", root, {href: "/"});
   }
   async function send(path, body) {
@@ -67,7 +73,8 @@
   function accept(next, preserve) {
     const previous = answers, before = initial;
     form = next;
-    answers = {members: {}, additional_information: next.additional_information,
+    conflicts.clear();
+    answers = {members: {}, additional_information: next.additional_enabled ? next.additional_information : "",
       testing_acknowledged: false};
     next.members.forEach((member) => {
       answers.members[member.id] = Object.fromEntries(member.fields.map(
@@ -83,15 +90,43 @@
               canonical(previous.members[id][name], name) !==
               canonical(before.members[id][name], name)) {
             fields[name] = previous.members[id][name];
+            if (canonical(before.members[id][name], name) !== canonical(initial.members[id][name], name) &&
+                canonical(fields[name], name) !== canonical(initial.members[id][name], name)) {
+              conflicts.set("members." + id + "." + name,
+                {edited: fields[name], refreshed: initial.members[id][name]});
+            }
           }
         });
       });
       if (next.additional_enabled && canonical(previous.additional_information, "additional") !==
           canonical(before.additional_information, "additional")) {
         answers.additional_information = previous.additional_information;
+        if (canonical(before.additional_information, "additional") !== canonical(next.additional_information, "additional") &&
+            canonical(previous.additional_information, "additional") !== canonical(next.additional_information, "additional")) {
+          conflicts.set("additional", {edited: previous.additional_information, refreshed: next.additional_information});
+        }
       }
     }
     edit();
+  }
+  function conflictChoice(path, input, parent) {
+    const conflict = conflicts.get(path);
+    if (!conflict) return;
+    input.disabled = true;
+    const group = node("fieldset", null, parent, {"data-conflict": path});
+    node("legend", "Choose which value to keep before continuing", group);
+    [["Use my edit", conflict.edited], ["Use updated records", conflict.refreshed]].forEach(([label, value]) => {
+      const wrapper = node("label", null, group);
+      const radio = node("input", null, wrapper, {type: "radio", name: "resolve-" + path});
+      wrapper.append(document.createTextNode(" " + label + ": " + (value || "Blank")));
+      radio.addEventListener("change", () => {
+        input.value = value;
+        input.disabled = false;
+        conflicts.delete(path);
+        input.dispatchEvent(new Event("input"));
+        group.remove(); input.focus();
+      });
+    });
   }
   function heading(text, section) {
     root.replaceChildren();
@@ -185,6 +220,7 @@
         input.addEventListener("blur", () => validateField(input, definition));
         update();
         fields.push([input, definition]);
+        conflictChoice("members." + member.id + "." + definition.name, input, group);
       });
     });
     if (form.additional_enabled) {
@@ -194,10 +230,16 @@
         maxlength: String(form.additional_max_length), autocomplete: "off"});
       extra.value = answers.additional_information;
       extra.addEventListener("input", () => { answers.additional_information = extra.value; });
+      conflictChoice("additional", extra, editor);
     }
     node("button", "Review response", editor, {type: "submit"});
     editor.addEventListener("submit", (event) => {
       event.preventDefault();
+      if (conflicts.size) {
+        say("Choose a value for every changed record before reviewing your response.");
+        root.querySelector("[data-conflict] input")?.focus();
+        return;
+      }
       fields.forEach(([input, definition]) => validateField(input, definition));
       if (editor.reportValidity()) review();
     });
@@ -241,16 +283,22 @@
       event.preventDefault();
       if (busy || !confirmation.reportValidity()) return;
       busy = true; submit.disabled = back.disabled = true; say("");
+      submissionAttempted = true;
+      const submittedThankYou = form.content.thank_you;
       try {
         const result = await send("/family/submit", {baseline: form.baseline, answers});
-        if (!result || finished) return;
+        if (!result) return;
         if (result.accepted) {
-          const thankYou = form.content.thank_you;
+          accepted = true;
+          document.dispatchEvent(new Event("stewardship:family-finished"));
           finished = true; clear(); cancel.hidden = true;
+          say("");
           heading("Thank you!", "welcome");
           node("p", testing ? "Your test response was submitted. It will not count toward the campaign." :
             "Your response was submitted. You are now signed out.", root);
-          if (thankYou) node("div", null, root).innerHTML = thankYou;
+          if (submittedThankYou) node("div", null, root).innerHTML = submittedThankYou;
+        } else if (finished) {
+          return;
         } else if (result.error === "review_required") {
           accept(result.form, true);
           say("Parish records or a previous Family response changed. Your edits to remaining fields are preserved. Please review everything and submit again.");
