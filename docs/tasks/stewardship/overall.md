@@ -280,9 +280,16 @@ work follows separately. Gate 2 is not released by this subdivision.
 
 The household implementation and its three review/correction rounds are
 complete with [recorded evidence](../../guides/stewardship-family-census-reviews.md);
-final-head CI and protected merge remain pending. FAM-03.01 through .04 are
+PR #24's final-head and merge-group CI passed and its protected merge is
+verified on `origin/main`. FAM-03.01 through .04 are
 complete. The remaining FAM-03.05 non-census omission integration accompanies
 FAM-05.06 rather than blocking the next Member-census increment.
+
+Branch `pr/stewardship-member-census` starts from that merged tip, `5c478e8`.
+Its [bounded scope](../../guides/stewardship-member-census.md) is existing
+Members' non-terminal census fields, including end-to-end validation and
+revisit. Terminal semantics and proposed Members follow separately. All
+FAM-04 tasks remain open until their complete linked requirements pass.
 
 1. Finish [FAM-03](parishioner-portal.md#fam-03-family-census-step); complete [FAM-04](parishioner-portal.md#fam-04-existing-and-proposed-member-steps), [FAM-05](parishioner-portal.md#fam-05-ministry-and-financial-stewardship-steps), [FAM-06](parishioner-portal.md#fam-06-additional-information-review-and-atomic-submit), and [FAM-07](parishioner-portal.md#fam-07-repeat-visits-and-source-change-merge).
 2. Exercise representative [FAM-08](parishioner-portal.md#fam-08-responsive-accessibility-privacy-and-browser-completion) cases continuously.

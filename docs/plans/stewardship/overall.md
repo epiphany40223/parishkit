@@ -317,6 +317,13 @@ steps follow in subsequent coherent increments. This boundary makes household
 contact updates independently demonstrable and keeps reviews smaller; it does
 not remove any package or weaken the integrated Gate 2 scope below.
 
+After PR #24, subdivide Member work into existing Members' non-terminal census
+fields, then terminal semantics and proposed Members. The first increment must
+include its complete form, source/proposal guards and browser/database tests,
+not merely field helpers. Leave partially fulfilled FAM-04 tasks unchecked.
+This keeps the ordinary census expansion reviewable without mixing in the
+separate semantic requests and local-identity lifecycle.
+
 1. Finish **FAM-03** and implement **FAM-04**, **FAM-05**, **FAM-06**, and
    **FAM-07** for all census, proposed Member, Ministry, financial, additional,
    submit, and repeat-merge behavior.
