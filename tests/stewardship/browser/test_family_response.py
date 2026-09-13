@@ -345,3 +345,44 @@ def test_expiry_after_definite_rejection_warns_changes_were_not_saved(
         "Unsubmitted changes have not been saved"
     )
     assert "check your last submission time" not in page.locator("main").inner_text()
+
+
+@pytest.mark.parametrize("retry", ["forbidden", "validation"])
+def test_uncertain_submit_survives_a_definitely_rejected_retry(
+    page, component_origin, retry
+):
+    """A rejected retry cannot prove that the earlier lost response did not commit."""
+    calls = []
+
+    def respond(route):
+        """Model a lost first reply followed by one definitely rejected request."""
+        calls.append(True)
+        if len(calls) == 1:
+            route.abort()
+        elif retry == "forbidden":
+            route.fulfill(status=403, body="Forbidden")
+        else:
+            route.fulfill(
+                status=400,
+                json={
+                    "error": "validation",
+                    "fields": {"members.3.first_name": "Review the name."},
+                },
+            )
+
+    prepare(page, component_origin, submit=respond)
+    page.get_by_role("button", name="Begin reviewing").click()
+    page.get_by_role("button", name="Review response").click()
+    page.get_by_role("button", name="Submit response").click()
+    expect(page.locator("#family-flow-message")).to_contain_text("could not confirm")
+    page.get_by_role("button", name="Submit response").click()
+    if retry == "validation":
+        expect(page.get_by_role("button", name="Review response")).to_be_visible()
+        page.clock.fast_forward(3_700_000)
+    expect(page.locator("#family-flow-message")).to_contain_text(
+        "check your last submission time"
+    )
+    assert (
+        "Unsubmitted changes have not been saved"
+        not in page.locator("main").inner_text()
+    )

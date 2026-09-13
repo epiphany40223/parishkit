@@ -5,7 +5,7 @@
   <h1>{% translate "Family campaign" %}</h1>
   <noscript><p class="notice">{% translate "To complete the Family response flow, enable JavaScript in a current or previous major version of Chrome, Edge, Firefox or Safari." %}</p></noscript>
   <p id="session-warning" class="notice" role="status" aria-live="polite" hidden>{% translate "Your session ends in less than five minutes. Changes that have not been submitted will be lost. The session cannot extend beyond its four-hour limit." %}</p>
-  <p id="session-expired" class="notice notice-error" role="alert" hidden>{% translate "Your session has ended. Unsubmitted changes have not been saved." %} <a href="/">{% translate "Sign in again" %}</a></p>
+  <p id="session-expired" class="notice notice-error" role="alert" hidden>{% translate "Your session has ended." %} <a href="/">{% translate "Sign in again" %}</a></p>
   <p>{% translate "Session deadline:" %} <time datetime="{{ deadline|instant }}" data-local-instant>{{ deadline|instant }} UTC</time></p>
   {% if testing %}<p class="notice" role="status">{% translate "Testing mode: this is a disposable rehearsal, not a live Family response." %}</p>{% endif %}
   <div id="family-flow-message" class="notice" role="status" aria-live="polite" tabindex="-1" hidden></div>

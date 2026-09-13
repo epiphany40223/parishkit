@@ -10,6 +10,7 @@
   const testing = root.dataset.testing === "true";
   let form = null, answers = null, initial = null, busy = false, finished = false;
   let accepted = false, submissionAttempted = false;
+  let uncertainSubmission = false;
   const conflicts = new Map();
 
   function node(tag, text, parent, attributes = {}) {
@@ -64,7 +65,7 @@
       headers: {"Content-Type": "application/json", "X-CSRFToken": csrf,
         "Accept": "application/json"}, body: JSON.stringify(body)
     });
-    if (response.status === 403) { submissionAttempted = false; expired(); return null; }
+    if (response.status === 403) { submissionAttempted = uncertainSubmission; expired(); return null; }
     if (!response.headers.get("Content-Type")?.includes("application/json")) {
       throw new Error("Unavailable response");
     }
@@ -291,9 +292,10 @@
       try {
         const result = await send("/family/submit", {baseline: form.baseline, answers});
         if (!result) return;
-        if (!result.accepted) submissionAttempted = false;
+        if (!result.accepted) submissionAttempted = uncertainSubmission;
         if (result.accepted) {
           accepted = true;
+          uncertainSubmission = false;
           document.dispatchEvent(new Event("stewardship:family-finished"));
           finished = true; clear(); cancel.hidden = true;
           say("");
@@ -315,7 +317,9 @@
             "The response could not be submitted. Your edits remain in this tab; please try again.");
         }
       } catch {
-        say("We could not confirm submission. Keep this tab open and try again, or sign in again to check the last submission time.");
+        uncertainSubmission = submissionAttempted = true;
+        if (finished) expired();
+        else say("We could not confirm submission. Keep this tab open and try again, or sign in again to check the last submission time.");
       } finally { busy = false; submit.disabled = back.disabled = false; }
     });
   }
