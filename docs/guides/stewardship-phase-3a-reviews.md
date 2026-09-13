@@ -173,3 +173,20 @@ and focused-fix conditions. Final targeted local validation passes; the
 current-head protected full-suite CI gate remains required before merging.
 An extra clean review solely because final
 round corrections were verified is not required by the controlling workflow.
+
+## CI collection correction
+
+PR #23's first CI run found that the Family browser test imported Playwright at
+module collection time. The baseline and container parity jobs intentionally
+omit that optional dependency, whereas the local browser-equipped environment
+had hidden the omission. The test now imports its assertion helper only when
+executed after browser opt-in. A new isolated subprocess regression blocks
+Playwright imports and collects the complete browser suite, so installing the
+optional dependency locally cannot hide this failure again.
+
+This is a test-only dependency-boundary correction with no application, SQL,
+assertion or acceptance-scope change. It does not reset the completed review
+round count. The new absent-dependency collection regression passes; all 45
+Family browser tests pass in 54 seconds, and all 4,535 default tests pass in
+41 seconds. Ruff check/format and Markdown lint pass. Full current-head CI
+remains required before merge.

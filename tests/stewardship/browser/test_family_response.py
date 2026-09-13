@@ -4,7 +4,6 @@ from copy import deepcopy
 from uuid import uuid4
 
 import pytest
-from playwright.sync_api import expect
 
 from parishkit.stewardship.responses.inputs import MEMBER_FIELDS
 
@@ -13,6 +12,13 @@ from .conftest import NOW
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
+
+
+def expect(locator):
+    """Load the optional browser assertion library only after explicit opt-in."""
+    from playwright.sync_api import expect as browser_expect
+
+    return browser_expect(locator)
 
 
 def form_payload(*, testing=False):
