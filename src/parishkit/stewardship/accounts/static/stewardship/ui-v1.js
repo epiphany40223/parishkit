@@ -336,11 +336,18 @@
   let dirty = false;
   let pending = false;
   let lastAttempt = Date.now();
+  let expiryAnnounced = false;
+  let familyFinished = false;
+  document.addEventListener("stewardship:family-finished", () => {
+    if (!session.hasAttribute("data-family-session")) return;
+    familyFinished = true;
+    warning.hidden = expired.hidden = true;
+  });
   if (![offset, deadline, absolute].every(Number.isFinite)) return;
 
   let familyPresencePending = false;
   async function familyPresence() {
-    if (!session.hasAttribute("data-family-session") || document.hidden ||
+    if (familyFinished || !session.hasAttribute("data-family-session") || document.hidden ||
         familyPresencePending || !csrf ||
         Date.now() + offset >= Math.min(deadline, absolute)) return;
     familyPresencePending = true;
@@ -365,10 +372,15 @@
     document.addEventListener(event, () => { dirty = true; }, {passive: true});
   });
   async function tick() {
+    if (familyFinished) return;
     const now = Date.now() + offset;
     const remaining = Math.min(deadline, absolute) - now;
     warning.hidden = remaining > 300000 || remaining <= 0;
     expired.hidden = remaining > 0;
+    if (remaining <= 0 && !expiryAnnounced && session.hasAttribute("data-family-session")) {
+      expiryAnnounced = true;
+      document.dispatchEvent(new Event("stewardship:family-expired"));
+    }
     if (!session.hasAttribute("data-family-session") || remaining <= 0 ||
         !dirty || pending || document.hidden || !csrf ||
         Date.now() - lastAttempt < 300000) return;

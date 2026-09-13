@@ -1,0 +1,7 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Campaign availability" %}{% endblock %}
+{% block content %}<section class="flow">
+  <h1>{% translate "Campaign availability" %}</h1>
+  <p class="notice">{{ availability_message }}</p>
+  <p><a href="/">{% translate "Check again" %}</a></p>
+</section>{% endblock %}

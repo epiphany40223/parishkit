@@ -113,6 +113,27 @@ def add_refresh_scheduler_grants(tables, columns):
 def add_refresh_worker_grants(tables, columns):
     """Extend fresh task maps with only implemented source/population effects."""
     add_configuration_reads(tables)
+    tables["stewardship_proposed_change"] = {"SELECT"}
+    columns["stewardship_proposed_change"] = {
+        "UPDATE": {
+            "current_available",
+            "current_value",
+            "current_source_id",
+            "execution",
+            "version",
+        }
+    }
+    columns["stewardship_submission"] = {
+        "SELECT": {
+            "id",
+            "campaign_id",
+            "family_id",
+            "reviewed_source_id",
+            "validation_source_id",
+        }
+    }
+    # SQL limits deletion to unused intermediate response comparison inputs.
+    tables["stewardship_source_pin"] = {"SELECT", "INSERT", "DELETE"}
     for table in SOURCE_READ:
         tables.setdefault(table, set()).add("SELECT")
     for table in SOURCE_APPEND:
@@ -142,10 +163,15 @@ def add_refresh_worker_grants(tables, columns):
     ):
         tables[table].add("UPDATE")
     columns["stewardship_credential_deployment"] = {"UPDATE": {"id"}}
+    # Issuing links for newly eligible Families takes the generation's SHARE
+    # lock; an id-only grant admits that lock, not generation mutation.
+    columns.setdefault("stewardship_family_token_generation", {}).setdefault(
+        "UPDATE", set()
+    ).add("id")
     # Existing sealed links are only tested for membership. The general worker
     # has the public sealing key, not private decryption or token-read authority.
     columns["stewardship_family_token"] = {
-        "SELECT": {"id", "created_at", "family_id", "generation_id"}
+        "SELECT": {"id", "created_at", "updated_at", "family_id", "generation_id"}
     }
     columns["stewardship_family_eligibility"] = {"SELECT": {"created_at"}}
     columns["stewardship_family_campaign"] = {

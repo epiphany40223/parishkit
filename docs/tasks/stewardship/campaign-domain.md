@@ -137,3 +137,8 @@ fixtures and synthetic offline restore input. Application calls always exercise
 their SQL guards. This completes Phase 1A's requirement to begin .01; source,
 Family, submission, outbox and destructive-state factories grow with their
 owning phases, so the whole cross-domain factory task remains open.
+Phase 3A adds the source-backed Family response factory and first executable
+scenario-5 slice in the [acceptance manifest](../../development/stewardship-acceptance.yaml).
+It covers actual source promotion, code login, no-change/changed final response,
+logout and effective revisit. DOM-05.03 and .05 remain partial until the other
+module and cross-domain scenarios are implemented and accepted.

@@ -7612,16 +7612,192 @@ END;
 $$;
 
 -- FUNCTION: stewardship_source_pin_guard()
+-- Narrow retention authority for disposable responses after epoch invalidation.
+CREATE FUNCTION public.stewardship_test_response_cleanup_v1(response_mode text, epoch_id uuid)
+    RETURNS boolean LANGUAGE sql STABLE
+    SET search_path TO pg_catalog, public, pg_temp
+AS $$
+    SELECT response_mode='test' AND epoch_id IS NOT NULL
+      AND EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+          AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
+          AND mode='ExclusiveLock' AND granted)
+      AND EXISTS (SELECT 1 FROM public.stewardship_rehearsal_epoch
+          WHERE id=epoch_id AND state='invalidated')
+      AND NOT EXISTS (SELECT 1 FROM public.stewardship_campaign_credentials
+          WHERE rehearsal_epoch_id=epoch_id)
+$$;
+
+-- Reconciliation shares the refresh owner's two live fences and work ordering.
+-- This is invoker-rights metadata, not a capability to impersonate another role.
+CREATE FUNCTION public.stewardship_response_source_owner_v1(snapshot_id uuid)
+    RETURNS boolean LANGUAGE sql STABLE
+    SET search_path TO pg_catalog, public, pg_temp
+AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.stewardship_source_current current_source
+        JOIN public.stewardship_source_snapshot source ON source.id=current_source.snapshot_id
+        JOIN public.stewardship_source_lease lease ON lease.owner_id=source.task_id
+            AND lease.fence=source.source_fence
+        JOIN public.stewardship_task_run task ON task.id=lease.owner_id
+        WHERE source.id=stewardship_response_source_owner_v1.snapshot_id AND source.state='promoted'
+          AND source.compacted_at IS NULL AND lease.phase IN ('full','delta')
+          AND lease.expires_at>clock_timestamp() AND task.state='running'
+          AND task.fence=lease.task_fence AND task.worker_id=lease.worker_id
+          AND task.lease_expires_at>clock_timestamp()
+    ) AND EXISTS (
+        SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+          AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
+          AND mode='ExclusiveLock' AND granted
+    )
+$$;
+
+CREATE FUNCTION public.stewardship_response_pin_required_v1(response_id uuid, source_id uuid)
+    RETURNS boolean LANGUAGE sql STABLE
+    SET search_path TO pg_catalog, public, pg_temp
+AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.stewardship_submission response
+        WHERE response.id=stewardship_response_pin_required_v1.response_id
+          AND (stewardship_response_pin_required_v1.source_id IN (response.reviewed_source_id,response.validation_source_id)
+            OR EXISTS (SELECT 1 FROM public.stewardship_proposed_change
+                WHERE submission_id=response.id AND current_source_id=stewardship_response_pin_required_v1.source_id))
+    )
+$$;
+
+-- SQL parity with the closed text/email portion of family-comparison-v1.
+-- Explicit Unicode whitespace and default case folding avoid database-locale
+-- changes turning a no-change answer into a pending/conflicting proposal.
+CREATE FUNCTION public.stewardship_response_comparison_v1(input_field text, input_value jsonb)
+    RETURNS text LANGUAGE plpgsql IMMUTABLE
+    SET search_path TO pg_catalog, public, pg_temp
+AS $$
+DECLARE normalized_value text;
+BEGIN
+    IF input_field NOT IN ('first_name','middle_name','last_name','email') THEN
+        RAISE EXCEPTION 'Unsupported response comparison field' USING ERRCODE='23514';
+    END IF;
+    IF input_value IS NULL OR input_value='null'::jsonb THEN RETURN NULL; END IF;
+    IF jsonb_typeof(input_value) <> 'string' OR length(input_value#>>'{}')>8192 THEN
+        RAISE EXCEPTION 'Invalid response comparison value' USING ERRCODE='23514';
+    END IF;
+    normalized_value := btrim(normalize(input_value#>>'{}',NFC),
+        U&'\0009\000A\000B\000C\000D\001C\001D\001E\001F\0020\0085\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000');
+    IF input_field='email' THEN
+        RETURN casefold(normalized_value COLLATE pg_catalog.pg_unicode_fast);
+    END IF;
+    RETURN normalized_value;
+END;
+$$;
+
+-- Independent SQL reconstruction of the closed Phase 3A field vocabulary.
+-- New proposals must match this scoped validation source, not browser values.
+CREATE FUNCTION public.stewardship_response_field_source_v1(
+    input_snapshot uuid, input_family uuid, input_member text, input_field text)
+    RETURNS jsonb LANGUAGE plpgsql STABLE
+    SET search_path TO pg_catalog, public, pg_temp
+AS $$
+DECLARE
+    member_value jsonb;
+    contact_value jsonb;
+    source_name text;
+    email_value text;
+BEGIN
+    SELECT member.canonical::jsonb INTO member_value
+    FROM public.stewardship_snapshot_member membership
+    JOIN public.stewardship_source_member member ON member.id=membership.payload_id
+    JOIN public.stewardship_family_campaign family ON member.family_key=family.family_duid::text
+    WHERE membership.snapshot_id=input_snapshot AND membership.source_key=input_member
+      AND family.id=input_family AND member.canonical::jsonb->'active'='true'::jsonb
+      AND member.canonical::jsonb->'deceased'='false'::jsonb;
+    IF NOT FOUND THEN RETURN NULL; END IF;
+    IF input_field='email' THEN
+        SELECT contact.canonical::jsonb INTO contact_value
+        FROM public.stewardship_snapshot_contact membership
+        JOIN public.stewardship_source_contact contact ON contact.id=membership.payload_id
+        WHERE membership.snapshot_id=input_snapshot
+          AND contact.owner_kind='member' AND contact.owner_key=input_member;
+        IF contact_value IS NULL OR NOT (contact_value->'available' ? 'email') THEN
+            RETURN jsonb_build_object('available',false,'value',NULL);
+        END IF;
+        SELECT coalesce(string_agg(item->>'value',', ' ORDER BY (item->>'value') COLLATE "C"),'')
+            INTO email_value FROM jsonb_array_elements(contact_value->'emails') item;
+        RETURN jsonb_build_object('available',true,'value',email_value);
+    END IF;
+    source_name := CASE input_field WHEN 'first_name' THEN 'firstName'
+        WHEN 'middle_name' THEN 'middleName' WHEN 'last_name' THEN 'lastName' END;
+    IF source_name IS NULL THEN RETURN NULL; END IF;
+    RETURN jsonb_build_object('available',member_value ? source_name,'value',member_value->source_name);
+END;
+$$;
+
 CREATE FUNCTION public.stewardship_source_pin_guard() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
-DECLARE snapshot stewardship_source_snapshot%ROWTYPE;
+DECLARE snapshot record;
 BEGIN
+    -- Separate role branches before planning their private table queries.
+    -- A boolean AND does not prevent PostgreSQL privilege checks on subqueries.
+    IF current_user='pk_stewardship_worker' THEN
+      IF TG_OP='DELETE' THEN
+        IF OLD.parent_kind <> 'submission'
+           OR NOT public.stewardship_response_source_owner_v1(
+               (SELECT snapshot_id FROM public.stewardship_source_current))
+           OR public.stewardship_response_pin_required_v1(OLD.parent_id,OLD.snapshot_id)
+        THEN
+            RAISE EXCEPTION 'Worker may release only unused response comparison inputs'
+                USING ERRCODE='23514';
+        END IF;
+      ELSE
+      IF (
+        TG_OP <> 'INSERT' OR NEW.parent_kind <> 'submission' OR NEW.expires_at IS NOT NULL
+        OR NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+            AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
+            AND mode='ExclusiveLock' AND granted)
+        OR NOT EXISTS (
+            SELECT 1 FROM public.stewardship_proposed_change change
+            JOIN public.stewardship_submission response ON response.id=change.submission_id
+            WHERE response.id=NEW.parent_id
+              AND change.execution IN ('pending','conflict','queued','failed')
+        )
+        OR NOT public.stewardship_response_source_owner_v1(NEW.snapshot_id)
+    ) THEN
+        RAISE EXCEPTION 'Worker source protection requires current response reconciliation'
+            USING ERRCODE='23514';
+      END IF;
+      END IF;
+    END IF;
+    IF current_user='pk_stewardship_web' THEN
+      IF (
+        (TG_OP <> 'INSERT' AND OLD.parent_kind <> 'form_baseline') OR
+        (TG_OP <> 'DELETE' AND NEW.parent_kind NOT IN ('form_baseline','submission'))
+    ) THEN
+        RAISE EXCEPTION 'Web source protection is limited to Family forms'
+            USING ERRCODE='23514';
+    END IF;
+    IF TG_OP='INSERT' AND NEW.parent_kind='form_baseline' AND NOT EXISTS (
+        SELECT 1 FROM stewardship_family_form_baseline
+        WHERE id=NEW.parent_id AND source_id=NEW.snapshot_id AND state='open'
+          AND expires_at=NEW.expires_at
+    ) THEN
+        RAISE EXCEPTION 'Web form protection requires its owned baseline'
+            USING ERRCODE='23514';
+    END IF;
+    IF TG_OP='INSERT' AND NEW.parent_kind='submission' AND NOT EXISTS (
+        SELECT 1 FROM stewardship_submission response
+        JOIN stewardship_family_form_baseline baseline ON baseline.id=response.baseline_id
+        WHERE response.id=NEW.parent_id AND baseline.state='open'
+          AND NEW.snapshot_id IN (response.reviewed_source_id,response.validation_source_id)
+          AND NEW.expires_at IS NULL
+    ) THEN
+        RAISE EXCEPTION 'Web response protection requires its final submission'
+            USING ERRCODE='23514';
+    END IF;
+    END IF;
     IF TG_OP='DELETE' THEN
         PERFORM 1 FROM stewardship_source_snapshot WHERE id=OLD.snapshot_id FOR UPDATE;
         RETURN OLD;
     END IF;
-    SELECT * INTO snapshot FROM stewardship_source_snapshot WHERE id=NEW.snapshot_id
+    SELECT state, compacted_at INTO snapshot FROM stewardship_source_snapshot WHERE id=NEW.snapshot_id
         FOR UPDATE;
     IF NOT FOUND OR snapshot.state <> 'promoted'
        OR snapshot.compacted_at IS NOT NULL THEN
@@ -8459,7 +8635,11 @@ BEGIN
        OR generation.source_snapshot_id IS DISTINCT FROM population.source_snapshot_id
        OR generation.source_generation IS DISTINCT FROM population.source_generation
        OR EXISTS(SELECT 1 FROM stewardship_rehearsal_credential c
-                 JOIN stewardship_rehearsal_epoch e ON e.id=c.epoch_id WHERE e.campaign_id=NEW.id) THEN
+                 JOIN stewardship_rehearsal_epoch e ON e.id=c.epoch_id WHERE e.campaign_id=NEW.id)
+       OR EXISTS(SELECT 1 FROM stewardship_submission WHERE campaign_id=NEW.id AND mode='test')
+       OR EXISTS(SELECT 1 FROM stewardship_family_form_baseline baseline
+                 JOIN stewardship_family_campaign family ON family.id=baseline.family_id
+                 WHERE family.campaign_id=NEW.id AND baseline.mode='test') THEN
         RAISE EXCEPTION 'Campaign requires a complete current token generation and rehearsal cleanup' USING ERRCODE='23514'; END IF;
     IF generation.configuration_request_id IS NULL THEN
         IF generation.configuration_id IS DISTINCT FROM NEW.active_configuration_id THEN

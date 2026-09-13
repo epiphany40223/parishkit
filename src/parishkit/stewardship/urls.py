@@ -36,6 +36,7 @@ from .accounts import (
     share_views,
 )
 from .jobs import views as job_views
+from .responses import views as response_views
 
 public_patterns = [
     path(
@@ -47,6 +48,8 @@ public_patterns = [
     path("access/<str:token>", family_authentication.access, name="access"),
 ]
 family_patterns = [
+    path("form", response_views.start, name="form"),
+    path("submit", response_views.submit, name="submit"),
     path("presence", presence.heartbeat, name="presence"),
     path("", family_authentication.portal, name="entry"),
     path("keepalive", family_authentication.keepalive, name="keepalive"),

@@ -130,6 +130,10 @@ def component_origin():
             render_to_string("stewardship/family-login.html", context),
         ),
         "/family": ("text/html", render_to_string("stewardship/family.html", context)),
+        "/family-testing": (
+            "text/html",
+            render_to_string("stewardship/family.html", context | {"testing": True}),
+        ),
         "/errors": (
             "text/html",
             render_to_string(
@@ -955,8 +959,12 @@ def component_origin():
                 context | {"admin_chrome": admin} | extra,
             ),
         )
-    for name, kind in (("css", "text/css"), ("js", "application/javascript")):
-        asset = f"stewardship/ui-v1.{name}"
+    for filename, kind in (
+        ("ui-v1.css", "text/css"),
+        ("ui-v1.js", "application/javascript"),
+        ("family-v1.js", "application/javascript"),
+    ):
+        asset = f"stewardship/{filename}"
         located = finders.find(asset)
         assert located is not None, f"Required component asset is missing: {asset}"
         responses[f"/static/{asset}"] = (kind, Path(located).read_text())

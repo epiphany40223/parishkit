@@ -30,8 +30,16 @@ five logical signed-off commits; regrouping preserved the complete source tree.
   browser, container, database and baseline verification.
 - [x] Review and correct material changes, then consolidate logical commits,
   preserve sign-offs, verify the final tree and update the existing PR safely.
-- [ ] Pass final-head CI after the final corrections and merge under the human's
+- [x] Pass final-head CI after the final corrections and merge under the human's
   standing authority, then wait for the merge to land on `origin/main`.
+
+PR #22 merged on September 13, 2026 as
+`7b2b1dd4478ae4014b167d6c0c203127c9a0ceb9`. Final-head
+[CI run 34767983463](https://github.com/epiphany40223/parishkit/actions/runs/34767983463)
+passed in exactly ten minutes, and protected merge-group
+[CI run 34768576640](https://github.com/epiphany40223/parishkit/actions/runs/34768576640)
+also passed. The merge was verified on refreshed `origin/main` before the next
+branch was created; no protection bypass, deployment or release occurred.
 
 The full serial database command remains a developer/release equivalent. No
 real provider credentials, production deployment or release is authorized by

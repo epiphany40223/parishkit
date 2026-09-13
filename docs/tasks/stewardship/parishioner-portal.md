@@ -18,7 +18,10 @@ Scope and dependencies: [FAM-01 work package](../../plans/stewardship/parishione
 - [ ] FAM-01.05 — Audit Family access and maintain presence metadata.
 - [ ] FAM-01.06 — Test access, Testing, token, and lifecycle denial cases.
 
-Evidence: Not started.
+Evidence: [Phase 3A](../../guides/stewardship-phase-3a.md) integrates the existing
+code/link session owner with answer-free entry, explicit Testing consent,
+banner, public date availability, and fresh route admission. Its HTTP and
+browser cases pass; complete lifecycle denial/acceptance and review remain open.
 
 ## FAM-02: In-memory form engine and navigation
 
@@ -30,7 +33,11 @@ Scope and dependencies: [FAM-02 work package](../../plans/stewardship/parishione
 - [ ] FAM-02.04 — Integrate validation, idle warning, and activity keepalive.
 - [ ] FAM-02.05 — Test navigation, lost drafts, expiry, and mobile focus.
 
-Evidence: Not started.
+Evidence: [Phase 3A](../../guides/stewardship-phase-3a.md) implements the first
+mobile census/review flow, merged prefill, change indicators, tab-only drafts,
+validation, expiry clearing, back/edit navigation and shared keepalive. Targeted
+browser tests cover all three engines. Full module navigation and Gate 2
+accessibility/privacy acceptance remain open.
 
 ## FAM-03: Family census step
 
@@ -81,7 +88,11 @@ Scope and dependencies: [FAM-06 work package](../../plans/stewardship/parishione
 - [ ] FAM-06.06 — Enforce Testing acknowledgement at final submission.
 - [ ] FAM-06.07 — Test duplicate, concurrent-response, source-promotion, and interrupted submissions.
 
-Evidence: Not started.
+Evidence: [Phase 3A](../../guides/stewardship-phase-3a.md) implements additional
+text, minimal complete census review, atomic Submit, separate final Testing
+consent, Thank You/logout and a receipt-intent stub. HTTP/database/browser
+tests cover no-change, errors, stale source/prior response and late rollback.
+Remaining modules and actual Phase 4 dispatch are not claimed complete.
 
 ## FAM-07: Repeat visits and source-change merge
 
@@ -93,7 +104,10 @@ Scope and dependencies: [FAM-07 work package](../../plans/stewardship/parishione
 - [ ] FAM-07.04 — Supersede derived work only upon final Submit.
 - [ ] FAM-07.05 — Test repeated census, information, and Ministry changes.
 
-Evidence: Not started.
+Evidence: [Phase 3A](../../guides/stewardship-phase-3a.md) implements census
+revisit, prior live submission time, effective-only private projection and
+pending/caught-up/conflict integration with source promotion. Complete
+Ministry/financial and publication-resolution acceptance remains open.
 
 ## FAM-08: Responsive, accessibility, privacy, and browser completion
 

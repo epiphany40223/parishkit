@@ -187,5 +187,8 @@ def reconcile_source_families(
             admit=admit,
             actor_id=claim.worker_id,
         )
+        from parishkit.stewardship.responses.reconciliation import reconcile_proposals
+
+        reconcile_proposals(snapshot, corpus, campaign_id=campaign_id)
         verify_source(claim)
         return result

@@ -3933,3 +3933,641 @@ CREATE POLICY stewardship_staging_scrub ON public.stewardship_sealed_credential_
 
 -- ACL: FUNCTION stewardship_bootstrap_empty_database()
 REVOKE ALL ON FUNCTION public.stewardship_bootstrap_empty_database() FROM PUBLIC;
+
+-- Phase 3A response references and indexes; all table keys now exist.
+ALTER TABLE "stewardship_family_form_baseline" ADD CONSTRAINT "stewardship_family_f_family_id_b74686eb_fk_stewardsh" FOREIGN KEY ("family_id") REFERENCES "stewardship_family_campaign" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_family_form_baseline" ADD CONSTRAINT "stewardship_family_f_source_id_a45560e8_fk_stewardsh" FOREIGN KEY ("source_id") REFERENCES "stewardship_source_snapshot" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_family_form_baseline" ADD CONSTRAINT "stewardship_family_f_configuration_id_215927b6_fk_stewardsh" FOREIGN KEY ("configuration_id") REFERENCES "stewardship_configuration_version" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_family_form_baseline" ADD CONSTRAINT "stewardship_family_f_prior_submission_id_25bb3f1e_fk_stewardsh" FOREIGN KEY ("prior_submission_id") REFERENCES "stewardship_submission" ("id") DEFERRABLE INITIALLY DEFERRED;
+CREATE INDEX "stewardship_family_form_baseline_correlation_id_df990299" ON "stewardship_family_form_baseline" ("correlation_id");
+CREATE INDEX "stewardship_family_form_baseline_family_id_b74686eb" ON "stewardship_family_form_baseline" ("family_id");
+CREATE INDEX "stewardship_family_form_baseline_source_id_a45560e8" ON "stewardship_family_form_baseline" ("source_id");
+CREATE INDEX "stewardship_family_form_baseline_configuration_id_215927b6" ON "stewardship_family_form_baseline" ("configuration_id");
+CREATE INDEX "stewardship_family_form_baseline_prior_submission_id_25bb3f1e" ON "stewardship_family_form_baseline" ("prior_submission_id");
+CREATE INDEX "family_baseline_expiry" ON "stewardship_family_form_baseline" ("state", "expires_at");
+CREATE INDEX "family_baseline_session" ON "stewardship_family_form_baseline" ("family_session_id", "state");
+ALTER TABLE "stewardship_submission" ADD CONSTRAINT "stewardship_submissi_family_id_c36ec6ca_fk_stewardsh" FOREIGN KEY ("family_id") REFERENCES "stewardship_family_campaign" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_submission" ADD CONSTRAINT "stewardship_submissi_campaign_id_3f80f67e_fk_stewardsh" FOREIGN KEY ("campaign_id") REFERENCES "stewardship_campaign" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_submission" ADD CONSTRAINT "stewardship_submissi_baseline_id_0b332131_fk_stewardsh" FOREIGN KEY ("baseline_id") REFERENCES "stewardship_family_form_baseline" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_submission" ADD CONSTRAINT "stewardship_submissi_reviewed_source_id_7693938b_fk_stewardsh" FOREIGN KEY ("reviewed_source_id") REFERENCES "stewardship_source_snapshot" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_submission" ADD CONSTRAINT "stewardship_submissi_validation_source_id_dccb0988_fk_stewardsh" FOREIGN KEY ("validation_source_id") REFERENCES "stewardship_source_snapshot" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_submission" ADD CONSTRAINT "stewardship_submissi_configuration_id_850edd92_fk_stewardsh" FOREIGN KEY ("configuration_id") REFERENCES "stewardship_configuration_version" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_submission" ADD CONSTRAINT "stewardship_submissi_prior_submission_id_791966fe_fk_stewardsh" FOREIGN KEY ("prior_submission_id") REFERENCES "stewardship_submission" ("id") DEFERRABLE INITIALLY DEFERRED;
+CREATE INDEX "stewardship_submission_correlation_id_f9d4aaa9" ON "stewardship_submission" ("correlation_id");
+CREATE INDEX "stewardship_submission_family_id_c36ec6ca" ON "stewardship_submission" ("family_id");
+CREATE INDEX "stewardship_submission_campaign_id_3f80f67e" ON "stewardship_submission" ("campaign_id");
+CREATE INDEX "stewardship_submission_reviewed_source_id_7693938b" ON "stewardship_submission" ("reviewed_source_id");
+CREATE INDEX "stewardship_submission_validation_source_id_dccb0988" ON "stewardship_submission" ("validation_source_id");
+CREATE INDEX "stewardship_submission_configuration_id_850edd92" ON "stewardship_submission" ("configuration_id");
+CREATE INDEX "stewardship_submission_prior_submission_id_791966fe" ON "stewardship_submission" ("prior_submission_id");
+CREATE INDEX "submission_family_time" ON "stewardship_submission" ("family_id", "mode", "submitted_at");
+CREATE INDEX "submission_local_day" ON "stewardship_submission" ("mode", "submitted_on");
+ALTER TABLE "stewardship_proposed_change" ADD CONSTRAINT "stewardship_proposed_submission_id_ccbe7500_fk_stewardsh" FOREIGN KEY ("submission_id") REFERENCES "stewardship_submission" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_proposed_change" ADD CONSTRAINT "stewardship_proposed_current_source_id_65846641_fk_stewardsh" FOREIGN KEY ("current_source_id") REFERENCES "stewardship_source_snapshot" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_proposed_change" ADD CONSTRAINT "stewardship_proposed_superseded_by_id_6f86a133_fk_stewardsh" FOREIGN KEY ("superseded_by_id") REFERENCES "stewardship_proposed_change" ("id") DEFERRABLE INITIALLY DEFERRED;
+CREATE INDEX "stewardship_proposed_change_correlation_id_1848c771" ON "stewardship_proposed_change" ("correlation_id");
+CREATE INDEX "stewardship_proposed_change_submission_id_ccbe7500" ON "stewardship_proposed_change" ("submission_id");
+CREATE INDEX "stewardship_proposed_change_current_source_id_65846641" ON "stewardship_proposed_change" ("current_source_id");
+CREATE INDEX "stewardship_proposed_change_superseded_by_id_6f86a133" ON "stewardship_proposed_change" ("superseded_by_id");
+CREATE INDEX "proposal_review_queue" ON "stewardship_proposed_change" ("decision", "execution");
+ALTER TABLE "stewardship_additional_information" ADD CONSTRAINT "stewardship_addition_submission_id_4e9b4c92_fk_stewardsh" FOREIGN KEY ("submission_id") REFERENCES "stewardship_submission" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_additional_information" ADD CONSTRAINT "stewardship_addition_replacement_id_e7eb6029_fk_stewardsh" FOREIGN KEY ("replacement_id") REFERENCES "stewardship_additional_information" ("id") DEFERRABLE INITIALLY DEFERRED;
+CREATE INDEX "stewardship_additional_information_correlation_id_bec7a412" ON "stewardship_additional_information" ("correlation_id");
+CREATE INDEX "additional_actionable_queue" ON "stewardship_additional_information" ("disposition", "created_at");
+ALTER TABLE "stewardship_submission_receipt" ADD CONSTRAINT "stewardship_submissi_submission_id_cae3467e_fk_stewardsh" FOREIGN KEY ("submission_id") REFERENCES "stewardship_submission" ("id") DEFERRABLE INITIALLY DEFERRED;
+CREATE INDEX "stewardship_submission_receipt_correlation_id_86526335" ON "stewardship_submission_receipt" ("correlation_id");
+
+-- Form metadata cannot be rebound to another session, input set or Family.
+-- The common advisory order serializes admission with source/lifecycle writes.
+CREATE FUNCTION public.stewardship_family_baseline_guard_v1() RETURNS trigger
+    LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp
+AS $$
+DECLARE
+    session_row public.stewardship_family_session;
+    runtime_row public.stewardship_system_configuration;
+    family_row public.stewardship_family_campaign;
+    campaign_row public.stewardship_campaign;
+    campaign_config public.stewardship_campaign_configuration;
+    credential_row public.stewardship_campaign_credentials;
+    instant timestamptz := clock_timestamp();
+    previous_id uuid;
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid() AND locktype='advisory'
+          AND classid=736220 AND objid=1 AND objsubid=2
+          AND mode='ExclusiveLock' AND granted
+    ) THEN
+        RAISE EXCEPTION 'Form metadata requires ordered admission' USING ERRCODE='23514';
+    END IF;
+    IF TG_OP = 'DELETE' THEN
+        IF public.stewardship_test_response_cleanup_v1(OLD.mode,OLD.rehearsal_epoch_id) THEN
+            RETURN OLD;
+        END IF;
+        RAISE EXCEPTION 'Form metadata deletion requires its retention owner' USING ERRCODE='23514';
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        IF OLD.state <> 'open' OR NEW.state = 'open'
+           OR NEW.version <> OLD.version + 1
+           OR (to_jsonb(NEW) - ARRAY['state','ended_at','version','updated_at'])
+                IS DISTINCT FROM
+              (to_jsonb(OLD) - ARRAY['state','ended_at','version','updated_at'])
+           OR NEW.ended_at > instant THEN
+            RAISE EXCEPTION 'Form metadata bindings are immutable' USING ERRCODE='23514';
+        END IF;
+        IF NEW.state = 'expired' AND NEW.expires_at > instant THEN
+            RAISE EXCEPTION 'The form has not expired' USING ERRCODE='23514';
+        END IF;
+        NEW.updated_at := instant;
+        RETURN NEW;
+    END IF;
+    SELECT * INTO runtime_row FROM public.stewardship_system_configuration FOR UPDATE;
+    SELECT * INTO session_row FROM public.stewardship_family_session
+        WHERE id=NEW.family_session_id FOR UPDATE;
+    IF NOT FOUND OR session_row.family_id <> NEW.family_id
+       OR session_row.revoked_at IS NOT NULL
+       OR instant >= session_row.expires_at
+       OR instant >= session_row.last_activity_at + interval '60 minutes'
+       OR session_row.mode <> runtime_row.mode
+       OR session_row.rehearsal_epoch_id IS DISTINCT FROM NEW.rehearsal_epoch_id
+       OR NEW.mode <> (CASE session_row.mode WHEN 'testing' THEN 'test' ELSE 'live' END)
+       OR NEW.expires_at > session_row.expires_at
+       OR NEW.expires_at <= instant OR NEW.state <> 'open'
+       OR NEW.version <> 1 OR NEW.actor_id IS DISTINCT FROM NEW.family_id
+       OR NEW.configuration_id IS DISTINCT FROM runtime_row.active_configuration_id
+       OR runtime_row.restore_review_required
+       OR session_row.credential_epoch IS DISTINCT FROM
+           (SELECT family_link_epoch FROM public.stewardship_credential_deployment)
+    THEN
+        RAISE EXCEPTION 'Form session admission is unavailable' USING ERRCODE='23514';
+    END IF;
+    SELECT * INTO family_row FROM public.stewardship_family_campaign
+        WHERE id=NEW.family_id FOR UPDATE;
+    SELECT * INTO campaign_row FROM public.stewardship_campaign
+        WHERE id=family_row.campaign_id;
+    SELECT * INTO campaign_config FROM public.stewardship_campaign_configuration
+        WHERE id=campaign_row.active_configuration_id;
+    SELECT * INTO credential_row FROM public.stewardship_campaign_credentials
+        WHERE campaign_id=campaign_row.id;
+    IF family_row.id IS NULL OR NOT family_row.portal_eligible
+       OR campaign_row.id IS DISTINCT FROM runtime_row.current_campaign_id
+       OR campaign_config.id IS NULL OR credential_row.id IS NULL
+       OR credential_row.go_live_gate OR credential_row.population_dirty
+       OR NOT (campaign_config.starts_at <= public.stewardship_campaign_now_v1()
+               AND public.stewardship_campaign_now_v1() < campaign_config.ends_at)
+       OR (NEW.mode='live' AND campaign_row.state NOT IN ('scheduled','active'))
+       OR (NEW.mode='test' AND (campaign_row.state <> 'draft'
+           OR credential_row.rehearsal_epoch_id IS DISTINCT FROM NEW.rehearsal_epoch_id
+           OR NOT EXISTS (SELECT 1 FROM public.stewardship_rehearsal_epoch
+                          WHERE id=NEW.rehearsal_epoch_id AND state='active')))
+       OR NOT EXISTS (
+           SELECT 1 FROM public.stewardship_source_current current_source
+             JOIN public.stewardship_source_snapshot snapshot ON snapshot.id=current_source.snapshot_id
+           WHERE snapshot.id=NEW.source_id AND snapshot.state='promoted'
+             AND snapshot.compacted_at IS NULL
+       )
+    THEN
+        RAISE EXCEPTION 'Form campaign or source admission is unavailable' USING ERRCODE='23514';
+    END IF;
+    SELECT id INTO previous_id FROM public.stewardship_submission
+        WHERE family_id=NEW.family_id AND mode=NEW.mode
+          AND rehearsal_epoch_id IS NOT DISTINCT FROM NEW.rehearsal_epoch_id
+        ORDER BY family_version DESC LIMIT 1;
+    IF previous_id IS DISTINCT FROM NEW.prior_submission_id THEN
+        RAISE EXCEPTION 'The effective Family response changed' USING ERRCODE='23514';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER stewardship_family_baseline_guard
+    BEFORE INSERT OR UPDATE OR DELETE ON public.stewardship_family_form_baseline
+    FOR EACH ROW EXECUTE FUNCTION public.stewardship_family_baseline_guard_v1();
+
+-- Deferred validation lets insertion/pinning and transition/unpinning commit
+-- together. An open baseline never survives without its exact expiring pin.
+CREATE FUNCTION public.stewardship_family_baseline_pin_v1() RETURNS trigger
+    LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp
+AS $$
+DECLARE
+    baseline public.stewardship_family_form_baseline;
+BEGIN
+    SELECT * INTO baseline FROM public.stewardship_family_form_baseline WHERE id=NEW.id;
+    IF NOT FOUND THEN RETURN NULL; END IF;
+    IF baseline.state = 'open' AND NOT EXISTS (
+        SELECT 1 FROM public.stewardship_source_pin
+        WHERE snapshot_id=baseline.source_id AND parent_kind='form_baseline'
+          AND parent_id=baseline.id AND expires_at=baseline.expires_at
+    ) THEN
+        RAISE EXCEPTION 'Open form baseline requires its source protection' USING ERRCODE='23514';
+    END IF;
+    IF baseline.state <> 'open' AND EXISTS (
+        SELECT 1 FROM public.stewardship_source_pin
+        WHERE parent_kind='form_baseline' AND parent_id=baseline.id
+    ) THEN
+        RAISE EXCEPTION 'Ended form baseline still owns expiring protection' USING ERRCODE='23514';
+    END IF;
+    IF (baseline.state='submitted') IS DISTINCT FROM EXISTS (
+        SELECT 1 FROM public.stewardship_submission WHERE baseline_id=baseline.id
+    ) THEN
+        RAISE EXCEPTION 'Submitted form requires its immutable response' USING ERRCODE='23514';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER stewardship_family_baseline_pin
+    AFTER INSERT OR UPDATE ON public.stewardship_family_form_baseline
+    DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
+    EXECUTE FUNCTION public.stewardship_family_baseline_pin_v1();
+
+-- The opposite side of the reference must also preserve a still-live baseline.
+-- Expired baselines are inadmissible even before bounded housekeeping catches up.
+CREATE FUNCTION public.stewardship_family_pin_reference_v1() RETURNS trigger
+    LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp
+AS $$
+DECLARE
+    baseline public.stewardship_family_form_baseline;
+BEGIN
+    IF current_user='pk_stewardship_worker' THEN
+        -- Workers can release only superseded comparison pins, never invoke the
+        -- separate privileged rehearsal-retention exception or read its data.
+        IF public.stewardship_response_pin_required_v1(OLD.parent_id,OLD.snapshot_id)
+           AND NOT EXISTS (SELECT 1 FROM public.stewardship_source_pin
+               WHERE parent_kind='submission' AND parent_id=OLD.parent_id
+                 AND snapshot_id=OLD.snapshot_id AND expires_at IS NULL)
+        THEN
+            RAISE EXCEPTION 'Retained response requires its source protection' USING ERRCODE='23514';
+        END IF;
+        RETURN NULL;
+    END IF;
+    IF OLD.parent_kind='submission' AND EXISTS (
+        SELECT 1 FROM public.stewardship_submission response
+        WHERE response.id=OLD.parent_id
+          AND NOT public.stewardship_test_response_cleanup_v1(response.mode,response.rehearsal_epoch_id)
+          AND (
+            OLD.snapshot_id IN (response.reviewed_source_id,response.validation_source_id)
+            OR EXISTS (SELECT 1 FROM public.stewardship_proposed_change
+                       WHERE submission_id=response.id AND current_source_id=OLD.snapshot_id))
+    ) AND NOT EXISTS (
+        SELECT 1 FROM public.stewardship_source_pin
+        WHERE parent_kind='submission' AND parent_id=OLD.parent_id
+          AND snapshot_id=OLD.snapshot_id AND expires_at IS NULL
+    ) THEN
+        RAISE EXCEPTION 'Retained response requires its source protection' USING ERRCODE='23514';
+    END IF;
+    IF OLD.parent_kind <> 'form_baseline' THEN RETURN NULL; END IF;
+    SELECT * INTO baseline FROM public.stewardship_family_form_baseline
+        WHERE id=OLD.parent_id;
+    IF FOUND AND baseline.state='open' AND baseline.expires_at > clock_timestamp()
+       AND NOT EXISTS (
+           SELECT 1 FROM public.stewardship_source_pin
+           WHERE snapshot_id=baseline.source_id AND parent_kind='form_baseline'
+             AND parent_id=baseline.id AND expires_at=baseline.expires_at
+       ) THEN
+        RAISE EXCEPTION 'Live form baseline requires its source protection' USING ERRCODE='23514';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER stewardship_family_pin_reference
+    AFTER UPDATE OR DELETE ON public.stewardship_source_pin
+    DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
+    EXECUTE FUNCTION public.stewardship_family_pin_reference_v1();
+
+-- A final response owns immutable history and one complete local effects batch.
+CREATE FUNCTION public.stewardship_submission_guard_v1() RETURNS trigger
+    LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp
+AS $$
+DECLARE
+    baseline public.stewardship_family_form_baseline;
+    session_row public.stewardship_family_session;
+    runtime_row public.stewardship_system_configuration;
+    campaign_row public.stewardship_campaign;
+    config_row public.stewardship_campaign_configuration;
+    previous_id uuid;
+    previous_version bigint;
+    last_sequence bigint;
+BEGIN
+    IF TG_OP <> 'INSERT' THEN
+        IF TG_OP='DELETE' AND public.stewardship_test_response_cleanup_v1(OLD.mode,OLD.rehearsal_epoch_id) THEN
+            RETURN OLD;
+        END IF;
+        RAISE EXCEPTION 'Submission history is immutable' USING ERRCODE='23514';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+        AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
+        AND mode='ExclusiveLock' AND granted) THEN
+        RAISE EXCEPTION 'Submission requires ordered admission' USING ERRCODE='23514';
+    END IF;
+    SELECT * INTO baseline FROM public.stewardship_family_form_baseline WHERE id=NEW.baseline_id FOR UPDATE;
+    SELECT * INTO runtime_row FROM public.stewardship_system_configuration FOR UPDATE;
+    SELECT * INTO session_row FROM public.stewardship_family_session WHERE id=baseline.family_session_id FOR UPDATE;
+    SELECT * INTO campaign_row FROM public.stewardship_campaign WHERE id=NEW.campaign_id FOR UPDATE;
+    SELECT * INTO config_row FROM public.stewardship_campaign_configuration WHERE id=campaign_row.active_configuration_id;
+    -- The insertion statement owns the business instant; a Python preflight
+    -- timestamp is not equal to the later INSERT's statement timestamp.
+    NEW.submitted_at := public.stewardship_campaign_now_v1();
+    NEW.submitted_on := (NEW.submitted_at AT TIME ZONE config_row.timezone)::date;
+    IF baseline.id IS NULL OR baseline.state <> 'open' OR baseline.expires_at <= clock_timestamp()
+        OR session_row.id IS NULL OR session_row.revoked_at IS NOT NULL
+        OR session_row.expires_at <= clock_timestamp()
+        OR session_row.last_activity_at + interval '60 minutes' <= clock_timestamp()
+        OR NEW.family_id IS DISTINCT FROM baseline.family_id
+        OR NEW.family_id IS DISTINCT FROM session_row.family_id
+        OR NEW.actor_id IS DISTINCT FROM NEW.family_id
+        OR NEW.mode IS DISTINCT FROM baseline.mode
+        OR NEW.rehearsal_epoch_id IS DISTINCT FROM baseline.rehearsal_epoch_id
+        OR NEW.rehearsal_epoch_id IS DISTINCT FROM session_row.rehearsal_epoch_id
+        OR NEW.prior_submission_id IS DISTINCT FROM baseline.prior_submission_id
+        OR NEW.reviewed_source_id IS DISTINCT FROM baseline.source_id
+        OR NEW.form_schema IS DISTINCT FROM baseline.form_schema
+        OR NEW.form_schema <> 'family-census-slice-v1'
+        OR NEW.configuration_id IS DISTINCT FROM runtime_row.active_configuration_id
+        OR runtime_row.restore_review_required OR session_row.mode <> runtime_row.mode
+        OR NEW.campaign_id IS DISTINCT FROM runtime_row.current_campaign_id
+        OR config_row.id IS NULL OR campaign_row.id IS NULL
+        OR NEW.submitted_on IS DISTINCT FROM (NEW.submitted_at AT TIME ZONE config_row.timezone)::date
+        OR NEW.submitted_at < config_row.starts_at OR NEW.submitted_at >= config_row.ends_at
+        OR NEW.annual_pledge IS NOT NULL
+        OR NOT EXISTS (SELECT 1 FROM public.stewardship_family_campaign
+            WHERE id=NEW.family_id AND campaign_id=NEW.campaign_id AND portal_eligible)
+        OR NOT EXISTS (SELECT 1 FROM public.stewardship_source_current
+            WHERE snapshot_id=NEW.validation_source_id)
+        OR session_row.credential_epoch IS DISTINCT FROM
+            (SELECT family_link_epoch FROM public.stewardship_credential_deployment)
+        OR NOT EXISTS (SELECT 1 FROM public.stewardship_campaign_credentials credentials
+            WHERE credentials.campaign_id=NEW.campaign_id AND NOT go_live_gate AND NOT population_dirty
+              AND ((NEW.mode='live' AND runtime_row.mode='production' AND campaign_row.state IN ('scheduled','active'))
+               OR (NEW.mode='test' AND runtime_row.mode='testing' AND campaign_row.state='draft'
+                  AND credentials.rehearsal_epoch_id=NEW.rehearsal_epoch_id
+                  AND EXISTS (SELECT 1 FROM public.stewardship_rehearsal_epoch
+                      WHERE id=NEW.rehearsal_epoch_id AND state='active'))))
+    THEN
+        RAISE EXCEPTION 'Submission provenance or admission is unavailable' USING ERRCODE='23514';
+    END IF;
+    SELECT id,family_version INTO previous_id,previous_version FROM public.stewardship_submission
+        WHERE family_id=NEW.family_id AND mode=NEW.mode
+          AND rehearsal_epoch_id IS NOT DISTINCT FROM NEW.rehearsal_epoch_id
+        ORDER BY family_version DESC LIMIT 1;
+    SELECT coalesce(max(family_version),0) INTO previous_version FROM public.stewardship_submission
+        WHERE family_id=NEW.family_id AND mode=NEW.mode;
+    SELECT coalesce(max(campaign_sequence),0) INTO last_sequence FROM public.stewardship_submission
+        WHERE campaign_id=NEW.campaign_id AND mode=NEW.mode;
+    IF NEW.prior_submission_id IS DISTINCT FROM previous_id
+        OR NEW.family_version <> coalesce(previous_version,0)+1
+        OR NEW.campaign_sequence <> last_sequence+1
+        OR jsonb_typeof(NEW.answers) <> 'object'
+        OR NOT (NEW.answers ?& ARRAY['schema','members','additional_information'])
+        OR NEW.answers - ARRAY['schema','members','additional_information'] <> '{}'::jsonb
+        OR NEW.answers->>'schema' IS DISTINCT FROM NEW.form_schema
+        OR jsonb_typeof(NEW.answers->'members') <> 'object'
+        OR jsonb_typeof(NEW.answers->'additional_information') <> 'string'
+        OR length(NEW.answers->>'additional_information') > 5000
+    THEN
+        RAISE EXCEPTION 'Submission aggregate or sequence is invalid' USING ERRCODE='23514';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER stewardship_submission_guard
+    BEFORE INSERT OR UPDATE OR DELETE ON public.stewardship_submission
+    FOR EACH ROW EXECUTE FUNCTION public.stewardship_submission_guard_v1();
+
+CREATE FUNCTION public.stewardship_submission_effects_v1() RETURNS trigger
+    LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp
+AS $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM public.stewardship_submission WHERE id=NEW.id) THEN RETURN NULL; END IF;
+    IF NOT EXISTS (SELECT 1 FROM public.stewardship_family_form_baseline
+                  WHERE id=NEW.baseline_id AND state='submitted')
+       OR NOT EXISTS (SELECT 1 FROM public.stewardship_submission_receipt WHERE submission_id=NEW.id)
+       OR EXISTS (
+           SELECT source_id FROM (VALUES (NEW.reviewed_source_id),(NEW.validation_source_id)) inputs(source_id)
+           WHERE NOT EXISTS (SELECT 1 FROM public.stewardship_source_pin
+               WHERE parent_kind='submission' AND parent_id=NEW.id AND snapshot_id=inputs.source_id AND expires_at IS NULL)
+       ) THEN
+        RAISE EXCEPTION 'Submission requires atomic baseline, receipt and source protection' USING ERRCODE='23514';
+    END IF;
+    IF NEW.mode='live' AND (
+        NOT EXISTS (SELECT 1 FROM public.stewardship_family_campaign family
+            WHERE family.id=NEW.family_id
+              AND family.first_live_submission_id=(SELECT id FROM public.stewardship_submission
+                WHERE family_id=NEW.family_id AND mode='live' ORDER BY family_version LIMIT 1)
+              AND family.effective_submission_id=(SELECT id FROM public.stewardship_submission
+                WHERE family_id=NEW.family_id AND mode='live' ORDER BY family_version DESC LIMIT 1))
+        OR NOT EXISTS (SELECT 1 FROM public.stewardship_campaign
+                       WHERE id=NEW.campaign_id AND first_live_submission_at IS NOT NULL)
+        OR EXISTS (SELECT scope FROM (VALUES ('historical'),('current')) populations(scope)
+            WHERE NOT EXISTS (SELECT 1 FROM public.stewardship_fact_demand
+                WHERE campaign_id=NEW.campaign_id AND population_scope=populations.scope
+                  AND requested_submission_watermark >= NEW.campaign_sequence))
+    ) THEN
+        RAISE EXCEPTION 'Live response requires atomic selectors and fact demand' USING ERRCODE='23514';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER stewardship_submission_effects
+    AFTER INSERT ON public.stewardship_submission DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION public.stewardship_submission_effects_v1();
+
+CREATE FUNCTION public.stewardship_response_derived_guard_v1() RETURNS trigger
+    LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp
+AS $$
+DECLARE
+    response public.stewardship_submission;
+    predecessor public.stewardship_proposed_change;
+    source_field jsonb;
+    expected_baseline jsonb;
+    carries_intent boolean;
+    submitted_key text;
+    baseline_key text;
+    current_key text;
+    expected_execution text;
+BEGIN
+    IF TG_OP='DELETE' THEN
+        SELECT * INTO response FROM public.stewardship_submission WHERE id=OLD.submission_id;
+        IF FOUND AND public.stewardship_test_response_cleanup_v1(response.mode,response.rehearsal_epoch_id) THEN
+            RETURN OLD;
+        END IF;
+        RAISE EXCEPTION 'Response detail deletion requires its retention owner' USING ERRCODE='23514';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+        AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
+        AND mode='ExclusiveLock' AND granted) THEN
+        RAISE EXCEPTION 'Response detail requires ordered admission' USING ERRCODE='23514';
+    END IF;
+    IF TG_TABLE_NAME <> 'stewardship_proposed_change' OR TG_OP='INSERT' THEN
+        SELECT * INTO response FROM public.stewardship_submission WHERE id=NEW.submission_id;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'Response detail has no immutable parent' USING ERRCODE='23514';
+        END IF;
+    END IF;
+    IF TG_TABLE_NAME='stewardship_submission_receipt' THEN
+        IF TG_OP <> 'INSERT' THEN
+            RAISE EXCEPTION 'Receipt intent is immutable' USING ERRCODE='23514';
+        END IF;
+        RETURN NEW;
+    END IF;
+    IF TG_TABLE_NAME='stewardship_proposed_change' THEN
+        IF TG_OP='INSERT' THEN
+            IF NEW.entity_kind <> 'member' OR NEW.field NOT IN ('first_name','middle_name','last_name','email')
+                OR NOT ((response.answers->'members') ? NEW.entity_key)
+                OR coalesce(NEW.submitted_value,'null'::jsonb) IS DISTINCT FROM response.answers #> ARRAY['members',NEW.entity_key,NEW.field]
+                OR NEW.current_source_id IS DISTINCT FROM response.validation_source_id
+                OR NEW.handling <> 'api' THEN
+                RAISE EXCEPTION 'Proposal differs from its immutable response' USING ERRCODE='23514';
+            END IF;
+            IF NEW.execution NOT IN ('pending','conflict') OR NEW.superseded_by_id IS NOT NULL THEN
+                RAISE EXCEPTION 'New proposal cannot mint execution outcomes' USING ERRCODE='23514';
+            END IF;
+            source_field := public.stewardship_response_field_source_v1(
+                response.validation_source_id,response.family_id,NEW.entity_key,NEW.field);
+            IF source_field IS NULL OR source_field IS DISTINCT FROM
+                jsonb_build_object('available',NEW.current_available,'value',NEW.current_value)
+            THEN
+                RAISE EXCEPTION 'Proposal comparison differs from its validation source' USING ERRCODE='23514';
+            END IF;
+            SELECT * INTO predecessor FROM public.stewardship_proposed_change
+            WHERE submission_id=response.prior_submission_id
+              AND ROW(entity_kind,entity_key,field)=ROW(NEW.entity_kind,NEW.entity_key,NEW.field)
+              AND execution NOT IN ('published','resolved_upstream','resolved_external','cancelled','superseded');
+            carries_intent := FOUND AND (
+                public.stewardship_response_comparison_v1(NEW.field,NEW.submitted_value)
+                IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(NEW.field,predecessor.submitted_value));
+            expected_baseline := source_field;
+            IF carries_intent THEN
+                expected_baseline := jsonb_build_object('available',predecessor.baseline_available,'value',predecessor.baseline_value);
+                IF ROW(NEW.decision,NEW.admin_value_set,NEW.admin_value)
+                    IS DISTINCT FROM ROW(predecessor.decision,predecessor.admin_value_set,predecessor.admin_value) THEN
+                    RAISE EXCEPTION 'Proposal review state requires the same prior intent' USING ERRCODE='23514';
+                END IF;
+            ELSIF NEW.decision <> 'unreviewed' OR NEW.admin_value_set OR NEW.admin_value IS NOT NULL THEN
+                RAISE EXCEPTION 'New proposal review state must be unreviewed' USING ERRCODE='23514';
+            END IF;
+            IF expected_baseline IS DISTINCT FROM jsonb_build_object('available',NEW.baseline_available,'value',NEW.baseline_value) THEN
+                RAISE EXCEPTION 'Proposal baseline requires exact source or prior intent' USING ERRCODE='23514';
+            END IF;
+            submitted_key := public.stewardship_response_comparison_v1(NEW.field,NEW.submitted_value);
+            baseline_key := public.stewardship_response_comparison_v1(NEW.field,NEW.baseline_value);
+            current_key := public.stewardship_response_comparison_v1(NEW.field,NEW.current_value);
+            IF (NEW.current_available AND submitted_key IS NOT DISTINCT FROM current_key)
+               OR (NOT NEW.current_available AND submitted_key IS NULL)
+               OR (NEW.baseline_available AND submitted_key IS NOT DISTINCT FROM baseline_key)
+            THEN
+                RAISE EXCEPTION 'Unchanged values cannot create actionable proposals' USING ERRCODE='23514';
+            END IF;
+            expected_execution := CASE
+                WHEN NEW.current_available AND (NOT NEW.baseline_available OR current_key IS DISTINCT FROM baseline_key)
+                THEN 'conflict' ELSE 'pending' END;
+            IF NEW.execution <> expected_execution THEN
+                RAISE EXCEPTION 'Proposal execution differs from its derived merge state' USING ERRCODE='23514';
+            END IF;
+        ELSE
+            IF OLD.execution IN ('published','resolved_upstream','resolved_external','cancelled','superseded')
+                OR (to_jsonb(NEW)-ARRAY['current_available','current_value','current_source_id','admin_value_set','admin_value','decision','execution','superseded_by_id','version','updated_at'])
+                    IS DISTINCT FROM (to_jsonb(OLD)-ARRAY['current_available','current_value','current_source_id','admin_value_set','admin_value','decision','execution','superseded_by_id','version','updated_at'])
+            THEN
+                RAISE EXCEPTION 'Proposal history and terminal outcomes are immutable' USING ERRCODE='23514';
+            END IF;
+            IF current_user='pk_stewardship_worker' THEN
+                IF NEW.execution NOT IN ('pending','conflict','resolved_upstream','cancelled')
+                   OR NEW.current_source_id=OLD.current_source_id
+                   OR NOT public.stewardship_response_source_owner_v1(NEW.current_source_id)
+                   OR NOT EXISTS (SELECT 1 FROM public.stewardship_source_pin
+                       WHERE snapshot_id=NEW.current_source_id AND parent_kind='submission'
+                         AND parent_id=NEW.submission_id AND expires_at IS NULL)
+                THEN
+                    RAISE EXCEPTION 'Proposal reconciliation requires fenced protected source' USING ERRCODE='23514';
+                END IF;
+            ELSIF current_user='pk_stewardship_web' THEN
+                IF NEW.execution NOT IN ('superseded','cancelled','resolved_upstream')
+                   OR NOT EXISTS (
+                       SELECT 1 FROM public.stewardship_submission later
+                       JOIN public.stewardship_family_form_baseline baseline ON baseline.id=later.baseline_id
+                       WHERE later.prior_submission_id=OLD.submission_id AND baseline.state='open'
+                         AND (NEW.execution <> 'superseded' OR EXISTS (
+                             SELECT 1 FROM public.stewardship_proposed_change successor
+                             WHERE successor.id=NEW.superseded_by_id AND successor.submission_id=later.id))
+                   )
+                THEN
+                    RAISE EXCEPTION 'Proposal replacement requires a new final Family response' USING ERRCODE='23514';
+                END IF;
+            END IF;
+        END IF;
+    ELSIF TG_TABLE_NAME='stewardship_additional_information' THEN
+        IF response.mode <> 'live' OR NEW.text IS DISTINCT FROM response.answers->>'additional_information'
+            OR length(NEW.text)>5000 OR btrim(NEW.text)='' THEN
+            RAISE EXCEPTION 'Follow-up requires live submitted text' USING ERRCODE='23514';
+        END IF;
+        IF TG_OP='UPDATE' AND (
+            (to_jsonb(NEW)-ARRAY['disposition','replacement_id','follow_up_needed','followed_up_at','version','updated_at'])
+                IS DISTINCT FROM (to_jsonb(OLD)-ARRAY['disposition','replacement_id','follow_up_needed','followed_up_at','version','updated_at'])
+            OR (OLD.disposition <> 'current_actionable' AND ROW(NEW.disposition,NEW.replacement_id) IS DISTINCT FROM ROW(OLD.disposition,OLD.replacement_id))
+        ) THEN
+            RAISE EXCEPTION 'Follow-up text and disposition history are immutable' USING ERRCODE='23514';
+        END IF;
+    END IF;
+    IF TG_OP='UPDATE' THEN
+        IF NEW.version <> OLD.version+1 THEN
+            RAISE EXCEPTION 'Response detail must advance its version' USING ERRCODE='23514';
+        END IF;
+        NEW.updated_at := clock_timestamp();
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER stewardship_proposed_change_guard BEFORE INSERT OR UPDATE OR DELETE
+    ON public.stewardship_proposed_change FOR EACH ROW
+    EXECUTE FUNCTION public.stewardship_response_derived_guard_v1();
+CREATE TRIGGER stewardship_additional_information_guard BEFORE INSERT OR UPDATE OR DELETE
+    ON public.stewardship_additional_information FOR EACH ROW
+    EXECUTE FUNCTION public.stewardship_response_derived_guard_v1();
+CREATE TRIGGER stewardship_submission_receipt_guard BEFORE INSERT OR UPDATE OR DELETE
+    ON public.stewardship_submission_receipt FOR EACH ROW
+    EXECUTE FUNCTION public.stewardship_response_derived_guard_v1();
+
+CREATE FUNCTION public.stewardship_family_response_selector_v1() RETURNS trigger
+    LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp
+AS $$
+BEGIN
+    IF TG_OP='INSERT' THEN
+        IF NEW.first_live_submission_id IS NOT NULL OR NEW.effective_submission_id IS NOT NULL THEN
+            RAISE EXCEPTION 'New Family cannot import response selectors' USING ERRCODE='23514';
+        END IF;
+        RETURN NEW;
+    END IF;
+    IF ROW(NEW.first_live_submission_id,NEW.effective_submission_id) IS NOT DISTINCT FROM
+       ROW(OLD.first_live_submission_id,OLD.effective_submission_id) THEN RETURN NEW; END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+        AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
+        AND mode='ExclusiveLock' AND granted)
+       OR NEW.first_live_submission_id IS DISTINCT FROM (
+           SELECT id FROM public.stewardship_submission
+           WHERE family_id=NEW.id AND mode='live' ORDER BY family_version LIMIT 1)
+       OR NEW.effective_submission_id IS DISTINCT FROM (
+           SELECT id FROM public.stewardship_submission
+           WHERE family_id=NEW.id AND mode='live' ORDER BY family_version DESC LIMIT 1)
+       OR NEW.effective_submission_id IS NULL
+    THEN
+        RAISE EXCEPTION 'Family selectors require current live response evidence' USING ERRCODE='23514';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER stewardship_family_response_selector BEFORE INSERT OR UPDATE
+    ON public.stewardship_family_campaign FOR EACH ROW
+    EXECUTE FUNCTION public.stewardship_family_response_selector_v1();
+
+-- Cross-row response history cannot point into another Family or backwards.
+-- Deferred checks permit atomic follow-up replacement in either insert order.
+CREATE FUNCTION public.stewardship_response_successor_v1() RETURNS trigger
+    LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp
+AS $$
+DECLARE actual record;
+BEGIN
+    IF TG_TABLE_NAME='stewardship_proposed_change' THEN
+        IF EXISTS (SELECT 1 FROM public.stewardship_proposed_change proposal
+            WHERE proposal.id=NEW.id AND NOT EXISTS (
+                SELECT 1 FROM public.stewardship_source_pin
+                WHERE snapshot_id=proposal.current_source_id AND parent_kind='submission'
+                  AND parent_id=proposal.submission_id AND expires_at IS NULL))
+        THEN
+            RAISE EXCEPTION 'Proposal comparison requires retained source protection' USING ERRCODE='23514';
+        END IF;
+        SELECT execution,superseded_by_id INTO actual FROM public.stewardship_proposed_change WHERE id=NEW.id;
+        IF NOT FOUND THEN RETURN NULL; END IF;
+        IF (actual.execution='superseded') IS DISTINCT FROM (actual.superseded_by_id IS NOT NULL) THEN
+            RAISE EXCEPTION 'Proposal supersession requires an exact successor' USING ERRCODE='23514';
+        END IF;
+        IF actual.superseded_by_id IS NOT NULL THEN
+            IF NOT EXISTS (
+                SELECT 1 FROM public.stewardship_proposed_change successor
+                JOIN public.stewardship_submission later ON later.id=successor.submission_id
+                JOIN public.stewardship_submission earlier ON earlier.id=NEW.submission_id
+                WHERE successor.id=actual.superseded_by_id
+                  AND ROW(successor.entity_kind,successor.entity_key,successor.field)=ROW(NEW.entity_kind,NEW.entity_key,NEW.field)
+                  AND later.family_id=earlier.family_id AND later.mode=earlier.mode
+                  AND later.rehearsal_epoch_id IS NOT DISTINCT FROM earlier.rehearsal_epoch_id
+                  AND later.family_version>earlier.family_version
+            ) THEN
+                RAISE EXCEPTION 'Proposal successor has incompatible provenance' USING ERRCODE='23514';
+            END IF;
+        END IF;
+    ELSE
+        SELECT disposition,replacement_id INTO actual FROM public.stewardship_additional_information WHERE id=NEW.id;
+        IF NOT FOUND THEN RETURN NULL; END IF;
+        IF actual.replacement_id IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM public.stewardship_additional_information successor
+            JOIN public.stewardship_submission later ON later.id=successor.submission_id
+            JOIN public.stewardship_submission earlier ON earlier.id=NEW.submission_id
+            WHERE successor.id=actual.replacement_id AND later.family_id=earlier.family_id
+              AND later.mode='live' AND earlier.mode='live'
+              AND later.family_version>earlier.family_version
+        ) THEN
+            RAISE EXCEPTION 'Follow-up replacement has incompatible provenance' USING ERRCODE='23514';
+        END IF;
+        IF actual.disposition='current_actionable' AND (
+            SELECT count(*) FROM public.stewardship_additional_information item
+            JOIN public.stewardship_submission response ON response.id=item.submission_id
+            WHERE item.disposition='current_actionable' AND response.family_id=(
+                SELECT family_id FROM public.stewardship_submission WHERE id=NEW.submission_id)
+        ) <> 1 THEN
+            RAISE EXCEPTION 'Family has multiple actionable follow-up items' USING ERRCODE='23514';
+        END IF;
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER stewardship_proposal_successor
+    AFTER INSERT OR UPDATE ON public.stewardship_proposed_change DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION public.stewardship_response_successor_v1();
+CREATE CONSTRAINT TRIGGER stewardship_followup_successor
+    AFTER INSERT OR UPDATE ON public.stewardship_additional_information DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION public.stewardship_response_successor_v1();
