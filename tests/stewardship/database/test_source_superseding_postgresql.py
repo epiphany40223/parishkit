@@ -98,6 +98,30 @@ def test_current_window_is_not_cancelled(tmp_path):
     assert [hint.run_id for hint in hints] == [identifier]
 
 
+@pytest.mark.parametrize("failure", ["organization", "window"])
+def test_unverifiable_current_scope_is_not_supersession_proof(
+    tmp_path, monkeypatch, failure
+):
+    """A misconfigured tenant or malformed window cannot authorize cancellation."""
+    from parishkit.stewardship.source import outcomes
+    from parishkit.stewardship.source.canonical import InvalidSourcePayload
+
+    identifier = queued(tmp_path)
+
+    def unavailable(scope):
+        """Fail the exact current-scope verifier without inventing replacement truth."""
+        if failure == "organization":
+            raise PermissionError(
+                "The source organization differs from retained truth."
+            )
+        raise InvalidSourcePayload("Invalid current window")
+
+    monkeypatch.setattr(outcomes, f"_{failure}", unavailable)
+    assert not cancel_superseded_refresh(identifier, worker_id=uuid4())
+    assert TaskRun.objects.get(pk=identifier).state == "queued"
+    assert not AuditEvent.objects.filter(event_type="source_superseded").exists()
+
+
 def test_running_owner_is_not_impersonated_by_cancellation(tmp_path):
     """Even stale scope must not let another process forge a live worker outcome."""
     _, execution, _, store, version, actor = setup(tmp_path)

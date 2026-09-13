@@ -227,6 +227,7 @@ def serve_credential_installer(configuration, lease):
         validate_metrics_candidate,
         validation_unavailable,
     )
+    from .provider_checks import request_validator
 
     validator = (
         validate_metrics_candidate
@@ -234,9 +235,54 @@ def serve_credential_installer(configuration, lease):
         else validation_unavailable
     )
     installer = CredentialInstaller.from_configuration(
-        configuration, validate=validator
+        configuration,
+        validate=validator,
+        validate_request=(
+            request_validator(configuration.credential_target, check=lease.check)
+            if configuration.credential_target
+            in {"parishsoft", "google_workspace", "slack"}
+            else None
+        ),
     )
-    return serve_installer_loop(installer.run_once, lease)
+    from .accounts.handoff_discovery import publish_handoff
+
+    lease.check()
+    publish_handoff(installer.files.private)
+
+    def run_once():
+        """Reconcile existing files before any fallible setup-specific relay work.
+
+        Cancellation rollback and ordinary rotations must get a turn even when
+        a setup exchange is stuck. Newly staged setup input is consumed on the
+        next bounded pass; no new authority or implicit retry is introduced.
+        """
+        installer.run_once()
+        if configuration.credential_target == "parishsoft":
+            from .source.setup_exchange import relay_pending
+
+            lease.check()
+            relay_pending(installer.files.private)
+        elif configuration.credential_target == "google_workspace":
+            from .accounts.setup_mail_exchange import relay_pending
+
+            lease.check()
+            relay_pending(installer.files.private)
+        elif configuration.credential_target == "slack":
+            from .accounts.setup_notifications import run_pending
+
+            lease.check()
+            run_pending(installer.files.private, check=lease.check)
+        if configuration.credential_target in {
+            "parishsoft",
+            "google_workspace",
+            "slack",
+        }:
+            from .accounts.setup_credential_installation import stage_initial_credential
+
+            lease.check()
+            stage_initial_credential(installer.files)
+
+    return serve_installer_loop(run_once, lease)
 
 
 def serve_installer_loop(run_once, lease):
@@ -262,6 +308,124 @@ def serve_installer_loop(run_once, lease):
     return 0
 
 
+def independent_producer(guard, operation, *args):
+    """One failed recovery owner cannot starve unrelated cleanup or hint scans.
+
+    Scheduler ownership checks remain outside the exception boundary: losing
+    the singleton session is fatal, not a recoverable sub-producer failure.
+    Each operation still owns its ordinary domain admission and transaction.
+    """
+    guard.check()
+    try:
+        result = operation(*args)
+    except Exception as error:
+        emit_failure(error)
+        result = ()
+    guard.check()
+    return result
+
+
+def serve_background(configuration, lease):
+    """Assemble one admitted queue process and retain exclusion through final drain."""
+    from uuid import uuid4
+
+    from .consumer_runtime import publish_single_process_receipts
+    from .installer_health import publish_heartbeat
+    from .runtime_background import configure_background, matching_authority
+
+    stop = StopEvent()
+
+    def heartbeat():
+        """Long task renewal and idle loop progress both retain lifecycle evidence."""
+        lease.check()
+        publish_heartbeat()
+
+    def stopping(signum, frame):
+        """Signals request drainage; no provider work or SQL runs in this handler."""
+        stop.set()
+
+    previous = {
+        sig: signal.signal(sig, stopping) for sig in (signal.SIGTERM, signal.SIGINT)
+    }
+    assembled = None
+    try:
+        lease.check()
+        assembled = configure_background(configuration, stop=stop, heartbeat=heartbeat)
+        # Model-dependent runtime owners may be imported only after the fresh
+        # process has configured Django and admitted its SQL identity.
+        from .accounts.branding_cleanup import produce_cleanup
+        from .accounts.setup_mail import recover_pending as recover_setup_mail
+        from .accounts.setup_notifications import recover_pending as recover_setup_slack
+        from .accounts.setup_staging import produce_setup_expiry
+        from .jobs.processes import serve_consumer, serve_scheduler
+        from .source.production import SourceProducer
+        from .source.setup_cleanup import produce_setup_cleanup
+        from .source.setup_final_production import produce_finalization
+
+        publish_single_process_receipts(configuration, assembled.receipts)
+        emit(Event.STARTUP_VALIDATED)
+        if configuration.service_role in {
+            ServiceRole.WORKER,
+            ServiceRole.MAIL_DISPATCH,
+        }:
+            return serve_consumer(
+                assembled.broker, lease=lease, stop=stop, heartbeat=heartbeat
+            )
+        producer = SourceProducer(uuid4())
+
+        def produce(guard):
+            """Expire abandoned setup even while exact candidate recovery is pending.
+
+            Expiry uses its original SQL-bound login, never selects configuration,
+            and is needed to unblock a selected-but-unapplied setup abort. Normal
+            source production and file cleanup still require matching authority.
+            """
+            independent_producer(guard, produce_setup_expiry, guard)
+            finalization = independent_producer(
+                guard, produce_finalization, assembled.store, guard
+            )
+            try:
+                matching_authority(assembled.store)
+            except ConfigError:
+                from .accounts.setup_startup import initial_setup_hold
+
+                # A dead original session can still be expired above. While
+                # awaiting installer rollback, no ordinary producer is admitted.
+                initial_setup_hold(assembled.store)
+                return finalization
+            independent_producer(guard, recover_setup_mail)
+            independent_producer(guard, recover_setup_slack)
+            from .accounts.campaign_mail_delivery import recover_pending
+
+            independent_producer(guard, recover_pending)
+            return (
+                *finalization,
+                *independent_producer(guard, producer, guard),
+                *independent_producer(guard, produce_cleanup, guard),
+                *independent_producer(guard, produce_setup_cleanup, guard),
+            )
+
+        return serve_scheduler(
+            assembled.broker,
+            handlers=assembled.handlers,
+            lease=lease,
+            stop=stop,
+            heartbeat=heartbeat,
+            produce=produce,
+        )
+    finally:
+        stop.set()
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+        if assembled is not None:
+            assembled.broker.app.close()
+        from django.conf import settings
+        from django.db import connections
+
+        if settings.configured:
+            connections.close_all()
+
+
 def execute_runtime(args):
     """Admit the operator-rendered profile and retain exclusion until final exit."""
     configure_logging()
@@ -273,6 +437,9 @@ def execute_runtime(args):
             ServiceRole.WEB: serve_web,
             ServiceRole.CONFIG_INSTALLER: serve_configuration_installer,
             ServiceRole.CREDENTIAL_INSTALLER: serve_credential_installer,
+            ServiceRole.WORKER: serve_background,
+            ServiceRole.SCHEDULER: serve_background,
+            ServiceRole.MAIL_DISPATCH: serve_background,
         }
         runner = runners.get(configuration.service_role)
         if runner is None:

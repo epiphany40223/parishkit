@@ -24,6 +24,7 @@ from parishkit.stewardship.campaigns.lifecycle import (
 from parishkit.stewardship.campaigns.models import Campaign, CampaignWorkGate
 from parishkit.stewardship.campaigns.runtime import _now, campaign_facts
 from parishkit.stewardship.campaigns.work_locks import require_work_order
+from parishkit.stewardship.source.errors import SourceScopeChanged
 
 
 @dataclass(frozen=True)
@@ -125,5 +126,5 @@ def require_source_refresh(*, campaign_id):
         )
         or CampaignWorkGate.objects.filter(state__in=["preparing", "running"]).exists()
     ):
-        raise PermissionError("Source refresh is not currently admitted.")
+        raise SourceScopeChanged("Source refresh is not currently admitted.")
     return scope

@@ -22,6 +22,7 @@ from .authority import ConfigurationVersion, parse_version
 from .configuration_models import (
     AppliedConfigurationVersion,
     AppliedIntegration,
+    MinistryActivity,
     Parish,
 )
 from .configuration_schema import (
@@ -29,11 +30,26 @@ from .configuration_schema import (
     validate_sections,
     validator_for,
 )
+from .content_models import ContentVersion
+from .content_schema import SCHEMA as CONTENT_SCHEMA
+from .content_schema import remember_content
+from .ministry_activity import SCHEMA as MINISTRY_SCHEMA
+from .ministry_activity import remember_records
+from .source_cadence_schema import SCHEMA as CADENCE_SCHEMA
 
 POLICY_SCHEMAS = {
     "foundation-policy-v2",
     "campaign-foundation-v3",
     "bootstrap-policy-v1",
+    MINISTRY_SCHEMA,
+    CONTENT_SCHEMA,
+    CADENCE_SCHEMA,
+}
+CAMPAIGN_SCHEMAS = {
+    "campaign-foundation-v3",
+    MINISTRY_SCHEMA,
+    CONTENT_SCHEMA,
+    CADENCE_SCHEMA,
 }
 HISTORY_BATCH_SIZE = 64
 
@@ -45,8 +61,12 @@ def _normalized(document, schema=None):
     selected = schema or schema_for(document)
     if selected in POLICY_SCHEMAS:
         names += ("login_rules",)
-    if selected == "campaign-foundation-v3":
+    if selected in CAMPAIGN_SCHEMAS:
         names += ("campaigns", "schedules")
+    if selected in {MINISTRY_SCHEMA, CONTENT_SCHEMA, CADENCE_SCHEMA}:
+        names += ("ministries",)
+    if selected in {CONTENT_SCHEMA, CADENCE_SCHEMA}:
+        names += ("content",)
     return {name: sections.get(name, []) for name in names}
 
 
@@ -108,10 +128,41 @@ def _stored_projections(snapshot):
         from .policy_projections import stored_policy
 
         result["login_rules"] = stored_policy(snapshot)
-    if snapshot.validation_schema == "campaign-foundation-v3":
+    if snapshot.validation_schema in CAMPAIGN_SCHEMAS:
         from parishkit.stewardship.campaigns.projections import stored_campaigns
 
         result.update(stored_campaigns(snapshot))
+    if snapshot.validation_schema in {MINISTRY_SCHEMA, CONTENT_SCHEMA, CADENCE_SCHEMA}:
+        result["ministries"] = [
+            {
+                "id": str(row.record_id),
+                "values": {
+                    "organization_id": row.organization_id,
+                    "ministry_duid": row.ministry_duid,
+                    "active": row.active,
+                },
+            }
+            for row in sorted(
+                snapshot.ministry_activity.all(), key=lambda item: str(item.record_id)
+            )
+        ]
+    if snapshot.validation_schema in {CONTENT_SCHEMA, CADENCE_SCHEMA}:
+        result["content"] = [
+            {
+                "id": str(row.record_id),
+                "values": {
+                    "campaign_id": str(row.campaign_id),
+                    "kind": row.kind,
+                    "slot": row.slot,
+                    "subject": row.subject,
+                    "html": row.html,
+                    "text": row.text,
+                },
+            }
+            for row in sorted(
+                snapshot.content_versions.all(), key=lambda item: str(item.record_id)
+            )
+        ]
     return result
 
 
@@ -188,13 +239,28 @@ def _prefetch_history(rows):
         "addressrule_set__grants",
         "ministryassignment_set",
     )
-    campaign_rows = [
-        row for row in rows if row.validation_schema == "campaign-foundation-v3"
-    ]
+    campaign_rows = [row for row in rows if row.validation_schema in CAMPAIGN_SCHEMAS]
     prefetch_related_objects(
         campaign_rows,
         "campaign_configurations",
         "schedule_revisions",
+    )
+    prefetch_related_objects(
+        [
+            row
+            for row in rows
+            if row.validation_schema
+            in {MINISTRY_SCHEMA, CONTENT_SCHEMA, CADENCE_SCHEMA}
+        ],
+        "ministry_activity",
+    )
+    prefetch_related_objects(
+        [
+            row
+            for row in rows
+            if row.validation_schema in {CONTENT_SCHEMA, CADENCE_SCHEMA}
+        ],
+        "content_versions",
     )
     if campaign_rows:
         from parishkit.stewardship.campaigns.projections import sql_boundaries_match
@@ -251,6 +317,8 @@ def _verify_history(snapshot, candidate=None):
     try:
         parish_id = None
         by_kind, by_id, policy_ids = {}, {}, {}
+        ministry_ids, ministry_identities = {}, {}
+        content_ids = {}
         newer_policy = None
         newer_parish = None
         if candidate is not None:
@@ -259,6 +327,8 @@ def _verify_history(snapshot, candidate=None):
             parish_id = parishes[0]["id"] if parishes else None
             _remember_integrations(candidate, by_kind, by_id)
             newer_policy = _remember_policy(candidate, policy_ids)
+            remember_records(candidate, ministry_ids, ministry_identities)
+            remember_content(candidate, content_ids)
         for entry in _hydrated_history(snapshot):
             predecessor = entry.predecessor.digest if entry.predecessor_id else None
             version = verified_snapshot_version(entry, predecessor_digest=predecessor)
@@ -273,6 +343,8 @@ def _verify_history(snapshot, candidate=None):
             newer_parish = bool(parishes)
             _remember_integrations(version.document(), by_kind, by_id)
             has_policy = _remember_policy(version.document(), policy_ids)
+            remember_records(version.document(), ministry_ids, ministry_identities)
+            remember_content(version.document(), content_ids)
             if newer_policy is False and has_policy:
                 return False
             newer_policy = has_policy
@@ -411,4 +483,18 @@ def prepare_snapshot(version, *, actor_id, correlation_id):
         from parishkit.stewardship.campaigns.projections import prepare_campaigns
 
         prepare_campaigns(snapshot, document, attribution)
+        for record in document["sections"].get("ministries", []):
+            MinistryActivity.objects.create(
+                configuration=snapshot,
+                record_id=record["id"],
+                **record["values"],
+                **attribution,
+            )
+        for record in document["sections"].get("content", []):
+            ContentVersion.objects.create(
+                configuration=snapshot,
+                record_id=record["id"],
+                **record["values"],
+                **attribution,
+            )
         return snapshot

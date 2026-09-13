@@ -1,0 +1,5 @@
+{% load i18n stewardship %}
+<p>{% translate "Edit labels, set their order, or explicitly delete options. The blank last row adds an option. After saving, another blank row is available. Up to 100 options are supported." %}</p>
+<p>{% translate "Labels support parish_name and pronoun placeholders inside double braces. The Family portal chooses I or We from the Family's active Member count." %}</p>
+{{ formset.management_form }}{{ formset.non_form_errors }}
+{% for form in formset %}<fieldset class="panel"><legend>{% translate "Option" %} {{ forloop.counter|number }}</legend>{{ form.as_div }}</fieldset>{% endfor %}

@@ -102,11 +102,9 @@ def test_scope_change_can_only_reject_and_release_old_read(tmp_path):
     credential, execution, lease, store, version, actor = setup(tmp_path)
     attempt = begin_refresh_attempt(execution, lease, credential)
     add_draft(store, version, actor)
-    with pytest.raises(PermissionError), execution.effect():
+    with pytest.raises(PermissionError) as error, execution.effect():
         pytest.fail("Old window must not have new-work admission")
-    result = settle_failed_read(
-        execution, PermissionError("PRIVATE"), source_claim=lease
-    )
+    result = settle_failed_read(execution, error.value, source_claim=lease)
     assert result.state == "retry_wait"
     assert SourceSnapshot.objects.get(pk=attempt.snapshot_id).state == "rejected"
     assert SourceMutationLease.objects.get().owner_id is None

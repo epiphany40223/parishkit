@@ -1,0 +1,29 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Setup email test" %}{% endblock %}
+{% block content %}
+<p><a href="{% url 'admin:setup_preview' %}">{% translate "Return to exact setup preview" %}</a></p>
+<h1>{% translate "Setup email test" %}</h1>
+<p class="notice">{% translate "Testing mode. Send a fictional sample only to the designated Testing recipient. This does not contact parishioners, satisfy a scheduled mailing, or activate the campaign." %}</p>
+<p>{% translate "Test recipient" %}: {{ testing_recipient }}</p>
+<p>{% translate "If a selected template is empty, a generic fictional readiness sample is used. Provider acceptance does not guarantee inbox delivery; check the Testing mailbox." %}</p>
+{% include 'stewardship/setup-deadlines.html' %}
+<section class="panel" data-setup-mail data-mail-status-url="{% url 'admin:setup_mail_status' %}" data-mail-revision="{{ draft.status.version }}" data-mail-pending="{{ pending|yesno:'true,false' }}">
+<h2>{% translate "Send an explicit test" %}</h2>
+<form method="post">{% csrf_token %}
+{{ form.preview_token }}{{ form.request_key }}
+{{ form.non_field_errors }}{{ form.preview_token.errors }}{{ form.request_key.errors }}
+<p><label for="{{ form.slot.id_for_label }}">{{ form.slot.label }}</label>{{ form.slot }}{{ form.slot.errors }}</p>
+<p data-mail-uncertain {% if not unknown %}hidden{% endif %}>
+{{ form.acknowledge_unknown }}<label for="{{ form.acknowledge_unknown.id_for_label }}">{{ form.acknowledge_unknown.label }}</label>{{ form.acknowledge_unknown.errors }}</p>
+<button data-mail-send type="submit" {% if pending %}disabled{% endif %}>{% translate "Send test email" %}</button>
+</form>
+<p data-mail-status-error hidden role="status">{% translate "Status is unavailable or setup changed. Reload this page to check the current test before sending another." %}</p>
+<p>{% translate "This page checks status without extending your login's idle deadline. A missing result is never automatically resent." %}</p>
+<h2>{% translate "Recent tests" %}</h2>
+<ul>{% for item in items %}<li data-mail-id="{{ item.id }}">
+<time data-local-instant datetime="{{ item.created_at }}">{{ item.created_at }}</time> — <span data-mail-state role="status">{{ item.label }}</span>
+{% if not item.current %}<span>{% translate "Earlier setup revision" %}</span>{% endif %}
+</li>{% empty %}<li>{% translate "No test has been requested yet." %}</li>{% endfor %}</ul>
+<p><a href="{% url 'admin:setup_mail' %}">{% translate "Reload test status" %}</a></p>
+</section>
+{% endblock %}

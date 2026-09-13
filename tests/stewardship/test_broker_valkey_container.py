@@ -127,7 +127,8 @@ def connection(endpoint, role):
     )
 
 
-def test_real_transport_can_publish_consume_and_ack_one_uuid(valkey_endpoint):
+@pytest.mark.parametrize("recovery", ["reject", "visibility"])
+def test_real_transport_can_publish_consume_and_ack_one_uuid(valkey_endpoint, recovery):
     """The narrowed ACL supports actual Kombu operations, not just a guessed list."""
     producer = build_broker(
         endpoint=valkey_endpoint,
@@ -153,8 +154,17 @@ def test_real_transport_can_publish_consume_and_ack_one_uuid(valkey_endpoint):
             assert message.payload[1] == {}
             # Exercise the mutex/Lua and watch/transaction restoration paths as
             # well as ordinary ACK; both must remain within the worker's keys.
-            message.channel.qos.restore_visible(interval=1)
-            message.reject(requeue=True)
+            if recovery == "visibility":
+                qos = message.channel.qos
+                # Expire this disposable message's actual transport record,
+                # rather than waiting or merely exercising an empty scan.
+                message.channel.client.zadd(
+                    qos.unacked_index_key,
+                    {message.delivery_tag: time.time() - qos.visibility_timeout - 1},
+                )
+                qos.restore_visible(interval=1)
+            else:
+                message.reject(requeue=True)
             repeated = queue.get(no_ack=False)
             assert repeated.payload[0] == [str(hint.run_id)]
             repeated.ack()
@@ -171,6 +181,18 @@ def test_real_transport_can_publish_consume_and_ack_one_uuid(valkey_endpoint):
         (ServiceRole.WORKER, ("FLUSHDB",)),
         (ServiceRole.SCHEDULER, ("RPOP", BROKER_PREFIX + "general")),
         (ServiceRole.SCHEDULER, ("DEL", BROKER_PREFIX + "general")),
+        (
+            ServiceRole.SCHEDULER,
+            ("LPUSH", BROKER_PREFIX + "qos:mail-dispatch:unacked_mutex", "x"),
+        ),
+        (
+            ServiceRole.SCHEDULER,
+            ("SADD", BROKER_PREFIX + "qos:mail-dispatch:unacked_index", "x"),
+        ),
+        (
+            ServiceRole.SCHEDULER,
+            ("LPUSH", BROKER_PREFIX + "qos:backup-worker:unacked", "x"),
+        ),
         (ServiceRole.WEB, ("GET", BROKER_PREFIX + "general")),
     ],
 )

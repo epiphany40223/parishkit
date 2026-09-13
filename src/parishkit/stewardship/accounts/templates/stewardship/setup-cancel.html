@@ -1,0 +1,41 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Initial setup progress" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Initial setup progress" %}</h1>
+{% if attempt.state == 'expired' %}
+<p>{% translate "If provider-mounted consumers were already recreated, ask the operator to wait for credential rollback, then recreate worker and mail-dispatch using the documented initial-setup Compose topology. Restarting the configured services is not sufficient after candidate files have been removed." %}</p>
+<p role="status">{% translate "Cancellation is recorded. Background cleanup must restore the original configuration and remove temporary setup data before a new attempt can finish." %}</p>
+<p><a href="{% url 'admin:setup' %}">{% translate "Check setup status" %}</a></p>
+{% else %}
+<p role="status">{% translate "Setup is not complete yet. The system remains in Testing mode and no live campaign has started." %}</p>
+<p>{% translate "Configuration checkpoint" %}: {{ checkpoint }}</p>
+{% if credentials %}<ul>{% for item in credentials %}<li>{{ item.target }}: {{ item.request__state }}</li>{% endfor %}</ul>{% endif %}
+{% if not prepared %}
+<section class="panel"><h2>{% translate "Initial credential consumer step" %}</h2>
+<p>{% translate "Once the credential installers have staged their files, the deployment operator must recreate the actual worker and mail containers using the generated configured Compose topology (the Slack variant when enabled). Use the same Compose project as initial startup, not a second deployment." %}</p>
+<p>{% translate "Run the documented credential acknowledgement command inside each actual consumer after recreation. A one-off container does not acknowledge the real consumer. The installer retains rollback material until the final setup transaction succeeds." %}</p>
+<p>{% translate "Follow the Initial Setup section of the Stewardship runtime operator guide. The web application cannot recreate containers or access the Docker daemon." %}</p></section>
+{% endif %}
+{% if source %}
+<section class="panel"><h2>{% translate "Final source load" %}</h2>
+<p>{{ source.state }} — {{ source.phase }}</p>
+<p>{{ source.progress|out_of }}</p>
+<p>{% translate "Task reference" %}: <code>{{ source.id }}</code></p>
+{% if source.state == 'failed' or source.state == 'cancelled' %}<p role="alert">{% translate "Setup did not complete. Use the task reference to investigate the service logs, then cancel this attempt before starting again." %}</p>{% endif %}
+</section>
+{% elif prepared %}<p>{% translate "Credential acknowledgements and YAML preparation are complete. Waiting for the scheduler and final source worker." %}</p>{% endif %}
+<p><a href="{% url 'admin:setup_cancel' %}">{% translate "Refresh setup progress" %}</a></p>
+<p>{% translate "This page does not renew your original login's idle or absolute deadlines." %}</p>
+<section class="panel" aria-label="{% translate 'Final setup deadlines' %}">
+<p>{% translate "Idle deadline:" %} <time data-local-instant datetime="{{ deadlines.idle_at|date:'c' }}">{{ deadlines.idle_at|date:'c' }}</time></p>
+<p>{% translate "Absolute session deadline:" %} <time data-local-instant datetime="{{ deadlines.absolute_at|date:'c' }}">{{ deadlines.absolute_at|date:'c' }}</time></p>
+<p>{% translate "Final setup must complete before these deadlines. Interrupted work can resume only while this original login remains valid. Expiry cancels unfinished setup; after cleanup, sign out and sign in to start again." %}</p>
+</section>
+<p>{% translate "This will permanently end your initial setup attempt. Your original Administrator access will be preserved. This cannot undo a completed setup." %}</p>
+<form method="post">{% csrf_token %}
+<input type="hidden" name="attempt" value="{{ attempt.attempt_id }}">
+<button type="submit">{% translate "Cancel initial setup" %}</button>
+</form>
+{% endif %}
+<form method="post" action="{% url 'admin:logout' %}">{% csrf_token %}<button type="submit">{% translate "Sign out" %}</button></form>
+{% endblock %}

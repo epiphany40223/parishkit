@@ -13,7 +13,7 @@ from parishkit.parishsoft_households import load_family_slice
 from parishkit.parishsoft_source import CoherentParishSoftClient
 
 from .canonical import InvalidSourcePayload
-from .corpus import KINDS, normalize_core
+from .corpus import KINDS, _scalar, normalize_core
 from .cursors import delta_dates
 from .loading import SourceLoad, validate_count_trend
 from .windows import RefreshWindow
@@ -156,13 +156,16 @@ def load_delta_source(
             for identifier in indications.family_ids
         }
         _composition(base, households)
-        groups = load_family_groups(client) if households else {}
-        if households:
-            for family in base["family"].values():
-                if family.get("family_group") != groups.get(family.get("famGroupID")):
-                    raise ChangeFeedIncomplete(
-                        "Changed Family group definitions require full refresh."
-                    )
+        # Lookup definitions may change without a Family feed indication. Even
+        # an empty delta must not bless stale eligibility labels as fresh truth.
+        groups = load_family_groups(client)
+        for family in base["family"].values():
+            if family.get("family_group") != _scalar(
+                groups.get(family.get("famGroupID"))
+            ):
+                raise ChangeFeedIncomplete(
+                    "Changed Family group definitions require full refresh."
+                )
         updated = normalize_core(
             _slice_data(client.expected_organization_id, households, groups),
             as_of=as_of,

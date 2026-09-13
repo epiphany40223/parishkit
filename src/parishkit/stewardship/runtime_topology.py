@@ -3,7 +3,8 @@
 The renderer is non-mutating. An operator command writes its documents only to
 explicit private configuration targets. Images and process counts are concrete;
 there are no compose-time secret substitutions, broad credential mounts or
-readiness-based proxy removal. Later-phase workers remain explicitly pending.
+readiness-based proxy removal. Only the compiled source task registry is enabled;
+later-phase delivery, publication and backup workers remain explicitly pending.
 """
 
 import re
@@ -65,7 +66,7 @@ def _image(value, profile):
     return value
 
 
-def _service_config(configuration, role, *, target=None):
+def _service_config(configuration, role, *, target=None, provider_mode="configured"):
     """Each process sees only its credential references and independent SQL login."""
     from .runtime_grants import login_name
 
@@ -78,6 +79,16 @@ def _service_config(configuration, role, *, target=None):
     else:
         names = {target} if target else ALLOWED_SECRETS.get(role, set())
     secrets = {key: layout.credential(key) for key in names}
+    document_name = name
+    if role in {ServiceRole.WORKER, ServiceRole.MAIL_DISPATCH}:
+        if provider_mode != "configured-slack":
+            secrets.pop("slack", None)
+        if provider_mode == "initial":
+            secrets.pop("parishsoft", None)
+            secrets.pop("google_workspace", None)
+            document_name += "-initial"
+        elif provider_mode == "configured-slack" and role is ServiceRole.WORKER:
+            document_name += "-slack"
     if target:
         secrets["handoff_private"] = layout.handoff(target)
     if role is ServiceRole.MIGRATION:
@@ -91,7 +102,7 @@ def _service_config(configuration, role, *, target=None):
         service_role=role,
         credential_target=target,
         secrets=secrets,
-        configuration_file=service_configuration_file(configuration, name),
+        configuration_file=service_configuration_file(configuration, document_name),
         postgres=replace(
             configuration.postgres,
             user=database_user,
@@ -108,7 +119,13 @@ def _service_config(configuration, role, *, target=None):
         valkey=replace(
             configuration.valkey,
             password_file=layout.valkey_password(role.value)
-            if role is ServiceRole.WEB
+            if role
+            in {
+                ServiceRole.WEB,
+                ServiceRole.WORKER,
+                ServiceRole.SCHEDULER,
+                ServiceRole.MAIL_DISPATCH,
+            }
             else None,
         ),
     )
@@ -148,22 +165,36 @@ def _online_mounts(configuration):
             result.append(bind(path.parent, read_only=False))
         else:
             result.append(bind(path))
-    if role is ServiceRole.WEB:
+    if role in {
+        ServiceRole.WEB,
+        ServiceRole.WORKER,
+        ServiceRole.SCHEDULER,
+        ServiceRole.MAIL_DISPATCH,
+    }:
         if configuration.valkey.password_file is None:
-            raise ConfigError("The web limiter needs its individual Valkey credential.")
+            raise ConfigError("The service needs its individual Valkey credential.")
+        result.append(bind(configuration.valkey.password_file))
+    if role is ServiceRole.WEB:
         result += [
-            bind(configuration.valkey.password_file),
             bind(configuration.postgres.download_password_file),
             *(
                 bind(configuration.paths[name], read_only=False)
                 for name in ("reports", "media")
             ),
         ]
+    if role is ServiceRole.WORKER:
+        result.append(bind(configuration.paths["media"], read_only=False))
     return result
 
 
-def render_runtime(configuration, *, image, checkout=None):
+def render_runtime(configuration, *, image, checkout=None, provider_mode="configured"):
     """Build one complete foundation topology, with independent offline profiles."""
+    if type(provider_mode) is not str or provider_mode not in {
+        "initial",
+        "configured",
+        "configured-slack",
+    }:
+        raise ConfigError("Unknown runtime provider mount mode.")
     configuration = resolve_database_files(configuration)
     configuration = resolve_valkey_files(configuration)
     RuntimeLayout(configuration).validate()
@@ -184,9 +215,9 @@ def render_runtime(configuration, *, image, checkout=None):
     if budget.replicas != 1:
         raise ConfigError("Operational runtime requires one web container.")
     targets = sorted(SECRET_NAMES - {"handoff_private"})
-    # Reserve concrete SQL slots even before source handlers enable these
-    # services: configuration/target installers + worker main/renewal + scheduler.
-    budget.validate_topology(background_processes=1 + len(targets) + 3)
+    # Configuration/target installers + worker/mail main/renewal + scheduler each
+    # retain their own reserved SQL slots, independent of interactive headroom.
+    budget.validate_topology(background_processes=1 + len(targets) + 5)
     image = _image(image, configuration.profile)
     if checkout is not None and (
         configuration.profile is not DeploymentProfile.DEVELOPMENT
@@ -194,7 +225,13 @@ def render_runtime(configuration, *, image, checkout=None):
     ):
         raise ConfigError("Source mounts require an explicit development checkout.")
     services, documents = {}, {}
-    roles = [(ServiceRole.WEB, None), (ServiceRole.CONFIG_INSTALLER, None)]
+    roles = [
+        (ServiceRole.WEB, None),
+        (ServiceRole.CONFIG_INSTALLER, None),
+        (ServiceRole.WORKER, None),
+        (ServiceRole.MAIL_DISPATCH, None),
+        (ServiceRole.SCHEDULER, None),
+    ]
     roles += [(ServiceRole.CREDENTIAL_INSTALLER, target) for target in targets]
     roles += [
         (role, None)
@@ -206,8 +243,14 @@ def render_runtime(configuration, *, image, checkout=None):
         )
     ]
     for role, target in roles:
-        selected = _service_config(configuration, role, target=target)
-        name = selected.configuration_file.stem
+        selected = _service_config(
+            configuration, role, target=target, provider_mode=provider_mode
+        )
+        # All modes describe the same Compose service identities. Only the
+        # individual configuration and provider mounts change on recreation.
+        name = (
+            "credential-installer-" + target.replace("_", "-") if target else role.value
+        )
         documents[selected.configuration_file] = deployment_document(selected)
         service = _application(image, budget)
         if role in {
@@ -244,8 +287,16 @@ def render_runtime(configuration, *, image, checkout=None):
                 "timeout": "4s",
                 "retries": 3,
             }
-            if role is ServiceRole.WEB:
+            if role in {
+                ServiceRole.WEB,
+                ServiceRole.WORKER,
+                ServiceRole.MAIL_DISPATCH,
+            } or (
+                role is ServiceRole.CREDENTIAL_INSTALLER
+                and target in {"parishsoft", "google_workspace", "slack"}
+            ):
                 service["networks"]["application-egress"] = {}
+            if role is ServiceRole.WEB:
                 service["healthcheck"] = {
                     "test": ["CMD", "pk-stewardship", "healthcheck"],
                     "interval": "10s",

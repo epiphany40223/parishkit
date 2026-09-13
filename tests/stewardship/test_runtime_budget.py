@@ -10,7 +10,7 @@ from parishkit.stewardship.runtime_budget import RuntimeBudget, parse_budget
 
 def test_default_budget_accounts_for_all_classes_and_overlap():
     budget = RuntimeBudget()
-    assert budget.total_connections == 91
+    assert budget.total_connections == 95
     assert parse_budget({}) == budget
     budget.validate_database(maximum=100, reserved=3)
     budget.validate_database(maximum=200, reserved=2)
@@ -18,7 +18,7 @@ def test_default_budget_accounts_for_all_classes_and_overlap():
         replace(budget, replicas=3)
     budget.validate_topology(background_processes=13)
     with pytest.raises(ConfigError):
-        budget.validate_topology(background_processes=17)
+        budget.validate_topology(background_processes=19)
 
 
 def test_health_connections_are_already_in_the_auxiliary_reserve():
@@ -28,7 +28,9 @@ def test_health_connections_are_already_in_the_auxiliary_reserve():
     from parishkit.stewardship.database_provisioning import role_limit
     from parishkit.stewardship.deployment import ServiceRole
 
-    budget = RuntimeBudget(download_pool_per_process=4, download_capacity=8)
+    budget = RuntimeBudget(
+        download_pool_per_process=4, download_capacity=8, database_connections=110
+    )
     config = SimpleNamespace(runtime_budget=budget)
     assert (
         budget.auxiliary_connections
@@ -43,7 +45,7 @@ def test_health_connections_are_already_in_the_auxiliary_reserve():
             + budget.operator_connections
             + budget.database_reserved
         )
-        == 99
+        == 103
     )
     with pytest.raises(ConfigError):
         replace(budget, auxiliary_connections=7)
@@ -58,6 +60,7 @@ def test_background_inventory_includes_worker_renewal_and_rollout_overlap():
     config = load_deployment(environ={})
     roles = {
         ServiceRole.WORKER,
+        ServiceRole.MAIL_DISPATCH,
         ServiceRole.SCHEDULER,
         ServiceRole.CONFIG_INSTALLER,
         ServiceRole.CREDENTIAL_INSTALLER,
@@ -67,8 +70,9 @@ def test_background_inventory_includes_worker_renewal_and_rollout_overlap():
         for _, _, role, _ in database_identities()
         if role in roles
     )
-    assert used == config.runtime_budget.background_connections == 32
+    assert used == config.runtime_budget.background_connections == 36
     assert role_limit(config, ServiceRole.WORKER) == 4
+    assert role_limit(config, ServiceRole.MAIL_DISPATCH) == 4
     assert role_limit(config, ServiceRole.SCHEDULER) == 2
     doubled = replace(
         config, runtime_budget=replace(config.runtime_budget, rollout_overlap=1)

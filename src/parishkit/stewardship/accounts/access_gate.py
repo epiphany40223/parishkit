@@ -51,6 +51,11 @@ class AccessGateMiddleware(MiddlewareMixin):
         )
         if (not admin and not family) or request.path_info in AUTH_ROUTES:
             return None
+        if request.path_info == "/admin/setup/cancel":
+            # The dedicated view authenticates only the original setup login
+            # against its still-applied bootstrap predecessor. No other route
+            # may use that narrow selected-but-unapplied cancellation exception.
+            return None
         try:
             service = runtime()
             configured = service.configured()
@@ -60,7 +65,8 @@ class AccessGateMiddleware(MiddlewareMixin):
             if (
                 configured
                 and not restored
-                and request.path_info not in {"/admin/setup", "/admin/maintenance"}
+                and request.path_info != "/admin/maintenance"
+                and not _setup_path(request.path_info)
             ):
                 # Ordinary views own current-policy authentication, including
                 # expiry revocation and privilege-change cookie rotation. This
@@ -79,7 +85,10 @@ class AccessGateMiddleware(MiddlewareMixin):
                 return self._unavailable(
                     request, "setup", admin, principal if admin else None
                 )
-            if request.path_info in {"/admin/setup", "/admin/maintenance"}:
+            if (
+                _setup_path(request.path_info)
+                or request.path_info == "/admin/maintenance"
+            ):
                 return HttpResponseRedirect("/admin/")
         except (ConfigError, LimiterUnavailable):
             # Keep the missing-runtime scaffold closed, with a stable retry URL.
@@ -89,20 +98,21 @@ class AccessGateMiddleware(MiddlewareMixin):
         return None
 
     def _unavailable(self, request, kind, admin, principal):
-        """An Admin may reach only the matching placeholder/future owner workflow."""
+        """An Admin may reach only the matching owning workflow and its subroutes."""
         if admin and "administrator" in principal.roles:
             destination = "/admin/" + kind
-            if request.path_info == destination:
+            if request.path_info == destination or (
+                kind == "setup" and _setup_path(request.path_info)
+            ):
                 return None
             if request.method in {"GET", "HEAD"}:
                 return HttpResponseRedirect(destination)
         return status_page(request, kind=kind, admin=admin)
 
 
-@require_safe
-def setup(request):
-    """ADM-02 owns the transactional wizard; this route offers no partial writes."""
-    return status_page(request, kind="setup", admin=True)
+def _setup_path(path):
+    """Match the exact setup namespace, never a similarly prefixed Admin route."""
+    return path == "/admin/setup" or path.startswith("/admin/setup/")
 
 
 @require_safe

@@ -43,15 +43,22 @@ def pin_snapshot(snapshot_id, *, parent_kind, parent_id, admit, expires_at=None)
         return pin
 
 
-def release_snapshot_pin(pin_id, *, admit):
-    """Release only the named parent's protection; no other pin is shortened."""
+def release_snapshot_pin(pin_id, *, parent_kind, parent_id, admit):
+    """Release the exact parent; admission receives its pin, never another owner."""
+    if (
+        not isinstance(parent_id, UUID)
+        or type(parent_kind) is not str
+        or not parent_kind
+    ):
+        raise ValueError("Source release requires an explicit parent identity.")
     with transaction.atomic():
-        existing = SourceSnapshotPin.objects.filter(pk=pin_id).first()
+        selected = SourceSnapshotPin.objects.filter(
+            pk=pin_id, parent_kind=parent_kind, parent_id=parent_id
+        )
+        existing = selected.first()
         if existing is None:
             _admit(admit, "unpin", None)
             return False
-        snapshot = SourceSnapshot.objects.select_for_update().get(
-            pk=existing.snapshot_id
-        )
-        _admit(admit, "unpin", snapshot)
-        return SourceSnapshotPin.objects.filter(pk=pin_id).delete()[0] == 1
+        SourceSnapshot.objects.select_for_update().get(pk=existing.snapshot_id)
+        _admit(admit, "unpin", existing)
+        return selected.delete()[0] == 1

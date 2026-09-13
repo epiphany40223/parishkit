@@ -2,7 +2,9 @@
 
 This separate historical discriminator avoids inventing a parish, phone or logo
 just to admit the initial Google Administrator. Successors of this shape exist
-only for additive offline account recovery while setup remains incomplete.
+for additive offline account recovery while setup remains incomplete. The
+explicit initial-setup request format alone adds the complete parish and draft
+campaign; ordinary public-setting patches cannot reinterpret this minimal base.
 """
 
 from uuid import UUID, uuid5

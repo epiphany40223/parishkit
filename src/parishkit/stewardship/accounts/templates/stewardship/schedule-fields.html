@@ -1,0 +1,4 @@
+{% load i18n stewardship %}
+{{ schedules.management_form }}{{ schedules.non_form_errors }}
+<p>{% translate "The blank last row adds a schedule. Saving makes another blank row available. Every saved row must remain present or be explicitly marked for deletion; its mail type cannot change." %}</p>
+{% for form in schedules %}<fieldset class="panel"><legend>{% translate "Schedule" %} {{ forloop.counter|number }}</legend>{{ form.as_div }}</fieldset>{% endfor %}

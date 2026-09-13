@@ -1,0 +1,16 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Parish settings" %}{% endblock %}
+{% block content %}
+<p><a href="{% url 'admin:index' %}">{% translate "Administration" %}</a></p>
+<h1>{% translate "Parish settings" %}</h1>
+<section id="testing-mode" class="panel"><h2>{% translate "Operating mode" %}</h2>
+<p>{{ configuration.mode|capfirst }}</p>
+{% if configuration.mode == 'testing' %}<p>{% translate "Test recipient:" %} {{ configuration.testing_recipient }}</p>{% endif %}
+<p>{% translate "Production activation is a separate campaign readiness workflow, not a profile setting." %}</p></section>
+<p class="notice">{% translate "Changing the Parish timezone affects general presentation and future campaign drafts. Existing campaign timezones, dates, schedules and historical reports do not change." %}</p>
+<form method="post" class="panel">
+  {% csrf_token %}<input type="hidden" name="action" value="preview">
+  {{ form.as_div }}
+  <button type="submit">{% translate "Preview changes" %}</button>
+</form>
+{% endblock %}

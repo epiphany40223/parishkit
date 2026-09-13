@@ -20,6 +20,7 @@ from parishkit.parishsoft import (
 from parishkit.parishsoft_transport import (
     BoundedSourceSession,
     ExactSourceResponse,
+    InvalidSourceResponse,
     SourceTransportDrainFailure,
     SourceTransportError,
 )
@@ -396,7 +397,9 @@ def test_shared_transport_retries_have_a_finite_exhaustion_bound(tmp_path, monke
     assert exchange.call_count == 3
 
 
-@pytest.mark.parametrize("error", [PermissionError, SourceTransportDrainFailure])
+@pytest.mark.parametrize(
+    "error", [PermissionError, SourceTransportDrainFailure, InvalidSourceResponse]
+)
 def test_shared_retry_never_retries_admission_loss_or_unknown_drain(
     tmp_path, monkeypatch, error
 ):
@@ -444,5 +447,35 @@ def test_cache_flag_requires_exact_boolean(tmp_path, value):
 def test_empty_success_frame_cannot_become_a_valid_empty_collection(monkeypatch):
     """Shared legacy empty-body handling does not weaken coherent-source reads."""
     monkeypatch.setattr(transport, "_exchange", lambda *args, **kwargs: b"200\n")
-    with pytest.raises(SourceTransportError, match="no JSON body"):
+    with pytest.raises(InvalidSourceResponse, match="no JSON body"):
         session().get(request()["url"], timeout=30)
+
+
+def test_helper_reports_deterministic_body_failure_without_private_text(monkeypatch):
+    """Malformed bodies have a distinct closed IPC outcome, not a network error."""
+    from types import SimpleNamespace
+
+    output = io.BytesIO()
+    monkeypatch.setattr(
+        helper.sys,
+        "stdin",
+        SimpleNamespace(buffer=io.BytesIO(json.dumps(request()).encode())),
+    )
+    monkeypatch.setattr(helper.sys, "stdout", SimpleNamespace(buffer=output))
+    monkeypatch.setattr(helper.logging, "disable", Mock())
+    monkeypatch.setattr(
+        helper, "perform", Mock(side_effect=InvalidSourceResponse("PRIVATE"))
+    )
+    assert helper.main() == 2
+    assert output.getvalue() == b"INVALID\n"
+
+
+def test_parent_does_not_retry_deterministic_helper_failure(monkeypatch):
+    """Recognize only the exact nontransient marker and still reap the helper."""
+    process = Mock(stdin=io.BytesIO(), stdout=io.BytesIO(), returncode=2)
+    process.communicate.return_value = (b"INVALID\n", None)
+    process.poll.return_value = 2
+    monkeypatch.setattr(transport.subprocess, "Popen", Mock(return_value=process))
+    with pytest.raises(InvalidSourceResponse):
+        transport._exchange(b"synthetic", seconds=30, check=lambda: None)
+    assert process.stdin.closed and process.stdout.closed

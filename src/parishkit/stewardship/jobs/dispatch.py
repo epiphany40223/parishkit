@@ -58,6 +58,7 @@ class Handler:
     execute: Callable
     recover: Callable | None = None
     scope: Callable = nullcontext
+    pulse: Callable | None = None
 
     def __post_init__(self):
         """Reject incomplete handlers before any durable task can be claimed."""
@@ -67,6 +68,7 @@ class Handler:
                 callable(value) for value in (self.admit, self.execute, self.scope)
             )
             or (self.recover is not None and not callable(self.recover))
+            or (self.pulse is not None and not callable(self.pulse))
         ):
             raise ValueError("A complete internal task handler is required.")
 

@@ -116,6 +116,12 @@ def test_complete_successor_can_follow_bootstrap_but_not_regress(bootstrapped):
     document = configuration_document()
     document["predecessor_digest"] = root.digest
     document["sections"]["login_rules"] = root.document()["sections"]["login_rules"]
+    from .test_branding_postgresql import ready
+
+    # A complete setup successor now needs normalized branding receipts, not
+    # arbitrary placeholder UUIDs. Files are tested by the owning media workflow.
+    _, branding = ready(root, actor)
+    document["sections"]["parish"][0]["values"]["branding"] = branding
     successor = configuration_version(document)
     prepare_snapshot(successor, actor_id=actor, correlation_id=uuid4())
     assert is_prepared(successor.digest)
@@ -313,6 +319,42 @@ def test_initial_bootstrap_refuses_unrelated_existing_data(tmp_path):
         materialize_initial_files(configuration, identity)
     assert not AppliedConfigurationVersion.objects.exists()
     assert User.objects.filter(username="existing-account").exists()
+
+
+@pytest.mark.parametrize(
+    "kind", ["pristine", "lease-attribution", "pointer-attribution"]
+)
+def test_bootstrap_admits_only_pristine_migration_source_sentinels(tmp_path, kind):
+    """Fresh migration seeds are not source activity; nondefault attribution is."""
+    from parishkit.stewardship.source.models import SourceMutationLease
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+
+    lease_defaults = {"actor_id": uuid4()} if kind == "lease-attribution" else {}
+    pointer_defaults = {"actor_id": uuid4()} if kind == "pointer-attribution" else {}
+    SourceMutationLease.objects.update_or_create(
+        singleton=True, defaults=lease_defaults
+    )
+    SourceCurrent.objects.update_or_create(singleton=True, defaults=pointer_defaults)
+    store = AuthorityStore(tmp_path, validate_sections)
+    root = bootstrap_version(uuid4(), "admin@example.org")
+
+    def bootstrap():
+        """Use actual root materialization, including the SQL empty-database trigger."""
+        prepare_initial_configuration(
+            store,
+            root,
+            testing_recipient="test@example.org",
+            actor_id=uuid4(),
+            correlation_id=uuid4(),
+        )
+
+    if kind == "pristine":
+        bootstrap()
+        assert coherent_configuration(store).active_configuration_id == root.version_id
+    else:
+        with pytest.raises(IntegrityError, match="cannot adopt"):
+            bootstrap()
+        assert not AppliedConfigurationVersion.objects.exists()
 
 
 def test_bootstrap_refuses_unreviewed_row_security_even_on_empty_table(tmp_path):

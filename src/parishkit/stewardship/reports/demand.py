@@ -59,7 +59,11 @@ def request_rebuild(inputs, *, admit):
         if (
             source.generation < row.requested_source_generation
             or inputs.submission_watermark < row.requested_submission_watermark
-            or inputs.through_date < row.requested_through_date
+            or (
+                inputs.timezone_configuration_id
+                == row.requested_timezone_configuration_id
+                and inputs.through_date < row.requested_through_date
+            )
         ):
             raise FactUnavailable("Interactive fact demand cannot regress.")
     now = database_now()

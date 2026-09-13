@@ -323,7 +323,18 @@ def reconcile_families(
         population.refresh_from_db(fields=["version"])
         population.population_dirty = False
         population.version += 1
-        population.save()
+        # Source refresh owns population evidence, never go-live/restore gates.
+        # Explicit columns let its SQL login retain that same boundary.
+        population.save(
+            update_fields=[
+                "source_snapshot_id",
+                "source_generation",
+                "eligibility_digest",
+                "eligible_count",
+                "population_dirty",
+                "version",
+            ]
+        )
         if campaign.active_token_generation_id is not None:
             from .link_tokens import extend_active_generation
 

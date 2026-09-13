@@ -229,6 +229,8 @@ def test_root_and_stewardship_build_exclusions_stay_synchronized():
     # Re-including a directory implicitly admits unlisted descendants, too.
     assert not any(line.endswith("/") for line in rules)
     assert "!**" not in rules and "!src/**" not in rules
+    assert "!src/parishkit/stewardship/accounts/timezone_names_v1.txt" in rules
+    assert "!src/**/*.txt" not in rules
 
 
 @pytest.mark.parametrize("document", ["README.md", "docs/development/stewardship.md"])

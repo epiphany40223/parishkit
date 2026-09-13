@@ -20,6 +20,7 @@ import requests
 from parishkit.parishsoft_http_worker import (
     MAX_REQUEST_BYTES,
     MAX_RESPONSE_BYTES,
+    InvalidSourceResponse,
     validate_request,
 )
 
@@ -123,7 +124,11 @@ def _exchange(payload, *, seconds, check):
                     "Source request pipe is unavailable."
                 ) from None
         check()
-        if process.returncode != 0 or len(output) > MAX_RESPONSE_BYTES + 4:
+        if (process.returncode == 2 and output == b"INVALID\n") or len(
+            output
+        ) > MAX_RESPONSE_BYTES + 4:
+            raise InvalidSourceResponse("Source response violates its body contract.")
+        if process.returncode != 0:
             raise SourceTransportError(
                 "Source request did not return a valid response."
             )
@@ -200,7 +205,7 @@ class BoundedSourceSession:
         response = ExactSourceResponse()
         response.status_code = int(status)
         if 200 <= response.status_code < 300 and not body:
-            raise SourceTransportError("Source response contains no JSON body.")
+            raise InvalidSourceResponse("Source response contains no JSON body.")
         response.url = url  # No query strings, request headers or original request.
         response.encoding = "utf-8"
         response._content = body if 200 <= response.status_code < 300 else b""

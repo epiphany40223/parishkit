@@ -98,11 +98,11 @@ Valkey file-map identities are `web`, `worker`, `scheduler`, `mail-dispatch`
 and `backup-worker`. The scalar reference belongs only to the input profile's
 identity; disagreeing scalar and map references are rejected. Fresh runtime
 provisioning defaults these individual paths below `credentials/valkey/`,
-creates only the implemented web/worker/scheduler credentials, and puts only
+creates the implemented web/worker/scheduler/mail-dispatch credentials, and puts only
 password hashes in the server-only ACL. Each consumer receives only its own
 file mount. Independent credentials cannot alias SQL files, writable application
 storage, credential-installer targets, each other or the ACL itself. Declaring a
-future identity does not provision it or enable its runtime.
+future backup-worker identity does not provision it or enable its runtime.
 
 Service identities are `web`, `worker`, `scheduler`, `config-installer`,
 `credential-installer`, `backup-worker`, `mail-dispatch`, `token-key-rotation`,

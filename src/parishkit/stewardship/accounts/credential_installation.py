@@ -45,14 +45,17 @@ class CredentialInstaller:
     tests, but still cannot bypass actual database identity and grant checks.
     """
 
-    def __init__(self, files, *, validate):
+    def __init__(self, files, *, validate, validate_request=None):
         if not isinstance(files, CredentialFiles) or not callable(validate):
             raise TypeError("Credential files and target validation are required.")
         self.files, self.validate = files, validate
+        if validate_request is not None and not callable(validate_request):
+            raise TypeError("Request validation must be callable.")
+        self.validate_request = validate_request
         self.target = files.private.target
 
     @classmethod
-    def from_configuration(cls, configuration, *, validate):
+    def from_configuration(cls, configuration, *, validate, validate_request=None):
         """Admit actual mounts and SQL identity before loading the one private key."""
         if admit_online_service(configuration) is not ServiceRole.CREDENTIAL_INSTALLER:
             raise ConfigError("A target-specific credential installer is required.")
@@ -66,6 +69,7 @@ class CredentialInstaller:
                 PrivateHandoff(configuration.credential_target, ring.active),
             ),
             validate=validate,
+            validate_request=validate_request,
         )
 
     def _read(self, identifier):
@@ -106,7 +110,12 @@ class CredentialInstaller:
             value.decode("utf-8")
             valid = (
                 credential_receipt(value, self.target) == staged.fingerprint
-                and self.validate(value) is True
+                and (
+                    self.validate_request(row.pk, value)
+                    if self.validate_request is not None
+                    else self.validate(value)
+                )
+                is True
             )
         except CredentialValidationUnavailable:
             # Retain testing state and sealed input; the owning loop retries
@@ -170,7 +179,16 @@ class CredentialInstaller:
             current = self._read(row.pk)
             if current.state != "awaiting_ack":
                 return current
-            if current.expires_at <= _now():
+            from .setup_credential_installation import initial_state
+
+            initial = initial_state(current)
+            if initial is not None and initial[0]:
+                # Initial consumer ACKs are readiness, not final setup commit.
+                # Keep the predecessor and candidate file journal until then.
+                return current
+            if initial is not None:
+                reason = "applied" if initial[1] is not None else "expired"
+            elif current.expires_at <= _now():
                 reason = "expired"
             else:
                 acknowledgements = dict(
@@ -310,7 +328,15 @@ class CredentialInstaller:
                             record_terminal=partial(self._terminal, row.pk),
                         )
                     return _receipt(row)
-                if row.state != "cleanup_pending" and row.expires_at <= _now():
+                from .setup_credential_installation import initial_state
+
+                initial = initial_state(row)
+                expired = (
+                    not initial[0] and initial[1] is None
+                    if initial is not None
+                    else row.expires_at <= _now()
+                )
+                if row.state != "cleanup_pending" and expired:
                     row = self._advance(
                         row.pk, row.state, "cleanup_pending", reason="expired"
                     )

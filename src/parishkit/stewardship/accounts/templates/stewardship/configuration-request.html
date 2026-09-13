@@ -1,0 +1,16 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Configuration change status" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Configuration change status" %}</h1>
+<section class="panel" role="status" aria-live="polite">
+{% if receipt.state == 'applied' %}
+  <h2>{% translate "Applied" %}</h2><p>{% translate "The change has an activated YAML and database version." %}</p>
+{% elif receipt.state == 'failed' or receipt.state == 'cancelled' %}
+  <h2>{% translate "Not applied" %}</h2><p>{% translate "Review the current configuration before starting a new change." %}</p>
+{% else %}
+  <h2>{% translate "Applying" %}</h2><p>{% translate "The installer has not yet confirmed activation. This is not a saved configuration change." %}</p>
+{% endif %}
+  <p>{% translate "Request:" %} {{ receipt.request_id }}</p>
+</section>
+<p><a href="{% url 'admin:configuration_request' receipt.request_id %}">{% translate "Refresh status" %}</a> · <a href="{% url 'admin:ministries' %}">{% translate "Ministry activity" %}</a> · <a href="/admin/">{% translate "Administration" %}</a></p>
+{% endblock %}

@@ -86,15 +86,30 @@ def recover_rebuild(demand_id, claim, *, revision, admit):
         demand = CampaignFactRebuildDemand.objects.select_for_update().get(pk=demand_id)
         if demand.claimed_revision != revision or demand.claimed_generation_id is None:
             raise FactUnavailable("Rebuild recovery no longer owns this revision.")
+        same = (
+            demand.claimed_task_id == claim.run_id
+            and demand.claimed_task_fence == claim.fence
+            and demand.claimed_worker_id == claim.worker_id
+        )
+        if not same:
+            # A ready generation does not release its interactive demand. The
+            # original builder can still be between publish and completion.
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT stewardship_fact_live(%s,%s,%s)",
+                    (
+                        demand.claimed_task_id,
+                        demand.claimed_task_fence,
+                        demand.claimed_worker_id,
+                    ),
+                )
+                if cursor.fetchone()[0]:
+                    raise FactUnavailable("A live fact builder still owns this demand.")
         record = CampaignDailyFactSet.objects.select_for_update().get(
             pk=demand.claimed_generation_id
         )
         _recover(record, claim, admit)
-        if (
-            demand.claimed_task_id == claim.run_id
-            and demand.claimed_task_fence == claim.fence
-            and demand.claimed_worker_id == claim.worker_id
-        ):
+        if same:
             lock_task_claim(claim)
             return demand
         demand.claimed_task_id, demand.claimed_task_fence = claim.run_id, claim.fence

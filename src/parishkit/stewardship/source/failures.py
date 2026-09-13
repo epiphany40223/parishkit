@@ -12,8 +12,8 @@ from django.db import connection
 
 from parishkit.parishsoft import ParishSoftAPIError
 from parishkit.parishsoft_pagination import IncompleteSourceCollection
-from parishkit.parishsoft_transport import SourceTransportError
-from parishkit.retry import RetryError
+from parishkit.parishsoft_transport import InvalidSourceResponse, SourceTransportError
+from parishkit.retry import RetryError, TransientRetryError
 from parishkit.stewardship.accounts.cryptography import CryptographicError
 from parishkit.stewardship.audit.schemas import ContextKind, Outcome
 from parishkit.stewardship.audit.services import operational
@@ -26,13 +26,15 @@ from parishkit.stewardship.storage import StorageInvariantError
 
 from .attempts import _bindings
 from .canonical import InvalidSourcePayload
+from .errors import SourceCredentialChanged, SourceScopeChanged
 from .leases import SourceLeaseUnavailable, release_source, verify_source
 from .models import SourceMutationLease
 from .outcomes import (
-    MAX_AUTOMATIC_ATTEMPTS,
     _request,
     completed_snapshot,
+    failure_action,
     fallback_state,
+    retry_delay,
 )
 from .refresh_models import SourceRefreshAttempt
 from .rejection import reject_snapshot
@@ -49,13 +51,21 @@ class ReadFailure:
 
 def classify_read_failure(error, *, has_source_claim):
     """Classify known read errors only; uncertain drainage/lost ownership propagate."""
-    if isinstance(error, (InvalidSourcePayload, IncompleteSourceCollection)):
+    seen = set()
+    while isinstance(error, RetryError):
+        if id(error) in seen:
+            return None
+        seen.add(id(error))
+        error = error.last_exception
+    if isinstance(
+        error, (InvalidSourcePayload, IncompleteSourceCollection, InvalidSourceResponse)
+    ):
         return ReadFailure(False, False, Event.SOURCE_INVALID)
     if isinstance(error, SourceLeaseUnavailable):
         return ReadFailure(True, True, Event.SOURCE_HELD)
-    if isinstance(error, PermissionError):
+    if isinstance(error, SourceScopeChanged):
         return ReadFailure(True, False, Event.SOURCE_HELD)
-    if isinstance(error, CryptographicError):
+    if isinstance(error, (CryptographicError, SourceCredentialChanged)):
         # Pre-claim credential intake cannot succeed without an operator repair.
         # A post-load key-inventory rotation may instead require a bounded retry.
         return ReadFailure(has_source_claim, False, Event.SOURCE_CREDENTIAL_FAILED)
@@ -65,10 +75,16 @@ def classify_read_failure(error, *, has_source_claim):
             False,
             Event.SOURCE_PROVIDER_FAILED,
         )
-    if isinstance(error, RetryError):
-        error = error.last_exception
     if isinstance(
-        error, (SourceTransportError, requests.ConnectionError, requests.Timeout)
+        error,
+        (
+            SourceTransportError,
+            requests.ConnectionError,
+            requests.Timeout,
+            TransientRetryError,
+            TimeoutError,
+            ConnectionError,
+        ),
     ):
         return ReadFailure(True, False, Event.SOURCE_PROVIDER_FAILED)
     return None
@@ -138,10 +154,10 @@ def settle_failed_read(execution, error, *, source_claim=None):
                     raise StorageInvariantError(
                         "Source failure must retain its source claim."
                     )
-            retry = decision.retry and (
-                decision.contention or status.attempt < MAX_AUTOMATIC_ATTEMPTS
+            action = failure_action(
+                status.attempt, retry=decision.retry, contention=decision.contention
             )
-            action = "retryable_failure" if retry else "permanent_failure"
+            retry = action == "retryable_failure"
 
             def admit_failure(candidate_action, candidate):
                 """Verify this classified claim and its rejected/no-effect state."""
@@ -168,8 +184,8 @@ def settle_failed_read(execution, error, *, source_claim=None):
                 fence=execution.claim.fence,
                 admit=admit_failure,
                 **(
-                    {"retry_seconds": min(30 * 2 ** min(status.attempt - 1, 5), 600)}
-                    if retry
+                    {"retry_seconds": retry_delay(status.attempt)}
+                    if action == "retryable_failure"
                     else {}
                 ),
             )

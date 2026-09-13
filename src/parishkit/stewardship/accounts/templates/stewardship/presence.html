@@ -1,0 +1,13 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Active Families" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Active Families" %}</h1>
+<p>{% translate "Visible Family sessions with a heartbeat in the last 90 seconds:" %} {{ presence.count|number }}</p>
+<p>{% translate "Presence does not extend a login. Closed, expired, or ineligible sessions are excluded. Multiple sessions may belong to one Family." %}</p>
+<p>{% translate "As of:" %} <time datetime="{{ presence.as_of|instant }}" data-local-instant>{{ presence.as_of|instant }} UTC</time></p>
+<div class="table-scroll"><table><caption>{% translate "Recently visible Family sessions" %}</caption>
+<thead><tr><th scope="col">{% translate "Family" %}</th><th scope="col">{% translate "DUID" %}</th><th scope="col">{% translate "Signed in" %}</th><th scope="col">{% translate "Last activity" %}</th><th scope="col">{% translate "Last heartbeat" %}</th><th scope="col">{% translate "Section" %}</th></tr></thead>
+<tbody>{% for row in presence.sessions %}<tr><td>{{ row.name }}</td><td>{{ row.duid|number }}</td><td><time datetime="{{ row.started_at|instant }}" data-local-instant>{{ row.started_at|instant }} UTC</time></td><td><time datetime="{{ row.last_activity_at|instant }}" data-local-instant>{{ row.last_activity_at|instant }} UTC</time></td><td><time datetime="{{ row.presence_at|instant }}" data-local-instant>{{ row.presence_at|instant }} UTC</time></td><td>{{ row.section|capfirst }}</td></tr>{% empty %}<tr><td colspan="6">{% translate "No Families are currently visible." %}</td></tr>{% endfor %}</tbody></table></div>
+{% if presence.has_next %}<a href="?page={{ next_page }}">{% translate "Next page" %}</a>{% endif %}
+<p><a href="{% url 'admin:presence' %}">{% translate "Refresh list" %}</a></p>
+{% endblock %}

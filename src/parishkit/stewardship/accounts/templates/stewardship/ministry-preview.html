@@ -1,0 +1,19 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Review Ministry activity change" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Review Ministry activity change" %}</h1>
+<section class="panel">
+  <h2>{{ ministry.name }}</h2>
+  <p>{% translate "Applied state:" %} {% if ministry.active %}{% translate "Active" %}{% else %}{% translate "Inactive" %}{% endif %}</p>
+  <p>{% translate "Proposed state:" %} {% if new_active %}{% translate "Active" %}{% else %}{% translate "Inactive" %}{% endif %}</p>
+  <p>{% translate "Source-seeded leader assignments to re-evaluate:" %} {{ seeded_count|number }}</p>
+  <p>{% translate "Manual assignments preserved:" %} {{ manual_count|number }}</p>
+  <p>{% translate "No participation records or earlier campaign responses will be deleted. Campaign Ministry selection is unchanged. This preview expires in 15 minutes." %}</p>
+</section>
+<form method="post" action="{% url 'admin:ministries' %}">
+  {% csrf_token %}<input type="hidden" name="action" value="confirm">
+  <input type="hidden" name="preview" value="{{ preview }}">
+  <button type="submit">{% translate "Apply activity change" %}</button>
+  <a href="{% url 'admin:ministries' %}">{% translate "Cancel" %}</a>
+</form>
+{% endblock %}

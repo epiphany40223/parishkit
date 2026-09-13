@@ -188,3 +188,30 @@ def test_different_loaded_bytes_cannot_borrow_an_attempt(owner, monkeypatch):
     ):
         session.get(DEFAULT_API_BASE_URL + "/families/change/list", timeout=30)
     assert not calls and SourceMutationLease.objects.get().external_deadline is None
+
+
+def test_local_configuration_failure_during_read_is_not_invalid_provider_data(
+    owner, monkeypatch
+):
+    """After one good read, a local preflight failure cannot trigger full fallback."""
+    from unittest.mock import Mock
+
+    from parishkit.config import ConfigError
+    from parishkit.stewardship.source import transport
+    from parishkit.stewardship.source.failures import classify_read_failure
+
+    execution, lease, session, *_ = owner
+    exchange = Mock(return_value=b"200\n[]")
+    monkeypatch.setattr(parishsoft_transport, "_exchange", exchange)
+    with maintain_execution(execution), execution.maintain_source(lease):
+        session.get(DEFAULT_API_BASE_URL + "/families/change/list", timeout=30)
+        monkeypatch.setattr(
+            transport,
+            "verify_refresh_attempt",
+            Mock(side_effect=ConfigError("synthetic-private")),
+        )
+        with pytest.raises(StorageInvariantError) as raised:
+            session.get(DEFAULT_API_BASE_URL + "/families/change/list", timeout=30)
+    assert classify_read_failure(raised.value, has_source_claim=True) is None
+    assert "synthetic-private" not in str(raised.value)
+    assert exchange.call_count == 1

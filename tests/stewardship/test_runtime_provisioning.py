@@ -42,6 +42,22 @@ def test_fresh_provisioning_creates_narrow_files_but_no_provider_or_app_secrets(
     assert not layout.credential("token_private").exists()
     compose = json.loads(read_private(layout.service_directory / "compose.json"))
     assert "web" in compose["services"]
+    for filename, worker_file in (
+        ("compose-initial.json", "worker-initial.yaml"),
+        ("compose-slack.json", "worker-slack.yaml"),
+    ):
+        variant = json.loads(read_private(layout.service_directory / filename))
+        assert variant["name"] == compose["name"]
+        assert variant["services"].keys() == compose["services"].keys()
+        assert variant["services"]["worker"]["command"][-1] == str(
+            layout.service_directory / worker_file
+        )
+        assert (
+            load_deployment(
+                layout.service_directory / worker_file, environ={}
+            ).service_role.value
+            == "worker"
+        )
     for path in root.rglob("*"):
         assert path.stat().st_mode & 0o777 == (0o700 if path.is_dir() else 0o600)
     with pytest.raises(ConfigError, match="already provisioned"):
@@ -97,7 +113,7 @@ def test_independent_broker_credentials_survive_exact_resume_and_document_roundt
         with pytest.raises(OSError):
             provisioning.provision_runtime(configuration, image=IMAGE)
     before = {name: read_private(path) for name, path in overrides.items()}
-    assert len(set(before.values())) == 3
+    assert len(set(before.values())) == 4
     changed = replace(
         configuration,
         valkey=replace(
@@ -118,7 +134,7 @@ def test_independent_broker_credentials_survive_exact_resume_and_document_roundt
         assert (
             f"user {name} on #" + hashlib.sha256(password).hexdigest()
         ).encode() in acl
-    assert b"user mail-dispatch" not in acl and b"user backup-worker" not in acl
+    assert b"user mail-dispatch" in acl and b"user backup-worker" not in acl
     loaded = load_deployment(layout.service_directory / "web.yaml", environ={})
     assert loaded.valkey.password_files == overrides
     assert loaded.valkey.password_file == overrides["web"]
@@ -127,7 +143,7 @@ def test_independent_broker_credentials_survive_exact_resume_and_document_roundt
     assert mounts & {str(path) for path in overrides.values()} == {
         str(overrides["web"])
     }
-    assert not RuntimeLayout(configuration).valkey_password("mail-dispatch").exists()
+    assert RuntimeLayout(configuration).valkey_password("mail-dispatch").exists()
 
 
 def test_atomic_writer_residue_does_not_strand_exact_provisioning_retry(

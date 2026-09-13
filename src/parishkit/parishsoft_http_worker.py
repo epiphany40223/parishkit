@@ -17,6 +17,12 @@ from parishkit.parishsoft import DEFAULT_API_BASE_URL
 
 MAX_REQUEST_BYTES = 65536
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+
+
+class InvalidSourceResponse(ValueError):
+    """A deterministic body-contract failure must not be retried as an outage."""
+
+
 READ_POSTS = frozenset(
     {
         "organizations/search",
@@ -95,10 +101,12 @@ def perform(request):
             body = bytearray()
             for chunk in response.iter_content(chunk_size=65536):
                 if len(body) + len(chunk) > MAX_RESPONSE_BYTES:
-                    raise ValueError("Source response exceeds its byte bound.")
+                    raise InvalidSourceResponse(
+                        "Source response exceeds its byte bound."
+                    )
                 body.extend(chunk)
             if not body:
-                raise ValueError("Source response has no JSON body.")
+                raise InvalidSourceResponse("Source response has no JSON body.")
             return response.status_code, bytes(body)
 
 
@@ -114,6 +122,10 @@ def main():
         sys.stdout.buffer.write(str(status).encode("ascii") + b"\n" + body)
         sys.stdout.buffer.flush()
         return 0
+    except InvalidSourceResponse:
+        sys.stdout.buffer.write(b"INVALID\n")
+        sys.stdout.buffer.flush()
+        return 2
     except Exception:
         # No traceback, original input, response, or request headers may escape.
         sys.stdout.buffer.write(b"ERROR\n")

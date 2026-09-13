@@ -61,7 +61,7 @@ Evidence: Not started.
 Scope and dependencies: [FAM-05 work package](../../plans/stewardship/parishioner-portal.md#fam-05-ministry-and-financial-stewardship-steps).
 
 - [ ] FAM-05.01 — Build current, join, and leave Ministry controls.
-- [ ] FAM-05.02 — Apply campaign Ministry selection boundaries.
+- [ ] FAM-05.02 — Apply campaign Ministry selection and Admin-managed activity boundaries.
 - [ ] FAM-05.03 — Build financial aggregates, pledge, and installment calculation.
 - [ ] FAM-05.04 — Build share options and zero/one/many Member wording.
 - [ ] FAM-05.05 — Show financial periods and unavailable source data.

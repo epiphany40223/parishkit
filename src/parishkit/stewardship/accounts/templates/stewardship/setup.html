@@ -1,0 +1,48 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Initial setup" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Initial setup" %}</h1>
+<p class="notice">{% translate "Testing mode. Settings saved here are temporary and are not active configuration. No campaign is open to parishioners." %}</p>
+{% if expired %}
+<h2>{% translate "This setup attempt has ended" %}</h2>
+<p>{% translate "Your temporary settings have been cleared. Sign out and sign in again to start a new setup attempt." %}</p>
+{% elif draft %}
+{% include 'stewardship/setup-deadlines.html' %}
+{% if draft.source_task_id %}<p><a href="{% url 'admin:setup_source_progress' draft.source_task_id %}">{% translate "Source-load progress" %}</a></p>{% endif %}
+<h2>{% translate "Setup sections" %}</h2>
+<ul>{% for item in steps %}<li><a href="{% url 'admin:setup_step' item.key %}">{{ item.label }}</a> — {% if item.saved %}{% translate "Saved temporarily" %}{% else %}{% translate "Not yet entered" %}{% endif %}</li>{% endfor %}</ul>
+<p>{% translate "The original bootstrap Administrator is preserved. Additional access rules do not take effect until setup completes." %}</p>
+{% if draft.status.state == 'collecting' %}
+<p><a href="{% url 'admin:setup_preview' %}">{% translate "Review the complete first-campaign setup" %}</a></p>
+<h2>{% translate "Sealed setup credentials" %}</h2>
+{% if draft.sections.campaign %}<p><a href="{% url 'admin:setup_content' %}">{% translate "Prepare first-campaign content and email templates" %}</a></p>{% endif %}
+{% if 'financial' in draft.sections.campaign.campaign.modules %}<p><a href="{% url 'admin:setup_shares' %}">{% translate "Prepare how Families will share" %}</a></p>{% endif %}
+<ul>
+<li><a href="{% url 'admin:setup_credential' 'parishsoft' %}">{% translate "ParishSoft credential" %}</a></li>
+<li><a href="{% url 'admin:setup_credential' 'google_workspace' %}">{% translate "Google Workspace mail credential" %}</a></li>
+<li><a href="{% url 'admin:setup_credential' 'slack' %}">{% translate "Optional Slack credential" %}</a></li>
+</ul>
+{% if not draft.source_task_id %}
+<form method="post" class="panel">{% csrf_token %}
+<input type="hidden" name="action" value="load"><input type="hidden" name="attempt" value="{{ draft.status.attempt_id }}"><input type="hidden" name="version" value="{{ draft.status.version }}">
+<p>{% translate "Save the parish profile and ParishSoft credential before loading the source data. A normal load takes about two to three minutes. Keep the progress page open until it completes." %}</p>
+<button type="submit">{% translate "Load parish source data" %}</button>
+</form>
+{% endif %}
+{% endif %}
+<p>{% translate "Provider credentials, source loading, delivery checks and the final readiness confirmation must also complete before this system can be configured." %}</p>
+{% if draft.status.state == 'frozen' %}
+<p><a href="{% url 'admin:setup_cancel' %}">{% translate "Check progress or cancel initial setup" %}</a></p>
+{% else %}
+<form method="post" class="panel">{% csrf_token %}
+<input type="hidden" name="action" value="cancel"><input type="hidden" name="attempt" value="{{ draft.status.attempt_id }}">
+<p>{% translate "Cancel permanently ends this attempt and clears its temporary settings. A new login is required to restart." %}</p>
+<button type="submit">{% translate "Cancel setup and clear temporary settings" %}</button>
+</form>
+{% endif %}
+{% else %}
+<p>{% translate "Complete the Parish and first campaign setup using this login. Another login cannot resume your temporary settings. Closing the browser stops any source-load renewal; idle and absolute timeouts still apply." %}</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="start"><button type="submit">{% translate "Start setup" %}</button></form>
+{% endif %}
+<form method="post" action="{% url 'admin:logout' %}">{% csrf_token %}<button type="submit">{% translate "Sign out" %}</button></form>
+{% endblock %}

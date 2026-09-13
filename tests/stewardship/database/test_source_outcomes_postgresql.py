@@ -3,6 +3,8 @@
 from dataclasses import replace
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.models import TaskRun
@@ -16,6 +18,7 @@ from parishkit.stewardship.source.leases import (
 )
 from parishkit.stewardship.source.models import SourceCurrent, SourceMutationLease
 from parishkit.stewardship.source.outcomes import (
+    admit_refresh_metadata,
     completed_snapshot,
     read_attempts_drained,
     recovery_plan,
@@ -129,11 +132,34 @@ def test_abandonment_waits_for_reserved_read_drain_deadline(tmp_path):
     with work_transaction():
         assert not read_attempts_drained(abandoned)
         assert recovery_plan(abandoned) is None
+        assert not admit_refresh_metadata("recovery_hint", abandoned)
     delay(2.05)
     with work_transaction():
         assert read_attempts_drained(abandoned)
         plan = recovery_plan(abandoned)
         assert plan.action == "recovery_retry" and plan.retry_seconds == 30
+        assert admit_refresh_metadata("recovery_hint", abandoned)
+
+
+def test_recovery_admission_resolves_request_once_and_does_not_cache_across_calls(
+    tmp_path,
+):
+    """Composed proofs share bounded reads, not authority across later transitions."""
+    _, execution, lease, *_ = setup(tmp_path)
+    release_source(lease)
+    abandoned = abandon(execution)
+    with work_transaction():
+        with CaptureQueriesContext(connection) as queries:
+            assert admit_refresh_metadata("recovery_retry", abandoned)
+        reads = [q["sql"] for q in queries.captured_queries]
+        # One outcome binding plus the independent new-work admission owner's
+        # recheck. Composed outcome predicates must not reload it individually.
+        assert sum('FROM "stewardship_source_refresh_request"' in q for q in reads) == 2
+        table = connection.ops.quote_name(SourceMutationLease._meta.db_table)
+        assert sum(f"FROM {table}" in q for q in reads) == 1
+        act(abandoned, "recovery_retry")
+        with pytest.raises(StaleRecordError):
+            admit_refresh_metadata("recovery_retry", abandoned)
 
 
 def test_safe_new_source_fence_proves_older_attempts_drained(tmp_path):

@@ -28,7 +28,7 @@ def pledge(identifier=1, **changes):
         "pledgeID": identifier,
         "fundID": 9,
         "organizationID": 5,
-        "familyID": 11,
+        "familyID": 1,
         "memberID": None,
         "currentPledgeAmount": 1200,
         "pledgeDate": "2025-11-15",
@@ -106,10 +106,20 @@ def test_future_period_reads_pledges_but_no_future_contributions(tmp_path):
     assert len(client.session.calls) == 2
 
 
-def test_out_of_period_pledge_history_is_never_returned_for_staging(tmp_path):
+@pytest.mark.parametrize("amount", [1200, None, "legacy", 1.001])
+def test_out_of_period_pledge_history_is_never_returned_for_staging(tmp_path, amount):
     """Selected fund history is transient and never widens the retained window."""
     result, _ = read(
-        tmp_path, [pledge(), pledge(2, pledgeStartDate="2022-01-01", familyID=999)]
+        tmp_path,
+        [
+            pledge(),
+            pledge(
+                2,
+                pledgeStartDate="2022-01-01",
+                familyID=999,
+                currentPledgeAmount=amount,
+            ),
+        ],
     )
     assert set(result.pledges) == {"1"}
     assert "999" not in str(result)
@@ -148,12 +158,25 @@ def test_invalid_pledge_does_not_become_verified_zero(tmp_path, changes):
         read(tmp_path, [pledge(**changes)])
 
 
-def test_family_duid_local_id_collision_is_not_guessed(tmp_path):
-    """Even one plausible alias must not override contradictory retained identity."""
+def test_giving_uses_duids_even_when_another_local_family_id_collides(tmp_path):
+    """Match shared ParishKit linkage without mixing independent identifier spaces."""
     data = source()
     data.families[2]["familyID"] = 1
-    with pytest.raises(InvalidSourcePayload, match="ambiguous"):
-        read(tmp_path, [pledge(familyID=1)], data=data)
+    result, _ = read(tmp_path, [pledge()], [contribution()], data=data)
+    assert result.pledges["1"]["family_key"] == "1"
+    assert result.contributions["1"]["family_key"] == "1"
+
+
+@pytest.mark.parametrize("kind", ["pledge", "contribution"])
+def test_unknown_duid_cannot_fall_back_to_a_local_family_number(tmp_path, kind):
+    """A locally matching ID is not proof of a giving record's Family ownership."""
+    options = (
+        {"pledges": [pledge(familyID=11)]}
+        if kind == "pledge"
+        else {"contributions": [contribution(familyId=11, memberId=None)]}
+    )
+    with pytest.raises(InvalidSourcePayload, match="no retained Family"):
+        read(tmp_path, **options)
 
 
 def test_provider_cannot_ignore_contribution_date_bounds(tmp_path):

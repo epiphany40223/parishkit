@@ -1,0 +1,28 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Background work" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Background work" %}</h1>
+<p>{% translate "Opening or refreshing this status page does not extend your login session." %}</p>
+<p>{% translate "Running:" %} {{ work.counts.active|number }} · {% translate "Queued:" %} {{ work.counts.queued|number }} · {% translate "Waiting to retry:" %} {{ work.counts.retry_wait|number }} · {% translate "Abandoned:" %} {{ work.counts.abandoned|number }}</p>
+<form method="get" class="panel">
+  <label for="task-state">{% translate "Task state" %}</label>
+  <select id="task-state" name="state">
+    {% for state in states %}<option value="{{ state }}"{% if state == selected_state %} selected{% endif %}>{{ state|capfirst }}</option>{% endfor %}
+  </select>
+  <button type="submit">{% translate "Show tasks" %}</button>
+</form>
+{% for task in work.tasks %}
+<section class="panel">
+  <h2>{{ task.type }}</h2>
+  <p>{% translate "State:" %} {{ task.state }} · {% translate "Phase:" %} {{ task.progress.phase }}</p>
+  <p>{% translate "Task:" %} <a href="{% url 'admin:background_task_page' task.id %}">{{ task.id }}</a></p>
+  {% if task.progress.total %}
+  <p>{{ task.progress.display|out_of }}</p>
+  <progress value="{{ task.progress.current }}" max="{{ task.progress.total }}" aria-label="{% translate 'Task progress' %}"></progress>
+  {% else %}<p>{% translate "Waiting for progress details." %}</p>{% endif %}
+  {% if task.heartbeat_at %}<p>{% translate "Last heartbeat:" %} <time datetime="{{ task.heartbeat_at }}" data-local-instant>{{ task.heartbeat_at }}</time></p>{% endif %}
+</section>
+{% empty %}<p class="panel">{% translate "No tasks match this view." %}</p>{% endfor %}
+{% if work.has_next %}<a href="?{{ next_query }}">{% translate "Next page" %}</a>{% endif %}
+<p><a href="{% url 'admin:background' %}">{% translate "Refresh current work" %}</a></p>
+{% endblock %}

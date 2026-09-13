@@ -208,6 +208,7 @@ def configure_web(configuration):
     from .accounts.configuration_schema import validate_sections
     from .accounts.family_authentication import FamilyRuntime
     from .accounts.limiting import Limiter
+    from .accounts.setup_completion import setup_is_complete
     from .runtime_grants import admit_download_database, admit_runtime_database
 
     admit_runtime_database(configuration)
@@ -227,9 +228,17 @@ def configure_web(configuration):
         database=downloads.settings_dict,
     )
     store = AuthorityStore(configuration.paths["authority"], validate_sections)
-    coherent_configuration(store)
+    try:
+        coherent_configuration(store)
+    except ConfigError:
+        from .accounts.setup_startup import initial_setup_hold
+
+        # Keep the real store for every request. Only the existing original-
+        # login cancellation route can use predecessor policy during this hold.
+        initial_setup_hold(store)
     for name in ("reports", "media"):
         private_directory(configuration.paths[name])
+    settings.STEWARDSHIP_MEDIA_ROOT = configuration.paths["media"]
     client = valkey_client(configuration)
     limiter_key = hmac.digest(
         rings["django_signing"].active.material,
@@ -243,7 +252,7 @@ def configure_web(configuration):
         limits=configuration.authentication_limits,
     )
     limiter.check_health(force=True)
-    settings.STEWARDSHIP_AUTH_RUNTIME = AuthRuntime(store, limiter)
+    settings.STEWARDSHIP_AUTH_RUNTIME = AuthRuntime(store, limiter, setup_is_complete)
     settings.STEWARDSHIP_FAMILY_RUNTIME = FamilyRuntime(
         store,
         limiter,

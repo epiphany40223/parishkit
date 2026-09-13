@@ -38,6 +38,7 @@ from .campaign_builders import (
     restored_runtime,
 )
 from .credential_builders import family_campaign
+from .lock_observer import backend_pid, wait_for_lock
 from .test_rehearsals_postgresql import prepare
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -243,19 +244,21 @@ def test_claim_and_cleanup_serialize_then_next_effect_rechecks_gate(tmp_path):
 
     def cleanup():
         """The real gate writer joins the same order before its credential row."""
-        started.set()
         try:
+            cleanup_backend.append(backend_pid())
+            started.set()
             invalidate_rehearsal(campaign_id=campaign.pk, admit=lambda *args: True)
         finally:
             connections.close_all()
 
+    cleanup_backend = []
     with ThreadPoolExecutor(max_workers=2) as pool:
         claiming = pool.submit(claim)
         try:
             assert entered.wait(5)
             cleaning = pool.submit(cleanup)
             assert started.wait(5)
-            assert not cleaning.done()
+            wait_for_lock(cleanup_backend[0])
         finally:
             release.set()
         context = claiming.result(timeout=5)

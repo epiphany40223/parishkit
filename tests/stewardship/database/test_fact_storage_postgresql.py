@@ -159,6 +159,22 @@ def test_sql_rejects_rewriting_frozen_build_inputs(tmp_path, change):
         )
 
 
+def test_sql_liveness_requires_exact_task_fence_and_worker(tmp_path):
+    """SQL arguments cannot resolve to same-named TaskRun columns or tautologies."""
+    _, owner, _ = fact_fixture(tmp_path)
+    with connection.cursor() as cursor:
+        for task, fence, worker, expected in (
+            (owner.run_id, owner.fence, owner.worker_id, True),
+            (owner.run_id, owner.fence + 1, owner.worker_id, False),
+            (owner.run_id, owner.fence, uuid4(), False),
+            (uuid4(), owner.fence, owner.worker_id, False),
+        ):
+            cursor.execute(
+                "SELECT stewardship_fact_live(%s,%s,%s)", [task, fence, worker]
+            )
+            assert cursor.fetchone()[0] is expected
+
+
 def test_completeness_checks_cumulative_math_not_just_number_of_days(tmp_path):
     """Every expected date is insufficient evidence when cumulative counts disagree."""
     inputs, owner, source = fact_fixture(tmp_path)

@@ -1,0 +1,12 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Review share options" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Review share options" %}</h1>
+{% if unchanged %}<p>{% translate "No share options have changed." %}</p>{% else %}
+<section class="panel"><h2>{% translate "Applied order and labels" %}</h2><ol>{% for option in before %}<li>{{ option.label }}{% if option.free_text %} — {% translate "free-text response" %}{% endif %}</li>{% empty %}<li>{% translate "None" %}</li>{% endfor %}</ol></section>
+<section class="panel"><h2>{% translate "Proposed order and labels" %}</h2><ol>{% for option in after %}<li>{{ option.label }}{% if option.free_text %} — {% translate "free-text response" %}{% endif %}</li>{% empty %}<li>{% translate "None" %}</li>{% endfor %}</ol></section>
+<p>{% translate "This exact preview expires in 15 minutes. Confirmation requests installation; options change only when the request is Applied." %}</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}"><button type="submit">{% translate "Apply changes" %}</button></form>
+{% endif %}
+<p><a href="{% url 'admin:share_settings' campaign.pk %}">{% translate "Return to share options" %}</a></p>
+{% endblock %}

@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection, transaction
+from django.db.backends.signals import connection_created
 from psycopg import sql
 
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
@@ -27,11 +28,22 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 @contextmanager
-def task_login(service):
-    """Create/remove only a fresh UUID-named fixture login; never alter real roles."""
-    role = sql.Identifier("test_background_" + uuid4().hex)
+def task_login(service, *, reconnect=False, exact=False):
+    """Create a fresh fixture role; exact-name probes never adopt existing roles."""
+    name = (
+        ("pk_stewardship_" + service.value.replace("-", "_"))
+        if exact
+        else "test_background_" + uuid4().hex
+    )
+    role = sql.Identifier(name)
     with connection.cursor() as cursor:
         cursor.execute(sql.SQL("CREATE ROLE {} LOGIN NOINHERIT").format(role))
+
+    def restrict_connection(sender, connection, **kwargs):
+        """Keep provider socket closure and renewal threads on the same test role."""
+        with connection.cursor() as cursor:
+            cursor.execute(sql.SQL("SET SESSION AUTHORIZATION {}").format(role))
+
     try:
         tables, columns = runtime_grants(service)
         with connection.cursor() as cursor:
@@ -59,9 +71,12 @@ def task_login(service):
                         )
                     )
             cursor.execute(sql.SQL("SET SESSION AUTHORIZATION {}").format(role))
+        if reconnect:
+            connection_created.connect(restrict_connection, weak=False)
         admit_columns(connection, tables, columns)
         yield
     finally:
+        connection_created.disconnect(restrict_connection)
         with connection.cursor() as cursor:
             cursor.execute("RESET SESSION AUTHORIZATION")
             cursor.execute(sql.SQL("DROP OWNED BY {}").format(role))
@@ -101,13 +116,14 @@ def test_scheduler_can_enqueue_and_scan_but_cannot_claim(tmp_path):
         guard.check()
         hints, _ = collect_hints(handlers=handlers)
         assert [hint.run_id for hint in hints] == [task.run_id]
-        with pytest.raises(DatabaseError):
+        with pytest.raises(DatabaseError) as error:
             claim_hint(
                 task.run_id,
                 queue=WorkQueue.GENERAL,
                 worker_id=uuid4(),
                 handlers=handlers,
             )
+        assert error.value.__cause__.sqlstate == "42501"
 
 
 def test_worker_can_claim_progress_complete_and_record_private_safe_audit(tmp_path):
@@ -148,13 +164,17 @@ def test_both_background_roles_can_check_current_credential_gate_without_mutatio
 @pytest.mark.parametrize(
     "statement",
     [
-        "SELECT * FROM stewardship_family_token",
-        "SELECT * FROM stewardship_portal_session",
-        "SELECT * FROM stewardship_audit_context",
+        "SELECT ciphertext FROM stewardship_family_token",
+        "SELECT session_id FROM stewardship_portal_session",
+        "SELECT context FROM stewardship_audit_context",
         "UPDATE stewardship_campaign SET state='active'",
         "UPDATE stewardship_campaign_credentials SET go_live_gate=false",
         "INSERT INTO stewardship_domain_rule DEFAULT VALUES",
         "DELETE FROM stewardship_task_event",
+        "INSERT INTO stewardship_chair_seed_evidence DEFAULT VALUES",
+        "UPDATE stewardship_family_token SET digest=NULL",
+        "UPDATE stewardship_family_campaign SET last_activity_at=now()",
+        "UPDATE stewardship_source_family SET canonical='{}'",
     ],
 )
 def test_background_sql_cannot_read_private_payloads_or_expand_authority(
@@ -163,8 +183,26 @@ def test_background_sql_cannot_read_private_payloads_or_expand_authority(
     """Exercise the real server, not merely equality against the grant registry."""
     with (
         task_login(service),
-        pytest.raises(DatabaseError),
+        pytest.raises(DatabaseError) as error,
         transaction.atomic(),
         connection.cursor() as cursor,
     ):
         cursor.execute(statement)
+    assert error.value.__cause__.sqlstate == "42501"
+
+
+@pytest.mark.parametrize("service", [ServiceRole.WORKER, ServiceRole.SCHEDULER])
+def test_empty_source_delete_matches_cleanup_authority(service):
+    """Worker cleanup grants allow a zero-row DELETE, not unrestricted row deletion.
+
+    PostgreSQL does not invoke row guards for an empty table. The populated
+    live/expired/shared-source denial cases belong to test_setup_disposal_postgresql.
+    The scheduler has no deletion grant at all.
+    """
+    with task_login(service), transaction.atomic(), connection.cursor() as cursor:
+        if service is ServiceRole.SCHEDULER:
+            with pytest.raises(DatabaseError), transaction.atomic():
+                cursor.execute("DELETE FROM stewardship_source_family")
+        else:
+            cursor.execute("DELETE FROM stewardship_source_family")
+            assert cursor.rowcount == 0

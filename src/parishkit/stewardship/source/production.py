@@ -105,9 +105,9 @@ def produce_refreshes(guard):
         timezone = (
             scope.campaign.active_configuration.timezone
             if scope.campaign is not None
-            else Parish.objects.get(
+            else Parish.objects.values_list("timezone", flat=True).get(
                 configuration_id=scope.runtime.active_configuration_id
-            ).timezone
+            )
         )
         nightly_time = integration.settings.get("nightly_time", "02:00")
         slots = due_slots(

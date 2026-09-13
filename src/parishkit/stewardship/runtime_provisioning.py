@@ -34,7 +34,7 @@ MAX_DOCUMENT = 1024 * 1024
 
 # This phase provisions only implemented limiter and background transport users.
 # Queue ACLs are not startup or domain authority; no consumer starts here.
-VALKEY_SERVICES = ("web", "worker", "scheduler")
+VALKEY_SERVICES = ("web", "worker", "scheduler", "mail-dispatch")
 
 
 def _admit_inventory(root, directories, files):
@@ -131,16 +131,29 @@ def provisioning_plan(configuration, *, image, checkout=None, bind_source_root=N
     configuration = resolve_valkey_files(configuration)
     configuration = resolve_database_files(configuration)
     layout = RuntimeLayout(configuration).validate()
-    compose, documents = render_runtime(configuration, image=image, checkout=checkout)
-    if bind_source_root is not None:
-        source_root = explicit_path(bind_source_root)
-        for service in compose["services"].values():
-            for mount in service["volumes"]:
-                source = Path(mount["source"])
-                if source.is_relative_to(configuration.paths.root):
-                    mount["source"] = str(
-                        source_root / source.relative_to(configuration.paths.root)
-                    )
+    documents, topologies = {}, {}
+    for mode, filename in (
+        ("configured", "compose.json"),
+        ("initial", "compose-initial.json"),
+        ("configured-slack", "compose-slack.json"),
+    ):
+        compose, selected = render_runtime(
+            configuration, image=image, checkout=checkout, provider_mode=mode
+        )
+        for path, value in selected.items():
+            if path in documents and documents[path] != value:
+                raise ConfigError("Runtime mount variants have conflicting documents.")
+            documents[path] = value
+        if bind_source_root is not None:
+            source_root = explicit_path(bind_source_root)
+            for service in compose["services"].values():
+                for mount in service["volumes"]:
+                    source = Path(mount["source"])
+                    if source.is_relative_to(configuration.paths.root):
+                        mount["source"] = str(
+                            source_root / source.relative_to(configuration.paths.root)
+                        )
+        topologies[layout.service_directory / filename] = _json(compose)
     directories = {
         *configuration.paths.values.values(),
         layout.deployment_directory,
@@ -162,8 +175,7 @@ def provisioning_plan(configuration, *, image, checkout=None, bind_source_root=N
         path: document.encode() if isinstance(document, str) else _json(document)
         for path, document in documents.items()
     }
-    compose_path = layout.service_directory / "compose.json"
-    documents[compose_path] = _json(compose)
+    documents.update(topologies)
     intent = _json(
         {
             "version": 1,

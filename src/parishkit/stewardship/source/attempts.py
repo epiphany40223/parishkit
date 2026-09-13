@@ -7,6 +7,7 @@ from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .credentials import SourceCredential
+from .errors import SourceCredentialChanged, SourceScopeChanged
 from .leases import SourceClaim, verify_source
 from .refresh_models import SourceRefreshAttempt, SourceRefreshRequest
 from .requests import _organization, _window
@@ -16,15 +17,20 @@ from .snapshots import begin_snapshot
 def _scope(request, credential_fingerprint):
     """Harmless config edits may survive; tenant/window/key changes do not."""
     scope = require_source_refresh(campaign_id=request.campaign_id)
-    integration = AppliedIntegration.objects.get(
-        configuration_id=scope.runtime.active_configuration_id, kind="parishsoft"
+    fingerprint = (
+        AppliedIntegration.objects.filter(
+            configuration_id=scope.runtime.active_configuration_id, kind="parishsoft"
+        )
+        .values_list("credential_fingerprint", flat=True)
+        .first()
     )
+    if fingerprint is None or fingerprint != credential_fingerprint:
+        raise SourceCredentialChanged("The loaded source credential is stale.")
     if (
         _organization(scope) != request.organization_id
         or _window(scope).digest != request.window_digest
-        or integration.credential_fingerprint != credential_fingerprint
     ):
-        raise PermissionError("The source attempt scope or loaded credential is stale.")
+        raise SourceScopeChanged("The source attempt scope is stale.")
     return scope
 
 

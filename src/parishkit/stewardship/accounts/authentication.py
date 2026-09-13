@@ -24,7 +24,7 @@ from allauth.socialaccount.providers.oauth2.client import OAuth2Error
 from allauth.socialaccount.providers.oauth2.views import OAuth2CallbackView
 from django.conf import settings
 from django.core.exceptions import MultipleObjectsReturned
-from django.db import transaction
+from django.db import DatabaseError, transaction
 from django.db.models import F
 from django.http import HttpResponseRedirect
 from django.middleware.csrf import rotate_token
@@ -37,15 +37,15 @@ from django.views.decorators.http import (
 )
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.web.security import login_denial
 
 from .auth_incidents import record_login_rejection
 from .limiting import Counter, Limiter, LimiterUnavailable
-from .models import OAuthStateConsumption, PolicyEpoch, PortalUser, SystemConfiguration
+from .models import OAuthStateConsumption, PolicyEpoch, PortalUser
 from .policy import current_principal
 from .policy_schema import normalized_domain, normalized_email
 from .sessions import (
-    ADMIN_IDLE,
     authenticated_admin,
     database_now,
     end_admin,
@@ -384,27 +384,54 @@ def logout(request):
 
 @require_safe
 def index(request):
-    """Role-bearing shell; feature pages remain with their owning work packages."""
+    """Show current campaign status under fresh, capability-filtered authorization."""
+    from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
+    from parishkit.stewardship.audit.services import record_action
+
+    from .admin_dashboard import summary
+    from .configuration_installation import coherent_configuration
+
     try:
-        principal = authenticated_admin(request, store=runtime().store, activity=True)
-    except (LimiterUnavailable, ConfigError):
+        service = runtime()
+        principal = authenticated_admin(request, store=service.store, activity=True)
+        if principal is None:
+            return HttpResponseRedirect("/admin/login")
+        with work_transaction():
+            config = coherent_configuration(service.store)
+            if config.restore_review_required:
+                return denial(status=503, retry=5)
+            data = summary(principal, config, database_now())
+            # Presentation only: this exact projection is already verified and
+            # captured with the summary under the work transaction. Rendering
+            # happens after release; chrome must use that observation, not
+            # independently choose a newer projection for the same response.
+            request._stewardship_display_configuration = config
+        response = render(
+            request,
+            "stewardship/home.html",
+            {
+                "principal": principal,
+                "configuration": config,
+                "dashboard": data,
+            },
+        )
+        with transaction.atomic():
+            if (
+                authenticated_admin(request, store=service.store, read_only=True)
+                != principal
+            ):
+                return denial(status=403)
+            # A rendered-but-revoked or failed response never claims a successful
+            # disclosure. The request boundary owns failure/denial diagnostics.
+            record_action(
+                Action.DASHBOARD_VIEWED,
+                actor_kind=ActorKind.PORTAL_USER,
+                actor_id=principal.identity,
+                parish_id=config.active_configuration.parish.pk,
+                campaign_id=config.current_campaign_id,
+                context={"outcome": Outcome.SUCCEEDED},
+            )
+        response["Cache-Control"] = "no-store"
+        return response
+    except (LimiterUnavailable, ConfigError, DatabaseError):
         return denial(status=503, retry=5)
-    if principal is None:
-        return HttpResponseRedirect("/admin/login")
-    config = SystemConfiguration.objects.get()
-    if config.restore_review_required:
-        return denial(status=503, retry=5)
-    return render(
-        request,
-        "stewardship/home.html",
-        {
-            "principal": principal,
-            "configuration": config,
-            "server_now": database_now(),
-            "absolute_deadline": request.portal_session.expires_at,
-            "deadline": min(
-                request.portal_session.expires_at,
-                request.portal_session.last_activity_at + ADMIN_IDLE,
-            ),
-        },
-    )

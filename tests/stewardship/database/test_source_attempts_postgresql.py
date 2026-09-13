@@ -12,7 +12,9 @@ from parishkit.stewardship.accounts.configuration_installation import (
     prepare_initial_configuration,
 )
 from parishkit.stewardship.accounts.configuration_schema import validate_sections
+from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.source.attempts import (
+    _scope,
     begin_refresh_attempt,
     verify_refresh_attempt,
 )
@@ -203,11 +205,34 @@ def test_changed_campaign_blocks_attempt_verification_and_sql_promotion(tmp_path
     add_draft(store, version, actor)
     with pytest.raises(PermissionError):
         verify_refresh_attempt(attempt.pk, execution, source_claim)
-    with pytest.raises(IntegrityError):
+    with (
+        pytest.raises(IntegrityError, match="Source completion scope"),
+        # Hold the actual work-order lock, without the service admission that
+        # already rejected above, to isolate the independent SQL scope guard.
+        work_transaction(),
+    ):
         promote_snapshot(
             attempt.snapshot_id, source_claim, admit=permit, reconcile=permit
         )
     assert SourceCurrent.objects.get().snapshot_id is None
+
+
+def test_missing_integration_is_a_scope_denial_not_an_orm_lookup_error(tmp_path):
+    """A retained request cannot continue after its ParishSoft configuration is removed.
+
+    Exercise scope verification directly so the missing projection reaches this layer.
+    """
+    credential, execution, _, store, version, actor = setup(tmp_path)
+    integration = version.document()["sections"]["integrations"][0]
+    change(
+        store,
+        version,
+        actor,
+        [{"operation": "remove", "section": "integrations", "id": integration["id"]}],
+    )
+    request = SourceRefreshRequest.objects.get(task_root_id=execution.claim.run_id)
+    with work_transaction(), pytest.raises(PermissionError, match="scope|credential"):
+        _scope(request, credential.fingerprint)
 
 
 def test_harmless_configuration_edit_preserves_historical_attempt_provenance(tmp_path):

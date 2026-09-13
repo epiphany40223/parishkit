@@ -1,0 +1,12 @@
+{% load i18n stewardship %}
+<nav aria-label="{% translate 'Administration navigation' %}">
+  <ul>{% for item in admin_chrome.navigation %}<li><a href="{{ item.url }}">{{ item.label }}</a></li>{% endfor %}</ul>
+</nav>
+{% if admin_chrome.background %}
+<a href="{% url 'admin:background' %}" data-background-indicator>{% translate "Background work:" %} <span data-background-total>{{ admin_chrome.background.total|number }}</span> ({% translate "running:" %} <span data-background-running>{{ admin_chrome.background.running|number }}</span>)</a>
+<span class="help" data-background-unavailable hidden>{% translate "Background status unavailable; open the list to retry." %}</span>
+{% endif %}
+{% if admin_chrome.admin %}
+<a href="{% url 'admin:presence' %}" data-presence-indicator>{% translate "Active Families:" %} <span data-presence-count>{% if admin_chrome.presence_count is not None %}{{ admin_chrome.presence_count|number }}{% else %}—{% endif %}</span></a>
+<span class="help" data-presence-unavailable hidden>{% translate "Presence status unavailable; open the list to retry." %}</span>
+{% endif %}

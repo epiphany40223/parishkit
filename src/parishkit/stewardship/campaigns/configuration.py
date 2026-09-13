@@ -256,3 +256,13 @@ def validate_campaign_change(before, after):
             row["values"][field] != previous[field] for field in ("campaign_id", "kind")
         ):
             invalid()
+
+
+def schedule_window_changed(before, after):
+    """A changed timezone reinterprets cadence even with identical mail fields.
+
+    Date-only interval changes do not reinterpret an in-range mailing's time.
+    Out-of-range Family mail must instead be explicitly edited or removed by
+    the combined configuration validator; unrelated work stays unchanged.
+    """
+    return before["timezone"] != after["timezone"]

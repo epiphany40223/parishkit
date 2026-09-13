@@ -1,10 +1,12 @@
 """Admin-only operational task metadata; requester-owned exports have a separate API."""
 
+import json
 import re
 
 from django.db import DatabaseError, transaction
 from django.db.models import Count, Q
 from django.http import JsonResponse
+from django.shortcuts import render
 from django.views.decorators.http import require_safe
 
 from parishkit.config import ConfigError
@@ -15,6 +17,7 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
+from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.web.contracts import (
     ErrorCode,
     FieldError,
@@ -82,6 +85,7 @@ def _task(row, instant):
         "action": row.action,
         "version": row.version,
         "attempt": row.attempt,
+        "initiator_id": str(row.initiated_by_id) if row.initiated_by_id else None,
         "progress": _progress(row),
         "created_at": row.created_at,
         "updated_at": row.updated_at,
@@ -90,6 +94,14 @@ def _task(row, instant):
         "lease_expires_at": row.lease_expires_at,
         "active": row.state == "running" and row.lease_expires_at > instant,
     }
+
+
+def _counts(instant):
+    """Count indexed nonterminal work without fetching task identities or payloads."""
+    return TaskRun.objects.filter(state__in=NONTERMINAL_STATES).aggregate(
+        active=Count("id", filter=Q(state="running", lease_expires_at__gt=instant)),
+        **{state: Count("id", filter=Q(state=state)) for state in NONTERMINAL_STATES},
+    )
 
 
 def _listing(window, state, task_type, instant):
@@ -102,13 +114,9 @@ def _listing(window, state, task_type, instant):
     if task_type:
         query = query.filter(task_type=task_type)
     rows, has_next = window.rows(query.order_by("-created_at", "-id"))
-    counts = TaskRun.objects.filter(state__in=NONTERMINAL_STATES).aggregate(
-        active=Count("id", filter=Q(state="running", lease_expires_at__gt=instant)),
-        **{state: Count("id", filter=Q(state=state)) for state in NONTERMINAL_STATES},
-    )
     return {
         "as_of": instant,
-        "counts": counts,
+        "counts": _counts(instant),
         "page": window.page,
         "size": window.size,
         "has_next": has_next,
@@ -144,7 +152,7 @@ def _detail(identifier, window, instant):
     }, len(events)
 
 
-def _read(request, identifier=None):
+def _read(request, identifier=None, *, counts_only=False, audit=True):
     """Recheck current Admin authority; automatic polls never renew idle activity."""
     try:
         service = runtime()
@@ -152,7 +160,12 @@ def _read(request, identifier=None):
         if not allows(principal, Capability.BACKGROUND_WORK):
             return _error(ErrorCode.DENIED, 403)
         try:
-            window, state, task_type = _window(request.GET, listing=identifier is None)
+            if counts_only:
+                filters(request.GET, allowed=set())
+            else:
+                window, state, task_type = _window(
+                    request.GET, listing=identifier is None
+                )
         except ValueError:
             return _error(ErrorCode.INVALID, 400)
         with transaction.atomic():
@@ -160,11 +173,14 @@ def _read(request, identifier=None):
             if configuration is None or configuration.restore_review_required:
                 return _error(ErrorCode.UNAVAILABLE, 503)
             instant = database_now()
-            data, count = (
-                _listing(window, state, task_type, instant)
-                if identifier is None
-                else _detail(identifier, window, instant)
-            )
+            if counts_only:
+                data, count = {"as_of": instant, "counts": _counts(instant)}, 0
+            else:
+                data, count = (
+                    _listing(window, state, task_type, instant)
+                    if identifier is None
+                    else _detail(identifier, window, instant)
+                )
             current = authenticated_admin(request, store=service.store, read_only=True)
             if not allows(current, Capability.BACKGROUND_WORK):
                 return _error(ErrorCode.DENIED, 403)
@@ -172,16 +188,52 @@ def _read(request, identifier=None):
                 return _error(ErrorCode.UNAVAILABLE, 404)
             response = JsonResponse(data)
             response["Cache-Control"] = "no-store"
+            if not counts_only and audit:
+                record_action(
+                    Action.BACKGROUND_VIEWED,
+                    actor_kind=ActorKind.PORTAL_USER,
+                    actor_id=current.identity,
+                    subject_id=identifier,
+                    context={"outcome": Outcome.SUCCEEDED, "count": count},
+                )
+            response.stewardship_read_identity = current.identity
+            response.stewardship_read_count = count
+            return response
+    except (ConfigError, LimiterUnavailable, DatabaseError, ValueError, TypeError):
+        return _error(ErrorCode.UNAVAILABLE, 503)
+
+
+def _finish_html(request, result, response, identifier=None):
+    """Audit only rendered HTML still authorized for its original reader."""
+    try:
+        service = runtime()
+        with transaction.atomic():
+            current = authenticated_admin(request, store=service.store, read_only=True)
+            if (
+                not allows(current, Capability.BACKGROUND_WORK)
+                or current.identity != result.stewardship_read_identity
+            ):
+                return _error(ErrorCode.DENIED, 403)
             record_action(
                 Action.BACKGROUND_VIEWED,
                 actor_kind=ActorKind.PORTAL_USER,
                 actor_id=current.identity,
                 subject_id=identifier,
-                context={"outcome": Outcome.SUCCEEDED, "count": count},
+                context={
+                    "outcome": Outcome.SUCCEEDED,
+                    "count": result.stewardship_read_count,
+                },
             )
-            return response
+        response["Cache-Control"] = "no-store"
+        return response
     except (ConfigError, LimiterUnavailable, DatabaseError, ValueError, TypeError):
         return _error(ErrorCode.UNAVAILABLE, 503)
+
+
+@require_safe
+def task_counts(request):
+    """Passive header counts are not an operator report read or an idle renewal."""
+    return _read(request, counts_only=True)
 
 
 @require_safe
@@ -194,3 +246,52 @@ def task_list(request):
 def task_detail(request, task_id):
     """Read bounded immutable attempt history, never task commands or provider data."""
     return _read(request, task_id)
+
+
+@require_safe
+def background_page(request):
+    """Render the same authorized bounded metadata as the passive polling API."""
+    result = _read(request, audit=False)
+    if result.status_code != 200:
+        return result
+    work = json.loads(result.content)
+    for task in work["tasks"]:
+        progress = task["progress"]
+        progress["display"] = Percentage(progress["current"], progress["total"])
+    following = request.GET.copy()
+    following["page"] = str(work["page"] + 1)
+    response = render(
+        request,
+        "stewardship/background.html",
+        {
+            "work": work,
+            "next_query": following.urlencode(),
+            "selected_state": request.GET.get("state", "nonterminal"),
+            "states": ("nonterminal", "all", *TASK_STATES),
+        },
+    )
+    return _finish_html(request, result, response)
+
+
+@require_safe
+def task_page(request, task_id):
+    """Render bounded chronological task history without exposing worker payloads."""
+    result = _read(request, task_id, audit=False)
+    if result.status_code != 200:
+        return result
+    work = json.loads(result.content)
+    for item in [work["task"], *work["events"]]:
+        progress = item["progress"]
+        progress["display"] = Percentage(progress["current"], progress["total"])
+    following = request.GET.copy()
+    following["page"] = str(work["page"] + 1)
+    response = render(
+        request,
+        "stewardship/background-task.html",
+        {
+            "work": work,
+            "task": work["task"],
+            "next_query": following.urlencode(),
+        },
+    )
+    return _finish_html(request, result, response, task_id)

@@ -7,6 +7,7 @@ from test_parishsoft import Response, client
 
 from parishkit.parishsoft import ParishSoftAPIError
 from parishkit.parishsoft_changes import ChangeFeedIncomplete, load_family_changes
+from parishkit.parishsoft_pagination import IncompleteSourceCollection
 
 START, END = date(2026, 9, 10), date(2026, 9, 11)
 
@@ -87,9 +88,38 @@ def test_change_feed_ignores_cached_organization_and_indications(tmp_path):
 def test_wrong_organization_stops_before_fetching_family_data(tmp_path):
     """The expected numeric tenant identity is checked before the feed request."""
     source = provider(tmp_path, [])
-    with pytest.raises(ChangeFeedIncomplete, match="another organization"):
+    with pytest.raises(IncompleteSourceCollection, match="expected tenant"):
         load(source, organization_id=9)
     assert len(source.session.calls) == 1
+
+
+@pytest.mark.parametrize("actual", [None, True, "5", 0, -1, 9, 2**31])
+def test_generic_client_tenant_failure_never_requests_feed(
+    tmp_path, monkeypatch, actual
+):
+    """Wrong/malformed validated tenant IDs cannot authorize a full fallback."""
+    source = provider(tmp_path, [])
+    monkeypatch.setattr(source, "validate_organization", lambda: actual)
+    with pytest.raises(IncompleteSourceCollection, match="expected tenant"):
+        load(source)
+    assert source.session.calls == []
+
+
+def test_coherent_tenant_failure_is_not_feed_ambiguity_or_full_refresh_authority(
+    tmp_path,
+):
+    """A validated key loses its old tenant when revalidation fails."""
+    from test_parishsoft_source import initialized
+
+    from parishkit.parishsoft_pagination import IncompleteSourceCollection
+
+    source = initialized(tmp_path, [[{"organizationID": 9}]])
+    with pytest.raises(IncompleteSourceCollection, match="expected tenant"):
+        load(source)
+    assert len(source.session.calls) == 2
+    with pytest.raises(IncompleteSourceCollection, match="not been validated"):
+        source.get_uncached("families/change/list")
+    assert len(source.session.calls) == 2
 
 
 @pytest.mark.parametrize(

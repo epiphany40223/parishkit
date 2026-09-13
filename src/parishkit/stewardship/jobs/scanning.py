@@ -10,10 +10,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import connection, transaction
 from django.db.models import Q
 
-from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.observability import emit_failure
+from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
 from .dispatch import Handler, WorkQueue
 from .models import TaskRun
@@ -106,6 +108,12 @@ def collect_hints(*, handlers, cursor=None, limit=100):
             # A raised gate denial and an explicit False are equally held work;
             # neither may pin the cursor forever on an ineligible prefix.
             continue
+        except (StaleRecordError, StorageInvariantError, ObjectDoesNotExist) as error:
+            # One broken durable scope must not discard earlier hints or strand
+            # later independent work. Its own transaction has rolled back; retain
+            # a closed diagnostic while advancing the same fair page cursor.
+            # Database/transport failures still abort the scan as service outages.
+            emit_failure(error)
     position = (
         ScanCursor(page[-1].not_before, page[-1].pk) if len(page) == limit else None
     )

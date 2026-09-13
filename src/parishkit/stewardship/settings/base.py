@@ -45,7 +45,12 @@ TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
         "APP_DIRS": True,
-        "OPTIONS": {"context_processors": []},
+        "OPTIONS": {
+            "context_processors": [
+                "parishkit.stewardship.accounts.branding_context.parish_branding",
+                "parishkit.stewardship.accounts.admin_context.portal_chrome",
+            ]
+        },
     }
 ]
 SESSION_ENGINE = "django.contrib.sessions.backends.db"

@@ -1,6 +1,6 @@
 """Scheduler-owned refresh slots are atomic, replayable and scope-bound."""
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from importlib import import_module
 from uuid import uuid4
 
@@ -15,7 +15,9 @@ from parishkit.stewardship.jobs.scheduler import (
     scheduler_session,
 )
 from parishkit.stewardship.source import production
+from parishkit.stewardship.source.cadence import due_slots
 from parishkit.stewardship.source.models import SourceCurrent, SourceMutationLease
+from parishkit.stewardship.source.outcomes import scope_fingerprint
 from parishkit.stewardship.source.production import (
     SourceProducer,
     produce_refreshes,
@@ -27,7 +29,7 @@ from parishkit.stewardship.source.refresh_models import (
     SourceRefreshTick,
 )
 
-from .campaign_builders import add_draft, restored_runtime
+from .campaign_builders import add_draft, change, restored_runtime
 from .test_source_attempts_postgresql import configured
 from .test_source_requests_postgresql import command
 
@@ -65,6 +67,59 @@ def test_two_due_slots_share_one_full_request_and_survive_restart(tmp_path):
         assert all(
             tick.due_at <= database_now() for tick in SourceRefreshTick.objects.all()
         )
+
+
+@pytest.mark.parametrize("zone", ["EET", "US/Eastern", "America/Indianapolis"])
+def test_nightly_alias_uses_same_local_day_as_python_resolver(
+    tmp_path, monkeypatch, zone
+):
+    """A DST midnight slot must not become the previous date under a fixed offset."""
+    _, store, version, actor = configured(tmp_path)
+    sections = version.document()["sections"]
+    integration = sections["integrations"][0]
+    assert (
+        change(
+            store,
+            version,
+            actor,
+            [
+                {
+                    "operation": "update",
+                    "section": "parish",
+                    "id": sections["parish"][0]["id"],
+                    "values": {"timezone": zone},
+                },
+                {
+                    "operation": "update",
+                    "section": "integrations",
+                    "id": integration["id"],
+                    "values": {
+                        "settings": integration["values"]["settings"]
+                        | {"nightly_time": "00:30"}
+                    },
+                },
+            ],
+        ).state
+        == "applied"
+    )
+    now = datetime(2026, 4, 15, 12, tzinfo=UTC)
+    monkeypatch.setattr(production, "database_now", lambda: now)
+    with scheduler_session() as guard:
+        assert len(produce_refreshes(guard)) == 2
+    tick = SourceRefreshTick.objects.select_related("command__request").get(
+        command__cause="nightly"
+    )
+    request = tick.command.request
+    expected = due_slots(
+        now=now,
+        timezone=zone,
+        nightly_time="00:30",
+        scope_fingerprint=scope_fingerprint(
+            request.organization_id, request.window_digest
+        ),
+    )[0]
+    assert tick.due_at == expected.due_at
+    assert tick.slot_key == expected.slot_key
 
 
 def test_absent_configuration_and_restore_are_holds_not_consumed_slots(tmp_path):
@@ -148,18 +203,35 @@ def test_raw_tick_requires_scheduler_and_no_future_due_time(tmp_path):
     configured(tmp_path)
     with scheduler_session() as guard:
         produce_refreshes(guard)
-        tick = SourceRefreshTick.objects.first()
-        with pytest.raises(IntegrityError), work_transaction():
+        tick = SourceRefreshTick.objects.select_related("command__request").get(
+            command__cause="delta"
+        )
+        request = tick.command.request
+        future = due_slots(
+            now=tick.due_at + timedelta(days=1),
+            timezone=tick.timezone,
+            nightly_time=tick.nightly_time,
+            scope_fingerprint=scope_fingerprint(
+                request.organization_id, request.window_digest
+            ),
+        )[1]
+        with (
+            pytest.raises(IntegrityError, match="not due under its applied cadence"),
+            work_transaction(),
+        ):
             receipt = command(cause="delta", actor_id=None)
             SourceRefreshTick.objects.create(
                 command_id=receipt.command_id,
                 configuration_id=tick.configuration_id,
-                due_at=database_now() + timedelta(days=1),
+                due_at=future.due_at,
                 timezone=tick.timezone,
                 nightly_time=tick.nightly_time,
-                slot_key="b" * 64,
+                slot_key=future.slot_key,
             )
-    with pytest.raises(IntegrityError), work_transaction():
+    with (
+        pytest.raises(IntegrityError, match="requires scheduler and work ownership"),
+        work_transaction(),
+    ):
         receipt = command(cause="delta", actor_id=None)
         SourceRefreshTick.objects.create(
             command_id=receipt.command_id,
@@ -167,7 +239,7 @@ def test_raw_tick_requires_scheduler_and_no_future_due_time(tmp_path):
             due_at=tick.due_at,
             timezone=tick.timezone,
             nightly_time=tick.nightly_time,
-            slot_key="c" * 64,
+            slot_key=tick.slot_key,
         )
 
 

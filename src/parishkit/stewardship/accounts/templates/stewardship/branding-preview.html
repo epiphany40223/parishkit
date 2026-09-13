@@ -1,0 +1,12 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Review parish logos" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Review parish logos" %}</h1>
+<p class="notice">{% translate "These files are staged, not applied. Confirmation queues a YAML configuration change. Historical configuration versions retain their logos." %}</p>
+<section class="panel"><h2>{% translate "Generated variants" %}</h2>
+{% for asset in assets %}<figure><img src="{% url 'admin:branding_asset' asset.pk %}" alt="{{ asset.label }}" width="{{ asset.width }}" height="{{ asset.height }}" class="branding-preview"><figcaption>{{ asset.label|capfirst }} — {{ asset.width|number }} × {{ asset.height|number }} {% translate "pixels" %}</figcaption></figure>{% endfor %}</section>
+<p>{% translate "This confirmation expires in fifteen minutes. Unapplied uploads expire after twenty-four hours or when their owning setup attempt expires." %}</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}">
+<button type="submit">{% translate "Confirm new logos" %}</button></form>
+<p><a href="{% url 'admin:branding_settings' %}">{% translate "Back to parish logos" %}</a></p>
+{% endblock %}

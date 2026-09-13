@@ -1,0 +1,11 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Parish logos" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Parish logos" %}</h1>
+<section class="panel"><h2>{% translate "Current logos" %}</h2>
+{% for asset in assets %}<figure><img src="{% url 'public:branding_asset' asset.pk %}" alt="{{ asset.label }}" width="{{ asset.width }}" height="{{ asset.height }}" class="branding-preview"><figcaption>{{ asset.label|capfirst }}</figcaption></figure>
+{% empty %}<p>{% translate "No stored logo variants are available for this configuration." %}</p>{% endfor %}</section>
+<p>{% translate "Upload one large logo to generate large, menu, icon and favicon variants. The original file and its metadata are not retained. Review every size before confirming a versioned configuration change." %}</p>
+<form method="post" enctype="multipart/form-data" class="panel">{% csrf_token %}{{ form.as_div }}
+<button type="submit">{% translate "Upload and preview logos" %}</button></form>
+{% endblock %}

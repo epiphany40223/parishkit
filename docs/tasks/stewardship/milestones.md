@@ -1660,13 +1660,23 @@ release, or merging the next PR.
 
 Scope: [Phase 2](../../plans/stewardship/overall.md#phase-2-source-truth-initial-setup-and-campaign-preparation).
 
-- [ ] M2.01 — Demonstrate empty deployment through a configured Testing campaign.
-- [ ] M2.02 — Prove YAML/database agreement and safe installer/wizard interruption.
-- [ ] M2.03 — Demonstrate atomic full/delta refresh and stable campaign identities.
-- [ ] M2.04 — Preview each Family page/email without creating live fulfillment.
-- [ ] M2.05 — Complete the focused import/setup correction pass before the Family slice.
+- [x] M2.01 — Demonstrate empty deployment through a configured Testing campaign.
+- [x] M2.02 — Prove YAML/database agreement and safe installer/wizard interruption.
+- [x] M2.03 — Demonstrate atomic full/delta refresh and stable campaign identities.
+- [x] M2.04 — Preview each Family page/email without creating live fulfillment.
+- [x] M2.05 — Complete the focused import/setup correction pass before the Family slice.
 
-Evidence: Not started.
+Evidence: All Phase 2 implementation, local acceptance and three independent
+full-phase review/fix rounds pass at corrected implementation `ea2d5cb`.
+The final round has no High/Critical findings; every retained Medium finding
+has a correction and regression evidence. Final checks pass 4,297 baseline,
+2,114 PostgreSQL, 447 browser, 59 container/isolation/provisioning and eight
+operational Compose cases. Scoped coverage is 94.16% lines and 85.04% branches.
+Both development and production-shaped profiles demonstrate complete initial
+setup and selected-but-unapplied cancellation after actual consumer ACKs.
+The [acceptance index](../../guides/stewardship-phase-2-acceptance.md) maps each
+demonstration and links review dispositions. PR CI and human merge approval
+remain required before Phase 3A; Gate 2 remains after the Family response slice.
 
 ## Phase 3: Family response
 

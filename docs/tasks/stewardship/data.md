@@ -202,13 +202,14 @@ stable encrypted manual codes, versioned MAC lookup/collision constraints,
 population reconciliation, sealed token generations, rehearsal epochs/reservations
 and isolated sessions. Phase 2 now connects normalized promoted source data to
 the Family allocator in the same transaction, with explicit suppression inputs,
-stable reactivation codes, rollback and rotation-contention tests. Enabling the
-complete runtime promotion handler and submission/mail-state pointers remains
-with BG-05/DAT-06/DAT-07; do not fabricate those later tables. Additional
+stable reactivation codes, rollback and rotation-contention tests. The complete
+BG-05 runtime promotion handler and initial configured-marker transaction now
+consume that allocator. Submission/mail-state pointers remain with DAT-06/DAT-07;
+do not fabricate those later tables. Additional
 credential lifecycle/reactivation and retirement cases now pass; invitation
 evaluation and backup-catalog integration retain their named later owners. See
 [Phase 1B evidence](../../guides/stewardship-phase-1b.md); the mixed-phase tasks stay
-unchecked rather than claiming complete runtime integration. The source-owned
+unchecked rather than claiming completion of later consumers. The source-owned
 Family effect is recorded in [Phase 2 evidence](../../guides/stewardship-phase-2.md).
 
 ## DAT-05: Portal users and authorization policy records
@@ -218,9 +219,23 @@ Scope and dependencies: [DAT-05 work package](../../plans/stewardship/data.md#da
 - [ ] DAT-05.01 — Implement portal users, login rules, and assignments.
 - [x] DAT-05.02 — Materialize policy from applied YAML versions.
 - [x] DAT-05.03 — Enforce rule precedence and last-Administrator guards.
-- [ ] DAT-05.04 — Implement provenance-aware chair seeds and runtime suspension overlays.
+- [ ] DAT-05.04 — Implement Ministry activity policy, provenance-aware chair seeds, and runtime suspension overlays.
 - [x] DAT-05.05 — Index login and Ministry authorization queries.
 - [ ] DAT-05.06 — Test policy activation, source transitions, and idempotent autosave races.
+
+Phase 2 Ministry activity storage is implemented: v4 YAML/patch and recovery
+formats, exact immutable PostgreSQL projections, retained tenant/DUID/record-ID
+bindings, current-catalog activity selection and narrow runtime grants. The
+source suggestion calculator groups exact Member relationships and flags shared
+email ambiguity without granting access. Exact retained Member selections,
+source-promotion/configuration reconciliation receipts, suspension overlays and
+durable review episodes now have owning services and PostgreSQL guards. Activity
+activation uses the restricted installer and the same source predicate; missing
+source still holds seeded activity edits. The Admin Ministry activity screen and
+complete refresh-worker wiring now consume these services. The Admin-confirmed
+seed creator/autosave workflow remains with ADM-07 in Phase 5; Family submission
+enforcement remains with Phase 3.
+See the [Phase 2 checkpoint](../../guides/stewardship-phase-2.md).
 
 Evidence: The Phase 1A policy batch adds immutable normalized rule/grant/
 assignment projections, explicit provenance, verified identity metadata, runtime
@@ -228,9 +243,11 @@ overlays, lookup indexes, strict v2 schema/patch dispatch, last-Admin protection
 and immediate exact-address/hosted-domain decisions. High-impact activation
 commits security-notification intent and denial-namespace evidence atomically.
 See the [foundation boundary](../../guides/stewardship-authorization-foundation.md).
-DAT-05.01/.04/.06 remain partial: source-backed suggestions/review tasks,
-Admin-confirmed seeds, promotion integration, actual login/audit/session
-enforcement, and autosave/service admission races require Phase 1B/2 consumers.
+DAT-05.01/.04/.06 remain partial for the Admin-confirmed seed creator, user-rule
+UI and end-to-end autosave/source races owned by ADM-07, not missing Phase 2
+activity editing or refresh integration.
+Phase 1B supplies actual login/audit/session enforcement; Phase 2 supplies the
+source-backed reconciliation services described above.
 The Phase 1A policy-schema portion is complete; these mixed-phase checkboxes
 do not represent additional Phase 1A PRs.
 

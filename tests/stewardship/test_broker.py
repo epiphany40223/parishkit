@@ -111,4 +111,4 @@ def test_worker_default_queues_and_unacked_keys_are_service_isolated(service, ex
     assert runtime.app.conf.task_default_queue in expected
     options = runtime.app.conf.broker_transport_options
     for name in ("unacked_key", "unacked_index_key", "unacked_mutex_key"):
-        assert options[name].startswith(service.value + ":")
+        assert options[name].startswith("qos:" + service.value + ":")

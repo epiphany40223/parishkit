@@ -10,6 +10,7 @@ def database_identities():
     for role in (
         ServiceRole.WEB,
         ServiceRole.WORKER,
+        ServiceRole.MAIL_DISPATCH,
         ServiceRole.SCHEDULER,
         ServiceRole.CONFIG_INSTALLER,
         ServiceRole.BOOTSTRAP,

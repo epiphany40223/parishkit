@@ -126,12 +126,12 @@ def test_empty_indications_preserve_giving_age_but_reevaluate_roster_dates(tmp_p
     row = next(iter(options["base"]["roster"].values()))
     row["endDate"] = TODAY.isoformat()
     assert row["current"] is True
-    connection = client(tmp_path, [[]])
+    connection = client(tmp_path, [[], [{"famGroupID": 7, "famGroup": "Active"}]])
     result = load_delta_source(connection, **options)
     assert next(iter(result.corpus["roster"].values()))["current"] is False
     assert row["current"] is True
     assert result.evidence["giving_as_of_date"] == BEFORE.isoformat()
-    assert len(connection.session.calls) == 2
+    assert len(connection.session.calls) == 3
 
 
 @pytest.mark.parametrize("member_rows", [[], [{"memberDUID": 4, "familyDUID": 1}]])
@@ -145,14 +145,36 @@ def test_removed_or_replaced_member_requires_full_refresh(tmp_path, member_rows)
         load_delta_source(connection, **arguments())
 
 
-def test_changed_global_family_group_definition_requires_full_refresh(tmp_path):
+@pytest.mark.parametrize("changed_family", [False, True])
+def test_changed_global_family_group_definition_requires_full_refresh(
+    tmp_path, changed_family
+):
     """A global eligibility lookup change may affect unqueried households."""
     connection = client(
         tmp_path,
-        [[indication()], *household(), [{"famGroupID": 7, "famGroup": "Inactive"}]],
+        [
+            [indication()] if changed_family else [],
+            *(household() if changed_family else []),
+            [{"famGroupID": 7, "famGroup": "Inactive"}],
+        ],
     )
     with pytest.raises(ChangeFeedIncomplete, match="group definitions"):
         load_delta_source(connection, **arguments())
+
+
+@pytest.mark.parametrize("group", [" Active ", "\u00a0Active\u00a0", "Cafe\u0301"])
+def test_group_comparison_uses_the_full_load_canonicalization(tmp_path, group):
+    """Whitespace and Unicode-equivalent labels do not force perpetual full loads."""
+    options = arguments()
+    data = source()
+    data.family_groups[7] = group
+    options["base"] = normalize_core(data, as_of=BEFORE)
+    connection = client(
+        tmp_path,
+        [[indication()], *household(), [{"famGroupID": 7, "famGroup": group}]],
+    )
+    result = load_delta_source(connection, **options)
+    assert result.corpus == options["base"]
 
 
 def test_unavailable_family_requires_full_without_a_partial_corpus(tmp_path):

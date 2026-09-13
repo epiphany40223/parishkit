@@ -83,6 +83,11 @@ campaign configuration before making the system configured:
 7. Exact preview/readiness summary and final confirmation.
 
 The staged ParishSoft load provides the Ministries/funds needed by later steps.
+Starting that load fixes the Parish timezone for this setup attempt, so the
+source catalog and first campaign retain the same civil-date interpretation.
+The Parish step explains this restriction and keeps other Parish fields editable.
+Changing the timezone then requires cancelling and starting a new setup attempt;
+it never silently reinterprets an existing source result.
 Wizard progress may be kept in the authenticated session and temporary staging
 tables/files, but no staged configuration is active until installer
 finalization. While the bootstrap Admin remains on the correlated source-load
@@ -113,9 +118,16 @@ configuration installer, and then commits the promoted source snapshot, Family
 codes, Testing mode, configured marker, and one redacted setup audit event. The
 configured marker is last and cannot become visible until YAML/DB digests match
 and every required consumer acknowledges its secret fingerprint. A crash or
-failure resumes idempotently from installer checkpoints; before the marker,
+failure resumes idempotently from installer checkpoints only within the original
+Admin session's idle and absolute lifetime. Finalization progress displays both
+deadlines and does not renew them; expiry cancels unfinished setup, and a new
+attempt requires cleanup and a new login. Before the marker,
 normal routes remain unconfigured/fail-closed and cancel cleanup removes sealed
 staging and any wizard-only files without exposing a partial product setup.
+Cancellation after YAML selection uses the
+[initial-setup abort journal](../data/spec.md#parish-and-integrations), never a
+rollback of applied configuration. Final database activation and the configured
+marker share one transaction so cancellation cannot fall between those commits.
 
 Restore is an operator command performed before bootstrap/wizard. A restored,
 valid configured database skips initial setup after version/migration and
@@ -192,6 +204,48 @@ it. Failure or expiry destroys sealed staging and leaves the old working
 credential installed. Slack is optional; its token and channel must be
 supplied/removed together. Non-secret integration setting changes use the YAML
 configuration-request path rather than the credential installer.
+
+### Ministry activity management
+
+Admins can mark a Ministry inactive or reactivate it through an Admin web
+screen. The screen lists the current Ministry catalog with name, DUID, local
+active/inactive state and campaign inclusion, and supports searching and
+filtering by status. Saves use the ordinary versioned YAML configuration-request
+workflow, with optimistic concurrency, an impact preview and audit; a pending
+save is not presented as applied.
+
+ParishSoft's Ministry catalog does not supply a reliable active/inactive flag.
+Catalog entries default to locally active unless an Admin has marked them
+inactive. The parish-wide override is keyed by ParishSoft organization and
+Ministry DUID, not its name or a campaign. Refreshes, renames, new campaigns and
+temporary disappearance/reappearance in the catalog never erase an override.
+A Ministry absent from the current catalog is unavailable regardless of its
+local setting. Reactivation never creates a source Ministry or changes its
+upstream roster.
+
+Inactive Ministries are not shown to parishioners: they are omitted from both
+current-membership displays and join/leave controls. Visibility requires current
+catalog presence, local active status and inclusion in the campaign's selected
+Ministry set. Staff/Admin records, source rosters, past submissions and existing
+follow-up requests remain intact; hiding a Ministry is not a request to leave
+it or to withdraw earlier interest. The server enforces the same eligibility
+as the UI and rechecks it at submission. A stale form cannot create new actions
+for an inactive Ministry, and omission of hidden fields never cancels retained
+requests. Use the ordinary changed-baseline reconfirmation flow for stale forms.
+
+Local activity may be changed during a campaign without editing its structurally
+locked Ministry-selection set. Reactivating an excluded Ministry does not add
+it to that set. Historical administrative views retain their recorded inputs;
+current parishioner pages and previews use the applied visibility policy.
+
+For [Chairperson suggestions and assignments](#chairperson-suggestions-and-assignments),
+an active Ministry means one present in the current catalog and locally active.
+Applying an activity change reevaluates suggestions and seeded assignment
+overlays against the current source in the configuration-activation transaction,
+using the same suspension/reactivation and review rules as source promotion.
+It does not delete authoritative grants or alter manual Ministry assignments,
+Staff roles or Admin roles. The impact preview identifies affected seeded
+assignments before confirmation.
 
 ## Campaign configuration
 

@@ -13,6 +13,7 @@ from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .canonical import canonical_payload
+from .errors import SourceScopeChanged
 from .models import SourceCurrent, SourceMutationLease, SourceSnapshot
 from .refresh_models import REFRESH_CAUSES, SourceRefreshCommand, SourceRefreshRequest
 from .windows import refresh_window
@@ -79,7 +80,7 @@ def admit_refresh_request(action, status):
         _organization(scope) != request.organization_id
         or _window(scope).digest != request.window_digest
     ):
-        raise PermissionError("The source refresh window is no longer current.")
+        raise SourceScopeChanged("The source refresh window is no longer current.")
     return True
 
 
@@ -90,6 +91,10 @@ def _pending(*, organization_id, digest, kind):
     A retained lease and a committed promotion also exclude their retry root;
     this closes the release-to-task-completion interval. The global work order
     serializes creation with every compiled refresh claim/effect.
+    An abandoned root without a lease or promotion may still be waiting for a
+    fallback or admission hold. Coalesce it until its owning recovery disposes
+    it; receipts identify that actual state, not a promise of a running read.
+    Repeated manual commands must not create another root for the same hold.
     """
     active_roots = TaskRun.objects.filter(state="running").values("root_id")
     leased_roots = SourceMutationLease.objects.filter(owner__isnull=False).values(

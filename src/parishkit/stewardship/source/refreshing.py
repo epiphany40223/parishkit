@@ -74,9 +74,9 @@ def _inputs(attempt_id, execution, claim):
         zone = (
             scope.campaign.active_configuration.timezone
             if scope.campaign is not None
-            else Parish.objects.get(
+            else Parish.objects.values_list("timezone", flat=True).get(
                 configuration_id=scope.runtime.active_configuration_id
-            ).timezone
+            )
         )
         return RefreshInputs(
             _window(scope),

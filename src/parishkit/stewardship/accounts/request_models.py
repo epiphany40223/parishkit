@@ -1,5 +1,6 @@
 """Immutable submitted intents and append-only installer checkpoints."""
 
+from django.contrib.postgres.indexes import GinIndex
 from django.db import models
 
 from parishkit.stewardship.storage import ImmutableRecord
@@ -23,6 +24,13 @@ class ConfigurationChangeRequest(ImmutableRecord):
 
     class Meta:
         db_table = "stewardship_config_request"
+        indexes = [
+            GinIndex(
+                fields=["patch"],
+                name="config_request_patch_lookup",
+                opclasses=["jsonb_path_ops"],
+            )
+        ]
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(
@@ -33,6 +41,15 @@ class ConfigurationChangeRequest(ImmutableRecord):
                         "operator-recovery-patch-v2",
                         "operator-recovery-bootstrap-v1",
                         "campaign-foundation-patch-v3",
+                        "ministry-activity-patch-v4",
+                        "operator-recovery-ministry-v4",
+                        "campaign-content-patch-v5",
+                        "operator-recovery-content-v5",
+                        "integration-credential-patch-v6",
+                        "initial-setup-patch-v7",
+                        "source-cadence-patch-v8",
+                        "operator-recovery-cadence-v8",
+                        "integration-credential-cadence-v8",
                     ]
                 ),
                 name="config_request_schema",
@@ -55,6 +72,9 @@ class ConfigurationChangeRequest(ImmutableRecord):
                             "operator-recovery-patch-v1",
                             "operator-recovery-patch-v2",
                             "operator-recovery-bootstrap-v1",
+                            "operator-recovery-ministry-v4",
+                            "operator-recovery-content-v5",
+                            "operator-recovery-cadence-v8",
                         ]
                     )
                     | models.Q(
@@ -68,6 +88,9 @@ class ConfigurationChangeRequest(ImmutableRecord):
                             "operator-recovery-patch-v1",
                             "operator-recovery-patch-v2",
                             "operator-recovery-bootstrap-v1",
+                            "operator-recovery-ministry-v4",
+                            "operator-recovery-content-v5",
+                            "operator-recovery-cadence-v8",
                         ],
                     )
                 ),

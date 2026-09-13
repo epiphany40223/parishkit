@@ -198,7 +198,10 @@ def _publish_pointer(record):
     if (
         record.source_generation < prior.source_generation
         or record.submission_watermark < prior.submission_watermark
-        or record.through_date < prior.through_date
+        or (
+            record.timezone_configuration_id == prior.timezone_configuration_id
+            and record.through_date < prior.through_date
+        )
     ):
         return False
     pointer.fact_set = record

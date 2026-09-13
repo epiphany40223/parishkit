@@ -3,14 +3,47 @@
 import os
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from io import BytesIO
 from pathlib import Path
 from threading import Thread
+from uuid import uuid4
 
 import pytest
 from django.contrib.staticfiles import finders
 from django.template.loader import render_to_string
+from PIL import Image
 
+from parishkit.stewardship.accounts.branding_views import LogoForm
+from parishkit.stewardship.accounts.campaign_forms import CampaignForm
+from parishkit.stewardship.accounts.campaign_mail_views import CampaignMailForm
+from parishkit.stewardship.accounts.content_forms import ContentForm
+from parishkit.stewardship.accounts.integration_forms import (
+    CredentialForm,
+    IntegrationForm,
+)
+from parishkit.stewardship.accounts.parish_views import ParishForm
+from parishkit.stewardship.accounts.schedule_forms import Schedules, ScheduleWindow
+from parishkit.stewardship.accounts.setup_branding_views import SetupLogoForm
+from parishkit.stewardship.accounts.setup_campaign_views import SetupCampaignForm
+from parishkit.stewardship.accounts.setup_confirmation_views import (
+    SetupConfirmationForm,
+)
+from parishkit.stewardship.accounts.setup_content_views import SetupContentForm
+from parishkit.stewardship.accounts.setup_credential_views import SetupCredentialForm
+from parishkit.stewardship.accounts.setup_forms import FORMS, STEPS
+from parishkit.stewardship.accounts.setup_mail_views import SetupMailForm
+from parishkit.stewardship.accounts.setup_notification_views import (
+    SetupNotificationForm,
+)
+from parishkit.stewardship.accounts.setup_schedule_views import SetupScheduleWindow
+from parishkit.stewardship.accounts.share_forms import (
+    ShareOptions,
+    default_share_options,
+)
+from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.web.security import CSP
+
+from ..campaign_factory import campaign, schedule
 
 NOW = datetime(2026, 9, 10, 12, tzinfo=UTC)
 
@@ -22,9 +55,15 @@ def browser_opt_in():
         pytest.skip("Browser component tests require PARISHKIT_RUN_BROWSER_TESTS=1.")
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def browser_engine(request):
-    """An explicitly enabled browser job fails if tools/engines are missing."""
+    """Isolate processes as well as contexts for clock and interception scenarios.
+
+    Reusing one WebKit process across this growing suite reproducibly stalled
+    navigation before any request in the 64th scenario; either 63-test subset
+    passed. Fresh processes avoid cross-scenario engine state without retries,
+    skipped assertions, or longer navigation timeouts.
+    """
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as runner:
@@ -47,11 +86,42 @@ def page(browser_engine):
 @pytest.fixture(scope="module")
 def component_origin():
     """An exact response allowlist avoids exposing source files through the server."""
+    mail_campaign = campaign()
+    mail = schedule(mail_campaign["id"])
     context = {
         "server_now": NOW,
         "deadline": NOW + timedelta(hours=1),
         "absolute_deadline": NOW + timedelta(hours=4),
         "csrf_token": "a" * 64,
+    }
+    admin = {
+        "admin": True,
+        "parish_name": "Sample Parish",
+        "navigation": [
+            {"url": "/home", "label": "Home"},
+            {"url": "/parish-settings", "label": "Parish settings"},
+            {"url": "/ministries", "label": "Ministry activity"},
+        ],
+        "testing": True,
+        "testing_recipient": "testing@example.org",
+        "background": {"total": 1, "running": 1},
+        "server_now": NOW,
+        "idle_deadline": NOW + timedelta(hours=1),
+        "absolute_deadline": NOW + timedelta(hours=12),
+    }
+    ministry = {
+        "duid": 12345,
+        "name": "Community outreach",
+        "active": True,
+        "included": True,
+    }
+    branding_asset = {"pk": uuid4(), "label": "large", "width": 1024, "height": 512}
+    setup_draft = {
+        "status": {"attempt_id": uuid4(), "state": "collecting", "version": 2},
+        "sections": {},
+        "idle_at": NOW + timedelta(minutes=30),
+        "absolute_at": NOW + timedelta(hours=12),
+        "watchdog_at": None,
     }
     responses = {
         "/login": ("text/html", render_to_string("stewardship/login.html", context)),
@@ -74,7 +144,516 @@ def component_origin():
         ),
     }
     for path, template, extra in (
-        ("/home", "home", {"configuration": {"mode": "testing"}}),
+        (
+            "/branding-settings",
+            "branding-settings",
+            {
+                "form": LogoForm(initial={"base_digest": "a" * 64}),
+                "assets": [branding_asset],
+            },
+        ),
+        (
+            "/branding-preview",
+            "branding-preview",
+            {"assets": [branding_asset], "preview": "synthetic-preview"},
+        ),
+        (
+            "/integrations",
+            "integrations",
+            {
+                "integrations": [
+                    {"target": "parishsoft", "label": "ParishSoft", "configured": True}
+                ]
+            },
+        ),
+        (
+            "/integration-settings",
+            "integration-settings",
+            {
+                "target": "parishsoft",
+                "label": "ParishSoft",
+                "fingerprint": "a" * 64,
+                "latest": {"state": "staged", "updated_at": NOW},
+                "replacement_allowed": True,
+                "form": IntegrationForm(
+                    "parishsoft",
+                    initial={"organization_id": 12345, "base_digest": "a" * 64},
+                ),
+            },
+        ),
+        (
+            "/integration-preview",
+            "integration-preview",
+            {
+                "target": "parishsoft",
+                "label": "ParishSoft",
+                "preview": "synthetic-preview",
+                "changes": [
+                    {"label": "Organization ID", "before": "12345", "after": "54321"}
+                ],
+            },
+        ),
+        (
+            "/credential-replace",
+            "credential-replace",
+            {
+                "target": "parishsoft",
+                "label": "ParishSoft",
+                "form": CredentialForm(initial={"intent": "synthetic-intent"}),
+            },
+        ),
+        (
+            "/credential-selection",
+            "credential-selection",
+            {
+                "label": "ParishSoft",
+                "before": "a" * 64,
+                "receipt": {"pk": uuid4(), "resulting_fingerprint": "b" * 64},
+                "preview": "synthetic-selection-intent",
+                "selected": False,
+            },
+        ),
+        (
+            "/credential-status",
+            "credential-status",
+            {
+                "receipt": {"request_id": uuid4(), "state": "awaiting_ack"},
+                "pending": True,
+            },
+        ),
+        (
+            "/clone-settings",
+            "clone-settings",
+            {
+                "source": {
+                    "pk": mail_campaign["id"],
+                    "active_configuration": mail_campaign["values"],
+                },
+                "form": CampaignForm(
+                    initial={
+                        "timezone": "America/New_York",
+                        "census": True,
+                        "base_digest": "a" * 64,
+                    }
+                ),
+                "schedules": Schedules(
+                    previous=[mail],
+                    templates=[],
+                    campaign_id=mail_campaign["id"],
+                    campaign=mail_campaign["values"],
+                    prefix="schedules",
+                ),
+                "clone_seed": "synthetic-seed",
+            },
+        ),
+        (
+            "/clone-preview",
+            "clone-preview",
+            {
+                "source": {
+                    "pk": mail_campaign["id"],
+                    "active_configuration": mail_campaign["values"],
+                },
+                "changes": [
+                    {
+                        "label": "Campaign dates",
+                        "after": "2027-10-01 through 2027-10-31",
+                    }
+                ],
+                "schedules": [mail["values"]],
+                "preview": "synthetic-preview",
+                "content_previews": [
+                    {
+                        "label": "Welcome",
+                        "rendered": {
+                            "subject": None,
+                            "html": "<p>Welcome, Sample Family.</p>",
+                            "text": "Welcome, Sample Family.",
+                        },
+                    }
+                ],
+            },
+        ),
+        (
+            "/schedule-settings",
+            "schedule-settings",
+            {
+                "campaign": {
+                    "pk": mail_campaign["id"],
+                    "active_configuration": mail_campaign["values"],
+                },
+                "window": ScheduleWindow(
+                    previous=mail_campaign["values"], editable=True, prefix="window"
+                ),
+                "schedules": Schedules(
+                    previous=[mail],
+                    templates=[],
+                    campaign_id=mail_campaign["id"],
+                    campaign=mail_campaign["values"],
+                    prefix="schedules",
+                ),
+                "base_digest": "a" * 64,
+                "editable": True,
+            },
+        ),
+        (
+            "/schedule-preview",
+            "schedule-preview",
+            {
+                "campaign": {
+                    "pk": mail_campaign["id"],
+                    "active_configuration": mail_campaign["values"],
+                },
+                "changes": [
+                    {
+                        "label": "Reminder",
+                        "operation": "remove",
+                        "before": mail["values"],
+                        "after": None,
+                        "impact": {
+                            "delivered": 1234,
+                            "blocking": 0,
+                            "occurrences": 3456,
+                            "cancellable": 2222,
+                            "outboxes": 0,
+                            "failed": 0,
+                        },
+                    }
+                ],
+                "window_changes": {},
+                "blocking": 0,
+                "preview": "synthetic-preview",
+            },
+        ),
+        (
+            "/content-settings",
+            "content-settings",
+            {
+                "campaign": {
+                    "pk": uuid4(),
+                    "active_configuration": {"name": "Sample campaign"},
+                },
+                "label": "Family welcome",
+                "visual": "<p>Hello Sample Family</p>",
+                "placeholders": ["family_name", "parish_name"],
+                "form": ContentForm(
+                    kind="page",
+                    initial={
+                        "base_digest": "a" * 64,
+                        "html": "<p>Hello Sample Family</p>",
+                        "text": "Hello Sample Family",
+                        "generate_text": True,
+                    },
+                ),
+            },
+        ),
+        (
+            "/setup-content-edit",
+            "setup-content-edit",
+            {
+                "draft": setup_draft,
+                "label": "Family welcome",
+                "visual": "<p>Hello Sample Family</p>",
+                "placeholders": ["family_name", "parish_name"],
+                "form": SetupContentForm(
+                    kind="page",
+                    initial={
+                        "html": "<p>Hello Sample Family</p>",
+                        "text": "Hello Sample Family",
+                        "generate_text": True,
+                    },
+                ),
+                "sample": {
+                    "html": "<p>Hello Sample Family</p>",
+                    "text": "Hello Sample Family",
+                },
+            },
+        ),
+        (
+            "/setup-shares",
+            "setup-shares",
+            {
+                "draft": setup_draft,
+                "campaign_name": "Sample campaign",
+                "formset": ShareOptions(
+                    prefix="options", previous=default_share_options()
+                ),
+            },
+        ),
+        (
+            "/setup-slack-test",
+            "setup-notification",
+            {
+                "draft": setup_draft,
+                "channel_id": "CFIXTURE",
+                "pending": True,
+                "unknown": False,
+                "form": SetupNotificationForm(
+                    initial={
+                        "preview_token": "synthetic-preview",
+                        "request_key": uuid4(),
+                    }
+                ),
+                "items": [
+                    {
+                        "id": "synthetic-delivery",
+                        "state": "queued",
+                        "label": "Awaiting Slack installer",
+                        "created_at": NOW.isoformat(),
+                        "current": True,
+                    }
+                ],
+            },
+        ),
+        (
+            "/setup-mail-test",
+            "setup-mail",
+            {
+                "draft": setup_draft,
+                "testing_recipient": "testing@example.org",
+                "pending": True,
+                "unknown": False,
+                "form": SetupMailForm(
+                    initial={
+                        "preview_token": "synthetic-preview",
+                        "request_key": uuid4(),
+                        "slot": "initial",
+                    }
+                ),
+                "items": [
+                    {
+                        "id": "synthetic-delivery",
+                        "state": "queued",
+                        "label": "Awaiting mail worker",
+                        "created_at": NOW.isoformat(),
+                        "current": True,
+                    }
+                ],
+            },
+        ),
+        (
+            "/campaign-mail",
+            "campaign-mail",
+            {
+                "campaign": {
+                    "pk": mail_campaign["id"],
+                    "active_configuration": mail_campaign["values"],
+                },
+                "form": CampaignMailForm(
+                    initial={"preview_token": "synthetic-preview"}
+                ),
+                "sample": {
+                    "subject": "[TEST] Sample invitation",
+                    "html": "<p>Hello Sample Family.</p>",
+                    "text": "Hello Sample Family.",
+                },
+                "testing_recipient": "testing@example.org",
+                "pending": False,
+                "unknown": False,
+                "items": [
+                    {
+                        "id": uuid4(),
+                        "label": "Provider accepted the test",
+                        "created_at": NOW,
+                        "current": True,
+                    }
+                ],
+            },
+        ),
+        (
+            "/campaign-mail-unknown",
+            "campaign-mail",
+            {
+                "campaign": {
+                    "pk": mail_campaign["id"],
+                    "active_configuration": mail_campaign["values"],
+                },
+                "form": CampaignMailForm(
+                    initial={"preview_token": "synthetic-preview"}
+                ),
+                "sample": {
+                    "subject": "[TEST] Sample invitation",
+                    "html": "<p>Hello Sample Family.</p>",
+                    "text": "Hello Sample Family.",
+                },
+                "testing_recipient": "testing@example.org",
+                "pending": False,
+                "unknown": True,
+                "items": [
+                    {
+                        "id": uuid4(),
+                        "label": "Delivery uncertain",
+                        "created_at": NOW,
+                        "current": False,
+                    }
+                ],
+            },
+        ),
+        (
+            "/campaign-mail-pending",
+            "campaign-mail",
+            {
+                "campaign": {
+                    "pk": mail_campaign["id"],
+                    "active_configuration": mail_campaign["values"],
+                },
+                "form": CampaignMailForm(
+                    initial={"preview_token": "synthetic-preview"}
+                ),
+                "sample": {
+                    "subject": "[TEST] Sample invitation",
+                    "html": "<p>Hello Sample Family.</p>",
+                    "text": "Hello Sample Family.",
+                },
+                "testing_recipient": "testing@example.org",
+                "pending": True,
+                "unknown": False,
+                "items": [
+                    {
+                        "id": uuid4(),
+                        "label": "Awaiting mail worker",
+                        "created_at": NOW,
+                        "current": True,
+                    }
+                ],
+            },
+        ),
+        (
+            "/setup-confirmation",
+            "setup-confirmation",
+            {
+                "draft": setup_draft,
+                "form": SetupConfirmationForm(
+                    initial={"preview_token": "synthetic-preview"}
+                ),
+                "candidate_digest": "a" * 64,
+            },
+        ),
+        (
+            "/setup-confirmation-unready",
+            "setup-confirmation",
+            {
+                "draft": setup_draft,
+                "form": SetupConfirmationForm(
+                    initial={"preview_token": "synthetic-preview"}
+                ),
+                "candidate_digest": "a" * 64,
+                "readiness_problem": "The reviewed email test must be accepted.",
+            },
+        ),
+        (
+            "/setup-finalization",
+            "setup-cancel",
+            {
+                "attempt": {"state": "frozen", "attempt_id": uuid4()},
+                "checkpoint": "yaml_activated",
+                "prepared": True,
+                "credentials": [
+                    {"target": "parishsoft", "request__state": "awaiting_ack"}
+                ],
+                "source": {
+                    "id": uuid4(),
+                    "state": "running",
+                    "phase": "loading",
+                    "progress": Percentage(1234, 5678),
+                },
+            },
+        ),
+        (
+            "/setup-installation",
+            "setup-cancel",
+            {
+                "attempt": {"state": "frozen", "attempt_id": uuid4()},
+                "checkpoint": "validating",
+                "prepared": False,
+                "credentials": [],
+            },
+        ),
+        (
+            "/setup-preview",
+            "setup-preview",
+            {
+                "draft": setup_draft,
+                "parish": {
+                    "name": "Sample Parish",
+                    "website": "https://example.invalid/",
+                    "phone": "+12025550123",
+                },
+                "campaign": mail_campaign["values"],
+                "testing_recipient": "testing@example.org",
+                "candidate_digest": "a" * 64,
+                "document": '{"sections": {"campaigns": []}}',
+                "samples": [
+                    {
+                        "label": "Family welcome",
+                        "sample": {
+                            "html": "<p>Hello Sample Family</p>",
+                            "text": "Hello Sample Family",
+                        },
+                    }
+                ],
+            },
+        ),
+        (
+            "/setup-schedules",
+            "setup-schedules",
+            {
+                "draft": setup_draft,
+                "campaign_name": "Sample campaign",
+                "window": SetupScheduleWindow(
+                    prefix="window", previous=mail_campaign["values"]
+                ),
+                "schedules": Schedules(
+                    prefix="schedules",
+                    previous=[mail],
+                    templates=[],
+                    campaign_id=mail_campaign["id"],
+                    campaign=mail_campaign["values"],
+                ),
+            },
+        ),
+        (
+            "/content-history",
+            "content-history",
+            {
+                "campaign": {
+                    "pk": uuid4(),
+                    "state": "archived",
+                    "active_configuration": {"name": "Prior campaign"},
+                },
+                "version": {"pk": uuid4()},
+                "entries": [
+                    {"id": uuid4(), "label": "Family welcome", "subject": None}
+                ],
+                "selected": True,
+                "sample": {
+                    "html": "<p>Hello Sample Family</p>",
+                    "text": "Hello Sample Family",
+                    "subject": None,
+                },
+            },
+        ),
+        (
+            "/content-preview",
+            "content-preview",
+            {
+                "campaign": {"pk": uuid4()},
+                "label": "Family welcome",
+                "before": None,
+                "after": {
+                    "html": "<p>Hello Sample Family</p>",
+                    "text": "Hello Sample Family",
+                    "subject": None,
+                },
+                "preview": "synthetic-preview",
+                "affected": [],
+            },
+        ),
+        (
+            "/home",
+            "home",
+            {"configuration": {"mode": "testing"}, "admin_chrome": admin},
+        ),
         (
             "/codes",
             "codes",
@@ -89,6 +668,63 @@ def component_origin():
                 "next_page": 3,
             },
         ),
+        (
+            "/setup",
+            "setup",
+            {
+                "draft": setup_draft,
+                "steps": [
+                    {"key": key, "label": label, "saved": False}
+                    for key, label in STEPS.items()
+                ],
+            },
+        ),
+        (
+            "/setup-branding",
+            "setup-branding",
+            {"draft": setup_draft, "form": SetupLogoForm(), "assets": []},
+        ),
+        (
+            "/setup-credential",
+            "setup-credential",
+            {
+                "draft": setup_draft,
+                "form": SetupCredentialForm("parishsoft"),
+                "label": "ParishSoft",
+                "saved": True,
+            },
+        ),
+        (
+            "/setup-campaign",
+            "setup-campaign",
+            {
+                "draft": setup_draft,
+                "form": SetupCampaignForm(
+                    initial={"timezone": "America/New_York"},
+                    ministries=[("1", "Music ministry")],
+                    funds=[("9", "Offertory")],
+                ),
+            },
+        ),
+        (
+            "/setup-source-progress",
+            "setup-source-progress",
+            {
+                "progress": {
+                    "server_now": NOW.isoformat(),
+                    "task_id": uuid4(),
+                    "task_state": "running",
+                    "setup_state": "loading",
+                    "phase": "fetching",
+                    "current": 0,
+                    "total": 0,
+                    "active": True,
+                    "idle_at": (NOW + timedelta(minutes=30)).isoformat(),
+                    "watchdog_at": (NOW + timedelta(hours=2)).isoformat(),
+                    "absolute_at": (NOW + timedelta(hours=12)).isoformat(),
+                }
+            },
+        ),
         ("/availability", "availability", {"setup": True, "admin": True}),
         ("/denied", "denied", {"retry_path": "/admin/login"}),
     ):
@@ -96,11 +732,242 @@ def component_origin():
             "text/html",
             render_to_string(f"stewardship/{template}.html", {**context, **extra}),
         )
+    for step, form_type in FORMS.items():
+        if step == "branding":
+            continue
+        responses["/setup-" + step] = (
+            "text/html",
+            render_to_string(
+                "stewardship/setup-step.html",
+                context
+                | {
+                    "draft": setup_draft,
+                    "form": form_type(),
+                    "step": step,
+                    "step_label": STEPS[step],
+                },
+            ),
+        )
+    for path, template, extra in (
+        (
+            "/background-task",
+            "background-task",
+            {
+                "task": {
+                    "id": uuid4(),
+                    "type": "source_refresh",
+                    "state": "running",
+                    "active": True,
+                    "created_at": NOW.isoformat(),
+                    "attempt": 1,
+                    "retry_sequence": 0,
+                    "progress": {
+                        "phase": "fetching",
+                        "current": 1000,
+                        "total": 4000,
+                        "display": Percentage(1000, 4000),
+                    },
+                },
+                "work": {
+                    "events": [
+                        {
+                            "version": 2,
+                            "at": NOW.isoformat(),
+                            "action": "progress",
+                            "state": "running",
+                            "progress": {
+                                "phase": "fetching",
+                                "current": 1000,
+                                "total": 4000,
+                                "display": Percentage(1000, 4000),
+                            },
+                        }
+                    ]
+                },
+            },
+        ),
+        (
+            "/presence",
+            "presence",
+            {
+                "presence": {
+                    "count": 1,
+                    "as_of": NOW,
+                    "sessions": [
+                        {
+                            "name": "Sample Family",
+                            "duid": 12345,
+                            "started_at": NOW,
+                            "last_activity_at": NOW,
+                            "presence_at": NOW,
+                            "section": "welcome",
+                        }
+                    ],
+                }
+            },
+        ),
+        (
+            "/share-settings",
+            "share-settings",
+            {
+                "campaign": {
+                    "pk": uuid4(),
+                    "active_configuration": {"name": "Sample campaign"},
+                },
+                "base_digest": "a" * 64,
+                "formset": ShareOptions(
+                    prefix="options", previous=default_share_options()
+                ),
+            },
+        ),
+        (
+            "/share-preview",
+            "share-preview",
+            {
+                "campaign": {"pk": uuid4()},
+                "preview": "synthetic-signed-intent",
+                "before": [],
+                "after": default_share_options(),
+            },
+        ),
+        (
+            "/campaign-settings",
+            "campaign-settings",
+            {
+                "editable": True,
+                "form": CampaignForm(
+                    initial={
+                        "name": "Sample campaign",
+                        "timezone": "America/New_York",
+                        "start_date": "2026-10-01",
+                        "end_date": "2026-10-31",
+                        "census": True,
+                        "base_digest": "a" * 64,
+                    },
+                    ministries=[("4", "Community outreach")],
+                    funds=[("9", "Offertory")],
+                ),
+            },
+        ),
+        (
+            "/campaign-preview",
+            "campaign-preview",
+            {
+                "creating": True,
+                "preview": "synthetic-signed-intent",
+                "changes": [
+                    {
+                        "label": "Campaign timezone",
+                        "before": None,
+                        "after": "America/New_York",
+                    }
+                ],
+            },
+        ),
+        ("/ministries", "ministries", {"ministries": [ministry], "state": "all"}),
+        (
+            "/ministry-preview",
+            "ministry-preview",
+            {
+                "ministry": ministry,
+                "new_active": False,
+                "preview": "synthetic-signed-intent",
+                "seeded_count": 2,
+                "manual_count": 1,
+            },
+        ),
+        (
+            "/parish-settings",
+            "parish-settings",
+            {
+                "configuration": {
+                    "mode": "testing",
+                    "testing_recipient": "testing@example.org",
+                },
+                "form": ParishForm(
+                    initial={
+                        "name": "Sample Parish",
+                        "website": "https://example.org",
+                        "timezone": "America/New_York",
+                        "phone": "+12125551234",
+                        "base_digest": "a" * 64,
+                    }
+                ),
+            },
+        ),
+        (
+            "/parish-preview",
+            "parish-preview",
+            {
+                "changes": [
+                    {
+                        "label": "Parish timezone",
+                        "before": "America/New_York",
+                        "after": "America/Los_Angeles",
+                    }
+                ],
+                "timezone_changed": True,
+                "preview": "synthetic-signed-intent",
+            },
+        ),
+        (
+            "/configuration-request",
+            "configuration-request",
+            {
+                "receipt": {"state": "staged", "request_id": uuid4()},
+            },
+        ),
+        (
+            "/background",
+            "background",
+            {
+                "work": {
+                    "counts": {
+                        "active": 1,
+                        "queued": 0,
+                        "retry_wait": 0,
+                        "abandoned": 0,
+                    },
+                    "tasks": [
+                        {
+                            "id": str(uuid4()),
+                            "type": "source_refresh",
+                            "state": "running",
+                            "heartbeat_at": NOW.isoformat(),
+                            "progress": {
+                                "phase": "fetching",
+                                "current": 1000,
+                                "total": 3000,
+                                "display": Percentage(1000, 3000),
+                            },
+                        }
+                    ],
+                },
+                "states": ("nonterminal", "all", "succeeded", "failed"),
+                "selected_state": "nonterminal",
+            },
+        ),
+    ):
+        responses[path] = (
+            "text/html",
+            render_to_string(
+                f"stewardship/{template}.html",
+                context | {"admin_chrome": admin} | extra,
+            ),
+        )
     for name, kind in (("css", "text/css"), ("js", "application/javascript")):
         asset = f"stewardship/ui-v1.{name}"
         located = finders.find(asset)
         assert located is not None, f"Required component asset is missing: {asset}"
         responses[f"/static/{asset}"] = (kind, Path(located).read_text())
+
+    logo = BytesIO()
+    Image.new("RGB", (1024, 512), "blue").save(logo, format="PNG")
+    for prefix in ("/branding/", "/admin/configuration/branding/assets/"):
+        responses[f"{prefix}{branding_asset['pk']}.png"] = (
+            "image/png",
+            logo.getvalue(),
+        )
 
     class Handler(BaseHTTPRequestHandler):
         """Suppress raw request logging; unknown routes are intentionally empty."""
@@ -109,10 +976,13 @@ def component_origin():
             """Serve only exact pre-rendered component fixtures with actual CSP."""
             kind, body = responses.get(self.path, ("text/plain", ""))
             self.send_response(200 if self.path in responses else 404)
-            self.send_header("Content-Type", kind + "; charset=utf-8")
+            self.send_header(
+                "Content-Type",
+                kind if kind == "image/png" else kind + "; charset=utf-8",
+            )
             self.send_header("Content-Security-Policy", CSP)
             self.end_headers()
-            self.wfile.write(body.encode())
+            self.wfile.write(body if isinstance(body, bytes) else body.encode())
 
         def log_message(self, *args):
             """Fixture HTTP traffic must not generate private request diagnostics."""

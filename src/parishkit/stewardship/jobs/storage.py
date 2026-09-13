@@ -312,5 +312,19 @@ def change_run(
         run.state, run.action = actions[action], action
         run.actor_id, run.correlation_id = actor_id, correlation_id
         run.version += 1
-        run.save()
+        if action in {"safe_cancel", "recovery_cancel"}:
+            # The scheduler may cancel waiting source work without receiving
+            # worker claim, heartbeat, progress or retry-timing SQL privileges.
+            run.save(
+                update_fields=[
+                    "state",
+                    "action",
+                    "actor_id",
+                    "correlation_id",
+                    "version",
+                    "lease_expires_at",
+                ]
+            )
+        else:
+            run.save()
         return _status(run)

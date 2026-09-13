@@ -132,6 +132,9 @@ def validate_installation(document, *, request_id=None):
                 raise ConfigError("A new draft must copy the current parish timezone.")
     # Check retired definition identities before immutable projection insertion;
     # otherwise the SQL defense would leave the installer at 'validating'.
+    _validate_content_installation(
+        document, runtime, target_id=target["id"] if target is not None else None
+    )
     schedules = document["sections"].get("schedules", [])
     proposed_schedules = {row["id"]: row["values"] for row in schedules}
     definitions = list(ScheduleDefinition.objects.select_related("current_revision"))
@@ -148,7 +151,17 @@ def validate_installation(document, *, request_id=None):
         old = (
             definition.current_revision.values if definition.current_revision else None
         )
-        if proposed == old:
+        owner = str(definition.campaign_id)
+        from .configuration import schedule_window_changed
+
+        changed_window = (
+            owner in existing
+            and owner in candidates
+            and schedule_window_changed(
+                existing[owner].active_configuration.values, candidates[owner]["values"]
+            )
+        )
+        if proposed == old and (old is None or not changed_window):
             continue
         if runtime is not None and runtime.restore_review_required:
             raise CampaignAdmissionUnavailable(
@@ -184,3 +197,34 @@ def validate_installation(document, *, request_id=None):
     ):
         if identities[str(identifier)] != (str(campaign_id), kind):
             raise ConfigError("Logical schedule identities cannot be repurposed.")
+
+
+def _validate_content_installation(document, runtime, *, target_id):
+    """Only the admitted current/new campaign may receive changed content.
+
+    Creation admission above owns the Testing/single-current/history gates.
+    This permits one atomic clone without letting it rewrite the source's text.
+    """
+    from .models import CampaignWorkGate
+
+    old = (
+        runtime.active_configuration.canonical_document["sections"].get("content", [])
+        if runtime is not None
+        else []
+    )
+    new = document["sections"].get("content", [])
+    before = {row["id"]: row for row in old}
+    after = {row["id"]: row for row in new}
+    if before == after:
+        return
+    changed = [
+        row for identifier, row in before.items() if after.get(identifier) != row
+    ] + [row for identifier, row in after.items() if before.get(identifier) != row]
+    if target_id is None or any(
+        row["values"]["campaign_id"] != str(target_id) for row in changed
+    ):
+        raise ConfigError("Content can only be edited for the current campaign.")
+    if (
+        runtime is not None and runtime.restore_review_required
+    ) or CampaignWorkGate.objects.filter(state__in=["preparing", "running"]).exists():
+        raise CampaignAdmissionUnavailable("Content changes are currently held.")

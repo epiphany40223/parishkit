@@ -330,8 +330,19 @@ def test_empty_reverse_and_reapply_and_populated_refusal(tmp_path):
     MigrationExecutor(connection).migrate(leaves)
     store, root, actor = initialized(tmp_path)
     add_draft(store, root, actor)
+    from importlib import import_module
+
+    guard = import_module(
+        "parishkit.stewardship.campaigns.migrations.0002_campaign_guards"
+    )
+    with (
+        pytest.raises(IntegrityError, match="Campaign history prevents"),
+        transaction.atomic(),
+        connection.schema_editor() as editor,
+    ):
+        guard.restore_policy_schema(None, editor)
     try:
-        with pytest.raises(IntegrityError, match="Campaign history prevents"):
+        with pytest.raises(IntegrityError, match="Schedule history prevents"):
             MigrationExecutor(connection).migrate(target)
         assert Campaign.objects.count() == 1
         with pytest.raises(IntegrityError), transaction.atomic():

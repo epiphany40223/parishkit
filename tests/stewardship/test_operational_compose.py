@@ -13,10 +13,11 @@ import pytest
 
 from parishkit.stewardship.accounts.key_files import write_private
 from parishkit.stewardship.bootstrap import HANDOFF_TARGETS, INITIAL_TARGETS
+from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.runtime_identities import database_identities
 from parishkit.stewardship.runtime_paths import RuntimeLayout
 from parishkit.stewardship.runtime_topology import render_runtime
-from parishkit.stewardship.runtime_valkey import web_acl
+from parishkit.stewardship.runtime_valkey import server_acl
 from parishkit.stewardship.startup_interlock import MARKER
 
 from .test_container_isolation import _fixture_volume
@@ -30,7 +31,7 @@ pytestmark = pytest.mark.skipif(
 IMAGE = "parishkit-stewardship:development"
 
 
-def seed_runtime(root, *, production=False):
+def seed_runtime(root, *, production=False, provider_mode="configured"):
     """Only synthetic credentials; fixture ownership is translated on native Linux."""
     # The host's pytest directory may live under /tmp. It is staging, not a
     # container deployment path: placing credentials beneath writable /tmp
@@ -94,7 +95,13 @@ def seed_runtime(root, *, production=False):
         staged(layout.credential("google_oauth")),
         b'{"client_id":"fake-client","client_secret":"fake-secret"}',
     )
-    write_private(staged(configuration.valkey.password_file), b"disposable-valkey-only")
+    passwords = {ServiceRole.WEB: b"disposable-valkey-only"}
+    write_private(
+        staged(configuration.valkey.password_file), passwords[ServiceRole.WEB]
+    )
+    for role in (ServiceRole.WORKER, ServiceRole.SCHEDULER, ServiceRole.MAIL_DISPATCH):
+        passwords[role] = ("disposable-" + role.value).encode()
+        write_private(staged(layout.valkey_password(role.value)), passwords[role])
     write_private(
         staged(configuration.paths["cache"] / "static" / "synthetic.txt"),
         b"Synthetic static fixture",
@@ -102,11 +109,23 @@ def seed_runtime(root, *, production=False):
     # The fixture uses the same restricted vocabulary needed by limiter/metrics.
     write_private(
         staged(configuration.valkey.password_file.parent / "server.acl"),
-        web_acl(b"disposable-valkey-only"),
+        server_acl(passwords),
     )
     compose, documents = render_runtime(
-        configuration, image=PRODUCTION_IMAGE if production else IMAGE
+        configuration,
+        image=PRODUCTION_IMAGE if production else IMAGE,
+        provider_mode=provider_mode,
     )
+    if provider_mode == "initial":
+        # Production provisioning retains every complete mount variant so the
+        # host can later recreate consumers after first credential installation.
+        for mode in ("configured", "configured-slack"):
+            _, variants = render_runtime(
+                configuration,
+                image=PRODUCTION_IMAGE if production else IMAGE,
+                provider_mode=mode,
+            )
+            documents = variants | documents
     for path, document in documents.items():
         if isinstance(document, str):
             # Test-only local CA: no ACME request, DNS dependency or real TLS key.
@@ -187,15 +206,30 @@ def compose_run(file, project, *arguments, check=True, timeout=60):
 
 
 @pytest.mark.parametrize("production", [False, True])
-def test_complete_foundation_bootstrap_and_online_exclusion(tmp_path, production):
+@pytest.mark.parametrize(
+    "provider_mode", ["configured", "initial", "complete", "abort"]
+)
+def test_complete_foundation_bootstrap_and_online_exclusion(
+    tmp_path, production, provider_mode
+):
     """Use real operator profiles, narrow mounts, SQL identities and native inodes."""
     root = tmp_path / "seed"
-    configuration, compose = seed_runtime(root, production=production)
+    configuration, compose = seed_runtime(
+        root,
+        production=production,
+        provider_mode="initial"
+        if provider_mode in {"complete", "abort"}
+        else provider_mode,
+    )
     layout = RuntimeLayout(configuration)
     project = "parishkit-runtime-" + uuid4().hex
     volume = project + "-state"
     file = tmp_path / "compose.json"
     deployment = str(uuid4())
+    if provider_mode in {"complete", "abort"}:
+        from .runtime_setup_compose import inject_providers
+
+        inject_providers(compose)
     try:
         mountpoint = _fixture_volume(root, IMAGE, volume, owner=10001)
         for service in compose["services"].values():
@@ -352,6 +386,81 @@ def test_complete_foundation_bootstrap_and_online_exclusion(tmp_path, production
             str(layout.service_directory / "web.yaml"),
         )
         assert json.loads(diagnosis.stdout)["ready"] is True
+        if provider_mode in {"initial", "complete", "abort"}:
+            started = compose_run(
+                file,
+                project,
+                "up",
+                "--detach",
+                "--wait",
+                "--wait-timeout",
+                "60",
+                "worker",
+                "scheduler",
+                "mail-dispatch",
+                timeout=90,
+                check=False,
+            )
+            if started.returncode:
+                logs = compose_run(
+                    file,
+                    project,
+                    "logs",
+                    "worker",
+                    "scheduler",
+                    "mail-dispatch",
+                    check=False,
+                )
+                details = []
+                for name in ("worker", "scheduler", "mail-dispatch"):
+                    config_name = name if name == "scheduler" else name + "-initial"
+                    diagnostic = compose_run(
+                        file,
+                        project,
+                        "run",
+                        "--rm",
+                        "--entrypoint",
+                        "python",
+                        name,
+                        "-c",
+                        "import sys; from pathlib import Path; "
+                        "from threading import Event; "
+                        "from parishkit.stewardship.deployment import load_deployment; "
+                        "from parishkit.stewardship.runtime_background "
+                        "import configure_background; "
+                        "r=configure_background(load_deployment(Path(sys.argv[1])), "
+                        "stop=Event(), heartbeat=lambda: None); r.broker.app.close()",
+                        str(layout.service_directory / f"{config_name}.yaml"),
+                        check=False,
+                    )
+                    details.append(diagnostic.stdout + diagnostic.stderr)
+                pytest.fail(
+                    started.stderr + logs.stdout + logs.stderr + "\n".join(details)
+                )
+            for name in ("worker", "mail-dispatch"):
+                probe = compose_run(
+                    file,
+                    project,
+                    "exec",
+                    "-T",
+                    name,
+                    "python",
+                    "-c",
+                    "from pathlib import Path; import sys; "
+                    "from parishkit.stewardship.deployment import load_deployment; "
+                    "c=load_deployment(Path(sys.argv[1])); "
+                    "assert not ({'parishsoft','google_workspace','slack'} "
+                    "& c.secrets.keys())",
+                    str(layout.service_directory / f"{name}-initial.yaml"),
+                )
+                assert probe.returncode == 0
+        if provider_mode in {"complete", "abort"}:
+            from .runtime_setup_compose import complete_setup
+
+            complete_setup(
+                file, project, configuration, mountpoint, abort=provider_mode == "abort"
+            )
+            return
         auth_probe = compose_run(
             file,
             project,

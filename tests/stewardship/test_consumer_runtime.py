@@ -183,3 +183,47 @@ def test_linux_child_inventory_is_bounded_and_unique(monkeypatch, value):
     else:
         with pytest.raises(ConfigError):
             consumers._children(100)
+
+
+@pytest.mark.parametrize("role", [ServiceRole.WORKER, ServiceRole.SCHEDULER])
+def test_background_receipts_bind_real_pid_start_and_exact_loaded_inventory(
+    cohort, role
+):
+    """A recreated process cannot replay a prior credential acknowledgement."""
+    configuration, _, identities = cohort
+    configuration = replace(
+        configuration,
+        service_role=role,
+        secrets={"token_public": configuration.secrets["metrics"]},
+    )
+    identities[os.getpid()] = (100, 2001)
+    receipts = {"token_public": "f" * 64}
+    consumers.publish_single_process_receipts(configuration, receipts)
+    assert consumers.loaded_service_receipts(configuration) == receipts
+    identities[os.getpid()] = (100, 2002)
+    with pytest.raises(ConfigError):
+        consumers.loaded_service_receipts(configuration)
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        {"version": True},
+        {"started": "2001"},
+        {"service": "web"},
+        {"receipts": {}},
+        {"extra": 1},
+    ],
+)
+def test_background_receipts_reject_malformed_or_partial_records(cohort, replacement):
+    """Public fingerprints still require complete, precisely typed live evidence."""
+    configuration, _, identities = cohort
+    configuration = replace(configuration, service_role=ServiceRole.WORKER)
+    identities[os.getpid()] = (100, 2001)
+    consumers.publish_single_process_receipts(configuration, {"metrics": "f" * 64})
+    path = consumers.DIRECTORY / "background.json"
+    value = json.loads(path.read_bytes())
+    value.update(replacement)
+    write_private(path, json.dumps(value).encode())
+    with pytest.raises(ConfigError):
+        consumers.loaded_service_receipts(configuration)

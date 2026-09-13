@@ -69,6 +69,15 @@ def isolated_roles():
                     f'stewardship_credential_consumer_ack TO "{role}"'
                 )
                 cursor.execute(f'GRANT INSERT ON stewardship_audit_event TO "{role}"')
+                if role in {
+                    "pk_stewardship_web",
+                    "pk_stewardship_credential_slack",
+                    "pk_stewardship_credential_parishsoft",
+                }:
+                    cursor.execute(
+                        "GRANT SELECT ON stewardship_setup_credential_install "
+                        f'TO "{role}"'
+                    )
                 cursor.execute(
                     "GRANT SELECT(active_configuration_id) ON "
                     f'stewardship_system_configuration TO "{role}"'
@@ -76,6 +85,13 @@ def isolated_roles():
                 cursor.execute(
                     "GRANT SELECT(id, configuration_id) ON stewardship_parish "
                     f'TO "{role}"'
+                )
+                # Match production attribution metadata. A generic audit plan
+                # checks this relation even when the bootstrap fallback is not
+                # ultimately needed; short-circuiting is not a grant contract.
+                cursor.execute(
+                    "GRANT SELECT(id, validation_schema) ON "
+                    f'stewardship_configuration_version TO "{role}"'
                 )
                 if role == "pk_stewardship_worker":
                     # SELECT FOR SHARE in the acknowledgement trigger needs one
@@ -97,6 +113,10 @@ def isolated_roles():
                     )
                 if role == "pk_stewardship_web":
                     cursor.execute(
+                        "GRANT SELECT, INSERT ON stewardship_provider_context "
+                        f'TO "{role}"'
+                    )
+                    cursor.execute(
                         "GRANT INSERT ON stewardship_credential_consumer_ack "
                         f'TO "{role}"'
                     )
@@ -109,6 +129,9 @@ def isolated_roles():
                         f'ON stewardship_sealed_credential_staging TO "{role}"'
                     )
                 elif role.startswith("pk_stewardship_credential_"):
+                    cursor.execute(
+                        f'GRANT SELECT ON stewardship_provider_context TO "{role}"'
+                    )
                     cursor.execute(
                         "GRANT SELECT, UPDATE ON stewardship_sealed_credential_staging "
                         f'TO "{role}"'
@@ -178,6 +201,46 @@ def advance(identifier, state, **changes):
         correlation_id=uuid4(),
         **changes,
     )
+
+
+@pytest.mark.parametrize("stale_process", [False, True])
+def test_background_confirmation_records_only_actual_loaded_worker_bytes(
+    isolated_roles, tmp_path, monkeypatch, stale_process
+):
+    """CLI proof composition writes through the real target-scoped consumer role."""
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.credential_runtime import _confirm_loaded
+    from parishkit.stewardship.deployment import ServiceRole
+
+    identifier, fingerprint = stage("parishsoft")
+    with identity("pk_stewardship_credential_parishsoft"):
+        advance(identifier, "testing")
+        advance(identifier, "installing", resulting_fingerprint=fingerprint)
+        advance(identifier, "awaiting_ack")
+    path = tmp_path / "parishsoft"
+    write_private(path, b"synthetic-candidate")
+    configuration = SimpleNamespace(
+        service_role=ServiceRole.WORKER, secrets={"parishsoft": path}
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.consumer_runtime.loaded_service_receipts",
+        lambda _: {"parishsoft": "0" * 64 if stale_process else fingerprint},
+    )
+    with identity("pk_stewardship_worker"):
+        if stale_process:
+            with pytest.raises(ConfigError):
+                _confirm_loaded(configuration, identifier)
+            assert not CredentialConsumerAcknowledgement.objects.exists()
+        else:
+            _confirm_loaded(configuration, identifier)
+            _confirm_loaded(configuration, identifier)
+            row = CredentialConsumerAcknowledgement.objects.get(request_id=identifier)
+            assert row.consumer == "worker" and row.fingerprint == fingerprint
+        with pytest.raises(DatabaseError), connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT ciphertext FROM stewardship_sealed_credential_staging"
+            )
 
 
 def test_target_and_web_roles_cannot_cross_credential_or_campaign_boundaries(
@@ -342,6 +405,30 @@ def test_failed_candidate_test_preserves_prior_and_scrubs_intake(installer, fail
     assert run(installer).state == "failed"
     assert read_private(installer.files.path) == b"synthetic-prior"
     assert SealedCredentialStaging.objects.get(request_id=identifier).ciphertext is None
+    assert not installer.files.journal_path.exists()
+
+
+def test_provider_ownership_loss_preserves_sealed_intake_without_a_verdict(installer):
+    """A lost installer may not reject or install the candidate it was checking."""
+    from parishkit.stewardship.provider_checks import (
+        ProviderCheckOwnershipLost,
+        check_candidate,
+    )
+
+    identifier = stage_for(installer)
+
+    def lost():
+        """Model the startup interlock refusing further effects."""
+        raise ConfigError("synthetic-private-interlock")
+
+    installer.validate_request = lambda request_id, value: check_candidate(
+        "slack", {"channel_id": "C123"}, value, seconds=30, check=lost
+    )
+    with pytest.raises(ProviderCheckOwnershipLost):
+        run(installer)
+    assert SecretReplacementRequest.objects.get(pk=identifier).state == "testing"
+    assert SealedCredentialStaging.objects.get(request_id=identifier).ciphertext
+    assert read_private(installer.files.path) == b"synthetic-prior"
     assert not installer.files.journal_path.exists()
 
 

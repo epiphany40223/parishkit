@@ -93,6 +93,23 @@ supported preparation API; deliberately malformed database inserts in tests
 prove that completeness verification refuses them. Runtime database privilege
 separation remains an OPS-02/OPS-04 prerequisite before deployment.
 
+## Nightly source cadence extension
+
+The Phase 2 ParishSoft editor emits `source-cadence-v8` when public integration
+settings contain `nightly_time`. The setting uses parish-local `HH:MM`; its
+scheduling and default behavior remain owned by the
+[full-cycle specification](../specs/stewardship/background-processing/spec.md#full-cycle).
+Validation delegates to the frozen content/policy/campaign rules after checking
+only the added field. Older schema names continue to reject that field.
+
+Ordinary edits, additive offline recovery and fingerprint-only selection retain
+distinct v8 request discriminators. Provider authentication scope excludes
+cadence; changing a time does not change the expected ParishSoft organization or
+attest to credential validity. Every normalized projection admits the new
+schema, and retained v8 history prevents downgrade. See the
+[Phase 2 correction record](stewardship-phase-2-full-review-2.md#acceptance-gap-found-during-corrections)
+for acceptance status.
+
 ## Next integration steps
 
 The [request intake](stewardship-configuration-requests.md) and

@@ -91,3 +91,25 @@ def test_same_owner_can_retry_failed_claim_without_changing_its_revision(tmp_pat
     resumed = recover_rebuild(demand.pk, owner, revision=1, admit=permit)
     assert resumed.version == demand.version
     assert publish_fact_set(record.pk, owner, admit=permit).state == "ready"
+
+
+def test_ready_generation_does_not_release_a_live_interactive_claim(tmp_path):
+    """Publication and demand completion are distinct ownership checkpoints."""
+    inputs, owner, source = fact_fixture(tmp_path)
+    due_demand(inputs)
+    demand = claim_rebuild(
+        inputs.campaign_id, inputs.population_scope, owner, admit=permit
+    )
+    record, _ = staged_facts(inputs, owner, source)
+    publish_fact_set(record.pk, owner, admit=permit)
+    rival = running_source_task()
+    rival = TaskClaim(rival["task_id"], rival["task_fence"], rival["worker_id"])
+    with pytest.raises(FactUnavailable, match="live fact builder"):
+        recover_rebuild(demand.pk, rival, revision=1, admit=permit)
+    demand.refresh_from_db()
+    assert demand.claimed_task_id == owner.run_id
+    assert recover_rebuild(demand.pk, owner, revision=1, admit=permit).pk == demand.pk
+    replacement = retire(owner)
+    recovered = recover_rebuild(demand.pk, replacement, revision=1, admit=permit)
+    assert recovered.claimed_task_id == replacement.run_id
+    assert complete_rebuild(demand.pk, replacement, revision=1, admit=permit)

@@ -1,10 +1,12 @@
 """Lost-hint replay is fair, repeatable and has no durable execution side effects."""
 
 import pytest
+from django.core.exceptions import ObjectDoesNotExist
 
 from parishkit.stewardship.jobs.dispatch import Handler, WorkQueue
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.scanning import collect_hints
+from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
 from .test_dispatch_postgresql import queued
 
@@ -65,3 +67,34 @@ def test_raised_gate_denial_also_advances_past_held_work():
     hints, cursor = collect_hints(handlers=registry)
     assert [hint.run_id for hint in hints] == [wanted.run_id] and cursor is None
     assert TaskRun.objects.filter(state="queued").count() == 2
+
+
+@pytest.mark.parametrize(
+    "error_type", [StaleRecordError, StorageInvariantError, ObjectDoesNotExist]
+)
+def test_broken_row_preserves_hints_and_advances_past_the_fault(
+    monkeypatch, error_type
+):
+    """Retained invariant failures cannot poison a whole page or starve its suffix."""
+    from unittest.mock import Mock
+
+    from parishkit.stewardship.jobs import scanning
+
+    first, broken, last = queued(), queued(), queued()
+    diagnostic = Mock()
+    monkeypatch.setattr(scanning, "emit_failure", diagnostic)
+
+    def admit(action, status):
+        """Fail only the middle durable scope, with a private synthetic diagnostic."""
+        if status.run_id == broken.run_id:
+            raise error_type("synthetic-private-record")
+        return True
+
+    registry = {"dispatch_probe": Handler(WorkQueue.GENERAL, admit, lambda *args: None)}
+    hints, cursor = collect_hints(handlers=registry, limit=2)
+    assert [hint.run_id for hint in hints] == [first.run_id]
+    assert cursor.run_id == broken.run_id
+    hints, cursor = collect_hints(handlers=registry, cursor=cursor, limit=2)
+    assert [hint.run_id for hint in hints] == [last.run_id] and cursor is None
+    assert TaskRun.objects.filter(state="queued").count() == 3
+    assert diagnostic.call_count == 1

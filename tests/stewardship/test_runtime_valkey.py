@@ -36,11 +36,12 @@ def test_consumer_acl_never_reaches_web_or_other_service_keys(role):
     """Restoration metadata and every command remain scoped to one consumer."""
     output = broker_acl(role, b"synthetic-private-password").decode()
     assert "synthetic-private-password" not in output
-    assert f"~stewardship:broker:v1:{role.value}:unacked*" in output
+    assert f"~stewardship:broker:v1:qos:{role.value}:unacked*" in output
     assert "stewardship:auth:" not in output and "~*" not in output
     if role is ServiceRole.WORKER:
         assert "mail-dispatch" not in output and "backup-worker" not in output
     assert "+brpop" in output and "+watch" in output
+    assert "+rpush" in output.split()
     for forbidden in (
         "+@all",
         "+acl",
@@ -57,7 +58,8 @@ def test_scheduler_acl_publishes_but_cannot_consume_or_delete():
     """Hint recovery grants publication, not business data or consumer authority."""
     output = broker_acl(ServiceRole.SCHEDULER, b"synthetic-password").decode()
     assert "+lpush" in output and "_kombu.binding.general" in output
-    for command in ("+brpop", "+rpop", "+del", "+hget", "+eval", "+config"):
+    assert "qos:" not in output
+    for command in ("+brpop", "+rpop", "+rpush", "+del", "+hget", "+eval", "+config"):
         assert command not in output
 
 

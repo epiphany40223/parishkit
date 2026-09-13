@@ -1,0 +1,21 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Finish initial setup" %}{% endblock %}
+{% block content %}
+<p><a href="{% url 'admin:setup_preview' %}">{% translate "Review the exact setup preview" %}</a></p>
+<h1>{% translate "Finish initial setup" %}</h1>
+{% include 'stewardship/setup-deadlines.html' %}
+<p class="notice">{% translate "The system will remain in Testing mode. This does not activate a live campaign or send invitations to Families." %}</p>
+<p>{% translate "Confirming freezes this revision. Background services install its credentials, wait for the actual consumers to acknowledge them, load fresh source data for the selected financial periods, and complete setup together." %}</p>
+<p>{% translate "An operator may need to recreate the worker and mail containers with their installed credential mounts. The progress page explains this step. No container-control access is granted to the web app." %}</p>
+<p>{% translate "Keep this original login available. Its idle and absolute time limits still apply. You can cancel until setup completes, but cannot edit frozen settings or resume them under a different login." %}</p>
+{% if readiness_problem %}
+<p role="status">{{ readiness_problem }}</p>
+<p><a href="{% url 'admin:setup_mail' %}">{% translate "Send and check the required email test" %}</a></p>
+{% if draft.sections.slack.enabled %}<p><a href="{% url 'admin:setup_notification' %}">{% translate "Send and check the required Slack test" %}</a></p>{% endif %}
+{% endif %}
+<form method="post" class="panel">{% csrf_token %}
+{{ form.as_div }}
+<button type="submit"{% if readiness_problem %} disabled{% endif %}>{% translate "Confirm and finish setup" %}</button>
+</form>
+<details><summary>{% translate "Reviewed configuration identity" %}</summary><code>{{ candidate_digest }}</code></details>
+{% endblock %}

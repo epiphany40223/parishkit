@@ -1,5 +1,7 @@
 """Progress phases are typed, fenced, immutable in history and losslessly upgraded."""
 
+from importlib import import_module
+
 import pytest
 from django.db import IntegrityError, connection, transaction
 from django.db.migrations.executor import MigrationExecutor
@@ -73,10 +75,18 @@ def test_phase_history_cannot_be_rewritten():
 def test_recorded_phase_prevents_lossy_downgrade():
     """Schema downgrade cannot silently erase worker history that uses the new field."""
     running = act(new(), "claim")
-    with pytest.raises(IntegrityError, match="Task history prevents"):
-        MigrationExecutor(connection).migrate(
-            [("stewardship_jobs", "0002_taskrun_guards")]
-        )
+    migration = import_module(
+        "parishkit.stewardship.jobs.migrations.0004_task_phase_guards"
+    )
+    # Exercise this exact guard, not an earlier dependent migration's refusal.
+    # Its schema-editor transaction rolls back even a partially executed DDL batch.
+    with (
+        pytest.raises(
+            IntegrityError, match="Task history prevents phase schema downgrade"
+        ),
+        connection.schema_editor() as editor,
+    ):
+        migration.remove(None, editor)
     assert TaskRun.objects.get(pk=running.run_id).phase == "starting"
 
 

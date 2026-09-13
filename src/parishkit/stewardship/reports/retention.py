@@ -39,18 +39,25 @@ def pin_facts(fact_set_id, *, parent_kind, parent_id, admit):
         return pin
 
 
-def release_fact_pin(pin_id, *, admit):
+def release_fact_pin(pin_id, *, parent_kind, parent_id, admit):
     """Only the owning retained parent may release this specific durable pin."""
+    if (
+        not isinstance(parent_id, UUID)
+        or type(parent_kind) is not str
+        or not parent_kind
+    ):
+        raise ValueError("Fact release requires an explicit parent identity.")
     with transaction.atomic():
-        pin = CampaignFactPin.objects.filter(pk=pin_id).first()
+        selected = CampaignFactPin.objects.filter(
+            pk=pin_id, parent_kind=parent_kind, parent_id=parent_id
+        )
+        pin = selected.first()
         if pin is None:
             _admit(admit, "unpin", None)
             return False
-        record = CampaignDailyFactSet.objects.select_for_update().get(
-            pk=pin.fact_set_id
-        )
-        _admit(admit, "unpin", fact_inputs(record))
-        return CampaignFactPin.objects.filter(pk=pin_id).delete()[0] == 1
+        CampaignDailyFactSet.objects.select_for_update().get(pk=pin.fact_set_id)
+        _admit(admit, "unpin", pin)
+        return selected.delete()[0] == 1
 
 
 def compact_facts(campaign_id, claim, *, admit, limit=50):
@@ -123,6 +130,8 @@ def compact_facts(campaign_id, claim, *, admit, limit=50):
             ):
                 release_snapshot_pin(
                     pin.pk,
+                    parent_kind="facts",
+                    parent_id=identifier,
                     admit=lambda *args, inputs=inputs: admit("compact", inputs),
                 )
             record_action(

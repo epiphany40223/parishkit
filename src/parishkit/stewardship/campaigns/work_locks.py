@@ -4,8 +4,9 @@ For campaign-scoped work the existing lifecycle advisory lock precedes
 retry-root/task and domain rows. Unrelated tasks retain independent root locks.
 This prevents a task callback waiting for Campaign while an archive/configuration
 transition waits for that same task. File installers retain their separate
-session lock before joining this order; workers never acquire the file lock or
-hold this transaction while waiting for external services.
+session lock before joining this order. The one-time setup completion worker
+also pins installer serialization, without writing files, before entering its
+short atomic SQL activation. No worker holds this transaction during provider I/O.
 """
 
 from contextlib import contextmanager

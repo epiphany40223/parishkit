@@ -119,6 +119,21 @@ files for investigation. Never force `applied`, clear the uniqueness reservation
 disable triggers, or overwrite an unrecognized working credential to unblock the
 UI. Operational command assembly and its restore runbook remain OPS-04/OPS-06.
 
+The closed `credential_handoff_key_mismatch` event identifies a mounted handoff
+key that differs from the immutable public discovery record. Check the emitting
+installer's service identity, restore its original matching handoff key from
+the deployment's protected escrow, and restart that same target. Do not regenerate
+the key, edit the publication row, or discard sealed requests. This is distinct
+from an ordinary mount/grant startup failure: replacing the advertised public
+key would make retained ciphertext unreadable. Handoff-key rotation requires
+its own reviewed migration protocol and is not supplied by credential replacement.
+
+The Phase 2 replacement form provides a one-hour installer/consumer window from
+first submission; exact retries retain that original deadline. After installation
+and all consumer acknowledgements, select the resulting configuration fingerprint
+before submitting another replacement. Intake rejects a stale predecessor so
+that cancellation can always retain the actual installed working credential.
+
 ## Runtime integration boundaries
 
 The internal consumer hook attests the credential bytes loaded by a whole
@@ -129,11 +144,12 @@ does not update that mount. OPS-04 must recreate the affected consumer container
 and verify its fingerprint; a reload signal alone is insufficient. The installer
 does not mount the Docker socket or get authority to restart other services.
 
-Provider-specific candidate validation/testing, whole-service startup and
-recreation, handoff-key provisioning, and current-Admin/CSRF/fresh-Google web
-admission remain explicit integration work. The internal orchestrator requires
-a validator but does not supply a production always-successful validator.
-No new web credential endpoint or enabled production service exists here.
+Phase 2 connects provider-specific validation/testing, handoff-key provisioning,
+whole-service startup and current-Admin/CSRF/fresh-Google web admission. The
+internal orchestrator requires the compiled target-specific validator; it never
+supplies a production always-successful validator. Initial installation follows
+the [runtime setup protocol](stewardship-runtime.md), including explicit host-side
+consumer recreation rather than granting web access to Docker.
 Keyring retirement additionally needs the separate online-migration and retained-
 backup compatibility workflow; successful file replacement does not retire keys.
 
@@ -147,7 +163,18 @@ explicit Compose file/project arguments. Do not use `compose run` for this
 confirmation: its new process namespace has no live service cohort. All workers
 must have completed admission with the replacement loaded. The command refuses
 multi-container replica configurations; no partial service acknowledgement is
-inferred. Later provider/consumer integrations remain pending as described above.
+inferred. Provider consumers use the same whole-service proof described below.
+
+Phase 2 extends the same command to the single-process `worker`, `scheduler`
+and `mail-dispatch` services. Recreate the complete affected service, then run
+`pk-stewardship acknowledge-credential --config <service-config> --request-id <UUID>`
+with `docker compose exec -T <service>`. The command repeats runtime admission
+and verifies that the original live process published matching loaded receipts;
+it cannot publish readiness for itself or substitute a newly opened file for
+that proof. The consumer SQL role can acknowledge its required targets but cannot
+read sealed staging or change credential-installation state. Mail-dispatch
+acknowledges its own Workspace consumer, never a different service. These
+commands do not enable live campaign mail delivery.
 
 ## Verification
 

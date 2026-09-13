@@ -368,6 +368,17 @@ class RehearsalCodeReservation(models.Model):
         ]
 
 
+PRESENCE_SECTIONS = (
+    "welcome",
+    "census",
+    "members",
+    "ministry",
+    "financial",
+    "additional",
+    "review",
+)
+
+
 class FamilySession(MutableRecord):
     """Separate PostgreSQL authority with fixed mode/epoch and absolute deadline."""
 
@@ -382,13 +393,16 @@ class FamilySession(MutableRecord):
     authenticated_at = UTCDateTimeField()
     last_activity_at = UTCDateTimeField()
     last_keepalive_at = UTCDateTimeField(null=True)
+    presence_at = UTCDateTimeField(null=True)
+    presence_section = models.CharField(max_length=24, default="", blank=True)
     expires_at = UTCDateTimeField()
     revoked_at = UTCDateTimeField(null=True)
 
     class Meta(MutableRecord.Meta):
         db_table = "stewardship_family_session"
         indexes = [
-            models.Index(fields=["expires_at", "id"], name="family_session_expiry")
+            models.Index(fields=["expires_at", "id"], name="family_session_expiry"),
+            models.Index(fields=["presence_at", "id"], name="family_session_presence"),
         ]
         constraints = MutableRecord.Meta.constraints + [
             models.CheckConstraint(
@@ -400,5 +414,15 @@ class FamilySession(MutableRecord):
                 condition=models.Q(last_activity_at__gte=models.F("authenticated_at"))
                 & models.Q(expires_at__gt=models.F("last_activity_at")),
                 name="family_session_chronology",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(presence_at__isnull=True, presence_section="")
+                | models.Q(
+                    presence_at__isnull=False,
+                    presence_at__gte=models.F("authenticated_at"),
+                    presence_at__lt=models.F("expires_at"),
+                    presence_section__in=PRESENCE_SECTIONS,
+                ),
+                name="family_presence_shape",
             ),
         ]

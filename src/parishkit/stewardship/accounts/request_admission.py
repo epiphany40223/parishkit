@@ -4,8 +4,13 @@ from django.db import connection
 
 from parishkit.config import ConfigError
 
-from .configuration_models import AppliedConfigurationVersion, AppliedIntegration
+from .configuration_models import (
+    AppliedConfigurationVersion,
+    AppliedIntegration,
+    MinistryActivity,
+)
 from .configuration_snapshots import verified_snapshot_version
+from .content_models import ContentVersion
 
 
 def intake_base(digest):
@@ -41,6 +46,8 @@ def check_historical_additions(base_id, patch):
     the installer prepares the candidate; this is not a readiness certificate.
     """
     _check_policy_additions(base_id, patch)
+    _check_ministry_additions(base_id, patch)
+    _check_content_additions(base_id, patch)
     additions = [
         item
         for item in patch
@@ -87,6 +94,107 @@ def check_historical_additions(base_id, patch):
             raise ConfigError(
                 "Integration identities must remain stable across history."
             )
+
+
+def _history_join(model):
+    """Build model-owned identifiers only; the selected base remains a parameter."""
+    quote = connection.ops.quote_name
+    versions = AppliedConfigurationVersion._meta
+    table = quote(versions.db_table)
+    pk = quote(versions.pk.column)
+    predecessor = quote(versions.get_field("predecessor").column)
+    projection = quote(model._meta.db_table)
+    configuration = quote(model._meta.get_field("configuration").column)
+    return f"""WITH RECURSIVE chain(id, predecessor_id) AS (
+        SELECT {pk}, {predecessor} FROM {table} WHERE {pk}=%s
+        UNION
+        SELECT p.{pk}, p.{predecessor} FROM {table} p
+        JOIN chain c ON p.{pk}=c.predecessor_id
+    ) SELECT 1 FROM {projection} m
+      JOIN chain c ON c.id=m.{configuration} WHERE """
+
+
+def _columns(model, *names):
+    """Quote real projection columns, not canonical-document field spellings."""
+    return {
+        name: "m." + connection.ops.quote_name(model._meta.get_field(name).column)
+        for name in names
+    }
+
+
+def _check_content_additions(base_id, patch):
+    """Compare only matching revision payloads across retained immutable ancestry."""
+    import json
+
+    additions = [
+        item
+        for item in patch
+        if item["section"] == "content" and item["operation"] == "add"
+    ]
+    if not additions:
+        return
+    columns = _columns(
+        ContentVersion,
+        "record_id",
+        "campaign_id",
+        "kind",
+        "slot",
+        "subject",
+        "html",
+        "text",
+    )
+    payload = ", ".join(
+        f"'{name}', {columns[name]}"
+        for name in ("campaign_id", "kind", "slot", "subject", "html", "text")
+    )
+    predicates, parameters = [], [base_id]
+    for item in additions:
+        predicates.append(
+            f"({columns['record_id']}=%s AND jsonb_build_object({payload}) "
+            "IS DISTINCT FROM %s::jsonb)"
+        )
+        parameters.extend([item["id"], json.dumps(item["values"])])
+    with connection.cursor() as cursor:
+        cursor.execute(
+            _history_join(ContentVersion) + " OR ".join(predicates) + " LIMIT 1",
+            parameters,
+        )
+        if cursor.fetchone() is not None:
+            raise ConfigError("Content revision identities must remain immutable.")
+
+
+def _check_ministry_additions(base_id, patch):
+    """Check retired activity identities without loading historical documents."""
+    additions = [
+        item
+        for item in patch
+        if item["section"] == "ministries" and item["operation"] == "add"
+    ]
+    if not additions:
+        return
+    columns = _columns(
+        MinistryActivity, "record_id", "organization_id", "ministry_duid"
+    )
+    record, organization, ministry = (
+        columns[name] for name in ("record_id", "organization_id", "ministry_duid")
+    )
+    predicates, parameters = [], [base_id]
+    for item in additions:
+        values = item["values"]
+        predicates.append(
+            f"(({record}=%s AND ({organization}, {ministry}) "
+            "IS DISTINCT FROM (%s::bigint, %s::bigint)) OR "
+            f"({record}<>%s AND {organization}=%s AND {ministry}=%s))"
+        )
+        identity = [values["organization_id"], values["ministry_duid"]]
+        parameters.extend([item["id"], *identity, item["id"], *identity])
+    with connection.cursor() as cursor:
+        cursor.execute(
+            _history_join(MinistryActivity) + " OR ".join(predicates) + " LIMIT 1",
+            parameters,
+        )
+        if cursor.fetchone() is not None:
+            raise ConfigError("Ministry activity identities must remain stable.")
 
 
 def _check_policy_additions(base_id, patch):

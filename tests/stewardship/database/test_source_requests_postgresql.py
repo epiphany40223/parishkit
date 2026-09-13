@@ -180,6 +180,19 @@ def test_financial_request_window_is_verified_by_sql_and_runtime(tmp_path):
         assert connection.in_atomic_block
 
 
+def test_intake_and_attempt_guards_share_the_installed_window_derivation():
+    """Future window changes have one SQL owner rather than two drifting copies."""
+    with connection.cursor() as cursor:
+        for name in (
+            "stewardship_refresh_request_guard_v1",
+            "stewardship_refresh_attempt_guard_v1",
+        ):
+            cursor.execute("SELECT pg_get_functiondef(%s::regprocedure)", [name + "()"])
+            definition = cursor.fetchone()[0]
+            assert "stewardship_source_current_window_v1(" in definition
+            assert "comparison_start" not in definition
+
+
 def test_restore_blocks_replay_and_new_commands(tmp_path):
     """Manual does not bypass an installation's restore safety gate."""
     _, campaign, _ = draft_campaign(tmp_path)

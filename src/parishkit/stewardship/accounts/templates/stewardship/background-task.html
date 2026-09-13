@@ -1,0 +1,22 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Background task details" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Background task details" %}</h1>
+<p>{{ task.type }} — {{ task.id }}</p>
+<section class="panel"><h2>{% translate "Current status" %}</h2>
+<p>{% translate "State:" %} {{ task.state|capfirst }} · {% translate "Phase:" %} {{ task.progress.phase|capfirst }}</p>
+<p>{% translate "Attempt:" %} {{ task.attempt|number }} · {% translate "Retry sequence:" %} {{ task.retry_sequence|number }}</p>
+<p>{% translate "Initiator ID:" %} {{ task.initiator_id|default:_("System") }}</p>
+<p>{% translate "Created:" %} <time datetime="{{ task.created_at }}" data-local-instant>{{ task.created_at }}</time></p>
+{% if task.heartbeat_at %}<p>{% translate "Heartbeat:" %} <time datetime="{{ task.heartbeat_at }}" data-local-instant>{{ task.heartbeat_at }}</time></p>{% endif %}
+{% if task.lease_expires_at %}<p>{% translate "Lease expires:" %} <time datetime="{{ task.lease_expires_at }}" data-local-instant>{{ task.lease_expires_at }}</time></p>{% endif %}
+{% if task.state == 'running' and not task.active %}<p class="notice">{% translate "The worker lease is no longer current. Recovery has not yet finished." %}</p>{% endif %}
+{% if task.progress.total %}<p>{{ task.progress.display|out_of }}</p><progress value="{{ task.progress.current }}" max="{{ task.progress.total }}" aria-label="{% translate 'Task progress' %}"></progress>{% else %}<p>{% translate "Waiting for progress details." %}</p>{% endif %}
+</section>
+<div class="table-scroll"><table><caption>{% translate "Task history (newest first)" %}</caption>
+<thead><tr><th scope="col">{% translate "Version" %}</th><th scope="col">{% translate "Time" %}</th><th scope="col">{% translate "Action" %}</th><th scope="col">{% translate "State" %}</th><th scope="col">{% translate "Phase and progress" %}</th></tr></thead>
+<tbody>{% for event in work.events %}<tr><td>{{ event.version|number }}</td><td><time datetime="{{ event.at }}" data-local-instant>{{ event.at }}</time></td><td>{{ event.action }}</td><td>{{ event.state }}</td><td>{{ event.progress.phase }}{% if event.progress.total %} — {{ event.progress.display|out_of }}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+{% if work.has_next %}<p><a href="?{{ next_query }}">{% translate "Older history" %}</a></p>{% endif %}
+<p><a href="{% url 'admin:background_task_page' task.id %}">{% translate "Refresh task" %}</a> · <a href="{% url 'admin:background' %}">{% translate "All background work" %}</a></p>
+<p>{% translate "Refreshing this status does not extend your login session." %}</p>
+{% endblock %}

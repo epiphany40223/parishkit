@@ -15,3 +15,4 @@
 !src/**/*.svg
 !src/**/*.png
 !src/**/*.ico
+!src/parishkit/stewardship/accounts/timezone_names_v1.txt

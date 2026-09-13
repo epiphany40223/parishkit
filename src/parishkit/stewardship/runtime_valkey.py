@@ -58,8 +58,8 @@ def broker_acl(service, password):
     queues = frozenset(WorkQueue) if producer else ROLE_QUEUES[service]
     keys = []
     for queue in sorted(queues):
-        # Kombu appends a priority separator to list names. Prefixes here are
-        # fixed disjoint reviewed queue names, never administrator input.
+        # Kombu appends binary priority separators. QoS lives under a separate
+        # qos: namespace so these queue patterns cannot grant it to publishers.
         keys.extend(
             (
                 f"~{BROKER_PREFIX}{queue.value}*",
@@ -71,9 +71,9 @@ def broker_acl(service, password):
         "+sadd +smembers +lpush +multi +exec"
     )
     if not producer:
-        keys.append(f"~{BROKER_PREFIX}{service.value}:unacked*")
+        keys.append(f"~{BROKER_PREFIX}qos:{service.value}:unacked*")
         commands += (
-            " +brpop +rpop +srem +hset +hget +hdel +zadd +zrem +zrevrangebyscore"
+            " +brpop +rpop +rpush +srem +hset +hget +hdel +zadd +zrem +zrevrangebyscore"
             " +get +set +del +expire +pexpire +watch +unwatch"
             " +eval +evalsha +script|load +script|exists"
         )

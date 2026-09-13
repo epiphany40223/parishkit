@@ -156,3 +156,32 @@ def test_payload_and_membership_rewrites_are_rejected_by_sql():
         ):
             cursor.execute(statement, (snapshot.pk,))
     assert SourceFamily.objects.get().payload["name"] == "Synthetic"
+
+
+def test_source_guards_ignore_shadow_relations_and_pin_resolution():
+    """Even a schema-owner test session cannot redirect guard lookups via pg_temp."""
+    snapshot, _ = staging()
+    payload = version()
+    with transaction.atomic(), connection.cursor() as cursor:
+        for table in (
+            "stewardship_source_snapshot",
+            "stewardship_source_lease",
+            "stewardship_source_family",
+        ):
+            cursor.execute(
+                f"CREATE TEMP TABLE {table} (LIKE public.{table}) ON COMMIT DROP"
+            )
+        cursor.execute("SET LOCAL search_path=pg_temp,public")
+        ENTITY_MODELS["family"][1].objects.create(
+            snapshot=snapshot, source_key="1", payload=payload
+        )
+        for function in (
+            "stewardship_source_canonical(jsonb,integer)",
+            "stewardship_source_payload_guard()",
+            "stewardship_source_membership_guard()",
+        ):
+            cursor.execute(
+                "SELECT proconfig FROM pg_catalog.pg_proc WHERE oid=%s::regprocedure",
+                ["public." + function],
+            )
+            assert cursor.fetchone()[0] == ["search_path=pg_catalog, public, pg_temp"]

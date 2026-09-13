@@ -1,0 +1,11 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Retained campaign content" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Retained campaign content" %}</h1>
+<p>{{ campaign.active_configuration.name }} — {{ campaign.state|capfirst }}</p>
+<p class="notice">{% translate "Read-only fictional sample — not a live Family or an email delivery. This campaign's retained configuration supplies its content, Parish name and logo." %}</p>
+<p>{% translate "Configuration" %}: <code>{{ version.pk }}</code></p>
+<section class="panel"><h2>{% translate "Pages and email templates" %}</h2><ul>{% for entry in entries %}<li><a href="{% url 'admin:content_history_revision' campaign.pk entry.id %}">{{ entry.label }}{% if entry.subject %} — {{ entry.subject }}{% endif %}</a></li>{% empty %}<li>{% translate "No content was configured." %}</li>{% endfor %}</ul></section>
+{% if selected %}<section class="panel"><h2>{% translate "Retained sample" %}</h2>{% include 'stewardship/content-sample.html' %}</section>{% endif %}
+<p><a href="{% url 'admin:campaign_settings' campaign.pk %}">{% translate "Campaign settings" %}</a></p>
+{% endblock %}

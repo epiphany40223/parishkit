@@ -1,0 +1,17 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Review schedule reconciliation" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Review schedule reconciliation" %}</h1><p>{{ campaign.active_configuration.name }}</p>
+<p>{% translate "Sent messages cannot be recalled. Successful logical-schedule fulfillment remains valid across revisions. Failed and safely cancellable old work is superseded; changes apply atomically or not at all." %}</p>
+{% if window_changes %}<section class="panel"><h2>{% translate "Campaign window" %}</h2><p>{% translate "Applied:" %} {{ before_window.start_date }} – {{ before_window.end_date }} ({{ before_window.timezone }})</p><p>{% translate "Proposed:" %} {{ after_window.start_date }} – {{ after_window.end_date }} ({{ after_window.timezone }})</p></section>{% endif %}
+{% if 'financial' in window_changes %}<section class="panel"><h2>{% translate "Financial overlap acknowledgment" %}</h2><p>{% translate "Applied:" %} {{ before_window.financial.overlap_confirmed|yesno }}</p><p>{% translate "Proposed:" %} {{ after_window.financial.overlap_confirmed|yesno }}</p></section>{% endif %}
+{% for change in changes %}<section class="panel"><h2>{{ change.label }} — {{ change.operation|capfirst }}</h2>
+<h3>{% translate "Applied schedule" %}</h3>{% include 'stewardship/schedule-summary.html' with value=change.before %}
+<h3>{% translate "Proposed schedule" %}</h3>{% include 'stewardship/schedule-summary.html' with value=change.after %}
+<dl><dt>{% translate "Successful deliveries (all revisions)" %}</dt><dd>{{ change.impact.delivered|default:0|number }}</dd><dt>{% translate "Safely cancellable occurrences" %}</dt><dd>{{ change.impact.cancellable|default:0|number }}</dd><dt>{% translate "Terminal failed occurrences" %}</dt><dd>{{ change.impact.failed|default:0|number }}</dd><dt>{% translate "Blocking in-flight or uncertain work" %}</dt><dd>{{ change.impact.blocking|default:0|number }}</dd><dt>{% translate "Current-revision occurrences" %}</dt><dd>{{ change.impact.occurrences|default:0|number }}</dd><dt>{% translate "Linked outbox records" %}</dt><dd>{{ change.impact.outboxes|default:0|number }}</dd></dl>
+</section>{% endfor %}
+{% if blocking %}<p class="notice notice-error" role="alert">{% translate "In-flight or uncertain work blocks this change. Resolve it before creating a fresh preview." %} {{ blocking|number }}</p>{% else %}
+<p>{% translate "This exact preview expires in 15 minutes. Any change to relevant work invalidates it. Confirmation requests installation and returns a durable receipt; it does not send email." %}</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}"><button type="submit">{% translate "Apply all changes" %}</button></form>{% endif %}
+<p><a href="{% url 'admin:schedule_settings' campaign.pk %}">{% translate "Return to schedules" %}</a></p>
+{% endblock %}

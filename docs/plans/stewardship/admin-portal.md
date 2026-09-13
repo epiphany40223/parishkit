@@ -38,6 +38,10 @@ remain below `/admin/` and apply server-side authorization.
 5. Freeze setup, run target-specific secret installers, apply one complete YAML
    version/materialization, and commit the configured marker only after source,
    Family codes, Testing mode, digests, and consumer fingerprints agree.
+   Use the [initial-setup abort protocol](../../specs/stewardship/data/spec.md#parish-and-integrations)
+   for selected-but-unapplied cancellation. Commit database activation and the
+   configured marker atomically; test cancellation/activation races and crash
+   recovery on both sides of manifest restoration without rewinding applied history.
 6. Add browser and worker-race tests for happy path, every abort boundary,
    timeout, and restored deployment skip.
 
@@ -51,12 +55,19 @@ remain below `/admin/` and apply server-side authorization.
 4. Build parish, branding, timezone, contact, mode, integration, sender, Slack,
    and secret replace/test pages with YAML change-request and sealed target-
    installer progress, version diff, optimistic digest concurrency, and audit.
+   Include the [Ministry activity editor](../../specs/stewardship/admin-portal/spec.md#ministry-activity-management),
+   with persistent tenant/DUID overrides, impact preview and applied-status UI.
+   Its activation must atomically reevaluate seeded assignment overlays without
+   changing manual assignments or the campaign's structural selection.
 5. Make Parish-timezone edits explicitly prospective: they affect general
    presentation and future drafts but never mutate an existing campaign.
 6. Add logo variant preview and safe branding-version handling.
 7. Test all role variants, browser sizes, applying/applied/error states, stale
    saves, config-installer crash recovery, secret expiry/failure rollback,
    campaign-timezone isolation, and browser-local timestamp rendering.
+   Test Ministry inactivation/reactivation, rename and catalog reappearance,
+   import persistence, active-campaign edits, seeded-access effects, manual-role
+   preservation and activity-change/source-promotion races.
 
 ### ADM-04: Campaign editor, content, schedules, and previews
 

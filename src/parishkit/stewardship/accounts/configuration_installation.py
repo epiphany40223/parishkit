@@ -19,12 +19,13 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .authority import apply_version, recover_active
+from .configuration_errors import ConfigurationReadinessUnavailable
 from .configuration_requests import _identities, _status
 from .configuration_snapshots import is_prepared, prepare_snapshot
 from .installation_lock import installation_lock
 from .request_admission import intake_base
 from .request_models import ConfigurationChangeRequest, ConfigurationRequestCheckpoint
-from .request_patch import build_candidate
+from .request_patch import MANUAL_POLICY_REQUEST_SCHEMAS, build_candidate
 from .runtime_models import ConfigurationActivation, SystemConfiguration
 
 
@@ -135,6 +136,13 @@ class DatabaseMaterializer:
         """Commit the snapshot before its checkpoint; retry an intervening crash."""
         self._check()
         self._candidate(version)
+        from .branding_validation import validate_installation as validate_branding
+        from .integration_selection import validate_installation as validate_credentials
+        from .ministry_activity import validate_installation as validate_activity
+
+        validate_activity(version.document())
+        validate_branding(version.document(), actor_id=self.actor_id)
+        validate_credentials(version.document())
         from parishkit.stewardship.campaigns.admission import validate_installation
 
         validate_installation(
@@ -180,7 +188,7 @@ class DatabaseMaterializer:
                     actor_id=self.actor_id,
                     correlation_id=self.correlation_id,
                 )
-            ConfigurationActivation.objects.create(
+            activation = ConfigurationActivation.objects.create(
                 configuration_id=selected.version_id,
                 predecessor_id=runtime.active_configuration_id,
                 sequence=runtime.configuration_sequence,
@@ -188,6 +196,9 @@ class DatabaseMaterializer:
                 actor_id=self.actor_id,
                 correlation_id=self.correlation_id,
             )
+            from .chair_reconciliation import reconcile_configuration_chairs
+
+            reconcile_configuration_chairs(activation)
             # SQL inserts Applied, safe audit, and the runtime pointer in this
             # same transaction. A failure in any effect rolls them all back.
 
@@ -208,13 +219,19 @@ class DatabaseMaterializer:
         """
         from parishkit.stewardship.campaigns.models import CampaignConfigurationAbort
 
+        from .setup_models import SetupConfigurationAbort
+
         self._check()
         request = self.request
+        journal = (
+            SetupConfigurationAbort
+            if request is not None
+            and request.request_schema == "initial-setup-patch-v7"
+            else CampaignConfigurationAbort
+        )
         if (
             request is None
-            or not CampaignConfigurationAbort.objects.filter(
-                intent__request=request
-            ).exists()
+            or not journal.objects.filter(intent__request=request).exists()
         ):
             raise StorageInvariantError(
                 "Exceptional cancellation requires its journal."
@@ -338,6 +355,11 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
     )
     with materializer.lock():
         current = _status(request)
+        from .setup_installation import recover_setup_abort
+
+        setup_abort = recover_setup_abort(materializer)
+        if setup_abort is not None:
+            return setup_abort
         from parishkit.stewardship.campaigns.configuration_intents import (
             recover_configuration_abort,
         )
@@ -352,6 +374,10 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
 
             verify_intent_receipt(request.pk, admit_campaign)
             return current
+        if request.request_schema == "initial-setup-patch-v7":
+            from .setup_preparation import prepare_setup_configuration
+
+            return prepare_setup_configuration(materializer)
         selected = store.active()
         active_digest = materializer.active_digest()
         if active_digest is None:
@@ -378,10 +404,7 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
                     candidate_id=request.candidate_version_id,
                     request_schema=request.request_schema,
                 )
-                if request.request_schema in {
-                    "foundation-policy-patch-v2",
-                    "campaign-foundation-patch-v3",
-                }:
+                if request.request_schema in MANUAL_POLICY_REQUEST_SCHEMAS:
                     from .policy_schema import validate_manual_operation
 
                     validate_manual_operation(
@@ -392,6 +415,11 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
                 from .request_admission import check_historical_additions
 
                 check_historical_additions(request.base_id, request.patch)
+                from .ministry_activity import (
+                    validate_installation as validate_activity,
+                )
+
+                validate_activity(intent.candidate.document())
                 from parishkit.stewardship.campaigns.admission import (
                     validate_installation,
                 )
@@ -404,6 +432,22 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
                     or intent.payload_fingerprint != request.payload_fingerprint
                 ):
                     raise ConfigError("Configuration request metadata is inconsistent.")
+                from .branding_validation import (
+                    validate_installation as validate_branding,
+                )
+
+                validate_branding(
+                    intent.candidate.document(), actor_id=request.actor_id
+                )
+                from .integration_selection import (
+                    validate_installation as validate_credentials,
+                )
+
+                validate_credentials(intent.candidate.document())
+            except ConfigurationReadinessUnavailable:
+                # Retain the exact durable request for a later installer pass;
+                # unfinished normalization/replacement is not malformed intent.
+                raise
             except ConfigError:
                 failure_code = "invalid_candidate"
             if not failure_code:

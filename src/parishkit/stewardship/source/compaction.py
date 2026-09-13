@@ -27,15 +27,18 @@ def _live_pins(now):
 
 def _select_compaction(current, now, limit):
     """Skip active readers and recheck late pins after winning each candidate lock."""
+    recent, _ = retention_cutoffs(now)
     anchors = retention_anchors(
-        SourceSnapshot.objects.filter(state="promoted")
+        SourceSnapshot.objects.filter(state="promoted", promoted_at__lt=recent)
         .values_list("id", "promoted_at", "generation")
         .iterator(chunk_size=1000),
         now=now,
     )
     pins = _live_pins(now).filter(snapshot_id=OuterRef("id"))
     candidates = list(
-        SourceSnapshot.objects.filter(state="promoted", compacted_at__isnull=True)
+        SourceSnapshot.objects.filter(
+            state="promoted", compacted_at__isnull=True, promoted_at__lt=recent
+        )
         .exclude(pk=current.snapshot_id)
         .exclude(pk__in=anchors)
         .filter(~Exists(pins))

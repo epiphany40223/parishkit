@@ -150,9 +150,9 @@ from the request, prepared snapshot, and active-manifest digest. While they
 differ, readiness and configuration-dependent mutations/background work fail
 closed; no process silently chooses one copy. Rollback creates and applies a
 new YAML version derived from a prior version rather than mutating history.
-The only selected-but-unapplied cancellation is the journaled
-[exceptional end-edit abort](../data/spec.md#parish-and-integrations); it cannot
-rewind an applied version or act as general configuration rollback.
+Selected-but-unapplied cancellation is limited to the journaled
+[exceptional end-edit and initial-setup aborts](../data/spec.md#parish-and-integrations).
+Neither can rewind an applied version or act as general configuration rollback.
 
 Deployment configuration required to reach PostgreSQL is changed by the
 documented operator workflow, not the web installer. Dynamic runtime state is

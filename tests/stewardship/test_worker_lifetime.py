@@ -1,13 +1,16 @@
 """Process-local stop/renewal coordination rejects unsafe scopes before SQL."""
 
 from threading import Event
+from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
 
 from parishkit.stewardship.jobs.dispatch import Execution, Handler, WorkQueue
 from parishkit.stewardship.jobs.lifetime import (
+    RENEWAL_DRAIN_SECONDS,
     ExecutionInterrupted,
+    RenewalDrainFailure,
     maintain_execution,
     renew_once,
 )
@@ -106,3 +109,37 @@ def test_source_attachment_requires_exact_owner_and_active_nonnested_lifetime():
         with pytest.raises(ValueError), context.maintain_source(different):
             pytest.fail("Another worker's source claim was attached")
     assert context.control.source_claim is None
+
+
+@pytest.mark.parametrize("body_fails", [False, True])
+def test_undrained_renewer_is_fatal_even_when_handler_already_failed(
+    monkeypatch, body_fails
+):
+    """Ordinary broker error handling must not resume beside an old live renewer."""
+    from parishkit.stewardship.deployment import ServiceRole, ValkeyConfiguration
+    from parishkit.stewardship.jobs import broker, lifetime
+
+    context = execution()
+    thread = Mock(ident=123)
+    thread.is_alive.return_value = True
+    monkeypatch.setattr(lifetime, "Thread", Mock(return_value=thread))
+
+    def consume(*args, **kwargs):
+        """Exercise the real lifetime exit through the registered broker task."""
+        with maintain_execution(context):
+            if body_fails:
+                raise ValueError("synthetic-handler-failure")
+
+    monkeypatch.setattr(broker, "consume_hint", consume)
+    runtime = broker.build_broker(
+        endpoint=ValkeyConfiguration("valkey", 6379, 0, None),
+        password="synthetic-password",
+        service=ServiceRole.WORKER,
+        handlers={},
+    )
+    with pytest.raises(RenewalDrainFailure) as caught:
+        runtime.app.tasks[broker.HINT_TASK].run(str(uuid4()))
+    assert context.control.failed.is_set() and not context.control.active
+    thread.join.assert_called_once_with(timeout=RENEWAL_DRAIN_SECONDS)
+    if body_fails:
+        assert isinstance(caught.value.__context__, ValueError)

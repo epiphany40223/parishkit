@@ -56,6 +56,34 @@ def cancel(intent):
     )
 
 
+def test_server_lifetime_begins_at_intake_and_retries_keep_the_deadline(
+    intent, monkeypatch
+):
+    """A delayed form and repeated POST never shorten or renew the operator window."""
+    from parishkit.stewardship.accounts import secret_requests
+
+    intent.pop("expires_at")
+    intent["staging_lifetime"] = timedelta(hours=1)
+    receipt = stage_secret_request(**intent)
+    row = SecretReplacementRequest.objects.get(pk=receipt.request_id)
+    assert timedelta(minutes=59) < row.expires_at - row.created_at <= timedelta(hours=1)
+    monkeypatch.setattr(
+        secret_requests, "_now", lambda: row.expires_at + timedelta(hours=1)
+    )
+    assert stage_secret_request(**intent) == receipt
+    row.refresh_from_db()
+    assert row.version == 1
+
+
+@pytest.mark.parametrize("lifetime", [0, "3600", timedelta(0), timedelta(days=2)])
+def test_invalid_server_lifetime_never_reserves_a_target(intent, lifetime):
+    """Only bounded server-selected timedeltas may replace the explicit deadline."""
+    intent.pop("expires_at")
+    with pytest.raises(ConfigError, match="lifetime"):
+        stage_secret_request(**intent, staging_lifetime=lifetime)
+    assert not SecretReplacementRequest.objects.exists()
+
+
 def clean(intent, callback):
     """Exercise the future target-store port with an explicit synthetic callback."""
     return clean_secret_request(
@@ -306,6 +334,7 @@ def seed_expired(intent):
             updated_at=now - timedelta(minutes=2),
             expires_at=now - timedelta(minutes=1),
         )
+        cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
         cursor.execute(
             "ALTER TABLE stewardship_secret_request "
             "ENABLE TRIGGER stewardship_secret_state_v1"

@@ -7,6 +7,7 @@ from django.test import Client
 
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
+from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs import views
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.phases import TaskPhase
@@ -14,13 +15,14 @@ from parishkit.stewardship.jobs.phases import TaskPhase
 from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import change
+from .test_background_grants_postgresql import task_login
 from .test_taskrun_postgresql import act, new
 
 pytestmark = pytest.mark.django_db(transaction=True)
 BASE = "/admin/background/tasks"
 
 
-@pytest.mark.parametrize("detail", [False, True])
+@pytest.mark.parametrize("detail", [False, True, "counts"])
 @pytest.mark.parametrize(
     "role,status", [("administrator", 200), ("staff", 403), ("ministry_leader", 403)]
 )
@@ -44,9 +46,21 @@ def test_only_current_admin_sees_operational_tasks(
     task = new()
     browser, signed = signed_in()
     assert signed.status_code == 302
-    response = browser.get(BASE + (f"/{task.run_id}" if detail else ""))
+    path = (
+        "/admin/background/counts"
+        if detail == "counts"
+        else BASE + (f"/{task.run_id}" if detail else "")
+    )
+    with task_login(ServiceRole.WEB):
+        response = browser.get(path)
     assert response.status_code == status
     assert response["Cache-Control"] == "no-store"
+    if detail == "counts":
+        if status == 200:
+            assert set(response.json()) == {"as_of", "counts"}
+            assert response.json()["counts"]["queued"] == 1
+        assert not AuditEvent.objects.filter(event_type="background_viewed").exists()
+        return
     if status == 200:
         row = response.json()["task"] if detail else response.json()["tasks"][0]
         assert row["id"] == str(task.run_id)
@@ -60,6 +74,7 @@ def test_only_current_admin_sees_operational_tasks(
             "action",
             "version",
             "attempt",
+            "initiator_id",
             "progress",
             "created_at",
             "updated_at",
@@ -128,6 +143,14 @@ def test_polls_do_not_renew_idle_session_and_report_typed_progress(
         "percent": 25.0,
     }
     assert detailed["events"][0]["progress"] == detailed["task"]["progress"]
+    audit_count = AuditEvent.objects.count()
+    for _ in range(3):
+        assert (
+            browser.get("/admin/background/counts").json()["counts"] == listed["counts"]
+        )
+    assert AuditEvent.objects.count() == audit_count
+    assert PortalSession.objects.get().last_activity_at == before
+    assert browser.get("/admin/background/counts?size=1").status_code == 400
 
 
 def test_task_and_history_pages_are_bounded_and_terminal_filter_is_explicit(
@@ -150,8 +173,9 @@ def test_task_and_history_pages_are_bounded_and_terminal_filter_is_explicit(
     assert len(history["events"]) == 1
 
 
+@pytest.mark.parametrize("counts_only", [False, True])
 def test_revocation_during_query_discards_prepared_metadata(
-    auth_service, google, monkeypatch
+    auth_service, google, monkeypatch, counts_only
 ):
     """Fresh response-boundary authorization may deny an initially authorized read."""
     task = new()
@@ -164,7 +188,9 @@ def test_revocation_during_query_discards_prepared_metadata(
         return None if kwargs.get("read_only") else original(request, **kwargs)
 
     monkeypatch.setattr(views, "authenticated_admin", authorize)
-    response = browser.get(f"{BASE}/{task.run_id}")
+    response = browser.get(
+        "/admin/background/counts" if counts_only else f"{BASE}/{task.run_id}"
+    )
     assert response.status_code == 403 and len(calls) == 2
     assert str(task.run_id).encode() not in response.content
     assert not AuditEvent.objects.filter(event_type="background_viewed").exists()
@@ -194,3 +220,56 @@ def test_detail_missing_identity_and_unsupported_methods_do_not_change_tasks(
     response = browser.post(BASE, HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value)
     assert response.status_code == 405
     assert not TaskRun.objects.exists()
+
+
+def test_task_html_detail_is_bounded_passive_and_preserves_history_filters(
+    auth_service, google
+):
+    """The rendered task page uses exactly the authenticated API's closed metadata."""
+    task = act(
+        act(new(), "claim"), "progress", progress=(1000, 4000), phase=TaskPhase.FETCHING
+    )
+    browser, _ = signed_in()
+    before = PortalSession.objects.get().last_activity_at
+    path = f"/admin/background/task/{task.run_id}"
+    response = browser.get(path, {"page": 1, "size": 1})
+    assert response.status_code == 200 and response["Cache-Control"] == "no-store"
+    assert b"1,000 out of 4,000 (25%)" in response.content
+    assert b"Task history (newest first)" in response.content
+    assert b"page=2&amp;size=1" in response.content
+    assert PortalSession.objects.get().last_activity_at == before
+    assert browser.get(f"/admin/background/task/{uuid4()}").status_code == 404
+    assert Client().get(path).status_code == 403
+
+
+@pytest.mark.parametrize("detail", [False, True])
+@pytest.mark.parametrize("failure", ["render", "revoke"])
+def test_html_render_or_final_revocation_cannot_record_success(
+    auth_service, google, monkeypatch, detail, failure
+):
+    """A JSON intermediate is not proof that an HTML report was displayed."""
+    task = new()
+    browser, _ = signed_in()
+    original = views.render
+
+    def render(*args, **kwargs):
+        """Lose rendering or the actual login after metadata was selected."""
+        assert not AuditEvent.objects.filter(event_type="background_viewed").exists()
+        if failure == "render":
+            raise RuntimeError("Synthetic render failure")
+        result = original(*args, **kwargs)
+        from parishkit.stewardship.accounts.sessions import end_admin
+
+        end_admin(args[0])
+        return result
+
+    monkeypatch.setattr(views, "render", render)
+    path = f"/admin/background/task/{task.run_id}" if detail else "/admin/background"
+    if failure == "render":
+        with pytest.raises(RuntimeError, match="Synthetic"):
+            browser.get(path)
+    else:
+        response = browser.get(path)
+        assert response.status_code == 403
+        assert str(task.run_id).encode() not in response.content
+    assert not AuditEvent.objects.filter(event_type="background_viewed").exists()

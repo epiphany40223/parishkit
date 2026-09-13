@@ -205,9 +205,12 @@ def test_delta_uses_only_promoted_base_and_preserves_full_provenance(
     credential, execution, lease, *_ = setup(tmp_path)
     first = seed_full(credential, execution, lease)
     execution, lease = next_delta()
-    remaining, calls = fake_provider(monkeypatch, [[{"organizationID": 12345}], []])
+    remaining, calls = fake_provider(
+        monkeypatch,
+        [[{"organizationID": 12345}], [], [{"famGroupID": 7, "famGroup": "Active"}]],
+    )
     result = run(credential, execution, lease)
-    assert not remaining and len(calls) == 2
+    assert not remaining and len(calls) == 3
     assert result.state == "ready" and result.base_id == first.pk
     assert result.counts == first.counts
     assert result.cursor["full_snapshot_id"] == str(first.pk)

@@ -9,7 +9,7 @@ import pytest
 from django.db import connections, transaction
 
 from parishkit.stewardship.audit.models import AuditContext
-from parishkit.stewardship.source import snapshots
+from parishkit.stewardship.source import compaction, snapshots
 from parishkit.stewardship.source.canonical import InvalidSourcePayload
 from parishkit.stewardship.source.compaction import compact_source
 from parishkit.stewardship.source.leases import _now, acquire_source, release_source
@@ -115,6 +115,25 @@ def test_compaction_preserves_manifests_anchors_current_and_shared_payloads(hist
     assert result.recent_cutoff == result.cutoff_at - timedelta(days=90)
 
 
+def test_recent_history_is_retained_by_sql_not_materialized_uuid_sets(
+    history, monkeypatch
+):
+    """Frequent recent polls do not enlarge the Python anchor set or SQL IN list."""
+    original = compaction.retention_anchors
+    observed = []
+
+    def anchors(stamps, *, now):
+        """Inspect only the real SQL iterator passed to the unchanged pure policy."""
+        values = list(stamps)
+        observed.extend(row[0] for row in values)
+        return original(values, now=now)
+
+    monkeypatch.setattr(compaction, "retention_anchors", anchors)
+    assert cleanup().snapshot_count == 1
+    assert set(observed) == {history[0].pk, history[1].pk}
+    assert reconstruct_snapshot(history[2].pk)
+
+
 @pytest.mark.parametrize(
     "kind",
     [
@@ -135,8 +154,27 @@ def test_retained_parent_pins_override_compaction_until_explicit_release(history
     pin = pin_snapshot(history[0].pk, parent_kind=kind, parent_id=uuid4(), admit=permit)
     assert cleanup().snapshot_count == 0
     assert reconstruct_snapshot(history[0].pk)
-    assert release_snapshot_pin(pin.pk, admit=permit)
-    assert not release_snapshot_pin(pin.pk, admit=permit)
+    assert not release_snapshot_pin(
+        pin.pk, parent_kind=kind, parent_id=uuid4(), admit=permit
+    )
+    assert not release_snapshot_pin(
+        pin.pk, parent_kind="different", parent_id=pin.parent_id, admit=permit
+    )
+    assert cleanup().snapshot_count == 0
+    observed = []
+
+    def owning_admission(action, selected):
+        """The retained parent's actual pin is available for owning authorization."""
+        observed.append((action, selected.pk, selected.parent_kind, selected.parent_id))
+        return True
+
+    assert release_snapshot_pin(
+        pin.pk, parent_kind=kind, parent_id=pin.parent_id, admit=owning_admission
+    )
+    assert observed == [("unpin", pin.pk, kind, pin.parent_id)]
+    assert not release_snapshot_pin(
+        pin.pk, parent_kind=kind, parent_id=pin.parent_id, admit=permit
+    )
     assert cleanup().snapshot_count == 1
 
 

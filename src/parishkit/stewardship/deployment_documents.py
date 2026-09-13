@@ -54,10 +54,18 @@ def service_configuration_file(configuration, name):
 
     from .deployment import SECRET_NAMES, ServiceRole
 
-    names = {role.value for role in ServiceRole} | {
-        "credential-installer-" + target.replace("_", "-")
-        for target in SECRET_NAMES - {"handoff_private"}
-    }
+    names = (
+        {role.value for role in ServiceRole}
+        | {
+            "worker-initial",
+            "mail-dispatch-initial",
+            "worker-slack",
+        }
+        | {
+            "credential-installer-" + target.replace("_", "-")
+            for target in SECRET_NAMES - {"handoff_private"}
+        }
+    )
     if name not in names:
         raise ConfigError("Unknown operational service identity.")
     return Path(configuration.paths["config"]) / "services" / (name + ".yaml")

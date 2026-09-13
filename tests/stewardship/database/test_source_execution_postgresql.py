@@ -159,7 +159,14 @@ def test_delta_execution_can_promote_complete_unchanged_base(tmp_path, monkeypat
     base = seed_full(credential, execution, claim)
     receipt = command(cause="delta", actor_id=None)
     compiled = handler(tmp_path, credential, reconcile=permit)
-    fake_provider(monkeypatch, [[{"organizationID": 12345}], []])
+    fake_provider(
+        monkeypatch,
+        [
+            [{"organizationID": 12345}],
+            [],
+            [{"famGroupID": 7, "famGroup": "Active"}],
+        ],
+    )
     assert run(receipt, compiled)
     result = SourceSnapshot.objects.exclude(pk=base.pk).get()
     assert result.state == "promoted" and result.counts == base.counts

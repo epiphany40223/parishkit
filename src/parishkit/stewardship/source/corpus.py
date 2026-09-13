@@ -444,7 +444,11 @@ def _ministries(corpus, source, as_of):
             identity = {
                 "member": member_id,
                 "ministry": identifier,
-                "role": values.get("ministryRoleId", values.get("ministryRoleName")),
+                "role": (
+                    values["ministryRoleId"]
+                    if values.get("ministryRoleId") is not None
+                    else values.get("ministryRoleName")
+                ),
                 "event": values.get("ministryEventId"),
                 "start": start,
             }

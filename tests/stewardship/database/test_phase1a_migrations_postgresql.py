@@ -90,8 +90,29 @@ def test_populated_phase1a_reverse_preserves_history(
             )
     leaves = MigrationExecutor(connection).loader.graph.leaf_nodes()
     applied = set(MigrationRecorder(connection).applied_migrations())
+    # Later migrations can refuse the downgrade before these original guards
+    # run. Prove each original refusal independently, with all effects rolled
+    # back, then verify the complete downgrade still preserves the schema.
+    guard_module, operation = {
+        "intent": ("0011_exceptional_end_guards", "restore_functions"),
+        "runtime": ("0006_runtime_guards", "restore_predecessors"),
+        "hold": ("0014_resolution_guards", 0),
+        "checkpoint": ("0008_checkpoint_completion", 2),
+        "boundary": ("0009_boundary_catchup_guards", 0),
+    }[history]
+    module = import_module("parishkit.stewardship.campaigns.migrations." + guard_module)
+    with (
+        pytest.raises(IntegrityError, match=message),
+        transaction.atomic(),
+        connection.schema_editor() as editor,
+    ):
+        if isinstance(operation, str):
+            getattr(module, operation)(None, editor)
+        else:
+            editor.execute(module.Migration.operations[operation].reverse_sql)
+    first_guard = message if history == "runtime" else "Schedule history prevents"
     try:
-        with pytest.raises(IntegrityError, match=message):
+        with pytest.raises(IntegrityError, match=first_guard):
             MigrationExecutor(connection).migrate([("stewardship_campaigns", target)])
     finally:
         MigrationExecutor(connection).migrate(leaves)

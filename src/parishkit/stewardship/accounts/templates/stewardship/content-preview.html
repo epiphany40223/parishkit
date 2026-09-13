@@ -1,0 +1,12 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Review content changes" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Review content changes" %}</h1><h2>{{ label }}</h2>
+<p class="notice">{% translate "Fictional sample preview — not a live Family or an email delivery. HTML is sanitized and every placeholder is substituted as inert text." %}</p>
+<section class="panel"><h2>{% translate "Applied content" %}</h2>{% include 'stewardship/content-sample.html' with sample=before %}</section>
+<section class="panel"><h2>{% translate "Proposed content" %}</h2>{% include 'stewardship/content-sample.html' with sample=after %}</section>
+{% if affected %}<section class="panel"><h2>{% translate "Schedules using this template" %}</h2><p>{% translate "These schedules will select the new revision and subject atomically. In-flight work can delay installation." %}</p><ul>{% for schedule in affected %}<li>{{ schedule.values.kind }} — {{ schedule.values.date|default:_("Recurring") }} {{ schedule.values.time }} — {{ schedule.values.subject }}</li>{% endfor %}</ul></section>{% endif %}
+<p>{% translate "This exact preview expires in 15 minutes. Confirmation requests installation; content changes only when the request is Applied." %}</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ preview }}"><button type="submit">{% translate "Apply changes" %}</button></form>
+<p><a href="{% url 'admin:content_catalog' campaign.pk %}">{% translate "Return to content and templates" %}</a></p>
+{% endblock %}
