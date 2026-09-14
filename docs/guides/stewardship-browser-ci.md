@@ -96,9 +96,8 @@ three below-cutoff Low; three validated findings, all accepted and fixed:
 
 Finalized artifact SHA-256:
 `3d475b845dde60baff27f4a1b4a42201ef20539794a019f3ea3f26a532bdffe4`.
-Post-correction CI/sharding/gate regressions: 128 passed. The complete browser
-partitions and default suite are being revalidated before delivery; later
-review rounds and final-head/protected merge-group CI remain required.
+Post-correction CI/sharding/gate regressions: 128 passed. Complete browser and
+default-suite validation is recorded with the following rounds.
 
 ### Review round 2
 
@@ -124,5 +123,51 @@ Finalized artifact SHA-256:
 Round-1 correction validation completed: 5,098 default tests passed; all 639
 browser cases passed in parallel (Chromium 115.77 seconds, WebKit 190.08 seconds,
 Firefox 395.19 seconds). Their executed teardown IDs and selected manifests
-exactly matched the independent serial collection, 213 per engine. The new
-external runner and round-2 corrections are being revalidated before delivery.
+exactly matched the independent serial collection, 213 per engine. Final
+external-runner validation is recorded below.
+
+### Review round 3
+
+Session `20260914-023939-b19499` reviewed the correction diff from
+`7bf804fe41c3c164255956d0b84aeda6b04138c7` to
+`27a1f1b864f4d48c409a51c96611099fc7e1dfb6`, tree
+`546a2ff64f5bf227aea1b4712db34b9995f6ff2b`, including the external runner,
+workflow, surrounding selector, and regression tests. Both reviewers completed
+without failure, degradation, mismatch or salvage. The finalized result is
+APPROVE: zero validated findings; raw seven Low, zero Medium/High/Critical.
+Six Low findings were below cutoff and one referenced a path outside the diff.
+Codex's actual structured result is APPROVED with an empty findings list and
+exit 0 (244 seconds, no timeout/stall); finalize's `parsed: false` telemetry for
+that empty list is not a missing review.
+
+Finalized artifact SHA-256:
+`9ad1c2d46dd7eb4023dd9200c3d508fbb026e6cb48ee6f7b9b82098f7749a4ac`.
+All six accepted Medium-or-higher findings from rounds 1 and 2 are fixed. Three
+dual-source rounds are complete, and the final round has no High/Critical
+findings. No accepted Medium-or-higher issue remains unresolved.
+
+### Final local validation and delivery
+
+- 5,129 default tests passed; 3,106 explicit runtime opt-in skips remain outside
+  the default profile. CI/sharding/gate regressions: 159 passed.
+- The exact `quality_browser` CI command passed all 639 cases, 213 per engine:
+  Chromium 130.02 seconds, WebKit 194.79 seconds, Firefox 395.56 seconds. Each
+  parent runner validated a fresh completion receipt. Selected and executed
+  IDs exactly matched the independent complete serial collection with no
+  overlaps, omissions or skips.
+- Ruff lint/format, all tracked Markdown, whitespace checks and current
+  model/baseline drift checks passed. No development database was deleted or
+  upgraded and no application/provider/deployment/release action occurred.
+
+Consolidation preserves the complete reviewed history on local branch
+`pr/stewardship-browser-ci-reviewed`. Implementation `1bb17476d4ae2a8f37be5d3fc9da6cd1d253e9fe`
+has exactly the same tree as reviewed `27a1f1b`; the direct diff is empty. Keep
+the pre-squash review endpoint mapping, not a misleading triple-dot correction
+comparison across the rewritten ancestry. Subsequent changes only record this
+review/validation evidence and task status.
+
+PR final-head CI and protected merge-group CI remain required. The human's
+standing merge/continue authority applies after these pass. Measure actual
+GitHub engine/gate timing before claiming a CI speedup. The next implementation
+increment is financial forms, only after this PR's merge is verified on main;
+Gate 2 and later OPS-09 release/load-test work remain open.
