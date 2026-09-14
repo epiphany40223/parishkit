@@ -78,8 +78,8 @@ def runtime():
     return service
 
 
-def denied(*, status=403, retry=None):
-    """Unknown, inactive and non-parishioner credentials use identical responses."""
+def _optional_public_help(slot):
+    """Optional public instructions never replace the fixed entry/error fallback."""
     from parishkit.stewardship.responses.availability import public_help
 
     content = ""
@@ -88,8 +88,15 @@ def denied(*, status=403, retry=None):
         # Optional contact help must not turn an outage into a secondary error.
         # Its inputs are campaign-wide, independent of the rejected credential.
         with suppress(ConfigError, DatabaseError, ValueError):
-            content = public_help(service, "access_denied")
-    response = login_denial(status=status, public_content=content)
+            content = public_help(service, slot)
+    return content
+
+
+def denied(*, status=403, retry=None):
+    """Unknown, inactive and non-parishioner credentials use identical responses."""
+    response = login_denial(
+        status=status, public_content=_optional_public_help("access_denied")
+    )
     response.stewardship_safe_error = True
     if retry:
         response["Retry-After"] = str(min(3600, max(1, int(retry))))
@@ -323,10 +330,7 @@ def _ip_counter(service, source):
 @require_http_methods(["GET", "HEAD", "POST"])
 def entry(request):
     """Eight-letter manual entry; code values never enter a URL, log or audit."""
-    from parishkit.stewardship.responses.availability import (
-        public_help,
-        unavailable_page,
-    )
+    from parishkit.stewardship.responses.availability import unavailable_page
 
     try:
         service = runtime()
@@ -344,7 +348,7 @@ def entry(request):
             return render(
                 request,
                 "stewardship/family-login.html",
-                {"login_help": public_help(service, "login_help")},
+                {"login_help": _optional_public_help("login_help")},
             )
         ip = _ip_counter(service, request.client_address)
         delay = service.limiter.counters([ip])

@@ -190,3 +190,36 @@ strict catalog fixture before comparison. Again only
 and grants unchanged. The corrected function fingerprint is
 `3a5c2ed32a9437695f76e39907188ee38777d381368e96e34ccecca1fb186847`.
 This audit does not replace the pending corrected-tree full coverage run.
+
+## Round 2: setup, source and session integrations
+
+Session `20260914-094624-4d43f5` reviewed the corrections from `14f2ec4` through
+`78bcb67c9ceea335f16c56fcaeca70d212647394`, clean tree
+`407bd9be8b2b7bbf7e5429e9fe0e35c71a020eb2`. Both vendors completed successfully
+with no failures, degradations, verdict mismatches or salvage. Codex completed
+in 282 seconds; Claude recorded all 17 manifest files without skips. The final
+artifact SHA-256 is
+`2ae2f552db40147805c2cf952cb0f46a2239234e210eaca66d212759e190f590`.
+
+Both summaries explicitly covered G2-I1/I2/I5 and the round-1 corrections.
+Claude inspected setup completion/rollback and access gating but relied on
+PR #22 for staged-secret internals. Round 3 must explicitly revisit that
+credential replacement/testing → final prepared manifest → completion/abort
+boundary, as well as all integration IDs' negative cases; component reuse alone
+does not substitute for that fresh boundary check.
+
+There were no High/Critical findings. Six raw findings comprised one Medium and
+five Low; the single Medium was retained and verified:
+
+- **R2-01 / Medium, Codex:** optional login-help database/configuration/rendering
+  failures could bypass the safe fallback used by denial help. Both callers now
+  use one optional-help adapter. Six fault-injection cases independently raise
+  configuration, database and rendering exceptions for login and denial help,
+  preserving fixed responses and omitting diagnostic values.
+
+The corrected image at `78bcb67` passed all **30 Compose cases** and all **eight
+operational cases** (727.27 seconds), including configured, initial, completed
+and cancelled setup under both development and production-shaped profiles.
+These use synthetic credentials and do not perform a deployment or real provider
+operation. R2-01's targeted content/authentication run passed all 40 tests in
+55.05 seconds. The third review and corrected-tree full coverage remain pending.

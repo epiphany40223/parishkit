@@ -4,7 +4,9 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
+from django.db import DatabaseError
 
+from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.content_forms import LEGACY_PAGE_REFERENCES
 from parishkit.stewardship.responses.models import Submission
 
@@ -14,6 +16,41 @@ from .test_response_http_postgresql import answers_for, load_form, post
 from .test_runtime_auth_grants_postgresql import web_login
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+
+@pytest.mark.parametrize("slot", ["login_help", "access_denied"])
+@pytest.mark.parametrize("error", [ConfigError, DatabaseError, ValueError])
+def test_optional_public_help_failure_keeps_fixed_safe_fallback(
+    response_service, monkeypatch, slot, error
+):
+    """Fault only optional help after ordinary campaign admission has succeeded."""
+    from parishkit.stewardship.responses import availability
+
+    def fail(service, requested):
+        """Simulate a private diagnostic from the optional content lookup alone."""
+        assert requested == slot
+        raise error("synthetic-private-diagnostic")
+
+    monkeypatch.setattr(availability, "public_help", fail)
+    harness = response_service
+    with web_login():
+        response = (
+            harness.client.get("/")
+            if slot == "login_help"
+            else harness.client.post(
+                "/",
+                {"code": "invalid"},
+                HTTP_X_CSRFTOKEN=harness.client.cookies["csrftoken"].value,
+            )
+        )
+        assert response.status_code == (200 if slot == "login_help" else 403)
+        assert b"synthetic-private-diagnostic" not in response.content
+        assert (
+            b"Family campaign sign-in"
+            if slot == "login_help"
+            else b"Sign-in is unavailable"
+        ) in response.content
+        assert response["Cache-Control"] == "no-store"
 
 
 def select_content(harness, slot, html, *, modules=None):
