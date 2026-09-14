@@ -8,6 +8,10 @@ def add_response_web_grants(tables, columns):
         "stewardship_source_member",
         "stewardship_snapshot_contact",
         "stewardship_source_contact",
+        "stewardship_snapshot_ministry",
+        "stewardship_source_ministry",
+        "stewardship_snapshot_roster",
+        "stewardship_source_roster",
         "stewardship_submission",
     ):
         tables[table] = {"SELECT"}
@@ -28,12 +32,16 @@ def add_response_web_grants(tables, columns):
         "stewardship_submission",
         "stewardship_submission_receipt",
         "stewardship_proposed_change",
+        "stewardship_ministry_request",
         "stewardship_additional_information",
         "stewardship_fact_demand",
     ):
         tables[table] = {"SELECT", "INSERT"}
     columns["stewardship_proposed_change"] = {
         "UPDATE": {"execution", "superseded_by_id", "version"}
+    }
+    columns["stewardship_ministry_request"] = {
+        "UPDATE": {"state", "superseded_by_id", "version"}
     }
     columns["stewardship_additional_information"] = {
         "UPDATE": {"disposition", "replacement_id", "version"}

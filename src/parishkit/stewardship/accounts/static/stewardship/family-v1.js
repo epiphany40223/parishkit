@@ -44,7 +44,7 @@
   }
   function canonical(value, name) {
     if (value === undefined) return "missing";
-    if (value === null || typeof value === "boolean") return JSON.stringify(value);
+    if (value === null || typeof value === "boolean" || typeof value === "number") return JSON.stringify(value);
     if (typeof value === "object") return JSON.stringify(Object.keys(value).sort().map(
       (key) => [key, canonical(value[key], key)]));
     const result = value.normalize("NFC").trim();
@@ -58,6 +58,7 @@
       canonical(answers.additional_information, "additional") !==
       canonical(initial.additional_information, "additional") ||
       canonical(requests, "requests") !== canonical(initialRequests, "requests") ||
+      canonical(answers.ministries, "ministries") !== canonical(initial.ministries, "ministries") ||
       canonical(answers.proposed_members, "proposed_members") !== canonical(initial.proposed_members, "proposed_members") ||
       Object.entries(answers.members).some(([id, fields]) =>
         Object.entries(fields).some(([name, value]) => canonical(value, name) !==
@@ -98,11 +99,16 @@
     const mailingDraft = separateMailing;
     form = next;
     conflicts.clear();
-    answers = {family: Object.fromEntries(next.household.fields.map(
+    answers = {family: Object.fromEntries((next.household?.fields || []).map(
       (field) => [field.name, structuredClone(field.value)])),
       members: {}, proposed_members: {}, additional_information: next.additional_enabled ? next.additional_information : "",
-      testing_acknowledged: false};
-    answers.family.mailing_same_as_home = next.household.mailing_same_as_home;
+      ministries: next.ministries ? {members: {}, proposed_members: {}} : {}, testing_acknowledged: false};
+    if (next.household) answers.family.mailing_same_as_home = next.household.mailing_same_as_home;
+    if (next.ministries) ["members", "proposed_members"].forEach((group) => {
+      Object.entries(next.ministries[group]).forEach(([id, entry]) => {
+        answers.ministries[group][id] = {join: [...entry.join], ...(group === "members" ? {leave: [...entry.leave]} : {})};
+      });
+    });
     separateMailing = null;
     requests = {};
     next.members.forEach((member) => {
@@ -117,7 +123,7 @@
     initial = structuredClone(answers);
     initialRequests = structuredClone(requests);
     if (preserve && previous && before) {
-      next.household.fields.forEach(({name}) => {
+      (next.household?.fields || []).forEach(({name}) => {
         if (canonical(previous.family[name], name) !== canonical(before.family[name], name)) {
           answers.family[name] = structuredClone(previous.family[name]);
           if (canonical(before.family[name], name) !== canonical(initial.family[name], name) &&
@@ -127,6 +133,7 @@
         }
       });
       // Refresh never uses a convenience flag to overwrite a competing address.
+      if (next.household) {
       const requestedSame = previous.family.mailing_same_as_home !== before.family.mailing_same_as_home ?
         previous.family.mailing_same_as_home : initial.family.mailing_same_as_home;
       const addressChoice = conflicts.has("family.home_address") || conflicts.has("family.mailing_address") ||
@@ -136,12 +143,13 @@
         conflicts.set("family.mailing_same_as_home", {edited: true, refreshed: false});
       }
       separateMailing = mailingDraft;
+      }
       // Only actual edits survive. A removed person/field is never rendered or
       // resent; untouched fields adopt the newly admitted effective values.
       Object.entries(answers.members).forEach(([id, fields]) => {
         const ordinaryEdited = previous.members[id] && before.members[id] && Object.keys(fields).some(
           (name) => canonical(previous.members[id][name], name) !== canonical(before.members[id][name], name));
-        if (id in previousRequests && (canonical(previousRequests[id], "request") !== canonical(beforeRequests[id], "request") ||
+        if (next.household && id in previousRequests && (canonical(previousRequests[id], "request") !== canonical(beforeRequests[id], "request") ||
             (!previousRequests[id] && ordinaryEdited && canonical(beforeRequests[id], "request") !== canonical(initialRequests[id], "request")))) {
           requests[id] = structuredClone(previousRequests[id]);
           if (canonical(beforeRequests[id], "request") !== canonical(initialRequests[id], "request") &&
@@ -164,7 +172,7 @@
       });
       // A proposed Member is one manual structure request. Merge additions,
       // edits and removals as a unit without reviving a concurrent withdrawal.
-      new Set([...Object.keys(previous.proposed_members), ...Object.keys(before.proposed_members)]).forEach((id) => {
+      if (next.household) new Set([...Object.keys(previous.proposed_members), ...Object.keys(before.proposed_members)]).forEach((id) => {
         const edited = previous.proposed_members[id], old = before.proposed_members[id];
         const refreshed = initial.proposed_members[id];
         if (canonical(edited, "member") === canonical(old, "member")) return;
@@ -175,6 +183,7 @@
           conflicts.set("proposed_members." + id, {edited, refreshed});
         }
       });
+      preserveMinistries(previous, before);
       if (next.additional_enabled && canonical(previous.additional_information, "additional") !==
           canonical(before.additional_information, "additional")) {
         answers.additional_information = previous.additional_information;
@@ -248,8 +257,10 @@
   function familySummary() {
     const panel = node("div", null, root, {class: "panel"});
     node("p", form.family.mailingName || form.family.lastName || "Your Family", panel);
-    node("p", "Envelope number: " + (form.family.envelopeNumber ?? "Not available"), panel);
-    node("p", "Registration date: " + (form.family.registration_date ?? "Not available"), panel);
+    if (form.household) {
+      node("p", "Envelope number: " + (form.family.envelopeNumber ?? "Not available"), panel);
+      node("p", "Registration date: " + (form.family.registration_date ?? "Not available"), panel);
+    }
     if (form.last_submitted_at) {
       node("p", "Last submitted: " + new Date(form.last_submitted_at).toLocaleString(), panel);
     }
@@ -289,7 +300,7 @@
   }
   function memberName(member, index) {
     const values = memberValues(member);
-    return [values.first_name, values.last_name].filter(Boolean).join(" ") ||
+    return [values.first_name, values.last_name].filter(Boolean).join(" ") || member.display_name ||
       "Household member " + (index + 1).toLocaleString("en-US");
   }
   function memberValues(member) {
@@ -375,7 +386,7 @@
           delete answers.proposed_members[member.id]; edit();
         }
       });
-    } else {
+    } else if (form.household) {
       terminalEditor(member, group, fields);
       if (requests[member.id]) return;
     }
@@ -473,6 +484,113 @@
         if (language) language.disabled = false;
       });
     });
+    ministryEditor(member, group);
+  }
+  function ministryChoices(member) {
+    const group = member.proposed ? "proposed_members" : "members";
+    return answers.ministries[group][member.id] ||= member.proposed ? {join: []} : {join: [], leave: []};
+  }
+  function ministryCurrent(member) {
+    return new Set(member.proposed ? [] : form.ministries.members[member.id]?.current || []);
+  }
+  function preserveMinistries(previous, before) {
+    if (!form.ministries) return;
+    const offered = new Set(form.ministries.options.map((option) => option.id));
+    allMembers().forEach((member) => {
+      const group = member.proposed ? "proposed_members" : "members";
+      const old = before.ministries[group]?.[member.id] || {};
+      const edited = previous.ministries[group]?.[member.id] || {};
+      const current = ministryCurrent(member), choices = ministryChoices(member);
+      Object.keys(choices).forEach((action) => {
+        const original = new Set(old[action] || []), changed = new Set(edited[action] || []);
+        const result = new Set(choices[action]);
+        new Set([...original, ...changed]).forEach((id) => {
+          if (original.has(id) === changed.has(id)) return;
+          const allowed = offered.has(id) && (action === "leave" ? current.has(id) : !current.has(id));
+          if (allowed) { if (changed.has(id)) result.add(id); else result.delete(id); }
+          else {
+            // Do not expose a now-hidden Ministry's old label or a removed
+            // Member. Both selection and withdrawal edits need acknowledgement:
+            // hidden omission preserves existing intent on the server.
+            conflicts.set("ministries." + group + "." + member.id, {unavailable: true});
+          }
+        });
+        choices[action] = [...result].sort((a, b) => a - b);
+      });
+    });
+  }
+  function ministryEditor(member, parent) {
+    if (!form.ministries) return;
+    const panel = node("section", null, parent, {class: "panel"});
+    node("h3", "Ministry participation", panel);
+    node("p", "These are requests, not automatic roster changes. A Ministry leader or parish staff member may follow up.", panel);
+    const choices = ministryChoices(member), current = ministryCurrent(member);
+    const path = "ministries." + (member.proposed ? "proposed_members." : "members.") + member.id;
+    const conflict = conflicts.get(path);
+    if (conflict && conflict.choice === undefined) {
+      const notice = node("div", null, panel, {"data-conflict": path});
+      node("p", "Some of your edited Ministry choices are no longer available. Review the current choices below.", notice);
+      const acknowledge = node("button", "Discard unavailable choices and use the current list", notice, {type: "button"});
+      acknowledge.addEventListener("click", () => { conflict.choice = 0; edit(); });
+    }
+    function optionControl(option, action, parent) {
+      const label = node("label", null, parent);
+      const id = "ministry-" + member.id + "-" + action + "-" + option.id;
+      const input = node("input", null, label, {id, type: "checkbox"});
+      input.checked = choices[action].includes(option.id);
+      label.append(document.createTextNode(" " + option.name + (action === "leave" ? " — wishes to stop participating" : " — interested in joining")));
+      label.classList.toggle("changed", input.checked);
+      input.addEventListener("change", () => {
+        const selected = new Set(choices[action]);
+        if (input.checked) selected.add(option.id); else selected.delete(option.id);
+        choices[action] = [...selected].sort((a, b) => a - b);
+        label.classList.toggle("changed", input.checked);
+      });
+    }
+    node("h4", "Current Ministries", panel);
+    const currentOptions = form.ministries.options.filter((option) => current.has(option.id));
+    if (!currentOptions.length) node("p", "No current Ministries are included in this campaign.", panel);
+    currentOptions.forEach((option) => optionControl(option, "leave", panel));
+    const details = node("details", null, panel);
+    node("summary", "Join another Ministry", details);
+    let populated = false;
+    details.addEventListener("toggle", () => {
+      if (!details.open || populated) return;
+      populated = true;
+      const searchId = "ministry-search-" + member.id;
+      node("label", "Search Ministries", details, {for: searchId});
+      const search = node("input", null, details, {id: searchId, type: "search", autocomplete: "off"});
+      const list = node("div", null, details);
+      const render = () => {
+        list.replaceChildren();
+        const query = search.value.normalize("NFC").trim().toLocaleLowerCase("en-US");
+        const options = form.ministries.options.filter((option) => !current.has(option.id) &&
+          option.name.toLocaleLowerCase("en-US").includes(query));
+        options.forEach((option) => optionControl(option, "join", list));
+        if (!options.length) node("p", "No matching Ministries.", list);
+      };
+      search.addEventListener("input", render);
+      render();
+    });
+    if (choices.join.length) {
+      node("p", "Interested in joining: " + form.ministries.options.filter(
+        (option) => choices.join.includes(option.id)).map((option) => option.name).join(", "), panel, {class: "changed"});
+    }
+  }
+  function ministryReview(member, parent) {
+    if (!form.ministries) return;
+    node("h4", "Ministry requests", parent);
+    const choices = ministryChoices(member);
+    let selected = false;
+    ["leave", "join"].forEach((action) => {
+      form.ministries.options.filter((option) => (choices[action] || []).includes(option.id)).forEach((option) => {
+        node("p", (action === "join" ? "Interested in joining: " : "Wishes to stop participating: ") + option.name,
+          parent, {class: "changed"});
+        selected = true;
+      });
+    });
+    if (!selected) node("p", "No Ministry changes requested.", parent);
+    node("p", "Parish staff or a Ministry leader may follow up; this does not change a roster automatically.", parent);
   }
   function householdDisplay(value) {
     if (value === null) return "Not provided";
@@ -708,10 +826,11 @@
     };
   }
   function edit() {
-    heading("Step 1 of 2: Review your household", "census");
+    heading("Step 1 of 2: Review your household", form.household ? "census" : "ministry");
     node("progress", "50%", root, {max: "2", value: "1", "aria-label": "Response progress"});
     block("welcome", root);
     block("census", root);
+    block("ministry", root);
     familySummary();
     const editor = node("form", null, root, {autocomplete: "off", novalidate: ""});
     let reviewPointerDown = false;
@@ -721,10 +840,11 @@
     editor.addEventListener("keydown", () => { reviewPointerDown = false; }, true);
     editor.addEventListener("pointercancel", () => { reviewPointerDown = false; });
     const fields = [];
-    const validateHousehold = householdEditor(editor);
+    const validateHousehold = form.household ? householdEditor(editor) : () => {};
     structuralConflicts(editor);
     allMembers().forEach((member, index) => memberEditor(member, index, editor, fields,
       () => reviewPointerDown));
+    if (form.household) {
     const add = node("button", "Add a household member", editor, {type: "button"});
     add.disabled = Object.keys(answers.proposed_members).length >= form.max_proposed_members;
     add.addEventListener("click", () => {
@@ -732,6 +852,7 @@
       answers.proposed_members[id] = Object.fromEntries(form.new_member_fields.map((field) => [field.name, field.value]));
       edit(); document.getElementById("member-" + id + "-first_name")?.focus();
     });
+    }
     if (form.additional_enabled) {
       block("additional", editor);
       node("label", "Additional information (optional)", editor, {for: "additional-information"});
@@ -764,6 +885,8 @@
     });
   }
   function conflictApplies(path) {
+    const ministry = /^ministries\.(members|proposed_members)\.([0-9a-f-]+)$/.exec(path);
+    if (ministry) return ministry[1] === "members" ? !requests[ministry[2]] : ministry[2] in answers.proposed_members;
     const member = /^members\.([0-9]+)\.([a-z_]+)$/.exec(path);
     return !member || member[2] === "request" || !requests[member[1]];
   }
@@ -773,6 +896,7 @@
     block("review", root);
     node("p", "Nothing is saved until you select Submit response.", root);
     familySummary();
+    if (form.household) {
     const household = node("section", null, root, {class: "panel"});
     node("h3", "Family census", household);
     const householdList = node("dl", null, household);
@@ -786,6 +910,7 @@
         node("span", " — Changed from parish records", display);
       }
     });
+    }
     allMembers().forEach((member, index) => {
       const panel = node("section", null, root, {class: "panel"});
       node("h3", memberName(member, index), panel);
@@ -811,6 +936,7 @@
           node("span", " — Changed from parish records", display);
         }
       });
+      ministryReview(member, panel);
     });
     if (form.additional_enabled) node("p", "Additional information: " +
       (answers.additional_information || "Not provided"), root);
@@ -835,6 +961,12 @@
       try {
         const payload = {...answers, members: Object.fromEntries(Object.entries(answers.members).map(
           ([id, value]) => [id, requests[id] || value]))};
+        if (form.ministries) payload.ministries = {
+          members: Object.fromEntries(form.members.filter((member) => !requests[member.id]).map(
+            (member) => [member.id, ministryChoices(member)])),
+          proposed_members: Object.fromEntries(allMembers().filter((member) => member.proposed).map(
+            (member) => [member.id, ministryChoices(member)]))
+        };
         const result = await send("/family/submit", {baseline: form.baseline, answers: payload});
         if (!result) return;
         if (!result.accepted) submissionAttempted = uncertainSubmission;

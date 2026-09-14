@@ -23,6 +23,9 @@ def derive_proposals(submission, validated):
     No immutable Family answer is edited, including to an Admin-corrected value.
     """
     require_work_order()
+    if "census" not in validated.current.modules:
+        # An unenabled census section cannot create or withdraw census work.
+        return []
     previous = proposal_index(validated.prior_submission)
     resolved_semantics = {
         key

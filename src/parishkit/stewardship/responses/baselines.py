@@ -162,6 +162,7 @@ def issue_baseline(request, service, *, testing_acknowledged=False):
             snapshot.pk,
             family.family_duid,
             configuration=campaign.active_configuration.values,
+            document=configuration.active_configuration.canonical_document,
         )
         prior = effective_submission(family, session)
         # Pin the replacement before releasing the old protection. Compaction

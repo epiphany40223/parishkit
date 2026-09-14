@@ -6,6 +6,7 @@ from parishkit.stewardship.campaigns.work_locks import require_work_order
 from parishkit.stewardship.source.pins import pin_snapshot, release_snapshot_pin
 from parishkit.stewardship.source.snapshot_models import SourceSnapshotPin
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.workflows.models import MinistryRequest
 
 from .baselines import _pin_admission
 from .census import FAMILY_FIELDS
@@ -171,6 +172,10 @@ def _release_unused_source(submission_id, snapshot_id):
         return
     if ProposedChange.objects.filter(
         submission_id=submission_id, current_source_id=snapshot_id
+    ).exists():
+        return
+    if MinistryRequest.objects.filter(
+        submission_id=submission_id, resolution_source_id=snapshot_id
     ).exists():
         return
     pin = SourceSnapshotPin.objects.filter(

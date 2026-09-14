@@ -170,6 +170,7 @@ def revisit(harness):
             },
             "members": members,
             "proposed_members": {},
+            "ministries": {},
             "additional_information": prior.answers["additional_information"]
             if prior
             else "",

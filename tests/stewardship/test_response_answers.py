@@ -30,6 +30,7 @@ def answers():
     return {
         "family": household(),
         "proposed_members": {},
+        "ministries": {},
         "members": {
             "1": member(
                 first_name=" First ",
@@ -59,6 +60,7 @@ def test_complete_answer_is_normalized_without_mutating_input(answers):
     assert result == {
         "schema": FORM_SCHEMA,
         "proposed_members": {},
+        "ministries": {},
         "family": {
             "home_address": None,
             "mailing_address": None,

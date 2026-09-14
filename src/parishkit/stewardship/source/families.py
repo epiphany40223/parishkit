@@ -174,7 +174,7 @@ def reconcile_source_families(
                 .select_related("payload")
                 .iterator(chunk_size=500)
             }
-            for kind in ("family", "member", "contact")
+            for kind in ("family", "member", "contact", "ministry", "roster")
         }
         result = reconcile_families(
             campaign_id=campaign_id,
@@ -187,8 +187,12 @@ def reconcile_source_families(
             admit=admit,
             actor_id=claim.worker_id,
         )
+        from parishkit.stewardship.responses.ministry_reconciliation import (
+            reconcile_ministry_requests,
+        )
         from parishkit.stewardship.responses.reconciliation import reconcile_proposals
 
         reconcile_proposals(snapshot, corpus, campaign_id=campaign_id)
+        reconcile_ministry_requests(snapshot, corpus, campaign_id=campaign_id)
         verify_source(claim)
         return result

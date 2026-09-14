@@ -20,9 +20,10 @@ from .comparison import COMPARISON_VERSION, ValueKind, canonical_value
 from .member_census import MEMBER_FIELDS, InvalidMemberSource, source_value
 from .member_requests import MAX_PROPOSED_MEMBERS, REQUEST_FIELDS
 from .merge import KnownValue
+from .ministry import MAX_MINISTRY_LABEL, MinistryInputs
 
-FORM_SCHEMA = "family-census-household-members-v1"
-PROJECTION_VERSION = "family-inputs-v4"
+FORM_SCHEMA = "family-census-ministry-v1"
+PROJECTION_VERSION = "family-inputs-v5"
 ADDITIONAL_MAX_LENGTH = 5000
 
 
@@ -88,6 +89,8 @@ class CensusInputs:
     member_duids: tuple[int, ...]
     fields: tuple[FieldInput, ...]
     definition_digest: str
+    modules: tuple[str, ...] = ("census",)
+    ministries: MinistryInputs | None = None
 
     @property
     def projection_digest(self):
@@ -100,6 +103,8 @@ class CensusInputs:
                 self.family_duid,
                 self.member_duids,
                 self.definition_digest,
+                self.modules,
+                self.ministries.comparison() if self.ministries is not None else None,
                 tuple(field.comparison() for field in self.fields),
             )
         )
@@ -108,21 +113,38 @@ class CensusInputs:
 def definition_digest(configuration):
     """Project relevant validated campaign configuration, excluding email schedules.
 
-    The minimal slice deliberately refuses financial/Ministry campaigns instead
-    of accepting an incomplete aggregate. Their later adapters must enumerate
-    offered option additions/removals as well as current selections. Content
+    Financial campaigns remain unavailable until their complete owner is wired.
+    Ministry adapters enumerate visible option additions/removals and current
+    memberships independently of unrelated campaign settings. Content
     references are immutable, so their selected identities protect displayed
     instructions without loading unrelated admin/email configuration.
     """
-    if configuration.get("modules") != ["census"]:
+    modules = configuration.get("modules")
+    if (
+        type(modules) is not list
+        or not modules
+        or any(
+            type(value) is not str or value not in {"census", "ministry"}
+            for value in modules
+        )
+        or len(modules) != len(set(modules))
+    ):
         _unavailable()
+    census = "census" in modules
     content = configuration["content_versions"]
     return _digest(
         {
             "schema": FORM_SCHEMA,
-            "max_proposed_members": MAX_PROPOSED_MEMBERS,
+            "modules": sorted(modules),
+            "ministry_duids": sorted(configuration["ministry_duids"])
+            if "ministry" in modules
+            else [],
+            "ministry_label_limit": MAX_MINISTRY_LABEL
+            if "ministry" in modules
+            else None,
+            "max_proposed_members": MAX_PROPOSED_MEMBERS if census else 0,
             "request_fields": [
-                (field.name, field.kind.value) for field in REQUEST_FIELDS
+                (field.name, field.kind.value) for field in REQUEST_FIELDS if census
             ],
             "fields": [
                 (
@@ -134,15 +156,18 @@ def definition_digest(configuration):
                     field.choices,
                 )
                 for field in MEMBER_FIELDS
+                if census
             ],
             "household_fields": [
-                (field.name, field.kind.value, field.label) for field in FAMILY_FIELDS
+                (field.name, field.kind.value, field.label)
+                for field in FAMILY_FIELDS
+                if census
             ],
-            "phone_metadata": phonenumbers.__version__,
-            "phone_national_region": "US",
-            "address_limits": dict(ADDRESS_LIMITS),
-            "country_choices": country_choices(),
-            "us_regions": sorted(us_regions()),
+            "phone_metadata": phonenumbers.__version__ if census else None,
+            "phone_national_region": "US" if census else None,
+            "address_limits": dict(ADDRESS_LIMITS) if census else None,
+            "country_choices": country_choices() if census else None,
+            "us_regions": sorted(us_regions()) if census else None,
             "name": configuration["name"],
             "start_date": configuration["start_date"],
             "end_date": configuration["end_date"],
@@ -153,9 +178,17 @@ def definition_digest(configuration):
             else None,
             "content": {
                 key: content[key]
-                for key in ("welcome", "census", "review", "thank_you", "additional")
+                for key in (
+                    "welcome",
+                    "census",
+                    "ministry",
+                    "review",
+                    "thank_you",
+                    "additional",
+                )
                 if key in content
                 and (key != "additional" or configuration["additional_information"])
+                and (key not in {"census", "ministry"} or key in modules)
             },
         }
     )
@@ -222,7 +255,7 @@ def family_field_value(field):
     return KnownValue(False)
 
 
-def census_inputs(family, members, contacts, *, configuration):
+def census_inputs(family, members, contacts, *, configuration, ministries=None):
     """Build the complete active-household projection from trusted scoped payloads.
 
     Missing contacts retain explicit availability. All source Members must
@@ -238,8 +271,11 @@ def census_inputs(family, members, contacts, *, configuration):
     ):
         _unavailable()
     definition = definition_digest(configuration)
+    census = "census" in configuration["modules"]
     fields = []
     for name in ("firstName", "lastName", "mailingName", "envelopeNumber"):
+        if name == "envelopeNumber" and not census:
+            continue
         value = family.get(name)
         # Envelope identifiers may be zero; they are read-only text, not DUIDs.
         if name == "envelopeNumber" and type(value) is int:
@@ -256,21 +292,22 @@ def census_inputs(family, members, contacts, *, configuration):
     active, seen = [], set()
     # Registration date is read-only but the current verified loader does not
     # supply it. Its explicit unknown still belongs to the displayed projection.
-    fields.append(
-        FieldInput(
-            "family",
-            family_duid,
-            "registration_date",
-            ValueKind.DATE,
-            KnownValue(False),
+    if census:
+        fields.append(
+            FieldInput(
+                "family",
+                family_duid,
+                "registration_date",
+                ValueKind.DATE,
+                KnownValue(False),
+            )
         )
-    )
-    fields.extend(
-        FieldInput(
-            "family", family_duid, field.name, field.kind, family_field_value(field)
+        fields.extend(
+            FieldInput(
+                "family", family_duid, field.name, field.kind, family_field_value(field)
+            )
+            for field in FAMILY_FIELDS
         )
-        for field in FAMILY_FIELDS
-    )
     for member in members:
         identifier = member.get("memberDUID")
         if (
@@ -298,7 +335,7 @@ def census_inputs(family, members, contacts, *, configuration):
                 KnownValue("memberType" in member, member.get("memberType")),
             )
         )
-        for field in (*MEMBER_FIELDS, *REQUEST_FIELDS):
+        for field in (*MEMBER_FIELDS, *REQUEST_FIELDS) if census else ():
             fields.append(
                 FieldInput(
                     "member",
@@ -308,11 +345,36 @@ def census_inputs(family, members, contacts, *, configuration):
                     member_field_value(member, contact, field),
                 )
             )
+        if not census:
+            # Ministry-only screens identify the Member but never load or
+            # validate unrelated birth, gender, email or phone census fields.
+            for field in MEMBER_FIELDS:
+                if field.name in {"first_name", "last_name"}:
+                    fields.append(
+                        FieldInput(
+                            "member_context",
+                            identifier,
+                            field.name,
+                            field.kind,
+                            member_field_value(member, None, field),
+                        )
+                    )
+    identifiers = tuple(member["memberDUID"] for member in active)
+    if "ministry" in configuration["modules"]:
+        if (
+            not isinstance(ministries, MinistryInputs)
+            or tuple(member for member, _ in ministries.memberships) != identifiers
+        ):
+            _unavailable()
+    elif ministries is not None:
+        _unavailable()
     result = CensusInputs(
         family_duid,
-        tuple(member["memberDUID"] for member in active),
+        identifiers,
         tuple(fields),
         definition,
+        tuple(sorted(configuration["modules"])),
+        ministries,
     )
     # Detect a malformed typed source before issuing a baseline, not on Submit.
     _ = result.projection_digest

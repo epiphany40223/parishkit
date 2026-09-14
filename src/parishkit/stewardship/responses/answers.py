@@ -18,6 +18,7 @@ from .member_requests import (
     local_member_id,
     ordinary_answers,
 )
+from .ministry import InvalidMinistryAnswers, validate_ministry_answers
 
 
 class InvalidAnswers(ValueError):
@@ -48,6 +49,7 @@ def validate_answers(payload, inputs, *, additional_enabled, testing, today):
         "family",
         "members",
         "proposed_members",
+        "ministries",
         "additional_information",
         "testing_acknowledged",
     }:
@@ -60,24 +62,32 @@ def validate_answers(payload, inputs, *, additional_enabled, testing, today):
     }:
         raise InvalidAnswers({"members": "Review the current household members."})
     proposed = payload["proposed_members"]
+    census = "census" in inputs.modules
     if (
         type(proposed) is not dict
         or len(proposed) > MAX_PROPOSED_MEMBERS
         or any(not local_member_id(key) for key in proposed)
+        or (not census and bool(proposed))
     ):
         raise InvalidAnswers(
             {"proposed_members": "Review the added household members."}
         )
     errors, normalized = {}, {}
     try:
-        household = validate_household(
-            payload["family"],
-            {
-                field.field: field.source
-                for field in inputs.fields
-                if field.entity == "family" and field.field in HOUSEHOLD_FIELDS
-            },
+        household = (
+            validate_household(
+                payload["family"],
+                {
+                    field.field: field.source
+                    for field in inputs.fields
+                    if field.entity == "family" and field.field in HOUSEHOLD_FIELDS
+                },
+            )
+            if census
+            else {}
         )
+        if not census and (type(payload["family"]) is not dict or payload["family"]):
+            errors["family"] = "Census editing is not enabled."
     except InvalidHousehold as error:
         errors.update(
             {
@@ -99,6 +109,11 @@ def validate_answers(payload, inputs, *, additional_enabled, testing, today):
         )
     for identifier in inputs.member_duids:
         key, member = str(identifier), members[str(identifier)]
+        if not census:
+            if type(member) is not dict or member:
+                errors[f"members.{key}"] = "Census editing is not enabled."
+            normalized[key] = {}
+            continue
         try:
             normalized[key] = existing_answers(
                 member,
@@ -127,6 +142,19 @@ def validate_answers(payload, inputs, *, additional_enabled, testing, today):
                     for name, message in error.fields.items()
                 }
             )
+    try:
+        ministries = validate_ministry_answers(
+            payload["ministries"],
+            inputs.ministries,
+            terminal_members=frozenset(
+                key
+                for key, values in normalized.items()
+                if values.get("moved_household") or values.get("deceased_status")
+            ),
+            proposed_members=frozenset(proposed_normalized),
+        )
+    except InvalidMinistryAnswers as error:
+        errors.update(error.fields)
     additional = _text(payload["additional_information"], ADDITIONAL_MAX_LENGTH)
     if additional is None or (not additional_enabled and additional):
         errors["additional_information"] = (
@@ -139,5 +167,6 @@ def validate_answers(payload, inputs, *, additional_enabled, testing, today):
         "family": household,
         "members": normalized,
         "proposed_members": proposed_normalized,
+        "ministries": ministries,
         "additional_information": additional,
     }

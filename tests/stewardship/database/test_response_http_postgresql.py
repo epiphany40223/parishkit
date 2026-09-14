@@ -45,7 +45,9 @@ def answers_for(form):
         "family": {
             **{field["name"]: field["value"] for field in form["household"]["fields"]},
             "mailing_same_as_home": form["household"]["mailing_same_as_home"],
-        },
+        }
+        if form["household"]
+        else {},
         "members": {
             member["id"]: member["request"]
             or {field["name"]: field["value"] for field in member["fields"]}
@@ -56,6 +58,25 @@ def answers_for(form):
             for member in form["proposed_members"]
         },
         "additional_information": form["additional_information"],
+        "ministries": {
+            group: {
+                key: {
+                    action: value
+                    for action, value in entry.items()
+                    if action != "current"
+                }
+                for key, entry in form["ministries"][group].items()
+                if group == "proposed_members"
+                or not next(
+                    member["request"]
+                    for member in form["members"]
+                    if member["id"] == key
+                )
+            }
+            for group in ("members", "proposed_members")
+        }
+        if form["ministries"] is not None
+        else {},
         "testing_acknowledged": form["testing"],
     }
 
