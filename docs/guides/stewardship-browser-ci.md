@@ -228,3 +228,44 @@ PostgreSQL partitions and their coverage aggregate. All 639 browser cases passed
 the browser stage took 10 minutes 10 seconds from the first engine start to
 aggregate completion, versus PR #27's 14 minutes 50 seconds (about 31% shorter
 in these runs). This is an observed comparison, not a guaranteed runtime.
+
+### Review round 5: bounded baseline log replay
+
+Corrected-head run `34816353816` stalled in Compose and exceeded its job limit;
+GitHub retained a timeout annotation but no downloadable runner log. A retry
+of only the failed checks also stopped reporting at the same step. Both runs
+were cancelled without increasing deadlines. Inspection of the passing local
+run found 27,381,382 bytes of replayed output, almost entirely progress lines;
+one synthetic parameterized test identifier occupied over five megabytes.
+This is a concrete log-volume defect and a suspected cause of the hosted-runner
+stall, not proof of an application or database deadlock.
+
+The success path now filters captured progress and the collection manifest
+before replaying its human-readable summary. Exact collection parity continues
+to use the untouched output. Timeout diagnostics retain their bounded tail.
+Local full Compose validation passed all 30 checks in 103.21 seconds, including
+5,135 baseline tests in 65.20 seconds; output shrank to 812 bytes. The default
+host suite passed 5,135 tests in 48.31 seconds.
+
+Session `20260914-033827-0e4541` reviewed the correction from
+`1610ea020c844c1af51ffa2df208fcf931ef5325` to
+`1575923b6332915197c2c62509f06c8aef1d555d`, tree
+`771ddc7c0aee6f1143b539687480a8f2688c916f`. Both reviewers completed without
+failure, degradation, mismatch or salvage. Raw severities: one Medium, five Low,
+zero High/Critical. The one validated Claude Medium was accepted and fixed:
+nonzero baseline exits must also avoid replaying the giant manifest/progress
+and unbounded traceback. That path now retains a bounded failure tail and
+service diagnostics, with an actual nested-helper regression proving failure
+and UUID-owned cleanup still occur. Focused tests passed 25 cases, with 12
+explicit daemon opt-in skips. Codex returned APPROVED with no findings and
+exit 0; its empty findings list is not a missing review.
+
+Finalized artifact SHA-256:
+`8f91cff9c7ce5f40549cf524a6c721b5842c2c4826947309c4f2b87261c1791f`.
+The reviewed endpoint is retained on `pr/stewardship-browser-ci-logging-reviewed`.
+Five successful dual-source review/fix rounds are complete; the accepted
+failure-path correction and its tests belong to round 5. Final post-correction
+validation passed 5,136 host tests in 53.83 seconds and all 30 Compose checks in
+107.98 seconds, including 5,136 in-container tests in 68.92 seconds and exact
+collection parity. Ruff, tracked Markdown and whitespace checks passed.
+Exact-head/merge-group CI remain required before delivery.

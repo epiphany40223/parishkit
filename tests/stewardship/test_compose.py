@@ -50,6 +50,21 @@ def assert_collection_parity(host_output, image_output):
     )
 
 
+def baseline_summary(output):
+    """Keep success totals without replaying captured, potentially huge test IDs.
+
+    Progress remains in the original captured output for timeout diagnostics.
+    Some parameterized IDs contain megabytes of synthetic input; replaying all
+    progress to the hosted runner can overwhelm its log processing. Collection
+    parity is checked against the untouched output before calling this helper.
+    """
+    return "\n".join(
+        line
+        for line in output.splitlines()
+        if not line.startswith("PARISHKIT_TEST_NODEIDS=") and "CI_PROGRESS " not in line
+    )
+
+
 @pytest.mark.parametrize(
     "output",
     [
@@ -785,6 +800,18 @@ def test_development_container_lifecycle(tmp_path):
                 timeout=15,
                 check=False,
             )
+            if diagnose_timeout:
+                output = (
+                    baseline_summary(result.stdout)
+                    + result.stderr
+                    + diagnostics.stdout
+                    + diagnostics.stderr
+                )
+                pytest.fail(
+                    f"Disposable Compose baseline exited {result.returncode}:\n"
+                    + "\n".join(output.splitlines()[-40:])[-8000:],
+                    pytrace=False,
+                )
             pytest.fail(
                 result.stdout + result.stderr + diagnostics.stdout + diagnostics.stderr
             )
@@ -875,14 +902,7 @@ def test_development_container_lifecycle(tmp_path):
             diagnose_timeout=True,
         )
         assert_collection_parity(host_collection.stdout, baseline.stdout)
-        # Keep human-readable test evidence without repeating hundreds of IDs.
-        print(
-            "\n".join(
-                line
-                for line in baseline.stdout.splitlines()
-                if not line.startswith("PARISHKIT_TEST_NODEIDS=")
-            )
-        )
+        print(baseline_summary(baseline.stdout))
         compose("up", "--wait", "--wait-timeout", "90", "web", "postgres", "valkey")
         assert compose("exec", "-T", "web", "id", "-u").stdout.strip() == "10001"
         origin = "http://" + compose("port", "web", "8000").stdout.strip()

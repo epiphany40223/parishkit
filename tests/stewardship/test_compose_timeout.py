@@ -10,6 +10,57 @@ import pytest
 from . import test_compose as compose_tests
 
 
+def test_success_summary_omits_oversized_progress_but_preserves_collection_evidence():
+    """A large synthetic parameter cannot flood CI or weaken exact parity checks."""
+    parameter = "synthetic" * 700_000
+    output = (
+        'PARISHKIT_TEST_NODEIDS=["test[synthetic]"]\n'
+        f"CI_PROGRESS timestamp START test[{parameter}]\n"
+        f".CI_PROGRESS timestamp END test[{parameter}] elapsed=0.001s\n"
+        "1 passed in 0.01s\n"
+    )
+    assert compose_tests.baseline_summary(output) == "1 passed in 0.01s"
+    assert compose_tests.collection_manifest(output) == {"test[synthetic]": 1}
+
+
+def test_baseline_failure_bounds_progress_and_traceback_before_disposable_cleanup(
+    tmp_path, monkeypatch
+):
+    """A failing container retains useful diagnostics without replaying huge IDs."""
+    checkout = tmp_path / "checkout"
+    (checkout / "src").mkdir(parents=True)
+    monkeypatch.setattr(compose_tests, "ROOT", checkout)
+    monkeypatch.delenv("PARISHKIT_COMPOSE_NATIVE_POSTGRES", raising=False)
+
+    def run(command, **kwargs):
+        """Fail only the baseline; synthetic diagnostics and cleanup still run."""
+        code, output, error = 0, "", ""
+        if "--ci-progress" in command:
+            code = 1
+            output = (
+                "CI_PROGRESS START test["
+                + "oversized" * 700_000
+                + "]\n"
+                + "traceback-value" * 1000
+                + "\nFAILED synthetic-baseline\n"
+            )
+            error = "synthetic-stderr\n"
+        elif "logs" in command:
+            output = "synthetic-service-log\n"
+        return subprocess.CompletedProcess(command, code, stdout=output, stderr=error)
+
+    runner = Mock(side_effect=run)
+    monkeypatch.setattr(compose_tests.subprocess, "run", runner)
+    with pytest.raises(pytest.fail.Exception, match="baseline exited 1") as failure:
+        compose_tests.test_development_container_lifecycle(tmp_path)
+    text = str(failure.value)
+    assert len(text) < 8100
+    assert "oversized" not in text
+    assert "FAILED synthetic-baseline" in text
+    assert "synthetic-stderr" in text and "synthetic-service-log" in text
+    assert "down" in runner.call_args.args[0]
+
+
 @pytest.mark.parametrize(
     "kind,cleanup_timeout",
     [("bytes", False), ("text", False), ("empty", False), ("bytes", True)],
