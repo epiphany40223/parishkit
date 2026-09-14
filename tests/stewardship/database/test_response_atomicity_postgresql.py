@@ -25,6 +25,63 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 @pytest.mark.parametrize("restricted", [False, True])
+@pytest.mark.parametrize("repeated", [False, True])
+def test_partial_followup_replacement_cannot_forge_history(
+    live_response_service, monkeypatch, restricted, repeated
+):
+    """A correct latest text cannot hide a false withdrawal or repeated-text item."""
+    from contextlib import nullcontext
+
+    from parishkit.stewardship.responses import submission
+
+    from .test_runtime_auth_grants_postgresql import web_login
+
+    harness = live_response_service
+    with web_login() if restricted else nullcontext():
+        form, answers = form_and_answers(harness)
+        answers.update(testing_acknowledged=False, additional_information="First text")
+        first = submit(harness, form, answers).submission
+        old = AdditionalInformationItem.objects.get(submission=first)
+        harness, form, answers, _ = revisit(harness)
+        if not repeated:
+            answers["additional_information"] = "Replacement text"
+
+        def false_withdrawal(response, prior):
+            """Leave the queue correct but intentionally break its history chain."""
+            AdditionalInformationItem.objects.filter(pk=old.pk).update(
+                disposition="withdrawn", replacement_id=None, version=F("version") + 1
+            )
+            return AdditionalInformationItem.objects.create(
+                submission=response,
+                text=response.answers["additional_information"],
+                actor_id=response.family_id,
+            )
+
+        with monkeypatch.context() as patch:
+            patch.setattr(submission, "derive_additional_information", false_withdrawal)
+            with pytest.raises(
+                IntegrityError, match="follow-up history|linked history"
+            ):
+                submit(harness, form, answers)
+        assert (
+            Submission.objects.count() == AdditionalInformationItem.objects.count() == 1
+        )
+        old.refresh_from_db()
+        assert old.disposition == "current_actionable" and old.replacement_id is None
+        form.baseline.refresh_from_db()
+        assert form.baseline.state == "open"
+        result = submit(harness, form, answers).submission
+        assert result is not None
+        old.refresh_from_db()
+        if repeated:
+            assert old.disposition == "current_actionable"
+            assert AdditionalInformationItem.objects.count() == 1
+        else:
+            assert old.disposition == "superseded"
+            assert old.replacement.submission_id == result.pk
+
+
+@pytest.mark.parametrize("restricted", [False, True])
 @pytest.mark.parametrize(
     "kind",
     [

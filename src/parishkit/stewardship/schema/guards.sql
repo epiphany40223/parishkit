@@ -4477,7 +4477,8 @@ AS $$
 DECLARE
     answer record; source_field jsonb; submitted_key text;
     prior public.stewardship_proposed_change;
-    latest_text text;
+    latest_text text; prior_text text; replacement_id uuid;
+    prior_followup public.stewardship_additional_information;
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM public.stewardship_submission WHERE id=NEW.id) THEN RETURN NULL; END IF;
     IF NOT EXISTS (SELECT 1 FROM public.stewardship_family_form_baseline
@@ -4599,6 +4600,30 @@ BEGIN
                AND NOT EXISTS (SELECT 1 FROM public.stewardship_additional_information
                    WHERE submission_id=NEW.id)) THEN
             RAISE EXCEPTION 'Live response requires atomic follow-up derivation' USING ERRCODE='23514';
+        END IF;
+        SELECT answers->>'additional_information' INTO prior_text
+        FROM public.stewardship_submission WHERE id=NEW.prior_submission_id;
+        IF NEW.answers->>'additional_information'=coalesce(prior_text,'') THEN
+            IF EXISTS (SELECT 1 FROM public.stewardship_additional_information WHERE submission_id=NEW.id) THEN
+                RAISE EXCEPTION 'Repeated text must preserve existing follow-up history' USING ERRCODE='23514';
+            END IF;
+        ELSIF coalesce(prior_text,'')<>'' THEN
+            -- Check the actual historical transition, not only the latest queue
+            -- selection: a replacement is supersession, never a withdrawal.
+            SELECT item.* INTO prior_followup
+            FROM public.stewardship_additional_information item
+            JOIN public.stewardship_submission history ON history.id=item.submission_id
+            JOIN public.stewardship_submission previous ON previous.id=NEW.prior_submission_id
+            WHERE history.family_id=NEW.family_id AND history.mode='live'
+              AND history.family_version<=previous.family_version
+            ORDER BY history.family_version DESC LIMIT 1;
+            SELECT id INTO replacement_id FROM public.stewardship_additional_information WHERE submission_id=NEW.id;
+            IF prior_followup.id IS NULL OR prior_followup.text IS DISTINCT FROM prior_text
+               OR prior_followup.disposition IS DISTINCT FROM
+                    (CASE WHEN NEW.answers->>'additional_information'='' THEN 'withdrawn' ELSE 'superseded' END)
+               OR prior_followup.replacement_id IS DISTINCT FROM replacement_id THEN
+                RAISE EXCEPTION 'Follow-up replacement requires exact linked history' USING ERRCODE='23514';
+            END IF;
         END IF;
     END IF;
     RETURN NULL;

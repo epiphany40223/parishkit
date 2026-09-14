@@ -1,5 +1,7 @@
 """Fault-inject derivation while retaining exact web SQL authority boundaries."""
 
+from contextlib import contextmanager
+
 import pytest
 from django.db import IntegrityError, connection, transaction
 from django.db.models import F, QuerySet
@@ -41,11 +43,39 @@ def first_request(harness, *, ordinary=False):
 
 def response_without_derivation(harness, monkeypatch):
     """Emulate incomplete derivation, not an alternate production write owner."""
-    with monkeypatch.context() as patch, web_login():
+    with incomplete_history_fixture(), monkeypatch.context() as patch, web_login():
         patch.setattr(owner, "derive_proposals", lambda *args: [])
         form = revisit(harness)
         send(harness, form, answers_for(form))
     return Submission.objects.latest("family_version")
+
+
+@contextmanager
+def incomplete_history_fixture():
+    """Fabricate corruption only as the disposable schema owner, then restore guards.
+
+    The production completeness guard now rejects these historical no-op bugs.
+    Retain independent child-authority tests by explicitly injecting the corrupt
+    starting state. Every tested web mutation runs after this guard is restored.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "ALTER TABLE stewardship_submission DISABLE TRIGGER "
+            "stewardship_submission_effects"
+        )
+    try:
+        yield
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "ALTER TABLE stewardship_submission ENABLE TRIGGER "
+                "stewardship_submission_effects"
+            )
+            cursor.execute(
+                "SELECT tgenabled FROM pg_trigger "
+                "WHERE tgname='stewardship_submission_effects'"
+            )
+            assert cursor.fetchone() == ("O",)
 
 
 def restart_rehearsal(harness):
@@ -156,7 +186,7 @@ def duplicate_pending_fixture(harness, monkeypatch):
             return 0
         return original_update(query, **values)
 
-    with monkeypatch.context() as patch, web_login():
+    with incomplete_history_fixture(), monkeypatch.context() as patch, web_login():
         patch.setattr(QuerySet, "update", omit_supersession)
         form = revisit(harness)
         send(harness, form, answers_for(form))
