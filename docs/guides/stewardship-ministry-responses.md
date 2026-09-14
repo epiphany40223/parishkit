@@ -6,6 +6,8 @@
 [Activity policy](../specs/stewardship/admin-portal/spec.md#ministry-activity-management) ·
 [Source reconciliation](../specs/stewardship/data/spec.md#parishsoft-refresh-reconciliation)
 
+[Review rounds and corrections](stewardship-ministry-responses-reviews.md)
+
 ## Boundary
 
 Branch `pr/stewardship-ministry-responses` starts from PR #26's verified protected
@@ -47,8 +49,62 @@ selection/aggregation failure paths.
 
 ## Evidence
 
-Planning and interface inspection are in progress. No Ministry implementation
-task is claimed complete. PR #26 passed final-head CI with 4,998 default tests,
+Implementation, local validation and all three dual-model review/fix rounds
+are complete. Final-head CI and the protected merge remain pending. Gate 2
+still requires the financial increment and integrated acceptance. PR #26
+passed final-head CI with 4,998 default tests,
 2,377 PostgreSQL tests, 621 browser cases and 94.02% statement/85.53% branch
 coverage; the protected merge and complete merge-group CI are verified. Its
 merge-group browser check finished after branch creation, before implementation.
+
+The corrected implementation passes 5,037 default tests, 336 combined response/
+census/authority/schema PostgreSQL cases in 321 seconds, and 192 Family browser
+cases in 233 seconds. The final Ministry file has 18 cases across Chromium,
+Firefox and WebKit. After round 2 added three direct-SQL fault cases, all 66
+selected Ministry/Member-authority/schema cases passed in 100 seconds. That
+round changed tests only; earlier application/browser results still apply.
+Ruff, full tracked Markdown and model-state drift checks pass.
+
+Coverage includes both enabled module combinations, exact web/worker roles,
+same-intent succession, withdrawal, hidden requests, proposed UUIDs, terminal
+Members, activity changes, positive join/leave roster catch-up, independent SQL
+rejection, module-toggle census continuity and stale withdrawal acknowledgement.
+The [review ledger](stewardship-ministry-responses-reviews.md) records all raw
+severities, accepted corrections and duplicate disposition; round 3 approved
+with no validated Medium-or-higher findings.
+
+Earlier validation exposed a configuration-checkpoint fixture error after 67
+passes; its isolated 38-case rerun and subsequent 291-case combined rerun both
+passed without weakening or omitting it. An intermediate 263-pass attempt
+also exposed four new CHECK-constraint cast renderings differing from the
+baseline's normal PostgreSQL dump/reparse representation. Correcting that
+representation preserved all predicates and the independent model checker;
+all model-contract/negative-probe and strict baseline checks now pass.
+
+### Fresh-install schema audit
+
+A separately named reference database was installed from exact starting main
+`047f0f458c160fd4f79edc6a57b85f1f32826c1f` and verified against that commit's
+independent strict fingerprint before comparison. No retained development
+database was deleted, upgraded, downgraded or repurposed.
+
+The reviewed delta adds one `stewardship_ministry_request` relation, 16 columns,
+27 constraints, seven indexes, nine functions and three triggers. No existing
+columns, constraints, indexes, policies, relations or triggers changed or were
+removed. Five existing functions change deliberately: final aggregate
+validation, census predecessor authority, worker source-pin admission, and the two retained-response pin
+reference checks. All 28 row policies remain unchanged. The fresh schema has
+129 relations and 312 functions; Django reports no model-state drift.
+
+The workflows app has one initial state-only migration; its table, constraints
+and guards are part of the shared fresh-install SQL baseline. Ministry requests
+derive in the existing ordered final-submission transaction. Deferred checks
+reject missing derived choices and abandoned predecessor work. Worker resolution
+requires a fenced current snapshot, exact Family ownership, current catalog
+presence and the requested roster state, plus a retained provenance pin.
+
+Hidden Ministries and missing/foreign Members preserve prior requests. A
+confirmed terminal answer withdraws visible unresolved Ministry choices, as
+does removing an editable proposed Member; neither action writes a source
+roster. Source catch-up may resolve hidden work with actual roster proof.
+Staff assignment/contact editing remains with the later workflow increment.

@@ -21,6 +21,10 @@ directly to the fresh-install SQL. This is still a baseline, not an upgrade of
 retained development databases. The audited delta and new object counts are in
 the [Phase 3A evidence](stewardship-phase-3a.md#schema-audit).
 
+The [Ministry response increment](stewardship-ministry-responses.md#fresh-install-schema-audit)
+adds the workflows app's initial state-only migration and the Ministry request
+table to that same baseline. It retains the pre-production fresh-install policy.
+
 The SQL files under `src/parishkit/stewardship/schema/` install the final function
 definitions, tables, seed sentinels and guards directly. Only function-body
 validation is temporarily deferred within the installation transaction because
