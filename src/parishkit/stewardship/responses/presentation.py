@@ -1,9 +1,11 @@
 """A scoped browser projection: effective values only, never competing values."""
 
 from datetime import date
+from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.accounts.content_models import ContentVersion
 from parishkit.stewardship.campaigns.models import CampaignConfiguration
+from parishkit.stewardship.campaigns.runtime import _now
 from parishkit.stewardship.campaigns.work_locks import require_work_order
 from parishkit.stewardship.web.content import PLACEHOLDERS, render_template
 from parishkit.stewardship.web.presentation import parish_date
@@ -19,6 +21,7 @@ from .census import (
 from .comparison import ValueKind, canonical_value
 from .effective import effective_fields
 from .inputs import ADDITIONAL_MAX_LENGTH, MEMBER_FIELDS
+from .member_census import browser_value
 from .models import Submission
 
 
@@ -48,6 +51,11 @@ def form_presentation(form):
         if field.entity == "member"
     }
     members = []
+    relationships = {
+        field.identity: field.effective.value.value
+        for field in values
+        if field.entity == "member_context"
+    }
     for identifier in form.inputs.member_duids:
         fields = []
         for definition in MEMBER_FIELDS:
@@ -58,13 +66,31 @@ def form_presentation(form):
                     "label": definition.label,
                     "required": definition.required,
                     "max_length": definition.max_length,
-                    "value": effective.value.value or "",
+                    "kind": definition.kind.value,
+                    "choices": list(definition.choices),
+                    "value": browser_value(
+                        definition,
+                        effective.value,
+                        previous_unknown=bool(
+                            definition.name == "birth_date"
+                            and prior
+                            and str(identifier) in prior.answers["members"]
+                            and prior.answers["members"][str(identifier)]["birth_date"]
+                            is None
+                        ),
+                    ),
                     "available": effective.value.available,
                     "changed": effective.changed,
                     "conflict": effective.conflict,
                 }
             )
-        members.append({"id": str(identifier), "fields": fields})
+        members.append(
+            {
+                "id": str(identifier),
+                "fields": fields,
+                "relationship": relationships.get(identifier),
+            }
+        )
     campaign = CampaignConfiguration.objects.get(
         configuration_id=baseline.configuration_id,
         record_id=baseline.family.campaign_id,
@@ -72,6 +98,7 @@ def form_presentation(form):
     return {
         "baseline": str(baseline.pk),
         "testing": baseline.mode == "test",
+        "today": _now().astimezone(ZoneInfo(campaign.timezone)).date().isoformat(),
         "family": family,
         "household": _household_presentation(values, prior),
         "members": members,

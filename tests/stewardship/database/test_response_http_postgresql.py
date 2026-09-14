@@ -169,7 +169,11 @@ def test_minimal_family_acceptance_from_source_to_no_change_change_and_revisit(
     harness.client, _ = login(harness.code)
     third = load_form(harness)
     assert answers_for(third)["members"]["3"]["first_name"] == "Updated Family name"
-    assert third["members"][0]["fields"][0]["changed"]
+    assert next(
+        field
+        for field in third["members"][0]["fields"]
+        if field["name"] == "first_name"
+    )["changed"]
     assert Submission.objects.count() == 2 and ProposedChange.objects.count() == 1
     original, updated = Submission.objects.order_by("family_version")
     assert original.answers["members"]["3"]["first_name"] == "Member"
@@ -297,13 +301,19 @@ def test_revisit_never_serializes_hidden_conflicting_source_value(
     response = post(harness.client, "/family/form", {"testing_acknowledged": False})
     assert response.status_code == 200
     assert b"Hidden competing value" not in response.content
-    field = response.json()["form"]["members"][0]["fields"][0]
+    field = next(
+        field
+        for field in response.json()["form"]["members"][0]["fields"]
+        if field["name"] == "first_name"
+    )
     assert field["value"] == "Family chosen name" and field["conflict"]
     assert set(field) == {
         "name",
         "label",
         "required",
         "max_length",
+        "kind",
+        "choices",
         "value",
         "available",
         "changed",

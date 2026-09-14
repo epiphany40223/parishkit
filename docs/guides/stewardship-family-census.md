@@ -112,8 +112,16 @@ All three dual-model rounds are complete; the linked review ledger records
 each finding and correction. The final Family browser suite passes 93 tests
 across Chromium, Firefox and WebKit. Python/SQL remain at the passing
 182-database and 4,656-default-test checkpoint. The final schema has 301
-functions, as independently audited after round 1. Final-head CI and protected
-merge remain outstanding; this record does not release Gate 2.
+functions, as independently audited after round 1.
+
+PR #24 merged through the protected queue as
+`5c478e8a304b5de66e9f96d9096937e498d2f836`. Final-head CI run `34786578892`
+passed at `f3b920d9ff17c38c40497368c4cbdf200ed567b9`, including 2,260 database
+tests across eight isolated shards, 540 browser tests, baseline validation,
+Compose/operational checks and DCO. Aggregate coverage was 93.95% statements
+and 85.25% branches. Browser test execution took 686 seconds. Merge-group run
+`34787277023` also completed successfully. The merged tip was fetched and
+verified before starting the next branch. This does not release Gate 2.
 
 FAM-03.01 through .04 are implemented. FAM-03.05's address/error checks pass;
 successful non-census omission is integrated with FAM-05.06 when those modules

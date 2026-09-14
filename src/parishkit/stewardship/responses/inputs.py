@@ -11,37 +11,34 @@ import hashlib
 import json
 from dataclasses import dataclass
 
+import phonenumbers
+
+from parishkit.stewardship.audit.schemas import ContextKind, sanitize
+
 from .census import ADDRESS_LIMITS, FAMILY_FIELDS, country_choices, us_regions
 from .comparison import COMPARISON_VERSION, ValueKind, canonical_value
+from .member_census import MEMBER_FIELDS, InvalidMemberSource, source_value
 from .merge import KnownValue
 
-FORM_SCHEMA = "family-census-household-v1"
-PROJECTION_VERSION = "family-inputs-v2"
+FORM_SCHEMA = "family-census-members-v1"
+PROJECTION_VERSION = "family-inputs-v3"
 ADDITIONAL_MAX_LENGTH = 5000
-
-
-@dataclass(frozen=True)
-class CensusField:
-    """One server-owned editable field, including its comparison and UI contract."""
-
-    name: str
-    source_name: str
-    label: str
-    kind: ValueKind
-    required: bool
-    max_length: int
-
-
-MEMBER_FIELDS = (
-    CensusField("first_name", "firstName", "First name", ValueKind.TEXT, True, 100),
-    CensusField("middle_name", "middleName", "Middle name", ValueKind.TEXT, False, 100),
-    CensusField("last_name", "lastName", "Last name", ValueKind.TEXT, True, 100),
-    CensusField("email", "email", "Email address", ValueKind.EMAIL, False, 254),
-)
 
 
 class FormInputsUnavailable(ValueError):
     """No form may be issued from an incomplete or unsupported trusted input set."""
+
+
+class MemberSourceUnavailable(FormInputsUnavailable):
+    """A scoped Member field is unrepresentable, not an ownership/adapter fault."""
+
+    def __init__(self, *, family_duid, member_duid, field):
+        """Carry only validated source identifiers, never the unusable value."""
+        self.context = sanitize(
+            ContextKind.MEMBER_SOURCE,
+            {"family_duid": family_duid, "member_duid": member_duid, "field": field},
+        )
+        super().__init__("The Family form inputs are unavailable.")
 
 
 def _unavailable():
@@ -129,12 +126,15 @@ def definition_digest(configuration):
                     field.required,
                     field.max_length,
                     field.label,
+                    field.choices,
                 )
                 for field in MEMBER_FIELDS
             ],
             "household_fields": [
                 (field.name, field.kind.value, field.label) for field in FAMILY_FIELDS
             ],
+            "phone_metadata": phonenumbers.__version__,
+            "phone_national_region": "US",
             "address_limits": dict(ADDRESS_LIMITS),
             "country_choices": country_choices(),
             "us_regions": sorted(us_regions()),
@@ -157,6 +157,18 @@ def definition_digest(configuration):
 
 
 def member_field_value(member, contact, field):
+    """Translate malformed retained source to the endpoint's safe unavailable path."""
+    try:
+        return _member_field_value(member, contact, field)
+    except InvalidMemberSource:
+        raise MemberSourceUnavailable(
+            family_duid=int(member["family_key"]),
+            member_duid=member["memberDUID"],
+            field=field.name,
+        ) from None
+
+
+def _member_field_value(member, contact, field):
     """Read a scoped census value consistently for forms and source reconciliation."""
     if member is None:
         return KnownValue(False)
@@ -174,8 +186,18 @@ def member_field_value(member, contact, field):
             if available
             else None
         )
-        return KnownValue(available, value)
-    return KnownValue(field.source_name in member, member.get(field.source_name))
+        return KnownValue(available, source_value(field, value))
+    if field.kind is ValueKind.PHONE:
+        available = contact is not None and field.source_name in contact["available"]
+        return KnownValue(
+            available,
+            source_value(field, contact["phones"].get(field.source_name))
+            if available
+            else None,
+        )
+    return KnownValue(
+        field.source_name in member, source_value(field, member.get(field.source_name))
+    )
 
 
 def family_field_value(field):
@@ -258,6 +280,15 @@ def census_inputs(family, members, contacts, *, configuration):
     for member in active:
         identifier = member["memberDUID"]
         contact = contacts.get(str(identifier))
+        fields.append(
+            FieldInput(
+                "member_context",
+                identifier,
+                "relationship",
+                ValueKind.TEXT,
+                KnownValue("memberType" in member, member.get("memberType")),
+            )
+        )
         for field in MEMBER_FIELDS:
             fields.append(
                 FieldInput(

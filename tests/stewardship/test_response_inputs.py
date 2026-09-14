@@ -115,8 +115,13 @@ def test_every_editable_ui_field_is_a_dependency(inputs, field):
     before = digest(inputs)
     if field.name == "email":
         inputs["contacts"]["10"]["emails"][0]["value"] = "changed@example.org"
+    elif field.kind.value == "phone":
+        inputs["contacts"]["10"]["available"].append(field.source_name)
+        inputs["contacts"]["10"]["phones"][field.source_name] = "+12025550123"
     else:
-        inputs["members"][0][field.source_name] = "changed"
+        inputs["members"][0][field.source_name] = (
+            "2000-01-01" if field.kind.value == "date" else "changed"
+        )
     assert digest(inputs) != before
     projected = census_inputs(**inputs)
     assert {value.field for value in projected.fields if value.entity == "member"} == {
@@ -163,8 +168,7 @@ def test_canonical_equivalence_and_order_do_not_invalidate(inputs):
 def test_unrelated_values_are_not_dependencies(inputs):
     before = digest(inputs)
     inputs["members"][1]["firstName"] = "Other inactive name"
-    inputs["members"][0]["birthdate"] = "2000-01-01"  # Not in this version's UI.
-    inputs["contacts"]["10"]["phones"]["home"] = "5025550101"
+    inputs["members"][0]["unrelated_provider_metadata"] = "changed"
     inputs["contacts"]["999"] = {"unrelated": "private"}
     inputs["family"]["modified_at"] = "later"
     inputs["configuration"]["email_schedule"] = "later"
@@ -239,3 +243,34 @@ def test_builder_never_alters_provider_inputs(inputs):
     original = deepcopy(inputs)
     census_inputs(**inputs)
     assert inputs == original
+
+
+def test_relationship_context_is_a_displayed_dependency(inputs):
+    before = digest(inputs)
+    inputs["members"][0]["memberType"] = "Head"
+    assert digest(inputs) != before
+
+
+def test_phone_punctuation_equivalence_does_not_invalidate(inputs):
+    before = digest(inputs)
+    inputs["contacts"]["10"]["phones"]["home"] = "+1 (502) 555-0100"
+    assert digest(inputs) == before
+    inputs["contacts"]["10"]["phones"]["home"] += " x7"
+    assert digest(inputs) != before
+
+
+@pytest.mark.parametrize(
+    "name,value",
+    [("firstName", "x" * 101), ("sex", "x" * 101), ("birthdate", "2025-02-29")],
+)
+def test_unusable_member_source_never_issues_a_baseline(inputs, name, value):
+    inputs["members"][0][name] = value
+    with pytest.raises(FormInputsUnavailable):
+        census_inputs(**inputs)
+
+
+@pytest.mark.parametrize("length", [101, 257, 8192])
+def test_oversized_source_phone_has_controlled_unavailability(inputs, length):
+    inputs["contacts"]["10"]["phones"]["home"] = "x" * length
+    with pytest.raises(FormInputsUnavailable):
+        census_inputs(**inputs)

@@ -14,6 +14,7 @@ from parishkit.stewardship.responses.census import (
 )
 from parishkit.stewardship.responses.inputs import MEMBER_FIELDS
 
+from ..census_factory import member
 from .conftest import NOW
 
 pytestmark = pytest.mark.parametrize(
@@ -28,17 +29,20 @@ def expect(locator):
     return browser_expect(locator)
 
 
+def member_field(form, name):
+    """Select by stable field name, independent of presentation ordering."""
+    return next(
+        field for field in form["members"][0]["fields"] if field["name"] == name
+    )
+
+
 def form_payload(*, testing=False):
     """The component fixture uses the same closed schema as the HTTP owner tests."""
-    values = {
-        "first_name": "Alex",
-        "middle_name": "",
-        "last_name": "Sample",
-        "email": "alex@example.org",
-    }
+    values = member(email="alex@example.org")
     return {
         "baseline": str(uuid4()),
         "testing": testing,
+        "today": "2026-09-13",
         "family": {"mailingName": "Sample Family", "envelopeNumber": "123"},
         "household": {
             "fields": [
@@ -61,12 +65,15 @@ def form_payload(*, testing=False):
         "members": [
             {
                 "id": "3",
+                "relationship": "Head",
                 "fields": [
                     {
                         "name": field.name,
                         "label": field.label,
                         "required": field.required,
                         "max_length": field.max_length,
+                        "kind": field.kind.value,
+                        "choices": list(field.choices),
                         "value": values[field.name],
                         "available": True,
                         "changed": False,
@@ -184,8 +191,8 @@ def test_stale_response_keeps_only_actual_edits_and_requires_review(
     """A refreshed source name is adopted only when that field was not edited."""
     submissions = []
     fresh = form_payload()
-    fresh["members"][0]["fields"][0]["value"] = "New source first"
-    fresh["members"][0]["fields"][2]["value"] = "New source last"
+    member_field(fresh, "first_name")["value"] = "New source first"
+    member_field(fresh, "last_name")["value"] = "New source last"
 
     def submit(route):
         submissions.append(deepcopy(route.request.post_data_json))
@@ -294,7 +301,7 @@ def test_competing_member_and_additional_edits_need_explicit_choices(
 ):
     """R1-10: the tab cannot silently replace newly refreshed competing values."""
     form = form_payload()
-    form["members"][0]["fields"][0]["value"] = "Updated record"
+    member_field(form, "first_name")["value"] = "Updated record"
     form["additional_information"] = "Another adult's note"
     prepare(
         page,
@@ -325,7 +332,7 @@ def test_competing_member_and_additional_edits_need_explicit_choices(
 def test_conflict_arrows_keep_both_values_until_explicit_review(page, component_origin):
     """Keyboard exploration must not destroy the edit or the alternative value."""
     fresh = form_payload()
-    fresh["members"][0]["fields"][0]["value"] = "Updated records"
+    member_field(fresh, "first_name")["value"] = "Updated records"
     prepare(
         page,
         component_origin,

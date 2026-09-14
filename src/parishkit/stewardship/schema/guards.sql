@@ -4188,6 +4188,14 @@ DECLARE
     previous_id uuid;
     previous_version bigint;
     last_sequence bigint;
+    member_key text;
+    member_answer jsonb;
+    field_name text;
+    field_value jsonb;
+    source_value jsonb;
+    display_value text;
+    allowed_fields text[] := ARRAY['prefix','first_name','middle_name','last_name','suffix','nickname',
+        'maiden_name','birth_date','gender','email','home_phone','mobile_phone','work_phone','marital_status','language'];
 BEGIN
     IF TG_OP <> 'INSERT' THEN
         IF TG_OP='DELETE' AND public.stewardship_test_response_cleanup_v1(OLD.mode,OLD.rehearsal_epoch_id) THEN
@@ -4222,7 +4230,7 @@ BEGIN
         OR NEW.prior_submission_id IS DISTINCT FROM baseline.prior_submission_id
         OR NEW.reviewed_source_id IS DISTINCT FROM baseline.source_id
         OR NEW.form_schema IS DISTINCT FROM baseline.form_schema
-        OR NEW.form_schema <> 'family-census-household-v1'
+        OR NEW.form_schema <> 'family-census-members-v1'
         OR NEW.configuration_id IS DISTINCT FROM runtime_row.active_configuration_id
         OR runtime_row.restore_review_required OR session_row.mode <> runtime_row.mode
         OR NEW.campaign_id IS DISTINCT FROM runtime_row.current_campaign_id
@@ -4277,6 +4285,67 @@ BEGIN
     PERFORM public.stewardship_response_address_guard_v1(NEW.answers#>'{family,home_address}');
     PERFORM public.stewardship_response_address_guard_v1(NEW.answers#>'{family,mailing_address}');
     PERFORM public.stewardship_response_comparison_v1('email_opt_out',NEW.answers#>'{family,email_opt_out}');
+    -- A response is a complete active household, not a patch or a caller-chosen
+    -- list. These checks also protect direct exact-role writes outside Python.
+    IF (SELECT coalesce(array_agg(key ORDER BY key),'{}'::text[]) FROM jsonb_object_keys(NEW.answers->'members') key)
+       IS DISTINCT FROM (
+           SELECT coalesce(array_agg(membership.source_key::text ORDER BY membership.source_key),'{}'::text[])
+           FROM public.stewardship_snapshot_member membership
+           JOIN public.stewardship_source_member member ON member.id=membership.payload_id
+           JOIN public.stewardship_family_campaign family ON member.family_key=family.family_duid::text
+           WHERE membership.snapshot_id=NEW.validation_source_id AND family.id=NEW.family_id
+             AND member.canonical::jsonb->'active'='true'::jsonb
+             AND member.canonical::jsonb->'deceased'='false'::jsonb) THEN
+        RAISE EXCEPTION 'Submission must include the current active household' USING ERRCODE='23514';
+    END IF;
+    FOR member_key,member_answer IN SELECT * FROM jsonb_each(NEW.answers->'members') LOOP
+        IF jsonb_typeof(member_answer)<>'object' OR NOT (member_answer ?& allowed_fields)
+           OR member_answer-allowed_fields<>'{}'::jsonb THEN
+            RAISE EXCEPTION 'Submission member fields are incomplete' USING ERRCODE='23514';
+        END IF;
+        FOR field_name,field_value IN SELECT * FROM jsonb_each(member_answer) LOOP
+            source_value := public.stewardship_response_field_source_v1(
+                NEW.validation_source_id,NEW.family_id,member_key,field_name);
+            PERFORM public.stewardship_response_comparison_v1(field_name,field_value);
+            IF field_name='birth_date' THEN
+                IF field_value<>'null'::jsonb AND (field_value#>>'{}')::date>NEW.submitted_on THEN
+                    RAISE EXCEPTION 'Member birth date cannot be in the future' USING ERRCODE='23514';
+                END IF;
+                CONTINUE;
+            END IF;
+            IF field_value='null'::jsonb THEN
+                IF field_name IN ('first_name','last_name','gender','language')
+                   OR (source_value->'available'='true'::jsonb AND source_value->'value'<>'null'::jsonb) THEN
+                    RAISE EXCEPTION 'Member nullable field has no supported blank source' USING ERRCODE='23514';
+                END IF;
+                CONTINUE;
+            END IF;
+            display_value := CASE WHEN field_name IN ('home_phone','mobile_phone','work_phone')
+                                  AND jsonb_typeof(field_value)='object'
+                THEN field_value->>'display' ELSE field_value#>>'{}' END;
+            IF length(display_value)>(CASE WHEN field_name='email' THEN 254 ELSE 100 END)
+               OR display_value IS DISTINCT FROM public.stewardship_response_comparison_v1('first_name',to_jsonb(display_value))
+               OR display_value ~ U&'[\0001-\001F\007F\0085\2028\2029]'
+               OR (field_name IN ('first_name','last_name','gender','language') AND display_value='') THEN
+                RAISE EXCEPTION 'Member text field is not normalized or complete' USING ERRCODE='23514';
+            END IF;
+            IF field_name='gender' AND display_value NOT IN ('Male','Female','Unspecified')
+               AND public.stewardship_response_comparison_v1(field_name,field_value)
+                   IS DISTINCT FROM public.stewardship_response_comparison_v1(field_name,source_value->'value') THEN
+                RAISE EXCEPTION 'Member gender choice is invalid' USING ERRCODE='23514';
+            END IF;
+            IF field_name='marital_status' AND display_value NOT IN ('','Annulled','Divorced','Married','Single','Separated','Widowed')
+               AND public.stewardship_response_comparison_v1(field_name,field_value)
+                   IS DISTINCT FROM public.stewardship_response_comparison_v1(field_name,source_value->'value') THEN
+                RAISE EXCEPTION 'Member marital choice is invalid' USING ERRCODE='23514';
+            END IF;
+            IF field_name IN ('home_phone','mobile_phone','work_phone') AND display_value<>''
+               AND field_value IS DISTINCT FROM source_value->'value'
+               AND coalesce(field_value->>'normalized','') !~ '^\+[1-9][0-9]{1,14}(;ext=[0-9]{1,12})?$' THEN
+                RAISE EXCEPTION 'Member new phone must have an international comparison number' USING ERRCODE='23514';
+            END IF;
+        END LOOP;
+    END LOOP;
     IF (NEW.answers#>>'{family,mailing_same_as_home}')::boolean
        AND (NEW.answers#>'{family,home_address}'='null'::jsonb
             OR public.stewardship_response_comparison_v1('home_address',NEW.answers#>'{family,home_address}')
@@ -4373,10 +4442,13 @@ BEGIN
     END IF;
     IF TG_TABLE_NAME='stewardship_proposed_change' THEN
         IF TG_OP='INSERT' THEN
-            IF NEW.entity_kind='member' AND NEW.field IN ('first_name','middle_name','last_name','email')
+            IF NEW.entity_kind='member' AND NEW.field IN (
+                'prefix','first_name','middle_name','last_name','suffix','nickname','maiden_name',
+                'birth_date','gender','email','home_phone','mobile_phone','work_phone','marital_status','language')
                AND (response.answers->'members') ? NEW.entity_key THEN
                 expected_submitted := response.answers#>ARRAY['members',NEW.entity_key,NEW.field];
-                expected_handling := 'api';
+                expected_handling := CASE WHEN NEW.field IN ('prefix','suffix','marital_status')
+                    THEN 'manual' ELSE 'api' END;
                 source_field := public.stewardship_response_field_source_v1(
                     response.validation_source_id,response.family_id,NEW.entity_key,NEW.field);
             ELSIF NEW.entity_kind='family' AND NEW.field IN ('home_address','mailing_address','email_opt_out') THEN

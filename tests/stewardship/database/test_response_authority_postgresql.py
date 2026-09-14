@@ -227,9 +227,20 @@ def test_sql_source_projection_matches_issued_field_registry(response_service, v
                 "middle_name": "Updated middle",
                 "last_name": "Updated last",
                 "email": "new@example.org",
+                "prefix": "Dr.",
+                "suffix": "Jr.",
+                "nickname": "Nickname",
+                "maiden_name": "Former name",
+                "birth_date": "1970-01-01",
+                "gender": "Female",
+                "home_phone": "+44 20 8366 1177",
+                "mobile_phone": "+44 20 8366 1177",
+                "work_phone": "+44 20 8366 1177",
+                "marital_status": "Married",
+                "language": "French",
             }[field.field]
         response = submit(harness, form, answers).submission
-        assert ProposedChange.objects.filter(submission=response).count() == 4
+        assert ProposedChange.objects.filter(submission=response).count() == 15
 
 
 def test_terminal_old_intent_starts_from_current_source(live_response_service):

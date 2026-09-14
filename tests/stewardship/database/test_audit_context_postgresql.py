@@ -105,3 +105,30 @@ def test_raw_sql_cannot_store_secret_bearing_context(context):
             ],
         )
     assert not OperationalLog.objects.exists()
+
+
+@pytest.mark.parametrize(
+    "context,valid",
+    [
+        ({"family_duid": 1, "member_duid": 3, "field": "email"}, True),
+        ({}, False),
+        ({"family_duid": 1, "member_duid": 3}, False),
+        ({"family_duid": 1, "member_duid": 3, "field": "private-value"}, False),
+        (
+            {"family_duid": 1, "member_duid": 3, "field": "email", "value": "private"},
+            False,
+        ),
+        *[
+            ({"family_duid": value, "member_duid": 3, "field": "email"}, False)
+            for value in (True, 0, -1, 2**31, "1", 1.0, None)
+        ],
+    ],
+)
+def test_sql_member_source_diagnostic_privacy(context, valid):
+    """Independent SQL prevents raw inserts from evading the closed Python schema."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT stewardship_safe_context_v1('member_source', %s::jsonb)",
+            [json.dumps(context)],
+        )
+        assert cursor.fetchone()[0] is valid

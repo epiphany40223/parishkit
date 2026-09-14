@@ -24,7 +24,8 @@ def test_secret_fields_rejected_for_every_context(kind):
     for key in ("url", "token", "message", "exception", "family_code", "password"):
         with pytest.raises(ValueError, match="fields"):
             sanitize(kind, {key: "synthetic-private"})
-    assert sanitize(kind, {"outcome": Outcome.DENIED}) == {"outcome": "denied"}
+    if kind is not ContextKind.MEMBER_SOURCE:
+        assert sanitize(kind, {"outcome": Outcome.DENIED}) == {"outcome": "denied"}
 
 
 @pytest.mark.parametrize("value", ["synthetic-secret", None, 1, True])

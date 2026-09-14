@@ -32,11 +32,21 @@
     // label and error elsewhere in this file is assigned through textContent.
     element.innerHTML = form.content[slot];
   }
+  function phoneKey(value) {
+    const match = /^(\+?[0-9][0-9 ().-]*|\([0-9][0-9 ().-]*)(?:\s*(?:ext\.?|x|#|;ext=)\s*([0-9]{1,12}))?$/i.exec(value);
+    if (!match) return null;
+    let digits = match[1].replace(/[^0-9]/g, ""), international = match[1].startsWith("+");
+    if (!international && digits.length === 10) { digits = "1" + digits; international = true; }
+    else if (!international && digits.length === 11 && digits.startsWith("1")) international = true;
+    return digits.length && digits.length <= 15 ? [
+      international ? "international" : "national", digits, match[2] || ""] : null;
+  }
   function canonical(value, name) {
     if (value === null || typeof value === "boolean") return JSON.stringify(value);
     if (typeof value === "object") return JSON.stringify(Object.keys(value).sort().map(
       (key) => [key, canonical(value[key], key)]));
     const result = value.normalize("NFC").trim();
+    if (name.endsWith("_phone")) return JSON.stringify(phoneKey(result) || ["opaque", result]);
     return name === "email" ? result.toLowerCase().split(/[,;]/).map(
       (address) => address.trim()).filter(Boolean).sort().join(",") : result;
   }
@@ -140,7 +150,7 @@
     }
     edit();
   }
-  function conflictChoice(path, input, parent) {
+  function conflictChoice(path, input, parent, apply = null) {
     const conflict = conflicts.get(path);
     if (!conflict) return;
     input.disabled = conflict.choice === undefined;
@@ -152,7 +162,7 @@
       radio.checked = conflict.choice === index;
       wrapper.append(document.createTextNode(" " + label + ": " + (value || "Blank")));
       radio.addEventListener("change", () => {
-        input.value = value;
+        if (apply) apply(value); else input.value = value;
         input.disabled = false;
         conflict.choice = index;
         input.dispatchEvent(new Event("input"));
@@ -211,7 +221,7 @@
   function validateField(input, definition) {
     input.setCustomValidity("");
     const value = input.value.normalize("NFC").trim();
-    if ((definition.required && !value) || /[\u0000-\u001f\u007f]/.test(value)) {
+    if ((definition.required && !value) || /[\u0000-\u001f\u007f\u0085\u2028\u2029]/.test(value)) {
       input.setCustomValidity("Enter a valid value for this field.");
     }
     if (definition.name === "email" && value) {
@@ -221,9 +231,129 @@
         probe.value = address.trim();
         return !probe.value || !probe.checkValidity();
       })) input.setCustomValidity("Enter valid email addresses separated by commas.");
+      const normalized = [...new Set(value.split(/[,;]/).map((address) => address.trim().toLowerCase()))].sort().join(", ");
+      if ([...normalized].length > definition.max_length) input.setCustomValidity("Enter fewer email addresses within the displayed length limit.");
+    }
+    if (definition.kind === "date" && !input.readOnly && value && value > form.today) {
+      input.setCustomValidity("Birth date cannot be in the future.");
+    }
+    if (definition.kind === "phone" && value && value !== definition.value) {
+      const key = phoneKey(value);
+      if (!key || key[0] !== "international") {
+        input.setCustomValidity("Enter a complete phone number, using + and country code outside the US.");
+      } else {
+        const digits = key[1];
+        if (!/^[1-9][0-9]{1,14}$/.test(digits)) input.setCustomValidity("Enter a valid international phone number.");
+      }
     }
     input.setAttribute("aria-invalid", String(!input.checkValidity()));
+    const error = document.getElementById(input.id + "-inline-error");
+    if (error) { error.textContent = input.validationMessage; error.hidden = input.checkValidity(); }
     return input.checkValidity();
+  }
+  function memberName(member, index) {
+    const values = answers.members[member.id];
+    return [values.first_name, values.last_name].filter(Boolean).join(" ") ||
+      "Household member " + (index + 1).toLocaleString("en-US");
+  }
+  function memberEditor(member, index, editor, fields, deferValidation) {
+    const group = node("fieldset", null, editor);
+    node("legend", memberName(member, index), group);
+    node("p", "Relationship: " + (member.relationship || "Not available in parish records"), group);
+    member.fields.forEach((definition) => {
+      const id = "member-" + member.id + "-" + definition.name;
+      const path = "members." + member.id + "." + definition.name;
+      const choices = definition.choices || [];
+      node("label", definition.label + (definition.required ? " (required)" : " (optional)"), group, {for: id});
+      const input = node(choices.length ? "select" : "input", null, group, {id,
+        autocomplete: "off", "aria-describedby": id + "-status " + id + "-inline-error"});
+      if (choices.length) {
+        if (!choices.includes("")) node("option", "Choose an option", input, {value: ""});
+        choices.forEach((value) => node("option", value || "Unknown", input, {value}));
+        if (definition.value && !choices.includes(definition.value)) {
+          node("option", "Current record: " + definition.value, input, {value: definition.value});
+        }
+      } else {
+        input.type = definition.kind === "date" ? "date" : "text";
+        input.maxLength = definition.max_length;
+      }
+      if (definition.kind === "date") input.max = form.today;
+      input.required = definition.required;
+      if (definition.name === "email") input.inputMode = "email";
+      if (definition.kind === "phone") {
+        input.inputMode = "tel";
+        node("p", "US national number, or + and country code for international numbers. Extensions are allowed.", group, {class: "muted"});
+      }
+      let unknown = null, language = null;
+      if (definition.kind === "date") {
+        const label = node("label", null, group);
+        unknown = node("input", null, label, {type: "checkbox", id: id + "-unknown"});
+        label.append(document.createTextNode(" Birth date is unknown"));
+        node("p", "Choosing Unknown requests removal of any recorded birth date, subject to parish review.", group, {id: id + "-unknown-help", class: "muted"});
+        unknown.setAttribute("aria-describedby", id + "-unknown-help");
+        unknown.disabled = conflicts.has(path);
+        unknown.addEventListener("change", () => {
+          input.value = "";
+          input.readOnly = unknown.checked;
+          input.required = !unknown.checked;
+          input.dispatchEvent(new Event("input"));
+          validateField(input, {...definition, required: !unknown.checked});
+        });
+      }
+      if (definition.name === "language") {
+        node("label", "Language choice", group, {for: id + "-choice"});
+        language = node("select", null, group, {id: id + "-choice"});
+        [["", "Choose an option"], ["English", "English"], ["Spanish", "Spanish"], ["other", "Other"]].forEach(
+          ([value, label]) => node("option", label, language, {value}));
+        language.disabled = conflicts.has(path);
+        language.addEventListener("change", () => {
+          input.value = language.value === "other" ? "" : language.value;
+          input.readOnly = ["English", "Spanish"].includes(language.value);
+          input.placeholder = language.value === "other" ? "Enter other language" : "";
+          input.dispatchEvent(new Event("input"));
+          if (language.value === "other") input.focus();
+        });
+      }
+      function setValue(value) {
+        if (unknown) {
+          unknown.checked = value === "unknown";
+          input.readOnly = unknown.checked;
+          input.required = !unknown.checked;
+          input.value = unknown.checked ? "" : value;
+        } else input.value = value;
+        if (language) {
+          language.value = ["", "English", "Spanish"].includes(value) ? value : "other";
+          input.readOnly = ["English", "Spanish"].includes(language.value);
+          input.placeholder = language.value === "other" ? "Enter other language" : "";
+        }
+      }
+      setValue(answers.members[member.id][definition.name]);
+      const status = node("p", "", group, {id: id + "-status", class: "muted"});
+      node("p", "", group, {id: id + "-inline-error", hidden: ""});
+      function update() {
+        const value = unknown?.checked ? "unknown" : input.value;
+        answers.members[member.id][definition.name] = value;
+        const changed = definition.changed || canonical(value, definition.name) !==
+          canonical(initial.members[member.id][definition.name], definition.name);
+        status.textContent = definition.conflict ? "Your requested change is awaiting parish review." :
+          changed ? "Changed from parish records." : !definition.available ? "Not available in parish records." : "";
+      }
+      input.addEventListener("input", () => { update(); input.setCustomValidity(""); });
+      const validate = () => validateField(input, {...definition, required: input.required});
+      input.addEventListener("blur", (event) => {
+        // Revealing an error during a button's mousedown can move that button
+        // before mouseup, swallowing the click. Review validates after click.
+        if (!deferValidation() && event.relatedTarget?.type !== "submit") validate();
+      });
+      if (input.tagName === "SELECT") input.addEventListener("change", validate);
+      update();
+      fields.push(validate);
+      conflictChoice(path, input, group, (value) => {
+        setValue(value);
+        if (unknown) unknown.disabled = false;
+        if (language) language.disabled = false;
+      });
+    });
   }
   function householdDisplay(value) {
     if (value === null) return "Not provided";
@@ -377,6 +507,9 @@
     const wrapper = node("label", null, section);
     section.insertBefore(wrapper, controls.get("mailing_address").group);
     const same = node("input", null, wrapper, {type: "checkbox", id: "family-mailing_same_as_home"});
+    const sameError = node("p", "", null, {id: "family-mailing_same_as_home-constraint", hidden: ""});
+    wrapper.after(sameError);
+    same.setAttribute("aria-describedby", sameError.id);
     wrapper.append(document.createTextNode(" Mailing address is the same as home address"));
     same.checked = answers.family.mailing_same_as_home;
     // Resolve competing records independently before offering an address copy.
@@ -384,6 +517,8 @@
     controls.get("mailing_address").group.disabled ||= same.checked;
     same.addEventListener("change", () => {
       same.setCustomValidity("");
+      sameError.hidden = true;
+      same.setAttribute("aria-invalid", "false");
       if (same.checked) {
         const distinct = canonical(answers.family.home_address, "address") !== canonical(answers.family.mailing_address, "address");
         if (distinct && Object.values(answers.family.mailing_address).some(Boolean) &&
@@ -448,6 +583,9 @@
       validators.forEach((validate) => validate());
       same.setCustomValidity(same.checked && !Object.values(answers.family.home_address).some((text) => text.trim()) ?
         "Provide a home address before selecting same as home." : "");
+      sameError.textContent = same.validationMessage;
+      sameError.hidden = same.checkValidity();
+      same.setAttribute("aria-invalid", String(!same.checkValidity()));
     };
   }
   function edit() {
@@ -457,34 +595,16 @@
     block("census", root);
     familySummary();
     const editor = node("form", null, root, {autocomplete: "off", novalidate: ""});
+    let reviewPointerDown = false;
+    editor.addEventListener("pointerdown", (event) => {
+      reviewPointerDown = Boolean(event.target.closest('button[type="submit"]'));
+    }, true);
+    editor.addEventListener("keydown", () => { reviewPointerDown = false; }, true);
+    editor.addEventListener("pointercancel", () => { reviewPointerDown = false; });
     const fields = [];
     const validateHousehold = householdEditor(editor);
-    form.members.forEach((member, index) => {
-      const group = node("fieldset", null, editor);
-      node("legend", "Household member " + (index + 1).toLocaleString("en-US"), group);
-      member.fields.forEach((definition) => {
-        const id = "member-" + member.id + "-" + definition.name;
-        node("label", definition.label + (definition.required ? " (required)" : " (optional)"), group, {for: id});
-        const input = node("input", null, group, {id, type: "text", maxlength: String(definition.max_length),
-          autocomplete: "off", "aria-describedby": id + "-status"});
-        if (definition.required) input.required = true;
-        if (definition.name === "email") input.inputMode = "email";
-        input.value = answers.members[member.id][definition.name];
-        const status = node("p", "", group, {id: id + "-status", class: "muted"});
-        function update() {
-          answers.members[member.id][definition.name] = input.value;
-          const changed = definition.changed || canonical(input.value, definition.name) !==
-            canonical(initial.members[member.id][definition.name], definition.name);
-          status.textContent = definition.conflict ? "Your requested change is awaiting parish review." :
-            changed ? "Changed from parish records." : !definition.available ? "Not available in parish records." : "";
-        }
-        input.addEventListener("input", () => { update(); input.setCustomValidity(""); });
-        input.addEventListener("blur", () => validateField(input, definition));
-        update();
-        fields.push([input, definition]);
-        conflictChoice("members." + member.id + "." + definition.name, input, group);
-      });
-    });
+    form.members.forEach((member, index) => memberEditor(member, index, editor, fields,
+      () => reviewPointerDown));
     if (form.additional_enabled) {
       block("additional", editor);
       node("label", "Additional information (optional)", editor, {for: "additional-information"});
@@ -497,14 +617,18 @@
     node("button", "Review response", editor, {type: "submit"});
     editor.addEventListener("submit", (event) => {
       event.preventDefault();
+      reviewPointerDown = false;
       if ([...conflicts.values()].some((conflict) => conflict.choice === undefined)) {
         say("Choose a value for every changed record before reviewing your response.");
         root.querySelector("[data-conflict] input")?.focus();
         return;
       }
-      fields.forEach(([input, definition]) => validateField(input, definition));
+      fields.forEach((validate) => validate());
       validateHousehold();
-      if (editor.reportValidity()) { conflicts.clear(); review(); }
+      // Inline errors already explain each failure. Native validation popups
+      // can steal focus from the requested field after it is scrolled into view.
+      if (editor.checkValidity()) { conflicts.clear(); review(); }
+      else editor.querySelector("input:invalid, select:invalid, textarea:invalid")?.focus();
     });
   }
   function review() {
@@ -528,14 +652,16 @@
     });
     form.members.forEach((member, index) => {
       const panel = node("section", null, root, {class: "panel"});
-      node("h3", "Household member " + (index + 1).toLocaleString("en-US"), panel);
+      node("h3", memberName(member, index), panel);
+      node("p", "Relationship: " + (member.relationship || "Not available in parish records"), panel);
       const list = node("dl", null, panel);
       member.fields.forEach((definition) => {
         node("dt", definition.label, list);
         const value = answers.members[member.id][definition.name];
         const changed = definition.changed || canonical(value, definition.name) !==
           canonical(initial.members[member.id][definition.name], definition.name);
-        const display = node("dd", value || "Not provided", list);
+        const display = node("dd", definition.name === "birth_date" && value === "unknown" ?
+          "Unknown — request parish review of removing any recorded birth date" : value || "Not provided", list);
         if (changed) {
           display.classList.add("changed");
           node("span", " — Changed from parish records", display);

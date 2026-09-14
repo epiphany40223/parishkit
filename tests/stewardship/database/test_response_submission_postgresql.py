@@ -32,10 +32,16 @@ def form_and_answers(harness):
     """Use the actual authorized field projection as a browser would receive it."""
     form = issue_baseline(harness.request, harness.service, testing_acknowledged=True)
     members = {}
+    from parishkit.stewardship.responses.member_census import (
+        MEMBER_FIELDS,
+        browser_value,
+    )
+
+    definitions = {field.name: field for field in MEMBER_FIELDS}
     for field in form.inputs.fields:
         if field.entity == "member":
-            members.setdefault(str(field.identity), {})[field.field] = (
-                field.source.value or ""
+            members.setdefault(str(field.identity), {})[field.field] = browser_value(
+                definitions[field.field], field.source
             )
     return form, {
         "family": household(),
@@ -58,7 +64,13 @@ def test_no_change_test_submission_is_complete_and_isolated(response_service):
     row = result.submission
     assert row is not None and result.refreshed is None
     assert row.mode == "test" and row.family_version == row.campaign_sequence == 1
-    assert row.answers["members"] == answers["members"]
+    assert row.answers["members"] == {
+        "3": {
+            field.field: field.source.value
+            for field in form.inputs.fields
+            if field.entity == "member"
+        }
+    }
     assert (
         row.reviewed_source_id
         == row.validation_source_id

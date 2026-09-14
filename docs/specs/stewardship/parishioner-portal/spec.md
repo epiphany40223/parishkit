@@ -170,6 +170,13 @@ The normalized internal model distinguishes a ParishSoft blank marital value
 from an accidentally omitted browser field while mapping explicit Unknown to
 the supported blank on manual/API processing.
 
+A missing or known-null source birth date does not preselect Unknown; only a
+prior explicit Family answer may prefill that choice. Choosing Unknown instead
+of a recorded date requests a blank date through the normal Admin-reviewed
+change workflow. The control and review summary must explain that it requests
+removal of any recorded birth date, not describe it as merely withholding an
+answer from this campaign. It never clears the source record automatically.
+
 Two mutually exclusive terminal choices precede the remaining fields:
 
 - this person is no longer a member of this Family household; or

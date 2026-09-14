@@ -53,8 +53,9 @@ Evidence: [Family census increment](../../guides/stewardship-family-census.md)
 implements identity/availability, typed complete household answers, guarded
 proposals and mobile review/revisit. Its [three-round review ledger](../../guides/stewardship-family-census-reviews.md)
 records eight accepted/resolved Medium findings, passing 182 database tests,
-4,656 default tests and 93 final Family browser cases. Final-head CI and merge
-remain pending. FAM-03.05's malformed/country-aware cases pass; its integrated
+4,656 default tests and 93 final Family browser cases. PR #24's final-head and
+merge-group CI passed; its merged tip is recorded in the increment guide.
+FAM-03.05's malformed/country-aware cases pass; its integrated
 census-disabled omission case completes alongside FAM-05.06 when non-census
 forms are admitted. The current census-only version rejects unsupported module
 sets instead of exposing an incomplete response. FAM-04 is the next ready
@@ -70,7 +71,12 @@ Scope and dependencies: [FAM-04 work package](../../plans/stewardship/parishione
 - [ ] FAM-04.04 — Apply terminal-aware mandatory-field rules.
 - [ ] FAM-04.05 — Test Member fields, dates, terminal choices, and removal.
 
-Evidence: Not started.
+Evidence: [Existing Member increment](../../guides/stewardship-member-census.md)
+implements non-terminal census fields and has completed three dual-model
+review/correction rounds with passing local validation. Final-head CI and
+protected merge remain pending. FAM-04.01, .04 and .05 remain
+unchecked until their terminal/proposed-Member requirements also pass in the
+following increment. No full FAM-04 task is claimed complete yet.
 
 ## FAM-05: Ministry and financial stewardship steps
 

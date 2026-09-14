@@ -129,10 +129,25 @@ def revisit(harness):
         )
         fields = effective_fields(form.inputs, prior)
     members = {}
+    from parishkit.stewardship.responses.member_census import (
+        MEMBER_FIELDS,
+        browser_value,
+    )
+
+    definitions = {field.name: field for field in MEMBER_FIELDS}
     for field in fields:
         if field.entity == "member":
-            members.setdefault(str(field.identity), {})[field.field] = (
-                field.effective.value.value or ""
+            members.setdefault(str(field.identity), {})[field.field] = browser_value(
+                definitions[field.field],
+                field.effective.value,
+                previous_unknown=bool(
+                    field.field == "birth_date"
+                    and prior
+                    and prior.answers["members"]
+                    .get(str(field.identity), {})
+                    .get("birth_date", "")
+                    is None
+                ),
             )
     return (
         harness,

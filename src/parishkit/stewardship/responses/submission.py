@@ -98,6 +98,9 @@ def submit_family(request, service, *, baseline_id, payload):
                 "additional_information"
             ],
             testing=session.mode == "testing",
+            today=_now()
+            .astimezone(ZoneInfo(campaign.active_configuration.timezone))
+            .date(),
         )
         mode = "test" if session.mode == "testing" else "live"
         sequence = (
