@@ -369,3 +369,25 @@ merge/continue authority applies under the controlling automated delivery cycle.
 Protected delivery is still pending: require final-head CI, the normal merge
 queue, all merge-group checks, and verified `origin/main` ancestry before
 releasing Phase 4. No deployment, release or real-provider authority is implied.
+
+## CI correction: initial-setup installer contention
+
+PR #30's first exact-head run (`34890151052`, head `51d612a`) passed every
+check except the development-profile setup-completion scenario and its Compose
+aggregate. The worker encountered `ConfigurationBusy` during final promotion;
+the unclassified exception retained leases until abandoned-task recovery and
+missed the browser's completion deadline. This was not a PostgreSQL assertion
+failure or a reason to extend the test deadline.
+
+A regression using an independent PostgreSQL session holding the actual
+installer advisory lock reproduces that same exception on the original code.
+The final-setup owner now classifies this post-read contention as a safe retry:
+reject the unpromoted observation, release the source claim, preserve its HTTP
+drainage deadline, and recheck the original setup authority on retry. The lock,
+atomic configured marker, unknown-error handling and database guards are not
+weakened. The test also exercises successful completion through the same Task
+root after the real exclusion window drains, without rewriting clocks or fences.
+
+Correction-specific PostgreSQL/operational validation, focused dual-model review
+and replacement exact-head CI are in progress. This correction reopens the local
+checkpoint above; neither protected delivery nor Gate 2 exit is yet claimed.

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from django.db import connection, transaction
 
+from parishkit.stewardship.accounts.installation_lock import ConfigurationBusy
 from parishkit.stewardship.audit.schemas import ContextKind, Outcome
 from parishkit.stewardship.audit.services import operational
 from parishkit.stewardship.campaigns.work_locks import work_transaction
@@ -13,10 +14,10 @@ from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.jobs.phases import TaskPhase
 from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.storage import _status, change_run
-from parishkit.stewardship.observability import correlation
+from parishkit.stewardship.observability import Event, correlation
 from parishkit.stewardship.storage import StorageInvariantError
 
-from .failures import classify_read_failure
+from .failures import ReadFailure, classify_read_failure
 from .leases import acquire_source, release_source, verify_source
 from .outcomes import failure_action, retry_delay
 from .rejection import reject_snapshot
@@ -98,7 +99,14 @@ def _execute(execution, *, store, credential_path, general, mac, public):
 
 def _failed(execution, error, claim, *, store):
     """Settle only known drained read failures; never invent a successful setup."""
-    decision = classify_read_failure(error, has_source_claim=claim is not None)
+    # Final promotion runs after provider drainage, but can race an ordinary
+    # installer pass. Reject this observation and release its source fence now;
+    # waiting for abandoned-task recovery needlessly retains both leases.
+    decision = (
+        ReadFailure(True, True, Event.SOURCE_HELD)
+        if isinstance(error, ConfigurationBusy) and claim is not None
+        else classify_read_failure(error, has_source_claim=claim is not None)
+    )
     if decision is None:
         raise error
     with execution.control.lock, correlation(execution.correlation_id):
