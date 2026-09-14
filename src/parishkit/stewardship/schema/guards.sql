@@ -4474,6 +4474,10 @@ CREATE TRIGGER stewardship_submission_guard
 CREATE FUNCTION public.stewardship_submission_effects_v1() RETURNS trigger
     LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp
 AS $$
+DECLARE
+    answer record; source_field jsonb; submitted_key text;
+    prior public.stewardship_proposed_change;
+    latest_text text;
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM public.stewardship_submission WHERE id=NEW.id) THEN RETURN NULL; END IF;
     IF NOT EXISTS (SELECT 1 FROM public.stewardship_family_form_baseline
@@ -4501,6 +4505,101 @@ BEGIN
                   AND requested_submission_watermark >= NEW.campaign_sequence))
     ) THEN
         RAISE EXCEPTION 'Live response requires atomic selectors and fact demand' USING ERRCODE='23514';
+    END IF;
+    -- Child guards validate rows that exist. This parent guard also detects a
+    -- missing derivation owner, including replacement/withdrawal with no new row.
+    IF NEW.answers->'family' ? 'home_address' THEN
+        FOR answer IN
+            SELECT 'family' AS entity, family.family_duid::text AS identity,
+                   field.key AS field, field.value AS value
+            FROM public.stewardship_family_campaign family,
+                 jsonb_each(NEW.answers->'family') field
+            WHERE family.id=NEW.family_id
+              AND field.key IN ('home_address','mailing_address','email_opt_out')
+            UNION ALL
+            SELECT 'member', member.key, field.key, field.value
+            FROM jsonb_each(NEW.answers->'members') member,
+                 jsonb_each(member.value) field
+            WHERE field.key <> 'confirmed'
+              AND NOT (field.key='death_date' AND field.value='null'::jsonb)
+            UNION ALL
+            SELECT 'proposed_member', member.key, 'new_member', member.value
+            FROM jsonb_each(NEW.answers->'proposed_members') member
+        LOOP
+            source_field := CASE answer.entity
+                WHEN 'family' THEN public.stewardship_response_household_source_v1(
+                    NEW.validation_source_id,NEW.family_id,answer.identity,answer.field)
+                WHEN 'member' THEN public.stewardship_response_field_source_v1(
+                    NEW.validation_source_id,NEW.family_id,answer.identity,answer.field)
+                ELSE jsonb_build_object('available',false,'value',NULL) END;
+            submitted_key := public.stewardship_response_comparison_v1(answer.field,answer.value);
+            IF NOT ((source_field->'available'='true'::jsonb AND submitted_key IS NOT DISTINCT FROM
+                     public.stewardship_response_comparison_v1(answer.field,source_field->'value'))
+                    OR (source_field->'available'='false'::jsonb AND answer.value='null'::jsonb))
+               AND NOT EXISTS (SELECT 1 FROM public.stewardship_proposed_change proposal
+                   WHERE proposal.submission_id=NEW.id AND proposal.entity_kind=answer.entity
+                     AND proposal.entity_key=answer.identity AND proposal.field=answer.field)
+            THEN
+                RAISE EXCEPTION 'Submitted census change requires atomic derived work' USING ERRCODE='23514';
+            END IF;
+        END LOOP;
+        FOR prior IN
+            SELECT DISTINCT ON (proposal.entity_kind,proposal.entity_key,proposal.field) proposal.*
+            FROM public.stewardship_proposed_change proposal
+            JOIN public.stewardship_submission history ON history.id=proposal.submission_id
+            JOIN public.stewardship_submission previous ON previous.id=NEW.prior_submission_id
+            WHERE history.family_id=NEW.family_id AND history.campaign_id=NEW.campaign_id
+              AND history.mode=NEW.mode
+              AND history.rehearsal_epoch_id IS NOT DISTINCT FROM NEW.rehearsal_epoch_id
+              AND history.family_version<=previous.family_version
+              AND (history.id=public.stewardship_response_census_anchor_v1(previous.id)
+                   OR (proposal.entity_kind='member'
+                       AND proposal.field IN ('moved_household','deceased_status','death_date')))
+            ORDER BY proposal.entity_kind,proposal.entity_key,proposal.field,history.family_version DESC
+        LOOP
+            IF prior.execution IN ('published','resolved_upstream','resolved_external','cancelled','superseded') THEN
+                CONTINUE;
+            END IF;
+            -- Source removal is not withdrawal of independent terminal work.
+            IF prior.entity_kind='member' AND prior.field IN ('moved_household','deceased_status','death_date') THEN
+                IF NOT (NEW.answers->'members' ? prior.entity_key) THEN CONTINUE; END IF;
+                IF prior.field='death_date'
+                   AND coalesce(NEW.answers#>ARRAY['members',prior.entity_key,'death_date'],'null'::jsonb)='null'::jsonb
+                   AND (SELECT proposal.execution FROM public.stewardship_proposed_change proposal
+                       JOIN public.stewardship_submission history ON history.id=proposal.submission_id
+                       JOIN public.stewardship_submission previous ON previous.id=NEW.prior_submission_id
+                       WHERE history.family_id=NEW.family_id AND history.campaign_id=NEW.campaign_id
+                         AND history.mode=NEW.mode
+                         AND history.rehearsal_epoch_id IS NOT DISTINCT FROM NEW.rehearsal_epoch_id
+                         AND history.family_version<=previous.family_version
+                         AND proposal.entity_kind='member' AND proposal.entity_key=prior.entity_key
+                         AND proposal.field='deceased_status'
+                       ORDER BY history.family_version DESC LIMIT 1)
+                       IN ('published','resolved_upstream','resolved_external') THEN CONTINUE; END IF;
+            END IF;
+            RAISE EXCEPTION 'New census response must reconcile earlier census work' USING ERRCODE='23514';
+        END LOOP;
+    END IF;
+    IF NEW.mode='live' THEN
+        SELECT answers->>'additional_information' INTO latest_text
+        FROM public.stewardship_submission WHERE family_id=NEW.family_id AND mode='live'
+        ORDER BY family_version DESC LIMIT 1;
+        IF (SELECT count(*) FROM public.stewardship_additional_information item
+            JOIN public.stewardship_submission response ON response.id=item.submission_id
+            WHERE response.family_id=NEW.family_id AND item.disposition='current_actionable')
+            <> (CASE WHEN latest_text='' THEN 0 ELSE 1 END)
+           OR EXISTS (SELECT 1 FROM public.stewardship_additional_information item
+               JOIN public.stewardship_submission response ON response.id=item.submission_id
+               WHERE response.family_id=NEW.family_id AND item.disposition='current_actionable'
+                 AND item.text IS DISTINCT FROM latest_text)
+           OR (NEW.answers->>'additional_information'<>''
+               AND NEW.answers->>'additional_information' IS DISTINCT FROM (
+                   SELECT answers->>'additional_information' FROM public.stewardship_submission
+                   WHERE id=NEW.prior_submission_id)
+               AND NOT EXISTS (SELECT 1 FROM public.stewardship_additional_information
+                   WHERE submission_id=NEW.id)) THEN
+            RAISE EXCEPTION 'Live response requires atomic follow-up derivation' USING ERRCODE='23514';
+        END IF;
     END IF;
     RETURN NULL;
 END;
