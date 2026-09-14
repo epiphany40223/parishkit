@@ -329,6 +329,12 @@ retains all failure/correction history and later-phase boundaries. Protected
 delivery, G2.06 and the Phase 4 release remain pending exact-head and complete
 merge-group CI plus verified main ancestry.
 
+Completion: [PR #30](../../guides/stewardship-gate-2-reviews.md#protected-delivery)
+merged as `6c8cd512e5121095961ffbeb3f80f4dfd844043c` after seven successful
+dual-source rounds, final-head CI and every merge-group job passed. The merge
+is verified on `origin/main`; the earlier pending delivery checkpoint above is
+superseded. M3.05/G2.06 are complete and Phase 4 is dependency-ready.
+
 1. Finish [FAM-03](parishioner-portal.md#fam-03-family-census-step); complete [FAM-04](parishioner-portal.md#fam-04-existing-and-proposed-member-steps), [FAM-05](parishioner-portal.md#fam-05-ministry-and-financial-stewardship-steps), [FAM-06](parishioner-portal.md#fam-06-additional-information-review-and-atomic-submit), and [FAM-07](parishioner-portal.md#fam-07-repeat-visits-and-source-change-merge).
 2. Exercise representative [FAM-08](parishioner-portal.md#fam-08-responsive-accessibility-privacy-and-browser-completion) cases continuously.
 3. Complete [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) follow-up derivation and required [RPT-02](reports.md#rpt-02-population-and-calculation-library) calculations.
@@ -337,6 +343,14 @@ merge-group CI plus verified main ancestry.
 ## Phase 4: Production scheduling and delivery
 
 Source scope: [Phase 4: Production scheduling and delivery](../../plans/stewardship/overall.md#phase-4-production-scheduling-delivery-and-notifications).
+
+Current increment: `pr/stewardship-delivery-journal` starts at the verified
+PR #30 merge. Begin DAT-07's durable outbox and Production-transition journal
+services with their state, ownership, scrubbing and concurrency tests. This is
+a coherent delivery-state foundation, not a PR per model. Its
+[scope and checkpoints](../../guides/stewardship-delivery-journal.md) preserve the
+later cleanup/scheduler/dispatch/UI owners and Gate 3 restrictions. No Phase 4
+task is yet claimed complete.
 
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).
