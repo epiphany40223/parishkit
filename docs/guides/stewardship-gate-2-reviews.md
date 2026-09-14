@@ -391,3 +391,39 @@ root after the real exclusion window drains, without rewriting clocks or fences.
 Correction-specific PostgreSQL/operational validation, focused dual-model review
 and replacement exact-head CI are in progress. This correction reopens the local
 checkpoint above; neither protected delivery nor Gate 2 exit is yet claimed.
+
+### Contention correction review
+
+Session `20260914-161453-aeb717` reviewed `51d612a` through
+`ad325726544d031e002e610d4b4052c376054457`, clean tree
+`b763dda4a31b28a33b9c10857bfd8196a198d3f9`. Both vendors reviewed all three
+changed files and the finalization/installer/task/source relationships. Codex
+completed in 183 seconds with no findings. Claude reported one Medium and three
+Low findings; there were no failed agents, degradations, mismatches or salvage.
+Finalized artifact SHA-256:
+`6493138b627fcd99d38cfba1b580f0600deaf7010e8e819a62fae9ce1d3c309a`.
+
+- **Medium / independent retry clocks:** accepted. The regression now waits for
+  both the retained HTTP exclusion and TaskRun backoff using database time. Slow
+  staging cannot make success depend on their accidental relative ordering.
+- **Low / preserved drainage assertion:** accepted. The regression observes the
+  actual deadline before the unchanged release function and requires that exact
+  deadline after settlement, rather than assuming it remains in the future on
+  every machine. Missing-claim contention is also explicitly required to propagate.
+- **Low / source-held event wording:** defer a distinct configuration-contention
+  diagnostic to OPS-08. The existing typed event records held source work with
+  the finalization task/correlation; no exception text or unreviewed event enters
+  durable logs. Retry behavior does not depend on the diagnostic name.
+- **Low / partially readable manifest:** reject the stated premise. Authority
+  selection uses a same-directory fsynced temporary file and atomic replacement;
+  readers cannot observe a half-written manifest. Genuine unreadable/corrupted
+  authority remains fail-closed rather than being reclassified as harmless
+  contention.
+
+Local validation exposed an overbroad new assertion that included the separate
+ready setup-catalog snapshot; it now checks only the finalization task. The other
+12 focused cases passed, and both real development/production-profile setup
+completion scenarios pass against the corrected image (258.22 seconds total).
+The superseded head's CI run `34891795985` was cancelled to avoid spending runner
+time on the known test-only error. Final regression validation and renewed
+correction review remain required before the replacement CI run and merge.

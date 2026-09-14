@@ -4,10 +4,11 @@
 
 from contextlib import ExitStack
 from dataclasses import replace
+from threading import Event
 from uuid import uuid4
 
 import pytest
-from django.db import connection
+from django.db import connection, transaction
 from django.test import Client
 
 from parishkit.config import ConfigError
@@ -20,6 +21,7 @@ from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.dispatch import claim_hint, execute_hint
 from parishkit.stewardship.jobs.lifetime import maintain_execution
 from parishkit.stewardship.jobs.models import TaskRun
+from parishkit.stewardship.jobs.ownership import database_now
 from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.scheduler import scheduler_session
 from parishkit.stewardship.source.models import SourceMutationLease
@@ -113,6 +115,18 @@ def test_real_finalization_producer_and_compiled_worker(
         mac=ring.mac,
         public=ring.public,
     )
+    drainage = []
+    if failure == "installer_busy":
+        from parishkit.stewardship.source import setup_final_execution as owner
+
+        release = owner.release_source
+
+        def observe_release(claim):
+            """Capture the real reserved deadline before the unmodified release."""
+            drainage.append(SourceMutationLease.objects.get().external_deadline)
+            return release(claim)
+
+        monkeypatch.setattr(owner, "release_source", observe_release)
     with ExitStack() as cleanup:
         if failure == "installer_busy":
             # An independent installer session really owns the advisory lock;
@@ -153,14 +167,28 @@ def test_real_finalization_producer_and_compiled_worker(
         assert rejected is not None
         assert rejected.correlation_id == execution.correlation_id
     if failure == "installer_busy":
-        assert SourceMutationLease.objects.get(singleton=True).owner_id is None
+        lease = SourceMutationLease.objects.get(singleton=True)
+        assert lease.owner_id is None
+        assert lease.external_deadline is not None
+        assert drainage == [lease.external_deadline]
         assert (
             SourceSnapshot.objects.filter(task_id=produced[0]).get().state == "rejected"
         )
-        assert not SourceSnapshot.objects.filter(state="ready").exists()
+        assert not SourceSnapshot.objects.filter(
+            task_id=produced[0], state="ready"
+        ).exists()
         # Release happened immediately, but the real HTTP safety window remains.
         # Once it drains, the same root must finish through normal worker intake.
         wait_for_source()
+        # Task backoff and HTTP drainage have independent start instants. Slow
+        # staging must not make this test depend on their accidental ordering.
+        with transaction.atomic():
+            remaining = (
+                TaskRun.objects.get(pk=produced[0]).not_before - database_now()
+            ).total_seconds()
+        assert remaining < 31
+        if remaining > 0:
+            Event().wait(remaining + 0.05)
         fake_provider(monkeypatch, pages())
         with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
             assert execute_hint(

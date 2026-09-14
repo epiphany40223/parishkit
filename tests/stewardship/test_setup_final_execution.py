@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from parishkit.stewardship.accounts.installation_lock import ConfigurationBusy
 from parishkit.stewardship.source import setup_final_execution as owner
 from parishkit.stewardship.source.setup_final_production import produce_finalization
 from parishkit.stewardship.storage import StorageInvariantError
@@ -41,9 +42,15 @@ def test_producer_requires_real_scheduler_guard():
         produce_finalization(object(), object())
 
 
-def test_unknown_failure_propagates_for_existing_lease_recovery():
+@pytest.mark.parametrize(
+    "error",
+    [
+        RuntimeError("synthetic unexpected failure"),
+        ConfigurationBusy("no source claim"),
+    ],
+)
+def test_unknown_failure_propagates_for_existing_lease_recovery(error):
     """Unexpected bugs are not silently classified as safely drained source errors."""
-    error = RuntimeError("synthetic unexpected failure")
     with pytest.raises(RuntimeError) as raised:
         owner._failed(object(), error, None, store=object())
     assert raised.value is error
