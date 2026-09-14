@@ -78,8 +78,8 @@ verified protected merge. The [Member-request increment](../../guides/stewardshi
 completes terminal/proposed-Member flow, independent date work, history-scoped
 revisits and SQL authority regressions. Three dual-model review/fix rounds and
 local acceptance pass with [recorded evidence](../../guides/stewardship-member-requests-reviews.md).
-Final-head CI and protected merge remain required before advancing. Ministry
-choices for proposed Members belong to FAM-05; Gate 2 remains open.
+PR #26 passed final-head CI and its protected merge is verified on `origin/main`.
+Ministry choices for proposed Members belong to FAM-05; Gate 2 remains open.
 
 ## FAM-05: Ministry and financial stewardship steps
 
@@ -92,7 +92,10 @@ Scope and dependencies: [FAM-05 work package](../../plans/stewardship/parishione
 - [ ] FAM-05.05 — Show financial periods and unavailable source data.
 - [ ] FAM-05.06 — Test Ministry, financial, and terminal-Member interactions.
 
-Evidence: Not started.
+Evidence: [Ministry increment](../../guides/stewardship-ministry-responses.md)
+is preparing .01/.02 and the Ministry portions of .06, including proposed
+Members, hidden request preservation, roster resolution and Ministry-only
+campaigns. Financial work remains a separate following increment.
 
 ## FAM-06: Additional information, review, and atomic submit
 

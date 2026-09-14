@@ -296,8 +296,11 @@ Branch `pr/stewardship-member-requests` starts from that exact tip. Its
 terminal semantics and proposed Members. FAM-04 implementation and local
 acceptance are complete, including three dual-model review/fix rounds with
 [recorded evidence](../../guides/stewardship-member-requests-reviews.md).
-Final-head CI and protected merge remain required before the next coherent
-FAM-05 Ministry increment. Gate 2 remains open.
+PR #26 passed final-head CI and merged through the protected queue as
+`047f0f4`, verified on `origin/main`. Branch `pr/stewardship-ministry-responses`
+starts there; its [increment checkpoints](../../guides/stewardship-ministry-responses.md)
+cover FAM-05 Ministry choices, roster resolution and non-census omission.
+Financial work follows separately. Gate 2 remains open.
 
 1. Finish [FAM-03](parishioner-portal.md#fam-03-family-census-step); complete [FAM-04](parishioner-portal.md#fam-04-existing-and-proposed-member-steps), [FAM-05](parishioner-portal.md#fam-05-ministry-and-financial-stewardship-steps), [FAM-06](parishioner-portal.md#fam-06-additional-information-review-and-atomic-submit), and [FAM-07](parishioner-portal.md#fam-07-repeat-visits-and-source-change-merge).
 2. Exercise representative [FAM-08](parishioner-portal.md#fam-08-responsive-accessibility-privacy-and-browser-completion) cases continuously.

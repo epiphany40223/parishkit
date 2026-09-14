@@ -8,7 +8,7 @@ triage, correction and protected merge authority. Pika owns the exact Claude
 and Codex roster. Local probe/review artifacts remain outside Git. This ledger
 authorizes no deployment, release, provider write or retained-database upgrade.
 Gate 2 remains open; the final section records FAM-04's local acceptance and
-the outstanding final-head CI/protected-merge boundary.
+the completed final-head CI/protected-merge evidence.
 
 ## Round 1: Complete terminal and proposed-Member increment
 
@@ -140,5 +140,15 @@ restriction and its focused regression rerun.
 Three completed dual-model review/fix rounds, no High/Critical finding in the
 final round, no unresolved accepted Medium findings and passing post-correction
 validation satisfy the documented local-review exit rule. The tested final-round
-correction does not itself require a fourth round. Final-head CI and protected
-merge remain required; neither is claimed by these local results.
+correction does not itself require a fourth round.
+
+## Delivery closure
+
+All implementation/review fixups were consolidated into one signed-off feature
+commit, separate from the preceding documentation/scope commit. Squashed head
+`a499edc4370039b3f3702819da853dd758900957` has exactly the same tree,
+`567cc421c065a72dafd15548081c452f9fab7408`, as corrected pre-squash head
+`71e6b706b4599f4ee15ae8fa413f886162f30ebf`. The local review-history reference is
+not a merge target. Final-head CI, normal protected merge and complete
+merge-group CI passed with links and counts in the
+[increment evidence](stewardship-member-requests.md#evidence).
