@@ -200,3 +200,45 @@ only browser code and tests, not production Python or SQL. The already-running
 full Python/PostgreSQL coverage pass therefore measures the unchanged Python
 implementation; the added PostgreSQL cases are separately validated above.
 Browser validation is repeated after the JavaScript correction.
+
+## Final validation and delivery
+
+Implementation `59e56dc` passes all 699 browser cases (233 per engine): Chromium
+134.07 seconds, WebKit 220.06 seconds and Firefox 457.33 seconds. The default
+suite passes 5,287 tests; its 3,227 opt-in skips are not integration evidence.
+The explicitly enabled PostgreSQL/browser suites above have no skips. Ruff
+lint/format, tracked Markdown and whitespace checks pass, and schema drift
+reports no changes. The full serial Python/PostgreSQL coverage result is
+recorded below; protected PR delivery remains required.
+
+The full serial run completed 2,473 passing PostgreSQL cases and one failed
+strict schema-fingerprint comparison in 3,293.55 seconds. That fixture still
+expected the pre-financial function inventory. The independent audit below
+verified the exact intentional delta before updating only its function count
+and digest. This was a test-expectation correction, not a production code or
+schema change. Scoped measured coverage is 93.86% of statements and 85.48% of
+branches; the failed full run is not represented as an all-passing result.
+The corrected schema/financial rerun passed all 75 cases in 86.20 seconds,
+including strict fingerprints, model contracts, negative schema probes, final
+transactions and independent financial guards. No production code changed in
+this follow-up. Together with the full-run evidence and five new closed-history
+cases, all locally observed failures are resolved. Exact-head CI must still
+pass the complete suites before protected merge; this focused rerun is not
+described as a second all-passing full serial run.
+
+### Fresh-install schema audit
+
+A new, separately named reference database was installed from exact starting
+main `c0ab9a1259c6a2c459b6568917e2da56278f061b` and independently matched that
+commit's checked-in strict fingerprint before comparison. No retained database
+was modified, deleted or upgraded. The candidate is another fresh installation.
+
+The exact delta adds `stewardship_response_financial_guard_v1` and
+`stewardship_response_retained_terminal_v1`, and modifies
+`stewardship_submission_guard_v1` and `stewardship_ministry_answers_guard_v1`.
+No functions were removed. All relation, column, constraint, index, trigger and
+policy definitions and their ownership/ACL fingerprints remain unchanged.
+The audited schema has 314 functions; its function fingerprint is
+`f43d5f2f01720cb20c07dbf48a527bdfc686863fb3f34af87e50b32ba731c4b5`.
+The independent audit passed, without regenerating expectations during tests
+or relaxing any comparison.

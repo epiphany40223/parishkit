@@ -273,6 +273,13 @@ for the minimal census schema. Tests include exact web/source-worker grants,
 two-session stale review and late-owner rollback. Remaining enabled-module
 schemas and the review gate keep this mixed-phase package open.
 
+The [financial-response increment](../../guides/stewardship-financial-responses.md)
+extends that owner to complete financial answers and annual pledge scalars,
+with Family/fund/period-scoped inputs, independent SQL module enforcement,
+test/live replacement, relevant-source refresh and late-failure rollback tests.
+Integrated Gate 2 acceptance and later publication/review consumers remain
+open; this evidence does not mark the entire package complete.
+
 ## DAT-07: Follow-up, content, templates, jobs, and audit
 
 Scope and dependencies: [DAT-07 work package](../../plans/stewardship/data.md#dat-07-follow-up-content-templates-jobs-and-audit).

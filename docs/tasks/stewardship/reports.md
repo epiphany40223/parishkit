@@ -29,7 +29,12 @@ Scope and dependencies: [RPT-02 work package](../../plans/stewardship/reports.md
 - [ ] RPT-02.03 — Represent missing values as unavailable.
 - [ ] RPT-02.04 — Test denominators, eligibility history, and timezone changes.
 
-Evidence: Not started.
+Partial evidence: the [financial-response increment](../../guides/stewardship-financial-responses.md)
+provides shared exact-cent money/aggregation primitives and typed unavailable
+values, with Family-scoped period/coverage checks and regression tests. These
+cover the financial prerequisite portions of .01/.03, not the full population,
+history, denominator, timezone, or report-service scope; all four tasks remain
+open for their later consumers.
 
 ## RPT-03: Participation graph and campaign statistics
 
