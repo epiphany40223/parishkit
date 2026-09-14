@@ -362,6 +362,10 @@ def test_all_concrete_mutable_records_have_enabled_guard(db):
             "stewardship_additional_information_guard",
             "stewardship_response_derived_guard_v1",
         ),
+        "stewardship_ministry_request": (
+            "stewardship_ministry_request_guard",
+            "stewardship_ministry_request_guard_v1",
+        ),
     }
     assert models
     with connection.cursor() as cursor:

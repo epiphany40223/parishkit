@@ -6,7 +6,7 @@ from parishkit.stewardship.campaigns.work_locks import require_work_order
 
 from .inputs import FieldInput
 from .merge import EffectiveValue, KnownValue, PriorChange, merge_value
-from .models import ProposedChange
+from .models import ProposedChange, Submission
 
 RESOLVED_EXECUTIONS = frozenset({"published", "resolved_upstream", "resolved_external"})
 
@@ -21,13 +21,39 @@ class EffectiveField:
     effective: EffectiveValue
 
 
+def census_submission(submission):
+    """Find the last complete census response within the admitted history.
+
+    Disabled modules intentionally have an empty Family aggregate. Skipping
+    those responses preserves census intent without resurrecting edits omitted
+    by a later *census* response. The complete schema requires home_address even
+    when its value is unknown, making key presence an immutable module witness.
+    """
+    require_work_order()
+    if submission is None or "home_address" in submission.answers["family"]:
+        return submission
+    return (
+        Submission.objects.filter(
+            family_id=submission.family_id,
+            campaign_id=submission.campaign_id,
+            mode=submission.mode,
+            rehearsal_epoch_id=submission.rehearsal_epoch_id,
+            family_version__lte=submission.family_version,
+            answers__family__has_key="home_address",
+        )
+        .order_by("-family_version")
+        .first()
+    )
+
+
 def proposal_index(submission):
     """Include preserved terminal work within the admitted response namespace.
 
     Source scope changes can leave a terminal/date request on an older response.
     Select the newest record for each such key, including terminal outcomes so
     an older actionable predecessor can never reappear. Ordinary census and
-    proposed-Member values still belong only to the exact effective response.
+    proposed-Member values belong to the last census-bearing response; an
+    intervening Ministry-only response cannot withdraw unpresented census work.
     """
     require_work_order()
     if submission is None:
@@ -49,7 +75,9 @@ def proposal_index(submission):
     indexed.update(
         {
             (row.entity_kind, row.entity_key, row.field): row
-            for row in ProposedChange.objects.filter(submission=submission)
+            for row in ProposedChange.objects.filter(
+                submission=census_submission(submission)
+            )
         }
     )
     return indexed

@@ -274,3 +274,53 @@ def test_oversized_source_phone_has_controlled_unavailability(inputs, length):
     inputs["contacts"]["10"]["phones"]["home"] = "x" * length
     with pytest.raises(FormInputsUnavailable):
         census_inputs(**inputs)
+
+
+def test_ministry_only_omits_hidden_census_validation_and_dependencies(inputs):
+    """Only displayed identity/roster, not hidden census data, affects this form."""
+    from parishkit.stewardship.responses.ministry import MinistryInputs, MinistryOption
+
+    inputs["configuration"].update(modules=["ministry"], ministry_duids=[4])
+    inputs["ministries"] = MinistryInputs((MinistryOption(4, "Choir"),), ((10, (4,)),))
+    before = census_inputs(**inputs)
+    assert before.modules == ("ministry",)
+    assert {field.field for field in before.fields if field.entity == "family"} == {
+        "firstName",
+        "lastName",
+        "mailingName",
+    }
+    assert {
+        field.field for field in before.fields if field.entity == "member_context"
+    } == {"relationship", "first_name", "last_name"}
+    assert not any(field.entity == "member" for field in before.fields)
+    inputs["members"][0].update(birthdate="not a date", sex={"malformed": True})
+    inputs["contacts"]["10"] = {"private": "unrelated contacts"}
+    inputs["family"]["envelopeNumber"] = "new envelope"
+    assert census_inputs(**inputs).projection_digest == before.projection_digest
+
+
+def test_ministry_projection_covers_catalog_and_roster_changes(inputs):
+    """Offered options and current participation both require renewed review."""
+    from parishkit.stewardship.responses.ministry import MinistryInputs, MinistryOption
+
+    inputs["configuration"].update(
+        modules=["census", "ministry"], ministry_duids=[4, 9]
+    )
+    options = (MinistryOption(4, "Choir"), MinistryOption(9, "Food pantry"))
+    inputs["ministries"] = MinistryInputs(options, ((10, (4,)),))
+    before = digest(inputs)
+    inputs["ministries"] = MinistryInputs(options, ((10, (4, 9)),))
+    assert digest(inputs) != before
+    inputs["ministries"] = MinistryInputs(options[:1], ((10, (4,)),))
+    assert digest(inputs) != before
+
+
+def test_enabled_ministry_requires_complete_scoped_inputs(inputs):
+    """Missing or foreign roster identities cannot issue a partial baseline."""
+    from parishkit.stewardship.responses.ministry import MinistryInputs
+
+    inputs["configuration"].update(modules=["ministry"], ministry_duids=[])
+    for value in (None, MinistryInputs((), ((999, ()),))):
+        inputs["ministries"] = value
+        with pytest.raises(FormInputsUnavailable):
+            census_inputs(**inputs)

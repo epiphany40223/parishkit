@@ -19,11 +19,18 @@ from .census import (
     us_regions,
 )
 from .comparison import ValueKind, canonical_value
-from .effective import RESOLVED_EXECUTIONS, effective_fields, proposal_index
+from .effective import (
+    RESOLVED_EXECUTIONS,
+    census_submission,
+    effective_field,
+    effective_fields,
+    proposal_index,
+)
 from .inputs import ADDITIONAL_MAX_LENGTH, MEMBER_FIELDS
 from .member_census import browser_value
 from .member_requests import MAX_PROPOSED_MEMBERS
 from .merge import KnownValue
+from .ministry_requests import ministry_presentation
 from .models import Submission
 
 
@@ -41,8 +48,14 @@ def form_presentation(form):
         if baseline.prior_submission_id
         else None
     )
-    values = effective_fields(form.inputs, prior)
-    proposals = proposal_index(prior)
+    census = "census" in form.inputs.modules
+    census_prior = census_submission(prior) if census else None
+    values = (
+        effective_fields(form.inputs, prior)
+        if census
+        else tuple(effective_field(field) for field in form.inputs.fields)
+    )
+    proposals = proposal_index(prior) if census else {}
     family = {
         field.field: field.effective.value.value
         for field in values
@@ -57,11 +70,16 @@ def form_presentation(form):
     relationships = {
         field.identity: field.effective.value.value
         for field in values
+        if field.entity == "member_context" and field.field == "relationship"
+    }
+    context = {
+        (field.identity, field.field): field.effective.value.value
+        for field in values
         if field.entity == "member_context"
     }
     for identifier in form.inputs.member_duids:
         fields = []
-        for definition in MEMBER_FIELDS:
+        for definition in MEMBER_FIELDS if census else ():
             effective = indexed[identifier, definition.name]
             fields.append(
                 {
@@ -76,9 +94,9 @@ def form_presentation(form):
                         effective.value,
                         previous_unknown=bool(
                             definition.name == "birth_date"
-                            and prior
-                            and str(identifier) in prior.answers["members"]
-                            and prior.answers["members"][str(identifier)].get(
+                            and census_prior
+                            and str(identifier) in census_prior.answers["members"]
+                            and census_prior.answers["members"][str(identifier)].get(
                                 "birth_date", ""
                             )
                             is None
@@ -94,22 +112,38 @@ def form_presentation(form):
                 "id": str(identifier),
                 "fields": fields,
                 "relationship": relationships.get(identifier),
-                "request": _terminal_presentation(identifier, indexed, proposals),
+                "display_name": " ".join(
+                    (indexed[identifier, name].value.value or "")
+                    if census
+                    else (context.get((identifier, name)) or "")
+                    for name in ("first_name", "last_name")
+                ).strip(),
+                "request": _terminal_presentation(identifier, indexed, proposals)
+                if census
+                else None,
             }
         )
     campaign = CampaignConfiguration.objects.get(
         configuration_id=baseline.configuration_id,
         record_id=baseline.family.campaign_id,
     )
+    proposed = _proposed_presentation(prior) if census else []
     return {
         "baseline": str(baseline.pk),
         "testing": baseline.mode == "test",
         "today": _now().astimezone(ZoneInfo(campaign.timezone)).date().isoformat(),
         "family": family,
-        "household": _household_presentation(values, prior),
+        "modules": list(form.inputs.modules),
+        "household": _household_presentation(values, census_prior) if census else None,
         "members": members,
-        "proposed_members": _proposed_presentation(prior),
-        "max_proposed_members": MAX_PROPOSED_MEMBERS,
+        "proposed_members": proposed,
+        "ministries": ministry_presentation(
+            form.inputs.ministries,
+            prior,
+            terminal_members=frozenset(row["id"] for row in members if row["request"]),
+            proposed_members=frozenset(row["id"] for row in proposed),
+        ),
+        "max_proposed_members": MAX_PROPOSED_MEMBERS if census else 0,
         "new_member_fields": [
             {
                 "name": field.name,
@@ -124,6 +158,7 @@ def form_presentation(form):
                 "conflict": False,
             }
             for field in MEMBER_FIELDS
+            if census
         ],
         "additional_enabled": campaign.values["additional_information"],
         "additional_max_length": ADDITIONAL_MAX_LENGTH,
@@ -216,7 +251,7 @@ def _household_presentation(values, prior):
     # revisit. Only retain that flag when the effective addresses still agree.
     same = bool(
         prior
-        and prior.answers["family"]["mailing_same_as_home"]
+        and prior.answers["family"].get("mailing_same_as_home", False)
         and home is not None
         and canonical_value(ValueKind.ADDRESS, home)
         == canonical_value(ValueKind.ADDRESS, mailing)
@@ -250,19 +285,12 @@ def _page_content(baseline, campaign, family, members):
         campaign_year=campaign.values.get("year_label")
         or campaign.values["start_date"][:4],
         family_name=family.get("mailingName") or family.get("lastName") or "",
-        family_member_names=", ".join(
-            " ".join(
-                field["value"]
-                for field in member["fields"]
-                if field["name"] in {"first_name", "last_name"}
-            )
-            for member in members
-        ),
+        family_member_names=", ".join(member["display_name"] for member in members),
         generic_family_url="/",
         family_url="/family/",
         pronoun="I" if len(members) == 1 else "We",
     )
-    slots = {"welcome", "census", "review", "thank_you"}
+    slots = {"welcome", "review", "thank_you"} | set(campaign.values["modules"])
     if campaign.values["additional_information"]:
         slots.add("additional")
     return {

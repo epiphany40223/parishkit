@@ -47,7 +47,7 @@ Scope and dependencies: [FAM-03 work package](../../plans/stewardship/parishione
 - [x] FAM-03.02 — Apply shared census validation and normalization.
 - [x] FAM-03.03 — Implement mailing-same-as-home with preservation.
 - [x] FAM-03.04 — Build changed-field and review summaries.
-- [ ] FAM-03.05 — Test invalid addresses and disabled census.
+- [x] FAM-03.05 — Test invalid addresses and disabled census.
 
 Evidence: [Family census increment](../../guides/stewardship-family-census.md)
 implements identity/availability, typed complete household answers, guarded
@@ -55,11 +55,11 @@ proposals and mobile review/revisit. Its [three-round review ledger](../../guide
 records eight accepted/resolved Medium findings, passing 182 database tests,
 4,656 default tests and 93 final Family browser cases. PR #24's final-head and
 merge-group CI passed; its merged tip is recorded in the increment guide.
-FAM-03.05's malformed/country-aware cases pass; its integrated
-census-disabled omission case completes alongside FAM-05.06 when non-census
-forms are admitted. The current census-only version rejects unsupported module
-sets instead of exposing an incomplete response. FAM-04 is the next ready
-implementation increment after this PR merges; Gate 2 remains open.
+FAM-03.05's malformed/country-aware cases pass; the
+[Ministry increment](../../guides/stewardship-ministry-responses.md) now tests
+census-disabled omission through the restricted HTTP/SQL and mobile browser
+owners. Financial module combinations remain fail-closed pending their owner;
+Gate 2 remains open.
 
 ## FAM-04: Existing and proposed Member steps
 
@@ -78,21 +78,27 @@ verified protected merge. The [Member-request increment](../../guides/stewardshi
 completes terminal/proposed-Member flow, independent date work, history-scoped
 revisits and SQL authority regressions. Three dual-model review/fix rounds and
 local acceptance pass with [recorded evidence](../../guides/stewardship-member-requests-reviews.md).
-Final-head CI and protected merge remain required before advancing. Ministry
-choices for proposed Members belong to FAM-05; Gate 2 remains open.
+PR #26 passed final-head CI and its protected merge is verified on `origin/main`.
+Ministry choices for proposed Members belong to FAM-05; Gate 2 remains open.
 
 ## FAM-05: Ministry and financial stewardship steps
 
 Scope and dependencies: [FAM-05 work package](../../plans/stewardship/parishioner-portal.md#fam-05-ministry-and-financial-stewardship-steps).
 
-- [ ] FAM-05.01 — Build current, join, and leave Ministry controls.
-- [ ] FAM-05.02 — Apply campaign Ministry selection and Admin-managed activity boundaries.
+- [x] FAM-05.01 — Build current, join, and leave Ministry controls.
+- [x] FAM-05.02 — Apply campaign Ministry selection and Admin-managed activity boundaries.
 - [ ] FAM-05.03 — Build financial aggregates, pledge, and installment calculation.
 - [ ] FAM-05.04 — Build share options and zero/one/many Member wording.
 - [ ] FAM-05.05 — Show financial periods and unavailable source data.
 - [ ] FAM-05.06 — Test Ministry, financial, and terminal-Member interactions.
 
-Evidence: Not started.
+Evidence: [Ministry increment](../../guides/stewardship-ministry-responses.md)
+implements .01/.02 and tests the Ministry portions of .06, including proposed
+Members, hidden request preservation, roster resolution and Ministry-only
+campaigns. Local validation and the
+[three-round review](../../guides/stewardship-ministry-responses-reviews.md)
+are complete; final-head CI and protected merge remain pending. Financial work remains a separate
+following increment, so .06 stays open.
 
 ## FAM-06: Additional information, review, and atomic submit
 

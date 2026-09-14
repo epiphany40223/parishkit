@@ -286,7 +286,10 @@ Scope and dependencies: [DAT-07 work package](../../plans/stewardship/data.md#da
 Evidence: The [Phase 3A record](../../guides/stewardship-phase-3a.md) implements
 live additional-information replacement/withdrawal, immutable confirmation
 intent stubs, response audit, and bounded invalidated-Testing detail cleanup.
-Staff note versions, Ministry workflows, real delivery/outbox and later-phase
+The [Ministry increment](../../guides/stewardship-ministry-responses.md) adds
+response-derived requests, visible-choice supersession/withdrawal, hidden
+history, fenced roster resolution and exact-role SQL constraints. Staff
+assignment/contact editing, Staff note versions, real delivery/outbox and later-phase
 transition/export/publication owners remain incomplete; the package stays open.
 
 ## DAT-08: Merge and source reconciliation services
@@ -304,7 +307,9 @@ Evidence: In progress in the
 The pure three-way merge has 32 passing branch/provenance/typed-comparison
 tests. The census slice also integrates source promotion, caught-up/conflicting
 proposals, source pins and effective revisit under actual restricted roles.
-Ministry/financial and publication workflow integrations remain incomplete;
+The [Ministry increment](../../guides/stewardship-ministry-responses.md) implements
+current-roster catch-up and retained hidden requests without provider writes.
+Financial and publication workflow integrations remain incomplete;
 the package stays open pending those phases and integrated review.
 
 ## DAT-09: Publication, retention, and purge schema behavior

@@ -7671,7 +7671,9 @@ AS $$
         WHERE response.id=stewardship_response_pin_required_v1.response_id
           AND (stewardship_response_pin_required_v1.source_id IN (response.reviewed_source_id,response.validation_source_id)
             OR EXISTS (SELECT 1 FROM public.stewardship_proposed_change
-                WHERE submission_id=response.id AND current_source_id=stewardship_response_pin_required_v1.source_id))
+                WHERE submission_id=response.id AND current_source_id=stewardship_response_pin_required_v1.source_id)
+            OR EXISTS (SELECT 1 FROM public.stewardship_ministry_request
+                WHERE submission_id=response.id AND resolution_source_id=stewardship_response_pin_required_v1.source_id))
     )
 $$;
 
@@ -7947,12 +7949,16 @@ BEGIN
         OR NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
             AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
             AND mode='ExclusiveLock' AND granted)
-        OR NOT EXISTS (
+        OR NOT (EXISTS (
             SELECT 1 FROM public.stewardship_proposed_change change
             JOIN public.stewardship_submission response ON response.id=change.submission_id
             WHERE response.id=NEW.parent_id
               AND change.execution IN ('pending','conflict','queued','failed')
-        )
+        ) OR EXISTS (
+            SELECT 1 FROM public.stewardship_ministry_request request
+            WHERE request.submission_id=NEW.parent_id AND request.entity_kind='member'
+              AND request.state IN ('new','assigned','in_progress')
+        ))
         OR NOT public.stewardship_response_source_owner_v1(NEW.snapshot_id)
     ) THEN
         RAISE EXCEPTION 'Worker source protection requires current response reconciliation'

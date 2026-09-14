@@ -43,9 +43,19 @@ The broader 197-case response database suite passed before that restriction;
 browser code. Ruff, model-state drift, Markdown and independent fresh-schema
 checks pass. The [review ledger](stewardship-member-requests-reviews.md) records
 exact reviewed endpoints, findings, corrections and verification. FAM-04's
-implementation acceptance is complete; final-head CI and protected PR merge
-remain required before the next increment starts. This is not Gate 2 completion.
+implementation acceptance is complete. This is not Gate 2 completion.
 PR #25's closure is recorded in the [ordinary Member guide](stewardship-member-census.md).
+
+PR [#26](https://github.com/epiphany40223/parishkit/pull/26) passed
+[final-head CI](https://github.com/epiphany40223/parishkit/actions/runs/34801029412)
+at `a499edc4370039b3f3702819da853dd758900957`: 4,998 default tests,
+2,377 PostgreSQL tests and 621 browser cases, with 94.02% statement and
+85.53% branch coverage. The two logical signed-off commits preserve the tested
+tree `567cc421c065a72dafd15548081c452f9fab7408` exactly. The protected queue
+merged it on September 14, 2026 as `047f0f458c160fd4f79edc6a57b85f1f32826c1f`,
+verified on `origin/main`. Complete
+[merge-group CI](https://github.com/epiphany40223/parishkit/actions/runs/34802122433)
+also passed. The [Ministry increment](stewardship-ministry-responses.md) follows.
 
 ## Implementation contracts
 

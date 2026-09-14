@@ -9,6 +9,7 @@ from parishkit.stewardship.campaigns.credential_models import (
 from parishkit.stewardship.campaigns.work_locks import require_work_order
 from parishkit.stewardship.source.models import SourceSnapshotPin
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.workflows.models import MinistryRequest
 
 from .baselines import end_baseline
 from .models import (
@@ -39,7 +40,7 @@ def cleanup_test_responses(epoch_id, *, batch_size):
         raise StorageInvariantError("An active rehearsal cannot be cleaned up.")
     scope = {"submission__mode": "test", "submission__rehearsal_epoch_id": epoch.pk}
     count = 0
-    for model in (ProposedChange, SubmissionReceiptOccurrence):
+    for model in (ProposedChange, MinistryRequest, SubmissionReceiptOccurrence):
         records = list(
             model.objects.filter(**scope).order_by(
                 "submission__campaign_sequence", "pk"
@@ -68,6 +69,7 @@ def cleanup_test_responses(epoch_id, *, batch_size):
     count += SourceSnapshotPin.objects.filter(pk__in=pins).delete()[0]
     eligible = responses.filter(
         ~Exists(ProposedChange.objects.filter(submission_id=OuterRef("pk"))),
+        ~Exists(MinistryRequest.objects.filter(submission_id=OuterRef("pk"))),
         ~Exists(
             SubmissionReceiptOccurrence.objects.filter(submission_id=OuterRef("pk"))
         ),

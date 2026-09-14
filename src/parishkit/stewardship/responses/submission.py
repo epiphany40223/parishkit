@@ -26,6 +26,7 @@ from .baselines import (
 )
 from .followup import derive_additional_information
 from .inputs import FORM_SCHEMA
+from .ministry_requests import derive_ministry_requests
 from .models import Submission, SubmissionReceiptOccurrence
 from .proposals import derive_proposals
 from .validation import validate_baseline
@@ -151,6 +152,7 @@ def submit_family(request, service, *, baseline_id, payload):
                 admit=_pin_admission,
             )
         derive_proposals(submission, validated)
+        derive_ministry_requests(submission, validated)
         derive_additional_information(submission, prior)
         receipt = SubmissionReceiptOccurrence.objects.create(
             submission=submission,

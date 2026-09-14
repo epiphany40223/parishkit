@@ -47,6 +47,7 @@ def form_and_answers(harness):
         "family": household(),
         "members": members,
         "proposed_members": {},
+        "ministries": {},
         "additional_information": "",
         "testing_acknowledged": True,
     }

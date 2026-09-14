@@ -90,7 +90,10 @@ def validate_baseline(identifier, *, family, session, campaign):
         configuration_id=baseline.configuration_id, record_id=campaign.pk
     )
     reviewed = load_census_inputs(
-        retained.pk, family.family_duid, configuration=definition.values
+        retained.pk,
+        family.family_duid,
+        configuration=definition.values,
+        document=definition.configuration.canonical_document,
     )
     if (
         reviewed.projection_digest != baseline.projection_digest
@@ -114,6 +117,7 @@ def validate_baseline(identifier, *, family, session, campaign):
         current_snapshot.pk,
         family.family_duid,
         configuration=campaign.active_configuration.values,
+        document=campaign.active_configuration.configuration.canonical_document,
     )
     prior = effective_submission(family, session)
     return BaselineValidation(

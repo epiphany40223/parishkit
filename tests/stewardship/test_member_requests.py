@@ -138,6 +138,7 @@ def validate(members, proposed):
             "family": household(),
             "members": members,
             "proposed_members": proposed,
+            "ministries": {},
             "additional_information": "",
             "testing_acknowledged": False,
         },

@@ -42,6 +42,8 @@ def form_payload(*, testing=False):
     return {
         "baseline": str(uuid4()),
         "testing": testing,
+        "modules": ["census"],
+        "ministries": None,
         "today": "2026-09-13",
         "family": {"mailingName": "Sample Family", "envelopeNumber": "123"},
         "household": {

@@ -4147,7 +4147,9 @@ BEGIN
           AND (
             OLD.snapshot_id IN (response.reviewed_source_id,response.validation_source_id)
             OR EXISTS (SELECT 1 FROM public.stewardship_proposed_change
-                       WHERE submission_id=response.id AND current_source_id=OLD.snapshot_id))
+                       WHERE submission_id=response.id AND current_source_id=OLD.snapshot_id)
+            OR EXISTS (SELECT 1 FROM public.stewardship_ministry_request
+                       WHERE submission_id=response.id AND resolution_source_id=OLD.snapshot_id))
     ) AND NOT EXISTS (
         SELECT 1 FROM public.stewardship_source_pin
         WHERE parent_kind='submission' AND parent_id=OLD.parent_id
@@ -4232,11 +4234,12 @@ BEGIN
         OR NEW.prior_submission_id IS DISTINCT FROM baseline.prior_submission_id
         OR NEW.reviewed_source_id IS DISTINCT FROM baseline.source_id
         OR NEW.form_schema IS DISTINCT FROM baseline.form_schema
-        OR NEW.form_schema <> 'family-census-household-members-v1'
+        OR NEW.form_schema <> 'family-census-ministry-v1'
         OR NEW.configuration_id IS DISTINCT FROM runtime_row.active_configuration_id
         OR runtime_row.restore_review_required OR session_row.mode <> runtime_row.mode
         OR NEW.campaign_id IS DISTINCT FROM runtime_row.current_campaign_id
         OR config_row.id IS NULL OR campaign_row.id IS NULL
+        OR NOT (config_row.values->'modules' <@ '["census","ministry"]'::jsonb)
         OR NEW.submitted_on IS DISTINCT FROM (NEW.submitted_at AT TIME ZONE config_row.timezone)::date
         OR NEW.submitted_at < config_row.starts_at OR NEW.submitted_at >= config_row.ends_at
         OR NEW.annual_pledge IS NOT NULL
@@ -4268,8 +4271,8 @@ BEGIN
         OR NEW.family_version <> coalesce(previous_version,0)+1
         OR NEW.campaign_sequence <> last_sequence+1
         OR jsonb_typeof(NEW.answers) <> 'object'
-        OR NOT (NEW.answers ?& ARRAY['schema','family','members','proposed_members','additional_information'])
-        OR NEW.answers - ARRAY['schema','family','members','proposed_members','additional_information'] <> '{}'::jsonb
+        OR NOT (NEW.answers ?& ARRAY['schema','family','members','proposed_members','ministries','additional_information'])
+        OR NEW.answers - ARRAY['schema','family','members','proposed_members','ministries','additional_information'] <> '{}'::jsonb
         OR NEW.answers->>'schema' IS DISTINCT FROM NEW.form_schema
         OR jsonb_typeof(NEW.answers->'family') <> 'object'
         OR jsonb_typeof(NEW.answers->'members') <> 'object'
@@ -4279,6 +4282,7 @@ BEGIN
     THEN
         RAISE EXCEPTION 'Submission aggregate or sequence is invalid' USING ERRCODE='23514';
     END IF;
+    IF config_row.values->'modules' ? 'census' THEN
     IF NOT ((NEW.answers->'family') ?& ARRAY['home_address','mailing_address','email_opt_out','mailing_same_as_home'])
        OR (NEW.answers->'family')-ARRAY['home_address','mailing_address','email_opt_out','mailing_same_as_home'] <> '{}'::jsonb
        OR jsonb_typeof(NEW.answers#>'{family,mailing_same_as_home}') IS DISTINCT FROM 'boolean'
@@ -4288,6 +4292,9 @@ BEGIN
     PERFORM public.stewardship_response_address_guard_v1(NEW.answers#>'{family,home_address}');
     PERFORM public.stewardship_response_address_guard_v1(NEW.answers#>'{family,mailing_address}');
     PERFORM public.stewardship_response_comparison_v1('email_opt_out',NEW.answers#>'{family,email_opt_out}');
+    ELSIF NEW.answers->'family' <> '{}'::jsonb OR NEW.answers->'proposed_members' <> '{}'::jsonb THEN
+        RAISE EXCEPTION 'Disabled census must not contain editable answers' USING ERRCODE='23514';
+    END IF;
     -- A response is a complete active household, not a patch or a caller-chosen
     -- list. These checks also protect direct exact-role writes outside Python.
     IF (SELECT coalesce(array_agg(key ORDER BY key),'{}'::text[]) FROM jsonb_object_keys(NEW.answers->'members') key)
@@ -4307,6 +4314,12 @@ BEGIN
     FOR member_key,member_answer,member_proposed IN
         SELECT key,value,false FROM jsonb_each(NEW.answers->'members')
         UNION ALL SELECT key,value,true FROM jsonb_each(NEW.answers->'proposed_members') LOOP
+        IF NOT (config_row.values->'modules' ? 'census') THEN
+            IF member_answer <> '{}'::jsonb THEN
+                RAISE EXCEPTION 'Disabled Member census must be empty' USING ERRCODE='23514';
+            END IF;
+            CONTINUE;
+        END IF;
         IF member_proposed AND (member_key !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
            OR member_key='00000000-0000-0000-0000-000000000000') THEN
             RAISE EXCEPTION 'Proposed Member requires canonical local identity' USING ERRCODE='23514';
@@ -4386,6 +4399,7 @@ BEGIN
             END IF;
         END LOOP;
     END LOOP;
+    PERFORM public.stewardship_ministry_answers_guard_v1(NEW,config_row);
     IF (NEW.answers#>>'{family,mailing_same_as_home}')::boolean
        AND (NEW.answers#>'{family,home_address}'='null'::jsonb
             OR public.stewardship_response_comparison_v1('home_address',NEW.answers#>'{family,home_address}')
@@ -4439,6 +4453,22 @@ $$;
 CREATE CONSTRAINT TRIGGER stewardship_submission_effects
     AFTER INSERT ON public.stewardship_submission DEFERRABLE INITIALLY DEFERRED
     FOR EACH ROW EXECUTE FUNCTION public.stewardship_submission_effects_v1();
+
+-- An immutable complete Family aggregate witnesses census participation. A
+-- Ministry-only response must not sever the previous census overlay, whereas
+-- a later census response intentionally replaces it even when it has no edits.
+CREATE FUNCTION public.stewardship_response_census_anchor_v1(prior_id uuid) RETURNS uuid
+    LANGUAGE sql STABLE SET search_path TO pg_catalog, public, pg_temp
+AS $$
+    SELECT history.id FROM public.stewardship_submission history
+    JOIN public.stewardship_submission prior ON prior.id=prior_id
+    WHERE history.family_id=prior.family_id AND history.campaign_id=prior.campaign_id
+      AND history.mode=prior.mode
+      AND history.rehearsal_epoch_id IS NOT DISTINCT FROM prior.rehearsal_epoch_id
+      AND history.family_version<=prior.family_version
+      AND history.answers->'family' ? 'home_address'
+    ORDER BY history.family_version DESC LIMIT 1;
+$$;
 
 CREATE FUNCTION public.stewardship_response_derived_guard_v1() RETURNS trigger
     LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp
@@ -4533,7 +4563,7 @@ BEGIN
               AND earlier.mode=response.mode
               AND earlier.rehearsal_epoch_id IS NOT DISTINCT FROM response.rehearsal_epoch_id
               AND earlier.family_version<=prior.family_version
-              AND (earlier.id=prior.id OR (NEW.entity_kind='member'
+              AND (earlier.id=public.stewardship_response_census_anchor_v1(prior.id) OR (NEW.entity_kind='member'
                    AND NEW.field IN ('moved_household','deceased_status','death_date')))
               AND ROW(candidate.entity_kind,candidate.entity_key,candidate.field)=ROW(NEW.entity_kind,NEW.entity_key,NEW.field)
             ORDER BY earlier.family_version DESC LIMIT 1;
@@ -4597,7 +4627,7 @@ BEGIN
                          AND later.mode=earlier.mode
                          AND later.rehearsal_epoch_id IS NOT DISTINCT FROM earlier.rehearsal_epoch_id
                          AND later.family_version>earlier.family_version
-                         AND (later.prior_submission_id=earlier.id OR (OLD.entity_kind='member'
+                         AND (public.stewardship_response_census_anchor_v1(later.prior_submission_id)=earlier.id OR (OLD.entity_kind='member'
                               AND OLD.field IN ('moved_household','deceased_status','death_date')))
                          AND OLD.id=(
                              SELECT candidate.id FROM public.stewardship_proposed_change candidate
@@ -4607,7 +4637,7 @@ BEGIN
                                AND history.mode=later.mode
                                AND history.rehearsal_epoch_id IS NOT DISTINCT FROM later.rehearsal_epoch_id
                                AND history.family_version<=prior.family_version
-                               AND (history.id=prior.id OR (OLD.entity_kind='member'
+                               AND (history.id=public.stewardship_response_census_anchor_v1(prior.id) OR (OLD.entity_kind='member'
                                     AND OLD.field IN ('moved_household','deceased_status','death_date')))
                                AND ROW(candidate.entity_kind,candidate.entity_key,candidate.field)=
                                    ROW(OLD.entity_kind,OLD.entity_key,OLD.field)
@@ -4754,3 +4784,350 @@ CREATE CONSTRAINT TRIGGER stewardship_proposal_successor
 CREATE CONSTRAINT TRIGGER stewardship_followup_successor
     AFTER INSERT OR UPDATE ON public.stewardship_additional_information DEFERRABLE INITIALLY DEFERRED
     FOR EACH ROW EXECUTE FUNCTION public.stewardship_response_successor_v1();
+
+ALTER TABLE "stewardship_ministry_request" ADD CONSTRAINT "stewardship_ministry_submission_id_fb59a955_fk_stewardsh" FOREIGN KEY ("submission_id") REFERENCES "stewardship_submission" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_ministry_request" ADD CONSTRAINT "stewardship_ministry_resolution_source_id_0593e49f_fk_stewardsh" FOREIGN KEY ("resolution_source_id") REFERENCES "stewardship_source_snapshot" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_ministry_request" ADD CONSTRAINT "stewardship_ministry_superseded_by_id_a61bbc0c_fk_stewardsh" FOREIGN KEY ("superseded_by_id") REFERENCES "stewardship_ministry_request" ("id") DEFERRABLE INITIALLY DEFERRED;
+CREATE INDEX "stewardship_ministry_request_correlation_id_a83340c1" ON "stewardship_ministry_request" ("correlation_id");
+CREATE INDEX "stewardship_ministry_request_submission_id_fb59a955" ON "stewardship_ministry_request" ("submission_id");
+CREATE INDEX "stewardship_ministry_request_resolution_source_id_0593e49f" ON "stewardship_ministry_request" ("resolution_source_id");
+CREATE INDEX "stewardship_ministry_request_superseded_by_id_a61bbc0c" ON "stewardship_ministry_request" ("superseded_by_id");
+CREATE INDEX "ministry_request_queue" ON "stewardship_ministry_request" ("ministry_duid", "state");
+
+-- The same snapshot/catalog/activity/selection boundary used by form issuance.
+CREATE FUNCTION public.stewardship_response_ministry_visible_v1(
+    source_id uuid, configuration_id uuid, campaign_id uuid, ministry_id integer)
+    RETURNS boolean LANGUAGE sql STABLE
+    SET search_path TO pg_catalog, public, pg_temp
+AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.stewardship_snapshot_ministry membership
+        JOIN public.stewardship_source_ministry ministry ON ministry.id=membership.payload_id
+        JOIN public.stewardship_campaign_configuration campaign
+            ON campaign.configuration_id=stewardship_response_ministry_visible_v1.configuration_id
+           AND campaign.record_id=stewardship_response_ministry_visible_v1.campaign_id
+        WHERE membership.snapshot_id=source_id AND membership.source_key=ministry_id::text
+          AND ministry.canonical::jsonb->'catalog_present'='true'::jsonb
+          AND campaign.values->'modules' ? 'ministry'
+          AND campaign.values->'ministry_duids' @> to_jsonb(ministry_id)
+          AND NOT EXISTS (SELECT 1 FROM public.stewardship_ministry_activity activity
+              WHERE activity.configuration_id=campaign.configuration_id
+                AND activity.organization_id=ministry.organization_id
+                AND activity.ministry_duid=ministry_id AND NOT activity.active)
+    )
+$$;
+
+CREATE FUNCTION public.stewardship_response_ministry_current_v1(
+    source_id uuid, family_id uuid, member_key text, ministry_id integer)
+    RETURNS boolean LANGUAGE sql STABLE
+    SET search_path TO pg_catalog, public, pg_temp
+AS $$
+    -- NULL is unavailable, not a false roster state. Neither a foreign Member
+    -- nor an absent catalog record can prove that somebody left a Ministry.
+    SELECT CASE WHEN EXISTS (
+        SELECT 1 FROM public.stewardship_snapshot_member membership
+        JOIN public.stewardship_source_member member ON member.id=membership.payload_id
+        JOIN public.stewardship_family_campaign family ON family.family_duid::text=member.family_key
+        WHERE membership.snapshot_id=source_id
+          AND membership.source_key=stewardship_response_ministry_current_v1.member_key
+          AND family.id=stewardship_response_ministry_current_v1.family_id
+          AND member.canonical::jsonb->'active'='true'::jsonb
+          AND member.canonical::jsonb->'deceased'='false'::jsonb
+    ) AND EXISTS (
+        SELECT 1 FROM public.stewardship_snapshot_ministry membership
+        JOIN public.stewardship_source_ministry ministry ON ministry.id=membership.payload_id
+        WHERE membership.snapshot_id=source_id AND membership.source_key=ministry_id::text
+          AND ministry.canonical::jsonb->'catalog_present'='true'::jsonb
+    ) THEN EXISTS (
+        SELECT 1 FROM public.stewardship_snapshot_roster membership
+        JOIN public.stewardship_source_roster roster ON roster.id=membership.payload_id
+        WHERE membership.snapshot_id=source_id
+          AND roster.member_key=stewardship_response_ministry_current_v1.member_key
+          AND roster.ministry_key=ministry_id::text AND roster.canonical::jsonb->'current'='true'::jsonb
+    ) ELSE NULL END
+$$;
+
+CREATE FUNCTION public.stewardship_ministry_answers_guard_v1(
+    response public.stewardship_submission, campaign public.stewardship_campaign_configuration)
+    RETURNS void LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp
+AS $$
+DECLARE
+    answers jsonb := response.answers->'ministries';
+    group_name text; member_key text; choices jsonb; action_name text; identifiers jsonb;
+    identifier jsonb; ministry_id integer; current_roster boolean; expected text[];
+BEGIN
+    IF NOT (campaign.values->'modules' ? 'ministry') THEN
+        IF answers IS DISTINCT FROM '{}'::jsonb THEN
+            RAISE EXCEPTION 'Disabled Ministry answers must be empty' USING ERRCODE='23514';
+        END IF;
+        RETURN;
+    END IF;
+    IF jsonb_typeof(answers) IS DISTINCT FROM 'object'
+       OR NOT (answers ?& ARRAY['members','proposed_members'])
+       OR answers-ARRAY['members','proposed_members'] <> '{}'::jsonb THEN
+        RAISE EXCEPTION 'Ministry aggregate must be complete' USING ERRCODE='23514';
+    END IF;
+    FOREACH group_name IN ARRAY ARRAY['members','proposed_members'] LOOP
+        IF jsonb_typeof(answers->group_name) IS DISTINCT FROM 'object' THEN
+            RAISE EXCEPTION 'Ministry identities require an object' USING ERRCODE='23514';
+        END IF;
+        SELECT coalesce(array_agg(key ORDER BY key),'{}'::text[]) INTO expected
+            FROM jsonb_each(response.answers->group_name)
+            WHERE NOT (value ? 'moved_household' OR value ? 'deceased_status');
+        IF (SELECT coalesce(array_agg(key ORDER BY key),'{}'::text[])
+            FROM jsonb_object_keys(answers->group_name) key) IS DISTINCT FROM expected THEN
+            RAISE EXCEPTION 'Ministry identities must match nonterminal household' USING ERRCODE='23514';
+        END IF;
+        FOR member_key,choices IN SELECT * FROM jsonb_each(answers->group_name) LOOP
+            expected := CASE WHEN group_name='members' THEN ARRAY['join','leave'] ELSE ARRAY['join'] END;
+            IF jsonb_typeof(choices) IS DISTINCT FROM 'object' OR NOT (choices ?& expected)
+               OR choices-expected <> '{}'::jsonb THEN
+                RAISE EXCEPTION 'Ministry choices require exact join and leave fields' USING ERRCODE='23514';
+            END IF;
+            FOR action_name,identifiers IN SELECT * FROM jsonb_each(choices) LOOP
+                IF jsonb_typeof(identifiers) IS DISTINCT FROM 'array' THEN
+                    RAISE EXCEPTION 'Ministry choices must be lists' USING ERRCODE='23514';
+                END IF;
+                IF jsonb_array_length(identifiers) <> (SELECT count(DISTINCT value) FROM jsonb_array_elements(identifiers)) THEN
+                    RAISE EXCEPTION 'Duplicate Ministry choices are invalid' USING ERRCODE='23514';
+                END IF;
+                FOR identifier IN SELECT * FROM jsonb_array_elements(identifiers) LOOP
+                    IF jsonb_typeof(identifier) <> 'number' OR identifier::text !~ '^[1-9][0-9]{0,9}$'
+                       OR identifier::numeric >= 2147483648 THEN
+                        RAISE EXCEPTION 'Ministry requires an exact positive DUID' USING ERRCODE='23514';
+                    END IF;
+                    ministry_id := identifier::text::integer;
+                    IF NOT public.stewardship_response_ministry_visible_v1(
+                        response.validation_source_id,response.configuration_id,response.campaign_id,ministry_id) THEN
+                        RAISE EXCEPTION 'Ministry is not currently offered' USING ERRCODE='23514';
+                    END IF;
+                    current_roster := CASE WHEN group_name='proposed_members' THEN false ELSE
+                        public.stewardship_response_ministry_current_v1(
+                            response.validation_source_id,response.family_id,member_key,ministry_id) END;
+                    IF current_roster IS NULL OR current_roster IS DISTINCT FROM (action_name='leave') THEN
+                        RAISE EXCEPTION 'Ministry action disagrees with current roster' USING ERRCODE='23514';
+                    END IF;
+                END LOOP;
+            END LOOP;
+        END LOOP;
+    END LOOP;
+END;
+$$;
+
+CREATE FUNCTION public.stewardship_ministry_predecessor_v1(
+    response public.stewardship_submission, entity text, identity text, ministry integer)
+    RETURNS uuid LANGUAGE sql STABLE SET search_path TO pg_catalog, public, pg_temp
+AS $$
+    SELECT request.id FROM public.stewardship_ministry_request request
+    JOIN public.stewardship_submission history ON history.id=request.submission_id
+    JOIN public.stewardship_submission prior ON prior.id=response.prior_submission_id
+    WHERE history.family_id=response.family_id AND history.campaign_id=response.campaign_id
+      AND history.mode=response.mode
+      AND history.rehearsal_epoch_id IS NOT DISTINCT FROM response.rehearsal_epoch_id
+      AND history.family_version<=prior.family_version
+      AND ROW(request.entity_kind,request.entity_key,request.ministry_duid)=ROW(entity,identity,ministry)
+    ORDER BY history.family_version DESC LIMIT 1
+$$;
+
+-- The preceding census answer identifies proposed people the Family could
+-- remove. Completed manual Member work is omitted from presentation, so an
+-- unrelated response cannot withdraw its still-unresolved Ministry request.
+-- Include cancelled/superseded proposals here because census derivation runs
+-- first and can already have applied this very response's explicit removal.
+CREATE FUNCTION public.stewardship_ministry_proposed_scope_v1(
+    response public.stewardship_submission, identity text) RETURNS boolean
+    LANGUAGE sql STABLE SET search_path TO pg_catalog, public, pg_temp
+AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.stewardship_submission prior
+        JOIN public.stewardship_proposed_change proposal ON proposal.submission_id=prior.id
+        JOIN public.stewardship_campaign_configuration config
+          ON config.configuration_id=response.configuration_id AND config.record_id=response.campaign_id
+        WHERE prior.id=public.stewardship_response_census_anchor_v1(response.prior_submission_id)
+          AND config.values->'modules' ? 'census'
+          AND prior.answers->'proposed_members' ? identity
+          AND proposal.entity_kind='proposed_member' AND proposal.field='new_member'
+          AND proposal.entity_key=identity
+          AND proposal.execution NOT IN ('published','resolved_upstream','resolved_external')
+    );
+$$;
+
+CREATE FUNCTION public.stewardship_ministry_request_guard_v1() RETURNS trigger
+    LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp
+AS $$
+DECLARE
+    response public.stewardship_submission;
+    later public.stewardship_submission;
+    prior public.stewardship_ministry_request;
+    successor public.stewardship_ministry_request;
+    group_name text; expected_state text;
+BEGIN
+    IF TG_OP='DELETE' THEN
+        SELECT * INTO response FROM public.stewardship_submission WHERE id=OLD.submission_id;
+        IF FOUND AND public.stewardship_test_response_cleanup_v1(response.mode,response.rehearsal_epoch_id) THEN
+            RETURN OLD;
+        END IF;
+        RAISE EXCEPTION 'Ministry history deletion requires its retention owner' USING ERRCODE='23514';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+        AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
+        AND mode='ExclusiveLock' AND granted) THEN
+        RAISE EXCEPTION 'Ministry requests require ordered admission' USING ERRCODE='23514';
+    END IF;
+    IF current_user='pk_stewardship_worker' THEN
+        SELECT id,family_id,campaign_id INTO response.id,response.family_id,response.campaign_id
+            FROM public.stewardship_submission WHERE id=NEW.submission_id;
+    ELSE
+        SELECT * INTO response FROM public.stewardship_submission WHERE id=NEW.submission_id;
+    END IF;
+    IF response.id IS NULL THEN
+        RAISE EXCEPTION 'Ministry request requires its immutable response' USING ERRCODE='23514';
+    END IF;
+    group_name := CASE WHEN NEW.entity_kind='member' THEN 'members' ELSE 'proposed_members' END;
+    IF TG_OP='INSERT' THEN
+        IF NOT EXISTS (SELECT 1 FROM public.stewardship_family_form_baseline
+                       WHERE id=response.baseline_id AND state='open')
+           OR NEW.actor_id IS DISTINCT FROM response.family_id OR NEW.version<>1
+           OR NOT coalesce(response.answers#>ARRAY['ministries',group_name,NEW.entity_key,NEW.action]
+                           @> to_jsonb(NEW.ministry_duid),false)
+           OR NEW.superseded_by_id IS NOT NULL OR NEW.outcome IS NOT NULL
+           OR NEW.resolved_at IS NOT NULL OR NEW.resolution_source_id IS NOT NULL THEN
+            RAISE EXCEPTION 'Ministry request must derive from an in-flight final answer' USING ERRCODE='23514';
+        END IF;
+        SELECT * INTO prior FROM public.stewardship_ministry_request WHERE id=
+            public.stewardship_ministry_predecessor_v1(response,NEW.entity_kind,NEW.entity_key,NEW.ministry_duid);
+        expected_state := CASE WHEN prior.state IN ('new','assigned','in_progress')
+            AND prior.action=NEW.action THEN prior.state ELSE 'new' END;
+        IF NEW.state IS DISTINCT FROM expected_state THEN
+            RAISE EXCEPTION 'Ministry request must preserve same-intent workflow state' USING ERRCODE='23514';
+        END IF;
+        RETURN NEW;
+    END IF;
+    IF OLD.state NOT IN ('new','assigned','in_progress') OR NEW.version<>OLD.version+1
+       OR (to_jsonb(NEW)-ARRAY['state','outcome','resolved_at','resolution_source_id','superseded_by_id','version','updated_at'])
+          IS DISTINCT FROM
+          (to_jsonb(OLD)-ARRAY['state','outcome','resolved_at','resolution_source_id','superseded_by_id','version','updated_at']) THEN
+        RAISE EXCEPTION 'Ministry provenance and closed outcomes are immutable' USING ERRCODE='23514';
+    END IF;
+    IF current_user='pk_stewardship_worker' THEN
+        IF NEW.state<>'resolved' OR NEW.outcome IS DISTINCT FROM
+            (CASE WHEN NEW.action='join' THEN 'joined' ELSE 'leave_confirmed' END)
+           OR NEW.resolution_source_id IS NULL
+           OR NOT public.stewardship_response_source_owner_v1(NEW.resolution_source_id)
+           OR NEW.entity_kind<>'member'
+           OR public.stewardship_response_ministry_current_v1(
+                NEW.resolution_source_id,response.family_id,NEW.entity_key,NEW.ministry_duid)
+              IS DISTINCT FROM (NEW.action='join')
+           OR NOT EXISTS (SELECT 1 FROM public.stewardship_source_pin
+               WHERE snapshot_id=NEW.resolution_source_id AND parent_kind='submission'
+                 AND parent_id=NEW.submission_id AND expires_at IS NULL) THEN
+            RAISE EXCEPTION 'Ministry resolution requires fenced scoped roster evidence' USING ERRCODE='23514';
+        END IF;
+        NEW.resolved_at := clock_timestamp();
+    ELSIF current_user='pk_stewardship_web' THEN
+        SELECT candidate.* INTO later FROM public.stewardship_submission candidate
+        JOIN public.stewardship_family_form_baseline baseline ON baseline.id=candidate.baseline_id
+        WHERE baseline.state='open' AND candidate.family_id=response.family_id
+          AND candidate.campaign_id=response.campaign_id AND candidate.mode=response.mode
+          AND candidate.rehearsal_epoch_id IS NOT DISTINCT FROM response.rehearsal_epoch_id
+          AND candidate.family_version>response.family_version
+          AND OLD.id=public.stewardship_ministry_predecessor_v1(
+              candidate,OLD.entity_kind,OLD.entity_key,OLD.ministry_duid);
+        IF NOT FOUND OR NEW.state NOT IN ('superseded','cancelled')
+           OR NOT public.stewardship_response_ministry_visible_v1(
+               later.validation_source_id,later.configuration_id,later.campaign_id,NEW.ministry_duid)
+           OR (NEW.entity_kind='member' AND NOT ((later.answers->'members') ? NEW.entity_key))
+           OR (NEW.entity_kind='proposed_member' AND NOT
+               public.stewardship_ministry_proposed_scope_v1(later,NEW.entity_key)) THEN
+            RAISE EXCEPTION 'Ministry replacement requires an informed new final response' USING ERRCODE='23514';
+        END IF;
+        IF NEW.state='superseded' THEN
+            SELECT * INTO successor FROM public.stewardship_ministry_request WHERE id=NEW.superseded_by_id;
+            IF NOT FOUND OR successor.submission_id<>later.id
+               OR ROW(successor.entity_kind,successor.entity_key,successor.ministry_duid)
+                  IS DISTINCT FROM ROW(NEW.entity_kind,NEW.entity_key,NEW.ministry_duid) THEN
+                RAISE EXCEPTION 'Ministry successor must have the exact new response identity' USING ERRCODE='23514';
+            END IF;
+        ELSIF coalesce(later.answers#>ARRAY['ministries',group_name,NEW.entity_key,'join'] @> to_jsonb(NEW.ministry_duid),false)
+           OR coalesce(later.answers#>ARRAY['ministries',group_name,NEW.entity_key,'leave'] @> to_jsonb(NEW.ministry_duid),false) THEN
+            RAISE EXCEPTION 'Selected Ministry intent cannot be cancelled' USING ERRCODE='23514';
+        END IF;
+    END IF;
+    NEW.updated_at := clock_timestamp();
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER stewardship_ministry_request_guard
+    BEFORE INSERT OR UPDATE OR DELETE ON public.stewardship_ministry_request
+    FOR EACH ROW EXECUTE FUNCTION public.stewardship_ministry_request_guard_v1();
+
+CREATE FUNCTION public.stewardship_ministry_submission_effects_v1() RETURNS trigger
+    LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp
+AS $$
+DECLARE
+    group_name text; entity text; member_key text; choices jsonb;
+    action_name text; identifiers jsonb; identifier jsonb;
+    prior public.stewardship_ministry_request;
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM public.stewardship_submission WHERE id=NEW.id)
+       OR NEW.answers->'ministries'='{}'::jsonb THEN RETURN NULL; END IF;
+    FOREACH group_name IN ARRAY ARRAY['members','proposed_members'] LOOP
+        entity := CASE WHEN group_name='members' THEN 'member' ELSE 'proposed_member' END;
+        FOR member_key,choices IN SELECT * FROM jsonb_each(NEW.answers#>ARRAY['ministries',group_name]) LOOP
+            FOR action_name,identifiers IN SELECT * FROM jsonb_each(choices) LOOP
+                FOR identifier IN SELECT * FROM jsonb_array_elements(identifiers) LOOP
+                    IF NOT EXISTS (SELECT 1 FROM public.stewardship_ministry_request request
+                        WHERE request.submission_id=NEW.id AND request.entity_kind=entity
+                          AND request.entity_key=member_key AND request.ministry_duid=identifier::text::integer
+                          AND request.action=action_name) THEN
+                        RAISE EXCEPTION 'Submitted Ministry choice requires atomic derived work' USING ERRCODE='23514';
+                    END IF;
+                END LOOP;
+            END LOOP;
+        END LOOP;
+    END LOOP;
+    FOR prior IN SELECT DISTINCT ON (request.entity_kind,request.entity_key,request.ministry_duid) request.*
+        FROM public.stewardship_ministry_request request
+        JOIN public.stewardship_submission history ON history.id=request.submission_id
+        JOIN public.stewardship_submission previous ON previous.id=NEW.prior_submission_id
+        WHERE history.family_id=NEW.family_id AND history.campaign_id=NEW.campaign_id
+          AND history.mode=NEW.mode AND history.rehearsal_epoch_id IS NOT DISTINCT FROM NEW.rehearsal_epoch_id
+          AND history.family_version<=previous.family_version
+        ORDER BY request.entity_kind,request.entity_key,request.ministry_duid,history.family_version DESC
+    LOOP
+        IF prior.state IN ('new','assigned','in_progress')
+           AND public.stewardship_response_ministry_visible_v1(
+               NEW.validation_source_id,NEW.configuration_id,NEW.campaign_id,prior.ministry_duid)
+           AND ((prior.entity_kind='member' AND (NEW.answers->'members') ? prior.entity_key)
+                OR (prior.entity_kind='proposed_member' AND
+                    public.stewardship_ministry_proposed_scope_v1(NEW,prior.entity_key))) THEN
+            RAISE EXCEPTION 'New informed response must reconcile earlier Ministry work' USING ERRCODE='23514';
+        END IF;
+    END LOOP;
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER stewardship_ministry_submission_effects
+    AFTER INSERT ON public.stewardship_submission DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION public.stewardship_ministry_submission_effects_v1();
+
+CREATE FUNCTION public.stewardship_ministry_resolution_pin_v1() RETURNS trigger
+    LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp
+AS $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM public.stewardship_ministry_request request
+        WHERE request.id=NEW.id AND request.resolution_source_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM public.stewardship_source_pin pin
+              WHERE pin.snapshot_id=request.resolution_source_id AND pin.parent_kind='submission'
+                AND pin.parent_id=request.submission_id AND pin.expires_at IS NULL)) THEN
+        RAISE EXCEPTION 'Ministry resolution requires retained source proof' USING ERRCODE='23514';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER stewardship_ministry_resolution_pin
+    AFTER INSERT OR UPDATE ON public.stewardship_ministry_request DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION public.stewardship_ministry_resolution_pin_v1();

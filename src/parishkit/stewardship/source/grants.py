@@ -114,6 +114,10 @@ def add_refresh_worker_grants(tables, columns):
     """Extend fresh task maps with only implemented source/population effects."""
     add_configuration_reads(tables)
     tables["stewardship_proposed_change"] = {"SELECT"}
+    tables["stewardship_ministry_request"] = {"SELECT"}
+    columns["stewardship_ministry_request"] = {
+        "UPDATE": {"state", "outcome", "resolved_at", "resolution_source_id", "version"}
+    }
     columns["stewardship_proposed_change"] = {
         "UPDATE": {
             "current_available",
