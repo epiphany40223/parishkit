@@ -32,7 +32,7 @@ from .member_requests import MAX_PROPOSED_MEMBERS
 from .merge import KnownValue
 from .ministry_requests import ministry_presentation
 from .models import Submission
-from .page_content import public_substitutions, render_pages
+from .page_content import family_page_slots, public_substitutions, render_pages
 
 
 def form_presentation(form):
@@ -306,9 +306,5 @@ def _page_content(baseline, campaign, family, members, member_count, financial):
             financial_end=end,
             financial_period=f"{start} – {end}",
         )
-    slots = {"welcome", "review", "thank_you"} | set(campaign.values["modules"])
-    if "census" in campaign.values["modules"]:
-        slots.add("member_census")
-    if campaign.values["additional_information"]:
-        slots.add("additional")
+    slots = family_page_slots(campaign.values)
     return render_pages(baseline.configuration_id, campaign, slots, substitutions)

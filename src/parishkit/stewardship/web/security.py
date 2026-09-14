@@ -88,13 +88,14 @@ def private_response(message, *, status=200):
     return response
 
 
-def login_denial(*, admin=False, status=403):
+def login_denial(*, admin=False, status=403, public_content=""):
     """Accessible uniform error with a fixed retry route, never an input redirect."""
     response = HttpResponse(
         render_to_string(
             "stewardship/denied.html",
             {
                 "retry_path": "/admin/login" if admin else "/",
+                "public_content": public_content,
             },
         ),
         status=status,

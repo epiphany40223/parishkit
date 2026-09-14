@@ -2,6 +2,7 @@
 {% block title %}{% translate "Family campaign sign-in" %}{% endblock %}
 {% block content %}<section class="flow panel">
   <h1>{% translate "Family campaign sign-in" %}</h1>
+  {% if login_help %}<div class="content-block">{{ login_help|safe }}</div>{% endif %}
   <form method="post" action="/">
     {% csrf_token %}
     <label for="family-code">{% translate "Family code" %}</label>

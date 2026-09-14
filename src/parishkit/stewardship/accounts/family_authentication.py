@@ -6,7 +6,7 @@ from datetime import timedelta
 from importlib import import_module
 
 from django.conf import settings
-from django.db import connection, transaction
+from django.db import DatabaseError, connection, transaction
 from django.db.models import F, Q
 from django.http import HttpResponseRedirect, JsonResponse, RawPostDataException
 from django.middleware.csrf import rotate_token
@@ -80,7 +80,16 @@ def runtime():
 
 def denied(*, status=403, retry=None):
     """Unknown, inactive and non-parishioner credentials use identical responses."""
-    response = login_denial(status=status)
+    from parishkit.stewardship.responses.availability import public_help
+
+    content = ""
+    service = getattr(settings, "STEWARDSHIP_FAMILY_RUNTIME", None)
+    if isinstance(service, FamilyRuntime):
+        # Optional contact help must not turn an outage into a secondary error.
+        # Its inputs are campaign-wide, independent of the rejected credential.
+        with suppress(ConfigError, DatabaseError, ValueError):
+            content = public_help(service, "access_denied")
+    response = login_denial(status=status, public_content=content)
     response.stewardship_safe_error = True
     if retry:
         response["Retry-After"] = str(min(3600, max(1, int(retry))))
@@ -314,7 +323,10 @@ def _ip_counter(service, source):
 @require_http_methods(["GET", "HEAD", "POST"])
 def entry(request):
     """Eight-letter manual entry; code values never enter a URL, log or audit."""
-    from parishkit.stewardship.responses.availability import unavailable_page
+    from parishkit.stewardship.responses.availability import (
+        public_help,
+        unavailable_page,
+    )
 
     try:
         service = runtime()
@@ -329,7 +341,11 @@ def entry(request):
                         "availability_content": page.content,
                     },
                 )
-            return render(request, "stewardship/family-login.html")
+            return render(
+                request,
+                "stewardship/family-login.html",
+                {"login_help": public_help(service, "login_help")},
+            )
         ip = _ip_counter(service, request.client_address)
         delay = service.limiter.counters([ip])
         if delay:

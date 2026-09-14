@@ -80,3 +80,14 @@ def _page(configuration, definition, slot, fallback):
         public_substitutions(configuration.active_configuration.parish, definition),
     )
     return UnavailablePage(fallback, blocks.get(slot, ""))
+
+
+def public_help(service, slot):
+    """Render campaign-wide login/denial instructions without credential lookup."""
+    if slot not in {"login_help", "access_denied"}:
+        raise ValueError("Unsupported public help slot.")
+    configuration = coherent_configuration(service.store)
+    if configuration.current_campaign is None:
+        return ""
+    definition = configuration.current_campaign.active_configuration
+    return _page(configuration, definition, slot, "").content

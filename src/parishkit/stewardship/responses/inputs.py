@@ -208,6 +208,7 @@ def definition_digest(configuration):
                 and (key != "member_census" or census)
                 and (key not in {"census", "ministry", "financial"} or key in modules)
             },
+            "content_public_values": configuration.get("content_public_values", {}),
         }
     )
 

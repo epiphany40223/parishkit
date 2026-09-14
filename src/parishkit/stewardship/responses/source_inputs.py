@@ -19,6 +19,7 @@ from .financial_inputs import (
 )
 from .inputs import FormInputsUnavailable, census_inputs
 from .ministry import InvalidMinistrySource, ministry_inputs
+from .page_content import public_content_dependencies
 
 
 def load_census_inputs(
@@ -105,6 +106,9 @@ def load_census_inputs(
         contacts,
         configuration=configuration
         | {
+            "content_public_values": public_content_dependencies(
+                document, configuration, campaign_id
+            ),
             # Non-legacy page slots select their sole revision in the immutable
             # content section, not the older campaign.content_versions mapping.
             "content_versions": configuration["content_versions"]
@@ -114,7 +118,7 @@ def load_census_inputs(
                 if row["values"]["campaign_id"] == str(campaign_id)
                 and row["values"]["kind"] == "page"
                 and row["values"]["slot"] == "member_census"
-            }
+            },
         },
         parish_name=parish_name,
         ministries=ministries,
