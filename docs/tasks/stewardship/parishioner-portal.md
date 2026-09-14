@@ -73,8 +73,10 @@ Scope and dependencies: [FAM-04 work package](../../plans/stewardship/parishione
 
 Evidence: [Existing Member increment](../../guides/stewardship-member-census.md)
 implements non-terminal census fields and has completed three dual-model
-review/correction rounds with passing local validation. Final-head CI and
-protected merge remain pending. FAM-04.01, .04 and .05 remain
+review/correction rounds, passing final-head/merge-group CI and PR #25's
+verified protected merge. The [Member-request increment](../../guides/stewardship-member-requests.md)
+is now implementing the remaining terminal/proposed-Member flow.
+FAM-04.01, .04 and .05 remain
 unchecked until their terminal/proposed-Member requirements also pass in the
 following increment. No full FAM-04 task is claimed complete yet.
 

@@ -289,9 +289,12 @@ Branch `pr/stewardship-member-census` starts from that merged tip, `5c478e8`.
 Its [bounded scope](../../guides/stewardship-member-census.md) is existing
 Members' non-terminal census fields, including end-to-end validation and
 revisit. Implementation, local validation and three dual-model review/correction
-rounds are complete; final-head CI and protected merge remain pending.
-Terminal semantics and proposed Members follow separately. All FAM-04 tasks
-remain open until their complete linked requirements pass.
+rounds are complete; final-head and merge-group CI passed, and PR #25 merged
+as `eeb3463`, verified on `origin/main`.
+Branch `pr/stewardship-member-requests` starts from that exact tip. Its
+[increment checkpoints](../../guides/stewardship-member-requests.md) cover
+terminal semantics and proposed Members. All FAM-04 tasks remain open until
+their complete linked requirements pass.
 
 1. Finish [FAM-03](parishioner-portal.md#fam-03-family-census-step); complete [FAM-04](parishioner-portal.md#fam-04-existing-and-proposed-member-steps), [FAM-05](parishioner-portal.md#fam-05-ministry-and-financial-stewardship-steps), [FAM-06](parishioner-portal.md#fam-06-additional-information-review-and-atomic-submit), and [FAM-07](parishioner-portal.md#fam-07-repeat-visits-and-source-change-merge).
 2. Exercise representative [FAM-08](parishioner-portal.md#fam-08-responsive-accessibility-privacy-and-browser-completion) cases continuously.
