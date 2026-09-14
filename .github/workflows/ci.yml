@@ -127,8 +127,15 @@ jobs:
           test "$CORE_RESULT" = success
           test "$OPERATIONAL_RESULT" = success
 
-  stewardship-browser:
+  stewardship-browser-engine:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, firefox, webkit]
+    env:
+      BROWSER_ENGINE: ${{ matrix.engine }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -145,11 +152,23 @@ jobs:
           python -m pip install -r requirements/stewardship-build.txt
           python -m pip install --no-build-isolation -r requirements.txt -r requirements/stewardship-browser.txt
           npm ci --ignore-scripts --prefix tests/stewardship/browser
-          python -m playwright install --with-deps chromium firefox webkit
+          python -m playwright install --with-deps "$BROWSER_ENGINE"
       - name: Responsive, keyboard, accessibility, and session component checks
         env:
           PARISHKIT_RUN_BROWSER_TESTS: "1"
-        run: python -m pytest tests/stewardship/browser --require-no-skips -q
+        run: python -m parishkit.stewardship.quality_browser --engine "$BROWSER_ENGINE"
+
+  # Preserve the protected check name, including failed/cancelled matrix work.
+  stewardship-browser:
+    needs: stewardship-browser-engine
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every browser engine
+        env:
+          BROWSER_RESULT: ${{ needs.stewardship-browser-engine.result }}
+        run: test "$BROWSER_RESULT" = success
 
   stewardship-postgresql-shard:
     runs-on: ubuntu-latest
