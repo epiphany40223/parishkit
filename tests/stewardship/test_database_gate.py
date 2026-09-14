@@ -210,19 +210,26 @@ def test_compose_matrix_and_required_gate_cover_all_scenarios():
 def test_ci_browser_and_isolation_cannot_pass_by_skipping(filename, path, flag):
     """Both required pipelines retain explicit opt-in and no-skip enforcement."""
     workflow = yaml.safe_load((ROOT / ".github/workflows" / filename).read_text())
+    wrapped = filename == "ci.yml" and path == "tests/stewardship/browser"
+    needle = "parishkit.stewardship.quality_browser" if wrapped else f"pytest {path}"
     steps = [
         step
         for job in workflow["jobs"].values()
         for step in job.get("steps", [])
-        if f"pytest {path}" in step.get("run", "")
+        if needle in step.get("run", "")
     ]
     assert steps
     for step in steps:
         assert step["env"][flag] == "1"
-        command = next(
-            line for line in step["run"].splitlines() if f"pytest {path}" in line
-        )
-        assert "--require-no-skips" in command
+        command = next(line for line in step["run"].splitlines() if needle in line)
+        if wrapped:
+            # The runner's actual subprocess/skip tests own no-skips enforcement.
+            assert (
+                command == "python -m parishkit.stewardship.quality_browser "
+                '--engine "$BROWSER_ENGINE"'
+            )
+        else:
+            assert "--require-no-skips" in command
 
 
 @pytest.mark.parametrize(

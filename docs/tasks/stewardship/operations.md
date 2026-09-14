@@ -206,3 +206,15 @@ macOS/arm64 smoke evidence remains under OPS-01. Browser/accessibility, full
 database integrations, multi-architecture release/SBOM/scanning/provenance, all
 acceptance/load suites, and real-provider human-run smoke tools remain open.
 All current tests are fake-backed. No image or release tag is published.
+
+September 14, 2026: the later delivery ledgers supersede the initial remote-CI
+status above. PR #27 passed full Linux container, 2,418 PostgreSQL and 639
+browser checks. The [browser-CI maintenance increment](../../guides/stewardship-browser-ci.md)
+now partitions the measured browser critical path while preserving complete
+validation and the required gate. It completes only that OPS-09.01/.03
+maintenance scope; later image/release/load-test acceptance remains open.
+Its local acceptance now passes 5,136 default tests, all 30 Compose checks and
+all 639 browser cases through three independently receipt-verified engine
+runners. Five dual-source review/fix rounds, including the container-baseline
+timeout and oversized-log corrections, are complete with no unresolved accepted
+Medium+ findings. New final-head and protected merge-group CI remain before delivery.

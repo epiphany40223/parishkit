@@ -1,7 +1,39 @@
-"""Deterministic, complete test partitions for isolated CI database runners."""
+"""Deterministic, complete test partitions for isolated CI runners."""
 
 import hashlib
 from pathlib import Path
+
+BROWSER_ENGINES = ("chromium", "firefox", "webkit")
+
+
+def browser_partition(cases, engine):
+    """Assign every browser case by its actual fixture parameter, not its name.
+
+    Require one supported owner for each unique node and all three engines in
+    the complete collection. A new unowned case must fail CI rather than vanish
+    from every partition. Ordinary local runs do not call this selector.
+    """
+    if (
+        engine not in BROWSER_ENGINES
+        or type(cases) is not list
+        or not cases
+        or any(
+            type(case) is not tuple
+            or len(case) != 2
+            or type(case[0]) is not str
+            or not case[0]
+            or type(case[1]) is not str
+            or case[1] not in BROWSER_ENGINES
+            for case in cases
+        )
+    ):
+        raise ValueError("Browser cases require explicit supported engine ownership")
+    if len({node for node, _ in cases}) != len(cases):
+        raise ValueError("Browser collection contains duplicate cases")
+    if {owner for _, owner in cases} != set(BROWSER_ENGINES):
+        raise ValueError("Browser collection must exercise every supported engine")
+    return sorted(node for node, owner in cases if owner == engine)
+
 
 # Scheduling hints, rounded from CI run 34754804591. These never select or
 # exclude tests: unknown/new cases receive the default weight. Keep full-duration

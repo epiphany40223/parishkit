@@ -50,6 +50,21 @@ def assert_collection_parity(host_output, image_output):
     )
 
 
+def baseline_summary(output):
+    """Keep success totals without replaying captured, potentially huge test IDs.
+
+    Progress remains in the original captured output for timeout diagnostics.
+    Some parameterized IDs contain megabytes of synthetic input; replaying all
+    progress to the hosted runner can overwhelm its log processing. Collection
+    parity is checked against the untouched output before calling this helper.
+    """
+    return "\n".join(
+        line
+        for line in output.splitlines()
+        if not line.startswith("PARISHKIT_TEST_NODEIDS=") and "CI_PROGRESS " not in line
+    )
+
+
 @pytest.mark.parametrize(
     "output",
     [
@@ -749,16 +764,30 @@ def test_development_container_lifecycle(tmp_path):
         str(override),
     ]
 
-    def compose(*arguments, check=True, timeout=120):
+    def compose(*arguments, check=True, timeout=120, diagnose_timeout=False):
         """Run only against the fresh disposable project, preserving error output."""
-        result = subprocess.run(
-            [*prefix, *arguments],
-            env=environment,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                [*prefix, *arguments],
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as error:
+            if not diagnose_timeout:
+                raise
+            # These UUID-owned fixtures contain synthetic data only. Retain the
+            # last progress lines rather than losing them behind a large manifest.
+            output = error.stdout or b""
+            if isinstance(output, bytes):
+                output = output.decode("utf-8", errors="replace")
+            pytest.fail(
+                f"Disposable Compose command exceeded {timeout}s: {arguments!r}\n"
+                + "\n".join(output.splitlines()[-40:])[-8000:],
+                pytrace=False,
+            )
         if check and result.returncode:
             # This UUID project contains synthetic data only. Capture bounded
             # service diagnostics before teardown so CI startup failures retain
@@ -771,6 +800,18 @@ def test_development_container_lifecycle(tmp_path):
                 timeout=15,
                 check=False,
             )
+            if diagnose_timeout:
+                output = (
+                    baseline_summary(result.stdout)
+                    + result.stderr
+                    + diagnostics.stdout
+                    + diagnostics.stderr
+                )
+                pytest.fail(
+                    f"Disposable Compose baseline exited {result.returncode}:\n"
+                    + "\n".join(output.splitlines()[-40:])[-8000:],
+                    pytrace=False,
+                )
             pytest.fail(
                 result.stdout + result.stderr + diagnostics.stdout + diagnostics.stderr
             )
@@ -848,21 +889,20 @@ def test_development_container_lifecycle(tmp_path):
             "tests",
             "tests",
             "--collection-manifest",
+            "--ci-progress",
             "-q",
             "-o",
             "addopts=",
             "-p",
             "no:cacheprovider",
+            # This executes the whole default suite, not just a startup probe.
+            # The host suite alone took 98s in CI; keep a finite margin for the
+            # container's process/filesystem overhead without delaying success.
+            timeout=300,
+            diagnose_timeout=True,
         )
         assert_collection_parity(host_collection.stdout, baseline.stdout)
-        # Keep human-readable test evidence without repeating hundreds of IDs.
-        print(
-            "\n".join(
-                line
-                for line in baseline.stdout.splitlines()
-                if not line.startswith("PARISHKIT_TEST_NODEIDS=")
-            )
-        )
+        print(baseline_summary(baseline.stdout))
         compose("up", "--wait", "--wait-timeout", "90", "web", "postgres", "valkey")
         assert compose("exec", "-T", "web", "id", "-u").stdout.strip() == "10001"
         origin = "http://" + compose("port", "web", "8000").stdout.strip()
