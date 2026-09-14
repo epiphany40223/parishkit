@@ -121,3 +121,22 @@ the consolidated final tree is byte-for-byte identical to that preserved tree.
 Use separate logical commits for the previous-increment handoff, the complete
 Ministry implementation/tests, and current review/task evidence. Final-head CI
 and the protected merge still precede the financial increment.
+
+### CI storage-contract registry correction
+
+PR #27's first final-head run, `34808777278`, passed seven PostgreSQL partitions
+but failed partition 4's generic mutable-model inventory test. The Ministry
+table correctly uses its domain-specific INSERT/UPDATE/DELETE guard, but that
+test had not registered the exact custom trigger/function pair alongside the
+other response guards. Add that pair without changing any assertion, application
+code, SQL function, privilege, model or schema fingerprint. The test now checks
+the actual enabled row trigger, version increment and complete immutable-field
+comparison. All 77 selected storage/schema/Ministry-authority cases pass in
+47 seconds, alongside Ruff and Markdown checks.
+
+This is a test-inventory synchronization, not a material application/authority
+correction requiring another independent-review round under the standing cycle.
+The three completed rounds remain valid; final CI verification for the updated
+head is recorded on [PR #27](https://github.com/epiphany40223/parishkit/pull/27)
+before merge. The preceding history/tree mapping describes the pre-CI
+consolidation; this subsequent signed-off test/evidence commit is separate.
