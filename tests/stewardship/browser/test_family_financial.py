@@ -103,6 +103,49 @@ def test_retained_terminal_ministry_eligibility_without_census(
     assert not errors
 
 
+@pytest.mark.parametrize("kind", ["moved_household", "deceased_status"])
+@pytest.mark.parametrize("action", ["join", "leave"])
+def test_concurrent_terminal_request_requires_explicit_ministry_discard(
+    page, component_origin, kind, action
+):
+    """An unchanged household status cannot silently discard a stale Ministry edit."""
+    form = financial_form(census=True, ministry=True)
+    fresh = deepcopy(form)
+    fresh["members"][0]["request"] = {kind: True, "confirmed": True}
+    if kind == "deceased_status":
+        fresh["members"][0]["request"]["death_date"] = ""
+    submissions = []
+
+    def submit(route):
+        """The first attempt returns another response's now-terminal household."""
+        submissions.append(route.request.post_data_json["answers"])
+        if len(submissions) == 1:
+            route.fulfill(status=409, json={"error": "review_required", "form": fresh})
+        else:
+            route.fulfill(json={"accepted": True})
+
+    begin(page, component_origin, form, submit)
+    page.get_by_label("Annual pledge (USD)").fill("0")
+    if action == "join":
+        page.get_by_text("Join another Ministry", exact=True).click()
+        page.get_by_label("Food pantry — interested in joining").check()
+    else:
+        page.get_by_label("Choir — wishes to stop participating").check()
+    final_submit(page)
+    expect(page.get_by_label("Household status")).to_have_value(kind)
+    expect(
+        page.get_by_role("button", name="Discard unavailable Ministry edits")
+    ).to_be_visible()
+    page.get_by_role("button", name="Review response").click()
+    assert page.get_by_role("button", name="Submit response").count() == 0
+    assert len(submissions) == 1
+    page.get_by_role("button", name="Discard unavailable Ministry edits").click()
+    final_submit(page)
+    expect(page.get_by_role("heading", name="Thank you!")).to_be_visible()
+    assert submissions[-1]["ministries"]["members"] == {}
+    assert submissions[-1]["members"]["3"][kind] is True
+
+
 @pytest.mark.parametrize(
     "census,ministry,width",
     [

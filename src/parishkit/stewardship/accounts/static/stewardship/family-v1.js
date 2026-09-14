@@ -396,7 +396,7 @@
       });
     } else if (form.household) {
       terminalEditor(member, group, fields);
-      if (requests[member.id]) return;
+      if (requests[member.id]) { ministryEditor(member, group); return; }
     }
     member.fields.forEach((definition) => {
       const id = "member-" + member.id + "-" + definition.name;
@@ -499,7 +499,8 @@
     return answers.ministries[group][member.id] ||= member.proposed ? {join: []} : {join: [], leave: []};
   }
   function ministryEligible(member) {
-    return Boolean(form.ministries && (member.proposed || Object.hasOwn(form.ministries.members, member.id)));
+    return Boolean(form.ministries && (member.proposed ||
+      (!requests[member.id] && Object.hasOwn(form.ministries.members, member.id))));
   }
   function ministryCurrent(member) {
     return new Set(member.proposed ? [] : form.ministries.members[member.id]?.current || []);
@@ -1125,7 +1126,8 @@
   }
   function conflictApplies(path) {
     const ministry = /^ministries\.(members|proposed_members)\.([0-9a-f-]+)$/.exec(path);
-    if (ministry) return ministry[1] === "members" ? !requests[ministry[2]] : ministry[2] in answers.proposed_members;
+    if (ministry) return ministry[1] === "members" ?
+      !requests[ministry[2]] || conflicts.get(path)?.unavailable : ministry[2] in answers.proposed_members;
     const member = /^members\.([0-9]+)\.([a-z_]+)$/.exec(path);
     return !member || member[2] === "request" || !requests[member[1]];
   }

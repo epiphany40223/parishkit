@@ -162,3 +162,41 @@ No accepted Medium-or-higher finding remains from this round. Before this
 correction, the broader response/Ministry/financial PostgreSQL suite passed
 224 cases and all 681 browser cases passed (227 per engine). Those earlier
 results are not claimed as final-head validation.
+
+## Review round 3
+
+Session `20260914-054813-970865` reviewed corrections from
+`8d80045cc1fe33c31684cc6e07817ba210fe6d13` to
+`575ccc16c9eb55572f4c8d0f14268f4255ed63a7`, tree
+`dcdc5fc9ee6869136c718c6c83896050c46d1a50`, with surrounding census history,
+Ministry derivation, browser concurrency and independent SQL enforcement.
+Both reviewers completed successfully without degradation, mismatch or salvage.
+Raw severities: three Medium and six Low; two validated Medium findings, both
+accepted and corrected. No High or Critical finding was reported.
+
+- A refreshed census-enabled terminal Member now also makes stale Ministry
+  edits unavailable. The explicit discard control renders before the terminal
+  editor's early return, and its unresolved conflict continues to block review.
+  Browser regressions cover both moved/deceased requests and join/leave edits
+  across all three engines.
+- PostgreSQL tests now cover a mixed household, pending/cancelled/published/
+  resolved terminal outcomes, exact successor history and repeated non-census
+  responses. Python presentation/validation and the independent SQL guard agree
+  on the required eligible Member identities. A proposed test fixture that
+  assigned `superseded` without a successor was correctly rejected; the final
+  tests use actual successive submissions and verify the exact successor link.
+
+Finalized artifact SHA-256:
+`8239f145c3c8d277a318fa0c4007a941fad3480e41b554caad1c0e0c57858f35`.
+Post-correction validation passed all 32 financial PostgreSQL cases and 105
+financial/Ministry/Member-request browser cases. Ruff lint/format and whitespace
+checks pass. All three review/fix rounds are complete and no accepted Medium+
+finding remains. Final regression/coverage validation and protected CI/delivery
+are still required.
+
+The preceding revision passed 226 broader PostgreSQL cases, all 687 browser
+cases (229 per engine), and 30 Compose checks in 128.28 seconds. Round 3 changes
+only browser code and tests, not production Python or SQL. The already-running
+full Python/PostgreSQL coverage pass therefore measures the unchanged Python
+implementation; the added PostgreSQL cases are separately validated above.
+Browser validation is repeated after the JavaScript correction.

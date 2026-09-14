@@ -7,7 +7,9 @@ from uuid import UUID, uuid4
 
 import pytest
 from django.db import IntegrityError, transaction
+from django.db.models import F
 
+from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.responses import submission
 from parishkit.stewardship.responses.models import (
     ProposedChange,
@@ -18,6 +20,7 @@ from parishkit.stewardship.source.models import SourceSnapshotPin
 
 from ..census_factory import member
 from ..test_financial_answers import CHECK, OPTIONS, OTHER
+from . import test_financial_source_postgresql as source_fixture
 from .campaign_builders import change
 from .response_builders import activate_response_service
 from .test_family_auth_postgresql import login
@@ -468,3 +471,76 @@ def test_disabled_census_preserves_terminal_ministry_eligibility(
         answers["ministries"]["members"]["3"] = {"join": [], "leave": [4]}
         result = respond(harness, form, answers)
         assert result.answers["ministries"]["members"]["3"]["leave"] == [4]
+
+
+@pytest.mark.parametrize(
+    "execution",
+    [
+        "pending",
+        "cancelled",
+        "published",
+        "resolved_upstream",
+        "resolved_external",
+    ],
+)
+def test_closed_terminal_history_and_mixed_household_ministry_agree(
+    response_service, monkeypatch, execution
+):
+    """Newest census intent and closed outcomes agree across Python and SQL."""
+    original_source = source_fixture.response_source
+
+    def two_members():
+        """One unaffected Member must remain required beside the terminal Member."""
+        data = original_source()
+        data.members[8] = data.members[3] | {
+            "memberDUID": 8,
+            "firstName": "Second",
+            "memberType": "Spouse",
+        }
+        return data
+
+    monkeypatch.setattr(source_fixture, "response_source", two_members)
+    harness = response_service
+    financial_source(
+        harness, modules=["census", "ministry", "financial"], selected=(4,)
+    )
+    form = load_form(harness)
+    answers = answers_for(form)
+    answers["members"]["3"] = {"moved_household": True, "confirmed": True}
+    del answers["ministries"]["members"]["3"]
+    answers["financial"] = {"annual_pledge": "0", "frequency": "", "shares": {}}
+    first = respond(harness, form, answers)
+    form = revisit(harness)
+    latest = respond(harness, form, answers_for(form))
+    predecessor = ProposedChange.objects.get(submission=first)
+    successor = ProposedChange.objects.get(submission=latest)
+    # Supersession requires a newer exact successor; a latest proposal cannot
+    # simply be assigned that state without violating the history constraint.
+    assert predecessor.execution == "superseded"
+    assert predecessor.superseded_by_id == successor.pk
+    with work_transaction():
+        ProposedChange.objects.filter(submission=latest).update(
+            execution=execution,
+            version=F("version") + 1,
+        )
+    financial_source(harness, modules=["ministry", "financial"], selected=(4,))
+    with web_login():
+        for _ in range(2):
+            form = revisit(harness)
+            expected = {"8"} if execution == "pending" else {"3", "8"}
+            assert set(form["ministries"]["members"]) == expected
+            assert form["effective_member_count"] == len(expected)
+            answers = answers_for(form)
+            omitted = deepcopy(answers)
+            del omitted["ministries"]["members"]["8"]
+            rejected = post(
+                harness.client,
+                "/family/submit",
+                {
+                    "baseline": form["baseline"],
+                    "answers": omitted,
+                },
+            )
+            assert rejected.status_code == 422, rejected.content
+            answers["ministries"]["members"]["8"]["join"] = [4]
+            assert respond(harness, form, answers).annual_pledge == 0
