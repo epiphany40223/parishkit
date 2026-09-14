@@ -66,6 +66,7 @@ def form_payload(*, testing=False):
             {
                 "id": "3",
                 "relationship": "Head",
+                "request": None,
                 "fields": [
                     {
                         "name": field.name,
@@ -82,6 +83,23 @@ def form_payload(*, testing=False):
                     for field in MEMBER_FIELDS
                 ],
             }
+        ],
+        "proposed_members": [],
+        "max_proposed_members": 100,
+        "new_member_fields": [
+            {
+                "name": field.name,
+                "label": field.label,
+                "required": field.required,
+                "max_length": field.max_length,
+                "kind": field.kind.value,
+                "choices": list(field.choices),
+                "value": "",
+                "available": False,
+                "changed": False,
+                "conflict": False,
+            }
+            for field in MEMBER_FIELDS
         ],
         "additional_enabled": True,
         "additional_max_length": 5000,

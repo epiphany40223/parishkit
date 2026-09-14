@@ -30,6 +30,7 @@ class ValueKind(StrEnum):
     MONEY = "money"
     ENUM = "enum"
     ADDRESS = "address"
+    MEMBER = "member"
 
 
 class ComparisonValueError(ValueError):
@@ -174,6 +175,19 @@ def canonical_value(kind, value, *, dialing_region=None):
         _invalid()
     if value is None:
         return None
+    if kind is ValueKind.MEMBER:
+        # Defer the registry import: its field definitions themselves use this
+        # enum. Reuse their typed comparisons instead of duplicating the schema.
+        from .member_census import MEMBER_FIELDS
+
+        if type(value) is not dict or set(value) != {
+            field.name for field in MEMBER_FIELDS
+        }:
+            _invalid()
+        return tuple(
+            (field.name, canonical_value(field.kind, value[field.name]))
+            for field in MEMBER_FIELDS
+        )
     if kind in {ValueKind.TEXT, ValueKind.ENUM}:
         return _text(value)
     if kind is ValueKind.EMAIL:

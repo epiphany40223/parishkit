@@ -136,7 +136,7 @@ def revisit(harness):
 
     definitions = {field.name: field for field in MEMBER_FIELDS}
     for field in fields:
-        if field.entity == "member":
+        if field.entity == "member" and field.field in definitions:
             members.setdefault(str(field.identity), {})[field.field] = browser_value(
                 definitions[field.field],
                 field.effective.value,
@@ -169,6 +169,7 @@ def revisit(harness):
                 "mailing_same_as_home": False,
             },
             "members": members,
+            "proposed_members": {},
             "additional_information": prior.answers["additional_information"]
             if prior
             else "",

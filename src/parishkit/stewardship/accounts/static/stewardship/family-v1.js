@@ -12,6 +12,7 @@
   let accepted = false, submissionAttempted = false;
   let uncertainSubmission = false;
   let separateMailing = null;
+  let requests = {}, initialRequests = {};
   const conflicts = new Map();
 
   function node(tag, text, parent, attributes = {}) {
@@ -42,6 +43,7 @@
       international ? "international" : "national", digits, match[2] || ""] : null;
   }
   function canonical(value, name) {
+    if (value === undefined) return "missing";
     if (value === null || typeof value === "boolean") return JSON.stringify(value);
     if (typeof value === "object") return JSON.stringify(Object.keys(value).sort().map(
       (key) => [key, canonical(value[key], key)]));
@@ -55,6 +57,8 @@
     return canonical(answers.family, "family") !== canonical(initial.family, "family") ||
       canonical(answers.additional_information, "additional") !==
       canonical(initial.additional_information, "additional") ||
+      canonical(requests, "requests") !== canonical(initialRequests, "requests") ||
+      canonical(answers.proposed_members, "proposed_members") !== canonical(initial.proposed_members, "proposed_members") ||
       Object.entries(answers.members).some(([id, fields]) =>
         Object.entries(fields).some(([name, value]) => canonical(value, name) !==
           canonical(initial.members[id][name], name)));
@@ -62,6 +66,7 @@
   function clear() {
     form = answers = initial = null;
     separateMailing = null;
+    requests = initialRequests = {};
     conflicts.clear();
     root.replaceChildren();
   }
@@ -89,20 +94,28 @@
   }
   function accept(next, preserve) {
     const previous = answers, before = initial;
+    const previousRequests = requests, beforeRequests = initialRequests;
     const mailingDraft = separateMailing;
     form = next;
     conflicts.clear();
     answers = {family: Object.fromEntries(next.household.fields.map(
       (field) => [field.name, structuredClone(field.value)])),
-      members: {}, additional_information: next.additional_enabled ? next.additional_information : "",
+      members: {}, proposed_members: {}, additional_information: next.additional_enabled ? next.additional_information : "",
       testing_acknowledged: false};
     answers.family.mailing_same_as_home = next.household.mailing_same_as_home;
     separateMailing = null;
+    requests = {};
     next.members.forEach((member) => {
       answers.members[member.id] = Object.fromEntries(member.fields.map(
         (field) => [field.name, field.value]));
+      requests[member.id] = structuredClone(member.request || null);
+    });
+    next.proposed_members.forEach((member) => {
+      answers.proposed_members[member.id] = Object.fromEntries(member.fields.map(
+        (field) => [field.name, field.value]));
     });
     initial = structuredClone(answers);
+    initialRequests = structuredClone(requests);
     if (preserve && previous && before) {
       next.household.fields.forEach(({name}) => {
         if (canonical(previous.family[name], name) !== canonical(before.family[name], name)) {
@@ -126,6 +139,16 @@
       // Only actual edits survive. A removed person/field is never rendered or
       // resent; untouched fields adopt the newly admitted effective values.
       Object.entries(answers.members).forEach(([id, fields]) => {
+        const ordinaryEdited = previous.members[id] && before.members[id] && Object.keys(fields).some(
+          (name) => canonical(previous.members[id][name], name) !== canonical(before.members[id][name], name));
+        if (id in previousRequests && (canonical(previousRequests[id], "request") !== canonical(beforeRequests[id], "request") ||
+            (!previousRequests[id] && ordinaryEdited && canonical(beforeRequests[id], "request") !== canonical(initialRequests[id], "request")))) {
+          requests[id] = structuredClone(previousRequests[id]);
+          if (canonical(beforeRequests[id], "request") !== canonical(initialRequests[id], "request") &&
+              canonical(requests[id], "request") !== canonical(initialRequests[id], "request")) {
+            conflicts.set("members." + id + ".request", {edited: requests[id], refreshed: initialRequests[id]});
+          }
+        }
         Object.keys(fields).forEach((name) => {
           if (previous.members[id] && before.members[id] &&
               canonical(previous.members[id][name], name) !==
@@ -138,6 +161,19 @@
             }
           }
         });
+      });
+      // A proposed Member is one manual structure request. Merge additions,
+      // edits and removals as a unit without reviving a concurrent withdrawal.
+      new Set([...Object.keys(previous.proposed_members), ...Object.keys(before.proposed_members)]).forEach((id) => {
+        const edited = previous.proposed_members[id], old = before.proposed_members[id];
+        const refreshed = initial.proposed_members[id];
+        if (canonical(edited, "member") === canonical(old, "member")) return;
+        if (edited === undefined) delete answers.proposed_members[id];
+        else answers.proposed_members[id] = structuredClone(edited);
+        if (canonical(old, "member") !== canonical(refreshed, "member") &&
+            canonical(edited, "member") !== canonical(refreshed, "member")) {
+          conflicts.set("proposed_members." + id, {edited, refreshed});
+        }
       });
       if (next.additional_enabled && canonical(previous.additional_information, "additional") !==
           canonical(before.additional_information, "additional")) {
@@ -183,7 +219,7 @@
     say("Please correct the indicated fields, then review your response again.");
     const list = node("ul", null, message);
     Object.entries(errors).forEach(([path, text]) => {
-      const match = /^members\.([0-9]+)\.([a-z_]+)$/.exec(path);
+      const match = /^(?:members|proposed_members)\.([0-9a-f-]+)\.([a-z_]+)$/.exec(path);
       const household = /^family\.([a-z_]+)(?:\.([a-z0-9_]+))?$/.exec(path);
       const id = match ? "member-" + match[1] + "-" + match[2] :
         household ? "family-" + household[1] + (household[2] ? "-" + household[2] : "") :
@@ -235,7 +271,7 @@
       if ([...normalized].length > definition.max_length) input.setCustomValidity("Enter fewer email addresses within the displayed length limit.");
     }
     if (definition.kind === "date" && !input.readOnly && value && value > form.today) {
-      input.setCustomValidity("Birth date cannot be in the future.");
+      input.setCustomValidity(definition.name === "death_date" ? "Death date cannot be in the future." : "Birth date cannot be in the future.");
     }
     if (definition.kind === "phone" && value && value !== definition.value) {
       const key = phoneKey(value);
@@ -252,17 +288,100 @@
     return input.checkValidity();
   }
   function memberName(member, index) {
-    const values = answers.members[member.id];
+    const values = memberValues(member);
     return [values.first_name, values.last_name].filter(Boolean).join(" ") ||
       "Household member " + (index + 1).toLocaleString("en-US");
+  }
+  function memberValues(member) {
+    return (member.proposed ? answers.proposed_members : answers.members)[member.id];
+  }
+  function initialMember(member) {
+    return (member.proposed ? initial.proposed_members : initial.members)[member.id] || {};
+  }
+  function allMembers() {
+    return [...form.members, ...Object.keys(answers.proposed_members).sort().map((id) => ({
+      ...(form.proposed_members.find((member) => member.id === id) || {
+        id, relationship: "Proposed household member", fields: form.new_member_fields}), proposed: true
+    }))];
+  }
+  function terminalEditor(member, group, fields) {
+    const id = "member-" + member.id + "-confirmed";
+    node("label", "Household status", group, {for: id});
+    const choice = node("select", null, group, {id});
+    [["current", "Still a member of this household"], ["moved_household", "No longer a member of this household"],
+      ["deceased_status", "This person is deceased"]].forEach(([value, label]) => node("option", label, choice, {value}));
+    const request = requests[member.id];
+    choice.value = request?.moved_household ? "moved_household" : request?.deceased_status ? "deceased_status" : "current";
+    choice.addEventListener("change", () => {
+      const selected = choice.value;
+      if (selected !== "current" && !window.confirm("Confirm this household change. Other edits for this person will not be submitted. Parish staff will review the request.")) {
+        choice.value = request?.moved_household ? "moved_household" : request?.deceased_status ? "deceased_status" : "current";
+        return;
+      }
+      requests[member.id] = selected === "current" ? null : {[selected]: true, confirmed: true,
+        ...(selected === "deceased_status" ? {death_date: ""} : {})};
+      edit(); document.getElementById(id)?.focus();
+    });
+    if (request) node("p", "Your household change will be sent for parish review. Other census edits for this person will not be submitted.", group, {class: "changed"});
+    if (request?.deceased_status) {
+      const deathId = "member-" + member.id + "-death_date";
+      node("label", "Death date (optional)", group, {for: deathId});
+      const input = node("input", null, group, {id: deathId, type: "date", max: form.today,
+        "aria-describedby": deathId + "-inline-error"});
+      input.value = request.death_date;
+      node("p", "", group, {id: deathId + "-inline-error", hidden: ""});
+      input.addEventListener("input", () => { request.death_date = input.value; input.setCustomValidity(""); });
+      const validate = () => validateField(input, {name: "death_date", kind: "date", required: false});
+      input.addEventListener("change", validate);
+      fields.push(validate);
+      node("p", "The date and deceased-status request are reviewed separately. Supplying a date does not change parish records automatically.", group);
+    }
+  }
+  function structuralConflicts(editor) {
+    // Resolve whole semantic/structure requests explicitly. Values stay in
+    // memory and are never serialized to markup, URLs or persistence.
+    conflicts.forEach((conflict, path) => {
+      const terminal = /^members\.([0-9]+)\.request$/.exec(path);
+      const proposed = /^proposed_members\.([0-9a-f-]+)$/.exec(path);
+      if ((!terminal && !proposed) || conflict.choice !== undefined) return;
+      const group = node("fieldset", null, editor, {"data-conflict": path});
+      node("legend", "A household request changed in another response. Choose which to keep.", group);
+      [["Keep my household request", conflict.edited], ["Use the updated response", conflict.refreshed]].forEach(([label, value], index) => {
+        let summary;
+        if (terminal) summary = value?.moved_household ? "No longer in household" : value?.deceased_status ?
+          "Deceased, date: " + (value.death_date || "not provided") : "Still in household";
+        else summary = value ? [value.first_name, value.last_name].filter(Boolean).join(" ") || "Proposed member" : "Remove proposed member";
+        const choose = node("button", label + ": " + summary, group, {type: "button"});
+        choose.addEventListener("click", () => {
+          if (terminal) {
+            requests[terminal[1]] = structuredClone(value);
+          } else if (value === undefined) delete answers.proposed_members[proposed[1]];
+          else answers.proposed_members[proposed[1]] = structuredClone(value);
+          conflict.choice = index;
+          edit();
+        });
+      });
+    });
   }
   function memberEditor(member, index, editor, fields, deferValidation) {
     const group = node("fieldset", null, editor);
     node("legend", memberName(member, index), group);
     node("p", "Relationship: " + (member.relationship || "Not available in parish records"), group);
+    if (member.proposed) {
+      node("p", "Proposed addition — parish staff will follow up. This does not automatically create a parish record.", group, {class: "changed"});
+      const remove = node("button", "Remove proposed member", group, {type: "button"});
+      remove.addEventListener("click", () => {
+        if (window.confirm("Remove this proposed household member from this response?")) {
+          delete answers.proposed_members[member.id]; edit();
+        }
+      });
+    } else {
+      terminalEditor(member, group, fields);
+      if (requests[member.id]) return;
+    }
     member.fields.forEach((definition) => {
       const id = "member-" + member.id + "-" + definition.name;
-      const path = "members." + member.id + "." + definition.name;
+      const path = (member.proposed ? "proposed_members." : "members.") + member.id + "." + definition.name;
       const choices = definition.choices || [];
       node("label", definition.label + (definition.required ? " (required)" : " (optional)"), group, {for: id});
       const input = node(choices.length ? "select" : "input", null, group, {id,
@@ -327,14 +446,14 @@
           input.placeholder = language.value === "other" ? "Enter other language" : "";
         }
       }
-      setValue(answers.members[member.id][definition.name]);
+      setValue(memberValues(member)[definition.name]);
       const status = node("p", "", group, {id: id + "-status", class: "muted"});
       node("p", "", group, {id: id + "-inline-error", hidden: ""});
       function update() {
         const value = unknown?.checked ? "unknown" : input.value;
-        answers.members[member.id][definition.name] = value;
+        memberValues(member)[definition.name] = value;
         const changed = definition.changed || canonical(value, definition.name) !==
-          canonical(initial.members[member.id][definition.name], definition.name);
+          canonical(initialMember(member)[definition.name], definition.name);
         status.textContent = definition.conflict ? "Your requested change is awaiting parish review." :
           changed ? "Changed from parish records." : !definition.available ? "Not available in parish records." : "";
       }
@@ -603,8 +722,16 @@
     editor.addEventListener("pointercancel", () => { reviewPointerDown = false; });
     const fields = [];
     const validateHousehold = householdEditor(editor);
-    form.members.forEach((member, index) => memberEditor(member, index, editor, fields,
+    structuralConflicts(editor);
+    allMembers().forEach((member, index) => memberEditor(member, index, editor, fields,
       () => reviewPointerDown));
+    const add = node("button", "Add a household member", editor, {type: "button"});
+    add.disabled = Object.keys(answers.proposed_members).length >= form.max_proposed_members;
+    add.addEventListener("click", () => {
+      const id = crypto.randomUUID();
+      answers.proposed_members[id] = Object.fromEntries(form.new_member_fields.map((field) => [field.name, field.value]));
+      edit(); document.getElementById("member-" + id + "-first_name")?.focus();
+    });
     if (form.additional_enabled) {
       block("additional", editor);
       node("label", "Additional information (optional)", editor, {for: "additional-information"});
@@ -618,18 +745,27 @@
     editor.addEventListener("submit", (event) => {
       event.preventDefault();
       reviewPointerDown = false;
-      if ([...conflicts.values()].some((conflict) => conflict.choice === undefined)) {
+      if ([...conflicts.entries()].some(([path, conflict]) => conflictApplies(path) && conflict.choice === undefined)) {
         say("Choose a value for every changed record before reviewing your response.");
-        root.querySelector("[data-conflict] input")?.focus();
+        root.querySelector("[data-conflict] input, [data-conflict] button")?.focus();
         return;
       }
       fields.forEach((validate) => validate());
       validateHousehold();
       // Inline errors already explain each failure. Native validation popups
       // can steal focus from the requested field after it is scrolled into view.
-      if (editor.checkValidity()) { conflicts.clear(); review(); }
+      if (editor.checkValidity()) {
+        // Keep hidden field conflicts through Review/Back. Returning a Member
+        // to ordinary status must restore the unresolved choices, not erase them.
+        [...conflicts.keys()].filter(conflictApplies).forEach((path) => conflicts.delete(path));
+        review();
+      }
       else editor.querySelector("input:invalid, select:invalid, textarea:invalid")?.focus();
     });
+  }
+  function conflictApplies(path) {
+    const member = /^members\.([0-9]+)\.([a-z_]+)$/.exec(path);
+    return !member || member[2] === "request" || !requests[member[1]];
   }
   function review() {
     heading("Step 2 of 2: Confirm and submit", "review");
@@ -650,16 +786,24 @@
         node("span", " — Changed from parish records", display);
       }
     });
-    form.members.forEach((member, index) => {
+    allMembers().forEach((member, index) => {
       const panel = node("section", null, root, {class: "panel"});
       node("h3", memberName(member, index), panel);
       node("p", "Relationship: " + (member.relationship || "Not available in parish records"), panel);
+      if (!member.proposed && requests[member.id]) {
+        const request = requests[member.id];
+        node("p", request.moved_household ? "Requested change: no longer a member of this household." :
+          "Requested change: deceased. Death date: " + (request.death_date || "Not provided"), panel, {class: "changed"});
+        node("p", "Parish staff will review this request. Other edits for this person are not included.", panel);
+        return;
+      }
+      if (member.proposed) node("p", "Proposed household addition — parish staff will follow up.", panel, {class: "changed"});
       const list = node("dl", null, panel);
       member.fields.forEach((definition) => {
         node("dt", definition.label, list);
-        const value = answers.members[member.id][definition.name];
+        const value = memberValues(member)[definition.name];
         const changed = definition.changed || canonical(value, definition.name) !==
-          canonical(initial.members[member.id][definition.name], definition.name);
+          canonical(initialMember(member)[definition.name], definition.name);
         const display = node("dd", definition.name === "birth_date" && value === "unknown" ?
           "Unknown — request parish review of removing any recorded birth date" : value || "Not provided", list);
         if (changed) {
@@ -689,7 +833,9 @@
       submissionAttempted = true;
       const submittedThankYou = form.content.thank_you;
       try {
-        const result = await send("/family/submit", {baseline: form.baseline, answers});
+        const payload = {...answers, members: Object.fromEntries(Object.entries(answers.members).map(
+          ([id, value]) => [id, requests[id] || value]))};
+        const result = await send("/family/submit", {baseline: form.baseline, answers: payload});
         if (!result) return;
         if (!result.accepted) submissionAttempted = uncertainSubmission;
         if (result.accepted) {

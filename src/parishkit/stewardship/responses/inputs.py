@@ -18,10 +18,11 @@ from parishkit.stewardship.audit.schemas import ContextKind, sanitize
 from .census import ADDRESS_LIMITS, FAMILY_FIELDS, country_choices, us_regions
 from .comparison import COMPARISON_VERSION, ValueKind, canonical_value
 from .member_census import MEMBER_FIELDS, InvalidMemberSource, source_value
+from .member_requests import MAX_PROPOSED_MEMBERS, REQUEST_FIELDS
 from .merge import KnownValue
 
-FORM_SCHEMA = "family-census-members-v1"
-PROJECTION_VERSION = "family-inputs-v3"
+FORM_SCHEMA = "family-census-household-members-v1"
+PROJECTION_VERSION = "family-inputs-v4"
 ADDITIONAL_MAX_LENGTH = 5000
 
 
@@ -60,7 +61,7 @@ class FieldInput:
     """A Family-scoped source field; raw display form is not its comparison key."""
 
     entity: str
-    identity: int
+    identity: int | str
     field: str
     kind: ValueKind
     source: KnownValue
@@ -119,6 +120,10 @@ def definition_digest(configuration):
     return _digest(
         {
             "schema": FORM_SCHEMA,
+            "max_proposed_members": MAX_PROPOSED_MEMBERS,
+            "request_fields": [
+                (field.name, field.kind.value) for field in REQUEST_FIELDS
+            ],
             "fields": [
                 (
                     field.name,
@@ -172,6 +177,10 @@ def _member_field_value(member, contact, field):
     """Read a scoped census value consistently for forms and source reconciliation."""
     if member is None:
         return KnownValue(False)
+    if field.name in {"moved_household", "deceased_status"}:
+        # A scoped active Member is neither moved nor deceased. These semantic
+        # inputs are separate from dateOfDeath and cannot be inferred from it.
+        return KnownValue(True, False)
     if contact is not None and (
         contact.get("owner_kind") != "member"
         or contact.get("owner_key") != str(member["memberDUID"])
@@ -289,7 +298,7 @@ def census_inputs(family, members, contacts, *, configuration):
                 KnownValue("memberType" in member, member.get("memberType")),
             )
         )
-        for field in MEMBER_FIELDS:
+        for field in (*MEMBER_FIELDS, *REQUEST_FIELDS):
             fields.append(
                 FieldInput(
                     "member",

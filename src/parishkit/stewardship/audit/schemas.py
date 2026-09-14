@@ -83,6 +83,7 @@ MEMBER_SOURCE_FIELDS = frozenset(
         "home_phone",
         "mobile_phone",
         "work_phone",
+        "death_date",
         "marital_status",
         "language",
     }
