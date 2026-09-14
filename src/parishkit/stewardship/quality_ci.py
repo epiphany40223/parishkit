@@ -1,9 +1,9 @@
 """Parallel CI coverage with complete, same-source execution evidence.
 
-Each shard runs on its own runner and PostgreSQL/Valkey cluster. Never run
-shards concurrently against the shared local disposable database: SQL roles
-and migrations are cluster-wide test fixtures. The ordinary quality command
-remains the serial, all-in-one developer gate.
+Each shard runs against its own PostgreSQL/Valkey cluster, on separate CI
+runners or isolated local disposable services. Never run shards concurrently
+against a shared cluster: SQL roles and schemas are cluster-wide test fixtures.
+The ordinary quality command remains the serial, all-in-one developer gate.
 """
 
 import hashlib

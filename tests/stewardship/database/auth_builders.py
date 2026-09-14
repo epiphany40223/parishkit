@@ -1,5 +1,6 @@
 """Real disposable Valkey, signed synthetic Google tokens and durable policy."""
 
+import os
 from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
@@ -20,13 +21,21 @@ from parishkit.stewardship.accounts.limiting import Limiter
 from .campaign_builders import initialized
 
 
+def valkey_client():
+    """Select an isolated test cluster without making host or credentials mutable."""
+    port = int(os.environ.get("PARISHKIT_TEST_VALKEY_PORT", "56379"))
+    if not 1024 <= port <= 65535 or port == 56380:
+        raise ValueError("Use an unprivileged test port other than reserved 56380")
+    return Redis(
+        host="127.0.0.1", port=port, socket_timeout=2, socket_connect_timeout=2
+    )
+
+
 @pytest.fixture
 def auth_service(tmp_path, settings):
     """Require the explicit loopback test services; missing Valkey fails, not skips."""
     store, _, _ = initialized(tmp_path)
-    client = Redis(
-        host="127.0.0.1", port=56379, socket_timeout=2, socket_connect_timeout=2
-    )
+    client = valkey_client()
     assert client.ping()
     namespace = "parishkit-test:" + uuid4().hex
     limiter = Limiter(
