@@ -26,9 +26,12 @@ def test_optional_public_help_failure_keeps_fixed_safe_fallback(
     """Fault only optional help after ordinary campaign admission has succeeded."""
     from parishkit.stewardship.responses import availability
 
+    calls = []
+
     def fail(service, requested):
         """Simulate a private diagnostic from the optional content lookup alone."""
         assert requested == slot
+        calls.append(requested)
         raise error("synthetic-private-diagnostic")
 
     monkeypatch.setattr(availability, "public_help", fail)
@@ -51,6 +54,7 @@ def test_optional_public_help_failure_keeps_fixed_safe_fallback(
             else b"Sign-in is unavailable"
         ) in response.content
         assert response["Cache-Control"] == "no-store"
+        assert calls == [slot]
 
 
 def select_content(harness, slot, html, *, modules=None):

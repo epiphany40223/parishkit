@@ -87,7 +87,9 @@ def _optional_public_help(slot):
     if isinstance(service, FamilyRuntime):
         # Optional contact help must not turn an outage into a secondary error.
         # Its inputs are campaign-wide, independent of the rejected credential.
-        with suppress(ConfigError, DatabaseError, ValueError):
+        # Presence may already have revoked a session in an outer transaction.
+        # Roll back a failed optional SQL lookup before suppressing its error.
+        with suppress(ConfigError, DatabaseError, ValueError), transaction.atomic():
             content = public_help(service, slot)
     return content
 
