@@ -1,6 +1,7 @@
 """Real attempt/HTTP/staging pipeline, with only the provider exchange replaced."""
 
 import json
+from datetime import UTC, date, datetime
 
 import pytest
 from django.db import connection, connections
@@ -20,7 +21,7 @@ from parishkit.stewardship.source.models import (
     SourceSnapshot,
 )
 from parishkit.stewardship.source.refresh_models import SourceRefreshAttempt
-from parishkit.stewardship.source.refreshing import load_and_stage_attempt
+from parishkit.stewardship.source.refreshing import _inputs, load_and_stage_attempt
 from parishkit.stewardship.source.snapshots import (
     finish_snapshot,
     promote_snapshot,
@@ -154,10 +155,13 @@ def seed_full(credential, execution, lease):
 
     attempt = begin_refresh_attempt(execution, lease, credential)
     snapshot = attempt.snapshot
+    # Use the same admitted parish-day observation as the real full loader.
+    # UTC's calendar date can already be tomorrow in an evening parish test.
+    as_of = _inputs(attempt.pk, execution, lease).as_of
     data = replace(source(), organization_id=12345)
     for family in data.families.values():
         family["registeredOrganizationID"] = 12345
-    corpus = normalize_core(data, as_of=snapshot.started_at.date())
+    corpus = normalize_core(data, as_of=as_of)
     with execution.effect():
         for kind, rows in corpus.items():
             stage_entities(snapshot.pk, lease, kind=kind, entities=rows, admit=permit)
@@ -167,7 +171,7 @@ def seed_full(credential, execution, lease):
             started_at=snapshot.started_at,
             window_digest=attempt.request.window_digest,
             evidence={
-                "giving_as_of_date": snapshot.started_at.date().isoformat(),
+                "giving_as_of_date": as_of.isoformat(),
                 "anonymous_pledges": 0,
                 "anonymous_contributions": 0,
             },
@@ -183,6 +187,33 @@ def seed_full(credential, execution, lease):
         release_source(lease)
     execution.transition("complete")
     return snapshot
+
+
+@pytest.mark.parametrize(
+    "instant,expected",
+    [
+        (datetime(2026, 1, 1, 2, tzinfo=UTC), date(2025, 12, 31)),
+        (datetime(2026, 7, 1, 2, tzinfo=UTC), date(2026, 6, 30)),
+    ],
+)
+def test_refresh_observation_day_uses_parish_timezone(
+    tmp_path, monkeypatch, instant, expected
+):
+    """Exercise winter/summer UTC-midnight boundaries without changing DB clocks."""
+    from parishkit.stewardship.source import refreshing
+
+    credential, execution, lease, *_ = setup(tmp_path)
+    attempt = begin_refresh_attempt(execution, lease, credential)
+    verify = refreshing.verify_refresh_attempt
+
+    def observed_at(*args, **kwargs):
+        """Keep real admission, replacing only its returned observation timestamp."""
+        checked = verify(*args, **kwargs)
+        checked.snapshot.started_at = instant
+        return checked
+
+    monkeypatch.setattr(refreshing, "verify_refresh_attempt", observed_at)
+    assert _inputs(attempt.pk, execution, lease).as_of == expected
 
 
 def next_delta():
