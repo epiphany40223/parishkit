@@ -213,13 +213,114 @@ five Low; the single Medium was retained and verified:
 
 - **R2-01 / Medium, Codex:** optional login-help database/configuration/rendering
   failures could bypass the safe fallback used by denial help. Both callers now
-  use one optional-help adapter. Six fault-injection cases independently raise
-  configuration, database and rendering exceptions for login and denial help,
-  preserving fixed responses and omitting diagnostic values.
+  use one optional-help adapter. Six fault-injection cases inject ConfigError,
+  DatabaseError and ValueError at the public-help boundary for login and denial
+  help, preserving fixed responses and omitting diagnostic values.
 
-The corrected image at `78bcb67` passed all **30 Compose cases** and all **eight
+The round-1-corrected image at `78bcb67`, before R2-01, passed all **30 Compose cases** and all **eight
 operational cases** (727.27 seconds), including configured, initial, completed
 and cancelled setup under both development and production-shaped profiles.
 These use synthetic credentials and do not perform a deployment or real provider
 operation. R2-01's targeted content/authentication run passed all 40 tests in
 55.05 seconds. The third review and corrected-tree full coverage remain pending.
+
+## Round 3 and supplemental integration coverage
+
+Round 3, session `20260914-145034-079615`, reviewed `78bcb67` through
+`81dcbf8cb6502a3cb0f7841df943f1f1635c4d28`, clean tree
+`6f885f6d9235931766e82e6a4f835d730ce3b02a`. Both vendors completed successfully;
+Codex took 326 seconds. The finalized result was Approve, six raw Low findings
+and none Medium/High/Critical. Artifact SHA-256:
+`8bb517c8650ec78f7577884a4ca3b7f208a16ddd0e63445a3ce88aa53799f6b3`.
+
+Claude freshly inspected the complete staged-credential replacement/testing,
+prepared-manifest, completion/abort boundary (G2-I1), closing its round-2 gap,
+and rechecked G2-I5. It explicitly reused earlier evidence for G2-I4 and parts
+of I2/I3/I6/I7/I8. Codex reported all IDs freshly inspected. This was the third
+successful dual-source round, but the remaining promised fresh negative-case
+coverage was not declared complete from that count alone.
+
+Supplemental session `20260914-145833-72e135` therefore reviewed the same clean
+endpoints with focus limited to current I2/I3/I4/I6/I7/I8 integrations. Both
+vendors explicitly covered all six IDs, identifying current interacting owners
+and negative cases. I1/I5 were deliberately not repeated. Parent browser
+execution and visual inspection supply the execution evidence; reviewers did
+not claim manual screen-reader or real-provider validation. Codex completed in
+358 seconds. Neither session has failed agents, degradation, mismatch or salvage.
+Supplement artifact SHA-256:
+`eefc35ff11476c7b076ddf4a65b0918eaca7f9097d6b052e90642c708b7fb607`.
+
+The supplement reported three raw Medium and three Low findings, no High or
+Critical. Pika retained one Medium and filtered two only because their paths
+were outside the correction diff. Those two were still inspected as part of
+the explicitly requested integrated gate scope, rather than assumed invalid:
+
+- **S-01 / Medium, accepted:** optional help was suppressed inside presence's
+  existing transaction without a savepoint. A real SQL failure could discard
+  session revocation and its audit. The adapter now rolls back its own nested
+  transaction before suppressing the error. The regression uses actual division
+  by zero in PostgreSQL on the presence-denial path, checks lookup invocation,
+  safe response, persisted revocation and the additional audit event. The six
+  earlier fault cases also now assert exact invocation counts.
+- **S-02 / Medium, rejected as false-positive:** the alleged live hidden-question
+  withdrawal requires changing `additional_information` after Production
+  activation. `campaigns/admission.py` excludes that field from the structurally
+  locked edit set, and the real installer rejects the attempted change. The
+  new restricted-HTTP regression retains that rejected operation, verifies
+  unchanged active configuration and actionable text, then resubmits unchanged
+  text without creating duplicate work. The cited Testing-only test creates no
+  live follow-up. An exploratory implementation was removed after this failed
+  premise was established; no schema or live follow-up semantics changed.
+- **S-03 / Medium, later-phase consumer clarified:** `submission_confirmation`
+  is the parish-authored receipt-email block owned by BG-07, while browser
+  completion uses `thank_you`. The Admin label, data contract, BG-07 plan and
+  acceptance boundary now explicitly identify that email consumer. Actual
+  delivery remains the existing Phase 4 dependency, not claimed implemented.
+
+### Below-cutoff Low dispositions
+
+All raw Lows remain visible here, including duplicates across rounds. Later
+hardening owners do not waive those owners' eventual acceptance criteria.
+
+| Origin | Disposition and evidence / later owner |
+| --- | --- |
+| Historical attempt: proposed-Member source-change wording | Defer cosmetic wording to FAM-08 final copy/accessibility pass; the separate proposed-household heading already identifies these values as requests. |
+| R1: final Testing checkbox deletion wording | Defer copy refinement to FAM-08; explicit deletion and non-campaign-response notices are present at entry/completion, and final consent says disposable test. |
+| R1: duplicate-name Edit accessible labels | Defer ordinal disambiguation to FAM-08 manual screen-reader pass; section focus and automated AA checks pass. |
+| R1: nullable completeness source witness | Reject the hypothesized valid path: the parent guard enforces exact active household and closed field vocabulary; both source helpers return explicit boolean availability for those admitted inputs. Schema-owner corruption is not an admitted submission. |
+| R1: stronger private-route baseline/pin assertions | Defer additional negative assertions to FAM-08/OPS-09; present admission, private-byte, no-submission and baseline-authority tests remain required. |
+| R2 denial-help cost; R3 and supplement repeat | Defer duplicate public configuration work and cheap 429/503-path optimization to OPS-08 load/abuse measurements. It exposes only campaign-wide public content; rejection and rate-limit outcomes are unchanged. |
+| R2 duplicate GET configuration reads; R3 repeat | Same OPS-08 optimization; no private form or submission is admitted by the public-help read. |
+| R2 fault matrix; R3 and supplement repeats | Basic six-case exception coverage and actual transactional SQL failure now pass. Exhaustive link/429/503 permutations remain FAM-08/OPS-09 hardening; callers share the tested adapter. |
+| R2 blank nonpublic projection constants | Defer docstring refinement to OPS-09 maintenance. Blank constants are not private values; actual Family and financial inputs have their separate concurrency owners. |
+| R2 fixture guard-restoration failure | Reject a falsely green aggregate: restoration failure errors the test and invalidates its shard receipt. Restoration is verified before the tested web mutation; strict schema checks remain independent. |
+| R3 and supplement missing injected-call assertion | Fixed: each original fault case now requires exactly one invocation, as does the actual SQL-failure case. |
+| R3 silent invalid-slot/rendering failure signal | Defer redacted operational notification to OPS-08; current callers use two constant supported slots. Safe error fallback is intentional and must not log exception text. |
+| R3 ledger and correction in one commit | Reject: the commit is one verified correction plus its directly related review evidence; its body explicitly describes both. |
+| R3 ambiguous prior-image wording | Fixed above: `78bcb67` image evidence is explicitly before R2-01. |
+| Supplement boundary-injection versus renderer execution wording | Fixed above: the original cases inject three exception types at the public-help boundary, not actual renderer faults. |
+
+## Corrected-tree validation checkpoint
+
+At `81dcbf8`, all 720 browser cases passed (240 per engine), with Chromium
+180.03 seconds, WebKit 270.36 seconds and Firefox 553.90 seconds. Fresh
+320-/1,280-pixel screenshots were visually inspected with no clipping or
+horizontal overflow; the full flow's keyboard, focus and automated AA checks
+passed. The rebuilt image passed all 30 Compose cases in 123.82 seconds.
+Ruff, formatting and all tracked Markdown passed.
+
+The complete four-shard database attempt executed 2,534 cases: 2,522 passed
+and 12 failed. All failures were unexpected synthetic Admin OAuth callback
+denials in setup/share-option/task-status tests. Its 5,299-test baseline passed;
+the prior six corrupt-history fixture regressions are resolved. No passing
+coverage aggregate is claimed. All 49 affected-module cases passed in an
+isolated diagnostic rerun, so the full-run cause is not yet established and a
+complete corrected-tree run is still required. The known 120-second setup
+cleanup diagnostic completed successfully at 142.54 seconds.
+
+S-01's actual SQL regression passed in the initial targeted run. Four exploratory
+S-02 tests failed precisely because live structural edits were rejected; their
+incorrect assumption and unnecessary implementation were removed. The final
+confirmed-correction suite passes all 88 presence/content/HTTP/schema tests in
+99.26 seconds; all 11 content-form unit tests pass. Complete coverage and the
+renewed focused review remain pending. Gate 2 is still open.
