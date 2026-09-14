@@ -4903,6 +4903,32 @@ AS $$
     ) ELSE NULL END
 $$;
 
+-- A disabled census does not restore a previously terminal Member's Ministry
+-- eligibility. Mirror the retained proposal index, including closed outcomes.
+CREATE FUNCTION public.stewardship_response_retained_terminal_v1(prior_id uuid, member_key text)
+    RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog, public, pg_temp
+AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM (
+            SELECT DISTINCT ON (proposal.field) proposal.submitted_value, proposal.execution
+            FROM public.stewardship_proposed_change proposal
+            JOIN public.stewardship_submission history ON history.id=proposal.submission_id
+            JOIN public.stewardship_submission prior ON prior.id=prior_id
+            WHERE history.family_id=prior.family_id AND history.campaign_id=prior.campaign_id
+              AND history.mode=prior.mode
+              AND history.rehearsal_epoch_id IS NOT DISTINCT FROM prior.rehearsal_epoch_id
+              AND history.family_version<=prior.family_version
+              AND proposal.entity_kind='member' AND proposal.entity_key=member_key
+              AND proposal.field IN ('moved_household','deceased_status')
+            ORDER BY proposal.field,
+                (history.id=public.stewardship_response_census_anchor_v1(prior_id)) DESC,
+                history.family_version DESC
+        ) latest
+        WHERE latest.submitted_value='true'::jsonb
+          AND latest.execution NOT IN ('published','resolved_upstream','resolved_external','cancelled','superseded')
+    );
+$$;
+
 CREATE FUNCTION public.stewardship_ministry_answers_guard_v1(
     response public.stewardship_submission, campaign public.stewardship_campaign_configuration)
     RETURNS void LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp
@@ -4929,7 +4955,9 @@ BEGIN
         END IF;
         SELECT coalesce(array_agg(key ORDER BY key),'{}'::text[]) INTO expected
             FROM jsonb_each(response.answers->group_name)
-            WHERE NOT (value ? 'moved_household' OR value ? 'deceased_status');
+            WHERE NOT (value ? 'moved_household' OR value ? 'deceased_status')
+              AND (group_name<>'members' OR campaign.values->'modules' ? 'census'
+                   OR NOT public.stewardship_response_retained_terminal_v1(response.prior_submission_id,key));
         IF (SELECT coalesce(array_agg(key ORDER BY key),'{}'::text[])
             FROM jsonb_object_keys(answers->group_name) key) IS DISTINCT FROM expected THEN
             RAISE EXCEPTION 'Ministry identities must match nonterminal household' USING ERRCODE='23514';

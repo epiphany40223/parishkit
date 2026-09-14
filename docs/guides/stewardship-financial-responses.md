@@ -132,3 +132,33 @@ no changes. The longer serial PostgreSQL coverage run was deliberately stopped
 before source corrections; it is not completed coverage evidence. Final-head
 coverage, full applicable regression validation, two further review rounds and
 protected CI/delivery remain required.
+
+## Review round 2
+
+Session `20260914-052803-dd94b1` reviewed corrections from
+`6cd1fe6f2f3dba37d2f4d29badddb92a1444afe3` to
+`8d80045cc1fe33c31684cc6e07817ba210fe6d13`, tree
+`84372f0f86722376fb18e50f143588a7bd7419ca`, with the surrounding financial
+and census-history boundaries. Both generated reviewers completed successfully
+without degradation, mismatch or salvage. Raw severities: one Medium and ten
+Low; one validated Medium, accepted and corrected.
+
+Disabled census now preserves terminal Ministry eligibility as well as the
+private effective household count. Presentation, Python validation and an
+independent SQL guard omit moved/deceased Members from Ministry answers without
+exposing the retained census request details. Re-enabling census still permits
+an explicit reversal. A stale tab with newly unavailable Ministry edits must
+explicitly discard them before reviewing/submitting the remaining answers.
+
+Focused post-correction validation passed two real PostgreSQL cases covering
+moved/deceased history, repeated responses, forged HTTP/Python-bypass INSERTs,
+rollback and census re-enablement. Six browser cases pass across Chromium,
+Firefox and WebKit, including explicit stale-edit discard. Ruff lint/format and
+schema-drift checks pass. Broader regression validation remains in progress.
+
+Finalized artifact SHA-256:
+`bc3d58df0ae3c93229a5411e6f50f226af82d84a56ee25ac533edf4cd3056c12`.
+No accepted Medium-or-higher finding remains from this round. Before this
+correction, the broader response/Ministry/financial PostgreSQL suite passed
+224 cases and all 681 browser cases passed (227 per engine). Those earlier
+results are not claimed as final-head validation.

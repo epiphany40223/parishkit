@@ -24,7 +24,7 @@ from .effective import (
     census_submission,
     effective_field,
     effective_fields,
-    effective_household_count,
+    effective_household,
     proposal_index,
 )
 from .financial import household_pronoun
@@ -131,10 +131,13 @@ def form_presentation(form):
         record_id=baseline.family.campaign_id,
     )
     proposed = _proposed_presentation(prior) if census else []
+    composition = (
+        effective_household(form.inputs.member_duids, prior) if not census else None
+    )
     member_count = (
         sum(not member["request"] for member in members) + len(proposed)
         if census
-        else effective_household_count(form.inputs.member_duids, prior)
+        else composition.member_count
     )
     return {
         "baseline": str(baseline.pk),
@@ -151,6 +154,9 @@ def form_presentation(form):
             prior,
             terminal_members=frozenset(row["id"] for row in members if row["request"]),
             proposed_members=frozenset(row["id"] for row in proposed),
+            unavailable_members=composition.terminal_members
+            if composition
+            else frozenset(),
         ),
         "financial": financial_presentation(
             form.inputs.financial, prior, parish_name=form.inputs.parish_name

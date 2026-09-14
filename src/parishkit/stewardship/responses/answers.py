@@ -31,7 +31,15 @@ class InvalidAnswers(ValueError):
         super().__init__("Please review the indicated Family form fields.")
 
 
-def validate_answers(payload, inputs, *, additional_enabled, testing, today):
+def validate_answers(
+    payload,
+    inputs,
+    *,
+    additional_enabled,
+    testing,
+    today,
+    retained_terminal_members=frozenset(),
+):
     """Validate all active Members and explicit test consent without persisting.
 
     Text limits are part of the server-owned form definition. Known source
@@ -44,6 +52,8 @@ def validate_answers(payload, inputs, *, additional_enabled, testing, today):
         or type(additional_enabled) is not bool
         or type(testing) is not bool
         or type(today) is not date
+        or type(retained_terminal_members) is not frozenset
+        or not retained_terminal_members <= {str(key) for key in inputs.member_duids}
     ):
         raise TypeError("Trusted form definition and namespace are required.")
     expected_fields = {
@@ -151,7 +161,8 @@ def validate_answers(payload, inputs, *, additional_enabled, testing, today):
         ministries = validate_ministry_answers(
             payload["ministries"],
             inputs.ministries,
-            terminal_members=frozenset(
+            terminal_members=(retained_terminal_members if not census else frozenset())
+            | frozenset(
                 key
                 for key, values in normalized.items()
                 if values.get("moved_household") or values.get("deceased_status")

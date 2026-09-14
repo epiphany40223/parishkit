@@ -55,6 +55,7 @@
   }
   function dirty() {
     if (!answers || !initial) return false;
+    if ([...conflicts.entries()].some(([path, conflict]) => conflictApplies(path) && conflict.choice === undefined)) return true;
     return canonical(answers.family, "family") !== canonical(initial.family, "family") ||
       canonical(answers.additional_information, "additional") !==
       canonical(initial.additional_information, "additional") ||
@@ -497,6 +498,9 @@
     const group = member.proposed ? "proposed_members" : "members";
     return answers.ministries[group][member.id] ||= member.proposed ? {join: []} : {join: [], leave: []};
   }
+  function ministryEligible(member) {
+    return Boolean(form.ministries && (member.proposed || Object.hasOwn(form.ministries.members, member.id)));
+  }
   function ministryCurrent(member) {
     return new Set(member.proposed ? [] : form.ministries.members[member.id]?.current || []);
   }
@@ -507,6 +511,12 @@
       const group = member.proposed ? "proposed_members" : "members";
       const old = before.ministries[group]?.[member.id] || {};
       const edited = previous.ministries[group]?.[member.id] || {};
+      if (!ministryEligible(member)) {
+        if (canonical(old, "ministries") !== canonical(edited, "ministries")) {
+          conflicts.set("ministries." + group + "." + member.id, {unavailable: true});
+        }
+        return;
+      }
       const current = ministryCurrent(member), choices = ministryChoices(member);
       Object.keys(choices).forEach((action) => {
         const original = new Set(old[action] || []), changed = new Set(edited[action] || []);
@@ -528,12 +538,22 @@
   }
   function ministryEditor(member, parent) {
     if (!form.ministries) return;
+    const path = "ministries." + (member.proposed ? "proposed_members." : "members.") + member.id;
+    const conflict = conflicts.get(path);
+    if (!ministryEligible(member)) {
+      if (conflict && conflict.choice === undefined) {
+        const group = node("fieldset", null, parent, {"data-conflict": path});
+        node("legend", "Ministry choices for this member are no longer available.", group);
+        node("button", "Discard unavailable Ministry edits", group, {type: "button"}).addEventListener("click", () => {
+          conflict.choice = 0; edit();
+        });
+      }
+      return;
+    }
     const panel = node("section", null, parent, {class: "panel"});
     node("h3", "Ministry participation", panel);
     node("p", "These are requests, not automatic roster changes. A Ministry leader or parish staff member may follow up.", panel);
     const choices = ministryChoices(member), current = ministryCurrent(member);
-    const path = "ministries." + (member.proposed ? "proposed_members." : "members.") + member.id;
-    const conflict = conflicts.get(path);
     if (conflict && conflict.choice === undefined) {
       const notice = node("div", null, panel, {"data-conflict": path});
       node("p", "Some of your edited Ministry choices are no longer available. Review the current choices below.", notice);
@@ -585,7 +605,7 @@
     }
   }
   function ministryReview(member, parent) {
-    if (!form.ministries) return;
+    if (!ministryEligible(member)) return;
     node("h4", "Ministry requests", parent);
     const choices = ministryChoices(member);
     let selected = false;
@@ -1182,7 +1202,7 @@
         const payload = {...answers, members: Object.fromEntries(Object.entries(answers.members).map(
           ([id, value]) => [id, requests[id] || value]))};
         if (form.ministries) payload.ministries = {
-          members: Object.fromEntries(form.members.filter((member) => !requests[member.id]).map(
+          members: Object.fromEntries(form.members.filter((member) => !requests[member.id] && ministryEligible(member)).map(
             (member) => [member.id, ministryChoices(member)])),
           proposed_members: Object.fromEntries(allMembers().filter((member) => member.proposed).map(
             (member) => [member.id, ministryChoices(member)]))

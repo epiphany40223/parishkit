@@ -394,3 +394,77 @@ def test_new_giving_timestamp_without_value_changes_does_not_force_review(
         result = respond(harness, form, answers)
         assert result.reviewed_source_id == old.pk
         assert result.validation_source_id == new.pk
+
+
+@pytest.mark.parametrize("kind", ["moved_household", "deceased_status"])
+def test_disabled_census_preserves_terminal_ministry_eligibility(
+    response_service, monkeypatch, kind
+):
+    """Module toggles preserve private terminal intent in HTTP and independent SQL."""
+    harness = response_service
+    financial_source(
+        harness, modules=["census", "ministry", "financial"], selected=(4,)
+    )
+    form = load_form(harness)
+    ordinary = answers_for(form)["members"]["3"]
+    answers = answers_for(form)
+    answers["members"]["3"] = {kind: True, "confirmed": True}
+    if kind == "deceased_status":
+        answers["members"]["3"]["death_date"] = ""
+    answers["ministries"]["members"] = {}
+    answers["financial"] = {"annual_pledge": "10", "frequency": "annual", "shares": {}}
+    respond(harness, form, answers)
+    financial_source(harness, modules=["ministry", "financial"], selected=(4,))
+    with web_login():
+        for _ in range(2):
+            form = revisit(harness)
+            assert form["effective_member_count"] == 0
+            assert form["members"][0]["request"] is None
+            assert form["members"][0]["fields"] == []
+            assert form["ministries"]["members"] == {}
+            assert respond(harness, form, answers_for(form)).annual_pledge == 10
+        form = revisit(harness)
+        answers = answers_for(form)
+        forged = deepcopy(answers)
+        forged["ministries"]["members"]["3"] = {"join": [], "leave": [4]}
+        rejected = post(
+            harness.client,
+            "/family/submit",
+            {
+                "baseline": form["baseline"],
+                "answers": forged,
+            },
+        )
+        assert rejected.status_code == 422, rejected.content
+        real = submission.validate_answers
+
+        def forge(*args, **kwargs):
+            """Bypass only Python validation; the real INSERT must still reject it."""
+            result = deepcopy(real(*args, **kwargs))
+            result["ministries"]["members"]["3"] = {"join": [], "leave": [4]}
+            return result
+
+        with monkeypatch.context() as patch:
+            patch.setattr(submission, "validate_answers", forge)
+            with (
+                pytest.raises(IntegrityError, match="Ministry identities"),
+                transaction.atomic(),
+            ):
+                submission.submit_family(
+                    harness.request,
+                    harness.service,
+                    baseline_id=UUID(form["baseline"]),
+                    payload=answers,
+                )
+        assert Submission.objects.count() == 3
+        assert SubmissionReceiptOccurrence.objects.count() == 3
+    financial_source(
+        harness, modules=["census", "ministry", "financial"], selected=(4,)
+    )
+    with web_login():
+        form = revisit(harness)
+        answers = answers_for(form)
+        answers["members"]["3"] = ordinary
+        answers["ministries"]["members"]["3"] = {"join": [], "leave": [4]}
+        result = respond(harness, form, answers)
+        assert result.answers["ministries"]["members"]["3"]["leave"] == [4]

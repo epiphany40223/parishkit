@@ -25,6 +25,7 @@ from .baselines import (
     end_baseline,
     issue_baseline,
 )
+from .effective import effective_household
 from .followup import derive_additional_information
 from .inputs import FORM_SCHEMA
 from .ministry_requests import derive_ministry_requests
@@ -103,6 +104,11 @@ def submit_family(request, service, *, baseline_id, payload):
             today=_now()
             .astimezone(ZoneInfo(campaign.active_configuration.timezone))
             .date(),
+            retained_terminal_members=effective_household(
+                validated.current.member_duids, validated.prior_submission
+            ).terminal_members
+            if "census" not in validated.current.modules
+            else frozenset(),
         )
         mode = "test" if session.mode == "testing" else "live"
         sequence = (

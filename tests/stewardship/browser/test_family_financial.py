@@ -60,6 +60,49 @@ def final_submit(page):
     page.get_by_role("button", name="Submit response").click()
 
 
+@pytest.mark.parametrize("stale_edit", [False, True])
+def test_retained_terminal_ministry_eligibility_without_census(
+    page, component_origin, stale_edit
+):
+    """Private eligibility excludes Ministry answers; stale edits need discard."""
+    fresh = financial_form(ministry=True)
+    fresh["effective_member_count"] = 0
+    fresh["ministries"]["members"] = {}
+    form = financial_form(ministry=True) if stale_edit else fresh
+    submissions, errors = [], []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+
+    def submit(route):
+        """A refreshed form never automatically submits the remaining pledge."""
+        submissions.append(route.request.post_data_json["answers"])
+        if stale_edit and len(submissions) == 1:
+            route.fulfill(status=409, json={"error": "review_required", "form": fresh})
+        else:
+            route.fulfill(json={"accepted": True})
+
+    begin(page, component_origin, form, submit)
+    page.get_by_label("Annual pledge (USD)").fill("25")
+    page.get_by_label("Pledge frequency").select_option("annual")
+    if stale_edit:
+        page.get_by_label("Choir — wishes to stop participating").check()
+        final_submit(page)
+        expect(
+            page.get_by_role("button", name="Discard unavailable Ministry edits")
+        ).to_be_visible()
+        page.get_by_role("button", name="Review response").click()
+        assert page.get_by_role("button", name="Submit response").count() == 0
+        assert len(submissions) == 1
+        page.get_by_role("button", name="Discard unavailable Ministry edits").click()
+    assert page.get_by_label("Household status").count() == 0
+    assert page.get_by_text("Ministry participation", exact=True).count() == 0
+    final_submit(page)
+    expect(page.get_by_role("heading", name="Thank you!")).to_be_visible()
+    assert submissions[-1]["ministries"] == {"members": {}, "proposed_members": {}}
+    assert submissions[-1]["members"] == {"3": {}}
+    assert submissions[-1]["financial"]["annual_pledge"] == "25"
+    assert not errors
+
+
 @pytest.mark.parametrize(
     "census,ministry,width",
     [
