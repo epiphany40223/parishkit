@@ -151,7 +151,12 @@ def test_stale_birth_unknown_choice_requires_explicit_resolution(
     expect(page.locator("#member-3-birth_date-unknown")).to_be_enabled()
     expect(page.locator("#member-3-birth_date-unknown")).to_be_checked(checked=use_edit)
     page.get_by_role("button", name="Review response").click()
-    page.get_by_role("button", name="Submit response").click()
+    # Clicking finishes before a fetch necessarily reaches the route callback.
+    # Await the second response so this cannot inspect the earlier submission.
+    with page.expect_response("**/family/submit") as response:
+        page.get_by_role("button", name="Submit response").click()
+    assert response.value.status == 409
+    assert len(submissions) == 2
     assert submissions[-1]["answers"]["members"]["3"]["birth_date"] == (
         "unknown" if use_edit else "1970-01-01"
     )
