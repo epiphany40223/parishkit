@@ -1238,10 +1238,13 @@
           document.dispatchEvent(new Event("stewardship:family-finished"));
           finished = true; clear(); cancel.hidden = true;
           say("");
-          heading("Thank you!", "welcome");
-          node("p", testing ? "Your test response will not count toward the campaign and will be deleted before Production. Please return to submit your response when the live campaign opens, or contact the parish. You are now signed out." :
+          heading(testing ? "Test response complete" : "Thank you!", "welcome");
+          node("p", testing ? "Your campaign response has not been recorded. This test response will be deleted before the live campaign opens. Please return to submit your response during the live campaign, or contact the parish if you expected to submit a real response. You are now signed out." :
             "Your response was submitted. You are now signed out.", root);
-          if (submittedThankYou) node("div", null, root).innerHTML = submittedThankYou;
+          if (submittedThankYou) {
+            if (testing) node("h2", "Preview only: parish Thank You message", root);
+            node("div", null, root).innerHTML = submittedThankYou;
+          }
         } else if (finished) {
           expired();
           return;

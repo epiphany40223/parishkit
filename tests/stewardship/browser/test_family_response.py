@@ -201,11 +201,23 @@ def test_testing_requires_two_independent_unchecked_acknowledgments(
     assert not page.locator("#testing-submit-ack").is_checked()
     page.locator("#testing-submit-ack").check()
     page.get_by_role("button", name="Submit test response").click()
-    expect(page.get_by_role("heading", name="Thank you!", exact=True)).to_be_visible()
+    expect(
+        page.get_by_role("heading", name="Test response complete", exact=True)
+    ).to_be_visible()
     assert submissions[0]["answers"]["testing_acknowledged"] is True
-    assert "will not count" in page.locator("main").inner_text()
-    assert "will be deleted before Production" in page.locator("main").inner_text()
+    assert (
+        "Your campaign response has not been recorded"
+        in page.locator("main").inner_text()
+    )
+    assert (
+        "will be deleted before the live campaign opens"
+        in page.locator("main").inner_text()
+    )
     assert "return to submit your response" in page.locator("main").inner_text()
+    assert "Production" not in page.locator("main").inner_text()
+    expect(
+        page.get_by_role("heading", name="Preview only: parish Thank You message")
+    ).to_be_visible()
 
 
 def test_stale_response_keeps_only_actual_edits_and_requires_review(
