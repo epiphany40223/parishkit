@@ -142,6 +142,7 @@ def form_presentation(form):
     return {
         "baseline": str(baseline.pk),
         "testing": baseline.mode == "test",
+        "parish_name": form.inputs.parish_name,
         "today": _now().astimezone(ZoneInfo(campaign.timezone)).date().isoformat(),
         "family": family,
         "modules": list(form.inputs.modules),

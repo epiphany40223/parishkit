@@ -1063,7 +1063,9 @@ disabled sections that neither affects the form nor its validation. Canonical
 comparisons use the shared typed normalization registry. Tests enumerate these
 dependencies so new form fields cannot omit their concurrency protection.
 Relevant form-definition/schema/configuration changes use the same review path;
-unrelated configuration-version changes are not conflicts. Transfer required
+unrelated configuration-version changes are not conflicts. The parish name in
+the definitive live Submit action is a relevant definition dependency for all
+module combinations, even when financial stewardship is disabled. Transfer required
 baseline pins to the immutable Submission atomically on successful submit;
 releasing a form pin cannot remove a submission's retention protection.
 

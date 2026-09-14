@@ -43,7 +43,7 @@ def test_household_addresses_and_explicit_false_submit_once(
     fill_address(page, "mailing_address", mailing)
     page.get_by_label("Opt out of all parish emails").select_option("false")
     page.get_by_role("button", name="Review response").click()
-    expect(page.get_by_role("button", name="Submit response")).to_be_visible()
+    expect(page.get_by_role("button", name="Submit to Sample Parish")).to_be_visible()
     assert "SW1A 1AA" in page.locator("main").inner_text()
     assert "[object Object]" not in page.locator("main").inner_text()
     page.get_by_role("button", name="Back to edit").click()
@@ -51,7 +51,7 @@ def test_household_addresses_and_explicit_false_submit_once(
     assert not submissions
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     page.get_by_role("button", name="Review response").click()
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(page.get_by_role("heading", name="Thank you!", exact=True)).to_be_visible()
     assert submissions[0]["answers"]["family"] == {
         "home_address": home,
@@ -96,10 +96,10 @@ def test_us_rules_do_not_block_international_address(page, component_origin):
     page.get_by_role("button", name="Begin reviewing").click()
     fill_address(page, "home_address", address(region="", postal_code=""))
     page.get_by_role("button", name="Review response").click()
-    assert page.get_by_role("button", name="Submit response").count() == 0
+    assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
     page.locator("#family-home_address-country").select_option("IE")
     page.get_by_role("button", name="Review response").click()
-    expect(page.get_by_role("button", name="Submit response")).to_be_visible()
+    expect(page.get_by_role("button", name="Submit to Sample Parish")).to_be_visible()
 
 
 def test_stale_household_values_require_explicit_field_choices(page, component_origin):
@@ -116,17 +116,17 @@ def test_stale_household_values_require_explicit_field_choices(page, component_o
     page.get_by_role("button", name="Begin reviewing").click()
     fill_address(page, "home_address", address(line1="My edited home"))
     page.get_by_role("button", name="Review response").click()
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(page.locator('[data-conflict="family.home_address"]')).to_be_visible()
     expect(page.locator("#family-home_address-line1")).to_be_disabled()
     page.get_by_role("button", name="Review response").click()
-    assert page.get_by_role("button", name="Submit response").count() == 0
+    assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
     page.get_by_role("radio", name="Use updated records:").check()
     expect(page.locator("#family-home_address-line1")).to_have_value(
         "Other adult's home"
     )
     page.get_by_role("button", name="Review response").click()
-    expect(page.get_by_role("button", name="Submit response")).to_be_visible()
+    expect(page.get_by_role("button", name="Submit to Sample Parish")).to_be_visible()
 
 
 @pytest.mark.parametrize("prior_same", [False, True])
@@ -149,7 +149,7 @@ def test_untouched_same_flag_adopts_other_adults_refreshed_choice(
     page.route("**/family/form", lambda route: route.fulfill(json={"form": original}))
     page.get_by_role("button", name="Begin reviewing").click()
     page.get_by_role("button", name="Review response").click()
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(page.get_by_role("button", name="Review response")).to_be_visible()
     assert page.get_by_label(
         "Mailing address is the same as home address"
@@ -176,7 +176,7 @@ def test_stale_address_choices_do_not_destroy_separate_mailing_draft(
     page.once("dialog", lambda dialog: dialog.accept())
     page.get_by_label("Mailing address is the same as home address").check()
     page.get_by_role("button", name="Review response").click()
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
     page.get_by_role("radio", name="Use my edit:").check()
     page.get_by_role("radio", name="Keep addresses separate").check()
     expect(page.locator("#family-mailing_address-line1")).to_have_value(
@@ -212,7 +212,7 @@ def test_household_blur_has_visible_linked_error_and_country_change_clears_it(
     page.locator("#family-home_address-country").select_option("GB")
     expect(error).to_be_hidden()
     page.get_by_role("button", name="Review response").click()
-    expect(page.get_by_role("button", name="Submit response")).to_be_visible()
+    expect(page.get_by_role("button", name="Submit to Sample Parish")).to_be_visible()
 
 
 @pytest.mark.parametrize(
@@ -239,7 +239,7 @@ def test_copy_then_change_home_resolution_restores_separate_value(
     page.once("dialog", lambda dialog: dialog.accept())
     page.get_by_label("Mailing address is the same as home address").check()
     page.get_by_role("button", name="Review response").click()
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
     if copy_first:
         page.get_by_role("radio", name="Use my edit:").check()
         page.once("dialog", lambda dialog: dialog.accept())
@@ -257,7 +257,7 @@ def test_copy_then_change_home_resolution_restores_separate_value(
         "Retained separate draft"
     )
     page.get_by_role("button", name="Review response").click()
-    expect(page.get_by_role("button", name="Submit response")).to_be_visible()
+    expect(page.get_by_role("button", name="Submit to Sample Parish")).to_be_visible()
     assert "Retained separate draft" in page.locator("main").inner_text()
 
 
@@ -281,7 +281,7 @@ def test_server_address_line_errors_are_linked_and_focusable(
     )
     page.get_by_role("button", name="Begin reviewing").click()
     page.get_by_role("button", name="Review response").click()
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
     identifier = f"family-home_address-{component}"
     link = page.locator(f'#family-flow-message a[href="#{identifier}"]')
     expect(link).to_be_visible()
@@ -313,4 +313,4 @@ def test_untouched_address_fields_show_errors_only_on_blur_or_review(
     expect(page.locator("#family-home_address-country-constraint")).to_be_hidden()
     page.get_by_role("button", name="Review response").click()
     expect(page.locator("#family-home_address-country-constraint")).to_be_visible()
-    assert page.get_by_role("button", name="Submit response").count() == 0
+    assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0

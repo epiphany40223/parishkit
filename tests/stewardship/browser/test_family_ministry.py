@@ -79,7 +79,7 @@ def test_mobile_ministry_edit_review_and_definitive_submit(
     expect(page.get_by_label("Choir — wishes to stop participating")).to_be_checked()
     assert not submissions
     page.get_by_role("button", name="Review response").click()
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(page.get_by_role("heading", name="Thank you!", exact=True)).to_be_visible()
     assert submissions[0]["ministries"] == {
         "members": {"3": {"join": [9], "leave": [4]}},
@@ -119,7 +119,7 @@ def test_stale_hidden_choice_requires_explicit_discard_without_hidden_label(
         not withdrawing
     )
     page.get_by_role("button", name="Review response").click()
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(
         page.get_by_role(
             "button", name="Discard unavailable choices and use the current list"
@@ -128,12 +128,12 @@ def test_stale_hidden_choice_requires_explicit_discard_without_hidden_label(
     assert "Food pantry" not in page.locator("main").inner_text()
     page.get_by_role("button", name="Review response").click()
     assert len(submissions) == 1
-    assert page.get_by_role("button", name="Submit response").count() == 0
+    assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
     page.get_by_role(
         "button", name="Discard unavailable choices and use the current list"
     ).click()
     page.get_by_role("button", name="Review response").click()
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(page.get_by_role("heading", name="Thank you!", exact=True)).to_be_visible()
     assert submissions[1]["ministries"]["members"]["3"] == {"join": [], "leave": []}
 
@@ -155,7 +155,7 @@ def test_terminal_choice_omits_all_in_step_ministry_edits(page, component_origin
     assert page.get_by_text("Ministry participation", exact=True).count() == 0
     page.get_by_role("button", name="Review response").click()
     assert "Food pantry" not in page.locator("main").inner_text()
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(page.get_by_role("heading", name="Thank you!")).to_be_visible()
     assert submissions[0]["ministries"] == {"members": {}, "proposed_members": {}}
 
@@ -178,7 +178,7 @@ def test_proposed_member_can_select_ministry_without_source_identity(
     page.get_by_text("Join another Ministry", exact=True).last.click()
     page.locator(f"#ministry-{identifier}-join-9").check()
     page.get_by_role("button", name="Review response").click()
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(page.get_by_role("heading", name="Thank you!")).to_be_visible()
     assert submissions[0]["ministries"]["proposed_members"] == {
         identifier: {"join": [9]}

@@ -383,7 +383,7 @@
     });
   }
   function memberEditor(member, index, editor, fields, deferValidation) {
-    const group = node("fieldset", null, editor);
+    const group = node("fieldset", null, editor, {id: "member-section-" + member.id, tabindex: "-1"});
     node("legend", memberName(member, index), group);
     node("p", "Relationship: " + (member.relationship || "Not available in parish records"), group);
     if (member.proposed) {
@@ -701,7 +701,7 @@
       });
     }
     if (!form.financial) return;
-    const group = node("fieldset", null, parent, {class: "panel", id: "financial-section"});
+    const group = node("fieldset", null, parent, {class: "panel", id: "financial-section", tabindex: "-1"});
     node("legend", "Financial stewardship", group);
     block("financial", group);
     financialSource(group);
@@ -818,6 +818,7 @@
     if (!form.financial) return;
     const panel = node("section", null, parent, {class: "panel"});
     node("h3", "Financial stewardship", panel);
+    editControl(panel, "Financial stewardship", "financial-section");
     financialSource(panel);
     const cents = moneyCents(answers.financial.annual_pledge), frequency = answers.financial.frequency;
     node("p", "Your annual pledge: " + moneyDisplay(cents), panel, {class: "changed"});
@@ -838,7 +839,7 @@
       value.country].filter(Boolean).join(", ") || "Not provided";
   }
   function householdEditor(editor) {
-    const section = node("section", null, editor);
+    const section = node("section", null, editor, {id: "household-section", tabindex: "-1", "aria-label": "Family census"});
     node("h3", "Family census", section);
     const controls = new Map(), validators = [];
     let reviewRequested = false;
@@ -1131,15 +1132,26 @@
     const member = /^members\.([0-9]+)\.([a-z_]+)$/.exec(path);
     return !member || member[2] === "request" || !requests[member[1]];
   }
+  function editControl(parent, label, target) {
+    // Rebuild from tab memory, then focus the requested section. Never navigate
+    // away from or mutate a final submission whose outcome is still pending.
+    node("button", "Edit " + label, parent, {type: "button", "data-review-edit": ""}).addEventListener("click", () => {
+      if (busy || finished) return;
+      edit();
+      document.getElementById(target)?.focus();
+    });
+  }
   function review() {
     heading("Step 2 of 2: Confirm and submit", "review");
     node("progress", "100%", root, {max: "2", value: "2", "aria-label": "Response progress"});
     block("review", root);
-    node("p", "Nothing is saved until you select Submit response.", root);
+    const submitLabel = testing ? "Submit test response" : "Submit to " + form.parish_name;
+    node("p", "Nothing is saved until you select “" + submitLabel + "”.", root);
     familySummary();
     if (form.household) {
     const household = node("section", null, root, {class: "panel"});
     node("h3", "Family census", household);
+    editControl(household, "Family census", "household-section");
     const householdList = node("dl", null, household);
     form.household.fields.forEach((definition) => {
       node("dt", definition.label, householdList);
@@ -1155,6 +1167,7 @@
     if (form.household || form.ministries) allMembers().forEach((member, index) => {
       const panel = node("section", null, root, {class: "panel"});
       node("h3", memberName(member, index), panel);
+      editControl(panel, memberName(member, index), "member-section-" + member.id);
       node("p", "Relationship: " + (member.relationship || "Not available in parish records"), panel);
       if (!member.proposed && requests[member.id]) {
         const request = requests[member.id];
@@ -1180,8 +1193,12 @@
       ministryReview(member, panel);
     });
     financialReview(root);
-    if (form.additional_enabled) node("p", "Additional information: " +
-      (answers.additional_information || "Not provided"), root);
+    if (form.additional_enabled) {
+      const additional = node("section", null, root, {class: "panel"});
+      node("h3", "Additional information", additional);
+      editControl(additional, "Additional information", "additional-information");
+      node("p", answers.additional_information || "Not provided", additional);
+    }
     const confirmation = node("form", null, root, {autocomplete: "off"});
     answers.testing_acknowledged = false;
     if (testing) {
@@ -1193,11 +1210,13 @@
     const actions = node("div", null, confirmation, {class: "actions"});
     const back = node("button", "Back to edit", actions, {type: "button"});
     back.addEventListener("click", edit);
-    const submit = node("button", "Submit response", actions, {type: "submit"});
+    const submit = node("button", submitLabel, actions, {type: "submit"});
     confirmation.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (busy || !confirmation.reportValidity()) return;
       busy = true; submit.disabled = back.disabled = true; say("");
+      const sectionEdits = [...root.querySelectorAll("[data-review-edit]")];
+      sectionEdits.forEach((button) => { button.disabled = true; });
       submissionAttempted = true;
       const submittedThankYou = form.content.thank_you;
       try {
@@ -1219,7 +1238,7 @@
           finished = true; clear(); cancel.hidden = true;
           say("");
           heading("Thank you!", "welcome");
-          node("p", testing ? "Your test response was submitted. It will not count toward the campaign." :
+          node("p", testing ? "Your test response will not count toward the campaign and will be deleted before Production. Please return to submit your response when the live campaign opens, or contact the parish. You are now signed out." :
             "Your response was submitted. You are now signed out.", root);
           if (submittedThankYou) node("div", null, root).innerHTML = submittedThankYou;
         } else if (finished) {
@@ -1239,7 +1258,10 @@
         uncertainSubmission = submissionAttempted = true;
         if (finished) expired();
         else say("We could not confirm submission. Keep this tab open and try again, or sign in again to check the last submission time.");
-      } finally { busy = false; submit.disabled = back.disabled = false; }
+      } finally {
+        busy = false; submit.disabled = back.disabled = false;
+        sectionEdits.forEach((button) => { button.disabled = false; });
+      }
     });
   }
   document.getElementById("family-start").addEventListener("click", async (event) => {

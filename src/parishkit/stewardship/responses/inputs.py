@@ -25,7 +25,7 @@ from .merge import KnownValue
 from .ministry import MAX_MINISTRY_LABEL, MinistryInputs
 
 FORM_SCHEMA = "family-response-v1"
-PROJECTION_VERSION = "family-inputs-v7"
+PROJECTION_VERSION = "family-inputs-v8"
 ADDITIONAL_MAX_LENGTH = 5000
 
 
@@ -110,7 +110,7 @@ class CensusInputs:
                 self.modules,
                 self.ministries.comparison() if self.ministries is not None else None,
                 self.financial.comparison() if self.financial is not None else None,
-                self.parish_name if self.financial is not None else None,
+                self.parish_name,
                 tuple(field.comparison() for field in self.fields),
             )
         )

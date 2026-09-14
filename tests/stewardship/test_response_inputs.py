@@ -138,6 +138,14 @@ def test_every_displayed_family_value_is_a_dependency(inputs, field):
     assert digest(inputs) != before
 
 
+def test_live_submit_recipient_is_a_dependency_without_financial_module(inputs):
+    """The final parish-named action is reviewed even on census-only forms."""
+    inputs["parish_name"] = "Original Parish"
+    before = digest(inputs)
+    inputs["parish_name"] = "Renamed Parish"
+    assert digest(inputs) != before
+
+
 @pytest.mark.parametrize(
     "operation", ["add", "remove", "deactivate", "activate", "deceased"]
 )
