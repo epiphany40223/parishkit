@@ -17,13 +17,14 @@ from parishkit.stewardship.audit.schemas import ContextKind, sanitize
 
 from .census import ADDRESS_LIMITS, FAMILY_FIELDS, country_choices, us_regions
 from .comparison import COMPARISON_VERSION, ValueKind, canonical_value
+from .financial_inputs import FinancialInputs
 from .member_census import MEMBER_FIELDS, InvalidMemberSource, source_value
 from .member_requests import MAX_PROPOSED_MEMBERS, REQUEST_FIELDS
 from .merge import KnownValue
 from .ministry import MAX_MINISTRY_LABEL, MinistryInputs
 
 FORM_SCHEMA = "family-census-ministry-v1"
-PROJECTION_VERSION = "family-inputs-v5"
+PROJECTION_VERSION = "family-inputs-v6"
 ADDITIONAL_MAX_LENGTH = 5000
 
 
@@ -91,6 +92,7 @@ class CensusInputs:
     definition_digest: str
     modules: tuple[str, ...] = ("census",)
     ministries: MinistryInputs | None = None
+    financial: FinancialInputs | None = None
 
     @property
     def projection_digest(self):
@@ -105,6 +107,7 @@ class CensusInputs:
                 self.definition_digest,
                 self.modules,
                 self.ministries.comparison() if self.ministries is not None else None,
+                self.financial.comparison() if self.financial is not None else None,
                 tuple(field.comparison() for field in self.fields),
             )
         )
@@ -255,7 +258,9 @@ def family_field_value(field):
     return KnownValue(False)
 
 
-def census_inputs(family, members, contacts, *, configuration, ministries=None):
+def census_inputs(
+    family, members, contacts, *, configuration, ministries=None, financial=None
+):
     """Build the complete active-household projection from trusted scoped payloads.
 
     Missing contacts retain explicit availability. All source Members must
@@ -368,6 +373,14 @@ def census_inputs(family, members, contacts, *, configuration, ministries=None):
             _unavailable()
     elif ministries is not None:
         _unavailable()
+    if "financial" in configuration["modules"]:
+        if (
+            not isinstance(financial, FinancialInputs)
+            or financial.family_duid != family_duid
+        ):
+            _unavailable()
+    elif financial is not None:
+        _unavailable()
     result = CensusInputs(
         family_duid,
         identifiers,
@@ -375,6 +388,7 @@ def census_inputs(family, members, contacts, *, configuration, ministries=None):
         definition,
         tuple(sorted(configuration["modules"])),
         ministries,
+        financial,
     )
     # Detect a malformed typed source before issuing a baseline, not on Submit.
     _ = result.projection_digest

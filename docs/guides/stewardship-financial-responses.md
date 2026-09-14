@@ -52,3 +52,17 @@ context-independent aggregation/installments, bounded annual pledge input,
 versioned share identity/free-text validation and effective household wording.
 These helpers are not yet exposed by the portal. No financial task is claimed
 complete until its source, transaction and browser integration passes.
+
+The source checkpoint adds campaign/fund/period coverage proof, retained giving
+observation timestamps, Family-bound aggregates and qualified snapshot/Family/
+fund queries. Financial inputs participate in projection version `family-inputs-v6`;
+the enabled-module gate still rejects financial campaigns until the complete
+submission/browser owner is wired. The web role receives read-only giving
+tables and the snapshot cursor, with no source-write grant.
+
+Financial pure/adapter tests now total 125 passing cases. The full default
+suite passed 5,261 tests. Real PostgreSQL validation passed 20 existing
+baseline/operational-authority checks and three new source tests using actual
+journaled configuration, staging, promotion and restricted web-role reads.
+These prove cross-Family exclusion and complete-zero versus unavailable data.
+No financial response has yet been accepted through the portal.
