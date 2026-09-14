@@ -101,6 +101,10 @@ are complete; final-head/merge-group CI passed and PR #27's protected merge is
 verified on `origin/main`. Financial work remains a separate
 following increment, so .06 stays open.
 
+The [financial increment](../../guides/stewardship-financial-responses.md) has
+started from PR #28's verified merge. Financial tasks remain unchecked until
+the source adapter, atomic submission guards and browser flow are integrated.
+
 ## FAM-06: Additional information, review, and atomic submit
 
 Scope and dependencies: [FAM-06 work package](../../plans/stewardship/parishioner-portal.md#fam-06-additional-information-review-and-atomic-submit).

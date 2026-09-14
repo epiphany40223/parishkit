@@ -269,3 +269,20 @@ validation passed 5,136 host tests in 53.83 seconds and all 30 Compose checks in
 107.98 seconds, including 5,136 in-container tests in 68.92 seconds and exact
 collection parity. Ruff, tracked Markdown and whitespace checks passed.
 Exact-head/merge-group CI remain required before delivery.
+
+### Protected delivery complete
+
+Final-head run `34819275741` passed every check at
+`139936f0d71671096dbcb250b55e39aab2fc258c`. Compose passed all 30 checks in
+189.07 seconds, including 5,136 in-container tests in 126.44 seconds, followed
+by 17 operational-runtime checks. All 639 browser cases and all eight
+PostgreSQL partitions passed; combined coverage was 93.98% statements and
+85.55% branches. The browser stage took 11 minutes 33 seconds in this run.
+
+PR #28 entered the normal protected queue using that exact expected head.
+Complete merge-group run `34820311292` passed, including Compose again. The
+PR merged on September 14, 2026 at 08:12:18 UTC as
+`c0ab9a1259c6a2c459b6568917e2da56278f061b`; a fresh fetch verified that commit
+on `origin/main`. This closes the scoped browser-CI maintenance increment,
+not Gate 2 or later release/load-test work. The next branch is
+`pr/stewardship-financial-responses`, starting from that verified main tip.
