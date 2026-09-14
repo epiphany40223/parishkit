@@ -58,8 +58,8 @@ merge-group CI passed; its merged tip is recorded in the increment guide.
 FAM-03.05's malformed/country-aware cases pass; the
 [Ministry increment](../../guides/stewardship-ministry-responses.md) now tests
 census-disabled omission through the restricted HTTP/SQL and mobile browser
-owners. Financial module combinations remain fail-closed pending their owner;
-Gate 2 remains open.
+owners. The financial increment below completes the remaining module
+combinations; Gate 2 remains open.
 
 ## FAM-04: Existing and proposed Member steps
 
@@ -98,16 +98,17 @@ Members, hidden request preservation, roster resolution and Ministry-only
 campaigns. Local validation and the
 [three-round review](../../guides/stewardship-ministry-responses-reviews.md)
 are complete; final-head/merge-group CI passed and PR #27's protected merge is
-verified on `origin/main`. Financial work remains a separate
-following increment, so .06 stays open.
+verified on `origin/main`. At that checkpoint, financial work remained a separate
+following increment and .06 stayed open.
 
 The [financial increment](../../guides/stewardship-financial-responses.md) completes
 .03–.06 with scoped source aggregates, atomic guarded submission and the mobile
 editor/review/revisit flow. Three dual-model review/fix rounds are complete with
 all accepted Medium+ findings corrected. All 699 browser cases pass; the linked
 ledger records PostgreSQL/coverage evidence and the independently audited schema
-fingerprint correction. Protected PR CI and merge remain delivery requirements.
-Integrated Family acceptance and Gate 2 remain open.
+fingerprint correction. PR #29 passed final-head and complete merge-group CI;
+its protected merge `e406ecfa` is verified on `origin/main`. Integrated Family
+acceptance and Gate 2 remain open.
 
 ## FAM-06: Additional information, review, and atomic submit
 

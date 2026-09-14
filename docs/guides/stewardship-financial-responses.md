@@ -242,3 +242,16 @@ The audited schema has 314 functions; its function fingerprint is
 `f43d5f2f01720cb20c07dbf48a527bdfc686863fb3f34af87e50b32ba731c4b5`.
 The independent audit passed, without regenerating expectations during tests
 or relaxing any comparison.
+
+### Protected delivery
+
+PR [#29](https://github.com/epiphany40223/parishkit/pull/29) passed all 24
+final-head [CI jobs](https://github.com/epiphany40223/parishkit/actions/runs/34835253377)
+at `82c81cb98f5ec80e4044581b374d553aaa202bf5`. Verified combined CI coverage is
+94.02% statements and 85.60% branches. The complete protected
+[merge-group run](https://github.com/epiphany40223/parishkit/actions/runs/34836570403)
+also passed all 24 jobs. The PR merged at 2026-09-14 11:21:03 UTC as
+`e406ecfa5af136aa06b67e5461bc1389360b2a8b`, verified on refreshed `origin/main`.
+No protection bypass, deployment, release or real provider write occurred.
+The next branch is the [integrated Family acceptance increment](stewardship-family-acceptance.md);
+Gate 2 remains open until that integrated review and demonstration finish.

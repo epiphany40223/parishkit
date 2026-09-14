@@ -315,10 +315,12 @@ The [financial-response increment](../../guides/stewardship-financial-responses.
 starts from that merge. FAM-05.03–.06 implementation and three dual-model
 review/fix rounds are complete, with all accepted Medium+ findings corrected.
 The linked ledger records local validation and the audited schema-fingerprint
-correction. Final-head CI and protected merge remain required. After that merge,
-the next coherent increment is integrated Family acceptance: close the remaining
-FAM-01/02/06/07 evidence, exercise representative FAM-08, complete the Phase 3
-demonstration, and review the entire Gate 2 scope before any Phase 4 work.
+correction. PR #29 passed final-head and complete merge-group CI and merged as
+`e406ecfa5af136aa06b67e5461bc1389360b2a8b`, verified on refreshed `origin/main`.
+Branch `pr/stewardship-family-acceptance` starts at that tip. Its
+[integrated acceptance scope](../../guides/stewardship-family-acceptance.md) closes the remaining
+FAM-01/02/06/07 evidence, exercises representative FAM-08, completes the Phase 3
+demonstration, and reviews the entire Gate 2 scope before any Phase 4 work.
 
 1. Finish [FAM-03](parishioner-portal.md#fam-03-family-census-step); complete [FAM-04](parishioner-portal.md#fam-04-existing-and-proposed-member-steps), [FAM-05](parishioner-portal.md#fam-05-ministry-and-financial-stewardship-steps), [FAM-06](parishioner-portal.md#fam-06-additional-information-review-and-atomic-submit), and [FAM-07](parishioner-portal.md#fam-07-repeat-visits-and-source-change-merge).
 2. Exercise representative [FAM-08](parishioner-portal.md#fam-08-responsive-accessibility-privacy-and-browser-completion) cases continuously.
