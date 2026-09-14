@@ -29,7 +29,9 @@ from .test_source_snapshots_postgresql import permit
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def financial_source(harness, *, covered=True, empty=False, modules=None, options=()):
+def financial_source(
+    harness, *, covered=True, empty=False, modules=None, options=(), selected=()
+):
     """Use actual configuration/staging/promotion, with only synthetic money rows."""
     financial = configuration()["financial"] | {
         "fund_duids": [9],
@@ -46,7 +48,7 @@ def financial_source(harness, *, covered=True, empty=False, modules=None, option
                 "id": str(harness.campaign.pk),
                 "values": {
                     "modules": sorted(modules or ["financial"]),
-                    "ministry_duids": [],
+                    "ministry_duids": sorted(selected),
                     "financial": financial,
                     "share_options": list(options),
                 },

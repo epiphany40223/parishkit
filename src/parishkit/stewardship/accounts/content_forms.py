@@ -13,7 +13,7 @@ from parishkit.stewardship.web.content import (
     render_template,
     validate_template,
 )
-from parishkit.stewardship.web.presentation import parish_date
+from parishkit.stewardship.web.presentation import campaign_year, parish_date
 
 PAGE_LABELS = {
     "welcome": _("Family welcome"),
@@ -142,7 +142,7 @@ def sample_render(value, *, parish, campaign):
         "campaign_start": parish_date(date.fromisoformat(campaign["start_date"])),
         "campaign_end": parish_date(date.fromisoformat(campaign["end_date"])),
         "campaign_timezone": campaign["timezone"],
-        "campaign_year": campaign.get("year_label") or campaign["start_date"][:4],
+        "campaign_year": campaign_year(campaign),
         "financial_start": parish_date(
             date.fromisoformat(campaign["financial"]["start"])
         )

@@ -8,6 +8,11 @@ from django.utils.translation import gettext as _
 from parishkit.stewardship.campaigns.domain import Money, Percentage
 
 
+def campaign_year(values):
+    """One campaign-year meaning for Admin previews, page blocks and share labels."""
+    return values.get("year_label") or values["start_date"][:4]
+
+
 def number(value):
     """Group integers/finite decimal values without introducing binary floats."""
     if type(value) is not int and not isinstance(value, Decimal):

@@ -614,8 +614,8 @@
       "." + String(cents % 100).padStart(2, "0");
   }
   function financialLabel(option) {
-    const count = form.members.filter((member) => !requests[member.id]).length +
-      Object.keys(answers.proposed_members).length;
+    const count = form.household ? form.members.filter((member) => !requests[member.id]).length +
+      Object.keys(answers.proposed_members).length : form.effective_member_count;
     return option.labels[count === 0 ? "none" : count === 1 ? "one" : "many"];
   }
   function preserveFinancial(previous, before, previousForm) {
@@ -642,7 +642,10 @@
       if (canonical(edited, "share") === canonical(old, "share")) return;
       if (edited === undefined) delete answers.financial.shares[id];
       else answers.financial.shares[id] = edited;
-      if (!offered.has(id) && edited !== undefined) {
+      if (!offered.has(id)) {
+        // Deselecting an unavailable option is already the only valid outcome.
+        // Do not create a conflict with no remaining control that could resolve it.
+        if (edited === undefined) return;
         const oldOption = [...previousForm.options, ...previousForm.unavailable_options].find((option) => option.id === id);
         if (oldOption && !form.financial.unavailable_options.some((option) => option.id === id)) {
           form.financial.unavailable_options.push(structuredClone(oldOption));

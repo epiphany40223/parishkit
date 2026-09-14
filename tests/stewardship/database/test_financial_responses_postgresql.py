@@ -3,7 +3,7 @@
 from copy import deepcopy
 from dataclasses import asdict
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from django.db import IntegrityError, transaction
@@ -16,7 +16,9 @@ from parishkit.stewardship.responses.models import (
 )
 from parishkit.stewardship.source.models import SourceSnapshotPin
 
+from ..census_factory import member
 from ..test_financial_answers import CHECK, OPTIONS, OTHER
+from .campaign_builders import change
 from .response_builders import activate_response_service
 from .test_family_auth_postgresql import login
 from .test_financial_source_postgresql import financial_source
@@ -234,10 +236,14 @@ def test_all_terminal_members_keep_family_financial_intent(response_service):
     """Terminal requests remove only Member/Ministry fields, not the Family pledge."""
     harness = response_service
     financial_source(
-        harness, modules=["census", "financial"], options=map(asdict, OPTIONS)
+        harness,
+        modules=["census", "ministry", "financial"],
+        options=map(asdict, OPTIONS),
+        selected=(4,),
     )
     with web_login():
         form = load_form(harness)
+        assert form["ministries"]["members"]["3"]["current"] == [4]
         answers = answers_for(form)
         answers["members"] = {
             key: {"moved_household": True, "confirmed": True}
@@ -248,6 +254,7 @@ def test_all_terminal_members_keep_family_financial_intent(response_service):
             "frequency": "annual",
             "shares": {OTHER: "Gift"},
         }
+        answers["ministries"] = {"members": {}, "proposed_members": {}}
         first = respond(harness, form, answers)
         form = revisit(harness)
         assert all(member["request"] for member in form["members"])
@@ -255,3 +262,135 @@ def test_all_terminal_members_keep_family_financial_intent(response_service):
         assert respond(harness, form, answers_for(form)).annual_pledge == Decimal(
             "10.00"
         )
+
+
+@pytest.mark.parametrize("fault", ["scalar", "answer", "both"])
+def test_sql_disabled_financial_boundary_rejects_injected_intent(
+    response_service, monkeypatch, fault
+):
+    """Independent INSERT guards reject both JSON and scalar disabled-module paths."""
+    harness = response_service
+    form = load_form(harness)
+    answers = answers_for(form)
+    create = Submission.objects.create
+
+    def forge(**values):
+        """Keep Python validation intact but corrupt its final INSERT arguments."""
+        if fault in {"scalar", "both"}:
+            values["annual_pledge"] = Decimal("1.00")
+        if fault in {"answer", "both"}:
+            values["answers"] = deepcopy(values["answers"])
+            values["answers"]["financial"] = {
+                "annual_pledge": "1.00",
+                "frequency": "annual",
+                "shares": {},
+            }
+        return create(**values)
+
+    monkeypatch.setattr(Submission.objects, "create", forge)
+    with (
+        web_login(),
+        pytest.raises(IntegrityError, match="Submission|Disabled financial"),
+        transaction.atomic(),
+    ):
+        submission.submit_family(
+            harness.request,
+            harness.service,
+            baseline_id=UUID(form["baseline"]),
+            payload=answers,
+        )
+    assert not Submission.objects.exists()
+    assert not SubmissionReceiptOccurrence.objects.exists()
+    assert not SourceSnapshotPin.objects.filter(parent_kind="submission").exists()
+
+
+@pytest.mark.parametrize("proposed_count", [0, 1, 2])
+def test_census_disabled_financial_wording_keeps_private_effective_count(
+    response_service, proposed_count
+):
+    """Preserved census history supplies only a count, not disabled census details."""
+    harness = response_service
+    financial_source(harness, modules=["census", "financial"])
+    form = load_form(harness)
+    answers = answers_for(form)
+    answers["members"] = {
+        key: {"moved_household": True, "confirmed": True} for key in answers["members"]
+    }
+    answers["proposed_members"] = {
+        str(uuid4()): member() for _ in range(proposed_count)
+    }
+    answers["financial"] = {"annual_pledge": "0", "frequency": "", "shares": {}}
+    respond(harness, form, answers)
+    financial_source(harness, modules=["financial"])
+    with web_login():
+        for _ in range(2):
+            form = revisit(harness)
+            assert form["effective_member_count"] == proposed_count
+            assert form["proposed_members"] == [] and form["new_member_fields"] == []
+            assert all(
+                row["request"] is None and row["fields"] == []
+                for row in form["members"]
+            )
+            assert respond(harness, form, answers_for(form)).annual_pledge == 0
+
+
+def test_parish_name_change_requires_financial_label_review(response_service):
+    """A submission cannot reference a new parish label without reviewing it."""
+    harness = response_service
+    financial_source(
+        harness,
+        options=[{"id": CHECK, "label": "{{ parish_name }} gift", "free_text": False}],
+    )
+    form = load_form(harness)
+    answers = answers_for(form)
+    answers["financial"] = {
+        "annual_pledge": "0",
+        "frequency": "",
+        "shares": {CHECK: ""},
+    }
+    store = harness.service.store
+    version = store.active()
+    result = change(
+        store,
+        version,
+        uuid4(),
+        [
+            {
+                "operation": "update",
+                "section": "parish",
+                "id": version.document()["sections"]["parish"][0]["id"],
+                "values": {"name": "Renamed Sample Parish"},
+            }
+        ],
+    )
+    assert result.state == "applied"
+    with web_login():
+        response = post(
+            harness.client,
+            "/family/submit",
+            {"baseline": form["baseline"], "answers": answers},
+        )
+        assert response.status_code == 409, response.content
+        fresh = response.json()["form"]
+        assert set(fresh["financial"]["options"][0]["labels"].values()) == {
+            "Renamed Sample Parish gift"
+        }
+        assert not Submission.objects.exists()
+        assert respond(harness, fresh, answers).annual_pledge == 0
+
+
+def test_new_giving_timestamp_without_value_changes_does_not_force_review(
+    response_service,
+):
+    """An unchanged full refresh accepts with distinct reviewed/validation snapshots."""
+    harness = response_service
+    old, _ = financial_source(harness)
+    form = load_form(harness)
+    answers = answers_for(form)
+    answers["financial"] = {"annual_pledge": "0", "frequency": "", "shares": {}}
+    new, _ = financial_source(harness)
+    assert old.pk != new.pk and old.started_at != new.started_at
+    with web_login():
+        result = respond(harness, form, answers)
+        assert result.reviewed_source_id == old.pk
+        assert result.validation_source_id == new.pk

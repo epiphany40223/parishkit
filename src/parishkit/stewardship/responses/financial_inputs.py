@@ -16,6 +16,7 @@ from parishkit.stewardship.source.windows import (
     RefreshWindow,
     refresh_window,
 )
+from parishkit.stewardship.web.presentation import campaign_year
 
 from .financial import ShareOption
 
@@ -31,6 +32,7 @@ class FinancialDefinition:
     window: RefreshWindow
     year_label: str
     options: tuple[ShareOption, ...]
+    campaign_year: str
 
     @property
     def upcoming(self):
@@ -67,13 +69,15 @@ class FinancialInputs:
             self.family_duid,
             self.definition.window.document(),
             self.definition.year_label,
+            self.definition.campaign_year,
             tuple(
                 (row.id, row.label, row.free_text) for row in self.definition.options
             ),
             self.pledge.canonical,
             self.contributions.canonical,
-            self.observation.observed_at.isoformat() if self.observation else None,
-            self.observation.through_date.isoformat() if self.observation else None,
+            # A newer unchanged observation is display context, not a changed
+            # pledge or contribution. The reviewed snapshot retains its as-of.
+            self.observation is not None,
         )
 
 
@@ -94,7 +98,7 @@ def financial_definition(configuration, *, campaign_id):
         options = tuple(
             ShareOption(**value) for value in configuration["share_options"]
         )
-        return FinancialDefinition(window, year, options)
+        return FinancialDefinition(window, year, options, campaign_year(configuration))
     except (KeyError, TypeError, ValueError, OverflowError):
         raise InvalidFinancialSource(
             "The financial form definition is unavailable."

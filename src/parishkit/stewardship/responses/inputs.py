@@ -25,7 +25,7 @@ from .merge import KnownValue
 from .ministry import MAX_MINISTRY_LABEL, MinistryInputs
 
 FORM_SCHEMA = "family-response-v1"
-PROJECTION_VERSION = "family-inputs-v6"
+PROJECTION_VERSION = "family-inputs-v7"
 ADDITIONAL_MAX_LENGTH = 5000
 
 
@@ -94,6 +94,7 @@ class CensusInputs:
     modules: tuple[str, ...] = ("census",)
     ministries: MinistryInputs | None = None
     financial: FinancialInputs | None = None
+    parish_name: str = ""
 
     @property
     def projection_digest(self):
@@ -109,6 +110,7 @@ class CensusInputs:
                 self.modules,
                 self.ministries.comparison() if self.ministries is not None else None,
                 self.financial.comparison() if self.financial is not None else None,
+                self.parish_name if self.financial is not None else None,
                 tuple(field.comparison() for field in self.fields),
             )
         )
@@ -270,7 +272,14 @@ def family_field_value(field):
 
 
 def census_inputs(
-    family, members, contacts, *, configuration, ministries=None, financial=None
+    family,
+    members,
+    contacts,
+    *,
+    configuration,
+    ministries=None,
+    financial=None,
+    parish_name="",
 ):
     """Build the complete active-household projection from trusted scoped payloads.
 
@@ -400,6 +409,7 @@ def census_inputs(
         tuple(sorted(configuration["modules"])),
         ministries,
         financial,
+        parish_name,
     )
     # Detect a malformed typed source before issuing a baseline, not on Submit.
     _ = result.projection_digest

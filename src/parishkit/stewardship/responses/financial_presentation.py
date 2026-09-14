@@ -18,7 +18,7 @@ def option_labels(option, definition, *, parish_name):
     start, end = definition.upcoming.start, definition.upcoming.end
     substitutions = {
         "parish_name": parish_name,
-        "campaign_year": definition.year_label,
+        "campaign_year": definition.campaign_year,
         "financial_start": parish_date(start),
         "financial_end": parish_date(end),
         "financial_period": f"{parish_date(start)} – {parish_date(end)}",

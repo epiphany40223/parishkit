@@ -8,7 +8,7 @@ from parishkit.stewardship.campaigns.models import CampaignConfiguration
 from parishkit.stewardship.campaigns.runtime import _now
 from parishkit.stewardship.campaigns.work_locks import require_work_order
 from parishkit.stewardship.web.content import PLACEHOLDERS, render_template
-from parishkit.stewardship.web.presentation import parish_date
+from parishkit.stewardship.web.presentation import campaign_year, parish_date
 
 from .census import (
     ADDRESS_LIMITS,
@@ -24,6 +24,7 @@ from .effective import (
     census_submission,
     effective_field,
     effective_fields,
+    effective_household_count,
     proposal_index,
 )
 from .financial import household_pronoun
@@ -130,12 +131,18 @@ def form_presentation(form):
         record_id=baseline.family.campaign_id,
     )
     proposed = _proposed_presentation(prior) if census else []
+    member_count = (
+        sum(not member["request"] for member in members) + len(proposed)
+        if census
+        else effective_household_count(form.inputs.member_duids, prior)
+    )
     return {
         "baseline": str(baseline.pk),
         "testing": baseline.mode == "test",
         "today": _now().astimezone(ZoneInfo(campaign.timezone)).date().isoformat(),
         "family": family,
         "modules": list(form.inputs.modules),
+        "effective_member_count": member_count,
         "household": _household_presentation(values, census_prior) if census else None,
         "members": members,
         "proposed_members": proposed,
@@ -146,7 +153,7 @@ def form_presentation(form):
             proposed_members=frozenset(row["id"] for row in proposed),
         ),
         "financial": financial_presentation(
-            form.inputs.financial, prior, parish_name=baseline.configuration.parish.name
+            form.inputs.financial, prior, parish_name=form.inputs.parish_name
         ),
         "max_proposed_members": MAX_PROPOSED_MEMBERS if census else 0,
         "new_member_fields": [
@@ -174,7 +181,7 @@ def form_presentation(form):
         if prior and prior.mode == "live"
         else None,
         "content": _page_content(
-            baseline, campaign, family, members, proposed, form.inputs.financial
+            baseline, campaign, family, members, member_count, form.inputs.financial
         ),
     }
 
@@ -272,7 +279,7 @@ def _household_presentation(values, prior):
     }
 
 
-def _page_content(baseline, campaign, family, members, proposed, financial):
+def _page_content(baseline, campaign, family, members, member_count, financial):
     """Render selected immutable blocks through the existing inert sanitizer.
 
     Email-only credential substitutions are empty in the authenticated flow;
@@ -289,21 +296,17 @@ def _page_content(baseline, campaign, family, members, proposed, financial):
         campaign_start=parish_date(date.fromisoformat(campaign.values["start_date"])),
         campaign_end=parish_date(date.fromisoformat(campaign.values["end_date"])),
         campaign_timezone=campaign.timezone,
-        campaign_year=campaign.values.get("year_label")
-        or campaign.values["start_date"][:4],
+        campaign_year=campaign_year(campaign.values),
         family_name=family.get("mailingName") or family.get("lastName") or "",
         family_member_names=", ".join(member["display_name"] for member in members),
         generic_family_url="/",
         family_url="/family/",
-        pronoun=household_pronoun(
-            sum(not member["request"] for member in members) + len(proposed)
-        ),
+        pronoun=household_pronoun(member_count),
     )
     if financial is not None:
         period = financial.definition.upcoming
         start, end = parish_date(period.start), parish_date(period.end)
         substitutions.update(
-            campaign_year=financial.definition.year_label,
             financial_start=start,
             financial_end=end,
             financial_period=f"{start} – {end}",

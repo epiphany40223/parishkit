@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 from dataclasses import replace
-from datetime import date
+from datetime import date, timedelta
 from uuid import uuid4
 
 import pytest
@@ -56,6 +56,21 @@ def test_delta_keeps_actual_older_giving_as_of_instead_of_newer_watermark():
     value = cursor(scope)
     value["full_started_at"] = "2026-10-16T02:00:00+00:00"
     assert giving_observation(value, scope).through_date == date(2026, 10, 15)
+
+
+def test_same_totals_with_newer_observation_do_not_require_review():
+    """Only observation context changed; the reviewed snapshot retains its as-of."""
+    scope = definition()
+    observation = giving_observation(cursor(scope), scope)
+    inputs = financial_inputs(
+        scope, observation, family_duid=1, pledges=[], contributions=[]
+    )
+    newer = replace(
+        observation,
+        observed_at=observation.observed_at + timedelta(days=1),
+        through_date=observation.through_date + timedelta(days=1),
+    )
+    assert inputs.comparison() == replace(inputs, observation=newer).comparison()
 
 
 @pytest.mark.parametrize(

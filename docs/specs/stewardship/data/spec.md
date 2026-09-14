@@ -1067,6 +1067,14 @@ unrelated configuration-version changes are not conflicts. Transfer required
 baseline pins to the immutable Submission atomically on successful submit;
 releasing a form pin cannot remove a submission's retention protection.
 
+For financial forms, a newer giving-observation timestamp or through-date alone
+does not require review when the scoped amounts, availability and mapped
+funds/periods are unchanged. The displayed as-of remains the truthful context of
+the retained reviewed snapshot; accepting against a newer validation snapshot
+does not relabel that older observation. Changed amounts or availability still
+require review. Rendered share wording, including the parish name, is a relevant
+definition dependency.
+
 The server reconstructs the baseline projection from trusted pinned inputs and
 compares it with the same projection from one current promoted snapshot. A
 client-supplied digest, field list, or snapshot ID is not proof of equivalence.

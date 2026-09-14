@@ -111,3 +111,29 @@ def effective_fields(inputs, submission):
         )
         for field in inputs.fields
     )
+
+
+def effective_household_count(member_duids, submission):
+    """Expose only a count when preserved census intent affects financial wording.
+
+    Disabled census must not reveal terminal/proposed details, but its retained
+    unresolved requests still affect household composition. Resolved terminal
+    requests defer to the current active source identity set.
+    """
+    proposals = proposal_index(submission)
+    inactive = RESOLVED_EXECUTIONS | {"cancelled", "superseded"}
+    terminal = {
+        int(key)
+        for (entity, key, field), row in proposals.items()
+        if entity == "member"
+        and field in {"moved_household", "deceased_status"}
+        and row.execution not in inactive
+        and row.submitted_value is True
+    }
+    proposed = sum(
+        entity == "proposed_member"
+        and field == "new_member"
+        and row.execution not in inactive
+        for (entity, _, field), row in proposals.items()
+    )
+    return len(set(member_duids) - terminal) + proposed

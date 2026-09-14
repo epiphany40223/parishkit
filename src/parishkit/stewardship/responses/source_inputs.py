@@ -22,7 +22,13 @@ from .ministry import InvalidMinistrySource, ministry_inputs
 
 
 def load_census_inputs(
-    snapshot_id, family_duid, *, configuration, document=None, campaign_id=None
+    snapshot_id,
+    family_duid,
+    *,
+    configuration,
+    document=None,
+    campaign_id=None,
+    parish_name="",
 ):
     """Read only this Family's records while the caller retains the snapshot pin.
 
@@ -98,6 +104,7 @@ def load_census_inputs(
         members,
         contacts,
         configuration=configuration,
+        parish_name=parish_name,
         ministries=ministries,
         financial=load_financial_inputs(
             snapshot_id,

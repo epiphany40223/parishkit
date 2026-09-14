@@ -55,7 +55,7 @@ protected delivery evidence is recorded below.
 
 The source checkpoint adds campaign/fund/period coverage proof, retained giving
 observation timestamps, Family-bound aggregates and qualified snapshot/Family/
-fund queries. Financial inputs participate in projection version `family-inputs-v6`;
+fund queries. Financial inputs participate in projection version `family-inputs-v7`;
 the complete submission/browser owner now admits financial campaigns under
 `family-response-v1`. The web role receives read-only giving
 tables and the snapshot cursor, with no source-write grant.
@@ -91,3 +91,44 @@ before Playwright can verify a retained checked state, and the proposed-Member
 helper assumed insertion order despite UUID sorting. Tests now exercise the
 actual action and identify newly added controls by identity, without retries or
 increased timeouts. The complete validation and review loop remains pending.
+
+## Review round 1
+
+Session `20260914-050258-d58f40` reviewed the complete branch from
+`c0ab9a1259c6a2c459b6568917e2da56278f061b` to
+`6cd1fe6f2f3dba37d2f4d29badddb92a1444afe3`, tree
+`6ef88c944d2408c27080a0e2de8d8c3e8e06ea4b`. Pika generated two Claude shards
+and one Codex reviewer; all completed successfully without degradation,
+mismatch or salvage. Raw severities: seven Medium and fourteen Low; six
+distinct validated Medium findings, all accepted and corrected:
+
+- Share labels, Admin previews and page blocks use one campaign-year helper;
+  upcoming-period placeholders retain their distinct meaning.
+- Independent INSERT tests now forge disabled-module JSON, scalar and combined
+  financial intent and require rollback.
+- Withdrawing a removed share method cannot leave an invisible conflict that
+  blocks review forever; all three browser engines exercise the concurrent-note
+  case.
+- Unchanged giving-observation timestamps do not force review; changed scoped
+  amounts/availability still do. The data specification records the distinction
+  and retained reviewed/validation snapshots preserve exact observation context.
+- Disabled census supplies only an effective household count from retained
+  unresolved terminal/proposed intent, tested through two subsequent responses
+  and zero/one/many browser wording without exposing disabled request details.
+- The parish name participates in the financial dependency projection, so a
+  renamed parish's share wording requires an explicit refreshed review.
+
+Finalized artifact SHA-256:
+`4106976f726a9bde4834208005b4448f6fad9e6a80c1ea07e588b0dbda3424c7`.
+Post-correction validation passed 5,287 default-suite tests, 79 PostgreSQL
+financial/baseline/validation tests and 42 financial browser cases. Additional
+combined census/Ministry/financial terminal checks passed one PostgreSQL and
+three browser cases. Ruff lint/format, tracked Markdown and whitespace checks
+pass. No accepted Medium-or-higher finding remains from this round.
+
+Before corrections, the complete browser suite passed 669 cases (223 per
+engine), Compose passed all 30 checks in 145.16 seconds, and schema drift found
+no changes. The longer serial PostgreSQL coverage run was deliberately stopped
+before source corrections; it is not completed coverage evidence. Final-head
+coverage, full applicable regression validation, two further review rounds and
+protected CI/delivery remain required.

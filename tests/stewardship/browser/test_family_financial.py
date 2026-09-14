@@ -30,6 +30,7 @@ def financial_form(*, census=False, ministry=False, available=True):
         form["ministries"] = None
         form["modules"].remove("ministry")
     form["modules"].append("financial")
+    form["effective_member_count"] = 1
     values = configuration()
     values["share_options"] = [
         {"id": CHECK, "label": "{{ pronoun }} will send a check", "free_text": False},
@@ -168,14 +169,18 @@ def test_terminal_and_proposed_counts_preserve_financial_answers(
     begin(
         page,
         component_origin,
-        financial_form(census=True),
+        financial_form(census=True, ministry=True),
         lambda route: route.fulfill(json={"accepted": True}),
     )
     page.get_by_label("Annual pledge (USD)").fill("25.00")
     page.get_by_label("Pledge frequency").select_option("annual")
     page.get_by_label("I will send a check", exact=True).check()
+    page.get_by_label("Choir — wishes to stop participating").check()
+    page.get_by_role("button", name="Review response").click()
+    page.get_by_role("button", name="Back to edit").click()
     page.once("dialog", lambda dialog: dialog.accept())
     page.get_by_label("Household status").select_option("moved_household")
+    assert page.get_by_text("Ministry participation", exact=True).count() == 0
     expect(
         page.get_by_label("This household will send a check", exact=True)
     ).to_be_checked()
@@ -239,3 +244,52 @@ def test_financial_stale_response_preserves_edits_and_requires_resolution(
         if changed == "removed"
         else {OTHER: "" if changed == "text_requirement" else "Keep this note"}
     )
+
+
+def test_deselected_removed_method_cannot_create_an_unresolvable_conflict(
+    page, component_origin
+):
+    """A concurrent note edit cannot block a valid withdrawal of a removed method."""
+    form = financial_form()
+    form["financial"]["answers"] = {
+        "annual_pledge": "0.00",
+        "frequency": "",
+        "shares": {OTHER: "Old note"},
+    }
+    fresh = deepcopy(form)
+    fresh["financial"]["options"] = fresh["financial"]["options"][:1]
+    fresh["financial"]["answers"]["shares"][OTHER] = "Another session note"
+    submissions = []
+
+    def submit(route):
+        """A new explicit Submit is required even when removal resolves itself."""
+        submissions.append(route.request.post_data_json["answers"])
+        if len(submissions) == 1:
+            route.fulfill(status=409, json={"error": "review_required", "form": fresh})
+        else:
+            route.fulfill(json={"accepted": True})
+
+    begin(page, component_origin, form, submit)
+    page.get_by_label("I will share another way", exact=True).uncheck()
+    final_submit(page)
+    expect(page.get_by_role("button", name="Review response")).to_be_visible()
+    assert len(submissions) == 1
+    final_submit(page)
+    expect(page.get_by_role("heading", name="Thank you!")).to_be_visible()
+    assert submissions[1]["financial"]["shares"] == {}
+
+
+@pytest.mark.parametrize("count,label", [(0, "This household"), (1, "I"), (2, "We")])
+def test_financial_only_uses_private_effective_count(
+    page, component_origin, count, label
+):
+    """A disabled census exposes no private requests, but wording counts them."""
+    form = financial_form()
+    form["effective_member_count"] = count
+    begin(
+        page,
+        component_origin,
+        form,
+        lambda route: route.fulfill(json={"accepted": True}),
+    )
+    expect(page.get_by_label(label + " will send a check", exact=True)).to_be_visible()
