@@ -1689,9 +1689,9 @@ remain required before Phase 3A; Gate 2 remains after the Family response slice.
 Scope: [Phase 3](../../plans/stewardship/overall.md#phase-3-complete-family-response-vertical-slice).
 
 - [x] M3.01 — Demonstrate the minimal login-to-submit-to-repeat-visit vertical slice.
-- [ ] M3.02 — Exercise every enabled-module combination and all Family response fields.
-- [ ] M3.03 — Prove in-memory drafts, atomic submission, and stale/duplicate protection.
-- [ ] M3.04 — Demonstrate upstream merge, proposal provenance, and follow-up supersession.
+- [x] M3.02 — Exercise every enabled-module combination and all Family response fields.
+- [x] M3.03 — Prove in-memory drafts, atomic submission, and stale/duplicate protection.
+- [x] M3.04 — Demonstrate upstream merge, proposal provenance, and follow-up supersession.
 - [ ] M3.05 — Complete representative mobile/accessibility/privacy evidence and Gate 2.
 
 Evidence: Phase 3A's minimal census-only flow is demonstrated at implementation
@@ -1704,19 +1704,34 @@ record boundaries and results. M3.02–.05 remain incomplete until the full
 Phase 3B module/field and integrated gate demonstrations. This is not Gate 2
 release or a claim that the remaining Family task packages are complete.
 
+The [integrated Family acceptance](../../guides/stewardship-family-acceptance.md#completed-local-acceptance)
+now completes M3.02–.04 and representative mobile/privacy/accessibility checks.
+FAM-01 through FAM-07 and DAT-06/08 meet their Family-service scope. The current
+5,299-test baseline, all 2,536 PostgreSQL cases, full browser coverage and
+five successful dual reviews pass. M3.05 remains open only for protected Gate 2
+delivery; full FAM-08 release obligations remain with later gates.
+
 ## Gate 2: Data, privacy, and Family UX
 
 Scope: [Phase 3 and Gate 2](../../plans/stewardship/overall.md#phase-3-complete-family-response-vertical-slice).
 Apply the complete [review protocol](../../plans/stewardship/overall.md#review-gate-protocol).
 
-- [ ] G2.01 — Prepare coherent signed commits and pass gate-specific validation.
-- [ ] G2.02 — Obtain two independent reviews of the complete gate diff.
-- [ ] G2.03 — Triage findings, implement corrections, and add regression coverage.
-- [ ] G2.04 — Repeat validation, the phase demonstration, and independent review.
-- [ ] G2.05 — Resolve all validated Critical/High/Medium findings; document Low deferrals.
+- [x] G2.01 — Prepare coherent signed commits and pass gate-specific validation.
+- [x] G2.02 — Obtain two independent reviews of the complete gate diff.
+- [x] G2.03 — Triage findings, implement corrections, and add regression coverage.
+- [x] G2.04 — Repeat validation, the phase demonstration, and independent review.
+- [x] G2.05 — Resolve all validated Critical/High/Medium findings; document Low deferrals.
 - [ ] G2.06 — Record reviewed SHA, evidence, and human approval before phase release.
 
-Evidence: Not started.
+Evidence: the human-approved [reuse and current-integration procedure](../../guides/stewardship-gate-2-reviews.md)
+supplies recorded merged component reviews and fresh dual coverage of every
+G2-I1–I8 boundary. Five current-PR dual rounds complete at `44455b5`, no accepted
+Medium+ remains, and corrected-tree coverage is 94.03% lines / 85.62% branches.
+The ledger records endpoints, artifact hashes, failed attempts, corrections,
+rejections, Low deferrals and current full-flow mobile/desktop inspection.
+Standing human merge/continue authority is recorded there. G2.06 and Phase 4
+release remain pending final-head CI, protected merge and complete merge-group
+CI verification; no routine human approval is otherwise needed.
 
 ## Phase 4: Production scheduling and mail
 

@@ -42,6 +42,7 @@ def form_payload(*, testing=False):
     return {
         "baseline": str(uuid4()),
         "testing": testing,
+        "parish_name": "Sample Parish",
         "modules": ["census"],
         "ministries": None,
         "today": "2026-09-13",
@@ -165,7 +166,7 @@ def test_no_change_flow_accessibility_mobile_and_no_draft_traffic(
     assert len(attempts) == 1 and not submissions
     assert page.evaluate("localStorage.length + sessionStorage.length") == 0
     page.get_by_role("button", name="Review response").click()
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(page.get_by_role("heading", name="Thank you!", exact=True)).to_be_visible()
     assert len(submissions) == 1
     assert submissions[0]["answers"]["members"]["3"]["first_name"] == "Alex"
@@ -186,23 +187,37 @@ def test_testing_requires_two_independent_unchecked_acknowledgments(
         route.fulfill(json={"accepted": True})
 
     attempts = prepare(page, component_origin, testing=True, submit=submit)
-    page.get_by_role("button", name="Begin reviewing").click()
+    page.get_by_role("button", name="Continue with test").click()
     assert not attempts and page.get_by_label("First name (required)").count() == 0
     page.locator("#testing-entry-ack").check()
-    page.get_by_role("button", name="Begin reviewing").click()
+    page.get_by_role("button", name="Continue with test").click()
     page.get_by_role("button", name="Review response").click()
     assert not page.locator("#testing-submit-ack").is_checked()
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit test response").click()
     assert not submissions
     page.locator("#testing-submit-ack").check()
     page.get_by_role("button", name="Back to edit").click()
     page.get_by_role("button", name="Review response").click()
     assert not page.locator("#testing-submit-ack").is_checked()
     page.locator("#testing-submit-ack").check()
-    page.get_by_role("button", name="Submit response").click()
-    expect(page.get_by_role("heading", name="Thank you!", exact=True)).to_be_visible()
+    page.get_by_role("button", name="Submit test response").click()
+    expect(
+        page.get_by_role("heading", name="Test response complete", exact=True)
+    ).to_be_visible()
     assert submissions[0]["answers"]["testing_acknowledged"] is True
-    assert "will not count" in page.locator("main").inner_text()
+    assert (
+        "Your campaign response has not been recorded"
+        in page.locator("main").inner_text()
+    )
+    assert (
+        "will be deleted before the live campaign opens"
+        in page.locator("main").inner_text()
+    )
+    assert "return to submit your response" in page.locator("main").inner_text()
+    assert "Production" not in page.locator("main").inner_text()
+    expect(
+        page.get_by_role("heading", name="Preview only: parish Thank You message")
+    ).to_be_visible()
 
 
 def test_stale_response_keeps_only_actual_edits_and_requires_review(
@@ -222,7 +237,7 @@ def test_stale_response_keeps_only_actual_edits_and_requires_review(
     page.get_by_role("button", name="Begin reviewing").click()
     page.get_by_label("First name (required)").fill("My edit")
     page.get_by_role("button", name="Review response").click()
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(page.get_by_label("First name (required)")).to_have_value("My edit")
     expect(page.get_by_label("Last name (required)")).to_have_value("New source last")
     assert len(submissions) == 1
@@ -256,10 +271,10 @@ def test_invalid_email_blur_and_answer_markup_stays_text(page, component_origin)
     page.get_by_label("First name (required)").fill("<img src=x onerror=alert(1)>")
     expect(email).to_have_attribute("aria-invalid", "true")
     page.get_by_role("button", name="Review response").click()
-    assert page.get_by_role("button", name="Submit response").count() == 0
+    assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
     email.fill("valid@example.org")
     page.get_by_role("button", name="Review response").click()
-    expect(page.get_by_role("button", name="Submit response")).to_be_visible()
+    expect(page.get_by_role("button", name="Submit to Sample Parish")).to_be_visible()
     assert page.locator("#family-flow img").count() == 0
     assert "<img src=x onerror=alert(1)>" in page.locator("#family-flow").inner_text()
 
@@ -278,9 +293,13 @@ def test_accepted_submission_wins_over_local_expiry(page, component_origin, in_f
     prepare(page, component_origin, submit=submit)
     page.get_by_role("button", name="Begin reviewing").click()
     page.get_by_role("button", name="Review response").click()
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
     if in_flight:
-        expect(page.get_by_role("button", name="Submit response")).to_be_disabled()
+        expect(
+            page.get_by_role("button", name="Submit to Sample Parish")
+        ).to_be_disabled()
+        for control in page.locator("[data-review-edit]").all():
+            expect(control).to_be_disabled()
         page.clock.fast_forward(4 * 60 * 60 * 1000)
         assert pending
         pending[0].fulfill(json={"accepted": True})
@@ -311,7 +330,7 @@ def test_disabled_additional_data_cannot_be_replayed_from_old_response(
     page.get_by_role("button", name="Begin reviewing").click()
     assert page.locator("#additional-information").count() == 0
     page.get_by_role("button", name="Review response").click()
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(page.get_by_role("heading", name="Thank you!", exact=True)).to_be_visible()
     assert submissions[0]["answers"]["additional_information"] == ""
 
@@ -335,10 +354,10 @@ def test_competing_member_and_additional_edits_need_explicit_choices(
     page.get_by_label("First name (required)").fill("My proposed name")
     page.get_by_label("Additional information (optional)").fill("My proposed note")
     page.get_by_role("button", name="Review response").click()
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(page.locator("[data-conflict]")).to_have_count(2)
     page.get_by_role("button", name="Review response").click()
-    assert page.get_by_role("button", name="Submit response").count() == 0
+    assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
     page.get_by_role("radio", name="Use updated records: Updated record").check()
     page.get_by_role("radio", name="Use my edit: My proposed note").check()
     expect(page.get_by_label("First name (required)")).to_have_value("Updated record")
@@ -346,7 +365,7 @@ def test_competing_member_and_additional_edits_need_explicit_choices(
         "My proposed note"
     )
     page.get_by_role("button", name="Review response").click()
-    expect(page.get_by_role("button", name="Submit response")).to_be_visible()
+    expect(page.get_by_role("button", name="Submit to Sample Parish")).to_be_visible()
 
 
 def test_conflict_arrows_keep_both_values_until_explicit_review(page, component_origin):
@@ -363,7 +382,7 @@ def test_conflict_arrows_keep_both_values_until_explicit_review(page, component_
     page.get_by_role("button", name="Begin reviewing").click()
     page.get_by_label("First name (required)").fill("My edit")
     page.get_by_role("button", name="Review response").click()
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
     mine = page.get_by_role("radio", name="Use my edit: My edit")
     records = page.get_by_role("radio", name="Use updated records: Updated records")
     mine.focus()
@@ -375,7 +394,7 @@ def test_conflict_arrows_keep_both_values_until_explicit_review(page, component_
     expect(records).to_be_visible()
     expect(page.get_by_label("First name (required)")).to_have_value("My edit")
     page.get_by_role("button", name="Review response").click()
-    expect(page.get_by_role("button", name="Submit response")).to_be_visible()
+    expect(page.get_by_role("button", name="Submit to Sample Parish")).to_be_visible()
     assert "My edit" in page.locator("main").inner_text()
 
 
@@ -396,7 +415,7 @@ def test_expiry_after_definite_rejection_warns_changes_were_not_saved(
     )
     page.get_by_role("button", name="Begin reviewing").click()
     page.get_by_role("button", name="Review response").click()
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(page.get_by_role("button", name="Review response")).to_be_visible()
     page.clock.fast_forward(3_700_000)
     expect(page.locator("#family-flow-message")).to_contain_text(
@@ -431,9 +450,9 @@ def test_uncertain_submit_survives_a_definitely_rejected_retry(
     prepare(page, component_origin, submit=respond)
     page.get_by_role("button", name="Begin reviewing").click()
     page.get_by_role("button", name="Review response").click()
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(page.locator("#family-flow-message")).to_contain_text("could not confirm")
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
     if retry == "validation":
         expect(page.get_by_role("button", name="Review response")).to_be_visible()
         page.clock.fast_forward(3_700_000)

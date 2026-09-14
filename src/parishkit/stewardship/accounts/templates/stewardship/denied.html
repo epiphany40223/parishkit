@@ -3,5 +3,6 @@
 {% block content %}<section class="flow panel">
   <h1>{% translate "Access unavailable" %}</h1>
   <p>{% translate "Sign-in is unavailable. Please try again." %}</p>
+  {% if public_content %}<div class="content-block">{{ public_content|safe }}</div>{% endif %}
   <p><a href="{{ retry_path }}">{% translate "Try signing in again" %}</a></p>
 </section>{% endblock %}

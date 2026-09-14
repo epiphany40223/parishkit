@@ -63,7 +63,7 @@ def test_complete_member_controls_review_and_atomic_payload(
     expect(page.locator("#member-3-birth_date")).to_have_value("1980-02-29")
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     page.get_by_role("button", name="Review response").click()
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(page.get_by_role("heading", name="Thank you!")).to_be_visible()
     assert len(submitted) == 1
     values = submitted[0]["members"]["3"]
@@ -142,7 +142,7 @@ def test_stale_birth_unknown_choice_requires_explicit_resolution(
     start(page, component_origin, submit=submit)
     page.locator("#member-3-birth_date-unknown").check()
     page.get_by_role("button", name="Review response").click()
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(page.locator("#member-3-birth_date-unknown")).to_be_disabled()
     group = page.locator('[data-conflict="members.3.birth_date"]')
     group.get_by_label(
@@ -154,7 +154,7 @@ def test_stale_birth_unknown_choice_requires_explicit_resolution(
     # Clicking finishes before a fetch necessarily reaches the route callback.
     # Await the second response so this cannot inspect the earlier submission.
     with page.expect_response("**/family/submit") as response:
-        page.get_by_role("button", name="Submit response").click()
+        page.get_by_role("button", name="Submit to Sample Parish").click()
     assert response.value.status == 409
     assert len(submissions) == 2
     assert submissions[-1]["answers"]["members"]["3"]["birth_date"] == (

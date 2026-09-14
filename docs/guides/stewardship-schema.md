@@ -29,6 +29,11 @@ The [financial response increment](stewardship-financial-responses.md#fresh-inst
 adds two functions and changes two existing submission guards, without changing
 tables, columns, constraints, indexes, triggers or policies.
 
+The [Gate 2 completeness correction](stewardship-gate-2-reviews.md#fresh-install-schema-audit)
+changes only the existing submission-effects function body, independently
+audited against the preceding immutable baseline. Object counts and permissions
+are unchanged.
+
 The SQL files under `src/parishkit/stewardship/schema/` install the final function
 definitions, tables, seed sentinels and guards directly. Only function-body
 validation is temporarily deferred within the installation transaction because

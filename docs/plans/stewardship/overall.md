@@ -112,7 +112,8 @@ human merge-approval stops, including historical checkpoint wording below.
    further when an independently testable outcome or reviewability boundary
    justifies it, and record why. Each resulting PR follows
    the full review/fix cycle. Formal gates still review the complete integrated
-   scope since the previous gate, including already merged changes. Create each
+   scope since the previous gate, including already merged changes, using any
+   explicitly approved evidence-reuse procedure stated at that gate. Create each
    subsequent branch from refreshed `origin/main` after its predecessor merges.
 7. Once local validation and the review loop pass, push and create the PR against
    `origin/main` (or update the existing phase PR). Watch CI for the current head,
@@ -368,6 +369,20 @@ Pause Phase 4. Run the review protocol with special attention to:
 Require at least one full browser review on a narrow mobile viewport and one
 desktop viewport after corrections.
 
+Human-approved Gate 2 procedure, September 14, 2026: reuse the recorded reviews
+of merged PRs and add focused dual-model integration reviews, with explicit
+coverage of every gate requirement, instead of re-reviewing the entire
+historical diff in 59 fresh Claude shards. This changes review procedure only:
+the gate baseline, acceptance criteria, validation, required correction work and
+current PR's minimum three successful dual-source rounds remain unchanged.
+The [Gate 2 evidence map](../../guides/stewardship-gate-2-reviews.md) identifies
+the reused reviews, fresh integration scopes and their eventual results.
+Each requirement must have prior component evidence and a fresh integration
+check; missing or stale evidence requires renewed review of that part. Reviewers
+must inspect current interacting owners beyond the current PR diff where needed.
+An incomplete/degraded historical attempt is never reused as approval, although
+its findings still require triage.
+
 ## Phase 4: Production scheduling, delivery, and notifications
 
 Goal: move a tested campaign safely to Production and run reliable scheduled
@@ -573,8 +588,10 @@ Every formal gate uses this sequence:
    logically signed commits. Squash fixups appropriately before final review.
 2. Run the repository checks plus gate-specific migration, PostgreSQL/Valkey,
    browser, accessibility, Compose, coverage, and failure-injection suites.
-3. Obtain two independent reviews of the complete gate diff, preferably through
-   the installed `$local-review` skill, and preserve their findings for triage.
+3. Obtain two independent reviews of the complete gate scope, using the complete
+   gate diff unless that gate explicitly records a human-approved combination
+   of prior review evidence and fresh integration review. Preferably use
+   the installed `$local-review` skill, and preserve findings for triage.
    If that skill is unavailable, stop for the human to provision it or approve
    an equivalent independent dual-review procedure before continuing.
 4. Triage all validated findings, preferably through the installed
@@ -587,7 +604,9 @@ Every formal gate uses this sequence:
    minimum-round and exit criteria. At a gate, review all integrated work since
    the previous gate even when earlier phase PRs have already merged; a diff
    against current `origin/main` alone may omit that scope. Preserve the gate
-   baseline and evidence alongside the current phase's reviewed SHA.
+   baseline and evidence alongside the current phase's reviewed SHA. An explicitly
+   approved evidence-reuse gate must map the entire scope rather than silently
+   substituting a review of only the newest PR.
 7. Gate exit requires no unresolved validated Critical, High, or Medium finding
    and all gate-specific evidence. Routine implementation-gate advancement uses
    the standing human delegation in the phase delivery cycle; Gate 5 retains

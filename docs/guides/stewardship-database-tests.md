@@ -70,6 +70,41 @@ Fresh schema creation now uses the
 upgrade/downgrade cycles. Current constraint, authorization and concurrency
 tests remain mandatory.
 
+## Isolated parallel local coverage
+
+For a faster complete local gate, use the same receipt-checked runner as CI
+with four independent disposable PostgreSQL/Valkey pairs. Each pair must have
+unique container names and unused loopback ports; use the pinned images and
+tmpfs-only storage below. Never point two shards at the same PostgreSQL cluster,
+even with different database names, because roles are cluster-wide.
+
+For example, map PostgreSQL ports `55440` through `55443` and Valkey ports
+`56381` through `56384`. After every service is ready, run one command per
+terminal, substituting the index and that pair's two ports:
+
+```sh
+PARISHKIT_TEST_POSTGRES_PORT=55440 PARISHKIT_TEST_VALKEY_PORT=56381 \
+  python -m parishkit.stewardship.quality_ci shard \
+  --index 1 --count 4 --output /tmp/stewardship-local-run/shard-1
+```
+
+Use indexes 1–4, the same count, and distinct new `shard-N` output directories
+under one new external parent. Only shard one runs the complete baseline;
+all four run their exact PostgreSQL partitions. Do not edit source, tests,
+configuration or documentation while collecting this same-tree evidence.
+After all four commands exit successfully, combine their raw coverage:
+
+```sh
+python -m parishkit.stewardship.quality_ci combine --count 4 \
+  --input /tmp/stewardship-local-run \
+  --report /tmp/stewardship-local-coverage.json
+```
+
+Independent collection, exact execution receipts, same-tree checks, no-skip
+enforcement, the 20-minute shard deadline and both coverage floors are unchanged.
+Never combine a failed shard or reuse an old artifact directory. The serial
+command remains available when only one disposable service pair is available.
+
 ## Local disposable server
 
 Use an unused container name and loopback port. If the chosen name or port is
@@ -92,8 +127,11 @@ The documented password is synthetic, intentionally public, and used only for
 this disposable loopback server. Never reuse it in a deployment.
 
 Authentication tests also require the pinned disposable Valkey service used by
-CI. Its fixture port is fixed at `127.0.0.1:56379`; do not substitute a real
-deployment or stop an unrelated service already using that port.
+CI. Its fixture defaults to `127.0.0.1:56379`; set
+`PARISHKIT_TEST_VALKEY_PORT` to the mapped port of a separate disposable Valkey
+cluster for each concurrent local shard. The host remains fixed to loopback.
+Port `56380` is reserved for unavailable-service tests and must remain unused.
+Do not substitute a real deployment or stop an unrelated service using a port.
 
 ```sh
 docker run --detach --name parishkit-auth-tests \

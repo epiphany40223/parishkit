@@ -37,6 +37,7 @@ def test_slots_and_module_visibility():
     assert "census" in slots and "member_census" in slots
     assert not {"additional", "ministry", "financial"} & slots.keys()
     assert "census" not in page_slots(campaign(modules=["ministry"])["values"])
+    assert "email delivery" in str(slots["submission_confirmation"])
 
 
 @pytest.mark.parametrize("generate", [False, True])

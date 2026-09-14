@@ -57,7 +57,7 @@ def financial_form(*, census=False, ministry=False, available=True):
 def final_submit(page):
     """Both deliberate actions are necessary, even after a refreshed response."""
     page.get_by_role("button", name="Review response").click()
-    page.get_by_role("button", name="Submit response").click()
+    page.get_by_role("button", name="Submit to Sample Parish").click()
 
 
 @pytest.mark.parametrize("stale_edit", [False, True])
@@ -90,7 +90,7 @@ def test_retained_terminal_ministry_eligibility_without_census(
             page.get_by_role("button", name="Discard unavailable Ministry edits")
         ).to_be_visible()
         page.get_by_role("button", name="Review response").click()
-        assert page.get_by_role("button", name="Submit response").count() == 0
+        assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
         assert len(submissions) == 1
         page.get_by_role("button", name="Discard unavailable Ministry edits").click()
     assert page.get_by_label("Household status").count() == 0
@@ -137,7 +137,7 @@ def test_concurrent_terminal_request_requires_explicit_ministry_discard(
         page.get_by_role("button", name="Discard unavailable Ministry edits")
     ).to_be_visible()
     page.get_by_role("button", name="Review response").click()
-    assert page.get_by_role("button", name="Submit response").count() == 0
+    assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
     assert len(submissions) == 1
     page.get_by_role("button", name="Discard unavailable Ministry edits").click()
     final_submit(page)
@@ -227,7 +227,7 @@ def test_financial_validation_zero_and_unavailable(page, component_origin):
     for invalid in ("", "-1", "1e2", "1.001", "1,23", "1000000000"):
         page.get_by_label("Annual pledge (USD)").fill(invalid)
         page.get_by_role("button", name="Review response").click()
-        assert page.get_by_role("button", name="Submit response").count() == 0
+        assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
         expect(page.get_by_label("Annual pledge (USD)")).to_have_attribute(
             "aria-invalid", "true"
         )
@@ -312,7 +312,7 @@ def test_financial_stale_response_preserves_edits_and_requires_resolution(
     page.get_by_label("Details for I will share another way").fill("Keep this note")
     final_submit(page)
     page.get_by_role("button", name="Review response").click()
-    assert page.get_by_role("button", name="Submit response").count() == 0
+    assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
     assert len(submissions) == 1
     if changed == "pledge":
         page.get_by_role("radio", name="Use my edit", exact=False).check()

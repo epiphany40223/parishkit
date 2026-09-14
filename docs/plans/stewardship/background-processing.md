@@ -139,6 +139,9 @@ both are tested.
 
 1. Create one idempotent confirmation occurrence in the submission transaction;
    sending remains asynchronous and does not affect accepted response state.
+   Render the separately versioned `submission_confirmation` receipt block
+   described by the [content contract](../../specs/stewardship/data/spec.md#content-and-email-templates)
+   as part of receipt email, never as a second browser Thank You page.
 2. Implement daily post-midnight digest with previous-local-day statistics and
    participation chart artifact from the exact ready CampaignDailyFactSet
    shared with reports; wait/retry rather than substituting another generation.

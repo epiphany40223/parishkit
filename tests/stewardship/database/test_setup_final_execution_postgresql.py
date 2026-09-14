@@ -2,13 +2,17 @@
 
 # ruff: noqa: F811 -- imported pytest fixtures.
 
+from contextlib import ExitStack
 from dataclasses import replace
+from threading import Event
 from uuid import uuid4
 
 import pytest
+from django.db import connection, transaction
 from django.test import Client
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.accounts.installation_lock import INSTALLER_LOCK
 from parishkit.stewardship.accounts.key_files import write_private
 from parishkit.stewardship.accounts.setup_completion import setup_is_complete
 from parishkit.stewardship.accounts.setup_models import SetupAttempt
@@ -17,8 +21,10 @@ from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.dispatch import claim_hint, execute_hint
 from parishkit.stewardship.jobs.lifetime import maintain_execution
 from parishkit.stewardship.jobs.models import TaskRun
+from parishkit.stewardship.jobs.ownership import database_now
 from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.scheduler import scheduler_session
+from parishkit.stewardship.source.models import SourceMutationLease
 from parishkit.stewardship.source.setup_final_execution import finalization_handler
 from parishkit.stewardship.source.setup_final_production import produce_finalization
 from parishkit.stewardship.source.setup_final_tasks import TASK_TYPE
@@ -71,7 +77,9 @@ def test_incoherent_finalization_does_not_abort_scheduler_tick(
     assert "Synthetic incoherent selection" not in SafeJsonFormatter().format(events[0])
 
 
-@pytest.mark.parametrize("failure", [None, "credential", "invalid_source"])
+@pytest.mark.parametrize(
+    "failure", [None, "credential", "invalid_source", "installer_busy"]
+)
 def test_real_finalization_producer_and_compiled_worker(
     setup_http, monkeypatch, tmp_path, config_role, failure, settings
 ):
@@ -107,7 +115,29 @@ def test_real_finalization_producer_and_compiled_worker(
         mac=ring.mac,
         public=ring.public,
     )
-    with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
+    drainage = []
+    if failure == "installer_busy":
+        from parishkit.stewardship.source import setup_final_execution as owner
+
+        release = owner.release_source
+
+        def observe_release(claim):
+            """Capture the real reserved deadline before the unmodified release."""
+            drainage.append(SourceMutationLease.objects.get().external_deadline)
+            return release(claim)
+
+        monkeypatch.setattr(owner, "release_source", observe_release)
+    with ExitStack() as cleanup:
+        if failure == "installer_busy":
+            # An independent installer session really owns the advisory lock;
+            # do not mock the finalizer or its PostgreSQL serialization guard.
+            installer = connection.copy(alias="synthetic_setup_installer")
+            cleanup.callback(installer.close)
+            with installer.cursor() as cursor:
+                cursor.execute("SELECT pg_advisory_lock(%s, %s)", INSTALLER_LOCK)
+        cleanup.enter_context(
+            task_login(ServiceRole.WORKER, exact=True, reconnect=True)
+        )
         execution = claim_hint(
             produced[0],
             queue=WorkQueue.GENERAL,
@@ -124,6 +154,7 @@ def test_real_finalization_producer_and_compiled_worker(
             None: "succeeded",
             "credential": "retry_wait",
             "invalid_source": "failed",
+            "installer_busy": "retry_wait",
         }[failure]
     )
     assert setup_is_complete() is (failure is None)
@@ -135,6 +166,44 @@ def test_real_finalization_producer_and_compiled_worker(
         rejected = AuditEvent.objects.filter(event_type="source_rejected").last()
         assert rejected is not None
         assert rejected.correlation_id == execution.correlation_id
+    if failure == "installer_busy":
+        lease = SourceMutationLease.objects.get(singleton=True)
+        assert lease.owner_id is None
+        assert lease.external_deadline is not None
+        assert drainage == [lease.external_deadline]
+        assert (
+            SourceSnapshot.objects.filter(task_id=produced[0]).get().state == "rejected"
+        )
+        assert not SourceSnapshot.objects.filter(
+            task_id=produced[0], state="ready"
+        ).exists()
+        # Release happened immediately, but the real HTTP safety window remains.
+        # Once it drains, the same root must finish through normal worker intake.
+        wait_for_source()
+        # Task backoff and HTTP drainage have independent start instants. Slow
+        # staging must not make this test depend on their accidental ordering.
+        with transaction.atomic():
+            remaining = (
+                TaskRun.objects.get(pk=produced[0]).not_before - database_now()
+            ).total_seconds()
+        assert remaining < 31
+        if remaining > 0:
+            Event().wait(remaining + 0.05)
+        fake_provider(monkeypatch, pages())
+        with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
+            assert execute_hint(
+                produced[0],
+                queue=WorkQueue.GENERAL,
+                worker_id=uuid4(),
+                handlers={TASK_TYPE: handler},
+            )
+        completed = TaskRun.objects.get(pk=produced[0])
+        assert (completed.state, completed.attempt) == ("succeeded", 2)
+        assert setup_is_complete()
+        assert (
+            SourceSnapshot.objects.filter(task_id=produced[0], state="promoted").count()
+            == 1
+        )
     if failure is None:
         settings.STEWARDSHIP_AUTH_RUNTIME = replace(
             setup_http, setup_complete=setup_is_complete

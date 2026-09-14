@@ -25,7 +25,7 @@ from .merge import KnownValue
 from .ministry import MAX_MINISTRY_LABEL, MinistryInputs
 
 FORM_SCHEMA = "family-response-v1"
-PROJECTION_VERSION = "family-inputs-v7"
+PROJECTION_VERSION = "family-inputs-v8"
 ADDITIONAL_MAX_LENGTH = 5000
 
 
@@ -110,7 +110,7 @@ class CensusInputs:
                 self.modules,
                 self.ministries.comparison() if self.ministries is not None else None,
                 self.financial.comparison() if self.financial is not None else None,
-                self.parish_name if self.financial is not None else None,
+                self.parish_name,
                 tuple(field.comparison() for field in self.fields),
             )
         )
@@ -196,6 +196,7 @@ def definition_digest(configuration):
                 for key in (
                     "welcome",
                     "census",
+                    "member_census",
                     "ministry",
                     "financial",
                     "review",
@@ -204,8 +205,10 @@ def definition_digest(configuration):
                 )
                 if key in content
                 and (key != "additional" or configuration["additional_information"])
+                and (key != "member_census" or census)
                 and (key not in {"census", "ministry", "financial"} or key in modules)
             },
+            "content_public_values": configuration.get("content_public_values", {}),
         }
     )
 

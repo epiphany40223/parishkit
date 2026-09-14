@@ -1,12 +1,14 @@
 """Real CSRF/session HTTP entry, final submission and safe revisit projection."""
 
 from contextlib import nullcontext
+from dataclasses import replace
 from datetime import timedelta
 from uuid import uuid4
 
 import pytest
 
 from parishkit.stewardship.responses.models import (
+    AdditionalInformationItem,
     FamilyFormBaseline,
     ProposedChange,
     Submission,
@@ -84,6 +86,108 @@ def answers_for(form):
     }
 
 
+def test_census_submit_recipient_change_requires_review(response_service):
+    """The displayed recipient is pinned even without financial share wording."""
+    harness = response_service
+    form = load_form(harness)
+    store = harness.service.store
+    version = store.active()
+    assert (
+        form["parish_name"]
+        == version.document()["sections"]["parish"][0]["values"]["name"]
+    )
+    changed = change_configuration(
+        store,
+        version,
+        uuid4(),
+        [
+            {
+                "operation": "update",
+                "section": "parish",
+                "id": version.document()["sections"]["parish"][0]["id"],
+                "values": {"name": "Renamed Sample Parish"},
+            }
+        ],
+    )
+    assert changed.state == "applied"
+    with web_login():
+        response = post(
+            harness.client,
+            "/family/submit",
+            {
+                "baseline": form["baseline"],
+                "answers": answers_for(form),
+            },
+        )
+        assert response.status_code == 409, response.content
+        fresh = response.json()["form"]
+        assert fresh["parish_name"] == "Renamed Sample Parish"
+        assert not Submission.objects.exists()
+        result = post(
+            harness.client,
+            "/family/submit",
+            {
+                "baseline": fresh["baseline"],
+                "answers": answers_for(fresh),
+            },
+        )
+        assert result.status_code == 200, result.content
+
+
+def test_live_additional_question_cannot_be_hidden_or_withdraw_followup(
+    live_response_service,
+):
+    """Production's structural lock prevents unpresented withdrawal of live text."""
+    harness = live_response_service
+    with web_login():
+        form = load_form(harness)
+        answers = answers_for(form)
+        answers["additional_information"] = "Preserve this request"
+        response = post(
+            harness.client,
+            "/family/submit",
+            {"baseline": form["baseline"], "answers": answers},
+        )
+        assert response.status_code == 200, response.content
+    original = AdditionalInformationItem.objects.get()
+    store = harness.service.store
+    before = store.active().digest
+    result = change_configuration(
+        store,
+        store.active(),
+        uuid4(),
+        [
+            {
+                "operation": "update",
+                "section": "campaigns",
+                "id": str(harness.campaign.pk),
+                "values": {"additional_information": False},
+            }
+        ],
+    )
+    assert result.state == "failed"
+    assert store.active().digest == before
+    harness.campaign.refresh_from_db()
+    assert harness.campaign.structural_locked
+    assert harness.campaign.active_configuration.values["additional_information"]
+    with web_login():
+        harness.client, response = login(harness.code)
+        assert response.status_code == 302
+        form = load_form(harness)
+        assert form["additional_enabled"]
+        assert form["additional_information"] == "Preserve this request"
+        response = post(
+            harness.client,
+            "/family/submit",
+            {"baseline": form["baseline"], "answers": answers_for(form)},
+        )
+        assert response.status_code == 200, response.content
+    original.refresh_from_db()
+    assert original.disposition == "current_actionable"
+    assert original.replacement_id is None
+    assert AdditionalInformationItem.objects.count() == 1
+
+
 def test_disabled_additional_field_does_not_replay_prior_text(response_service):
     """A real configuration change suppresses hidden text and permits Submit."""
     harness = response_service
@@ -145,6 +249,48 @@ def test_shell_and_testing_ack_reveal_no_household_data(response_service):
     form = load_form(harness)
     assert form["last_submitted_at"] is None
     assert answers_for(form)["members"]["3"]["email"] == "valid@example.org"
+    assert not Submission.objects.exists()
+
+
+@pytest.mark.parametrize("path", ["/family/form", "/family/submit"])
+@pytest.mark.parametrize(
+    "loss", ["before", "ended", "eligibility", "rehearsal", "unconfigured"]
+)
+def test_each_private_form_boundary_rechecks_current_admission(
+    response_service, settings, path, loss
+):
+    """A previously issued baseline cannot authorize data after current access loss."""
+    from parishkit.stewardship.campaigns.rehearsals import invalidate_rehearsal
+
+    harness = response_service
+    form = load_form(harness)
+    instant = harness.campaign.active_configuration.starts_at
+    if loss == "before":
+        instant -= timedelta(seconds=1)
+    elif loss == "ended":
+        instant = harness.campaign.active_configuration.ends_at
+    elif loss == "eligibility":
+        corpus = response_source()
+        corpus.members[3]["memberStatus"] = "Inactive"
+        snapshot, claim = prepare(corpus)
+        promote(snapshot, claim, harness.campaign, harness.rings)
+    elif loss == "rehearsal":
+        invalidate_rehearsal(campaign_id=harness.campaign.pk, admit=lambda *args: True)
+    else:
+        settings.STEWARDSHIP_AUTH_RUNTIME = replace(
+            settings.STEWARDSHIP_AUTH_RUNTIME, setup_complete=lambda: False
+        )
+    body = (
+        {"testing_acknowledged": True}
+        if path == "/family/form"
+        else {"baseline": form["baseline"], "answers": answers_for(form)}
+    )
+    with campaign_clock(instant):
+        result = post(harness.client, path, body)
+    assert result.status_code == (503 if loss == "unconfigured" else 403), (
+        result.content
+    )
+    assert b"valid@example.org" not in result.content
     assert not Submission.objects.exists()
 
 

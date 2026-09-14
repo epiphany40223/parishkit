@@ -4,7 +4,7 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 from django.db.models import F
 
 from parishkit.stewardship.accounts.presence import visible_sessions
@@ -56,6 +56,37 @@ def test_presence_updates_only_observation_and_is_rate_bounded(family_service):
         first.presence_at,
         first.presence_section,
         first.version,
+    )
+
+
+def test_optional_help_sql_failure_preserves_session_revocation(
+    family_service, monkeypatch
+):
+    """Real aborted SQL in optional content cannot undo presence's security audit."""
+    from parishkit.stewardship.responses import availability
+
+    browser, response = login(family_service.code)
+    assert response.status_code == 302
+    calls = []
+
+    def fail(service, slot):
+        """Abort PostgreSQL's current transaction, not just raise a Python error."""
+        calls.append(slot)
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1 / 0")
+
+    monkeypatch.setattr(availability, "public_help", fail)
+    before = AuditEvent.objects.filter(event_type="family_session_ended").count()
+    with campaign_clock(family_service.campaign.active_configuration.ends_at):
+        denied = beat(browser)
+    assert denied.status_code == 403
+    assert denied["Cache-Control"] == "no-store"
+    assert b"division by zero" not in denied.content
+    assert calls == ["access_denied"]
+    assert FamilySession.objects.get().revoked_at is not None
+    assert (
+        AuditEvent.objects.filter(event_type="family_session_ended").count()
+        == before + 1
     )
 
 

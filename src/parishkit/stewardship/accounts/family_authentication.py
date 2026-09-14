@@ -6,7 +6,7 @@ from datetime import timedelta
 from importlib import import_module
 
 from django.conf import settings
-from django.db import connection, transaction
+from django.db import DatabaseError, connection, transaction
 from django.db.models import F, Q
 from django.http import HttpResponseRedirect, JsonResponse, RawPostDataException
 from django.middleware.csrf import rotate_token
@@ -78,9 +78,27 @@ def runtime():
     return service
 
 
+def _optional_public_help(slot):
+    """Optional public instructions never replace the fixed entry/error fallback."""
+    from parishkit.stewardship.responses.availability import public_help
+
+    content = ""
+    service = getattr(settings, "STEWARDSHIP_FAMILY_RUNTIME", None)
+    if isinstance(service, FamilyRuntime):
+        # Optional contact help must not turn an outage into a secondary error.
+        # Its inputs are campaign-wide, independent of the rejected credential.
+        # Presence may already have revoked a session in an outer transaction.
+        # Roll back a failed optional SQL lookup before suppressing its error.
+        with suppress(ConfigError, DatabaseError, ValueError), transaction.atomic():
+            content = public_help(service, slot)
+    return content
+
+
 def denied(*, status=403, retry=None):
     """Unknown, inactive and non-parishioner credentials use identical responses."""
-    response = login_denial(status=status)
+    response = login_denial(
+        status=status, public_content=_optional_public_help("access_denied")
+    )
     response.stewardship_safe_error = True
     if retry:
         response["Retry-After"] = str(min(3600, max(1, int(retry))))
@@ -314,19 +332,26 @@ def _ip_counter(service, source):
 @require_http_methods(["GET", "HEAD", "POST"])
 def entry(request):
     """Eight-letter manual entry; code values never enter a URL, log or audit."""
-    from parishkit.stewardship.responses.availability import unavailable_message
+    from parishkit.stewardship.responses.availability import unavailable_page
 
     try:
         service = runtime()
         if request.method != "POST":
-            message = unavailable_message(service)
-            if message:
+            page = unavailable_page(service)
+            if page:
                 return render(
                     request,
                     "stewardship/family-unavailable.html",
-                    {"availability_message": message},
+                    {
+                        "availability_message": page.message,
+                        "availability_content": page.content,
+                    },
                 )
-            return render(request, "stewardship/family-login.html")
+            return render(
+                request,
+                "stewardship/family-login.html",
+                {"login_help": _optional_public_help("login_help")},
+            )
         ip = _ip_counter(service, request.client_address)
         delay = service.limiter.counters([ip])
         if delay:
