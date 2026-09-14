@@ -8,6 +8,7 @@ from uuid import uuid4
 import pytest
 
 from parishkit.stewardship.responses.models import (
+    AdditionalInformationItem,
     FamilyFormBaseline,
     ProposedChange,
     Submission,
@@ -131,6 +132,60 @@ def test_census_submit_recipient_change_requires_review(response_service):
             },
         )
         assert result.status_code == 200, result.content
+
+
+def test_live_additional_question_cannot_be_hidden_or_withdraw_followup(
+    live_response_service,
+):
+    """Production's structural lock prevents unpresented withdrawal of live text."""
+    harness = live_response_service
+    with web_login():
+        form = load_form(harness)
+        answers = answers_for(form)
+        answers["additional_information"] = "Preserve this request"
+        response = post(
+            harness.client,
+            "/family/submit",
+            {"baseline": form["baseline"], "answers": answers},
+        )
+        assert response.status_code == 200, response.content
+    original = AdditionalInformationItem.objects.get()
+    store = harness.service.store
+    before = store.active().digest
+    result = change_configuration(
+        store,
+        store.active(),
+        uuid4(),
+        [
+            {
+                "operation": "update",
+                "section": "campaigns",
+                "id": str(harness.campaign.pk),
+                "values": {"additional_information": False},
+            }
+        ],
+    )
+    assert result.state == "failed"
+    assert store.active().digest == before
+    harness.campaign.refresh_from_db()
+    assert harness.campaign.structural_locked
+    assert harness.campaign.active_configuration.values["additional_information"]
+    with web_login():
+        harness.client, response = login(harness.code)
+        assert response.status_code == 302
+        form = load_form(harness)
+        assert form["additional_enabled"]
+        assert form["additional_information"] == "Preserve this request"
+        response = post(
+            harness.client,
+            "/family/submit",
+            {"baseline": form["baseline"], "answers": answers_for(form)},
+        )
+        assert response.status_code == 200, response.content
+    original.refresh_from_db()
+    assert original.disposition == "current_actionable"
+    assert original.replacement_id is None
+    assert AdditionalInformationItem.objects.count() == 1
 
 
 def test_disabled_additional_field_does_not_replay_prior_text(response_service):
