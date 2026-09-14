@@ -38,6 +38,7 @@ stewardship = [
   "Pillow>=12.3.0,<13",
   "nh3>=0.3.7,<0.4",
   "pycountry>=26.2.16,<27",
+  "phonenumbers>=9.0.39,<10",
 ]
 google = [
   "google-api-python-client>=2.139.0",

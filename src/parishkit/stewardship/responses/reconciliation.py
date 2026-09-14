@@ -10,7 +10,13 @@ from parishkit.stewardship.storage import StorageInvariantError
 from .baselines import _pin_admission
 from .census import FAMILY_FIELDS
 from .comparison import canonical_value
-from .inputs import MEMBER_FIELDS, family_field_value, member_field_value
+from .diagnostics import record_unusable_source
+from .inputs import (
+    MEMBER_FIELDS,
+    MemberSourceUnavailable,
+    family_field_value,
+    member_field_value,
+)
 from .merge import KnownValue, MergeState, PriorChange, merge_value
 from .models import ProposedChange, Submission
 
@@ -59,9 +65,19 @@ def reconcile_proposals(snapshot, corpus, *, campaign_id):
             or member["deceased"]
         ):
             member = None
-        current = member_field_value(
-            member, corpus["contact"].get("member:" + row.entity_key), field
-        )
+        unusable = False
+        try:
+            current = member_field_value(
+                member, corpus["contact"].get("member:" + row.entity_key), field
+            )
+        except MemberSourceUnavailable as error:
+            # Do not leave an apparently actionable proposal compared against
+            # an obsolete value. Block it without blocking the whole refresh.
+            current = KnownValue(False)
+            unusable = True
+            if not row.current_available and row.execution == "conflict":
+                continue
+            record_unusable_source(error)
         old_key = (
             canonical_value(field.kind, row.current_value)
             if row.current_available
@@ -70,9 +86,17 @@ def reconcile_proposals(snapshot, corpus, *, campaign_id):
         new_key = (
             canonical_value(field.kind, current.value) if current.available else None
         )
-        if member is not None and (row.current_available, old_key) == (
-            current.available,
-            new_key,
+        if (
+            not unusable
+            and member is not None
+            # A formerly unusable value may become genuinely unavailable.
+            # Re-run the merge to clear that block even though both carry null.
+            and not (not row.current_available and row.execution == "conflict")
+            and (row.current_available, old_key)
+            == (
+                current.available,
+                new_key,
+            )
         ):
             continue
         result = merge_value(
@@ -89,7 +113,7 @@ def reconcile_proposals(snapshot, corpus, *, campaign_id):
             else "resolved_upstream"
             if result.state is MergeState.UPSTREAM_CAUGHT_UP
             else "conflict"
-            if result.conflict
+            if unusable or result.conflict
             else "pending"
         )
         pin_snapshot(

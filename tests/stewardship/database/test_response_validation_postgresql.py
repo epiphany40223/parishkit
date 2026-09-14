@@ -43,7 +43,7 @@ def validate(harness, identifier, *, request=None):
         ("name", True),
         ("new_member", True),
         ("remove_member", True),
-        ("disabled_field", False),
+        ("birth_date", True),
     ],
 )
 def test_promotions_compare_exact_form_dependencies(response_service, change, stale):
@@ -67,7 +67,7 @@ def test_promotions_compare_exact_form_dependencies(response_service, change, st
         data.members[8] = {**data.members[3], "memberDUID": 8, "memberType": "Child"}
     elif change == "remove_member":
         data.members[3]["memberStatus"] = "Inactive"
-    elif change == "disabled_field":
+    elif change == "birth_date":
         data.members[3]["birthdate"] = "1961-01-01"
     snapshot, claim = prepare(data)
     current = promote(

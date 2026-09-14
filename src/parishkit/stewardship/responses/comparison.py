@@ -111,6 +111,13 @@ def _phone(value, *, dialing_region):
     international numbers. Extensions remain part of the identity. Invalid
     source text stays opaque rather than collapsing different errors to empty.
     """
+    if type(value) is dict:
+        if (
+            set(value) != {"normalized", "display"}
+            or phone_record(value["display"]) != value
+        ):
+            _invalid()
+        value = value["normalized"] or value["display"]
     value = _text(value)
     if len(value) > 256 or dialing_region not in (None, "US"):
         _invalid()
@@ -137,6 +144,21 @@ def _phone(value, *, dialing_region):
         digits,
         match["extension"] or "",
     )
+
+
+def phone_record(value):
+    """Retain display and explicit US/international comparison without network IO.
+
+    This is intentionally syntactic, not numbering-plan validation. Source
+    payloads may contain malformed legacy values; they remain opaque rather
+    than being deleted or guessed. Answer validation owns dialable new input.
+    """
+    display = _text(value)
+    key = _phone(display, dialing_region="US")
+    normalized = None
+    if key[0] == "international":
+        normalized = "+" + key[1] + (";ext=" + key[2] if key[2] else "")
+    return {"normalized": normalized, "display": display}
 
 
 def canonical_value(kind, value, *, dialing_region=None):

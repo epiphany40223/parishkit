@@ -72,7 +72,9 @@ Scope and dependencies: [FAM-04 work package](../../plans/stewardship/parishione
 - [ ] FAM-04.05 — Test Member fields, dates, terminal choices, and removal.
 
 Evidence: [Existing Member increment](../../guides/stewardship-member-census.md)
-is in progress for non-terminal census fields. FAM-04.01, .04 and .05 remain
+implements non-terminal census fields and has completed three dual-model
+review/correction rounds with passing local validation. Final-head CI and
+protected merge remain pending. FAM-04.01, .04 and .05 remain
 unchecked until their terminal/proposed-Member requirements also pass in the
 following increment. No full FAM-04 task is claimed complete yet.
 

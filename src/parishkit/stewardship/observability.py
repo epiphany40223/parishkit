@@ -23,6 +23,7 @@ class Event(StrEnum):
     TASK_COMPLETED = "task_completed"
     TASK_FAILED = "task_failed"
     SOURCE_INVALID = "source_refresh_invalid"
+    SOURCE_MEMBER_UNUSABLE = "source_member_unusable"
     SOURCE_HELD = "source_refresh_held"
     SOURCE_CREDENTIAL_FAILED = "source_credential_failed"
     SOURCE_PROVIDER_FAILED = "source_provider_failed"

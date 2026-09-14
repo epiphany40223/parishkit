@@ -1,6 +1,7 @@
 """The final validator is total over the closed census aggregate, never a patch."""
 
 from copy import deepcopy
+from datetime import date
 
 import pytest
 
@@ -13,7 +14,7 @@ from parishkit.stewardship.responses.census import FAMILY_FIELDS
 from parishkit.stewardship.responses.inputs import FORM_SCHEMA, CensusInputs, FieldInput
 from parishkit.stewardship.responses.merge import KnownValue
 
-from .census_factory import household
+from .census_factory import household, member
 
 
 def family_fields():
@@ -29,12 +30,11 @@ def answers():
     return {
         "family": household(),
         "members": {
-            "1": {
-                "first_name": " First ",
-                "middle_name": "",
-                "last_name": "Last",
-                "email": "ONE@example.org; two@example.org",
-            }
+            "1": member(
+                first_name=" First ",
+                last_name="Last",
+                email="ONE@example.org; two@example.org",
+            )
         },
         "additional_information": " Text ",
         "testing_acknowledged": False,
@@ -45,7 +45,10 @@ def validate(payload, **kwargs):
     """Use a trusted issued household list, not one taken from the submitted keys."""
     inputs = CensusInputs(10, (1,), family_fields(), "d" * 64)
     return validate_answers(
-        payload, inputs, **({"additional_enabled": True, "testing": False} | kwargs)
+        payload,
+        inputs,
+        today=date(2026, 9, 13),
+        **({"additional_enabled": True, "testing": False} | kwargs),
     )
 
 
@@ -62,10 +65,12 @@ def test_complete_answer_is_normalized_without_mutating_input(answers):
         },
         "members": {
             "1": {
-                "first_name": "First",
-                "middle_name": "",
-                "last_name": "Last",
-                "email": "one@example.org, two@example.org",
+                key: value or None
+                for key, value in member(
+                    first_name="First",
+                    last_name="Last",
+                    email="one@example.org, two@example.org",
+                ).items()
             }
         },
         "additional_information": "Text",
@@ -78,7 +83,10 @@ def test_multiple_addresses_round_trip_through_normalized_browser_representation
 ):
     """The validator must accept its own comma-joined prefill on a later visit."""
     first = validate(answers)
-    answers["members"] = first["members"]
+    answers["members"] = {
+        key: {name: value or "" for name, value in fields.items()}
+        for key, fields in first["members"].items()
+    }
     answers["additional_information"] = first["additional_information"]
     assert validate(answers) == first
 
@@ -177,5 +185,6 @@ def test_empty_active_household_is_not_an_invented_member(answers):
         CensusInputs(10, (), family_fields(), "d" * 64),
         additional_enabled=True,
         testing=False,
+        today=date(2026, 9, 13),
     )
     assert result["members"] == {}

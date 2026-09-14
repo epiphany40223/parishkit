@@ -103,6 +103,8 @@ packaging==26.3
     #   build
     #   kombu
     #   pytest
+phonenumbers==9.0.39
+    # via parishkit (pyproject.toml)
 pillow==12.3.0
     # via parishkit (pyproject.toml)
 pluggy==1.6.0

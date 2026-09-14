@@ -6,13 +6,13 @@ Unknown fields and household identities are rejected rather than silently
 discarded, so a forged/stale browser cannot choose the scope of validation.
 """
 
-from parishkit.config import ConfigError
-from parishkit.parishsoft import split_email_addresses
-from parishkit.stewardship.accounts.policy_schema import normalized_email
+from datetime import date
 
 from .census import HOUSEHOLD_FIELDS, InvalidHousehold, validate_household
 from .census import clean_text as _text
 from .inputs import ADDITIONAL_MAX_LENGTH, FORM_SCHEMA, MEMBER_FIELDS, CensusInputs
+from .member_census import InvalidMemberValue, validate_member_value
+from .merge import KnownValue
 
 
 class InvalidAnswers(ValueError):
@@ -24,7 +24,7 @@ class InvalidAnswers(ValueError):
         super().__init__("Please review the indicated Family form fields.")
 
 
-def validate_answers(payload, inputs, *, additional_enabled, testing):
+def validate_answers(payload, inputs, *, additional_enabled, testing, today):
     """Validate all active Members and explicit test consent without persisting.
 
     Text limits are part of the server-owned form definition. Known source
@@ -36,6 +36,7 @@ def validate_answers(payload, inputs, *, additional_enabled, testing):
         not isinstance(inputs, CensusInputs)
         or type(additional_enabled) is not bool
         or type(testing) is not bool
+        or type(today) is not date
     ):
         raise TypeError("Trusted form definition and namespace are required.")
     if type(payload) is not dict or set(payload) != {
@@ -91,41 +92,15 @@ def validate_answers(payload, inputs, *, additional_enabled, testing):
         normalized[key] = {}
         for field in MEMBER_FIELDS:
             path = f"members.{key}.{field.name}"
-            value = _text(member[field.name], field.max_length)
-            if (
-                value is None
-                or (field.required and not value)
-                or any(character in value for character in "\n\r\t")
-            ):
-                errors[path] = "Enter a valid value within the displayed length limit."
-                continue
-            if field.name == "email" and value:
-                try:
-                    addresses = {
-                        normalized_email(address)
-                        for address in split_email_addresses(value.replace(",", ";"))
-                    }
-                except ConfigError:
-                    addresses = set()
-                if not addresses:
-                    errors[path] = (
-                        "Enter valid email addresses or leave this field blank."
-                    )
-                    continue
-                value = ", ".join(sorted(addresses))
-            source = source_fields.get((identifier, field.name))
-            # The UI renders optional known-null/unavailable inputs as blank.
-            # Preserve that value rather than manufacture a no-change proposal
-            # from an untouched blank. Explicit availability remains in baseline
-            # metadata, not inferred from the answer's nullable representation.
-            normalized[key][field.name] = (
-                None
-                if not field.required
-                and value == ""
-                and source is not None
-                and (not source.available or source.value is None)
-                else value
-            )
+            try:
+                normalized[key][field.name] = validate_member_value(
+                    field,
+                    member[field.name],
+                    source_fields.get((identifier, field.name), KnownValue(False)),
+                    today=today,
+                )
+            except InvalidMemberValue as error:
+                errors[path] = str(error)
     additional = _text(payload["additional_information"], ADDITIONAL_MAX_LENGTH)
     if additional is None or (not additional_enabled and additional):
         errors["additional_information"] = (

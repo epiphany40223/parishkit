@@ -20,7 +20,8 @@ from .baselines import (
     RehearsalAcknowledgmentRequired,
     issue_baseline,
 )
-from .inputs import FormInputsUnavailable
+from .diagnostics import record_unusable_source
+from .inputs import FormInputsUnavailable, MemberSourceUnavailable
 from .presentation import form_presentation
 from .submission import submit_family
 from .validation import BaselineUnavailable
@@ -60,6 +61,10 @@ def _body(request, *, maximum):
 
 def _failure(error):
     """Use closed status shapes, not exception text or submitted field values."""
+    if isinstance(error, MemberSourceUnavailable):
+        # The failed form transaction has unwound; otherwise this diagnostic
+        # would disappear along with the intentionally unissued baseline.
+        record_unusable_source(error)
     if isinstance(error, InvalidAnswers):
         return _json({"error": "validation", "fields": error.fields}, status=422)
     if isinstance(error, RehearsalAcknowledgmentRequired):

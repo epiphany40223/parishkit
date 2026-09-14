@@ -4535,16 +4535,27 @@ BEGIN
         WHEN 'task' THEN ARRAY['task_id','count','version','outcome']
         WHEN 'email' THEN ARRAY['message_id','recipient_count','outcome']
         WHEN 'source' THEN ARRAY['snapshot_id','generation','count','outcome']
+        WHEN 'member_source' THEN ARRAY['family_duid','member_duid','field']
         WHEN 'provider' THEN ARRAY['status','provider_fingerprint','outcome']
         WHEN 'exception' THEN ARRAY['outcome','retryable']
         WHEN 'action' THEN ARRAY['version','before_version','after_version','outcome','source_fingerprint','candidate_fingerprint','count']
         ELSE NULL END;
     IF allowed IS NULL OR jsonb_typeof(payload) IS DISTINCT FROM 'object' THEN RETURN false; END IF;
+    IF schema_name='member_source' AND NOT payload ?& allowed THEN RETURN false; END IF;
     FOR key,value IN SELECT * FROM jsonb_each(payload) LOOP
         IF NOT key=ANY(allowed) THEN RETURN false; END IF;
         text_value=value#>>'{}';
         IF key='outcome' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('started','succeeded','denied','failed','retry','cancelled','changed') THEN RETURN false; END IF;
+        ELSIF key='field' THEN
+            IF jsonb_typeof(value)<>'string' OR text_value NOT IN (
+                'prefix','first_name','middle_name','last_name','suffix','nickname',
+                'maiden_name','birth_date','gender','email','home_phone',
+                'mobile_phone','work_phone','marital_status','language'
+            ) THEN RETURN false; END IF;
+        ELSIF key IN ('family_duid','member_duid') THEN
+            IF jsonb_typeof(value)<>'number' OR text_value!~'^[0-9]{1,10}$' THEN RETURN false; END IF;
+            IF text_value::numeric NOT BETWEEN 1 AND 2147483647 THEN RETURN false; END IF;
         ELSIF key='method' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('GET','HEAD','POST') THEN RETURN false; END IF;
         ELSIF key LIKE '%\_id' ESCAPE '\' THEN
@@ -7664,6 +7675,49 @@ AS $$
     )
 $$;
 
+-- Numeric phone identity mirrors the Python comparator with explicit US
+-- national context. Invalid retained source text remains opaque, never blank.
+CREATE FUNCTION public.stewardship_response_phone_key_v1(input_value text)
+    RETURNS jsonb LANGUAGE plpgsql IMMUTABLE
+    SET search_path TO pg_catalog, public, pg_temp
+AS $$
+DECLARE value text; matched text[]; digits text; international boolean;
+BEGIN
+    value := public.stewardship_response_comparison_v1('first_name',to_jsonb(input_value));
+    IF value IS NULL OR length(value)>256 THEN
+        RAISE EXCEPTION 'Invalid phone comparison input' USING ERRCODE='23514';
+    END IF;
+    matched := regexp_match(value,
+        '^(\+?[0-9][0-9 ().-]*|\([0-9][0-9 ().-]*)(?:\s*(?:ext\.?|x|#|;ext=)\s*([0-9]{1,12}))?$', 'i');
+    IF matched IS NULL THEN RETURN jsonb_build_array('opaque',value); END IF;
+    digits := regexp_replace(matched[1],'[^0-9]','','g');
+    IF length(digits) NOT BETWEEN 1 AND 15 THEN RETURN jsonb_build_array('opaque',value); END IF;
+    international := left(matched[1],1)='+';
+    IF NOT international AND length(digits)=10 THEN
+        digits := '1'||digits; international := true;
+    ELSIF NOT international AND length(digits)=11 AND left(digits,1)='1' THEN
+        international := true;
+    END IF;
+    RETURN jsonb_build_array(CASE WHEN international THEN 'international' ELSE 'national' END,
+        digits,coalesce(matched[2],''));
+END;
+$$;
+
+CREATE FUNCTION public.stewardship_response_phone_record_v1(input_value text)
+    RETURNS jsonb LANGUAGE plpgsql IMMUTABLE
+    SET search_path TO pg_catalog, public, pg_temp
+AS $$
+DECLARE key jsonb; value text;
+BEGIN
+    key := public.stewardship_response_phone_key_v1(input_value);
+    IF key->>0='international' THEN
+        value := '+'||(key->>1)||CASE WHEN key->>2='' THEN '' ELSE ';ext='||(key->>2) END;
+    END IF;
+    RETURN jsonb_build_object('normalized',value,'display',
+        public.stewardship_response_comparison_v1('first_name',to_jsonb(input_value)));
+END;
+$$;
+
 -- SQL parity with the closed census portion of family-comparison-v1.
 -- Explicit Unicode whitespace and default case folding avoid database-locale
 -- changes turning a no-change answer into a pending/conflicting proposal.
@@ -7674,11 +7728,25 @@ AS $$
 DECLARE normalized_value text; component text; normalized_address jsonb;
 BEGIN
     IF input_field IS NULL OR input_field NOT IN (
-        'first_name','middle_name','last_name','email',
+        'prefix','first_name','middle_name','last_name','suffix','nickname','maiden_name',
+        'birth_date','gender','email','home_phone','mobile_phone','work_phone','marital_status','language',
         'home_address','mailing_address','email_opt_out') THEN
         RAISE EXCEPTION 'Unsupported response comparison field' USING ERRCODE='23514';
     END IF;
     IF input_value IS NULL OR input_value='null'::jsonb THEN RETURN NULL; END IF;
+    IF input_field IN ('home_phone','mobile_phone','work_phone') THEN
+        IF jsonb_typeof(input_value)='object' THEN
+            IF jsonb_typeof(input_value->'display') IS DISTINCT FROM 'string'
+               OR input_value IS DISTINCT FROM public.stewardship_response_phone_record_v1(input_value->>'display') THEN
+                RAISE EXCEPTION 'Invalid phone display/comparison record' USING ERRCODE='23514';
+            END IF;
+            RETURN public.stewardship_response_phone_key_v1(input_value->>'display')::text;
+        ELSIF input_value='""'::jsonb THEN
+            RETURN public.stewardship_response_phone_key_v1('')::text;
+        ELSE
+            RAISE EXCEPTION 'Invalid phone response value' USING ERRCODE='23514';
+        END IF;
+    END IF;
     IF input_field='email_opt_out' THEN
         IF jsonb_typeof(input_value) <> 'boolean' THEN
             RAISE EXCEPTION 'Invalid response boolean value' USING ERRCODE='23514';
@@ -7708,6 +7776,16 @@ BEGIN
     END IF;
     normalized_value := btrim(normalize(input_value#>>'{}',NFC),
         U&'\0009\000A\000B\000C\000D\001C\001D\001E\001F\0020\0085\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000');
+    IF input_field='birth_date' THEN
+        IF input_value#>>'{}' !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN
+            RAISE EXCEPTION 'Invalid response civil date' USING ERRCODE='23514';
+        END IF;
+        BEGIN
+            PERFORM (normalized_value::date);
+        EXCEPTION WHEN datetime_field_overflow OR invalid_datetime_format THEN
+            RAISE EXCEPTION 'Invalid response civil date' USING ERRCODE='23514';
+        END;
+    END IF;
     IF input_field='email' THEN
         RETURN casefold(normalized_value COLLATE pg_catalog.pg_unicode_fast);
     END IF;
@@ -7789,22 +7867,43 @@ BEGIN
       AND family.id=input_family AND member.canonical::jsonb->'active'='true'::jsonb
       AND member.canonical::jsonb->'deceased'='false'::jsonb;
     IF NOT FOUND THEN RETURN NULL; END IF;
-    IF input_field='email' THEN
+    IF input_field IN ('email','home_phone','mobile_phone','work_phone') THEN
         SELECT contact.canonical::jsonb INTO contact_value
         FROM public.stewardship_snapshot_contact membership
         JOIN public.stewardship_source_contact contact ON contact.id=membership.payload_id
         WHERE membership.snapshot_id=input_snapshot
           AND contact.owner_kind='member' AND contact.owner_key=input_member;
-        IF contact_value IS NULL OR NOT (contact_value->'available' ? 'email') THEN
+        source_name := CASE input_field WHEN 'email' THEN 'email' WHEN 'home_phone' THEN 'home'
+            WHEN 'mobile_phone' THEN 'mobile' WHEN 'work_phone' THEN 'work' END;
+        IF contact_value IS NULL OR NOT (contact_value->'available' ? source_name) THEN
             RETURN jsonb_build_object('available',false,'value',NULL);
+        END IF;
+        IF input_field <> 'email' THEN
+            email_value := contact_value#>>ARRAY['phones',source_name];
+            RETURN jsonb_build_object('available',true,'value',CASE
+                WHEN email_value IS NULL THEN 'null'::jsonb
+                WHEN email_value='' THEN '""'::jsonb
+                ELSE public.stewardship_response_phone_record_v1(email_value) END);
         END IF;
         SELECT coalesce(string_agg(item->>'value',', ' ORDER BY (item->>'value') COLLATE "C"),'')
             INTO email_value FROM jsonb_array_elements(contact_value->'emails') item;
         RETURN jsonb_build_object('available',true,'value',email_value);
     END IF;
     source_name := CASE input_field WHEN 'first_name' THEN 'firstName'
-        WHEN 'middle_name' THEN 'middleName' WHEN 'last_name' THEN 'lastName' END;
+        WHEN 'middle_name' THEN 'middleName' WHEN 'last_name' THEN 'lastName'
+        WHEN 'prefix' THEN 'salutation' WHEN 'suffix' THEN 'suffix'
+        WHEN 'nickname' THEN 'nickName' WHEN 'maiden_name' THEN 'maidenName'
+        WHEN 'birth_date' THEN 'birthdate' WHEN 'gender' THEN 'sex'
+        WHEN 'marital_status' THEN 'maritalStatus' WHEN 'language' THEN 'language' END;
     IF source_name IS NULL THEN RETURN NULL; END IF;
+    IF input_field IN ('gender','marital_status') AND jsonb_typeof(member_value->source_name)='string' THEN
+        SELECT choice INTO email_value FROM unnest(CASE WHEN input_field='gender'
+            THEN ARRAY['Male','Female','Unspecified']
+            ELSE ARRAY['','Annulled','Divorced','Married','Single','Separated','Widowed'] END) choice
+        WHERE public.stewardship_response_comparison_v1('email',to_jsonb(choice))=
+            public.stewardship_response_comparison_v1('email',member_value->source_name);
+        IF FOUND THEN RETURN jsonb_build_object('available',true,'value',email_value); END IF;
+    END IF;
     RETURN jsonb_build_object('available',member_value ? source_name,'value',member_value->source_name);
 END;
 $$;

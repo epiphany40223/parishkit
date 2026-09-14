@@ -16,6 +16,7 @@ class ContextKind(StrEnum):
     TASK = "task"
     EMAIL = "email"
     SOURCE = "source"
+    MEMBER_SOURCE = "member_source"
     PROVIDER = "provider"
     EXCEPTION = "exception"
     ACTION = "action"
@@ -66,11 +67,33 @@ class Action(StrEnum):
     SETUP_CREDENTIAL_SCRUBBED = "setup_credential_scrubbed"
 
 
+# Closed field identifiers are operational metadata, never census values.
+MEMBER_SOURCE_FIELDS = frozenset(
+    {
+        "prefix",
+        "first_name",
+        "middle_name",
+        "last_name",
+        "suffix",
+        "nickname",
+        "maiden_name",
+        "birth_date",
+        "gender",
+        "email",
+        "home_phone",
+        "mobile_phone",
+        "work_phone",
+        "marital_status",
+        "language",
+    }
+)
+
 FIELDS = {
     ContextKind.REQUEST: {"method", "status", "outcome", "source_fingerprint"},
     ContextKind.TASK: {"task_id", "count", "version", "outcome"},
     ContextKind.EMAIL: {"message_id", "recipient_count", "outcome"},
     ContextKind.SOURCE: {"snapshot_id", "generation", "count", "outcome"},
+    ContextKind.MEMBER_SOURCE: {"family_duid", "member_duid", "field"},
     ContextKind.PROVIDER: {"status", "provider_fingerprint", "outcome"},
     ContextKind.EXCEPTION: {"outcome", "retryable"},
     ContextKind.ACTION: {
@@ -91,11 +114,19 @@ def sanitize(kind, values):
         raise ValueError("Context requires a canonical schema and mapping.")
     if values.keys() - FIELDS[kind]:
         raise ValueError("Context contains fields outside its approved schema.")
+    if kind is ContextKind.MEMBER_SOURCE and values.keys() != FIELDS[kind]:
+        raise ValueError("Member source diagnostics require complete identifiers.")
     safe = {}
     for key, value in values.items():
         if key == "outcome":
             valid = isinstance(value, Outcome)
             safe[key] = value.value if valid else None
+        elif key == "field":
+            valid = type(value) is str and value in MEMBER_SOURCE_FIELDS
+            safe[key] = value
+        elif key in {"family_duid", "member_duid"}:
+            valid = type(value) is int and 0 < value < 2**31
+            safe[key] = value
         elif key == "method":
             valid = type(value) is str and value in {"GET", "HEAD", "POST"}
             safe[key] = value

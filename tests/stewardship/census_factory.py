@@ -1,7 +1,20 @@
 """Synthetic complete household values shared by pure, HTTP and browser tests."""
 
 from parishkit.stewardship.responses.census import HOUSEHOLD_FIELDS, blank_address
+from parishkit.stewardship.responses.member_census import MEMBER_FIELDS
 from parishkit.stewardship.responses.merge import KnownValue
+
+
+def member(**changes):
+    """Complete synthetic browser fields, including explicit required choices."""
+    return {field.name: "" for field in MEMBER_FIELDS} | {
+        "first_name": "Alex",
+        "last_name": "Sample",
+        "birth_date": "1960-01-01",
+        "gender": "Unspecified",
+        "language": "English",
+        **changes,
+    }
 
 
 def address(**changes):

@@ -25,6 +25,8 @@ def derive_proposals(submission, validated):
     previous = proposal_index(validated.prior_submission)
     created = []
     for field in validated.current.fields:
+        if field.entity not in {"family", "member"}:
+            continue
         if field.entity == "family" and field.field not in HOUSEHOLD_FIELDS:
             continue
         identity = (field.entity, str(field.identity), field.field)

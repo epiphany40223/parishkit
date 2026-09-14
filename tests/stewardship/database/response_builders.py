@@ -39,6 +39,7 @@ def response_source():
     """A valid no-change census fixture, without the corpus test's bad email."""
     data = source()
     data.members[3]["emailAddress"] = "valid@example.org"
+    data.members[3].update(sex="Unspecified", language="English")
     return data
 
 
