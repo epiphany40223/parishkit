@@ -10,9 +10,14 @@ from datetime import date
 
 from .census import HOUSEHOLD_FIELDS, InvalidHousehold, validate_household
 from .census import clean_text as _text
-from .inputs import ADDITIONAL_MAX_LENGTH, FORM_SCHEMA, MEMBER_FIELDS, CensusInputs
-from .member_census import InvalidMemberValue, validate_member_value
-from .merge import KnownValue
+from .inputs import ADDITIONAL_MAX_LENGTH, FORM_SCHEMA, CensusInputs
+from .member_requests import (
+    MAX_PROPOSED_MEMBERS,
+    InvalidMemberAnswers,
+    existing_answers,
+    local_member_id,
+    ordinary_answers,
+)
 
 
 class InvalidAnswers(ValueError):
@@ -42,6 +47,7 @@ def validate_answers(payload, inputs, *, additional_enabled, testing, today):
     if type(payload) is not dict or set(payload) != {
         "family",
         "members",
+        "proposed_members",
         "additional_information",
         "testing_acknowledged",
     }:
@@ -53,6 +59,15 @@ def validate_answers(payload, inputs, *, additional_enabled, testing, today):
         str(identifier) for identifier in inputs.member_duids
     }:
         raise InvalidAnswers({"members": "Review the current household members."})
+    proposed = payload["proposed_members"]
+    if (
+        type(proposed) is not dict
+        or len(proposed) > MAX_PROPOSED_MEMBERS
+        or any(not local_member_id(key) for key in proposed)
+    ):
+        raise InvalidAnswers(
+            {"proposed_members": "Review the added household members."}
+        )
     errors, normalized = {}, {}
     try:
         household = validate_household(
@@ -84,23 +99,34 @@ def validate_answers(payload, inputs, *, additional_enabled, testing, today):
         )
     for identifier in inputs.member_duids:
         key, member = str(identifier), members[str(identifier)]
-        if type(member) is not dict or set(member) != {
-            field.name for field in MEMBER_FIELDS
-        }:
-            errors[f"members.{key}"] = "Review every field for this household member."
-            continue
-        normalized[key] = {}
-        for field in MEMBER_FIELDS:
-            path = f"members.{key}.{field.name}"
-            try:
-                normalized[key][field.name] = validate_member_value(
-                    field,
-                    member[field.name],
-                    source_fields.get((identifier, field.name), KnownValue(False)),
-                    today=today,
-                )
-            except InvalidMemberValue as error:
-                errors[path] = str(error)
+        try:
+            normalized[key] = existing_answers(
+                member,
+                {
+                    name: value
+                    for (duid, name), value in source_fields.items()
+                    if duid == identifier
+                },
+                today=today,
+            )
+        except InvalidMemberAnswers as error:
+            errors.update(
+                {
+                    f"members.{key}" + (f".{name}" if name else ""): message
+                    for name, message in error.fields.items()
+                }
+            )
+    proposed_normalized = {}
+    for key, member in proposed.items():
+        try:
+            proposed_normalized[key] = ordinary_answers(member, {}, today=today)
+        except InvalidMemberAnswers as error:
+            errors.update(
+                {
+                    f"proposed_members.{key}" + (f".{name}" if name else ""): message
+                    for name, message in error.fields.items()
+                }
+            )
     additional = _text(payload["additional_information"], ADDITIONAL_MAX_LENGTH)
     if additional is None or (not additional_enabled and additional):
         errors["additional_information"] = (
@@ -112,5 +138,6 @@ def validate_answers(payload, inputs, *, additional_enabled, testing, today):
         "schema": FORM_SCHEMA,
         "family": household,
         "members": normalized,
+        "proposed_members": proposed_normalized,
         "additional_information": additional,
     }

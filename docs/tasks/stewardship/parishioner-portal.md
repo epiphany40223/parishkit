@@ -65,18 +65,21 @@ implementation increment after this PR merges; Gate 2 remains open.
 
 Scope and dependencies: [FAM-04 work package](../../plans/stewardship/parishioner-portal.md#fam-04-existing-and-proposed-member-steps).
 
-- [ ] FAM-04.01 — Build existing-Member census sections.
-- [ ] FAM-04.02 — Implement moved-household and deceased semantics.
-- [ ] FAM-04.03 — Build proposed-Member add, edit, and removal.
-- [ ] FAM-04.04 — Apply terminal-aware mandatory-field rules.
-- [ ] FAM-04.05 — Test Member fields, dates, terminal choices, and removal.
+- [x] FAM-04.01 — Build existing-Member census sections.
+- [x] FAM-04.02 — Implement moved-household and deceased semantics.
+- [x] FAM-04.03 — Build proposed-Member add, edit, and removal.
+- [x] FAM-04.04 — Apply terminal-aware mandatory-field rules.
+- [x] FAM-04.05 — Test Member fields, dates, terminal choices, and removal.
 
 Evidence: [Existing Member increment](../../guides/stewardship-member-census.md)
 implements non-terminal census fields and has completed three dual-model
-review/correction rounds with passing local validation. Final-head CI and
-protected merge remain pending. FAM-04.01, .04 and .05 remain
-unchecked until their terminal/proposed-Member requirements also pass in the
-following increment. No full FAM-04 task is claimed complete yet.
+review/correction rounds, passing final-head/merge-group CI and PR #25's
+verified protected merge. The [Member-request increment](../../guides/stewardship-member-requests.md)
+completes terminal/proposed-Member flow, independent date work, history-scoped
+revisits and SQL authority regressions. Three dual-model review/fix rounds and
+local acceptance pass with [recorded evidence](../../guides/stewardship-member-requests-reviews.md).
+Final-head CI and protected merge remain required before advancing. Ministry
+choices for proposed Members belong to FAM-05; Gate 2 remains open.
 
 ## FAM-05: Ministry and financial stewardship steps
 

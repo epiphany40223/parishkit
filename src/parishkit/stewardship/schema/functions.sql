@@ -4551,7 +4551,7 @@ BEGIN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN (
                 'prefix','first_name','middle_name','last_name','suffix','nickname',
                 'maiden_name','birth_date','gender','email','home_phone',
-                'mobile_phone','work_phone','marital_status','language'
+                'mobile_phone','work_phone','marital_status','language','death_date'
             ) THEN RETURN false; END IF;
         ELSIF key IN ('family_duid','member_duid') THEN
             IF jsonb_typeof(value)<>'number' OR text_value!~'^[0-9]{1,10}$' THEN RETURN false; END IF;
@@ -7730,10 +7730,22 @@ BEGIN
     IF input_field IS NULL OR input_field NOT IN (
         'prefix','first_name','middle_name','last_name','suffix','nickname','maiden_name',
         'birth_date','gender','email','home_phone','mobile_phone','work_phone','marital_status','language',
-        'home_address','mailing_address','email_opt_out') THEN
+        'home_address','mailing_address','email_opt_out','moved_household','deceased_status','death_date','new_member') THEN
         RAISE EXCEPTION 'Unsupported response comparison field' USING ERRCODE='23514';
     END IF;
     IF input_value IS NULL OR input_value='null'::jsonb THEN RETURN NULL; END IF;
+    IF input_field='new_member' THEN
+        IF jsonb_typeof(input_value) <> 'object'
+           OR NOT (input_value ?& ARRAY['prefix','first_name','middle_name','last_name','suffix','nickname',
+               'maiden_name','birth_date','gender','email','home_phone','mobile_phone','work_phone','marital_status','language'])
+           OR input_value-ARRAY['prefix','first_name','middle_name','last_name','suffix','nickname',
+               'maiden_name','birth_date','gender','email','home_phone','mobile_phone','work_phone','marital_status','language'] <> '{}'::jsonb THEN
+            RAISE EXCEPTION 'Invalid proposed Member comparison' USING ERRCODE='23514';
+        END IF;
+        SELECT jsonb_object_agg(key,public.stewardship_response_comparison_v1(key,value))
+          INTO normalized_address FROM jsonb_each(input_value);
+        RETURN normalized_address::text;
+    END IF;
     IF input_field IN ('home_phone','mobile_phone','work_phone') THEN
         IF jsonb_typeof(input_value)='object' THEN
             IF jsonb_typeof(input_value->'display') IS DISTINCT FROM 'string'
@@ -7747,7 +7759,7 @@ BEGIN
             RAISE EXCEPTION 'Invalid phone response value' USING ERRCODE='23514';
         END IF;
     END IF;
-    IF input_field='email_opt_out' THEN
+    IF input_field IN ('email_opt_out','moved_household','deceased_status') THEN
         IF jsonb_typeof(input_value) <> 'boolean' THEN
             RAISE EXCEPTION 'Invalid response boolean value' USING ERRCODE='23514';
         END IF;
@@ -7776,7 +7788,7 @@ BEGIN
     END IF;
     normalized_value := btrim(normalize(input_value#>>'{}',NFC),
         U&'\0009\000A\000B\000C\000D\001C\001D\001E\001F\0020\0085\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000');
-    IF input_field='birth_date' THEN
+    IF input_field IN ('birth_date','death_date') THEN
         IF input_value#>>'{}' !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN
             RAISE EXCEPTION 'Invalid response civil date' USING ERRCODE='23514';
         END IF;
@@ -7864,9 +7876,13 @@ BEGIN
     JOIN public.stewardship_source_member member ON member.id=membership.payload_id
     JOIN public.stewardship_family_campaign family ON member.family_key=family.family_duid::text
     WHERE membership.snapshot_id=input_snapshot AND membership.source_key=input_member
-      AND family.id=input_family AND member.canonical::jsonb->'active'='true'::jsonb
-      AND member.canonical::jsonb->'deceased'='false'::jsonb;
+      AND family.id=input_family
+      AND (input_field='death_date' OR (member.canonical::jsonb->'active'='true'::jsonb
+          AND member.canonical::jsonb->'deceased'='false'::jsonb));
     IF NOT FOUND THEN RETURN NULL; END IF;
+    IF input_field IN ('moved_household','deceased_status') THEN
+        RETURN jsonb_build_object('available',true,'value',false);
+    END IF;
     IF input_field IN ('email','home_phone','mobile_phone','work_phone') THEN
         SELECT contact.canonical::jsonb INTO contact_value
         FROM public.stewardship_snapshot_contact membership
@@ -7893,7 +7909,7 @@ BEGIN
         WHEN 'middle_name' THEN 'middleName' WHEN 'last_name' THEN 'lastName'
         WHEN 'prefix' THEN 'salutation' WHEN 'suffix' THEN 'suffix'
         WHEN 'nickname' THEN 'nickName' WHEN 'maiden_name' THEN 'maidenName'
-        WHEN 'birth_date' THEN 'birthdate' WHEN 'gender' THEN 'sex'
+        WHEN 'birth_date' THEN 'birthdate' WHEN 'death_date' THEN 'dateOfDeath' WHEN 'gender' THEN 'sex'
         WHEN 'marital_status' THEN 'maritalStatus' WHEN 'language' THEN 'language' END;
     IF source_name IS NULL THEN RETURN NULL; END IF;
     IF input_field IN ('gender','marital_status') AND jsonb_typeof(member_value->source_name)='string' THEN

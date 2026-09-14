@@ -6,8 +6,9 @@ from parishkit.stewardship.campaigns.work_locks import require_work_order
 
 from .capabilities import capability
 from .census import HOUSEHOLD_FIELDS
-from .comparison import canonical_value
+from .comparison import ValueKind, canonical_value
 from .effective import RESOLVED_EXECUTIONS, proposal_index
+from .inputs import FieldInput
 from .merge import KnownValue, MergeState, PriorChange, merge_value
 from .models import ProposedChange
 
@@ -23,17 +24,41 @@ def derive_proposals(submission, validated):
     """
     require_work_order()
     previous = proposal_index(validated.prior_submission)
+    resolved_semantics = {
+        key
+        for (entity, key, name), row in previous.items()
+        if entity == "member"
+        and name == "deceased_status"
+        and row.execution in RESOLVED_EXECUTIONS
+    }
     created = []
-    for field in validated.current.fields:
-        if field.entity not in {"family", "member"}:
+    fields = list(validated.current.fields)
+    fields.extend(
+        FieldInput(
+            "proposed_member", key, "new_member", ValueKind.MEMBER, KnownValue(False)
+        )
+        for key in submission.answers["proposed_members"]
+    )
+    for field in fields:
+        if field.entity not in {"family", "member", "proposed_member"}:
             continue
         if field.entity == "family" and field.field not in HOUSEHOLD_FIELDS:
             continue
         identity = (field.entity, str(field.identity), field.field)
+        if field.entity == "member":
+            answer = submission.answers["members"][str(field.identity)]
+            # Terminal answers deliberately omit ordinary controls. Omission
+            # cancels old actionable edits in the final leftover pass below.
+            if field.field not in answer or (
+                field.field == "death_date" and answer[field.field] is None
+            ):
+                continue
         old = previous.pop(identity, None)
         submitted = (
             submission.answers["family"][field.field]
             if field.entity == "family"
+            else submission.answers["proposed_members"][field.identity]
+            if field.entity == "proposed_member"
             else submission.answers["members"][str(field.identity)][field.field]
         )
         key = canonical_value(field.kind, submitted)
@@ -100,9 +125,24 @@ def derive_proposals(submission, validated):
                 superseded_by=new,
                 version=F("version") + 1,
             )
-    # A removed/inaccessible Member is not replayed into the new answer set.
-    # Preserve the old request's history while taking it out of actionable work.
+    # Omitted ordinary edits are withdrawn, but source scope changes alone
+    # must not discard independent household-status or death-date requests.
     for old in previous.values():
+        if old.entity_kind == "member" and old.field in {
+            "moved_household",
+            "deceased_status",
+            "death_date",
+        }:
+            answer = submission.answers["members"].get(old.entity_key)
+            # Source removal is not a Family withdrawal. Also do not withdraw
+            # independent date work when completed status work is no longer
+            # displayed to the Family. Staff retain these original queue rows.
+            if answer is None or (
+                old.field == "death_date"
+                and old.entity_key in resolved_semantics
+                and answer.get("death_date") is None
+            ):
+                continue
         if old.execution not in RESOLVED_EXECUTIONS | {"cancelled", "superseded"}:
             ProposedChange.objects.filter(pk=old.pk).update(
                 execution="cancelled", version=F("version") + 1

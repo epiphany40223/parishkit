@@ -4190,6 +4190,8 @@ DECLARE
     last_sequence bigint;
     member_key text;
     member_answer jsonb;
+    member_proposed boolean;
+    birth_value jsonb;
     field_name text;
     field_value jsonb;
     source_value jsonb;
@@ -4230,7 +4232,7 @@ BEGIN
         OR NEW.prior_submission_id IS DISTINCT FROM baseline.prior_submission_id
         OR NEW.reviewed_source_id IS DISTINCT FROM baseline.source_id
         OR NEW.form_schema IS DISTINCT FROM baseline.form_schema
-        OR NEW.form_schema <> 'family-census-members-v1'
+        OR NEW.form_schema <> 'family-census-household-members-v1'
         OR NEW.configuration_id IS DISTINCT FROM runtime_row.active_configuration_id
         OR runtime_row.restore_review_required OR session_row.mode <> runtime_row.mode
         OR NEW.campaign_id IS DISTINCT FROM runtime_row.current_campaign_id
@@ -4266,11 +4268,12 @@ BEGIN
         OR NEW.family_version <> coalesce(previous_version,0)+1
         OR NEW.campaign_sequence <> last_sequence+1
         OR jsonb_typeof(NEW.answers) <> 'object'
-        OR NOT (NEW.answers ?& ARRAY['schema','family','members','additional_information'])
-        OR NEW.answers - ARRAY['schema','family','members','additional_information'] <> '{}'::jsonb
+        OR NOT (NEW.answers ?& ARRAY['schema','family','members','proposed_members','additional_information'])
+        OR NEW.answers - ARRAY['schema','family','members','proposed_members','additional_information'] <> '{}'::jsonb
         OR NEW.answers->>'schema' IS DISTINCT FROM NEW.form_schema
         OR jsonb_typeof(NEW.answers->'family') <> 'object'
         OR jsonb_typeof(NEW.answers->'members') <> 'object'
+        OR jsonb_typeof(NEW.answers->'proposed_members') <> 'object'
         OR jsonb_typeof(NEW.answers->'additional_information') <> 'string'
         OR length(NEW.answers->>'additional_information') > 5000
     THEN
@@ -4298,14 +4301,51 @@ BEGIN
              AND member.canonical::jsonb->'deceased'='false'::jsonb) THEN
         RAISE EXCEPTION 'Submission must include the current active household' USING ERRCODE='23514';
     END IF;
-    FOR member_key,member_answer IN SELECT * FROM jsonb_each(NEW.answers->'members') LOOP
+    IF (SELECT count(*) FROM jsonb_object_keys(NEW.answers->'proposed_members')) > 100 THEN
+        RAISE EXCEPTION 'Too many proposed household Members' USING ERRCODE='23514';
+    END IF;
+    FOR member_key,member_answer,member_proposed IN
+        SELECT key,value,false FROM jsonb_each(NEW.answers->'members')
+        UNION ALL SELECT key,value,true FROM jsonb_each(NEW.answers->'proposed_members') LOOP
+        IF member_proposed AND (member_key !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+           OR member_key='00000000-0000-0000-0000-000000000000') THEN
+            RAISE EXCEPTION 'Proposed Member requires canonical local identity' USING ERRCODE='23514';
+        END IF;
+        IF NOT member_proposed AND jsonb_typeof(member_answer)='object'
+           AND (member_answer ? 'moved_household' OR member_answer ? 'deceased_status') THEN
+            IF member_answer->'confirmed' IS DISTINCT FROM 'true'::jsonb THEN
+                RAISE EXCEPTION 'Terminal Member requires explicit confirmation' USING ERRCODE='23514';
+            END IF;
+            IF member_answer ? 'moved_household' THEN
+                IF member_answer IS DISTINCT FROM '{"moved_household":true,"confirmed":true}'::jsonb THEN
+                    RAISE EXCEPTION 'Moved household request has unexpected fields' USING ERRCODE='23514';
+                END IF;
+            ELSE
+                IF NOT (member_answer ?& ARRAY['deceased_status','confirmed','death_date'])
+                   OR member_answer-ARRAY['deceased_status','confirmed','death_date'] <> '{}'::jsonb
+                   OR member_answer->'deceased_status' IS DISTINCT FROM 'true'::jsonb THEN
+                    RAISE EXCEPTION 'Deceased request has unexpected fields' USING ERRCODE='23514';
+                END IF;
+                PERFORM public.stewardship_response_comparison_v1('death_date',member_answer->'death_date');
+                birth_value := public.stewardship_response_field_source_v1(
+                    NEW.validation_source_id,NEW.family_id,member_key,'birth_date');
+                IF member_answer->'death_date'<>'null'::jsonb AND (
+                    (member_answer->>'death_date')::date>NEW.submitted_on
+                    OR (birth_value->'available'='true'::jsonb AND birth_value->'value'<>'null'::jsonb
+                        AND (member_answer->>'death_date')::date<(birth_value->>'value')::date)) THEN
+                    RAISE EXCEPTION 'Death date must respect recorded birth and parish day' USING ERRCODE='23514';
+                END IF;
+            END IF;
+            CONTINUE;
+        END IF;
         IF jsonb_typeof(member_answer)<>'object' OR NOT (member_answer ?& allowed_fields)
            OR member_answer-allowed_fields<>'{}'::jsonb THEN
             RAISE EXCEPTION 'Submission member fields are incomplete' USING ERRCODE='23514';
         END IF;
         FOR field_name,field_value IN SELECT * FROM jsonb_each(member_answer) LOOP
-            source_value := public.stewardship_response_field_source_v1(
-                NEW.validation_source_id,NEW.family_id,member_key,field_name);
+            source_value := CASE WHEN member_proposed THEN jsonb_build_object('available',false,'value',NULL)
+                ELSE public.stewardship_response_field_source_v1(
+                    NEW.validation_source_id,NEW.family_id,member_key,field_name) END;
             PERFORM public.stewardship_response_comparison_v1(field_name,field_value);
             IF field_name='birth_date' THEN
                 IF field_value<>'null'::jsonb AND (field_value#>>'{}')::date>NEW.submitted_on THEN
@@ -4444,13 +4484,23 @@ BEGIN
         IF TG_OP='INSERT' THEN
             IF NEW.entity_kind='member' AND NEW.field IN (
                 'prefix','first_name','middle_name','last_name','suffix','nickname','maiden_name',
-                'birth_date','gender','email','home_phone','mobile_phone','work_phone','marital_status','language')
-               AND (response.answers->'members') ? NEW.entity_key THEN
+                'birth_date','gender','email','home_phone','mobile_phone','work_phone','marital_status','language',
+                'moved_household','deceased_status','death_date')
+               AND (response.answers->'members') ? NEW.entity_key
+               AND (response.answers#>ARRAY['members',NEW.entity_key]) ? NEW.field THEN
                 expected_submitted := response.answers#>ARRAY['members',NEW.entity_key,NEW.field];
-                expected_handling := CASE WHEN NEW.field IN ('prefix','suffix','marital_status')
+                IF NEW.field='death_date' AND expected_submitted='null'::jsonb THEN
+                    RAISE EXCEPTION 'Omitted terminal date cannot request source clearing' USING ERRCODE='23514';
+                END IF;
+                expected_handling := CASE WHEN NEW.field IN ('prefix','suffix','marital_status','moved_household','deceased_status')
                     THEN 'manual' ELSE 'api' END;
                 source_field := public.stewardship_response_field_source_v1(
                     response.validation_source_id,response.family_id,NEW.entity_key,NEW.field);
+            ELSIF NEW.entity_kind='proposed_member' AND NEW.field='new_member'
+                  AND (response.answers->'proposed_members') ? NEW.entity_key THEN
+                expected_submitted := response.answers#>ARRAY['proposed_members',NEW.entity_key];
+                expected_handling := 'manual';
+                source_field := jsonb_build_object('available',false,'value',NULL);
             ELSIF NEW.entity_kind='family' AND NEW.field IN ('home_address','mailing_address','email_opt_out') THEN
                 expected_submitted := response.answers#>ARRAY['family',NEW.field];
                 expected_handling := CASE WHEN NEW.field='email_opt_out' THEN 'manual' ELSE 'api' END;
@@ -4473,11 +4523,22 @@ BEGIN
             THEN
                 RAISE EXCEPTION 'Proposal comparison differs from its validation source' USING ERRCODE='23514';
             END IF;
-            SELECT * INTO predecessor FROM public.stewardship_proposed_change
-            WHERE submission_id=response.prior_submission_id
-              AND ROW(entity_kind,entity_key,field)=ROW(NEW.entity_kind,NEW.entity_key,NEW.field)
-              AND execution NOT IN ('published','resolved_upstream','resolved_external','cancelled','superseded');
-            carries_intent := FOUND AND (
+            -- Terminal/date work may survive an intervening response that has
+            -- no active source Member to display. Mirror the Family namespace
+            -- and latest-record selection used by effective.proposal_index.
+            SELECT candidate.* INTO predecessor FROM public.stewardship_proposed_change candidate
+            JOIN public.stewardship_submission earlier ON earlier.id=candidate.submission_id
+            JOIN public.stewardship_submission prior ON prior.id=response.prior_submission_id
+            WHERE earlier.family_id=response.family_id AND earlier.campaign_id=response.campaign_id
+              AND earlier.mode=response.mode
+              AND earlier.rehearsal_epoch_id IS NOT DISTINCT FROM response.rehearsal_epoch_id
+              AND earlier.family_version<=prior.family_version
+              AND (earlier.id=prior.id OR (NEW.entity_kind='member'
+                   AND NEW.field IN ('moved_household','deceased_status','death_date')))
+              AND ROW(candidate.entity_kind,candidate.entity_key,candidate.field)=ROW(NEW.entity_kind,NEW.entity_key,NEW.field)
+            ORDER BY earlier.family_version DESC LIMIT 1;
+            carries_intent := FOUND
+                AND predecessor.execution NOT IN ('published','resolved_upstream','resolved_external','cancelled','superseded') AND (
                 public.stewardship_response_comparison_v1(NEW.field,NEW.submitted_value)
                 IS NOT DISTINCT FROM public.stewardship_response_comparison_v1(NEW.field,predecessor.submitted_value));
             expected_baseline := source_field;
@@ -4530,7 +4591,27 @@ BEGIN
                    OR NOT EXISTS (
                        SELECT 1 FROM public.stewardship_submission later
                        JOIN public.stewardship_family_form_baseline baseline ON baseline.id=later.baseline_id
-                       WHERE later.prior_submission_id=OLD.submission_id AND baseline.state='open'
+                       JOIN public.stewardship_submission earlier ON earlier.id=OLD.submission_id
+                       WHERE baseline.state='open'
+                         AND later.family_id=earlier.family_id AND later.campaign_id=earlier.campaign_id
+                         AND later.mode=earlier.mode
+                         AND later.rehearsal_epoch_id IS NOT DISTINCT FROM earlier.rehearsal_epoch_id
+                         AND later.family_version>earlier.family_version
+                         AND (later.prior_submission_id=earlier.id OR (OLD.entity_kind='member'
+                              AND OLD.field IN ('moved_household','deceased_status','death_date')))
+                         AND OLD.id=(
+                             SELECT candidate.id FROM public.stewardship_proposed_change candidate
+                             JOIN public.stewardship_submission history ON history.id=candidate.submission_id
+                             JOIN public.stewardship_submission prior ON prior.id=later.prior_submission_id
+                             WHERE history.family_id=later.family_id AND history.campaign_id=later.campaign_id
+                               AND history.mode=later.mode
+                               AND history.rehearsal_epoch_id IS NOT DISTINCT FROM later.rehearsal_epoch_id
+                               AND history.family_version<=prior.family_version
+                               AND (history.id=prior.id OR (OLD.entity_kind='member'
+                                    AND OLD.field IN ('moved_household','deceased_status','death_date')))
+                               AND ROW(candidate.entity_kind,candidate.entity_key,candidate.field)=
+                                   ROW(OLD.entity_kind,OLD.entity_key,OLD.field)
+                             ORDER BY history.family_version DESC LIMIT 1)
                          AND (NEW.execution <> 'superseded' OR EXISTS (
                              SELECT 1 FROM public.stewardship_proposed_change successor
                              WHERE successor.id=NEW.superseded_by_id AND successor.submission_id=later.id))

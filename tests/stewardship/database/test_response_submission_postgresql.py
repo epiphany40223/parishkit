@@ -39,13 +39,14 @@ def form_and_answers(harness):
 
     definitions = {field.name: field for field in MEMBER_FIELDS}
     for field in form.inputs.fields:
-        if field.entity == "member":
+        if field.entity == "member" and field.field in definitions:
             members.setdefault(str(field.identity), {})[field.field] = browser_value(
                 definitions[field.field], field.source
             )
     return form, {
         "family": household(),
         "members": members,
+        "proposed_members": {},
         "additional_information": "",
         "testing_acknowledged": True,
     }
@@ -68,7 +69,7 @@ def test_no_change_test_submission_is_complete_and_isolated(response_service):
         "3": {
             field.field: field.source.value
             for field in form.inputs.fields
-            if field.entity == "member"
+            if field.entity == "member" and field.field in answers["members"]["3"]
         }
     }
     assert (

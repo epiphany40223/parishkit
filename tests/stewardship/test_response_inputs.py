@@ -126,7 +126,7 @@ def test_every_editable_ui_field_is_a_dependency(inputs, field):
     projected = census_inputs(**inputs)
     assert {value.field for value in projected.fields if value.entity == "member"} == {
         field.name for field in MEMBER_FIELDS
-    }
+    } | {"moved_household", "deceased_status", "death_date"}
 
 
 @pytest.mark.parametrize(

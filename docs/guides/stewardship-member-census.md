@@ -51,8 +51,15 @@ state checks pass. Opt-in default-suite skips do not replace actual runtime
 validation. These database checks test application, exact-role and fresh-
 install invariants, not upgrade behavior or PostgreSQL itself.
 
-Final-head CI and protected merge remain required. No full FAM-04 task or Gate
-2 is claimed complete at this checkpoint.
+PR [#25](https://github.com/epiphany40223/parishkit/pull/25) merged through the
+protected queue on September 14, 2026 at 01:20:26 UTC as
+`eeb346342fe7c78bd4295801f6800dc5f6ec44fb`, verified on `origin/main`.
+Final-head CI [34793874498](https://github.com/epiphany40223/parishkit/actions/runs/34793874498)
+and merge-group CI [34794949667](https://github.com/epiphany40223/parishkit/actions/runs/34794949667)
+both passed completely. Final-head coverage measured 93.99% statements and
+85.39% branches, with 4,959 default, 2,333 PostgreSQL and 594 browser tests.
+No full FAM-04 task or Gate 2 is claimed complete by this ordinary-field slice.
+The [Member-request increment](stewardship-member-requests.md) follows.
 
 ## Field and source decisions
 

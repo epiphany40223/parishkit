@@ -17,6 +17,7 @@ from .inputs import (
     family_field_value,
     member_field_value,
 )
+from .member_requests import REQUEST_FIELDS
 from .merge import KnownValue, MergeState, PriorChange, merge_value
 from .models import ProposedChange, Submission
 
@@ -31,7 +32,7 @@ def reconcile_proposals(snapshot, corpus, *, campaign_id):
     new retention pins or rewrite every pending proposal.
     """
     require_work_order()
-    definitions = {field.name: field for field in MEMBER_FIELDS}
+    definitions = {field.name: field for field in (*MEMBER_FIELDS, *REQUEST_FIELDS)}
     household_definitions = {field.name: field for field in FAMILY_FIELDS}
     proposals = ProposedChange.objects.filter(
         submission__campaign_id=campaign_id,
@@ -39,6 +40,18 @@ def reconcile_proposals(snapshot, corpus, *, campaign_id):
     ).annotate(family_duid=F("submission__family__family_duid"))
     count = 0
     for row in proposals.iterator(chunk_size=500):
+        if row.entity_kind == "proposed_member" and row.field == "new_member":
+            # A local UUID has no provider identity to poll. Only the future
+            # explicit staff-association workflow may resolve that manual work.
+            continue
+        if row.entity_kind == "member" and row.field in {
+            "moved_household",
+            "deceased_status",
+        }:
+            # Keep semantic requests for explicit staff resolution even after
+            # loss of portal eligibility. A disappearance is not proof of the
+            # requested household/deceased action, and a death date is separate.
+            continue
         if row.entity_kind == "family" and row.field in household_definitions:
             # No verified source read exists for these semantics yet. Retain
             # submitted household intent even if the Family becomes inactive;
@@ -61,10 +74,20 @@ def reconcile_proposals(snapshot, corpus, *, campaign_id):
         member = corpus["member"].get(row.entity_key)
         if member is not None and (
             member["family_key"] != str(row.family_duid)
-            or not member["active"]
-            or member["deceased"]
+            or (
+                row.field != "death_date"
+                and (not member["active"] or member["deceased"])
+            )
         ):
             member = None
+        if (
+            member is None
+            and row.field == "death_date"
+            and row.execution == "conflict"
+            and not row.current_available
+        ):
+            # An unchanged scope block is not a new comparison or staff edit.
+            continue
         unusable = False
         try:
             current = member_field_value(
@@ -108,7 +131,7 @@ def reconcile_proposals(snapshot, corpus, *, campaign_id):
             ),
         )
         execution = (
-            "cancelled"
+            ("conflict" if row.field == "death_date" else "cancelled")
             if member is None
             else "resolved_upstream"
             if result.state is MergeState.UPSTREAM_CAUGHT_UP

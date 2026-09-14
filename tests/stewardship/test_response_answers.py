@@ -29,6 +29,7 @@ def family_fields():
 def answers():
     return {
         "family": household(),
+        "proposed_members": {},
         "members": {
             "1": member(
                 first_name=" First ",
@@ -57,6 +58,7 @@ def test_complete_answer_is_normalized_without_mutating_input(answers):
     result = validate(answers)
     assert result == {
         "schema": FORM_SCHEMA,
+        "proposed_members": {},
         "family": {
             "home_address": None,
             "mailing_address": None,

@@ -222,6 +222,9 @@ def test_sql_source_projection_matches_issued_field_registry(response_service, v
                     "available": field.source.available,
                     "value": field.source.value,
                 }
+            if field.field not in answers["members"][str(field.identity)]:
+                # Terminal requests are tested separately from ordinary edits.
+                continue
             answers["members"][str(field.identity)][field.field] = {
                 "first_name": "Updated first",
                 "middle_name": "Updated middle",

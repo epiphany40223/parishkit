@@ -120,5 +120,32 @@ model-state drift and the independently audited fresh-install baseline pass.
 
 The three completed rounds, no High/Critical in the final round and no
 unresolved accepted Medium findings satisfy the documented local-review exit
-rule. Final-head CI and protected merge remain required; no fourth round is
-required solely because the final round included this tested correction.
+rule. No fourth round was required solely because the final round included
+this tested correction. The subsequent CI-only correction was independently
+reviewed as recorded below.
+
+## CI-only correction and closure
+
+The first CI run caught a source-refresh test fixture using the UTC calendar
+date instead of the admitted parish day for giving data. The test-only fix
+uses the admitted refresh input's `as_of` and adds winter/summer regressions;
+27 affected database tests pass. It changes no production refresh behavior.
+
+- Additional session: `20260913-204853-d905f3`.
+- Base: `c0702e810d6605251cb77c86474987efe21e36dd`.
+- Reviewed head: `edb5a3eff5cd211e84f5916bed84407d9add01e2`.
+- Reviewed tree: `e1e38f0b22bf5e251276c879e8054548054e727c`, clean.
+- Permission probe: `2PCMpi`, exact successful validator/move grants, fixture
+  comparison, parent validation and no denials.
+- Both reviewers completed. Claude reported three Low findings, Codex none;
+  finalization approved with no validated Medium-or-higher findings and no
+  failure, degradation, mismatch or salvage.
+- Final artifact SHA-256:
+  `e4a0891a1253d671d4a8a823e236696971b81a0fa81fe72fb2ba287f843a78d3`.
+
+Feature/review fixups were consolidated into one logical signed-off commit
+with an independently verified identical corrected tree; the documentation
+and unrelated fixture correction remain separate logical commits. Complete
+final-head and merge-group CI passed, and PR #25 landed on `origin/main`.
+Exact run links, merge SHA and final test counts are in the
+[increment evidence](stewardship-member-census.md#evidence).

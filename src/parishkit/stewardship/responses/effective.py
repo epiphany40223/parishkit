@@ -22,14 +22,37 @@ class EffectiveField:
 
 
 def proposal_index(submission):
-    """Select only the admitted Family's exact effective response namespace."""
+    """Include preserved terminal work within the admitted response namespace.
+
+    Source scope changes can leave a terminal/date request on an older response.
+    Select the newest record for each such key, including terminal outcomes so
+    an older actionable predecessor can never reappear. Ordinary census and
+    proposed-Member values still belong only to the exact effective response.
+    """
     require_work_order()
     if submission is None:
         return {}
-    return {
-        (row.entity_kind, row.entity_key, row.field): row
-        for row in ProposedChange.objects.filter(submission=submission)
-    }
+    preserved = (
+        ProposedChange.objects.filter(
+            submission__family_id=submission.family_id,
+            submission__campaign_id=submission.campaign_id,
+            submission__mode=submission.mode,
+            submission__rehearsal_epoch_id=submission.rehearsal_epoch_id,
+            submission__family_version__lte=submission.family_version,
+            entity_kind="member",
+            field__in=["moved_household", "deceased_status", "death_date"],
+        )
+        .order_by("entity_key", "field", "-submission__family_version")
+        .distinct("entity_key", "field")
+    )
+    indexed = {(row.entity_kind, row.entity_key, row.field): row for row in preserved}
+    indexed.update(
+        {
+            (row.entity_kind, row.entity_key, row.field): row
+            for row in ProposedChange.objects.filter(submission=submission)
+        }
+    )
+    return indexed
 
 
 def effective_field(field: FieldInput, proposal=None):

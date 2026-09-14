@@ -47,8 +47,13 @@ def answers_for(form):
             "mailing_same_as_home": form["household"]["mailing_same_as_home"],
         },
         "members": {
-            member["id"]: {field["name"]: field["value"] for field in member["fields"]}
+            member["id"]: member["request"]
+            or {field["name"]: field["value"] for field in member["fields"]}
             for member in form["members"]
+        },
+        "proposed_members": {
+            member["id"]: {field["name"]: field["value"] for field in member["fields"]}
+            for member in form["proposed_members"]
         },
         "additional_information": form["additional_information"],
         "testing_acknowledged": form["testing"],

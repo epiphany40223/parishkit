@@ -12,7 +12,9 @@ from parishkit.stewardship.responses.member_census import MEMBER_FIELDS
 
 def test_diagnostic_field_vocabulary_matches_closed_census_registry():
     """Keep the privacy allowlist complete without allowing arbitrary field text."""
-    assert {field.name for field in MEMBER_FIELDS} == MEMBER_SOURCE_FIELDS
+    assert {field.name for field in MEMBER_FIELDS} | {
+        "death_date"
+    } == MEMBER_SOURCE_FIELDS
     for field in MEMBER_SOURCE_FIELDS:
         context = {"family_duid": 1, "member_duid": 3, "field": field}
         assert sanitize(ContextKind.MEMBER_SOURCE, context) == context

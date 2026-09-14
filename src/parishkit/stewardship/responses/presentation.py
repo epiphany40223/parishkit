@@ -19,9 +19,11 @@ from .census import (
     us_regions,
 )
 from .comparison import ValueKind, canonical_value
-from .effective import effective_fields
+from .effective import RESOLVED_EXECUTIONS, effective_fields, proposal_index
 from .inputs import ADDITIONAL_MAX_LENGTH, MEMBER_FIELDS
 from .member_census import browser_value
+from .member_requests import MAX_PROPOSED_MEMBERS
+from .merge import KnownValue
 from .models import Submission
 
 
@@ -40,6 +42,7 @@ def form_presentation(form):
         else None
     )
     values = effective_fields(form.inputs, prior)
+    proposals = proposal_index(prior)
     family = {
         field.field: field.effective.value.value
         for field in values
@@ -75,7 +78,9 @@ def form_presentation(form):
                             definition.name == "birth_date"
                             and prior
                             and str(identifier) in prior.answers["members"]
-                            and prior.answers["members"][str(identifier)]["birth_date"]
+                            and prior.answers["members"][str(identifier)].get(
+                                "birth_date", ""
+                            )
                             is None
                         ),
                     ),
@@ -89,6 +94,7 @@ def form_presentation(form):
                 "id": str(identifier),
                 "fields": fields,
                 "relationship": relationships.get(identifier),
+                "request": _terminal_presentation(identifier, indexed, proposals),
             }
         )
     campaign = CampaignConfiguration.objects.get(
@@ -102,6 +108,23 @@ def form_presentation(form):
         "family": family,
         "household": _household_presentation(values, prior),
         "members": members,
+        "proposed_members": _proposed_presentation(prior),
+        "max_proposed_members": MAX_PROPOSED_MEMBERS,
+        "new_member_fields": [
+            {
+                "name": field.name,
+                "label": field.label,
+                "required": field.required,
+                "max_length": field.max_length,
+                "kind": field.kind.value,
+                "choices": list(field.choices),
+                "value": "",
+                "available": False,
+                "changed": False,
+                "conflict": False,
+            }
+            for field in MEMBER_FIELDS
+        ],
         "additional_enabled": campaign.values["additional_information"],
         "additional_max_length": ADDITIONAL_MAX_LENGTH,
         "additional_information": prior.answers["additional_information"]
@@ -112,6 +135,56 @@ def form_presentation(form):
         else None,
         "content": _page_content(baseline, campaign, family, members),
     }
+
+
+def _terminal_presentation(identifier, indexed, proposals):
+    """Expose only effective terminal choices, not hidden source or Admin edits."""
+    for name in ("moved_household", "deceased_status"):
+        proposal = proposals.get(("member", str(identifier), name))
+        if proposal is not None and proposal.execution in RESOLVED_EXECUTIONS:
+            continue
+        effective = indexed[identifier, name]
+        if effective.value.value is True:
+            result = {name: True, "confirmed": True}
+            if name == "deceased_status":
+                result["death_date"] = (
+                    indexed[identifier, "death_date"].value.value or ""
+                )
+            return result
+    return None
+
+
+def _proposed_presentation(prior):
+    """Keep local identity stable on revisit while excluding resolved manual work."""
+    return [
+        {
+            "id": key,
+            "relationship": "Proposed household member",
+            "fields": [
+                {
+                    "name": field.name,
+                    "label": field.label,
+                    "required": field.required,
+                    "max_length": field.max_length,
+                    "kind": field.kind.value,
+                    "choices": list(field.choices),
+                    "value": browser_value(
+                        field,
+                        KnownValue(True, row.submitted_value[field.name]),
+                        previous_unknown=field.name == "birth_date",
+                    ),
+                    "available": True,
+                    "changed": True,
+                    "conflict": False,
+                }
+                for field in MEMBER_FIELDS
+            ],
+        }
+        for (entity, key, name), row in sorted(proposal_index(prior).items())
+        if entity == "proposed_member"
+        and name == "new_member"
+        and row.execution not in RESOLVED_EXECUTIONS | {"cancelled", "superseded"}
+    ]
 
 
 def _household_presentation(values, prior):
