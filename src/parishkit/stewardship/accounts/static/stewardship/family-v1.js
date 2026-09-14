@@ -1082,6 +1082,7 @@
     const fields = [];
     const validateHousehold = form.household ? householdEditor(editor) : () => {};
     structuralConflicts(editor);
+    if (form.household) block("member_census", editor);
     if (form.household || form.ministries) allMembers().forEach((member, index) => memberEditor(member, index, editor, fields,
       () => reviewPointerDown));
     if (form.household) {

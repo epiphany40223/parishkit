@@ -9,6 +9,7 @@ from parishkit.stewardship.responses.inputs import (
     MEMBER_FIELDS,
     FormInputsUnavailable,
     census_inputs,
+    definition_digest,
 )
 
 
@@ -202,6 +203,16 @@ def test_content_versions_require_review(inputs):
     before = digest(inputs)
     inputs["configuration"]["content_versions"]["review"] = "r2"
     assert digest(inputs) != before
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_member_content_revision_is_relevant_only_with_census(inputs, enabled):
+    """Selected Member instructions are concurrent inputs only when displayed."""
+    if not enabled:
+        inputs["configuration"].update(modules=["ministry"], ministry_duids=[])
+    before = definition_digest(inputs["configuration"])
+    inputs["configuration"]["content_versions"]["member_census"] = "new-member-intro"
+    assert (definition_digest(inputs["configuration"]) != before) is enabled
 
 
 @pytest.mark.parametrize(

@@ -103,7 +103,19 @@ def load_census_inputs(
         family.payload.payload,
         members,
         contacts,
-        configuration=configuration,
+        configuration=configuration
+        | {
+            # Non-legacy page slots select their sole revision in the immutable
+            # content section, not the older campaign.content_versions mapping.
+            "content_versions": configuration["content_versions"]
+            | {
+                row["values"]["slot"]: row["id"]
+                for row in (document or {}).get("sections", {}).get("content", [])
+                if row["values"]["campaign_id"] == str(campaign_id)
+                and row["values"]["kind"] == "page"
+                and row["values"]["slot"] == "member_census"
+            }
+        },
         parish_name=parish_name,
         ministries=ministries,
         financial=load_financial_inputs(

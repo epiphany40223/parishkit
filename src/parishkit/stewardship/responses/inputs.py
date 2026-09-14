@@ -196,6 +196,7 @@ def definition_digest(configuration):
                 for key in (
                     "welcome",
                     "census",
+                    "member_census",
                     "ministry",
                     "financial",
                     "review",
@@ -204,6 +205,7 @@ def definition_digest(configuration):
                 )
                 if key in content
                 and (key != "additional" or configuration["additional_information"])
+                and (key != "member_census" or census)
                 and (key not in {"census", "ministry", "financial"} or key in modules)
             },
         }

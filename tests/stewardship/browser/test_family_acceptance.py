@@ -16,6 +16,27 @@ pytestmark = pytest.mark.parametrize(
 )
 
 
+@pytest.mark.parametrize("census", [False, True])
+def test_member_intro_is_rendered_once_only_in_census(page, component_origin, census):
+    """The shared Member introduction sits after household fields, before Members."""
+    form = financial_form(census=census, ministry=True)
+    form["content"]["member_census"] = "<p>Review each household member below.</p>"
+    begin(
+        page,
+        component_origin,
+        form,
+        lambda route: route.fulfill(json={"accepted": True}),
+    )
+    intro = page.get_by_text("Review each household member below.", exact=True)
+    expect(intro).to_have_count(1 if census else 0)
+    if census:
+        assert intro.evaluate(
+            "element => Boolean(element.compareDocumentPosition("
+            "document.getElementById('member-section-3')) & "
+            "Node.DOCUMENT_POSITION_FOLLOWING)"
+        )
+
+
 @pytest.mark.parametrize("width", [320, 1280])
 def test_review_edit_controls_preserve_answers_and_focus_sections(
     page, component_origin, axe_source, tmp_path, width

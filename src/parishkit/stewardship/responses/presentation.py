@@ -1,14 +1,11 @@
 """A scoped browser projection: effective values only, never competing values."""
 
-from datetime import date
 from zoneinfo import ZoneInfo
 
-from parishkit.stewardship.accounts.content_models import ContentVersion
 from parishkit.stewardship.campaigns.models import CampaignConfiguration
 from parishkit.stewardship.campaigns.runtime import _now
 from parishkit.stewardship.campaigns.work_locks import require_work_order
-from parishkit.stewardship.web.content import PLACEHOLDERS, render_template
-from parishkit.stewardship.web.presentation import campaign_year, parish_date
+from parishkit.stewardship.web.presentation import parish_date
 
 from .census import (
     ADDRESS_LIMITS,
@@ -35,6 +32,7 @@ from .member_requests import MAX_PROPOSED_MEMBERS
 from .merge import KnownValue
 from .ministry_requests import ministry_presentation
 from .models import Submission
+from .page_content import public_substitutions, render_pages
 
 
 def form_presentation(form):
@@ -293,20 +291,10 @@ def _page_content(baseline, campaign, family, members, member_count, financial):
     rendering a page must never mint or decrypt a link/code. All Family names
     come from the effective projection, not a second, competing source read.
     """
-    parish = baseline.configuration.parish
-    substitutions = dict.fromkeys(PLACEHOLDERS, "")
+    substitutions = public_substitutions(baseline.configuration.parish, campaign)
     substitutions.update(
-        parish_name=parish.name,
-        parish_website=parish.website,
-        parish_phone=parish.phone,
-        campaign_name=campaign.values["name"],
-        campaign_start=parish_date(date.fromisoformat(campaign.values["start_date"])),
-        campaign_end=parish_date(date.fromisoformat(campaign.values["end_date"])),
-        campaign_timezone=campaign.timezone,
-        campaign_year=campaign_year(campaign.values),
         family_name=family.get("mailingName") or family.get("lastName") or "",
         family_member_names=", ".join(member["display_name"] for member in members),
-        generic_family_url="/",
         family_url="/family/",
         pronoun=household_pronoun(member_count),
     )
@@ -319,15 +307,8 @@ def _page_content(baseline, campaign, family, members, member_count, financial):
             financial_period=f"{start} – {end}",
         )
     slots = {"welcome", "review", "thank_you"} | set(campaign.values["modules"])
+    if "census" in campaign.values["modules"]:
+        slots.add("member_census")
     if campaign.values["additional_information"]:
         slots.add("additional")
-    return {
-        row.slot: render_template(row.html, substitutions, html=True)
-        for row in ContentVersion.objects.filter(
-            configuration_id=baseline.configuration_id,
-            campaign_id=campaign.record_id,
-            kind="page",
-            slot__in=slots,
-            record_id__in=campaign.values["content_versions"].values(),
-        )
-    }
+    return render_pages(baseline.configuration_id, campaign, slots, substitutions)

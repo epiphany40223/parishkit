@@ -156,7 +156,7 @@ def test_unrelated_financial_definition_settings_do_not_invalidate():
 def test_campaign_year_matches_admin_preview_pages_and_share_labels(monkeypatch, label):
     """The campaign year is not silently replaced by the upcoming pledge year."""
     from parishkit.stewardship.accounts.content_forms import sample_render
-    from parishkit.stewardship.responses import presentation
+    from parishkit.stewardship.responses import page_content, presentation
 
     text = "{{ campaign_year }}: {{ financial_period }}"
     values = configuration() | {
@@ -176,9 +176,9 @@ def test_campaign_year_matches_admin_preview_pages_and_share_labels(monkeypatch,
         {"html": html, "text": text, "subject": None}, parish=parish, campaign=values
     )
     monkeypatch.setattr(
-        presentation.ContentVersion.objects,
+        page_content.ContentVersion.objects,
         "filter",
-        lambda **kwargs: [SimpleNamespace(slot="financial", html=html)],
+        lambda *args, **kwargs: [SimpleNamespace(slot="financial", html=html)],
     )
     page = presentation._page_content(
         SimpleNamespace(

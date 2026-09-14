@@ -314,17 +314,20 @@ def _ip_counter(service, source):
 @require_http_methods(["GET", "HEAD", "POST"])
 def entry(request):
     """Eight-letter manual entry; code values never enter a URL, log or audit."""
-    from parishkit.stewardship.responses.availability import unavailable_message
+    from parishkit.stewardship.responses.availability import unavailable_page
 
     try:
         service = runtime()
         if request.method != "POST":
-            message = unavailable_message(service)
-            if message:
+            page = unavailable_page(service)
+            if page:
                 return render(
                     request,
                     "stewardship/family-unavailable.html",
-                    {"availability_message": message},
+                    {
+                        "availability_message": page.message,
+                        "availability_content": page.content,
+                    },
                 )
             return render(request, "stewardship/family-login.html")
         ip = _ip_counter(service, request.client_address)

@@ -3,5 +3,6 @@
 {% block content %}<section class="flow">
   <h1>{% translate "Campaign availability" %}</h1>
   <p class="notice">{{ availability_message }}</p>
+  {% if availability_content %}<div class="content-block">{{ availability_content|safe }}</div>{% endif %}
   <p><a href="/">{% translate "Check again" %}</a></p>
 </section>{% endblock %}
