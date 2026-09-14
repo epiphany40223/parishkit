@@ -722,6 +722,11 @@ additional-information prompt, review/attestation introduction, Thank You page,
 access-denied contact help, and submission-confirmation text. Empty optional
 slots render nothing.
 
+The `submission_confirmation` block supplies parish-authored receipt-email
+content through [submission confirmation](../background-processing/spec.md#submission-confirmation),
+not a second Thank You page. Its delivery consumer belongs to BG-07; the
+Family browser uses the separate `thank_you` slot.
+
 Initial, reminder, confirmation, daily digest, weekly digest, and critical-alert
 templates have separate subject, sanitized HTML, and generated/edited plain-text
 versions. Family templates support only documented placeholders, including

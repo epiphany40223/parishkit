@@ -84,6 +84,10 @@ previous branded-browser coverage, manual screen-reader validation, worker-delay
 mail UX and deployment-scale concurrent load remain their named later gates.
 The acceptance mapping does not claim those obligations complete.
 
+The configured `submission_confirmation` block is receipt-email content and
+is likewise owned by BG-07, not a Family page consumer. The Admin label names
+email delivery explicitly; browser completion uses the separate Thank You slot.
+
 ## Initial measurements
 
 The large-form browser fixture uses 20 existing Members, the supported maximum

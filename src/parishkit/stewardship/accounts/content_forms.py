@@ -28,7 +28,7 @@ PAGE_LABELS = {
     "review": _("Review and attestation introduction"),
     "thank_you": _("Thank You page"),
     "access_denied": _("Access-denied contact help"),
-    "submission_confirmation": _("Submission confirmation"),
+    "submission_confirmation": _("Submission receipt message (email delivery)"),
 }
 EMAIL_LABELS = {
     "initial": _("Initial invitation"),
