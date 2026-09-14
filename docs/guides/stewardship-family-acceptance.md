@@ -20,9 +20,10 @@ actual receipt delivery, reporting, publication and destructive workflows.
 Do not mark a mixed-phase package complete from partial evidence.
 
 The integrated Gate 2 baseline is the Gate 1 release,
-`48be3666f0c89cc15586cb67465cd1ba0504203c`. Reviews must cover all current
-integrated Phase 2/3 work since that baseline, including already merged PRs;
-the current branch diff alone is insufficient. The pre-production policy still
+`48be3666f0c89cc15586cb67465cd1ba0504203c`. The human-approved
+[evidence-reuse procedure and integration map](stewardship-gate-2-reviews.md)
+cover all current Phase 2/3 work since that baseline, including already merged
+PRs; the current branch diff alone is insufficient. The pre-production policy still
 applies: fresh-install schema and current behavior, without reintroducing
 historical upgrade/downgrade work or deleting retained development databases.
 
@@ -43,7 +44,7 @@ historical upgrade/downgrade work or deleting retained development databases.
    configurable as needed; do not share a PostgreSQL cluster between concurrent
    shards or weaken collection, coverage, timeout or no-skip checks.
 5. Run the complete gate validation and at least three successful dual-model
-   review/fix rounds, starting with the integrated Gate 2 scope. Correct all
+   review/fix rounds, following the approved Gate 2 integration scopes. Correct all
    accepted Medium+ findings and record endpoints, artifacts and demonstrations.
    Require final-head and complete protected merge-group CI before delivery.
 
@@ -102,6 +103,18 @@ change deployment credentials/hosts or weaken validation.
 
 ## Status
 
-Implementation and the initial targeted checks are complete. Complete-suite
-validation, integrated review/correction and Gate 2 evidence remain in progress;
-no remaining Family task or Gate 2 item is claimed complete yet.
+Implementation `64ecb4e` passed the complete credential-free baseline (5,297
+tests), all 2,490 PostgreSQL cases across four isolated local shards, and all
+714 browser cases. Receipt-checked coverage is 94.02% lines and 85.62% branches;
+the parallel local database gate took approximately 16 minutes. All 12 isolation,
+17 runtime/provisioning, 30 Compose and eight operational cases passed. Ruff,
+formatting, tracked Markdown, schema drift and whitespace checks passed.
+
+The first Compose attempt failed its in-container traceability check because
+no plan packages were visible, despite the host check passing. An isolated check
+with the actual Compose mounts and the complete unchanged-tree rerun passed.
+The failed attempt is retained; the underlying transient cause is not confirmed.
+
+Integrated review/correction and Gate 2 closure remain in progress. These
+results do not certify later corrections; no remaining Family task or Gate 2
+item is claimed complete yet.
