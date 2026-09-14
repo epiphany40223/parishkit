@@ -427,3 +427,37 @@ completion scenarios pass against the corrected image (258.22 seconds total).
 The superseded head's CI run `34891795985` was cancelled to avoid spending runner
 time on the known test-only error. Final regression validation and renewed
 correction review remain required before the replacement CI run and merge.
+
+### Final contention evidence
+
+Session `20260914-162225-49fa6f` reviewed `ad32572` through
+`c22c476b503746668244e93aa30a2636f9efe680`, clean tree
+`a7729b9bb577c5cb39bc1b46131e4ea4378ea190`. Both vendors completed all three
+changed files and the affected source/task relationships. Codex took 150 seconds.
+The seventh successful dual-source round is Approve, with five raw Low findings,
+no Medium/High/Critical, and no failed agents, degradations, mismatches or salvage.
+Artifact SHA-256:
+`4941d1c5c48e84e1450f75f1dd3afa9eb8cb1ac9cd8861f45b6ae98824a75fbd`.
+
+Low dispositions: source-deadline enforcement is already exercised by
+`test_external_request_deadline_survives_release_and_database_reconnect`;
+TaskRun's full write-relative interval and early-claim rejection are covered by
+`test_statement_clock_owns_full_lease_and_retry_interval` and
+`test_future_deadlines_cannot_be_skipped`. Additional setup-specific lower-bound
+assertions remain OPS-09 hardening. A shared wait helper, singleton-query style
+and more precise unit-test naming are deferred maintenance nits; neither changes
+the regression's exact-error assertion or the real lock and retry proof.
+
+The corrected contention/retry and unknown-error cases pass (three tests,
+112.31 seconds), including successful same-root completion, the unchanged
+reserved deadline, and propagation without a source claim. An intermediate
+test-helper invocation lacked the database-clock helper's required transaction;
+the final code reads that clock inside a short transaction and waits outside it.
+The unchanged 12 focused cases passed earlier; replacement CI exercises the
+complete set together. All **5,300 baseline tests** pass. Both real setup
+completion scenarios passed against the unchanged corrected production code.
+Ruff, formatting, Markdown, model drift and whitespace checks pass; no schema
+change or retained-database modification was needed.
+
+The local Gate 2 checkpoint is restored. Protected final-head CI, normal merge
+queue delivery and every merge-group check remain required before Phase 4.
