@@ -259,11 +259,11 @@ do not represent additional Phase 1A PRs.
 
 Scope and dependencies: [DAT-06 work package](../../plans/stewardship/data.md#dat-06-immutable-submissions-and-proposal-overlay).
 
-- [ ] DAT-06.01 — Implement immutable complete submission versions.
-- [ ] DAT-06.02 — Persist submission baselines, cutoffs, and provenance.
-- [ ] DAT-06.03 — Implement atomic validation and final submission.
-- [ ] DAT-06.04 — Implement proposal states, writability, and supersession.
-- [ ] DAT-06.05 — Test response variants, stale writes, and rollback.
+- [x] DAT-06.01 — Implement immutable complete submission versions.
+- [x] DAT-06.02 — Persist submission baselines, cutoffs, and provenance.
+- [x] DAT-06.03 — Implement atomic validation and final submission.
+- [x] DAT-06.04 — Implement proposal states, writability, and supersession.
+- [x] DAT-06.05 — Test response variants, stale writes, and rollback.
 
 Evidence: In progress in the
 [Phase 3A implementation record](../../guides/stewardship-phase-3a.md).
@@ -279,6 +279,14 @@ with Family/fund/period-scoped inputs, independent SQL module enforcement,
 test/live replacement, relevant-source refresh and late-failure rollback tests.
 Integrated Gate 2 acceptance and later publication/review consumers remain
 open; this evidence does not mark the entire package complete.
+
+Completion: the [integrated Family acceptance](../../guides/stewardship-family-acceptance.md)
+now completes DAT-06's storage/service/test scope for all modules, terminal and
+proposed Members, independent derived-work completeness, exact follow-up chains,
+no-op/late failures and source/baseline races. Five successful dual-source rounds
+and full 2,536-case PostgreSQL coverage validate the current owners. The earlier
+open checkpoints above are superseded for DAT-06; Admin review/publication UI and
+external writes remain their separate DAT-09/Phase 6 consumers.
 
 ## DAT-07: Follow-up, content, templates, jobs, and audit
 
@@ -299,15 +307,20 @@ history, fenced roster resolution and exact-role SQL constraints. Staff
 assignment/contact editing, Staff note versions, real delivery/outbox and later-phase
 transition/export/publication owners remain incomplete; the package stays open.
 
+The integrated acceptance additionally proves complete follow-up derivation,
+exact supersession/replacement chains and rejection of attempted live question
+hiding. This closes its Phase 3 submission/follow-up slice, not the remaining
+records and consumers above.
+
 ## DAT-08: Merge and source reconciliation services
 
 Scope and dependencies: [DAT-08 work package](../../plans/stewardship/data.md#dat-08-merge-and-source-reconciliation-services).
 
-- [ ] DAT-08.01 — Implement effective source/Family/Admin value merging.
-- [ ] DAT-08.02 — Classify every merge and upstream catch-up outcome.
-- [ ] DAT-08.03 — Preserve Family-submitted provenance through Admin edits.
-- [ ] DAT-08.04 — Reconcile source promotions into derived workflows.
-- [ ] DAT-08.05 — Test all merge branches and downstream effects.
+- [x] DAT-08.01 — Implement effective source/Family/Admin value merging.
+- [x] DAT-08.02 — Classify every merge and upstream catch-up outcome.
+- [x] DAT-08.03 — Preserve Family-submitted provenance through Admin edits.
+- [x] DAT-08.04 — Reconcile source promotions into derived workflows.
+- [x] DAT-08.05 — Test all merge branches and downstream effects.
 
 Evidence: In progress in the
 [Phase 3A implementation record](../../guides/stewardship-phase-3a.md).
@@ -318,6 +331,13 @@ The [Ministry increment](../../guides/stewardship-ministry-responses.md) impleme
 current-roster catch-up and retained hidden requests without provider writes.
 Financial and publication workflow integrations remain incomplete;
 the package stays open pending those phases and integrated review.
+
+Completion: financial and integrated Family acceptance now complete the merge
+service and its branch/provenance/promotion tests. G2-I2/I3/I4 review current
+source fencing, effective overlays, terminal/proposed/hidden Ministry intent and
+Admin-resolved values. The current 2,536-case database run passes. This closes
+DAT-08's merge service, not the later UI/provider operations that create Admin
+publication outcomes; the earlier open checkpoint is superseded for this scope.
 
 ## DAT-09: Publication, retention, and purge schema behavior
 

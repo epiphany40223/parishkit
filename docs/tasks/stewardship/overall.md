@@ -322,6 +322,13 @@ Branch `pr/stewardship-family-acceptance` starts at that tip. Its
 FAM-01/02/06/07 evidence, exercises representative FAM-08, completes the Phase 3
 demonstration, and reviews the entire Gate 2 scope before any Phase 4 work.
 
+Local acceptance is complete at `44455b5`: FAM-01–07 and DAT-06/08's Family
+service scope pass five dual review rounds and complete baseline/database/browser
+validation. The [final evidence](../../guides/stewardship-gate-2-reviews.md#final-correction-review-and-passing-local-gate)
+retains all failure/correction history and later-phase boundaries. Protected
+delivery, G2.06 and the Phase 4 release remain pending exact-head and complete
+merge-group CI plus verified main ancestry.
+
 1. Finish [FAM-03](parishioner-portal.md#fam-03-family-census-step); complete [FAM-04](parishioner-portal.md#fam-04-existing-and-proposed-member-steps), [FAM-05](parishioner-portal.md#fam-05-ministry-and-financial-stewardship-steps), [FAM-06](parishioner-portal.md#fam-06-additional-information-review-and-atomic-submit), and [FAM-07](parishioner-portal.md#fam-07-repeat-visits-and-source-change-merge).
 2. Exercise representative [FAM-08](parishioner-portal.md#fam-08-responsive-accessibility-privacy-and-browser-completion) cases continuously.
 3. Complete [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) follow-up derivation and required [RPT-02](reports.md#rpt-02-population-and-calculation-library) calculations.

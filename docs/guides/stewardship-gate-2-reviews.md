@@ -217,12 +217,13 @@ five Low; the single Medium was retained and verified:
   DatabaseError and ValueError at the public-help boundary for login and denial
   help, preserving fixed responses and omitting diagnostic values.
 
-The round-1-corrected image at `78bcb67`, before R2-01, passed all **30 Compose cases** and all **eight
-operational cases** (727.27 seconds), including configured, initial, completed
+The round-1-corrected image at `78bcb67`, before R2-01, passed all **30 Compose
+cases** and all **eight operational cases** (727.27 seconds), including configured, initial, completed
 and cancelled setup under both development and production-shaped profiles.
 These use synthetic credentials and do not perform a deployment or real provider
 operation. R2-01's targeted content/authentication run passed all 40 tests in
-55.05 seconds. The third review and corrected-tree full coverage remain pending.
+55.05 seconds. At that checkpoint, the third review and corrected-tree full
+coverage remained pending.
 
 ## Round 3 and supplemental integration coverage
 
@@ -264,8 +265,8 @@ the explicitly requested integrated gate scope, rather than assumed invalid:
   earlier fault cases also now assert exact invocation counts.
 - **S-02 / Medium, rejected as false-positive:** the alleged live hidden-question
   withdrawal requires changing `additional_information` after Production
-  activation. `campaigns/admission.py` excludes that field from the structurally
-  locked edit set, and the real installer rejects the attempted change. The
+  activation. `campaigns/admission.py` excludes that field from the editable
+  set, so it is structurally locked; the real installer rejects the change. The
   new restricted-HTTP regression retains that rejected operation, verifies
   unchanged active configuration and actionable text, then resubmits unchanged
   text without creating duplicate work. The cited Testing-only test creates no
@@ -324,3 +325,47 @@ incorrect assumption and unnecessary implementation were removed. The final
 confirmed-correction suite passes all 88 presence/content/HTTP/schema tests in
 99.26 seconds; all 11 content-form unit tests pass. Complete coverage and the
 renewed focused review remain pending. Gate 2 is still open.
+
+## Final correction review and passing local gate
+
+Session `20260914-153915-538b9b` reviewed `81dcbf8` through
+`44455b541c65d46d6ba6346070774414a3b3532d`, clean tree
+`33084974b08d2aeee70d356f1d4391ed759b3fc7`. Both reviewers completed successfully
+and explicitly confirmed S-01, S-02 and S-03. Codex took 377 seconds. The result
+is Approve: five raw Low findings, no Medium/High/Critical, and no failed agent,
+degradation, mismatch or salvage. Artifact SHA-256:
+`2f8f480d4aff566bdac0b4b29cadfa279f30f7ddb6105b38e45b6f63e6b3fde3`.
+This is the fifth successful dual-source round; the earlier four are retained,
+not reset by the correction-focused check.
+
+Final Low dispositions: corrected the ambiguous structural-lock wording and
+historical pending-review tense above, and wrapped the prior-image paragraph.
+An exact structural-rejection failure-code assertion is deferred to OPS-09
+test hardening; current code inspection and the same patch's successful Testing
+case establish the rejected live premise. The receipt block's precise composition
+with the confirmation email template remains an explicit BG-07 implementation
+detail, not a claimed current consumer. Both versions must remain coherent under
+that owner's existing content/delivery contract.
+
+The complete frozen-tree rerun passed **5,299 baseline tests** and **all 2,536
+PostgreSQL tests**: shards 643/632/628/633, with no enabled skips or missing cases.
+The independent receipt/partition combiner passed and measured **94.03% line
+coverage and 85.62% branch coverage**, both above the 80% floor. The longest
+database shard took 899.98 seconds; the baseline-bearing shard's database part
+took 740.40 seconds. The earlier 12 synthetic OAuth denials did not recur.
+Their cause remains unconfirmed, rather than attributed to a speculative fix.
+
+After the server-only correction, the full review/edit/submit scenario was run
+again at 320 and 1,280 pixels and both complete review-page screenshots were
+visually inspected. Both cases passed keyboard/focus, AA scanning, all section
+edits and final submission, with no clipping or horizontal overflow. The earlier
+720-case browser run covers the unchanged Family JavaScript. Current model drift,
+Ruff, formatting, Markdown and whitespace checks pass. The 88-case targeted
+suite includes the current strict schema checks; S-01 introduced no schema change.
+
+All local Gate 2 acceptance and review requirements are satisfied, with the
+documented Low deferrals and later-phase boundaries above. Standing human
+merge/continue authority applies under the controlling automated delivery cycle.
+Protected delivery is still pending: require final-head CI, the normal merge
+queue, all merge-group checks, and verified `origin/main` ancestry before
+releasing Phase 4. No deployment, release or real-provider authority is implied.

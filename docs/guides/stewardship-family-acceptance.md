@@ -122,3 +122,24 @@ The failed attempt is retained; the underlying transient cause is not confirmed.
 Integrated review/correction and Gate 2 closure remain in progress. These
 results do not certify later corrections; no remaining Family task or Gate 2
 item is claimed complete yet.
+
+### Completed local acceptance
+
+The earlier checkpoint is superseded by the
+[final passing gate evidence](stewardship-gate-2-reviews.md#final-correction-review-and-passing-local-gate)
+at `44455b5`: 5,299 baseline and all 2,536 PostgreSQL tests pass, with
+94.03% line / 85.62% branch coverage and complete independent shard receipts.
+Five successful dual-source rounds resolve every accepted Medium+ finding and
+cover all current integration IDs. The ledger retains failed attempts and all
+Low dispositions, rather than counting them as approvals.
+
+The full 720-case browser suite passes for the unchanged Family JavaScript;
+current-tree 320-/1,280-pixel complete review/edit/submit flows and full-page
+visual inspection pass after the server correction. FAM-01/02/06/07 and
+DAT-06/08 are complete within the master plan's Family service scope. FAM-08,
+actual receipt dispatch and later reporting/publication/retention remain their
+named later owners. The rebuilt `81dcbf8` image passed 30 Compose cases before
+the final savepoint-only correction; exact-head CI must verify the final image.
+
+Final-head/protected merge-group CI and main-merge verification remain pending.
+Phase 4 does not begin before that delivery completes.
