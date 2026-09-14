@@ -15,7 +15,10 @@ BEGIN
             USING ERRCODE='23514';
     END IF;
     IF NEW.sealed_substitutions IS NOT NULL AND
-       (TG_OP='INSERT' OR NEW.sealed_substitutions IS DISTINCT FROM OLD.sealed_substitutions) THEN
+       (TG_OP='INSERT' OR NEW.sealed_substitutions IS DISTINCT FROM OLD.sealed_substitutions
+        OR NEW.sealed_key_id IS DISTINCT FROM OLD.sealed_key_id
+        OR NEW.token_generation_id IS DISTINCT FROM OLD.token_generation_id
+        OR NEW.credential_epoch_id IS DISTINCT FROM OLD.credential_epoch_id) THEN
         -- Same nonblocking inventory lock as credential_keys.key_set_lock.
         -- No retired writer can race a newly retained outbox dependency.
         SELECT pg_try_advisory_xact_lock_shared(736226,1) INTO key_lock;
@@ -36,6 +39,31 @@ BEGIN
         EXCEPTION WHEN invalid_text_representation THEN
             RAISE EXCEPTION 'Invalid delivery envelope' USING ERRCODE='23514';
         END;
+    END IF;
+    -- Campaign Testing work is never an operational-mail exception. Recheck
+    -- both allocation and the last local boundary before external submission.
+    IF NEW.routing='testing_override' AND (TG_OP='INSERT' OR NEW.action IN ('prepared','submit'))
+       AND NOT EXISTS (
+           SELECT 1 FROM public.stewardship_campaign_credentials c
+           JOIN public.stewardship_system_configuration s ON s.current_campaign_id=c.campaign_id
+           WHERE c.campaign_id=NEW.campaign_id AND NOT c.go_live_gate AND s.mode='testing'
+             AND (NEW.credential_namespace='none' OR EXISTS (
+                 SELECT 1 FROM public.stewardship_rehearsal_epoch e
+                 WHERE e.id=NEW.rehearsal_epoch_id AND e.id=c.rehearsal_epoch_id
+                   AND e.campaign_id=c.campaign_id AND e.state='active'
+             ))
+       ) THEN
+        RAISE EXCEPTION 'Testing delivery is not currently admitted' USING ERRCODE='23514';
+    END IF;
+    IF NEW.credential_namespace='production' AND NEW.sealed_substitutions IS NOT NULL
+       AND NOT EXISTS (
+           SELECT 1 FROM public.stewardship_family_token_generation g
+           JOIN public.stewardship_family_token t ON t.generation_id=g.id
+           WHERE g.id=NEW.token_generation_id AND g.campaign_id=NEW.campaign_id
+             AND t.family_id=NEW.family_id
+             AND g.credential_epoch=NEW.credential_epoch_id
+       ) THEN
+        RAISE EXCEPTION 'Invalid delivery credential binding' USING ERRCODE='23514';
     END IF;
     SELECT * INTO claim FROM public.stewardship_task_run WHERE id=NEW.task_id;
     IF claim.id IS NULL OR claim.root_id <> claim.id
@@ -72,6 +100,14 @@ BEGIN
     allowed := ARRAY['version','updated_at','actor_id','correlation_id','command_id','command_digest',
         'action','reason','evidence_digest','evidence_note','provider_key_digest',
         'provider_message_digest'];
+    IF NEW.action IN ('prepared','cancel_unsent') AND (
+        SELECT action FROM public.stewardship_outbox_event
+        WHERE message_id=NEW.id AND action IN ('retry_idempotent','retry_unaccepted',
+            'fail_unaccepted','accept','authorize_resend') ORDER BY version DESC LIMIT 1
+    ) = 'retry_idempotent' THEN
+        RAISE EXCEPTION 'An uncertain idempotent retry must retain its payload and outcome'
+            USING ERRCODE='23514';
+    END IF;
     IF NEW.action IN ('prepared','hold','release_hold') THEN
         IF OLD.state NOT IN ('pending','retry_wait') OR NEW.state <> OLD.state THEN
             RAISE EXCEPTION 'Only unsent delivery may be prepared or held'
@@ -118,10 +154,16 @@ BEGIN
             allowed := allowed || ARRAY['attempt','run_id','task_fence','worker_id',
                 'submitted_at','provider_deadline'];
             SELECT * INTO claim FROM public.stewardship_task_run WHERE id=NEW.run_id;
-            IF OLD.pause_hold_id IS NOT NULL OR OLD.not_before > statement_timestamp()
-               OR NEW.attempt <> OLD.attempt+1 OR claim.id IS NULL
+            IF OLD.pause_hold_id IS NOT NULL THEN
+                RAISE EXCEPTION 'Delivery is paused' USING ERRCODE='23514';
+            END IF;
+            IF OLD.not_before > statement_timestamp() THEN
+                RAISE EXCEPTION 'Delivery retry is not yet due' USING ERRCODE='23514';
+            END IF;
+            IF NEW.attempt <> OLD.attempt+1 OR claim.id IS NULL
                OR claim.root_id <> NEW.task_id OR claim.state <> 'running'
                OR claim.worker_id IS DISTINCT FROM NEW.worker_id
+               OR NEW.actor_id IS DISTINCT FROM NEW.worker_id
                OR claim.fence IS DISTINCT FROM NEW.task_fence
                OR claim.lease_expires_at <= statement_timestamp()
                OR NEW.submitted_at IS DISTINCT FROM statement_timestamp()
@@ -156,10 +198,22 @@ BEGIN
         ELSE
             NULL;
         END CASE;
-        IF (OLD.state='delivery_unknown' OR NEW.action='retry_idempotent')
+        IF (OLD.state='delivery_unknown' OR NEW.action IN
+            ('accept','retry_unaccepted','fail_unaccepted','retry_idempotent'))
            AND (NEW.actor_id IS NULL OR NEW.evidence_digest='' OR NEW.evidence_note='') THEN
             RAISE EXCEPTION 'Delivery resolution requires attributed evidence'
                 USING ERRCODE='23514';
+        END IF;
+        IF OLD.state='submitting' AND NEW.action<>'mark_unknown' THEN
+            SELECT * INTO claim FROM public.stewardship_task_run WHERE id=OLD.run_id;
+            IF claim.id IS NULL OR claim.root_id<>OLD.task_id OR claim.state<>'running'
+               OR claim.fence IS DISTINCT FROM OLD.task_fence
+               OR claim.worker_id IS DISTINCT FROM OLD.worker_id
+               OR NEW.actor_id IS DISTINCT FROM OLD.worker_id
+               OR claim.lease_expires_at<=statement_timestamp() THEN
+                RAISE EXCEPTION 'Delivery outcome does not own a current claim'
+                    USING ERRCODE='23514';
+            END IF;
         END IF;
     END IF;
     IF (to_jsonb(NEW) - allowed) IS DISTINCT FROM (to_jsonb(OLD) - allowed) THEN
@@ -182,8 +236,8 @@ BEGIN
         NEW.provider_key_digest,NEW.provider_message_digest,NEW.evidence_digest,
         NEW.evidence_note,NEW.reason,NEW.not_before,NEW.submitted_at,NEW.provider_deadline,NEW.finished_at);
     INSERT INTO public.stewardship_audit_event
-        (id,actor_id,correlation_id,event_type,subject_id)
-    VALUES (gen_random_uuid(),NEW.actor_id,NEW.correlation_id,'outbox_'||NEW.action,NEW.id);
+        (id,actor_id,correlation_id,event_type,subject_id,campaign_reference)
+    VALUES (gen_random_uuid(),NEW.actor_id,NEW.correlation_id,'outbox_'||NEW.action,NEW.id,NEW.campaign_id);
     RETURN NEW;
 END $$;
 

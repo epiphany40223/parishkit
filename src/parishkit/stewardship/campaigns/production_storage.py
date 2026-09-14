@@ -6,6 +6,7 @@ no callable, UUID or state name is accepted by an HTTP or queue entry point.
 """
 
 import re
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from types import MappingProxyType
@@ -62,7 +63,7 @@ class CleanupInventory:
     """The inventory owner supplies exact category counts and its manifest digest."""
 
     digest: str
-    counts: dict
+    counts: Mapping[str, int]
 
     def __post_init__(self):
         """Detach and validate the non-sensitive summary before touching SQL."""
@@ -261,7 +262,8 @@ def change_transition(
         raise StorageInvariantError(
             "Production activation is not exposed by this journal."
         )
-    if action is ProductionAction.START:
+    claim_action = action in (ProductionAction.START, ProductionAction.RECOVER)
+    if claim_action:
         identifier(run_id)
         if type(task_fence) is not int or task_fence < 1:
             raise ValueError("Invalid cleanup task fence.")
@@ -271,6 +273,12 @@ def change_transition(
         failure_reason and re.fullmatch(r"[a-z][a-z0-9_]{0,63}", failure_reason) is None
     ):
         raise ValueError("Invalid cleanup failure reason.")
+    if bool(failure_reason) != (
+        action in (ProductionAction.FAIL, ProductionAction.RETRY_LATER)
+    ):
+        raise ValueError(
+            "A cleanup failure reason belongs only to a failed or delayed operation."
+        )
     with correlation(correlation_id), work_transaction():
         request, campaign = _locked(request_id)
         previous = ProductionTransitionEvent.objects.filter(
@@ -283,7 +291,7 @@ def change_transition(
                 or previous.version != expected_version + 1
                 or previous.snapshot["failure_reason"] != failure_reason
                 or (
-                    action is ProductionAction.START
+                    claim_action
                     and (
                         previous.snapshot["run_id"] != str(run_id)
                         or previous.snapshot["task_fence"] != task_fence
@@ -323,7 +331,7 @@ def change_transition(
             correlation_id=correlation_id,
             failure_reason=failure_reason,
         )
-        if action is ProductionAction.START:
+        if claim_action:
             TaskRun.objects.select_for_update().get(pk=run_id)
             values.update(run_id=run_id, task_fence=task_fence, worker_id=actor_id)
         ProductionTransitionRequest.objects.filter(pk=request_id).update(**values)

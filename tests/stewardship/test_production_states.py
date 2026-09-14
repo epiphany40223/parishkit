@@ -18,6 +18,7 @@ from parishkit.stewardship.campaigns.production_states import (
 EXPECTED = {
     (State.QUEUED, Action.START): State.RUNNING,
     (State.RETRY_WAIT, Action.START): State.RUNNING,
+    (State.RUNNING, Action.RECOVER): State.RUNNING,
     (State.RUNNING, Action.RETRY_LATER): State.RETRY_WAIT,
     (State.RUNNING, Action.FAIL): State.FAILED,
     (State.FAILED, Action.RETRY_FAILED): State.QUEUED,

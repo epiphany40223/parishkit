@@ -23,6 +23,18 @@ ADM-05/06 retain their Admin workflows. Export/publication and Staff follow-up
 records remain the later DAT-07 consumers. Preserve those mixed-phase tasks
 as incomplete rather than claiming the whole package from its first services.
 
+BG-03 must supply a narrowly scoped deletion port for terminal
+`testing_override` records, their dependent renders/events and linked task
+history. The current immutable/delete guards deliberately provide no such port.
+The checkpoint service supplies atomic progress, not permission to delete those
+records. BG-03 must implement and test both together before cleanup is exposed.
+
+Semantic creation binds the original logical initiator, not a transient worker
+process. Recovery producers pass that same initiator and fresh admission; a
+different actor cannot silently reuse the original command. Resealing the same
+credential is permitted on replay, but the first committed envelope is retained.
+Changed credential identity or render requires an explicit new preparation.
+
 ## Internal checkpoints
 
 1. Implement typed outbox/attempt transitions, immutable scope and routing,
@@ -52,6 +64,9 @@ authorized by this increment.
 
 The internal outbox and Production-cleanup journals are implemented. Validation
 and peer review are in progress; no DAT-07 checkbox is newly complete.
+The checkpoint results below describe the initial implementation, not final-head
+acceptance. Follow-up evidence and dispositions are recorded in the
+[delivery review ledger](stewardship-delivery-reviews.md).
 
 - Pure transition/input suites: 198 tests passed across delivery states,
   Production states, redacted render inputs and cleanup summaries.

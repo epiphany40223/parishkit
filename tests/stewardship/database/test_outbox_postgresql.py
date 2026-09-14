@@ -2,12 +2,14 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from datetime import timedelta
 from threading import Barrier
 from uuid import uuid4
 
 import pytest
 from django.db import IntegrityError, connection, connections, transaction
 from django.db.models import F
+from django.db.models.functions import Now
 
 from parishkit.stewardship.accounts.authority import AuthorityStore
 from parishkit.stewardship.accounts.configuration_installation import (
@@ -40,6 +42,15 @@ pytestmark = pytest.mark.django_db(transaction=True)
 def permit(*args):
     """Synthetic owner proof for internal storage only; no runtime port is granted."""
     return True
+
+
+def provider_evidence():
+    """Explicit synthetic provider proof; never used by a real dispatcher."""
+    return DeliveryEvidence(
+        provider_message_digest="a" * 64,
+        evidence_digest="b" * 64,
+        evidence_note="Synthetic provider outcome verified by this test",
+    )
 
 
 @pytest.fixture
@@ -87,7 +98,7 @@ def change(status, action, **options):
     )
 
 
-def claim(status, *, run_id=None):
+def claim(status, *, run_id=None, lease_seconds=300):
     """Claim only a synthetic TaskRun; no external worker is launched."""
     row = TaskRun.objects.get(pk=run_id or status.task_id)
     worker = uuid4()
@@ -98,7 +109,7 @@ def claim(status, *, run_id=None):
         actor_id=worker,
         correlation_id=uuid4(),
         admit=permit,
-        lease_seconds=300,
+        lease_seconds=lease_seconds,
     )
 
 
@@ -128,7 +139,7 @@ def test_create_submit_accept_preserves_render_and_history(inputs):
     accepted = change(
         submitted,
         Action.ACCEPT,
-        evidence=DeliveryEvidence(provider_message_digest="a" * 64),
+        evidence=provider_evidence(),
     )
     connections.close_all()
     message = OutboxMessage.objects.get(pk=first.message_id)
@@ -302,7 +313,7 @@ def test_failed_delivery_requires_linked_task_retry_and_preserves_terminal_histo
 ):
     """Explicit failure retry creates a new render without replacing the old one."""
     status = submit(create_message(**inputs))
-    failed = change(status, Action.FAIL_UNACCEPTED)
+    failed = change(status, Action.FAIL_UNACCEPTED, evidence=provider_evidence())
     run = TaskRun.objects.get(pk=status.task_id)
     change_run(
         run_id=run.pk,
@@ -349,7 +360,8 @@ def test_failed_delivery_requires_linked_task_retry_and_preserves_terminal_histo
 def test_raw_sql_cannot_rewrite_binding_or_history(inputs, mutation):
     """SQL guards are independent of optimistic ORM helpers and input validators."""
     first = create_message(**inputs)
-    with pytest.raises(IntegrityError), transaction.atomic():
+    message = "unrelated fields" if mutation == "unrelated" else None
+    with pytest.raises(IntegrityError, match=message), transaction.atomic():
         if mutation == "identity":
             OutboxMessage.objects.filter(pk=first.message_id).update(
                 scope_id=uuid4(), version=F("version") + 1
@@ -360,7 +372,7 @@ def test_raw_sql_cannot_rewrite_binding_or_history(inputs, mutation):
                 action="prepared",
                 command_id=uuid4(),
                 version=F("version") + 1,
-                attempt=1,
+                not_before=Now() + timedelta(seconds=10),
             )
         else:
             with connection.cursor() as cursor:
@@ -370,3 +382,108 @@ def test_raw_sql_cannot_rewrite_binding_or_history(inputs, mutation):
                     )
                 else:
                     cursor.execute("DELETE FROM stewardship_outbox_message")
+
+
+@pytest.mark.parametrize("action", [Action.RETRY_UNACCEPTED, Action.RETRY_IDEMPOTENT])
+def test_retry_schedule_and_attempt_history_use_database_clock(inputs, action):
+    """Retry waits are enforced; an uncertain idempotent attempt stays immutable."""
+    status = submit(create_message(**inputs))
+    waiting = change(status, action, retry_seconds=1, evidence=provider_evidence())
+    task = TaskRun.objects.get(pk=status.run_id)
+    with pytest.raises(IntegrityError, match="not yet due"):
+        change(
+            waiting,
+            Action.SUBMIT,
+            run_id=task.pk,
+            task_fence=task.fence,
+            actor_id=task.worker_id,
+            provider_seconds=30,
+        )
+    if action is Action.RETRY_IDEMPOTENT:
+        from parishkit.stewardship.jobs.outbox_storage import prepare_message
+
+        with pytest.raises(IntegrityError, match="uncertain idempotent"):
+            change(waiting, Action.CANCEL_UNSENT)
+        with pytest.raises(IntegrityError, match="uncertain idempotent"):
+            prepare_message(
+                message_id=waiting.message_id,
+                expected_version=waiting.version,
+                command_id=uuid4(),
+                actor_id=uuid4(),
+                correlation_id=uuid4(),
+                admit=permit,
+                render=replace(inputs["render"], text="Changed"),
+            )
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_sleep(1.05)")
+    second = change(
+        waiting,
+        Action.SUBMIT,
+        run_id=task.pk,
+        task_fence=task.fence,
+        actor_id=task.worker_id,
+        provider_seconds=30,
+    )
+    assert second.attempt == 2 and second.render_id == status.render_id
+    assert list(
+        OutboxEvent.objects.filter(message_id=status.message_id)
+        .order_by("version")
+        .values_list("attempt", flat=True)
+    ) == [0, 1, 1, 2]
+
+
+@pytest.mark.parametrize("unknown", [False, True])
+@pytest.mark.parametrize(
+    "action",
+    [
+        Action.ACCEPT,
+        Action.FAIL_UNACCEPTED,
+        Action.RETRY_UNACCEPTED,
+        Action.RETRY_IDEMPOTENT,
+    ],
+)
+def test_provider_outcomes_require_explicit_evidence(inputs, unknown, action):
+    """Both direct outcomes and reconciliation reject unproven acceptance claims."""
+    status = submit(create_message(**inputs))
+    if unknown:
+        status = change(status, Action.MARK_UNKNOWN)
+    options = (
+        {"retry_seconds": 1}
+        if action in (Action.RETRY_UNACCEPTED, Action.RETRY_IDEMPOTENT)
+        else {}
+    )
+    with pytest.raises(IntegrityError, match="attributed evidence"):
+        change(status, action, **options)
+
+
+@pytest.mark.parametrize(
+    "action",
+    [
+        Action.ACCEPT,
+        Action.FAIL_UNACCEPTED,
+        Action.RETRY_UNACCEPTED,
+        Action.RETRY_IDEMPOTENT,
+    ],
+)
+def test_expired_worker_must_record_uncertainty_before_reconciliation(inputs, action):
+    """Losing a task lease cannot authorize acceptance or a fresh provider attempt."""
+    first = create_message(**inputs)
+    status = submit(first, task=claim(first, lease_seconds=1))
+    options = (
+        {"retry_seconds": 1}
+        if action in (Action.RETRY_UNACCEPTED, Action.RETRY_IDEMPOTENT)
+        else {}
+    )
+    with pytest.raises(IntegrityError, match="current claim"):
+        change(
+            status, action, actor_id=uuid4(), evidence=provider_evidence(), **options
+        )
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_sleep(1.05)")
+    with pytest.raises(IntegrityError, match="current claim"):
+        change(status, action, evidence=provider_evidence(), **options)
+    unknown = change(status, Action.MARK_UNKNOWN, actor_id=uuid4())
+    resolved = change(
+        unknown, action, actor_id=uuid4(), evidence=provider_evidence(), **options
+    )
+    assert resolved.version == unknown.version + 1

@@ -118,12 +118,11 @@ def _command_digest(*values):
         if isinstance(value, RenderInput):
             value = value.fields()
         elif isinstance(value, SealedSubstitutions):
-            value = dict(
-                value.fields(),
-                sealed_substitutions=hashlib.sha256(
-                    value.envelope.encode()
-                ).hexdigest(),
-            )
+            # SealedBox is randomized: a lost-response retry may reseal the same
+            # credential. Bind its stable identity, never the random ciphertext.
+            # Replays keep the first envelope; admission still verifies the owner.
+            value = value.fields()
+            value.pop("sealed_substitutions")
         elif isinstance(value, DeliveryIdentity | DeliveryEvidence):
             value = asdict(value)
         converted.append(value)

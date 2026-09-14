@@ -10,6 +10,7 @@ from django.db import IntegrityError, connection, transaction
 from django.utils import timezone
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.credential_models import (
     CampaignCredentialState,
     RehearsalEpoch,
@@ -53,7 +54,7 @@ def intent(family_service):  # noqa: F811
         actor_id=uuid4(),
         correlation_id=uuid4(),
         inventory=CleanupInventory("a" * 64, {"sessions": 1}),
-        summary=TestingSummary("b" * 64, 0, 0, 3, 1, 1, 1),
+        summary=TestingSummary("b" * 64, 0, 0, 0, 0, 0, 0),
         acknowledged_at=now,
         reauthenticated_at=now - timedelta(seconds=1),
         admit=permit,
@@ -78,7 +79,7 @@ def act(status, action, **options):
     )
 
 
-def start(status, run_id=None):
+def start(status, run_id=None, *, action=Action.START, lease_seconds=300):
     """Claim a synthetic task and bind the cleanup request to that current fence."""
     task = TaskRun.objects.get(pk=run_id or status.task_id)
     claimed = change_run(
@@ -88,11 +89,11 @@ def start(status, run_id=None):
         actor_id=uuid4(),
         correlation_id=uuid4(),
         admit=permit,
-        lease_seconds=300,
+        lease_seconds=lease_seconds,
     )
     return act(
         status,
-        Action.START,
+        action,
         run_id=claimed.run_id,
         task_fence=claimed.fence,
         actor_id=claimed.worker_id,
@@ -151,6 +152,11 @@ def test_begin_invalidates_epoch_and_cancel_releases_gate_without_revival(intent
     assert TaskRun.objects.get(pk=status.task_id).state == "cancelled"
     assert SystemConfiguration.objects.get().mode == "testing"
     assert Aggregate.objects.count() == 1
+    assert set(
+        AuditEvent.objects.filter(subject_id=status.request_id).values_list(
+            "campaign_reference", flat=True
+        )
+    ) == {status.campaign_id}
 
 
 @pytest.mark.parametrize("denied", ["create", "invalidate_rehearsal", "create_task"])
@@ -249,7 +255,7 @@ def test_incomplete_cleanup_and_running_cancellation_are_rejected(intent):
     with pytest.raises(IntegrityError, match="safe task boundary"):
         act(status, Action.CANCEL)
     with pytest.raises(StaleRecordError):
-        act(status, Action.FAIL, expected_version=1)
+        act(status, Action.FAIL, expected_version=1, failure_reason="synthetic_failure")
 
 
 def test_exhausted_failure_keeps_gate_and_retry_preserves_checkpoints(intent):
@@ -305,3 +311,66 @@ def test_replay_requires_current_admission_and_same_inventory(intent):
         connection.cursor() as cursor,
     ):
         cursor.execute("UPDATE stewardship_production_event SET state='activated'")
+
+
+@pytest.mark.parametrize("crashed", [False, True])
+def test_cleanup_resumes_on_new_claim_without_losing_checkpoints(intent, crashed):
+    """Explicit retry and a crash after checkpoint both retain exact progress."""
+    from parishkit.stewardship.jobs.storage import _status as task_status
+
+    from .test_taskrun_postgresql import act as task_act
+    from .test_taskrun_postgresql import expire
+
+    status = batch(
+        start(begin_transition(**intent), lease_seconds=1 if crashed else 300)
+    )
+    task = task_status(TaskRun.objects.get(pk=status.run_id))
+    if crashed:
+        with pytest.raises(IntegrityError, match="newer task claim"):
+            act(
+                status,
+                Action.RECOVER,
+                run_id=status.run_id,
+                task_fence=status.task_fence,
+                actor_id=status.worker_id,
+            )
+        abandoned = expire(task)
+        with pytest.raises(IntegrityError, match="safe task boundary"):
+            act(status, Action.CANCEL)
+        waiting_task = task_act(abandoned, "recovery_retry")
+    else:
+        status = act(status, Action.RETRY_LATER, failure_reason="transient_failure")
+        waiting_task = task_act(task, "retryable_failure")
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_sleep(1.05)")
+    current = start(
+        status, waiting_task.run_id, action=Action.RECOVER if crashed else Action.START
+    )
+    assert current.task_fence > status.task_fence
+    assert current.processed_count == current.checkpoint_sequence == 1
+    with pytest.raises(IntegrityError, match="current task claim"):
+        act(current, Action.COMPLETE, actor_id=status.worker_id)
+    assert act(current, Action.COMPLETE).state == "cleanup_complete"
+
+
+def test_checkpoint_cannot_exceed_known_category_cumulative_inventory(intent):
+    """Known categories cannot consume each other's remaining allowance."""
+    intent["inventory"] = CleanupInventory("a" * 64, {"sessions": 1, "other": 1})
+    status = batch(start(begin_transition(**intent)))
+    with pytest.raises(IntegrityError, match="exceeds its inventory"):
+        batch(status)
+    assert (
+        ProductionTransitionRequest.objects.get(pk=status.request_id).processed_count
+        == 1
+    )
+
+
+def test_production_summary_must_match_actual_testing_delivery_totals(intent):
+    """Structurally plausible caller totals cannot replace the actual journal."""
+    intent["summary"] = TestingSummary("b" * 64, 0, 0, 3, 1, 1, 1)
+    with pytest.raises(IntegrityError, match="exact terminal Testing"):
+        begin_transition(**intent)
+    assert not ProductionTransitionRequest.objects.exists()
+    assert not CampaignCredentialState.objects.get(
+        campaign_id=intent["campaign_id"]
+    ).go_live_gate

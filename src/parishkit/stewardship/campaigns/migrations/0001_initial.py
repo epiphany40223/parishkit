@@ -3584,6 +3584,7 @@ class Migration(migrations.Migration):
                                 [
                                     "created",
                                     "start",
+                                    "recover",
                                     "checkpoint",
                                     "retry_later",
                                     "fail",

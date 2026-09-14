@@ -8,10 +8,23 @@ from parishkit.stewardship.storage import (
     UTCDateTimeField,
 )
 
-from .production_states import GATE_OWNING_PRODUCTION_STATES, ProductionState
+from .production_states import (
+    GATE_OWNING_PRODUCTION_STATES,
+    ProductionAction,
+    ProductionState,
+)
 
 GATE_STATES = tuple(
     state.value for state in ProductionState if state in GATE_OWNING_PRODUCTION_STATES
+)
+PRODUCTION_ACTIONS = (
+    ("created",)
+    + (ProductionAction.START.value, ProductionAction.RECOVER.value, "checkpoint")
+    + tuple(
+        action.value
+        for action in ProductionAction
+        if action not in (ProductionAction.START, ProductionAction.RECOVER)
+    )
 )
 
 
@@ -126,19 +139,7 @@ class ProductionTransitionRequest(MutableRecord):
                 name="production_known_state",
             ),
             models.CheckConstraint(
-                condition=models.Q(
-                    action__in=[
-                        "created",
-                        "start",
-                        "checkpoint",
-                        "retry_later",
-                        "fail",
-                        "retry_failed",
-                        "complete",
-                        "activate",
-                        "cancel",
-                    ]
-                ),
+                condition=models.Q(action__in=list(PRODUCTION_ACTIONS)),
                 name="production_known_action",
             ),
             models.CheckConstraint(

@@ -29,6 +29,7 @@ LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp AS $$
 DECLARE
     claim public.stewardship_task_run%ROWTYPE;
     batch public.stewardship_production_checkpoint%ROWTYPE;
+    totals public.stewardship_testing_aggregate%ROWTYPE;
     allowed text[];
 BEGIN
     IF TG_OP='DELETE' THEN
@@ -37,6 +38,9 @@ BEGIN
     IF NEW.action='activate' OR NEW.state='activated' THEN
         RAISE EXCEPTION 'Production activation requires its later owning workflow'
             USING ERRCODE='23514';
+    END IF;
+    IF (NEW.failure_reason<>'') IS DISTINCT FROM (NEW.action IN ('fail','retry_later')) THEN
+        RAISE EXCEPTION 'Invalid cleanup failure reason for this action' USING ERRCODE='23514';
     END IF;
     IF NEW.inventory_total <> public.stewardship_cleanup_counts_v1(NEW.inventory_counts)
        OR NEW.reauthenticated_at>NEW.acknowledged_at
@@ -57,12 +61,27 @@ BEGIN
            OR NEW.actor_id IS DISTINCT FROM NEW.initiated_by_id THEN
             RAISE EXCEPTION 'Invalid initial Production request' USING ERRCODE='23514';
         END IF;
+        SELECT * INTO totals FROM public.stewardship_testing_aggregate WHERE id=NEW.aggregate_id;
+        IF EXISTS (
+            SELECT 1 FROM public.stewardship_outbox_message
+            WHERE campaign_id=NEW.campaign_id AND routing='testing_override'
+              AND state NOT IN ('delivered','permanent_failure','cancelled')
+        ) OR (SELECT ROW(count(*),count(*) FILTER (WHERE state='delivered'),
+                        count(*) FILTER (WHERE state='permanent_failure'),
+                        count(*) FILTER (WHERE state='cancelled'))
+              FROM public.stewardship_outbox_message
+              WHERE campaign_id=NEW.campaign_id AND routing='testing_override')
+              IS DISTINCT FROM ROW(totals.messages,totals.delivered,totals.failed,totals.cancelled) THEN
+            RAISE EXCEPTION 'Production cleanup requires exact terminal Testing delivery totals'
+                USING ERRCODE='23514';
+        END IF;
         RETURN NEW;
     END IF;
     IF NEW.command_id=OLD.command_id OR NOT EXISTS (
         SELECT 1 FROM (VALUES
             ('cleanup_queued','start','cleanup_running'),
             ('cleanup_retry_wait','start','cleanup_running'),
+            ('cleanup_running','recover','cleanup_running'),
             ('cleanup_running','checkpoint','cleanup_running'),
             ('cleanup_running','retry_later','cleanup_retry_wait'),
             ('cleanup_running','fail','cleanup_failed'),
@@ -80,10 +99,10 @@ BEGIN
     END IF;
     allowed := ARRAY['version','updated_at','actor_id','correlation_id','command_id',
                      'action','state','failure_reason'];
-    IF NEW.action='start' THEN
+    IF NEW.action IN ('start','recover') THEN
         allowed := allowed || ARRAY['run_id','task_fence','worker_id'];
     END IF;
-    IF NEW.action IN ('start','checkpoint','retry_later','fail','complete') THEN
+    IF NEW.action IN ('start','recover','checkpoint','retry_later','fail','complete') THEN
         SELECT * INTO claim FROM public.stewardship_task_run WHERE id=NEW.run_id;
         IF claim.id IS NULL OR claim.root_id<>NEW.task_id OR claim.state<>'running'
            OR claim.fence IS DISTINCT FROM NEW.task_fence
@@ -92,6 +111,16 @@ BEGIN
            OR claim.lease_expires_at<=statement_timestamp() THEN
             RAISE EXCEPTION 'Production cleanup requires a current task claim' USING ERRCODE='23514';
         END IF;
+    END IF;
+    -- TaskRun recovery may commit before the domain journal can rebind. Only
+    -- a later claim of this root may take over; never rewind checkpoint state.
+    IF NEW.action='recover' AND NOT (
+        (NEW.run_id=OLD.run_id AND NEW.task_fence>OLD.task_fence)
+        OR (NEW.run_id<>OLD.run_id AND claim.retry_sequence>(
+            SELECT retry_sequence FROM public.stewardship_task_run WHERE id=OLD.run_id
+        ))
+    ) THEN
+        RAISE EXCEPTION 'Production recovery requires a newer task claim' USING ERRCODE='23514';
     END IF;
     IF NEW.action='checkpoint' THEN
         allowed := allowed || ARRAY['processed_count','checkpoint_sequence'];
@@ -182,8 +211,8 @@ BEGIN
         NEW.command_id,NEW.version,CASE WHEN TG_OP='INSERT' THEN '' ELSE OLD.state END,
         NEW.state,NEW.action,to_jsonb(NEW));
     INSERT INTO public.stewardship_audit_event
-        (id,actor_id,correlation_id,event_type,subject_id)
-    VALUES (gen_random_uuid(),NEW.actor_id,NEW.correlation_id,'production_'||NEW.action,NEW.id);
+        (id,actor_id,correlation_id,event_type,subject_id,campaign_reference)
+    VALUES (gen_random_uuid(),NEW.actor_id,NEW.correlation_id,'production_'||NEW.action,NEW.id,NEW.campaign_id);
     RETURN NEW;
 END $$;
 

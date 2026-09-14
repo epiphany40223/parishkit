@@ -38,7 +38,8 @@ The [delivery-journal increment](stewardship-delivery-journal.md#fresh-install-s
 adds eight tables and their guarded state/history contracts. Its outbox foreign
 keys require one additional jobs initial state-only step; Production request
 state is included in the existing campaigns initial step. The additive audit
-preserves every preexisting schema object and all retained developer databases.
+preserves every preexisting schema object. It does not modify or delete retained
+developer databases; they are not upgraded and require a new fresh installation.
 
 The SQL files under `src/parishkit/stewardship/schema/` install the final function
 definitions, tables, seed sentinels and guards directly. Only function-body

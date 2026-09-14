@@ -25,6 +25,7 @@ class ProductionAction(StrEnum):
     """Commands require fresh owning proof, not a caller-selected exemption."""
 
     START = "start"
+    RECOVER = "recover"
     RETRY_LATER = "retry_later"
     FAIL = "fail"
     RETRY_FAILED = "retry_failed"
@@ -42,6 +43,10 @@ GATE_OWNING_PRODUCTION_STATES = frozenset(
 _TRANSITIONS = {
     ProductionAction.START: (
         frozenset({ProductionState.QUEUED, ProductionState.RETRY_WAIT}),
+        ProductionState.RUNNING,
+    ),
+    ProductionAction.RECOVER: (
+        frozenset({ProductionState.RUNNING}),
         ProductionState.RUNNING,
     ),
     ProductionAction.RETRY_LATER: (
