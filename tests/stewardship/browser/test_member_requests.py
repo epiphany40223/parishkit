@@ -26,8 +26,14 @@ def capture(submissions):
 
 def fill_new(page):
     """Find the new local UUID from its labeled control, then fill required data."""
+    controls = page.locator('input[id$="-first_name"]')
+    before = set(controls.evaluate_all("rows => rows.map(row => row.id)"))
     page.get_by_role("button", name="Add a household member", exact=True).click()
-    control = page.locator('input[id$="-first_name"]').last
+    # Proposed Members sort by stable UUID, not insertion order. Adding a
+    # second person must not accidentally refill the existing last person.
+    added = set(controls.evaluate_all("rows => rows.map(row => row.id)")) - before
+    assert len(added) == 1
+    control = page.locator("#" + added.pop())
     identity = control.get_attribute("id")[len("member-") : -len("-first_name")]
     assert str(UUID(identity)) == identity
     control.fill("New")

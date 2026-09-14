@@ -26,6 +26,8 @@ from .effective import (
     effective_fields,
     proposal_index,
 )
+from .financial import household_pronoun
+from .financial_presentation import financial_presentation
 from .inputs import ADDITIONAL_MAX_LENGTH, MEMBER_FIELDS
 from .member_census import browser_value
 from .member_requests import MAX_PROPOSED_MEMBERS
@@ -143,6 +145,9 @@ def form_presentation(form):
             terminal_members=frozenset(row["id"] for row in members if row["request"]),
             proposed_members=frozenset(row["id"] for row in proposed),
         ),
+        "financial": financial_presentation(
+            form.inputs.financial, prior, parish_name=baseline.configuration.parish.name
+        ),
         "max_proposed_members": MAX_PROPOSED_MEMBERS if census else 0,
         "new_member_fields": [
             {
@@ -168,7 +173,9 @@ def form_presentation(form):
         "last_submitted_at": prior.submitted_at.isoformat()
         if prior and prior.mode == "live"
         else None,
-        "content": _page_content(baseline, campaign, family, members),
+        "content": _page_content(
+            baseline, campaign, family, members, proposed, form.inputs.financial
+        ),
     }
 
 
@@ -265,7 +272,7 @@ def _household_presentation(values, prior):
     }
 
 
-def _page_content(baseline, campaign, family, members):
+def _page_content(baseline, campaign, family, members, proposed, financial):
     """Render selected immutable blocks through the existing inert sanitizer.
 
     Email-only credential substitutions are empty in the authenticated flow;
@@ -288,8 +295,19 @@ def _page_content(baseline, campaign, family, members):
         family_member_names=", ".join(member["display_name"] for member in members),
         generic_family_url="/",
         family_url="/family/",
-        pronoun="I" if len(members) == 1 else "We",
+        pronoun=household_pronoun(
+            sum(not member["request"] for member in members) + len(proposed)
+        ),
     )
+    if financial is not None:
+        period = financial.definition.upcoming
+        start, end = parish_date(period.start), parish_date(period.end)
+        substitutions.update(
+            campaign_year=financial.definition.year_label,
+            financial_start=start,
+            financial_end=end,
+            financial_period=f"{start} – {end}",
+        )
     slots = {"welcome", "review", "thank_you"} | set(campaign.values["modules"])
     if campaign.values["additional_information"]:
         slots.add("additional")

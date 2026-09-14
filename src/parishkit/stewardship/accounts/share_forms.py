@@ -7,7 +7,7 @@ from django.forms import BaseFormSet, formset_factory
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.schema_primitives import text
-from parishkit.stewardship.web.content import validate_template
+from parishkit.stewardship.web.content import validate_share_label
 
 DEFAULT_LABELS = (
     "{{ pronoun }} will have my bank send a check (or this is already set up)",
@@ -43,12 +43,13 @@ class ShareOptionForm(forms.Form):
         value = self.cleaned_data["label"]
         try:
             text(value, 1024)
-            names = validate_template(value)
-            if not names <= {"parish_name", "pronoun"}:
-                raise ValueError
+            validate_share_label(value)
         except ValueError:
             raise forms.ValidationError(
-                _("Use visible text and only the parish_name and pronoun placeholders.")
+                _(
+                    "Use visible text and parish_name, pronoun, campaign_year, "
+                    "financial_period, financial_start or financial_end placeholders."
+                )
             ) from None
         return value
 

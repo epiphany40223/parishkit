@@ -48,6 +48,7 @@
     if (typeof value === "object") return JSON.stringify(Object.keys(value).sort().map(
       (key) => [key, canonical(value[key], key)]));
     const result = value.normalize("NFC").trim();
+    if (name === "annual_pledge") return String(moneyCents(result) ?? result);
     if (name.endsWith("_phone")) return JSON.stringify(phoneKey(result) || ["opaque", result]);
     return name === "email" ? result.toLowerCase().split(/[,;]/).map(
       (address) => address.trim()).filter(Boolean).sort().join(",") : result;
@@ -59,6 +60,7 @@
       canonical(initial.additional_information, "additional") ||
       canonical(requests, "requests") !== canonical(initialRequests, "requests") ||
       canonical(answers.ministries, "ministries") !== canonical(initial.ministries, "ministries") ||
+      canonical(answers.financial, "financial") !== canonical(initial.financial, "financial") ||
       canonical(answers.proposed_members, "proposed_members") !== canonical(initial.proposed_members, "proposed_members") ||
       Object.entries(answers.members).some(([id, fields]) =>
         Object.entries(fields).some(([name, value]) => canonical(value, name) !==
@@ -95,6 +97,7 @@
   }
   function accept(next, preserve) {
     const previous = answers, before = initial;
+    const previousFinancial = form?.financial;
     const previousRequests = requests, beforeRequests = initialRequests;
     const mailingDraft = separateMailing;
     form = next;
@@ -103,6 +106,7 @@
       (field) => [field.name, structuredClone(field.value)])),
       members: {}, proposed_members: {}, additional_information: next.additional_enabled ? next.additional_information : "",
       ministries: next.ministries ? {members: {}, proposed_members: {}} : {}, testing_acknowledged: false};
+    if (next.financial) answers.financial = structuredClone(next.financial.answers);
     if (next.household) answers.family.mailing_same_as_home = next.household.mailing_same_as_home;
     if (next.ministries) ["members", "proposed_members"].forEach((group) => {
       Object.entries(next.ministries[group]).forEach(([id, entry]) => {
@@ -184,6 +188,7 @@
         }
       });
       preserveMinistries(previous, before);
+      preserveFinancial(previous, before, previousFinancial);
       if (next.additional_enabled && canonical(previous.additional_information, "additional") !==
           canonical(before.additional_information, "additional")) {
         answers.additional_information = previous.additional_information;
@@ -230,8 +235,10 @@
     Object.entries(errors).forEach(([path, text]) => {
       const match = /^(?:members|proposed_members)\.([0-9a-f-]+)\.([a-z_]+)$/.exec(path);
       const household = /^family\.([a-z_]+)(?:\.([a-z0-9_]+))?$/.exec(path);
+      const financial = /^financial\.(annual_pledge|frequency|shares\.([0-9a-f-]+))$/.exec(path);
       const id = match ? "member-" + match[1] + "-" + match[2] :
         household ? "family-" + household[1] + (household[2] ? "-" + household[2] : "") :
+        financial ? "financial-" + (financial[2] ? "shares-" + financial[2] : financial[1]) :
         path === "additional_information" ? "additional-information" : null;
       const input = id ? document.getElementById(id) : null;
       const item = node("li", null, list);
@@ -592,6 +599,214 @@
     if (!selected) node("p", "No Ministry changes requested.", parent);
     node("p", "Parish staff or a Ministry leader may follow up; this does not change a roster automatically.", parent);
   }
+  function moneyCents(value) {
+    // Annual pledges fit exactly in JS integer cents; never multiply a parsed
+    // floating-point dollar amount. Source aggregates are formatted by Python.
+    if (typeof value !== "string" || value.length > 24) return null;
+    const text = value.normalize("NFC").trim();
+    if (!/^(?:[0-9]{1,9}|[0-9]{1,3}(?:,[0-9]{3}){1,2})(?:\.[0-9]{1,2})?$/.test(text)) return null;
+    const [whole, fraction = ""] = text.replaceAll(",", "").split(".");
+    const cents = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+    return Number.isSafeInteger(cents) && cents <= 99999999999 ? cents : null;
+  }
+  function moneyDisplay(cents) {
+    return cents === null ? "Not provided" : "$" + Math.floor(cents / 100).toLocaleString("en-US") +
+      "." + String(cents % 100).padStart(2, "0");
+  }
+  function financialLabel(option) {
+    const count = form.members.filter((member) => !requests[member.id]).length +
+      Object.keys(answers.proposed_members).length;
+    return option.labels[count === 0 ? "none" : count === 1 ? "one" : "many"];
+  }
+  function preserveFinancial(previous, before, previousForm) {
+    if (!previous.financial || !before.financial) return;
+    if (!form.financial) {
+      if (canonical(previous.financial, "financial") !== canonical(before.financial, "financial")) {
+        conflicts.set("financial.removed", {unavailable: true});
+      }
+      return;
+    }
+    form.financial.refreshed = true;
+    for (const key of ["annual_pledge", "frequency"]) {
+      const edited = previous.financial[key], old = before.financial[key], fresh = initial.financial[key];
+      if (canonical(edited, key) === canonical(old, key)) continue;
+      answers.financial[key] = edited;
+      if (canonical(old, key) !== canonical(fresh, key) && canonical(edited, key) !== canonical(fresh, key)) {
+        conflicts.set("financial." + key, {edited, refreshed: fresh});
+      }
+    }
+    const offered = new Set(form.financial.options.map((option) => option.id));
+    new Set([...Object.keys(previous.financial.shares), ...Object.keys(before.financial.shares)]).forEach((id) => {
+      const edited = previous.financial.shares[id], old = before.financial.shares[id];
+      const fresh = initial.financial.shares[id];
+      if (canonical(edited, "share") === canonical(old, "share")) return;
+      if (edited === undefined) delete answers.financial.shares[id];
+      else answers.financial.shares[id] = edited;
+      if (!offered.has(id) && edited !== undefined) {
+        const oldOption = [...previousForm.options, ...previousForm.unavailable_options].find((option) => option.id === id);
+        if (oldOption && !form.financial.unavailable_options.some((option) => option.id === id)) {
+          form.financial.unavailable_options.push(structuredClone(oldOption));
+        }
+      } else if (canonical(old, "share") !== canonical(fresh, "share") && canonical(edited, "share") !== canonical(fresh, "share")) {
+        conflicts.set("financial.shares." + id, {edited, refreshed: fresh});
+      }
+    });
+  }
+  function financialSource(parent) {
+    const value = form.financial;
+    node("p", "Upcoming stewardship period: " + value.upcoming.label, parent);
+    node("p", value.upcoming.start > form.today ?
+      "This pledge does not take effect before " + value.upcoming.start + "." :
+      "This stewardship period began on " + value.upcoming.start + ".", parent);
+    node("p", "Parish records for " + value.comparison.label + ": pledge " + value.pledge.display +
+      "; contributions " + value.contributions.display + ".", parent);
+    if (value.observed_at) node("p", "Giving records last refreshed " +
+      new Intl.DateTimeFormat(undefined, {dateStyle: "medium", timeStyle: "short"}).format(new Date(value.observed_at)) +
+      ". Contributions through " + value.through_date + ".", parent);
+    if (!value.pledge.available || !value.contributions.available) node("p",
+      "Financial records are unavailable or incomplete; this is not a zero balance. You can still enter your pledge.", parent);
+    if (value.refreshed) node("p", "Financial records or choices changed. Review the updated information before submitting again.", parent, {class: "changed"});
+  }
+  function financialEditor(parent, validators) {
+    const removed = conflicts.get("financial.removed");
+    if (removed && removed.choice === undefined) {
+      const group = node("fieldset", null, parent, {"data-conflict": "financial.removed"});
+      node("legend", "Financial stewardship was disabled while you were editing.", group);
+      node("button", "Discard edits to the disabled financial section", group, {type: "button"}).addEventListener("click", () => {
+        removed.choice = 0; edit();
+      });
+    }
+    if (!form.financial) return;
+    const group = node("fieldset", null, parent, {class: "panel", id: "financial-section"});
+    node("legend", "Financial stewardship", group);
+    block("financial", group);
+    financialSource(group);
+    node("p", "This form records your intention only. It does not take a payment or request bank or card credentials.", group);
+    node("label", "Annual pledge (USD)", group, {for: "financial-annual_pledge"});
+    const annual = node("input", null, group, {id: "financial-annual_pledge", type: "text", inputmode: "decimal",
+      required: "", maxlength: "24", autocomplete: "off", "aria-describedby": "financial-annual-hint"});
+    annual.value = answers.financial.annual_pledge;
+    const annualError = node("p", null, group, {id: "financial-annual-hint"});
+    node("label", "Pledge frequency", group, {for: "financial-frequency"});
+    const frequency = node("select", null, group, {id: "financial-frequency", "aria-describedby": "financial-frequency-hint"});
+    node("option", "Select a frequency (optional for a zero pledge)", frequency, {value: ""});
+    for (const [key, label] of [["weekly", "Weekly"], ["monthly", "Monthly"], ["quarterly", "Quarterly"], ["annual", "Once annually"]]) {
+      node("option", label, frequency, {value: key});
+    }
+    frequency.value = answers.financial.frequency;
+    const frequencyError = node("p", null, group, {id: "financial-frequency-hint"});
+    const approximation = node("p", null, group, {"aria-live": "polite", id: "financial-installment"});
+    let showErrors = false;
+    const validate = (show = true) => {
+      showErrors ||= show;
+      const cents = moneyCents(annual.value), periods = form.financial.frequencies[frequency.value];
+      annual.setCustomValidity(cents === null ? "Enter an annual pledge from $0.00 to $999,999,999.99 with up to two decimals." : "");
+      frequency.required = cents !== null && cents > 0;
+      frequency.setCustomValidity(frequency.required && !periods ? "Select a pledge frequency." : "");
+      for (const [input, error] of [[annual, annualError], [frequency, frequencyError]]) {
+        error.textContent = showErrors ? input.validationMessage : "";
+        error.hidden = !error.textContent;
+        input.setAttribute("aria-invalid", String(showErrors && !input.checkValidity()));
+      }
+      approximation.textContent = cents !== null && periods ?
+        "Approximately " + moneyDisplay(Math.floor((cents + Math.floor(periods / 2)) / periods)) +
+        " per " + ({weekly: "week", monthly: "month", quarterly: "quarter", annual: "year"})[frequency.value] +
+        ". The annual total remains " + moneyDisplay(cents) + "; the final payment may differ slightly." :
+        "Enter a pledge and select a frequency to see the approximate installment.";
+    };
+    annual.addEventListener("input", () => { answers.financial.annual_pledge = annual.value; validate(false); });
+    frequency.addEventListener("input", () => { answers.financial.frequency = frequency.value; validate(false); });
+    annual.addEventListener("blur", () => validate());
+    frequency.addEventListener("change", () => validate());
+    validators.push(() => validate());
+    conflictChoice("financial.annual_pledge", annual, group);
+    conflictChoice("financial.frequency", frequency, group);
+    validate(false);
+    const shares = node("fieldset", null, group);
+    node("legend", "How would you like to share? (optional)", shares);
+    form.financial.options.forEach((option) => {
+      const path = "financial.shares." + option.id, conflict = conflicts.get(path);
+      if (conflict && conflict.choice === undefined) {
+        const choices = node("fieldset", null, shares, {"data-conflict": path});
+        node("legend", "This sharing choice changed in another response: " + financialLabel(option), choices);
+        [["Keep my edit", conflict.edited], ["Use the updated response", conflict.refreshed]].forEach(([label, value], index) => {
+          node("button", label + ": " + (value === undefined ? "Not selected" : value || "Selected"), choices,
+            {type: "button"}).addEventListener("click", () => {
+            if (value === undefined) delete answers.financial.shares[option.id];
+            else answers.financial.shares[option.id] = value;
+            conflict.choice = index; edit();
+          });
+        });
+      }
+      const wrapper = node("label", null, shares, {for: "financial-option-" + option.id});
+      const checkbox = node("input", null, wrapper, {type: "checkbox", id: "financial-option-" + option.id});
+      checkbox.checked = option.id in answers.financial.shares;
+      checkbox.disabled = Boolean(conflict && conflict.choice === undefined);
+      wrapper.append(document.createTextNode(" " + financialLabel(option)));
+      if (!option.free_text && checkbox.checked && answers.financial.shares[option.id]) {
+        // A draft configuration can change an option's text requirement.
+        // Never erase a previously entered note without an explicit choice.
+        node("p", "This method no longer accepts details. Your note: " + answers.financial.shares[option.id], shares);
+        const label = node("label", null, shares);
+        const discard = node("input", null, label, {type: "checkbox", required: ""});
+        label.append(document.createTextNode(" Discard this note and keep the selected method"));
+        discard.addEventListener("change", () => {
+          if (discard.checked) { answers.financial.shares[option.id] = ""; edit(); }
+        });
+      }
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) answers.financial.shares[option.id] = "";
+        else delete answers.financial.shares[option.id];
+        edit(); document.getElementById("financial-shares-" + option.id)?.focus();
+        if (!option.free_text || !checkbox.checked) document.getElementById("financial-option-" + option.id)?.focus();
+      });
+      if (option.free_text && checkbox.checked) {
+        const id = "financial-shares-" + option.id;
+        node("label", "Details for " + financialLabel(option), shares, {for: id});
+        const extra = node("textarea", null, shares, {id, required: "", maxlength: String(form.financial.share_text_limit), rows: "3", "aria-describedby": id + "-hint"});
+        extra.value = answers.financial.shares[option.id];
+        extra.disabled = checkbox.disabled;
+        const error = node("p", null, shares, {id: id + "-hint"});
+        const validateText = () => {
+          extra.setCustomValidity(extra.value.trim() ? "" : "Provide details for this share method.");
+          error.textContent = extra.validationMessage; error.hidden = !error.textContent;
+          extra.setAttribute("aria-invalid", String(!extra.checkValidity()));
+        };
+        extra.addEventListener("input", () => { answers.financial.shares[option.id] = extra.value; validateText(); });
+        extra.addEventListener("blur", validateText);
+        validators.push(validateText);
+      }
+    });
+    const offered = new Set(form.financial.options.map((option) => option.id));
+    Object.keys(answers.financial.shares).filter((id) => !offered.has(id)).forEach((id) => {
+      const option = form.financial.unavailable_options.find((row) => row.id === id);
+      node("p", "A previously selected method is no longer available: " + (option ? financialLabel(option) : "Unavailable method") +
+        (answers.financial.shares[id] ? ". Your note: " + answers.financial.shares[id] : ""), shares);
+      const label = node("label", null, shares);
+      const remove = node("input", null, label, {type: "checkbox", required: "", id: "financial-removed-" + id});
+      label.append(document.createTextNode(" Remove this unavailable method before continuing"));
+      remove.addEventListener("change", () => {
+        if (remove.checked) { delete answers.financial.shares[id]; conflicts.delete("financial.shares." + id); edit(); }
+      });
+    });
+  }
+  function financialReview(parent) {
+    if (!form.financial) return;
+    const panel = node("section", null, parent, {class: "panel"});
+    node("h3", "Financial stewardship", panel);
+    financialSource(panel);
+    const cents = moneyCents(answers.financial.annual_pledge), frequency = answers.financial.frequency;
+    node("p", "Your annual pledge: " + moneyDisplay(cents), panel, {class: "changed"});
+    const periods = form.financial.frequencies[frequency];
+    node("p", periods ? "Approximate " + frequency + " installment: " +
+      moneyDisplay(Math.floor((cents + Math.floor(periods / 2)) / periods)) +
+      ". The annual total is authoritative; the final payment may differ slightly." : "No frequency selected (zero pledge).", panel);
+    const list = node("ul", null, panel);
+    form.financial.options.filter((option) => option.id in answers.financial.shares).forEach((option) => {
+      node("li", financialLabel(option) + (option.free_text ? ": " + answers.financial.shares[option.id] : ""), list);
+    });
+    if (!list.children.length) node("p", "No share methods selected.", panel);
+  }
   function householdDisplay(value) {
     if (value === null) return "Not provided";
     if (typeof value === "boolean") return value ? "Yes" : "No";
@@ -826,7 +1041,7 @@
     };
   }
   function edit() {
-    heading("Step 1 of 2: Review your household", form.household ? "census" : "ministry");
+    heading("Step 1 of 2: Review your household", form.household ? "census" : form.ministries ? "ministry" : "financial");
     node("progress", "50%", root, {max: "2", value: "1", "aria-label": "Response progress"});
     block("welcome", root);
     block("census", root);
@@ -842,7 +1057,7 @@
     const fields = [];
     const validateHousehold = form.household ? householdEditor(editor) : () => {};
     structuralConflicts(editor);
-    allMembers().forEach((member, index) => memberEditor(member, index, editor, fields,
+    if (form.household || form.ministries) allMembers().forEach((member, index) => memberEditor(member, index, editor, fields,
       () => reviewPointerDown));
     if (form.household) {
     const add = node("button", "Add a household member", editor, {type: "button"});
@@ -853,6 +1068,7 @@
       edit(); document.getElementById("member-" + id + "-first_name")?.focus();
     });
     }
+    financialEditor(editor, fields);
     if (form.additional_enabled) {
       block("additional", editor);
       node("label", "Additional information (optional)", editor, {for: "additional-information"});
@@ -911,7 +1127,7 @@
       }
     });
     }
-    allMembers().forEach((member, index) => {
+    if (form.household || form.ministries) allMembers().forEach((member, index) => {
       const panel = node("section", null, root, {class: "panel"});
       node("h3", memberName(member, index), panel);
       node("p", "Relationship: " + (member.relationship || "Not available in parish records"), panel);
@@ -938,6 +1154,7 @@
       });
       ministryReview(member, panel);
     });
+    financialReview(root);
     if (form.additional_enabled) node("p", "Additional information: " +
       (answers.additional_information || "Not provided"), root);
     const confirmation = node("form", null, root, {autocomplete: "off"});

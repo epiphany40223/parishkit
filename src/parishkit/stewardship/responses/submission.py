@@ -1,6 +1,7 @@
 """One local final-submit transaction, with no provider or queue I/O inside it."""
 
 from dataclasses import dataclass
+from decimal import Decimal
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -138,7 +139,9 @@ def submit_family(request, service, *, baseline_id, payload):
             ).date(),
             form_schema=FORM_SCHEMA,
             answers=answers,
-            annual_pledge=None,
+            annual_pledge=Decimal(answers["financial"]["annual_pledge"])
+            if "financial" in answers
+            else None,
             actor_id=family.pk,
         )
         submission.refresh_from_db(fields=["submitted_at", "submitted_on"])

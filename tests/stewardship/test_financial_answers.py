@@ -1,10 +1,12 @@
 """Pure financial intent validation: exact annual amount, frequency and sharing."""
 
+from datetime import date
 from decimal import Decimal, localcontext
 
 import pytest
 
 from parishkit.stewardship.reports.money import MoneyAmount
+from parishkit.stewardship.responses.answers import InvalidAnswers, validate_answers
 from parishkit.stewardship.responses.financial import (
     FREQUENCIES,
     InvalidFinancialAnswers,
@@ -14,6 +16,13 @@ from parishkit.stewardship.responses.financial import (
     pledge_amount,
     validate_financial_answers,
 )
+from parishkit.stewardship.responses.financial_inputs import (
+    financial_definition,
+    financial_inputs,
+)
+from parishkit.stewardship.responses.inputs import CensusInputs
+
+from .financial_factory import CAMPAIGN, configuration
 
 CHECK = "11111111-1111-4111-8111-111111111111"
 OTHER = "22222222-2222-4222-8222-222222222222"
@@ -192,3 +201,56 @@ def test_household_wording_rejects_invalid_counts(count):
     """Do not reinterpret invalid counts as singular or plural."""
     with pytest.raises(ValueError):
         household_pronoun(count)
+
+
+@pytest.mark.parametrize(
+    "enabled,include", [(False, True), (True, False), (True, True)]
+)
+def test_complete_answer_owner_requires_financial_only_for_enabled_module(
+    enabled, include
+):
+    """Reject omitted enabled and supplied disabled financial sections."""
+    definition = financial_definition(configuration(), campaign_id=CAMPAIGN)
+    money = financial_inputs(
+        definition, None, family_duid=1, pledges=[], contributions=[]
+    )
+    inputs = CensusInputs(
+        1,
+        (3,),
+        (),
+        "d" * 64,
+        modules=("financial",) if enabled else ("ministry",),
+        financial=money if enabled else None,
+    )
+    payload = {
+        "family": {},
+        "members": {"3": {}},
+        "proposed_members": {},
+        "ministries": {},
+        "additional_information": "",
+        "testing_acknowledged": False,
+    }
+    if include:
+        payload["financial"] = {
+            "annual_pledge": "12.3",
+            "frequency": "annual",
+            "shares": {},
+        }
+    if enabled != include:
+        with pytest.raises(InvalidAnswers):
+            validate_answers(
+                payload,
+                inputs,
+                additional_enabled=False,
+                testing=False,
+                today=date(2026, 10, 1),
+            )
+    else:
+        result = validate_answers(
+            payload,
+            inputs,
+            additional_enabled=False,
+            testing=False,
+            today=date(2026, 10, 1),
+        )
+        assert result["financial"]["annual_pledge"] == "12.30"

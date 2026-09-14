@@ -17,13 +17,14 @@ from parishkit.stewardship.audit.schemas import ContextKind, sanitize
 
 from .census import ADDRESS_LIMITS, FAMILY_FIELDS, country_choices, us_regions
 from .comparison import COMPARISON_VERSION, ValueKind, canonical_value
+from .financial import FREQUENCIES, MAX_PLEDGE_CENTS, SHARE_TEXT_LIMIT
 from .financial_inputs import FinancialInputs
 from .member_census import MEMBER_FIELDS, InvalidMemberSource, source_value
 from .member_requests import MAX_PROPOSED_MEMBERS, REQUEST_FIELDS
 from .merge import KnownValue
 from .ministry import MAX_MINISTRY_LABEL, MinistryInputs
 
-FORM_SCHEMA = "family-census-ministry-v1"
+FORM_SCHEMA = "family-response-v1"
 PROJECTION_VERSION = "family-inputs-v6"
 ADDITIONAL_MAX_LENGTH = 5000
 
@@ -116,7 +117,6 @@ class CensusInputs:
 def definition_digest(configuration):
     """Project relevant validated campaign configuration, excluding email schedules.
 
-    Financial campaigns remain unavailable until their complete owner is wired.
     Ministry adapters enumerate visible option additions/removals and current
     memberships independently of unrelated campaign settings. Content
     references are immutable, so their selected identities protect displayed
@@ -127,7 +127,7 @@ def definition_digest(configuration):
         type(modules) is not list
         or not modules
         or any(
-            type(value) is not str or value not in {"census", "ministry"}
+            type(value) is not str or value not in {"census", "ministry", "financial"}
             for value in modules
         )
         or len(modules) != len(set(modules))
@@ -139,6 +139,16 @@ def definition_digest(configuration):
         {
             "schema": FORM_SCHEMA,
             "modules": sorted(modules),
+            "financial": {
+                "periods": configuration.get("financial"),
+                "year_label": configuration.get("year_label"),
+                "options": configuration.get("share_options"),
+                "max_pledge_cents": MAX_PLEDGE_CENTS,
+                "share_text_limit": SHARE_TEXT_LIMIT,
+                "frequencies": FREQUENCIES,
+            }
+            if "financial" in modules
+            else None,
             "ministry_duids": sorted(configuration["ministry_duids"])
             if "ministry" in modules
             else [],
@@ -185,13 +195,14 @@ def definition_digest(configuration):
                     "welcome",
                     "census",
                     "ministry",
+                    "financial",
                     "review",
                     "thank_you",
                     "additional",
                 )
                 if key in content
                 and (key != "additional" or configuration["additional_information"])
-                and (key not in {"census", "ministry"} or key in modules)
+                and (key not in {"census", "ministry", "financial"} or key in modules)
             },
         }
     )

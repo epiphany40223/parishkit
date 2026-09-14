@@ -4177,6 +4177,56 @@ CREATE CONSTRAINT TRIGGER stewardship_family_pin_reference
     DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
     EXECUTE FUNCTION public.stewardship_family_pin_reference_v1();
 
+-- Enforce normalized financial intent independently of the Python final writer.
+-- This never authorizes payments or source writes; the scalar is report-only.
+CREATE FUNCTION public.stewardship_response_financial_guard_v1(
+    answer jsonb, options jsonb, annual numeric) RETURNS void
+    LANGUAGE plpgsql IMMUTABLE SET search_path TO pg_catalog, public, pg_temp
+AS $$
+DECLARE
+    share_key text;
+    share_value jsonb;
+    option_value jsonb;
+    text_value text;
+BEGIN
+    IF jsonb_typeof(answer) IS DISTINCT FROM 'object'
+       OR NOT (answer ?& ARRAY['annual_pledge','frequency','shares'])
+       OR answer-ARRAY['annual_pledge','frequency','shares'] <> '{}'::jsonb
+       OR jsonb_typeof(answer->'annual_pledge') IS DISTINCT FROM 'string'
+       OR answer->>'annual_pledge' !~ '^(0|[1-9][0-9]{0,8})\.[0-9]{2}$'
+       OR jsonb_typeof(answer->'frequency') IS DISTINCT FROM 'string'
+       OR answer->>'frequency' NOT IN ('','weekly','monthly','quarterly','annual')
+       OR jsonb_typeof(answer->'shares') IS DISTINCT FROM 'object'
+       OR jsonb_typeof(options) IS DISTINCT FROM 'array'
+    THEN
+        RAISE EXCEPTION 'Financial answer structure is invalid' USING ERRCODE='23514';
+    END IF;
+    IF annual IS DISTINCT FROM (answer->>'annual_pledge')::numeric
+       OR (annual>0 AND answer->>'frequency'='') THEN
+        RAISE EXCEPTION 'Financial annual pledge or frequency is invalid' USING ERRCODE='23514';
+    END IF;
+    FOR share_key,share_value IN SELECT key,value FROM jsonb_each(answer->'shares') LOOP
+        IF (SELECT count(*) FROM jsonb_array_elements(options) option
+            WHERE option->>'id'=share_key) <> 1
+           OR jsonb_typeof(share_value) IS DISTINCT FROM 'string' THEN
+            RAISE EXCEPTION 'Financial share selection is invalid' USING ERRCODE='23514';
+        END IF;
+        SELECT option INTO option_value FROM jsonb_array_elements(options) option
+            WHERE option->>'id'=share_key;
+        text_value := share_value#>>'{}';
+        IF length(text_value)>2000
+           OR text_value IS DISTINCT FROM public.stewardship_response_comparison_v1(
+               'first_name',share_value)
+           OR text_value ~ U&'[\0001-\0008\000B\000C\000E-\001F\007F]'
+           OR jsonb_typeof(option_value->'free_text') IS DISTINCT FROM 'boolean'
+           OR (option_value->'free_text'='true'::jsonb AND text_value='')
+           OR (option_value->'free_text'='false'::jsonb AND text_value<>'') THEN
+            RAISE EXCEPTION 'Financial share text is invalid' USING ERRCODE='23514';
+        END IF;
+    END LOOP;
+END;
+$$;
+
 -- A final response owns immutable history and one complete local effects batch.
 CREATE FUNCTION public.stewardship_submission_guard_v1() RETURNS trigger
     LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp
@@ -4234,15 +4284,15 @@ BEGIN
         OR NEW.prior_submission_id IS DISTINCT FROM baseline.prior_submission_id
         OR NEW.reviewed_source_id IS DISTINCT FROM baseline.source_id
         OR NEW.form_schema IS DISTINCT FROM baseline.form_schema
-        OR NEW.form_schema <> 'family-census-ministry-v1'
+        OR NEW.form_schema <> 'family-response-v1'
         OR NEW.configuration_id IS DISTINCT FROM runtime_row.active_configuration_id
         OR runtime_row.restore_review_required OR session_row.mode <> runtime_row.mode
         OR NEW.campaign_id IS DISTINCT FROM runtime_row.current_campaign_id
         OR config_row.id IS NULL OR campaign_row.id IS NULL
-        OR NOT (config_row.values->'modules' <@ '["census","ministry"]'::jsonb)
+        OR NOT (config_row.values->'modules' <@ '["census","ministry","financial"]'::jsonb)
         OR NEW.submitted_on IS DISTINCT FROM (NEW.submitted_at AT TIME ZONE config_row.timezone)::date
         OR NEW.submitted_at < config_row.starts_at OR NEW.submitted_at >= config_row.ends_at
-        OR NEW.annual_pledge IS NOT NULL
+        OR (NOT (config_row.values->'modules' ? 'financial') AND NEW.annual_pledge IS NOT NULL)
         OR NOT EXISTS (SELECT 1 FROM public.stewardship_family_campaign
             WHERE id=NEW.family_id AND campaign_id=NEW.campaign_id AND portal_eligible)
         OR NOT EXISTS (SELECT 1 FROM public.stewardship_source_current
@@ -4272,7 +4322,7 @@ BEGIN
         OR NEW.campaign_sequence <> last_sequence+1
         OR jsonb_typeof(NEW.answers) <> 'object'
         OR NOT (NEW.answers ?& ARRAY['schema','family','members','proposed_members','ministries','additional_information'])
-        OR NEW.answers - ARRAY['schema','family','members','proposed_members','ministries','additional_information'] <> '{}'::jsonb
+        OR NEW.answers - ARRAY['schema','family','members','proposed_members','ministries','additional_information','financial'] <> '{}'::jsonb
         OR NEW.answers->>'schema' IS DISTINCT FROM NEW.form_schema
         OR jsonb_typeof(NEW.answers->'family') <> 'object'
         OR jsonb_typeof(NEW.answers->'members') <> 'object'
@@ -4281,6 +4331,12 @@ BEGIN
         OR length(NEW.answers->>'additional_information') > 5000
     THEN
         RAISE EXCEPTION 'Submission aggregate or sequence is invalid' USING ERRCODE='23514';
+    END IF;
+    IF config_row.values->'modules' ? 'financial' THEN
+        PERFORM public.stewardship_response_financial_guard_v1(
+            NEW.answers->'financial',config_row.values->'share_options',NEW.annual_pledge);
+    ELSIF NEW.answers ? 'financial' THEN
+        RAISE EXCEPTION 'Disabled financial module must omit its answers' USING ERRCODE='23514';
     END IF;
     IF config_row.values->'modules' ? 'census' THEN
     IF NOT ((NEW.answers->'family') ?& ARRAY['home_address','mailing_address','email_opt_out','mailing_same_as_home'])

@@ -46,18 +46,18 @@ release, provider write or retained-data destructive action is authorized.
 
 ## Status and evidence
 
-Implementation has started. The initial pure money/answer checkpoint passes
+The initial pure money/answer checkpoint passed
 93 unit tests: exact signed source cents and unavailable/zero distinction,
 context-independent aggregation/installments, bounded annual pledge input,
 versioned share identity/free-text validation and effective household wording.
-These helpers are not yet exposed by the portal. No financial task is claimed
-complete until its source, transaction and browser integration passes.
+No financial task is claimed complete until its full validation/review and
+protected delivery evidence is recorded below.
 
 The source checkpoint adds campaign/fund/period coverage proof, retained giving
 observation timestamps, Family-bound aggregates and qualified snapshot/Family/
 fund queries. Financial inputs participate in projection version `family-inputs-v6`;
-the enabled-module gate still rejects financial campaigns until the complete
-submission/browser owner is wired. The web role receives read-only giving
+the complete submission/browser owner now admits financial campaigns under
+`family-response-v1`. The web role receives read-only giving
 tables and the snapshot cursor, with no source-write grant.
 
 Financial pure/adapter tests now total 125 passing cases. The full default
@@ -65,4 +65,29 @@ suite passed 5,261 tests. Real PostgreSQL validation passed 20 existing
 baseline/operational-authority checks and three new source tests using actual
 journaled configuration, staging, promotion and restricted web-role reads.
 These prove cross-Family exclusion and complete-zero versus unavailable data.
-No financial response has yet been accepted through the portal.
+
+The integrated owner now persists exact annual pledge scalars and complete
+financial answers only in the final transaction. Independent SQL guards enforce
+module boundaries, canonical amounts, known frequencies, stable option IDs and
+normalized bounded text. Existing receipt, source pin, test/live, repeat and
+rollback owners remain in that transaction. No payment or source write is added.
+
+The browser adds mobile/desktop financial context, exact-cent installments,
+share details and effective zero/one/many wording. Refreshed forms retain actual
+edits, require explicit competing-value/removal decisions, and never resubmit
+automatically. Disabled sections cannot retain submitted answers. Selected
+methods whose text requirement changes retain their old note until explicit
+discard. Page/share content uses only the existing inert substitutions.
+
+Integration checkpoint: 43 PostgreSQL response/guard cases pass, including
+restricted-web-role HTTP, all four financial module combinations in test and
+live mode, repeat replacement, concurrent responses, all-terminal households,
+source refresh and rollback. The default suite passed 5,284 cases. Twenty new
+pure presentation/definition tests pass. All 27 initial financial browser cases
+pass in three engines; full-suite/desktop coverage and delivery reviews follow.
+
+Initial browser failures were test defects: action checkboxes remove themselves
+before Playwright can verify a retained checked state, and the proposed-Member
+helper assumed insertion order despite UUID sorting. Tests now exercise the
+actual action and identify newly added controls by identity, without retries or
+increased timeouts. The complete validation and review loop remains pending.
