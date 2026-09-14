@@ -307,8 +307,9 @@ Before financial work, a small [OPS-09 browser-CI increment](../../guides/stewar
 reduces the measured 15–17-minute browser critical path while retaining the
 complete suite and protected aggregate check. Branch
 `pr/stewardship-browser-ci` starts at the PR #27 merge. Its implementation,
-three dual-source review/fix rounds and local validation are complete; final-head
-and protected merge-group CI remain before delivery. Gate 2 remains open.
+four dual-source review/fix rounds and local validation are complete, including
+the first PR CI's container-baseline timeout correction. New final-head and
+protected merge-group CI remain before delivery. Gate 2 remains open.
 
 1. Finish [FAM-03](parishioner-portal.md#fam-03-family-census-step); complete [FAM-04](parishioner-portal.md#fam-04-existing-and-proposed-member-steps), [FAM-05](parishioner-portal.md#fam-05-ministry-and-financial-stewardship-steps), [FAM-06](parishioner-portal.md#fam-06-additional-information-review-and-atomic-submit), and [FAM-07](parishioner-portal.md#fam-07-repeat-visits-and-source-change-merge).
 2. Exercise representative [FAM-08](parishioner-portal.md#fam-08-responsive-accessibility-privacy-and-browser-completion) cases continuously.

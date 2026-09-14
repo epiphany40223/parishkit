@@ -171,3 +171,60 @@ standing merge/continue authority applies after these pass. Measure actual
 GitHub engine/gate timing before claiming a CI speedup. The next implementation
 increment is financial forms, only after this PR's merge is verified on main;
 Gate 2 and later OPS-09 release/load-test work remain open.
+
+### First PR CI correction
+
+PR #28's first head `ee2c28d8f0dd9f0f73c40abf123924c8b6bb68d1` ran CI
+`34814952418`. Baseline validation passed 5,129 tests in 97.64 seconds; model
+drift and lint checks passed. The Compose core job reached its old 120-second
+per-command limit while executing the complete in-container baseline. This was
+not a failed assertion or evidence that the browser partitions omitted tests.
+
+Give only that full-suite command a finite 300-second maximum; other command
+limits stay unchanged. The maximum adds no sleep or delay to passing tests.
+Enable per-test progress and retain the last 40 lines/up to 8,000 characters
+on timeout so the active test is not hidden behind the collection manifest.
+Injected byte/text/empty-output tests prove the timeout still fails and the
+same UUID-owned project's existing cleanup runs. Focused unit validation:
+21 passed, 12 daemon-opt-in skips. A fresh local image and complete Compose
+validation plus a focused dual-model CI-correction review precede the next push.
+
+### Review round 4 and CI correction validation
+
+Session `20260914-025905-339e07` reviewed the CI-correction delta from
+`ee2c28d8f0dd9f0f73c40abf123924c8b6bb68d1` to
+`285e6f2a54ffbc2233e49caad552815c2125bc7a`, tree
+`c348f5b3c68bfbe25e73db4f6d08e28ffe77dadd`. Both reviewers completed without
+failure, degradation, mismatch or salvage. Raw severities: three Medium,
+five Low, no High/Critical. Two validated findings were dispositioned:
+
+- Agreed Medium, fixed: translating every timeout would suppress native
+  `TimeoutExpired` handling in live-probe retries and cleanup. Make diagnostic
+  conversion an explicit opt-in for the baseline command only. All other
+  callers preserve their original exception type and behavior.
+- Claude-only Medium, duplicate: the cleanup/original-error concern is the same
+  issue already included in the agreed finding and fixed by the same change.
+
+Fault-injection tests now execute the actual nested Compose helper and liveness
+retry loop, proving a five-second probe timeout retries successfully. A combined
+baseline/cleanup timeout preserves the original 300-second failure and emits
+the existing cleanup warning. Byte/text/empty diagnostic cases remain covered.
+Focused validation passed 31 tests, with 12 explicit daemon-opt-in skips.
+
+Finalized artifact SHA-256:
+`839c658650dab45a451726bfd457f9ca5d71a1677fceb78b385bba2ac802ea70`.
+These fixes and post-fix validation complete the fourth round under the
+controlling delivery cycle; a finding-free extra round is not required. Final
+local validation passed 5,134 default tests (51.04 seconds) and all 30 Compose
+checks (102.75 seconds), including 5,134 in-container tests (65.40 seconds) and
+exact host/container collection parity. Ruff, tracked Markdown and whitespace
+checks passed. The reviewed CI-correction endpoint remains on local branch
+`pr/stewardship-browser-ci-ci-reviewed`; its native-timeout corrections and
+evidence are consolidated into the same logical CI-correction commit before
+pushing. New final-head and protected merge-group CI remain before merge.
+
+The first PR run finished with every other check passing, including all eight
+PostgreSQL partitions and their coverage aggregate. All 639 browser cases passed;
+the browser stage took 10 minutes 10 seconds from the first engine start to
+aggregate completion, versus PR #27's 14 minutes 50 seconds (about 31% shorter
+in these runs). This is an observed comparison, not a guaranteed runtime.

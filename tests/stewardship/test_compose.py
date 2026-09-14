@@ -749,16 +749,30 @@ def test_development_container_lifecycle(tmp_path):
         str(override),
     ]
 
-    def compose(*arguments, check=True, timeout=120):
+    def compose(*arguments, check=True, timeout=120, diagnose_timeout=False):
         """Run only against the fresh disposable project, preserving error output."""
-        result = subprocess.run(
-            [*prefix, *arguments],
-            env=environment,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                [*prefix, *arguments],
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as error:
+            if not diagnose_timeout:
+                raise
+            # These UUID-owned fixtures contain synthetic data only. Retain the
+            # last progress lines rather than losing them behind a large manifest.
+            output = error.stdout or b""
+            if isinstance(output, bytes):
+                output = output.decode("utf-8", errors="replace")
+            pytest.fail(
+                f"Disposable Compose command exceeded {timeout}s: {arguments!r}\n"
+                + "\n".join(output.splitlines()[-40:])[-8000:],
+                pytrace=False,
+            )
         if check and result.returncode:
             # This UUID project contains synthetic data only. Capture bounded
             # service diagnostics before teardown so CI startup failures retain
@@ -848,11 +862,17 @@ def test_development_container_lifecycle(tmp_path):
             "tests",
             "tests",
             "--collection-manifest",
+            "--ci-progress",
             "-q",
             "-o",
             "addopts=",
             "-p",
             "no:cacheprovider",
+            # This executes the whole default suite, not just a startup probe.
+            # The host suite alone took 98s in CI; keep a finite margin for the
+            # container's process/filesystem overhead without delaying success.
+            timeout=300,
+            diagnose_timeout=True,
         )
         assert_collection_parity(host_collection.stdout, baseline.stdout)
         # Keep human-readable test evidence without repeating hundreds of IDs.

@@ -213,7 +213,8 @@ browser checks. The [browser-CI maintenance increment](../../guides/stewardship-
 now partitions the measured browser critical path while preserving complete
 validation and the required gate. It completes only that OPS-09.01/.03
 maintenance scope; later image/release/load-test acceptance remains open.
-Its local acceptance now passes 5,129 default tests and all 639 browser cases
-through three independently receipt-verified engine runners. Three dual-source
-review/fix rounds are complete with no unresolved accepted Medium+ findings;
-final-head and protected merge-group CI are still required before delivery.
+Its local acceptance now passes 5,134 default tests, all 30 Compose checks and
+all 639 browser cases through three independently receipt-verified engine
+runners. Four dual-source review/fix rounds, including the first PR CI's
+container-baseline timeout correction, are complete with no unresolved accepted
+Medium+ findings. New final-head and protected merge-group CI remain before delivery.
