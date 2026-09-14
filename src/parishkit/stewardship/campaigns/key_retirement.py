@@ -137,6 +137,14 @@ def retire_keys(previous, replacement, *, admit, dependencies):
         elif isinstance(previous, CodeMacKeyring):
             _verify_mac(previous, removed)
         else:
+            if isinstance(previous, TokenPrivateKeyring):
+                from parishkit.stewardship.jobs.outbox_models import OutboxMessage
+
+                # Terminal handling scrubs these dependencies. Until then keep
+                # the key: retry/uncertain mail must remain decryptable. Outbox
+                # insertion takes the same shared inventory lock in PostgreSQL.
+                if OutboxMessage.objects.filter(sealed_key_id__in=removed).exists():
+                    raise CryptographicError("Retained delivery requires this key.")
             counts = verify_ciphertexts(previous, admit=admit)
             if any(counts[key] for key in removed):
                 raise CryptographicError("Retained ciphertext requires this key.")

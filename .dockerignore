@@ -20,3 +20,5 @@
 !src/parishkit/stewardship/schema/tables.sql
 !src/parishkit/stewardship/schema/seed.sql
 !src/parishkit/stewardship/schema/guards.sql
+!src/parishkit/stewardship/schema/delivery.sql
+!src/parishkit/stewardship/schema/production.sql

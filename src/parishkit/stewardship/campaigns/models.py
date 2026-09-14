@@ -168,6 +168,12 @@ from .credential_models import (  # noqa: E402,F401
     RehearsalCredential,
     RehearsalEpoch,
 )
+from .production_models import (  # noqa: E402,F401
+    ProductionCleanupCheckpoint,
+    ProductionTransitionEvent,
+    ProductionTransitionRequest,
+    TestingAggregate,
+)
 from .runtime_models import (  # noqa: E402,F401
     ActivationCatchUpDemand,
     CampaignBoundaryOccurrence,

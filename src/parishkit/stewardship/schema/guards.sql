@@ -5339,3 +5339,184 @@ $$;
 CREATE CONSTRAINT TRIGGER stewardship_ministry_resolution_pin
     AFTER INSERT OR UPDATE ON public.stewardship_ministry_request DEFERRABLE INITIALLY DEFERRED
     FOR EACH ROW EXECUTE FUNCTION public.stewardship_ministry_resolution_pin_v1();
+
+-- Phase 4: durable delivery journal (fresh-install baseline only).
+ALTER TABLE "stewardship_delivery_pause_hold" ADD CONSTRAINT "stewardship_delivery_campaign_id_2e8810f7_fk_stewardsh" FOREIGN KEY ("campaign_id") REFERENCES "stewardship_campaign" ("id") DEFERRABLE INITIALLY DEFERRED;
+CREATE INDEX stewardship_delivery_pause_hold_correlation_id_551bfb45 ON public.stewardship_delivery_pause_hold USING btree (correlation_id);
+CREATE INDEX stewardship_delivery_pause_hold_campaign_id_2e8810f7 ON public.stewardship_delivery_pause_hold USING btree (campaign_id);
+ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "stewardship_outbox_m_campaign_id_92b12141_fk_stewardsh" FOREIGN KEY ("campaign_id") REFERENCES "stewardship_campaign" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "stewardship_outbox_m_family_id_fad78233_fk_stewardsh" FOREIGN KEY ("family_id") REFERENCES "stewardship_family_campaign" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "stewardship_outbox_m_task_id_dbcffa47_fk_stewardsh" FOREIGN KEY ("task_id") REFERENCES "stewardship_task_run" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "stewardship_outbox_m_render_id_e6d8aa8d_fk_stewardsh" FOREIGN KEY ("render_id") REFERENCES "stewardship_outbox_render" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "stewardship_outbox_m_run_id_9eb611b8_fk_stewardsh" FOREIGN KEY ("run_id") REFERENCES "stewardship_task_run" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "stewardship_outbox_m_pause_hold_id_e133dcb6_fk_stewardsh" FOREIGN KEY ("pause_hold_id") REFERENCES "stewardship_delivery_pause_hold" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "stewardship_jobs_outboxmessage_positive_version" CHECK ((version >= 1));
+ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_semantic_key" UNIQUE ("scope_id", "mode", "semantic_key");
+ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_known_state" CHECK (((state)::text = ANY ((ARRAY['pending'::character varying, 'submitting'::character varying, 'retry_wait'::character varying, 'delivery_unknown'::character varying, 'delivered'::character varying, 'permanent_failure'::character varying, 'cancelled'::character varying])::text[])));
+ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_action" CHECK (((action)::text = ANY ((ARRAY['created'::character varying, 'prepared'::character varying, 'hold'::character varying, 'release_hold'::character varying, 'submit'::character varying, 'accept'::character varying, 'retry_unaccepted'::character varying, 'fail_unaccepted'::character varying, 'mark_unknown'::character varying, 'cancel_unsent'::character varying, 'retry_failed'::character varying, 'authorize_resend'::character varying, 'retry_idempotent'::character varying])::text[])));
+ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_purpose" CHECK (((purpose)::text = ANY ((ARRAY['initial'::character varying, 'reminder'::character varying, 'receipt'::character varying, 'daily_digest'::character varying, 'weekly_digest'::character varying, 'operational'::character varying])::text[])));
+ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_mode" CHECK (((mode)::text = ANY ((ARRAY['testing'::character varying, 'production'::character varying])::text[])));
+ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_routing" CHECK ((((family_id IS NULL) AND ((purpose)::text = 'operational'::text) AND ((routing)::text = 'operational'::text)) OR ((NOT ((purpose)::text = 'operational'::text)) AND (campaign_id IS NOT NULL) AND ((((mode)::text = 'testing'::text) AND ((routing)::text = 'testing_override'::text)) OR (((mode)::text = 'production'::text) AND ((routing)::text = 'production'::text))))));
+ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_family_purpose" CHECK ((((family_id IS NOT NULL) AND ((purpose)::text = ANY ((ARRAY['initial'::character varying, 'reminder'::character varying, 'receipt'::character varying])::text[]))) OR ((family_id IS NULL) AND ((purpose)::text = ANY ((ARRAY['daily_digest'::character varying, 'weekly_digest'::character varying, 'operational'::character varying])::text[])))));
+ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_credential_namespace" CHECK ((((credential_epoch_id IS NULL) AND ((credential_namespace)::text = 'none'::text) AND (rehearsal_epoch_id IS NULL) AND (sealed_key_id IS NULL) AND (sealed_substitutions IS NULL) AND (token_generation_id IS NULL)) OR ((family_id IS NOT NULL) AND (((credential_epoch_id IS NOT NULL) AND ((credential_namespace)::text = 'production'::text) AND ((mode)::text = 'production'::text) AND (rehearsal_epoch_id IS NULL) AND (token_generation_id IS NOT NULL)) OR ((credential_epoch_id IS NULL) AND ((credential_namespace)::text = 'rehearsal'::text) AND ((mode)::text = 'testing'::text) AND (rehearsal_epoch_id IS NOT NULL) AND (token_generation_id IS NULL))))));
+ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_terminal_scrub" CHECK ((((finished_at IS NOT NULL) AND (sealed_key_id IS NULL) AND (sealed_substitutions IS NULL) AND ((state)::text = ANY ((ARRAY['delivered'::character varying, 'permanent_failure'::character varying, 'cancelled'::character varying])::text[]))) OR ((NOT ((state)::text = ANY ((ARRAY['delivered'::character varying, 'permanent_failure'::character varying, 'cancelled'::character varying])::text[]))) AND (finished_at IS NULL) AND (((credential_namespace)::text = 'none'::text) OR ((sealed_key_id IS NOT NULL) AND (sealed_substitutions IS NOT NULL))))));
+ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_attempt_shape" CHECK ((((attempt = 0) AND (provider_deadline IS NULL) AND (run_id IS NULL) AND (submitted_at IS NULL) AND (task_fence IS NULL) AND (worker_id IS NULL)) OR ((attempt >= 1) AND (provider_deadline >= submitted_at) AND (provider_deadline IS NOT NULL) AND (run_id IS NOT NULL) AND (submitted_at IS NOT NULL) AND (task_fence >= 1) AND (task_fence IS NOT NULL) AND (worker_id IS NOT NULL))));
+ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_submitted_outcome" CHECK (((NOT ((state)::text = ANY ((ARRAY['submitting'::character varying, 'delivery_unknown'::character varying, 'delivered'::character varying, 'retry_wait'::character varying])::text[]))) OR (attempt >= 1)));
+ALTER TABLE "stewardship_outbox_message" ADD CONSTRAINT "outbox_pause_shape" CHECK (((pause_hold_id IS NULL) OR ((campaign_id IS NOT NULL) AND (pause_version >= 1) AND (pause_version IS NOT NULL) AND ((routing)::text = 'production'::text) AND ((state)::text = ANY ((ARRAY['pending'::character varying, 'retry_wait'::character varying])::text[])))));
+CREATE INDEX stewardship_outbox_message_correlation_id_0c75b3a1 ON public.stewardship_outbox_message USING btree (correlation_id);
+CREATE INDEX stewardship_outbox_message_campaign_id_92b12141 ON public.stewardship_outbox_message USING btree (campaign_id);
+CREATE INDEX stewardship_outbox_message_family_id_fad78233 ON public.stewardship_outbox_message USING btree (family_id);
+CREATE INDEX stewardship_outbox_message_render_id_e6d8aa8d ON public.stewardship_outbox_message USING btree (render_id);
+CREATE INDEX stewardship_outbox_message_run_id_9eb611b8 ON public.stewardship_outbox_message USING btree (run_id);
+CREATE INDEX stewardship_outbox_message_pause_hold_id_e133dcb6 ON public.stewardship_outbox_message USING btree (pause_hold_id);
+CREATE INDEX outbox_due ON public.stewardship_outbox_message USING btree (state, not_before);
+CREATE INDEX outbox_campaign_state ON public.stewardship_outbox_message USING btree (campaign_id, state);
+ALTER TABLE "stewardship_outbox_render" ADD CONSTRAINT "stewardship_outbox_r_message_id_39aa1986_fk_stewardsh" FOREIGN KEY ("message_id") REFERENCES "stewardship_outbox_message" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_outbox_render" ADD CONSTRAINT "stewardship_outbox_r_configuration_id_99518083_fk_stewardsh" FOREIGN KEY ("configuration_id") REFERENCES "stewardship_configuration_version" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_outbox_render" ADD CONSTRAINT "stewardship_outbox_r_template_id_03c3fe62_fk_stewardsh" FOREIGN KEY ("template_id") REFERENCES "stewardship_content_version" ("id") DEFERRABLE INITIALLY DEFERRED;
+CREATE INDEX stewardship_outbox_render_correlation_id_35abecbe ON public.stewardship_outbox_render USING btree (correlation_id);
+CREATE INDEX stewardship_outbox_render_message_id_39aa1986 ON public.stewardship_outbox_render USING btree (message_id);
+CREATE INDEX stewardship_outbox_render_configuration_id_99518083 ON public.stewardship_outbox_render USING btree (configuration_id);
+CREATE INDEX stewardship_outbox_render_template_id_03c3fe62 ON public.stewardship_outbox_render USING btree (template_id);
+ALTER TABLE "stewardship_outbox_event" ADD CONSTRAINT "stewardship_outbox_e_message_id_76759adb_fk_stewardsh" FOREIGN KEY ("message_id") REFERENCES "stewardship_outbox_message" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_outbox_event" ADD CONSTRAINT "stewardship_outbox_e_render_id_2b451d37_fk_stewardsh" FOREIGN KEY ("render_id") REFERENCES "stewardship_outbox_render" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_outbox_event" ADD CONSTRAINT "stewardship_outbox_e_run_id_83bf61a0_fk_stewardsh" FOREIGN KEY ("run_id") REFERENCES "stewardship_task_run" ("id") DEFERRABLE INITIALLY DEFERRED;
+CREATE INDEX stewardship_outbox_event_correlation_id_aa2e01f5 ON public.stewardship_outbox_event USING btree (correlation_id);
+CREATE INDEX stewardship_outbox_event_message_id_76759adb ON public.stewardship_outbox_event USING btree (message_id);
+CREATE INDEX stewardship_outbox_event_render_id_2b451d37 ON public.stewardship_outbox_event USING btree (render_id);
+CREATE INDEX stewardship_outbox_event_run_id_83bf61a0 ON public.stewardship_outbox_event USING btree (run_id);
+CREATE INDEX outbox_attempt_history ON public.stewardship_outbox_event USING btree (message_id, attempt);
+ALTER TABLE "stewardship_testing_aggregate" ADD CONSTRAINT "stewardship_testing__campaign_id_520d6fde_fk_stewardsh" FOREIGN KEY ("campaign_id") REFERENCES "stewardship_campaign" ("id") DEFERRABLE INITIALLY DEFERRED;
+CREATE INDEX stewardship_testing_aggregate_correlation_id_e3223a56 ON public.stewardship_testing_aggregate USING btree (correlation_id);
+CREATE INDEX stewardship_testing_aggregate_campaign_id_520d6fde ON public.stewardship_testing_aggregate USING btree (campaign_id);
+ALTER TABLE "stewardship_production_request" ADD CONSTRAINT "stewardship_producti_campaign_id_dbf732a0_fk_stewardsh" FOREIGN KEY ("campaign_id") REFERENCES "stewardship_campaign" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_production_request" ADD CONSTRAINT "stewardship_producti_configuration_id_8854e8af_fk_stewardsh" FOREIGN KEY ("configuration_id") REFERENCES "stewardship_configuration_version" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_production_request" ADD CONSTRAINT "stewardship_producti_aggregate_id_cf4ee133_fk_stewardsh" FOREIGN KEY ("aggregate_id") REFERENCES "stewardship_testing_aggregate" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_production_request" ADD CONSTRAINT "stewardship_producti_task_id_4bea4b69_fk_stewardsh" FOREIGN KEY ("task_id") REFERENCES "stewardship_task_run" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_production_request" ADD CONSTRAINT "stewardship_producti_run_id_6c574742_fk_stewardsh" FOREIGN KEY ("run_id") REFERENCES "stewardship_task_run" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_production_request" ADD CONSTRAINT "stewardship_campaigns_productiontransitionrequest_positive_version" CHECK ((version >= 1));
+ALTER TABLE "stewardship_production_request" ADD CONSTRAINT "production_request_key" UNIQUE ("campaign_id", "request_key");
+CREATE UNIQUE INDEX production_one_gate_owner ON public.stewardship_production_request USING btree (campaign_id) WHERE ((state)::text = ANY ((ARRAY['cleanup_queued'::character varying, 'cleanup_running'::character varying, 'cleanup_retry_wait'::character varying, 'cleanup_complete'::character varying, 'cleanup_failed'::character varying])::text[]));
+ALTER TABLE "stewardship_production_request" ADD CONSTRAINT "production_known_state" CHECK (((state)::text = ANY ((ARRAY['cleanup_queued'::character varying, 'cleanup_running'::character varying, 'cleanup_retry_wait'::character varying, 'cleanup_complete'::character varying, 'cleanup_failed'::character varying, 'activated'::character varying, 'cancelled'::character varying])::text[])));
+ALTER TABLE "stewardship_production_request" ADD CONSTRAINT "production_known_action" CHECK (((action)::text = ANY ((ARRAY['created'::character varying, 'start'::character varying, 'checkpoint'::character varying, 'retry_later'::character varying, 'fail'::character varying, 'retry_failed'::character varying, 'complete'::character varying, 'activate'::character varying, 'cancel'::character varying])::text[])));
+ALTER TABLE "stewardship_production_request" ADD CONSTRAINT "production_count_bounds" CHECK (((gate_version >= 1) AND (processed_count <= inventory_total)));
+ALTER TABLE "stewardship_production_request" ADD CONSTRAINT "production_inventory_digest" CHECK (((inventory_digest)::text ~ '^[0-9a-f]{64}$'::text));
+ALTER TABLE "stewardship_production_request" ADD CONSTRAINT "production_safe_failure" CHECK ((((failure_reason)::text = ''::text) OR ((failure_reason)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text)));
+ALTER TABLE "stewardship_production_request" ADD CONSTRAINT "production_attempt_binding" CHECK ((((run_id IS NULL) AND (task_fence IS NULL) AND (worker_id IS NULL)) OR ((run_id IS NOT NULL) AND (task_fence >= 1) AND (task_fence IS NOT NULL) AND (worker_id IS NOT NULL))));
+ALTER TABLE "stewardship_production_request" ADD CONSTRAINT "production_activation_shape" CHECK ((((activated_at IS NOT NULL) AND ((activation_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((state)::text = 'activated'::text)) OR ((NOT ((state)::text = 'activated'::text)) AND (activated_at IS NULL) AND ((activation_digest)::text = ''::text))));
+CREATE INDEX stewardship_production_request_correlation_id_e79144ba ON public.stewardship_production_request USING btree (correlation_id);
+CREATE INDEX stewardship_production_request_campaign_id_dbf732a0 ON public.stewardship_production_request USING btree (campaign_id);
+CREATE INDEX stewardship_production_request_configuration_id_8854e8af ON public.stewardship_production_request USING btree (configuration_id);
+CREATE INDEX stewardship_production_request_run_id_6c574742 ON public.stewardship_production_request USING btree (run_id);
+ALTER TABLE "stewardship_production_checkpoint" ADD CONSTRAINT "stewardship_producti_request_id_7c7c3689_fk_stewardsh" FOREIGN KEY ("request_id") REFERENCES "stewardship_production_request" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_production_checkpoint" ADD CONSTRAINT "stewardship_producti_run_id_8d838fc3_fk_stewardsh" FOREIGN KEY ("run_id") REFERENCES "stewardship_task_run" ("id") DEFERRABLE INITIALLY DEFERRED;
+CREATE INDEX stewardship_production_checkpoint_correlation_id_8dcebca4 ON public.stewardship_production_checkpoint USING btree (correlation_id);
+CREATE INDEX stewardship_production_checkpoint_request_id_7c7c3689 ON public.stewardship_production_checkpoint USING btree (request_id);
+CREATE INDEX stewardship_production_checkpoint_run_id_8d838fc3 ON public.stewardship_production_checkpoint USING btree (run_id);
+ALTER TABLE "stewardship_production_event" ADD CONSTRAINT "stewardship_producti_request_id_6155bbb3_fk_stewardsh" FOREIGN KEY ("request_id") REFERENCES "stewardship_production_request" ("id") DEFERRABLE INITIALLY DEFERRED;
+CREATE INDEX stewardship_production_event_correlation_id_8210f962 ON public.stewardship_production_event USING btree (correlation_id);
+CREATE INDEX stewardship_production_event_request_id_6155bbb3 ON public.stewardship_production_event USING btree (request_id);
+
+            CREATE FUNCTION "stewardship_delivery_pause_hold_immutable_v1"()
+            RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                RAISE EXCEPTION 'Historical records are append-only'
+                    USING ERRCODE = '23514';
+            END;
+            $$;
+            CREATE TRIGGER "stewardship_delivery_pause_hold_immutable_guard_v1"
+            BEFORE UPDATE OR DELETE ON "stewardship_delivery_pause_hold"
+            FOR EACH ROW EXECUTE FUNCTION "stewardship_delivery_pause_hold_immutable_v1"();
+
+            CREATE FUNCTION "stewardship_outbox_message_mutable_v1"()
+            RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."scope_id" IS DISTINCT FROM OLD."scope_id" OR NEW."semantic_key" IS DISTINCT FROM OLD."semantic_key" OR NEW."campaign_id" IS DISTINCT FROM OLD."campaign_id" OR NEW."family_id" IS DISTINCT FROM OLD."family_id" OR NEW."mode" IS DISTINCT FROM OLD."mode" OR NEW."routing" IS DISTINCT FROM OLD."routing" OR NEW."purpose" IS DISTINCT FROM OLD."purpose" OR NEW."task_id" IS DISTINCT FROM OLD."task_id" OR NEW."credential_namespace" IS DISTINCT FROM OLD."credential_namespace" OR NEW."rehearsal_epoch_id" IS DISTINCT FROM OLD."rehearsal_epoch_id" THEN
+                    RAISE EXCEPTION 'Record identity and bindings are immutable'
+                        USING ERRCODE = '23514';
+                END IF;
+                IF NEW.version IS DISTINCT FROM OLD.version + 1 THEN
+                    RAISE EXCEPTION 'Every update must advance the record version'
+                        USING ERRCODE = '23514';
+                END IF;
+                NEW.updated_at := statement_timestamp();
+                RETURN NEW;
+            END;
+            $$;
+            CREATE TRIGGER "stewardship_outbox_message_mutable_guard_v1"
+            BEFORE UPDATE ON "stewardship_outbox_message"
+            FOR EACH ROW EXECUTE FUNCTION "stewardship_outbox_message_mutable_v1"();
+
+            CREATE FUNCTION "stewardship_outbox_render_immutable_v1"()
+            RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                RAISE EXCEPTION 'Historical records are append-only'
+                    USING ERRCODE = '23514';
+            END;
+            $$;
+            CREATE TRIGGER "stewardship_outbox_render_immutable_guard_v1"
+            BEFORE UPDATE OR DELETE ON "stewardship_outbox_render"
+            FOR EACH ROW EXECUTE FUNCTION "stewardship_outbox_render_immutable_v1"();
+
+            CREATE FUNCTION "stewardship_outbox_event_immutable_v1"()
+            RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                RAISE EXCEPTION 'Historical records are append-only'
+                    USING ERRCODE = '23514';
+            END;
+            $$;
+            CREATE TRIGGER "stewardship_outbox_event_immutable_guard_v1"
+            BEFORE UPDATE OR DELETE ON "stewardship_outbox_event"
+            FOR EACH ROW EXECUTE FUNCTION "stewardship_outbox_event_immutable_v1"();
+
+            CREATE FUNCTION "stewardship_testing_aggregate_immutable_v1"()
+            RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                RAISE EXCEPTION 'Historical records are append-only'
+                    USING ERRCODE = '23514';
+            END;
+            $$;
+            CREATE TRIGGER "stewardship_testing_aggregate_immutable_guard_v1"
+            BEFORE UPDATE OR DELETE ON "stewardship_testing_aggregate"
+            FOR EACH ROW EXECUTE FUNCTION "stewardship_testing_aggregate_immutable_v1"();
+
+            CREATE FUNCTION "stewardship_production_request_mutable_v1"()
+            RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."campaign_id" IS DISTINCT FROM OLD."campaign_id" OR NEW."initiated_by_id" IS DISTINCT FROM OLD."initiated_by_id" OR NEW."request_key" IS DISTINCT FROM OLD."request_key" OR NEW."configuration_id" IS DISTINCT FROM OLD."configuration_id" OR NEW."aggregate_id" IS DISTINCT FROM OLD."aggregate_id" OR NEW."inventory_digest" IS DISTINCT FROM OLD."inventory_digest" OR NEW."inventory_counts" IS DISTINCT FROM OLD."inventory_counts" OR NEW."inventory_total" IS DISTINCT FROM OLD."inventory_total" OR NEW."gate_version" IS DISTINCT FROM OLD."gate_version" OR NEW."invalidated_epoch_id" IS DISTINCT FROM OLD."invalidated_epoch_id" OR NEW."task_id" IS DISTINCT FROM OLD."task_id" OR NEW."acknowledged_at" IS DISTINCT FROM OLD."acknowledged_at" OR NEW."reauthenticated_at" IS DISTINCT FROM OLD."reauthenticated_at" THEN
+                    RAISE EXCEPTION 'Record identity and bindings are immutable'
+                        USING ERRCODE = '23514';
+                END IF;
+                IF NEW.version IS DISTINCT FROM OLD.version + 1 THEN
+                    RAISE EXCEPTION 'Every update must advance the record version'
+                        USING ERRCODE = '23514';
+                END IF;
+                NEW.updated_at := statement_timestamp();
+                RETURN NEW;
+            END;
+            $$;
+            CREATE TRIGGER "stewardship_production_request_mutable_guard_v1"
+            BEFORE UPDATE ON "stewardship_production_request"
+            FOR EACH ROW EXECUTE FUNCTION "stewardship_production_request_mutable_v1"();
+
+            CREATE FUNCTION "stewardship_production_checkpoint_immutable_v1"()
+            RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                RAISE EXCEPTION 'Historical records are append-only'
+                    USING ERRCODE = '23514';
+            END;
+            $$;
+            CREATE TRIGGER "stewardship_production_checkpoint_immutable_guard_v1"
+            BEFORE UPDATE OR DELETE ON "stewardship_production_checkpoint"
+            FOR EACH ROW EXECUTE FUNCTION "stewardship_production_checkpoint_immutable_v1"();
+
+            CREATE FUNCTION "stewardship_production_event_immutable_v1"()
+            RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                RAISE EXCEPTION 'Historical records are append-only'
+                    USING ERRCODE = '23514';
+            END;
+            $$;
+            CREATE TRIGGER "stewardship_production_event_immutable_guard_v1"
+            BEFORE UPDATE OR DELETE ON "stewardship_production_event"
+            FOR EACH ROW EXECUTE FUNCTION "stewardship_production_event_immutable_v1"();

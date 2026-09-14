@@ -50,5 +50,53 @@ authorized by this increment.
 
 ## Evidence
 
-Planning and dependency inspection are complete. Implementation, validation and
-review are in progress; no DAT-07 checkbox is newly complete.
+The internal outbox and Production-cleanup journals are implemented. Validation
+and peer review are in progress; no DAT-07 checkbox is newly complete.
+
+- Pure transition/input suites: 198 tests passed across delivery states,
+  Production states, redacted render inputs and cleanup summaries.
+- Full credential-free baseline: 5,498 passed in 49.99 seconds; database and
+  explicitly opted-in container tests remain separate. Two existing Valkey
+  client deprecation warnings are unchanged.
+- Broader PostgreSQL regression: 94 passed in 31.57 seconds with no warnings,
+  covering both journals, complete strict schema/model checks and shared storage
+  guards. Includes retained-key rejection and exact attempt-replay parameters.
+- Outbox PostgreSQL checkpoint: 27 tests passed, including schema/model and
+  all-model immutability guards, with no warnings.
+- Production PostgreSQL checkpoint: 13 tests passed, including schema/model
+  equivalence. A pytest collection warning from an imported model name was
+  corrected afterward; the full rerun remains required.
+- Actual runtime grant checks deny generic outbox writes to web, worker,
+  scheduler and mail-dispatch. Operational delivery and activation entry points
+  remain unavailable rather than accepting a caller-supplied permission flag.
+- Pre-cleanup counts, gated request state, batch progress and immutable history
+  are durable. A synthetic deletion-owner test proves late denial/count/fence
+  failures roll back both deleted rows and their checkpoint. Final activation
+  is explicitly rejected pending its complete ADM-05 owner.
+
+### Fresh-install schema audit
+
+An independently created reference database was installed from merged
+`6c8cd512e5121095961ffbeb3f80f4dfd844043c`. Its full strict fingerprint matches
+that commit before comparison with the candidate. Every preexisting relation,
+column, constraint, index, function, trigger and policy is unchanged; none is
+removed. The additions are eight journal tables, 152 columns, 224 constraints,
+51 indexes, 20 functions and 20 triggers. The only new guard attached to an
+existing table is the deferred go-live-gate pin on campaign credentials.
+All 28 existing row policies are unchanged.
+
+The candidate totals are 137 relations, 1,635 columns, 2,349 constraints,
+718 indexes, 334 functions, 332 triggers and 28 policies. The reviewed function
+fingerprint is
+`c37d10b60d33c4f27b5703509f088a812c59fd29cdc6963d47cedba15caabc86`.
+The all-model comparison independently confirms current field types, defaults,
+nullability, foreign keys and complete constraint/index definitions. The strict
+fixture was updated only after inspecting the additive catalog delta.
+
+All SQL remains one atomic fresh installation. Production model state joins the
+existing campaigns initial migration. One additional jobs **initial state-only**
+step resolves the outbox's cross-app references after campaign/configuration
+models exist; putting those references in the earlier jobs step would create a
+dependency cycle. There is no retained-database upgrade/downgrade or deletion.
+Two explicitly allowlisted SQL files keep the new workflow guards readable
+without broadening Docker's default-deny build context.
