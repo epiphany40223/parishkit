@@ -10,6 +10,7 @@ from datetime import date
 
 from .census import HOUSEHOLD_FIELDS, InvalidHousehold, validate_household
 from .census import clean_text as _text
+from .financial import InvalidFinancialAnswers, validate_financial_answers
 from .inputs import ADDITIONAL_MAX_LENGTH, FORM_SCHEMA, CensusInputs
 from .member_requests import (
     MAX_PROPOSED_MEMBERS,
@@ -30,7 +31,15 @@ class InvalidAnswers(ValueError):
         super().__init__("Please review the indicated Family form fields.")
 
 
-def validate_answers(payload, inputs, *, additional_enabled, testing, today):
+def validate_answers(
+    payload,
+    inputs,
+    *,
+    additional_enabled,
+    testing,
+    today,
+    retained_terminal_members=frozenset(),
+):
     """Validate all active Members and explicit test consent without persisting.
 
     Text limits are part of the server-owned form definition. Known source
@@ -43,16 +52,22 @@ def validate_answers(payload, inputs, *, additional_enabled, testing, today):
         or type(additional_enabled) is not bool
         or type(testing) is not bool
         or type(today) is not date
+        or type(retained_terminal_members) is not frozenset
+        or not retained_terminal_members <= {str(key) for key in inputs.member_duids}
     ):
         raise TypeError("Trusted form definition and namespace are required.")
-    if type(payload) is not dict or set(payload) != {
+    expected_fields = {
         "family",
         "members",
         "proposed_members",
         "ministries",
         "additional_information",
         "testing_acknowledged",
-    }:
+    }
+    financial_enabled = "financial" in inputs.modules
+    if financial_enabled:
+        expected_fields.add("financial")
+    if type(payload) is not dict or set(payload) != expected_fields:
         raise InvalidAnswers(
             {"form": "Reload the authorized form and review its fields."}
         )
@@ -146,7 +161,8 @@ def validate_answers(payload, inputs, *, additional_enabled, testing, today):
         ministries = validate_ministry_answers(
             payload["ministries"],
             inputs.ministries,
-            terminal_members=frozenset(
+            terminal_members=(retained_terminal_members if not census else frozenset())
+            | frozenset(
                 key
                 for key, values in normalized.items()
                 if values.get("moved_household") or values.get("deceased_status")
@@ -155,6 +171,16 @@ def validate_answers(payload, inputs, *, additional_enabled, testing, today):
         )
     except InvalidMinistryAnswers as error:
         errors.update(error.fields)
+    financial = None
+    if financial_enabled:
+        if inputs.financial is None:
+            raise TypeError("Trusted financial inputs are required.")
+        try:
+            financial = validate_financial_answers(
+                payload["financial"], inputs.financial.definition.options
+            )
+        except InvalidFinancialAnswers as error:
+            errors.update(error.fields)
     additional = _text(payload["additional_information"], ADDITIONAL_MAX_LENGTH)
     if additional is None or (not additional_enabled and additional):
         errors["additional_information"] = (
@@ -162,7 +188,7 @@ def validate_answers(payload, inputs, *, additional_enabled, testing, today):
         )
     if errors:
         raise InvalidAnswers(errors)
-    return {
+    result = {
         "schema": FORM_SCHEMA,
         "family": household,
         "members": normalized,
@@ -170,3 +196,6 @@ def validate_answers(payload, inputs, *, additional_enabled, testing, today):
         "ministries": ministries,
         "additional_information": additional,
     }
+    if financial_enabled:
+        result["financial"] = financial
+    return result

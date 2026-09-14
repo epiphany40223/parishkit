@@ -35,7 +35,14 @@ def request_index(submission):
     return {(row.entity_kind, row.entity_key, row.ministry_duid): row for row in rows}
 
 
-def ministry_presentation(inputs, prior, *, terminal_members, proposed_members):
+def ministry_presentation(
+    inputs,
+    prior,
+    *,
+    terminal_members,
+    proposed_members,
+    unavailable_members=frozenset(),
+):
     """Expose only currently offered labels and unresolved authorized choices."""
     require_work_order()
     if inputs is None:
@@ -52,6 +59,8 @@ def ministry_presentation(inputs, prior, *, terminal_members, proposed_members):
     for entity, key, current in [
         ("member", str(key), frozenset(values)) for key, values in inputs.memberships
     ] + [("proposed_member", key, frozenset()) for key in sorted(proposed_members)]:
+        if entity == "member" and key in unavailable_members:
+            continue
         choices = {"join": [], "leave": []} if entity == "member" else {"join": []}
         for ministry in sorted(offered):
             old = previous.get((entity, key, ministry))

@@ -150,8 +150,9 @@ def _choices(value, allowed):
 def validate_ministry_answers(payload, inputs, *, terminal_members, proposed_members):
     """Validate complete visible choices, never interpret hidden omissions here.
 
-    Terminal/proposed identity sets come from the already validated census
-    aggregate. The later derivation owner distinguishes an informed withdrawal
+    Terminal/proposed identity sets come from the validated census aggregate,
+    or retained server-owned terminal intent when census is disabled. The
+    later derivation owner distinguishes an informed withdrawal
     from a request absent because its Ministry is hidden or its Member terminal.
     Disabled modules accept an empty object only and cannot create work.
     """

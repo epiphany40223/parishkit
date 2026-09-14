@@ -111,3 +111,40 @@ def effective_fields(inputs, submission):
         )
         for field in inputs.fields
     )
+
+
+@dataclass(frozen=True)
+class HouseholdComposition:
+    """Internal effective count/eligibility; no terminal reasons or proposed details."""
+
+    member_count: int
+    terminal_members: frozenset[str]
+
+
+def effective_household(member_duids, submission):
+    """Derive shared financial wording and Ministry eligibility from retained intent.
+
+    Disabled census must not reveal terminal/proposed details, but its retained
+    unresolved requests still affect household composition. Resolved terminal
+    requests defer to the current active source identity set.
+    """
+    proposals = proposal_index(submission)
+    inactive = RESOLVED_EXECUTIONS | {"cancelled", "superseded"}
+    terminal = {
+        key
+        for (entity, key, field), row in proposals.items()
+        if entity == "member"
+        and field in {"moved_household", "deceased_status"}
+        and row.execution not in inactive
+        and row.submitted_value is True
+    }
+    proposed = sum(
+        entity == "proposed_member"
+        and field == "new_member"
+        and row.execution not in inactive
+        for (entity, _, field), row in proposals.items()
+    )
+    members = frozenset(map(str, member_duids))
+    return HouseholdComposition(
+        len(members - terminal) + proposed, frozenset(terminal & members)
+    )

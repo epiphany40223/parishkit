@@ -87,10 +87,10 @@ Scope and dependencies: [FAM-05 work package](../../plans/stewardship/parishione
 
 - [x] FAM-05.01 — Build current, join, and leave Ministry controls.
 - [x] FAM-05.02 — Apply campaign Ministry selection and Admin-managed activity boundaries.
-- [ ] FAM-05.03 — Build financial aggregates, pledge, and installment calculation.
-- [ ] FAM-05.04 — Build share options and zero/one/many Member wording.
-- [ ] FAM-05.05 — Show financial periods and unavailable source data.
-- [ ] FAM-05.06 — Test Ministry, financial, and terminal-Member interactions.
+- [x] FAM-05.03 — Build financial aggregates, pledge, and installment calculation.
+- [x] FAM-05.04 — Build share options and zero/one/many Member wording.
+- [x] FAM-05.05 — Show financial periods and unavailable source data.
+- [x] FAM-05.06 — Test Ministry, financial, and terminal-Member interactions.
 
 Evidence: [Ministry increment](../../guides/stewardship-ministry-responses.md)
 implements .01/.02 and tests the Ministry portions of .06, including proposed
@@ -100,6 +100,14 @@ campaigns. Local validation and the
 are complete; final-head/merge-group CI passed and PR #27's protected merge is
 verified on `origin/main`. Financial work remains a separate
 following increment, so .06 stays open.
+
+The [financial increment](../../guides/stewardship-financial-responses.md) completes
+.03–.06 with scoped source aggregates, atomic guarded submission and the mobile
+editor/review/revisit flow. Three dual-model review/fix rounds are complete with
+all accepted Medium+ findings corrected. All 699 browser cases pass; the linked
+ledger records PostgreSQL/coverage evidence and the independently audited schema
+fingerprint correction. Protected PR CI and merge remain delivery requirements.
+Integrated Family acceptance and Gate 2 remain open.
 
 ## FAM-06: Additional information, review, and atomic submit
 

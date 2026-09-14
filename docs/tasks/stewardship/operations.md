@@ -217,4 +217,6 @@ Its local acceptance now passes 5,136 default tests, all 30 Compose checks and
 all 639 browser cases through three independently receipt-verified engine
 runners. Five dual-source review/fix rounds, including the container-baseline
 timeout and oversized-log corrections, are complete with no unresolved accepted
-Medium+ findings. New final-head and protected merge-group CI remain before delivery.
+Medium+ findings. PR #28 passed final-head CI `34819275741` and complete
+merge-group CI `34820311292`; its protected merge
+`c0ab9a1259c6a2c459b6568917e2da56278f061b` is verified on `origin/main`.

@@ -1,6 +1,7 @@
 """One local final-submit transaction, with no provider or queue I/O inside it."""
 
 from dataclasses import dataclass
+from decimal import Decimal
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -24,6 +25,7 @@ from .baselines import (
     end_baseline,
     issue_baseline,
 )
+from .effective import effective_household
 from .followup import derive_additional_information
 from .inputs import FORM_SCHEMA
 from .ministry_requests import derive_ministry_requests
@@ -102,6 +104,11 @@ def submit_family(request, service, *, baseline_id, payload):
             today=_now()
             .astimezone(ZoneInfo(campaign.active_configuration.timezone))
             .date(),
+            retained_terminal_members=effective_household(
+                validated.current.member_duids, validated.prior_submission
+            ).terminal_members
+            if "census" not in validated.current.modules
+            else frozenset(),
         )
         mode = "test" if session.mode == "testing" else "live"
         sequence = (
@@ -138,7 +145,9 @@ def submit_family(request, service, *, baseline_id, payload):
             ).date(),
             form_schema=FORM_SCHEMA,
             answers=answers,
-            annual_pledge=None,
+            annual_pledge=Decimal(answers["financial"]["annual_pledge"])
+            if "financial" in answers
+            else None,
             actor_id=family.pk,
         )
         submission.refresh_from_db(fields=["submitted_at", "submitted_on"])

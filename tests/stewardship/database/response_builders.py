@@ -46,6 +46,11 @@ def response_source():
 @pytest.fixture
 def live_response_service(response_service):
     """Activate through real rehearsal cleanup and token/lifecycle services."""
+    return activate_response_service(response_service)
+
+
+def activate_response_service(harness):
+    """Activate a prepared synthetic campaign through its actual lifecycle owner."""
     from parishkit.stewardship.campaigns.family_identity import (
         code_context as live_code_context,
     )
@@ -57,7 +62,6 @@ def live_response_service(response_service):
 
     from .campaign_builders import command
 
-    harness = response_service
     epoch = invalidate_rehearsal(
         campaign_id=harness.campaign.pk, admit=lambda *args: True
     )

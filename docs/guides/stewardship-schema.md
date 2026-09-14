@@ -25,6 +25,10 @@ The [Ministry response increment](stewardship-ministry-responses.md#fresh-instal
 adds the workflows app's initial state-only migration and the Ministry request
 table to that same baseline. It retains the pre-production fresh-install policy.
 
+The [financial response increment](stewardship-financial-responses.md#fresh-install-schema-audit)
+adds two functions and changes two existing submission guards, without changing
+tables, columns, constraints, indexes, triggers or policies.
+
 The SQL files under `src/parishkit/stewardship/schema/` install the final function
 definitions, tables, seed sentinels and guards directly. Only function-body
 validation is temporarily deferred within the installation transaction because

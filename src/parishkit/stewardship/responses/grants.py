@@ -12,6 +12,10 @@ def add_response_web_grants(tables, columns):
         "stewardship_source_ministry",
         "stewardship_snapshot_roster",
         "stewardship_source_roster",
+        "stewardship_snapshot_pledge",
+        "stewardship_source_pledge",
+        "stewardship_snapshot_contribution",
+        "stewardship_source_contribution",
         "stewardship_submission",
     ):
         tables[table] = {"SELECT"}
@@ -25,7 +29,7 @@ def add_response_web_grants(tables, columns):
     # Extend, never replace, the setup catalog's task/fence metadata reads.
     snapshot = columns.setdefault("stewardship_source_snapshot", {})
     snapshot.setdefault("SELECT", set()).update(
-        {"id", "promoted_at", "state", "compacted_at", "generation"}
+        {"id", "promoted_at", "state", "compacted_at", "generation", "cursor"}
     )
     snapshot.setdefault("UPDATE", set()).add("id")
     for table in (

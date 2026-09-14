@@ -78,6 +78,9 @@ def answers_for(form):
         if form["ministries"] is not None
         else {},
         "testing_acknowledged": form["testing"],
+        **(
+            {"financial": form["financial"]["answers"]} if form.get("financial") else {}
+        ),
     }
 
 

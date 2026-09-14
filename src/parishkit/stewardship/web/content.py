@@ -37,6 +37,16 @@ PLACEHOLDERS = frozenset(
     }
 )
 PLACEHOLDER = re.compile(r"{{\s*([a-z_]+)\s*}}")
+SHARE_PLACEHOLDERS = frozenset(
+    {
+        "parish_name",
+        "pronoun",
+        "campaign_year",
+        "financial_period",
+        "financial_start",
+        "financial_end",
+    }
+)
 
 
 def bounded_text(value):
@@ -146,6 +156,15 @@ def render_template(value, substitutions, *, html=False, subject=False):
         raise ValueError("Invalid email subject substitution.")
     bounded_text(rendered)
     return sanitize_html(rendered) if html else rendered
+
+
+def validate_share_label(value):
+    """Share options permit only non-private parish, period and pronoun values."""
+    if type(value) is not str or not value.strip() or len(value) > 1024:
+        raise ValueError("A bounded share-option label is required.")
+    if not validate_template(value) <= SHARE_PLACEHOLDERS:
+        raise ValueError("Unsupported share-option placeholder.")
+    return value
 
 
 @dataclass(frozen=True)

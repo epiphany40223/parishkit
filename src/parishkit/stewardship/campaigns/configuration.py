@@ -14,6 +14,7 @@ from parishkit.stewardship.schema_primitives import (
     timezone_names,
     typed,
 )
+from parishkit.stewardship.web.content import validate_share_label
 
 from .domain import EnabledModules
 from .intervals import campaign_interval, financial_period_end, resolve_local
@@ -124,6 +125,10 @@ def campaign_values(values):
             invalid()
         typed(option["id"], "uuid")
         text(option["label"], 1024)
+        try:
+            validate_share_label(option["label"])
+        except ValueError:
+            invalid()
         if option["id"] in seen or type(option["free_text"]) is not bool:
             invalid()
         seen.add(option["id"])

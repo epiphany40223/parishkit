@@ -262,6 +262,14 @@ Members terminal does not discard or clear the Family's pledge/share answers.
 With a zero pledge, frequency/share methods are optional but allowed to express
 a non-cash intent.
 
+The `campaign_year` placeholder consistently means the configured campaign year
+label, or the campaign start year when no label is supplied, in Admin previews,
+page content and share labels. Use `financial_period`, `financial_start` and
+`financial_end` for the upcoming pledge period; enabling financial stewardship
+does not change the meaning of `campaign_year`. Preserved unresolved census
+intent still contributes to the effective household count if census is later
+disabled; expose the count without exposing disabled census request details.
+
 The page does not collect bank/card credentials or initiate a payment.
 
 ## Additional information

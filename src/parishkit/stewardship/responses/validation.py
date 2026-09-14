@@ -94,6 +94,8 @@ def validate_baseline(identifier, *, family, session, campaign):
         family.family_duid,
         configuration=definition.values,
         document=definition.configuration.canonical_document,
+        campaign_id=campaign.pk,
+        parish_name=definition.configuration.parish.name,
     )
     if (
         reviewed.projection_digest != baseline.projection_digest
@@ -118,6 +120,8 @@ def validate_baseline(identifier, *, family, session, campaign):
         family.family_duid,
         configuration=campaign.active_configuration.values,
         document=campaign.active_configuration.configuration.canonical_document,
+        campaign_id=campaign.pk,
+        parish_name=campaign.active_configuration.configuration.parish.name,
     )
     prior = effective_submission(family, session)
     return BaselineValidation(
