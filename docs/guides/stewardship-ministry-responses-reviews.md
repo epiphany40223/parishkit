@@ -5,8 +5,8 @@
 
 Reviews use `local-review` and `local-review-triage` with standing autonomous
 triage/correction authority. Pika owns the Claude/Codex roster. Local review
-artifacts remain outside Git. All three local rounds are complete. Gate 2,
-final-head CI and the protected merge are not yet complete. No provider write, deployment, release or retained-database
+artifacts remain outside Git. All three local rounds, final-head CI and the
+protected merge are complete. Gate 2 remains open. No provider write, deployment, release or retained-database
 upgrade is authorized by this ledger.
 
 ## Round 1: Complete Ministry response increment
@@ -140,3 +140,24 @@ The three completed rounds remain valid; final CI verification for the updated
 head is recorded on [PR #27](https://github.com/epiphany40223/parishkit/pull/27)
 before merge. The preceding history/tree mapping describes the pre-CI
 consolidation; this subsequent signed-off test/evidence commit is separate.
+
+## Final CI and protected merge
+
+PR #27's corrected head `d419d01c2446d42ca0a8f82dce00328c0f4ef768` passed
+[final-head CI](https://github.com/epiphany40223/parishkit/actions/runs/34809744592):
+5,037 default tests, all 2,418 PostgreSQL tests, 639 browser cases, container
+scenarios, lint/format/Markdown, model drift and DCO. Execution manifests prove
+one complete database universe across eight partitions. Scoped coverage is
+94.05% statements and 85.65% branches.
+
+Standing owner authority was exercised through the ordinary queue at that
+exact green head, with no protection bypass. The PR merged September 14, 2026
+at 05:57:31 UTC as `6e493657da0b48985a642ddcd38430837640e06e`, verified on
+refreshed `origin/main`. The complete
+[merge-group CI](https://github.com/epiphany40223/parishkit/actions/runs/34810746440)
+also passed, including the browser check that finished after the merge. No
+next-increment implementation began before that final result.
+
+The Ministry increment is delivered. Gate 2 still requires financial and
+integrated acceptance. Browser CI's recurring 15–17-minute critical path is
+addressed in a small OPS-09 increment before those financial forms.

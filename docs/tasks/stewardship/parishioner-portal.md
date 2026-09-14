@@ -97,7 +97,8 @@ implements .01/.02 and tests the Ministry portions of .06, including proposed
 Members, hidden request preservation, roster resolution and Ministry-only
 campaigns. Local validation and the
 [three-round review](../../guides/stewardship-ministry-responses-reviews.md)
-are complete; final-head CI and protected merge remain pending. Financial work remains a separate
+are complete; final-head/merge-group CI passed and PR #27's protected merge is
+verified on `origin/main`. Financial work remains a separate
 following increment, so .06 stays open.
 
 ## FAM-06: Additional information, review, and atomic submit

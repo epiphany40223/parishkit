@@ -50,7 +50,8 @@ selection/aggregation failure paths.
 ## Evidence
 
 Implementation, local validation and all three dual-model review/fix rounds
-are complete. Final-head CI and the protected merge remain pending. Gate 2
+are complete. Final-head and merge-group CI passed; PR #27's protected merge
+is verified on `origin/main` in the [delivery ledger](stewardship-ministry-responses-reviews.md#final-ci-and-protected-merge). Gate 2
 still requires the financial increment and integrated acceptance. PR #26
 passed final-head CI with 4,998 default tests,
 2,377 PostgreSQL tests, 621 browser cases and 94.02% statement/85.53% branch

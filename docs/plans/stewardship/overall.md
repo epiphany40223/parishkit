@@ -324,6 +324,14 @@ not merely field helpers. Leave partially fulfilled FAM-04 tasks unchecked.
 This keeps the ordinary census expansion reviewable without mixing in the
 separate semantic requests and local-identity lifecycle.
 
+After the Ministry increment (PR #27), deliver one small OPS-09 browser-CI
+parallelization increment before financial forms. Its measured 15–17-minute
+critical path repeats on PR and merge-group runs. Keep every browser case,
+fresh per-test processes and the required aggregate check; test complete,
+disjoint partitioning and fail-closed gate behavior. Follow the same three-round
+review and protected delivery cycle. This maintenance increment changes no
+Family behavior and does not release Gate 2.
+
 1. Finish **FAM-03** and implement **FAM-04**, **FAM-05**, **FAM-06**, and
    **FAM-07** for all census, proposed Member, Ministry, financial, additional,
    submit, and repeat-merge behavior.
