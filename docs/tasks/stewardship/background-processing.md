@@ -45,7 +45,10 @@ Scope and dependencies: [BG-02 work package](../../plans/stewardship/background-
 - [ ] BG-02.04 — Recover overdue boundaries in order while enforcing exact access gates.
 - [ ] BG-02.05 — Test DST, restart, duplicate, and boundary races.
 
-Evidence: Not started.
+Evidence: [Campaign-boundary increment](../../guides/stewardship-campaign-boundaries.md)
+begins from verified PR #31 merge `f4e000c5`. Existing ordered boundary storage
+is the substrate, not completed scheduler/worker integration. No new checkbox
+is complete. BG-02.03's shared restore/reopen token worker stays in Phase 6.
 
 ## BG-03: Production-transition cleanup worker
 

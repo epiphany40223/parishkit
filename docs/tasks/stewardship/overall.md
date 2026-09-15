@@ -353,9 +353,12 @@ later cleanup/scheduler/dispatch/UI owners and Gate 3 restrictions. No Phase 4
 task is yet claimed wholly complete. The journal slice now has three successful
 dual-source review/fix rounds and passing local regression/schema evidence in
 its [review ledger](../../guides/stewardship-delivery-reviews.md#third-correction-review).
-Final-head CI and protected delivery remain pending before branching the next
-BG-02 campaign-boundary increment; BG-03/04 continue after that in the order
-below.
+Final-head CI and complete merge-group validation subsequently passed, and
+PR #31 merged as `f4e000c5b3f7024e47c7f6d3dbdd30c6cd4976e1`, verified on
+refreshed `origin/main`. The next branch, `pr/stewardship-campaign-boundaries`,
+starts at that exact tip. Its [scope and checkpoints](../../guides/stewardship-campaign-boundaries.md)
+cover BG-02's Phase 4 start/close behavior; BG-03/04 continue afterward in the
+order below. Restore/reopen token preparation and Gate 3 remain later work.
 
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).
