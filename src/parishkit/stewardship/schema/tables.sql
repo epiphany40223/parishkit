@@ -1200,7 +1200,7 @@ CREATE TABLE public.stewardship_operational_log (
         'installer_request_failed','source_refresh_invalid','source_member_unusable',
         'source_refresh_held','source_credential_failed','source_provider_failed',
         'credential_handoff_key_mismatch','setup_credential_staged',
-        'setup_credential_scrubbed','campaign_boundary_lag')),
+        'setup_credential_scrubbed','campaign_boundary_lag','production_cleanup_failed')),
     CONSTRAINT operational_log_level CHECK (((level)::text = ANY ((ARRAY['DEBUG'::character varying, 'INFO'::character varying, 'WARNING'::character varying, 'ERROR'::character varying, 'CRITICAL'::character varying])::text[])))
 );
 
@@ -2459,6 +2459,69 @@ CREATE TABLE "stewardship_ministry_request" ("id" uuid NOT NULL PRIMARY KEY,
     CONSTRAINT "ministry_request_successor" CHECK ((("state" = 'superseded' AND "superseded_by_id" IS NOT NULL) OR (NOT ("state" = 'superseded') AND "superseded_by_id" IS NULL))),
     CONSTRAINT "ministry_request_not_own_next" CHECK (NOT ("superseded_by_id" = ("id") AND "superseded_by_id" IS NOT NULL)));
 
+-- Exact cleanup membership is created with its request and never exposed as
+-- general deletion authority. Foreign keys are installed with the other guards.
+-- This private proof exists only inside one trigger-owned batch transaction.
+-- Runtime roles receive no privileges on it; it is empty at every commit.
+CREATE TABLE public.stewardship_production_cancellation (
+    id uuid PRIMARY KEY,
+    created_at timestamp with time zone DEFAULT statement_timestamp() NOT NULL,
+    actor_id uuid,
+    correlation_id uuid NOT NULL,
+    request_id uuid NOT NULL UNIQUE,
+    command_id uuid NOT NULL UNIQUE,
+    expected_version bigint NOT NULL CHECK(expected_version>=0)
+);
+CREATE INDEX production_cancellation_correlation ON public.stewardship_production_cancellation(correlation_id);
+
+CREATE TABLE public.stewardship_cleanup_effect (
+    transaction_id xid8 NOT NULL,
+    checkpoint_id uuid NOT NULL,
+    request_id uuid NOT NULL,
+    category varchar(32) NOT NULL,
+    target_id uuid NOT NULL,
+    PRIMARY KEY (transaction_id, category, target_id)
+);
+CREATE TABLE public.stewardship_production_manifest (
+    id uuid PRIMARY KEY,
+    created_at timestamptz NOT NULL DEFAULT statement_timestamp(),
+    actor_id uuid,
+    correlation_id uuid NOT NULL,
+    request_id uuid NOT NULL UNIQUE,
+    catalog_version smallint NOT NULL DEFAULT 1 CHECK (catalog_version >= 0),
+    delivery_counts jsonb NOT NULL,
+    delivery_attempts bigint NOT NULL CHECK (delivery_attempts >= 0),
+    template_ids jsonb NOT NULL,
+    testing_recipient_fingerprint varchar(64) NOT NULL,
+    CONSTRAINT production_manifest_catalog CHECK (catalog_version = 1)
+);
+CREATE INDEX production_manifest_correlation ON public.stewardship_production_manifest (correlation_id);
+CREATE TABLE public.stewardship_production_target (
+    id uuid PRIMARY KEY,
+    created_at timestamptz NOT NULL DEFAULT statement_timestamp(),
+    actor_id uuid,
+    correlation_id uuid NOT NULL,
+    request_id uuid NOT NULL,
+    category varchar(32) NOT NULL,
+    target_id uuid NOT NULL,
+    CONSTRAINT production_target_identity UNIQUE (request_id, category, target_id),
+    position bigint NOT NULL DEFAULT 0 CHECK (position >= 0),
+    CONSTRAINT production_target_position UNIQUE (request_id, position),
+    CONSTRAINT production_target_category CHECK (category::text = ANY (ARRAY[
+        ('baselines'::varchar)::text,('session_data'::varchar)::text,('family_sessions'::varchar)::text,
+        ('ministry_requests'::varchar)::text,('occurrences'::varchar)::text,('occurrence_events'::varchar)::text,
+        ('outbox_events'::varchar)::text,('outbox_messages'::varchar)::text,('outbox_renders'::varchar)::text,
+        ('proposals'::varchar)::text,('rehearsal_credentials'::varchar)::text,('rehearsal_macs'::varchar)::text,
+        ('schedule_fulfillments'::varchar)::text,('source_pins'::varchar)::text,
+        ('submission_receipts'::varchar)::text,('submissions'::varchar)::text,
+        ('prior_inventory_targets'::varchar)::text
+    ]))
+);
+CREATE INDEX production_target_correlation ON public.stewardship_production_target (correlation_id);
+CREATE INDEX production_target_request ON public.stewardship_production_target (request_id);
+CREATE INDEX production_target_lookup ON public.stewardship_production_target (category, target_id);
+CREATE INDEX source_pin_owner_lookup ON public.stewardship_source_pin (parent_kind, parent_id);
+
 -- Phase 4: durable delivery journal (fresh-install baseline only).
 CREATE TABLE "stewardship_delivery_pause_hold" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "campaign_id" uuid NOT NULL, "pause_version" bigint NOT NULL CHECK ("pause_version" >= 0), CONSTRAINT "delivery_pause_identity" UNIQUE (campaign_id, pause_version), CONSTRAINT "delivery_pause_positive" CHECK ((pause_version >= 1)));
 CREATE TABLE "stewardship_outbox_message" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "updated_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "version" bigint NOT NULL CHECK ("version" >= 0), "command_id" uuid NOT NULL, "command_digest" varchar(64) NOT NULL, "action" varchar(24) NOT NULL, "provider_key_digest" varchar(64) NOT NULL, "provider_message_digest" varchar(64) NOT NULL, "evidence_digest" varchar(64) NOT NULL, "evidence_note" varchar(2000) NOT NULL, "reason" varchar(64) NOT NULL, "scope_id" uuid NOT NULL, "semantic_key" uuid NOT NULL, "campaign_id" uuid NULL, "family_id" uuid NULL, "mode" varchar(16) NOT NULL, "routing" varchar(24) NOT NULL, "purpose" varchar(24) NOT NULL, "task_id" uuid NOT NULL UNIQUE, "render_id" uuid NOT NULL, "credential_namespace" varchar(16) NOT NULL, "rehearsal_epoch_id" uuid NULL, "token_generation_id" uuid NULL, "credential_epoch_id" uuid NULL, "sealed_substitutions" text NULL, "sealed_key_id" varchar(48) NULL, "state" varchar(24) DEFAULT 'pending' NOT NULL, "attempt" bigint DEFAULT 0 NOT NULL CHECK ("attempt" >= 0), "not_before" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "run_id" uuid NULL, "task_fence" bigint NULL CHECK ("task_fence" >= 0), "worker_id" uuid NULL, "submitted_at" timestamp with time zone NULL, "provider_deadline" timestamp with time zone NULL, "finished_at" timestamp with time zone NULL, "pause_hold_id" uuid NULL, "pause_version" bigint NULL CHECK ("pause_version" >= 0));
@@ -2466,5 +2529,5 @@ CREATE TABLE "stewardship_outbox_render" ("id" uuid NOT NULL PRIMARY KEY, "creat
 CREATE TABLE "stewardship_outbox_event" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "command_id" uuid NOT NULL, "command_digest" varchar(64) NOT NULL, "action" varchar(24) NOT NULL, "provider_key_digest" varchar(64) NOT NULL, "provider_message_digest" varchar(64) NOT NULL, "evidence_digest" varchar(64) NOT NULL, "evidence_note" varchar(2000) NOT NULL, "reason" varchar(64) NOT NULL, "message_id" uuid NOT NULL, "version" bigint NOT NULL CHECK ("version" >= 0), "previous_state" varchar(24) NOT NULL, "state" varchar(24) NOT NULL, "attempt" bigint NOT NULL CHECK ("attempt" >= 0), "render_id" uuid NOT NULL, "run_id" uuid NULL, "task_fence" bigint NULL CHECK ("task_fence" >= 0), "worker_id" uuid NULL, "not_before" timestamp with time zone NOT NULL, "submitted_at" timestamp with time zone NULL, "provider_deadline" timestamp with time zone NULL, "finished_at" timestamp with time zone NULL, CONSTRAINT "outbox_event_version" UNIQUE (message_id, version), CONSTRAINT "outbox_command_once" UNIQUE (message_id, command_id), CONSTRAINT "outbox_event_positive" CHECK ((version >= 1)), CONSTRAINT "outbox_command_digest" CHECK (((command_digest)::text ~ '^[0-9a-f]{64}$'::text)), CONSTRAINT "outbox_event_action" CHECK (((action)::text = ANY ((ARRAY['created'::character varying, 'prepared'::character varying, 'hold'::character varying, 'release_hold'::character varying, 'submit'::character varying, 'accept'::character varying, 'retry_unaccepted'::character varying, 'fail_unaccepted'::character varying, 'mark_unknown'::character varying, 'cancel_unsent'::character varying, 'retry_failed'::character varying, 'authorize_resend'::character varying, 'retry_idempotent'::character varying])::text[]))), CONSTRAINT "outbox_event_state" CHECK (((state)::text = ANY ((ARRAY['pending'::character varying, 'submitting'::character varying, 'retry_wait'::character varying, 'delivery_unknown'::character varying, 'delivered'::character varying, 'permanent_failure'::character varying, 'cancelled'::character varying])::text[]))), CONSTRAINT "outbox_event_previous_state" CHECK (((previous_state)::text = ANY ((ARRAY[''::character varying, 'pending'::character varying, 'submitting'::character varying, 'retry_wait'::character varying, 'delivery_unknown'::character varying, 'delivered'::character varying, 'permanent_failure'::character varying, 'cancelled'::character varying])::text[]))), CONSTRAINT "outbox_event_digests" CHECK (((((provider_key_digest)::text = ''::text) OR ((provider_key_digest)::text ~ '^[0-9a-f]{64}$'::text)) AND (((provider_message_digest)::text = ''::text) OR ((provider_message_digest)::text ~ '^[0-9a-f]{64}$'::text)) AND (((evidence_digest)::text = ''::text) OR ((evidence_digest)::text ~ '^[0-9a-f]{64}$'::text)))), CONSTRAINT "outbox_event_reason" CHECK ((((reason)::text = ''::text) OR ((reason)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text))));
 CREATE TABLE "stewardship_testing_aggregate" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "campaign_id" uuid NOT NULL, "inventory_digest" varchar(64) NOT NULL, "readiness_digest" varchar(64) NOT NULL, "submissions" bigint NOT NULL CHECK ("submissions" >= 0), "families" bigint NOT NULL CHECK ("families" >= 0), "messages" bigint NOT NULL CHECK ("messages" >= 0), "delivered" bigint NOT NULL CHECK ("delivered" >= 0), "failed" bigint NOT NULL CHECK ("failed" >= 0), "cancelled" bigint NOT NULL CHECK ("cancelled" >= 0), CONSTRAINT "testing_aggregate_digests" CHECK ((((inventory_digest)::text ~ '^[0-9a-f]{64}$'::text) AND ((readiness_digest)::text ~ '^[0-9a-f]{64}$'::text))), CONSTRAINT "testing_aggregate_families" CHECK ((families <= submissions)), CONSTRAINT "testing_aggregate_terminal" CHECK ((messages = ((delivered + failed) + cancelled))));
 CREATE TABLE "stewardship_production_request" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "updated_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "version" bigint NOT NULL CHECK ("version" >= 0), "campaign_id" uuid NOT NULL, "initiated_by_id" uuid NOT NULL, "request_key" uuid NOT NULL, "configuration_id" uuid NOT NULL, "aggregate_id" uuid NOT NULL UNIQUE, "inventory_digest" varchar(64) NOT NULL, "inventory_counts" jsonb NOT NULL, "inventory_total" bigint NOT NULL CHECK ("inventory_total" >= 0), "gate_version" bigint NOT NULL CHECK ("gate_version" >= 0), "invalidated_epoch_id" uuid NULL, "task_id" uuid NOT NULL UNIQUE, "acknowledged_at" timestamp with time zone NOT NULL, "reauthenticated_at" timestamp with time zone NOT NULL, "state" varchar(24) DEFAULT 'cleanup_queued' NOT NULL, "action" varchar(24) DEFAULT 'created' NOT NULL, "command_id" uuid NOT NULL, "processed_count" bigint DEFAULT 0 NOT NULL CHECK ("processed_count" >= 0), "checkpoint_sequence" bigint DEFAULT 0 NOT NULL CHECK ("checkpoint_sequence" >= 0), "run_id" uuid NULL, "task_fence" bigint NULL CHECK ("task_fence" >= 0), "worker_id" uuid NULL, "failure_reason" varchar(64) NOT NULL, "activated_at" timestamp with time zone NULL, "activation_digest" varchar(64) NOT NULL);
-CREATE TABLE "stewardship_production_checkpoint" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "request_id" uuid NOT NULL, "command_id" uuid NOT NULL, "sequence" bigint NOT NULL CHECK ("sequence" >= 0), "counts" jsonb NOT NULL, "deleted_count" bigint NOT NULL CHECK ("deleted_count" >= 0), "batch_digest" varchar(64) NOT NULL, "run_id" uuid NOT NULL, "task_fence" bigint NOT NULL CHECK ("task_fence" >= 0), "worker_id" uuid NOT NULL, CONSTRAINT "production_checkpoint_order" UNIQUE (request_id, sequence), CONSTRAINT "production_checkpoint_command" UNIQUE (request_id, command_id), CONSTRAINT "production_checkpoint_positive" CHECK (((deleted_count >= 1) AND (sequence >= 1) AND (task_fence >= 1))), CONSTRAINT "production_batch_digest" CHECK (((batch_digest)::text ~ '^[0-9a-f]{64}$'::text)));
+CREATE TABLE "stewardship_production_checkpoint" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "request_id" uuid NOT NULL, "command_id" uuid NOT NULL, "sequence" bigint NOT NULL CHECK ("sequence" >= 0), "counts" jsonb NOT NULL, "deleted_count" bigint NOT NULL CHECK ("deleted_count" >= 0), "batch_digest" varchar(64) NOT NULL, "run_id" uuid NOT NULL, "task_fence" bigint NOT NULL CHECK ("task_fence" >= 0), "worker_id" uuid NOT NULL, "scanned_count" bigint DEFAULT 0 NOT NULL CHECK ("scanned_count" >= 0), "scan_position" bigint DEFAULT 0 NOT NULL CHECK ("scan_position" >= 0), "scan_round" bigint DEFAULT 0 NOT NULL CHECK ("scan_round" >= 0), CONSTRAINT "production_checkpoint_order" UNIQUE (request_id, sequence), CONSTRAINT "production_checkpoint_command" UNIQUE (request_id, command_id), CONSTRAINT "production_checkpoint_positive" CHECK ((((deleted_count >= 1) OR (scanned_count >= 1)) AND (sequence >= 1) AND (task_fence >= 1))), CONSTRAINT "production_batch_digest" CHECK (((batch_digest)::text ~ '^[0-9a-f]{64}$'::text)));
 CREATE TABLE "stewardship_production_event" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "request_id" uuid NOT NULL, "command_id" uuid NOT NULL, "version" bigint NOT NULL CHECK ("version" >= 0), "previous_state" varchar(24) NOT NULL, "state" varchar(24) NOT NULL, "action" varchar(24) NOT NULL, "snapshot" jsonb NOT NULL, CONSTRAINT "production_event_version" UNIQUE (request_id, version), CONSTRAINT "production_event_command" UNIQUE (request_id, command_id), CONSTRAINT "production_event_positive" CHECK ((version >= 1)), CONSTRAINT "production_event_state" CHECK (((state)::text = ANY ((ARRAY['cleanup_queued'::character varying, 'cleanup_running'::character varying, 'cleanup_retry_wait'::character varying, 'cleanup_complete'::character varying, 'cleanup_failed'::character varying, 'activated'::character varying, 'cancelled'::character varying])::text[]))));

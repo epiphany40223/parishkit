@@ -66,7 +66,15 @@ def prepare(data=None):
     claim = acquire_source(**running_source_task(), phase="full")
     snapshot = begin_snapshot(claim, organization_id=12345, admit=permit)
     for kind, values in corpus.items():
-        stage_entities(snapshot.pk, claim, kind=kind, entities=values, admit=permit)
+        items = list(values.items())
+        for offset in range(0, len(items), 500):
+            stage_entities(
+                snapshot.pk,
+                claim,
+                kind=kind,
+                entities=dict(items[offset : offset + 500]),
+                admit=permit,
+            )
     finish_snapshot(
         snapshot.pk,
         claim,

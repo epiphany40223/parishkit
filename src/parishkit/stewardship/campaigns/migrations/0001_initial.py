@@ -3336,6 +3336,201 @@ class Migration(migrations.Migration):
                     },
                 ),
                 migrations.CreateModel(
+                    name="ProductionCleanupCancellation",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        ("command_id", models.UUIDField(unique=True)),
+                        ("expected_version", models.PositiveBigIntegerField()),
+                        (
+                            "request",
+                            models.OneToOneField(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                related_name="cleanup_cancellation",
+                                to="stewardship_campaigns.productiontransitionrequest",
+                            ),
+                        ),
+                    ],
+                    options={"db_table": "stewardship_production_cancellation"},
+                ),
+                migrations.CreateModel(
+                    name="ProductionCleanupManifest",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "request",
+                            models.OneToOneField(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                related_name="cleanup_manifest",
+                                to="stewardship_campaigns.productiontransitionrequest",
+                            ),
+                        ),
+                        (
+                            "catalog_version",
+                            models.PositiveSmallIntegerField(default=1, db_default=1),
+                        ),
+                        ("delivery_counts", models.JSONField()),
+                        ("delivery_attempts", models.PositiveBigIntegerField()),
+                        ("template_ids", models.JSONField()),
+                        (
+                            "testing_recipient_fingerprint",
+                            models.CharField(max_length=64),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_production_manifest",
+                        "constraints": [
+                            models.CheckConstraint(
+                                condition=models.Q(catalog_version=1),
+                                name="production_manifest_catalog",
+                            )
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
+                    name="ProductionCleanupTarget",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "request",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                related_name="cleanup_targets",
+                                to="stewardship_campaigns.productiontransitionrequest",
+                            ),
+                        ),
+                        ("category", models.CharField(max_length=32)),
+                        ("target_id", models.UUIDField()),
+                        (
+                            "position",
+                            models.PositiveBigIntegerField(default=0, db_default=0),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_production_target",
+                        "indexes": [
+                            models.Index(
+                                fields=["category", "target_id"],
+                                name="production_target_lookup",
+                            )
+                        ],
+                        "constraints": [
+                            models.UniqueConstraint(
+                                fields=["request", "category", "target_id"],
+                                name="production_target_identity",
+                            ),
+                            models.UniqueConstraint(
+                                fields=["request", "position"],
+                                name="production_target_position",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    category__in=[
+                                        "baselines",
+                                        "session_data",
+                                        "family_sessions",
+                                        "ministry_requests",
+                                        "occurrences",
+                                        "occurrence_events",
+                                        "outbox_events",
+                                        "outbox_messages",
+                                        "outbox_renders",
+                                        "proposals",
+                                        "rehearsal_credentials",
+                                        "rehearsal_macs",
+                                        "schedule_fulfillments",
+                                        "source_pins",
+                                        "submission_receipts",
+                                        "submissions",
+                                        "prior_inventory_targets",
+                                    ]
+                                ),
+                                name="production_target_category",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
                     name="ProductionTransitionEvent",
                     fields=[
                         (
@@ -3451,6 +3646,18 @@ class Migration(migrations.Migration):
                         ("sequence", models.PositiveBigIntegerField()),
                         ("counts", models.JSONField()),
                         ("deleted_count", models.PositiveBigIntegerField()),
+                        (
+                            "scanned_count",
+                            models.PositiveBigIntegerField(default=0, db_default=0),
+                        ),
+                        (
+                            "scan_position",
+                            models.PositiveBigIntegerField(default=0, db_default=0),
+                        ),
+                        (
+                            "scan_round",
+                            models.PositiveBigIntegerField(default=0, db_default=0),
+                        ),
                         ("batch_digest", models.CharField(max_length=64)),
                         ("task_fence", models.PositiveBigIntegerField()),
                         ("worker_id", models.UUIDField()),
@@ -3486,11 +3693,11 @@ class Migration(migrations.Migration):
                                 name="production_checkpoint_batch",
                             ),
                             models.CheckConstraint(
-                                condition=models.Q(
-                                    ("deleted_count__gte", 1),
-                                    ("sequence__gte", 1),
-                                    ("task_fence__gte", 1),
-                                ),
+                                condition=(
+                                    models.Q(deleted_count__gte=1)
+                                    | models.Q(scanned_count__gte=1)
+                                )
+                                & models.Q(sequence__gte=1, task_fence__gte=1),
                                 name="production_checkpoint_positive",
                             ),
                             models.CheckConstraint(

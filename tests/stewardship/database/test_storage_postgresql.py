@@ -426,6 +426,12 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
     # ARC-05 intentionally deletes invalidated rehearsal detail, retaining the
     # separate anonymous code reservation forever. It is not append-only data.
     retention_exceptions = {"stewardship_rehearsal_code_mac": "retention"}
+    cleanup_retention_contracts = {
+        "stewardship_outbox_render": "outbox_renders",
+        "stewardship_outbox_event": "outbox_events",
+        "stewardship_occurrence_transition": "occurrence_events",
+        "stewardship_schedule_fulfillment": "schedule_fulfillments",
+    }
     response_contracts = {
         "stewardship_submission": (
             "stewardship_submission_guard",
@@ -438,6 +444,9 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             "Receipt intent is immutable",
         ),
     }
+    from parishkit.stewardship.campaigns.production_models import (
+        ProductionCleanupTarget,
+    )
     from parishkit.stewardship.reports.models import CampaignDailyFact
     from parishkit.stewardship.source.version_models import ENTITY_MODELS
 
@@ -446,6 +455,11 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
     # rather than exempting these tables from the inventory or demanding a
     # blanket append-only trigger that would prohibit the specified retention.
     compaction_contracts = {
+        ProductionCleanupTarget: (
+            "stewardship_production_target_guard",
+            "stewardship_production_target_guard_v1",
+            "Cleanup membership requires its bounded deletion owner",
+        ),
         CampaignDailyFact: (
             "fact_day_guard",
             "stewardship_fact_day_guard",
@@ -514,7 +528,13 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             assert row is not None, table
             assert row[:2] == (f"{table}_{contract}_v1", 27), table
             assert "USING ERRCODE = '23514'" in row[2]
-            if contract == "immutable":
+            if table in cleanup_retention_contracts:
+                compact = "".join(row[2].split())
+                category = cleanup_retention_contracts[table]
+                assert "TG_OP='DELETE'" in compact
+                assert f"stewardship_cleanup_effect_v1('{category}',OLD.id)" in compact
+                assert "RETURNOLD" in compact and "RAISEEXCEPTION" in compact
+            elif contract == "immutable":
                 assert "RETURN OLD" not in row[2]
             else:
                 assert "state='invalidated'" in row[2]

@@ -139,6 +139,11 @@ workflows, unavailable credentials, real external writes, destructive operations
 deployment, and release retain their existing authorization boundaries. This
 workflow does not grant blanket permission bypasses or waive gate-specific tests.
 
+Human clarification, September 15, 2026: automatically correct accidental stray
+characters or punctuation back to an already authorized exact command and retry.
+This is routine command repair, not permission expansion; genuine denials of
+the correctly formed command retain the boundaries above.
+
 Reviewer patience update (human instruction, September 10, 2026): double the
 previous reviewer wait budget before asking whether to continue waiting. For
 the current Pika baseline, use 40 minutes of wall time and 10 minutes without

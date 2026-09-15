@@ -169,7 +169,10 @@ from .credential_models import (  # noqa: E402,F401
     RehearsalEpoch,
 )
 from .production_models import (  # noqa: E402,F401
+    ProductionCleanupCancellation,
     ProductionCleanupCheckpoint,
+    ProductionCleanupManifest,
+    ProductionCleanupTarget,
     ProductionTransitionEvent,
     ProductionTransitionRequest,
     TestingAggregate,

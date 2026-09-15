@@ -332,7 +332,7 @@ def test_actual_runtime_grants_do_not_expose_generic_delivery_mutation(
     role,
     target,
 ):
-    """Every online owner still needs a later compiled narrow delivery entry point."""
+    """Delivery stays closed; BG-03 exposes only its compiled cleanup control port."""
     first = create_message(**inputs)
     name = "delivery_probe_" + uuid4().hex
     with connection.cursor() as cursor:
@@ -365,27 +365,75 @@ def test_actual_runtime_grants_do_not_expose_generic_delivery_mutation(
             # bits so an accidental write grant cannot hide behind denied reads.
             with connection.cursor() as cursor:
                 for privilege in ("INSERT", "UPDATE", "DELETE"):
+                    checkpoint_insert = (
+                        role is ServiceRole.WORKER
+                        and table == "stewardship_production_checkpoint"
+                        and privilege == "INSERT"
+                    )
+                    request_update = (
+                        role is ServiceRole.WORKER
+                        and table == "stewardship_production_request"
+                        and privilege == "UPDATE"
+                    )
                     cursor.execute(
                         "SELECT has_table_privilege(%s,%s,%s)",
                         [name, table, privilege],
                     )
-                    assert cursor.fetchone() == (False,), (role, table, privilege)
+                    assert cursor.fetchone() == (checkpoint_insert,), (
+                        role,
+                        table,
+                        privilege,
+                    )
                     if privilege != "DELETE":
                         cursor.execute(
                             "SELECT has_any_column_privilege(%s,%s,%s)",
                             [name, table, privilege],
                         )
-                        assert cursor.fetchone() == (False,), (role, table, privilege)
+                        assert cursor.fetchone() == (
+                            checkpoint_insert or request_update,
+                        ), (role, table, privilege)
+                    if request_update:
+                        # Independently constrain the new command fields, not
+                        # every future column admitted by runtime_grants().
+                        cursor.execute(
+                            "SELECT attname FROM pg_attribute "
+                            "WHERE attrelid=%s::regclass "
+                            "AND attnum>0 AND NOT attisdropped "
+                            "AND has_column_privilege(%s,%s,attname,'UPDATE')",
+                            [table, name, table],
+                        )
+                        assert {row[0] for row in cursor.fetchall()} == {
+                            "id",
+                            "state",
+                            "action",
+                            "command_id",
+                            "version",
+                            "actor_id",
+                            "correlation_id",
+                            "failure_reason",
+                            "run_id",
+                            "task_fence",
+                            "worker_id",
+                        }
             with (
                 pytest.raises(ProgrammingError, match="permission denied"),
                 transaction.atomic(),
                 connection.cursor() as cursor,
             ):
                 cursor.execute(f'SET LOCAL ROLE "{name}"')
-                cursor.execute(
-                    f'UPDATE "{table}" SET actor_id=%s WHERE id=%s',
-                    [uuid4(), first.message_id],
-                )
+                if (
+                    role is ServiceRole.WORKER
+                    and table == "stewardship_production_request"
+                ):
+                    cursor.execute(
+                        f'UPDATE "{table}" SET inventory_total=1 WHERE id=%s',
+                        [first.message_id],
+                    )
+                else:
+                    cursor.execute(
+                        f'UPDATE "{table}" SET actor_id=%s WHERE id=%s',
+                        [uuid4(), first.message_id],
+                    )
     finally:
         with connection.cursor() as cursor:
             cursor.execute(f'DROP OWNED BY "{name}"')

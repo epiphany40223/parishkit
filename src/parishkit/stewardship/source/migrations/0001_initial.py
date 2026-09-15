@@ -1543,6 +1543,12 @@ class Migration(migrations.Migration):
                     ],
                     options={
                         "db_table": "stewardship_source_pin",
+                        "indexes": [
+                            models.Index(
+                                fields=["parent_kind", "parent_id"],
+                                name="source_pin_owner_lookup",
+                            )
+                        ],
                         "abstract": False,
                     },
                 ),

@@ -11,6 +11,7 @@ DECLARE
     key_lock boolean;
 BEGIN
     IF TG_OP = 'DELETE' THEN
+        IF public.stewardship_cleanup_effect_v1('outbox_messages',OLD.id) THEN RETURN OLD; END IF;
         RAISE EXCEPTION 'Delivery history requires its retention owner'
             USING ERRCODE='23514';
     END IF;

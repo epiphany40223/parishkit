@@ -53,20 +53,28 @@ with immutable replacement history. BG-02.03's end-date replacement is complete;
 its shared restore/reopen token worker stays in Phase 6, so that task remains
 unchecked. Three completed dual-source review/fix rounds, 102 boundary/schema
 regressions, 5,540 baseline tests and operational Compose evidence are recorded
-in the linked guide. Final-head PR CI and protected delivery remain pending;
-these local task completions do not release Gate 3 or enable later mail owners.
+in the linked guide. All 24 final-head PR CI jobs and all 24 merge-group jobs
+passed; PR #32 merged as `5c85d26f`, verified on refreshed `origin/main`.
+These task completions do not release Gate 3 or enable later mail owners.
 
 ## BG-03: Production-transition cleanup worker
 
 Scope and dependencies: [BG-03 work package](../../plans/stewardship/background-processing.md#bg-03-production-transition-cleanup-worker).
 
-- [ ] BG-03.01 — Enforce the go-live gate and rehearsal invalidation.
-- [ ] BG-03.02 — Delete inventoried Testing and rehearsal credential detail in resumable batches.
-- [ ] BG-03.03 — Verify cleanup completeness before readiness.
-- [ ] BG-03.04 — Implement safe retry and cancellation semantics.
-- [ ] BG-03.05 — Test interrupted cleanup and concurrent Testing work.
+- [x] BG-03.01 — Enforce the go-live gate and rehearsal invalidation.
+- [x] BG-03.02 — Delete inventoried Testing and rehearsal credential detail in resumable batches.
+- [x] BG-03.03 — Verify cleanup completeness before readiness.
+- [x] BG-03.04 — Implement safe retry and cancellation semantics.
+- [x] BG-03.05 — Test interrupted cleanup and concurrent Testing work.
 
-Evidence: Not started.
+Evidence: Implemented and locally accepted on `pr/stewardship-production-cleanup`,
+based on PR #32 merge `5c85d26f`. The
+[increment guide](../../guides/stewardship-production-cleanup.md) records all three
+complete dual-source review/fix rounds, 100 passing cleanup tests, 93.57% line
+and 81.15% branch coverage, schema/ownership/race/runtime validation and submitted-
+Family scale measurements. Final-head PR and protected merge-group CI are still
+required before delivery. This does not release Gate 3 or enable Production
+activation; ADM-05 and its other dependencies retain those boundaries.
 
 ## BG-04: Schedule revision, fulfillment, and mode routing
 
