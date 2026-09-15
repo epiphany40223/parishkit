@@ -1692,7 +1692,7 @@ Scope: [Phase 3](../../plans/stewardship/overall.md#phase-3-complete-family-resp
 - [x] M3.02 — Exercise every enabled-module combination and all Family response fields.
 - [x] M3.03 — Prove in-memory drafts, atomic submission, and stale/duplicate protection.
 - [x] M3.04 — Demonstrate upstream merge, proposal provenance, and follow-up supersession.
-- [ ] M3.05 — Complete representative mobile/accessibility/privacy evidence and Gate 2.
+- [x] M3.05 — Complete representative mobile/accessibility/privacy evidence and Gate 2.
 
 Evidence: Phase 3A's minimal census-only flow is demonstrated at implementation
 `eaefbf3`. The real HTTP/database DOM-05 node covers source-backed login,
@@ -1721,7 +1721,7 @@ Apply the complete [review protocol](../../plans/stewardship/overall.md#review-g
 - [x] G2.03 — Triage findings, implement corrections, and add regression coverage.
 - [x] G2.04 — Repeat validation, the phase demonstration, and independent review.
 - [x] G2.05 — Resolve all validated Critical/High/Medium findings; document Low deferrals.
-- [ ] G2.06 — Record reviewed SHA, evidence, and human approval before phase release.
+- [x] G2.06 — Record reviewed SHA, evidence, and human approval before phase release.
 
 Evidence: the human-approved [reuse and current-integration procedure](../../guides/stewardship-gate-2-reviews.md)
 supplies recorded merged component reviews and fresh dual coverage of every
@@ -1732,6 +1732,13 @@ rejections, Low deferrals and current full-flow mobile/desktop inspection.
 Standing human merge/continue authority is recorded there. G2.06 and Phase 4
 release remain pending final-head CI, protected merge and complete merge-group
 CI verification; no routine human approval is otherwise needed.
+
+Completion: [PR #30's protected delivery](../../guides/stewardship-gate-2-reviews.md#protected-delivery)
+supersedes those earlier open checkpoints. Seven successful dual-source rounds,
+the corrected 5,300-test baseline, all 2,537 PostgreSQL cases and complete
+final-head/merge-group CI pass. Merge `6c8cd512e5121095961ffbeb3f80f4dfd844043c`
+is verified on `origin/main`. M3.05 and G2.06 are complete; Phase 4 is released
+under standing human authority. Full FAM-08 and Gate 5 obligations remain open.
 
 ## Phase 4: Production scheduling and mail
 

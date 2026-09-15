@@ -461,3 +461,21 @@ change or retained-database modification was needed.
 
 The local Gate 2 checkpoint is restored. Protected final-head CI, normal merge
 queue delivery and every merge-group check remain required before Phase 4.
+
+## Protected delivery
+
+PR #30's final head `e7d0aef8d55911817dc12b55822f7fca2459bafb` passed all
+25 checks, including [run 34892951001](https://github.com/epiphany40223/parishkit/actions/runs/34892951001).
+The normal protected queue then tested
+`6c8cd512e5121095961ffbeb3f80f4dfd844043c`; all 24 workflow jobs in
+[merge-group run 34895245986](https://github.com/epiphany40223/parishkit/actions/runs/34895245986)
+completed successfully. Both independent aggregates accounted for all 2,537
+PostgreSQL cases across eight shards and measured 94.03% line / 85.63% branch
+coverage. Browser, operational, Compose, baseline and repository checks passed.
+
+GitHub merged [PR #30](https://github.com/epiphany40223/parishkit/pull/30) at
+21:03:41 UTC on September 14, 2026. Its merge commit is the exact queue candidate;
+its tree equals the reviewed final head plus recorded evidence, and fetched
+`origin/main` contains that merge. M3.05 and G2.06 are complete under the standing
+human merge/continue authority. Phase 4 may proceed; Gate 5, real-provider writes,
+deployment and release retain their explicit approval boundaries.

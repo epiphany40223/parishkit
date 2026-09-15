@@ -3,6 +3,7 @@
 import uuid
 
 import django.db.models.deletion
+import django.db.models.expressions
 import django.db.models.functions.datetime
 from django.db import migrations, models
 
@@ -3136,6 +3137,537 @@ class Migration(migrations.Migration):
                     constraint=models.UniqueConstraint(
                         fields=("definition", "configuration"),
                         name="schedule_selection_configuration",
+                    ),
+                ),
+                migrations.CreateModel(
+                    name="TestingAggregate",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        ("inventory_digest", models.CharField(max_length=64)),
+                        ("readiness_digest", models.CharField(max_length=64)),
+                        ("submissions", models.PositiveBigIntegerField()),
+                        ("families", models.PositiveBigIntegerField()),
+                        ("messages", models.PositiveBigIntegerField()),
+                        ("delivered", models.PositiveBigIntegerField()),
+                        ("failed", models.PositiveBigIntegerField()),
+                        ("cancelled", models.PositiveBigIntegerField()),
+                        (
+                            "campaign",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_campaigns.campaign",
+                            ),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_testing_aggregate",
+                    },
+                ),
+                migrations.CreateModel(
+                    name="ProductionTransitionRequest",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "updated_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "version",
+                            models.PositiveBigIntegerField(default=1, editable=False),
+                        ),
+                        ("initiated_by_id", models.UUIDField()),
+                        ("request_key", models.UUIDField()),
+                        ("inventory_digest", models.CharField(max_length=64)),
+                        ("inventory_counts", models.JSONField()),
+                        ("inventory_total", models.PositiveBigIntegerField()),
+                        ("gate_version", models.PositiveBigIntegerField()),
+                        ("invalidated_epoch_id", models.UUIDField(null=True)),
+                        (
+                            "acknowledged_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(),
+                        ),
+                        (
+                            "reauthenticated_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(),
+                        ),
+                        (
+                            "state",
+                            models.CharField(
+                                db_default="cleanup_queued",
+                                default="cleanup_queued",
+                                max_length=24,
+                            ),
+                        ),
+                        (
+                            "action",
+                            models.CharField(
+                                db_default="created", default="created", max_length=24
+                            ),
+                        ),
+                        ("command_id", models.UUIDField()),
+                        (
+                            "processed_count",
+                            models.PositiveBigIntegerField(db_default=0, default=0),
+                        ),
+                        (
+                            "checkpoint_sequence",
+                            models.PositiveBigIntegerField(db_default=0, default=0),
+                        ),
+                        ("task_fence", models.PositiveBigIntegerField(null=True)),
+                        ("worker_id", models.UUIDField(null=True)),
+                        ("failure_reason", models.CharField(blank=True, max_length=64)),
+                        (
+                            "activated_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(null=True),
+                        ),
+                        (
+                            "activation_digest",
+                            models.CharField(blank=True, max_length=64),
+                        ),
+                        (
+                            "campaign",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_campaigns.campaign",
+                            ),
+                        ),
+                        (
+                            "configuration",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_accounts.appliedconfigurationversion",
+                            ),
+                        ),
+                        (
+                            "run",
+                            models.ForeignKey(
+                                null=True,
+                                on_delete=django.db.models.deletion.PROTECT,
+                                related_name="production_attempts",
+                                to="stewardship_jobs.taskrun",
+                            ),
+                        ),
+                        (
+                            "task",
+                            models.OneToOneField(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_jobs.taskrun",
+                            ),
+                        ),
+                        (
+                            "aggregate",
+                            models.OneToOneField(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_campaigns.testingaggregate",
+                            ),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_production_request",
+                        "abstract": False,
+                    },
+                ),
+                migrations.CreateModel(
+                    name="ProductionTransitionEvent",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        ("command_id", models.UUIDField()),
+                        ("version", models.PositiveBigIntegerField()),
+                        ("previous_state", models.CharField(blank=True, max_length=24)),
+                        ("state", models.CharField(max_length=24)),
+                        ("action", models.CharField(max_length=24)),
+                        ("snapshot", models.JSONField()),
+                        (
+                            "request",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                related_name="events",
+                                to="stewardship_campaigns.productiontransitionrequest",
+                            ),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_production_event",
+                        "constraints": [
+                            models.UniqueConstraint(
+                                fields=("request", "version"),
+                                name="production_event_version",
+                            ),
+                            models.UniqueConstraint(
+                                fields=("request", "command_id"),
+                                name="production_event_command",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(("version__gte", 1)),
+                                name="production_event_positive",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    (
+                                        "state__in",
+                                        [
+                                            "cleanup_queued",
+                                            "cleanup_running",
+                                            "cleanup_retry_wait",
+                                            "cleanup_complete",
+                                            "cleanup_failed",
+                                            "activated",
+                                            "cancelled",
+                                        ],
+                                    )
+                                ),
+                                name="production_event_state",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
+                    name="ProductionCleanupCheckpoint",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        ("command_id", models.UUIDField()),
+                        ("sequence", models.PositiveBigIntegerField()),
+                        ("counts", models.JSONField()),
+                        ("deleted_count", models.PositiveBigIntegerField()),
+                        ("batch_digest", models.CharField(max_length=64)),
+                        ("task_fence", models.PositiveBigIntegerField()),
+                        ("worker_id", models.UUIDField()),
+                        (
+                            "run",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_jobs.taskrun",
+                            ),
+                        ),
+                        (
+                            "request",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                related_name="checkpoints",
+                                to="stewardship_campaigns.productiontransitionrequest",
+                            ),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_production_checkpoint",
+                        "constraints": [
+                            models.UniqueConstraint(
+                                fields=("request", "sequence"),
+                                name="production_checkpoint_order",
+                            ),
+                            models.UniqueConstraint(
+                                fields=("request", "command_id"),
+                                name="production_checkpoint_command",
+                            ),
+                            models.UniqueConstraint(
+                                fields=("request", "batch_digest"),
+                                name="production_checkpoint_batch",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    ("deleted_count__gte", 1),
+                                    ("sequence__gte", 1),
+                                    ("task_fence__gte", 1),
+                                ),
+                                name="production_checkpoint_positive",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    ("batch_digest__regex", "^[0-9a-f]{64}$")
+                                ),
+                                name="production_batch_digest",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.AddConstraint(
+                    model_name="testingaggregate",
+                    constraint=models.CheckConstraint(
+                        condition=models.Q(
+                            ("inventory_digest__regex", "^[0-9a-f]{64}$"),
+                            ("readiness_digest__regex", "^[0-9a-f]{64}$"),
+                        ),
+                        name="testing_aggregate_digests",
+                    ),
+                ),
+                migrations.AddConstraint(
+                    model_name="testingaggregate",
+                    constraint=models.CheckConstraint(
+                        condition=models.Q(("families__lte", models.F("submissions"))),
+                        name="testing_aggregate_families",
+                    ),
+                ),
+                migrations.AddConstraint(
+                    model_name="testingaggregate",
+                    constraint=models.CheckConstraint(
+                        condition=models.Q(
+                            (
+                                "messages",
+                                django.db.models.expressions.CombinedExpression(
+                                    django.db.models.expressions.CombinedExpression(
+                                        models.F("delivered"), "+", models.F("failed")
+                                    ),
+                                    "+",
+                                    models.F("cancelled"),
+                                ),
+                            )
+                        ),
+                        name="testing_aggregate_terminal",
+                    ),
+                ),
+                migrations.AddConstraint(
+                    model_name="productiontransitionrequest",
+                    constraint=models.CheckConstraint(
+                        condition=models.Q(("version__gte", 1)),
+                        name="stewardship_campaigns_productiontransitionrequest_positive_version",
+                    ),
+                ),
+                migrations.AddConstraint(
+                    model_name="productiontransitionrequest",
+                    constraint=models.UniqueConstraint(
+                        fields=("campaign", "request_key"),
+                        name="production_request_key",
+                    ),
+                ),
+                migrations.AddConstraint(
+                    model_name="productiontransitionrequest",
+                    constraint=models.UniqueConstraint(
+                        condition=models.Q(
+                            (
+                                "state__in",
+                                (
+                                    "cleanup_queued",
+                                    "cleanup_running",
+                                    "cleanup_retry_wait",
+                                    "cleanup_complete",
+                                    "cleanup_failed",
+                                ),
+                            )
+                        ),
+                        fields=("campaign",),
+                        name="production_one_gate_owner",
+                    ),
+                ),
+                migrations.AddConstraint(
+                    model_name="productiontransitionrequest",
+                    constraint=models.CheckConstraint(
+                        condition=models.Q(
+                            (
+                                "state__in",
+                                [
+                                    "cleanup_queued",
+                                    "cleanup_running",
+                                    "cleanup_retry_wait",
+                                    "cleanup_complete",
+                                    "cleanup_failed",
+                                    "activated",
+                                    "cancelled",
+                                ],
+                            )
+                        ),
+                        name="production_known_state",
+                    ),
+                ),
+                migrations.AddConstraint(
+                    model_name="productiontransitionrequest",
+                    constraint=models.CheckConstraint(
+                        condition=models.Q(
+                            (
+                                "action__in",
+                                [
+                                    "created",
+                                    "start",
+                                    "recover",
+                                    "checkpoint",
+                                    "retry_later",
+                                    "fail",
+                                    "recovery_fail",
+                                    "retry_failed",
+                                    "complete",
+                                    "activate",
+                                    "cancel",
+                                ],
+                            )
+                        ),
+                        name="production_known_action",
+                    ),
+                ),
+                migrations.AddConstraint(
+                    model_name="productiontransitionrequest",
+                    constraint=models.CheckConstraint(
+                        condition=models.Q(
+                            ("gate_version__gte", 1),
+                            ("processed_count__lte", models.F("inventory_total")),
+                        ),
+                        name="production_count_bounds",
+                    ),
+                ),
+                migrations.AddConstraint(
+                    model_name="productiontransitionrequest",
+                    constraint=models.CheckConstraint(
+                        condition=models.Q(
+                            ("inventory_digest__regex", "^[0-9a-f]{64}$")
+                        ),
+                        name="production_inventory_digest",
+                    ),
+                ),
+                migrations.AddConstraint(
+                    model_name="productiontransitionrequest",
+                    constraint=models.CheckConstraint(
+                        condition=models.Q(
+                            ("failure_reason", ""),
+                            ("failure_reason__regex", "^[a-z][a-z0-9_]{0,63}$"),
+                            _connector="OR",
+                        ),
+                        name="production_safe_failure",
+                    ),
+                ),
+                migrations.AddConstraint(
+                    model_name="productiontransitionrequest",
+                    constraint=models.CheckConstraint(
+                        condition=models.Q(
+                            models.Q(
+                                ("run", None), ("task_fence", None), ("worker_id", None)
+                            ),
+                            models.Q(
+                                ("run__isnull", False),
+                                ("task_fence__gte", 1),
+                                ("task_fence__isnull", False),
+                                ("worker_id__isnull", False),
+                            ),
+                            _connector="OR",
+                        ),
+                        name="production_attempt_binding",
+                    ),
+                ),
+                migrations.AddConstraint(
+                    model_name="productiontransitionrequest",
+                    constraint=models.CheckConstraint(
+                        condition=models.Q(
+                            models.Q(
+                                ("activated_at__isnull", False),
+                                ("activation_digest__regex", "^[0-9a-f]{64}$"),
+                                ("state", "activated"),
+                            ),
+                            models.Q(
+                                models.Q(("state", "activated"), _negated=True),
+                                ("activated_at", None),
+                                ("activation_digest", ""),
+                            ),
+                            _connector="OR",
+                        ),
+                        name="production_activation_shape",
                     ),
                 ),
             ],

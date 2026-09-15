@@ -34,6 +34,13 @@ changes only the existing submission-effects function body, independently
 audited against the preceding immutable baseline. Object counts and permissions
 are unchanged.
 
+The [delivery-journal increment](stewardship-delivery-journal.md#fresh-install-schema-audit)
+adds eight tables and their guarded state/history contracts. Its outbox foreign
+keys require one additional jobs initial state-only step; Production request
+state is included in the existing campaigns initial step. The additive audit
+preserves every preexisting schema object. It does not modify or delete retained
+developer databases; they are not upgraded and require a new fresh installation.
+
 The SQL files under `src/parishkit/stewardship/schema/` install the final function
 definitions, tables, seed sentinels and guards directly. Only function-body
 validation is temporarily deferred within the installation transaction because

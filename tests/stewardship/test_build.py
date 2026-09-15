@@ -270,7 +270,7 @@ def test_root_and_stewardship_build_exclusions_stay_synchronized():
     assert "!**" not in rules and "!src/**" not in rules
     assert "!src/parishkit/stewardship/accounts/timezone_names_v1.txt" in rules
     assert "!src/**/*.txt" not in rules
-    for name in ("functions", "tables", "seed", "guards"):
+    for name in ("functions", "tables", "seed", "guards", "delivery", "production"):
         assert f"!src/parishkit/stewardship/schema/{name}.sql" in rules
     assert "!src/**/*.sql" not in rules
     assert "!src/parishkit/stewardship/schema/*.sql" not in rules

@@ -189,3 +189,12 @@ class TaskRunEvent(ImmutableRecord):
                 name="task_event_phase_known",
             ),
         ]
+
+
+# Model discovery stays here; delivery records have their own focused owner.
+from .outbox_models import (  # noqa: E402,F401
+    DeliveryPauseHold,
+    OutboxEvent,
+    OutboxMessage,
+    OutboxRender,
+)

@@ -312,6 +312,17 @@ exact supersession/replacement chains and rejection of attempted live question
 hiding. This closes its Phase 3 submission/follow-up slice, not the remaining
 records and consumers above.
 
+Phase 4's [delivery journal slice](../../guides/stewardship-delivery-journal.md)
+implements the outbox, render/hold and Production-transition/checkpoint records,
+guarded replay/recovery, append-only history and terminal secret scrubbing.
+Three successful dual-source review/fix rounds and all 200 final focused
+PostgreSQL/schema regressions pass; the
+[review ledger](../../guides/stewardship-delivery-reviews.md#third-correction-review)
+retains endpoints, rejected/deferred findings and full earlier-head coverage.
+Final-head CI and protected delivery remain pending. Operational logs,
+compiled cleanup/dispatch owners, Staff follow-up and export/publication scope
+remain incomplete, so DAT-07.01–.05 are not marked wholly complete.
+
 ## DAT-08: Merge and source reconciliation services
 
 Scope and dependencies: [DAT-08 work package](../../plans/stewardship/data.md#dat-08-merge-and-source-reconciliation-services).

@@ -17,7 +17,14 @@ def schema_sql():
         ["SET LOCAL check_function_bodies = false;", "SET LOCAL search_path = public;"]
         + [
             (DIRECTORY / f"{name}.sql").read_text(encoding="utf-8")
-            for name in ("functions", "tables", "seed", "guards")
+            for name in (
+                "functions",
+                "tables",
+                "seed",
+                "guards",
+                "delivery",
+                "production",
+            )
         ]
     )
 
