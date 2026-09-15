@@ -357,6 +357,7 @@ def serve_background(configuration, lease):
         from .accounts.setup_mail import recover_pending as recover_setup_mail
         from .accounts.setup_notifications import recover_pending as recover_setup_slack
         from .accounts.setup_staging import produce_setup_expiry
+        from .campaigns.boundary_production import produce_boundaries
         from .jobs.processes import serve_consumer, serve_scheduler
         from .source.production import SourceProducer
         from .source.setup_cleanup import produce_setup_cleanup
@@ -400,6 +401,7 @@ def serve_background(configuration, lease):
             independent_producer(guard, recover_pending)
             return (
                 *finalization,
+                *independent_producer(guard, produce_boundaries, guard),
                 *independent_producer(guard, producer, guard),
                 *independent_producer(guard, produce_cleanup, guard),
                 *independent_producer(guard, produce_setup_cleanup, guard),

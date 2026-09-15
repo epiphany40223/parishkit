@@ -315,3 +315,23 @@ all accepted Medium+ findings are corrected, the final round had no High or
 Critical findings, and all three successful rounds have passing post-fix
 validation. The two earlier degraded attempts remain excluded from that count.
 Protected delivery and complete final-head CI are still pending.
+
+## Protected delivery
+
+[PR #31](https://github.com/epiphany40223/parishkit/pull/31) completed final-head
+[CI run 34966856606](https://github.com/epiphany40223/parishkit/actions/runs/34966856606)
+at `a3f74f2efe277102a9dbd16a8106a910f5bbe332`: all 24 workflow jobs plus DCO
+passed. The eight shard receipts accounted for all 2,658 selected/completed
+database cases with one measured source fingerprint. Coverage was 94.0593%
+lines and 85.5699% branches. All three browser engines, all eight operational
+scenarios and core container validation passed.
+
+The normal queue accepted that exact head under the human's standing authority.
+The CLI attempted repository-disabled auto-merge; the standard queue enqueue
+operation succeeded with an expected-head check, no jump and no protection
+bypass. [Merge-group run 34968302892](https://github.com/epiphany40223/parishkit/actions/runs/34968302892)
+then passed all 24 jobs, including every browser job, with 94.0553% line and
+85.5570% branch coverage. The PR merged on September 15, 2026 at 12:34:51 UTC as
+`f4e000c5b3f7024e47c7f6d3dbdd30c6cd4976e1`, verified on refreshed `origin/main`.
+The earlier pending checkpoints are superseded. No deployment or release took
+place; mixed DAT-07 scope and Gate 3 remain open.

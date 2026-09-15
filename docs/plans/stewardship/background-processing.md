@@ -42,7 +42,8 @@ both are tested.
 1. Materialize unique start/close occurrences from resolved UTC boundaries.
 2. Implement locked scheduled-to-active and active-to-closed transactions with
    state/mode/gate rechecks and intended/actual/lag audit.
-3. Replace future close occurrences atomically on end-date edits and make races
+3. Replace future close occurrences atomically on end-date edits, allocate fresh
+   execution revisions when reusing dates (including A → B → A), and make races
    fall through to the guarded reopen workflow. Implement its resumable
    background token-preparation task on the general worker with public keys,
    pinned coverage, batch checkpoints, and stale/cancelled staging cleanup.

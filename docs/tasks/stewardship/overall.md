@@ -344,7 +344,7 @@ superseded. M3.05/G2.06 are complete and Phase 4 is dependency-ready.
 
 Source scope: [Phase 4: Production scheduling and delivery](../../plans/stewardship/overall.md#phase-4-production-scheduling-delivery-and-notifications).
 
-Current increment: `pr/stewardship-delivery-journal` starts at the verified
+Completed increment: `pr/stewardship-delivery-journal` starts at the verified
 PR #30 merge. Begin DAT-07's durable outbox and Production-transition journal
 services with their state, ownership, scrubbing and concurrency tests. This is
 a coherent delivery-state foundation, not a PR per model. Its
@@ -353,9 +353,19 @@ later cleanup/scheduler/dispatch/UI owners and Gate 3 restrictions. No Phase 4
 task is yet claimed wholly complete. The journal slice now has three successful
 dual-source review/fix rounds and passing local regression/schema evidence in
 its [review ledger](../../guides/stewardship-delivery-reviews.md#third-correction-review).
-Final-head CI and protected delivery remain pending before branching the next
-BG-02 campaign-boundary increment; BG-03/04 continue after that in the order
-below.
+Final-head CI and complete merge-group validation subsequently passed, and
+PR #31 merged as `f4e000c5b3f7024e47c7f6d3dbdd30c6cd4976e1`, verified on
+refreshed `origin/main`. The next branch, `pr/stewardship-campaign-boundaries`,
+starts at that exact tip. Its [scope and checkpoints](../../guides/stewardship-campaign-boundaries.md)
+cover BG-02's Phase 4 start/close behavior; BG-03/04 continue afterward in the
+order below. Restore/reopen token preparation and Gate 3 remain later work.
+
+Boundary delivery checkpoint: BG-02.01/.02/.04/.05 and BG-02.03's end-date
+replacement portion pass local acceptance and three dual-source review/fix
+rounds. The [boundary review ledger](../../guides/stewardship-campaign-boundaries.md#review-round-3)
+records exact heads, raw severities, dispositions and validation. BG-02.03
+remains unchecked for its Phase 6 token worker; PR CI and protected delivery
+remain pending before BG-03 starts from refreshed `origin/main`.
 
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).

@@ -39,13 +39,22 @@ retained only in the [checkpoint guide](../../guides/stewardship-phase-2.md).
 
 Scope and dependencies: [BG-02 work package](../../plans/stewardship/background-processing.md#bg-02-campaign-boundary-occurrences).
 
-- [ ] BG-02.01 — Materialize unique campaign boundary occurrences.
-- [ ] BG-02.02 — Implement locked start and close transitions.
+- [x] BG-02.01 — Materialize unique campaign boundary occurrences.
+- [x] BG-02.02 — Implement locked start and close transitions.
 - [ ] BG-02.03 — Replace future close work and implement shared restore/reopen token preparation.
-- [ ] BG-02.04 — Recover overdue boundaries in order while enforcing exact access gates.
-- [ ] BG-02.05 — Test DST, restart, duplicate, and boundary races.
+- [x] BG-02.04 — Recover overdue boundaries in order while enforcing exact access gates.
+- [x] BG-02.05 — Test DST, restart, duplicate, and boundary races.
 
-Evidence: Not started.
+Evidence: [Campaign-boundary increment](../../guides/stewardship-campaign-boundaries.md)
+begins from verified PR #31 merge `f4e000c5`. BG-02.01/.02/.04/.05 now deliver
+compiled scheduler/worker integration, restricted-role and timing/lag evidence,
+DST/concurrent execution, and human-approved repeated-date execution revisions
+with immutable replacement history. BG-02.03's end-date replacement is complete;
+its shared restore/reopen token worker stays in Phase 6, so that task remains
+unchecked. Three completed dual-source review/fix rounds, 102 boundary/schema
+regressions, 5,540 baseline tests and operational Compose evidence are recorded
+in the linked guide. Final-head PR CI and protected delivery remain pending;
+these local task completions do not release Gate 3 or enable later mail owners.
 
 ## BG-03: Production-transition cleanup worker
 

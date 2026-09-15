@@ -220,12 +220,21 @@ Campaign exists. Clearing the pointer through Return to Testing permanently
 makes that archived Campaign historical and ineligible for unarchive.
 
 `CampaignBoundaryOccurrence` stores campaign, kind (`start` or `close`),
-resolved UTC boundary, state, attempts/lease, intended and actual transition
-times, before/after lifecycle states, and audit/task correlation. A unique
-constraint on campaign, kind, and resolved boundary makes scheduler insertion
-and recovery idempotent. The transition and successful occurrence state commit
+resolved UTC boundary, immutable execution revision, state, attempts/lease,
+intended and actual transition times, before/after lifecycle states, and
+audit/task correlation. Execution revisions are positive, monotonically
+increasing integers per campaign and boundary kind, allocated under the
+Campaign/global locks. A unique constraint on campaign, kind, and execution
+revision makes scheduler insertion and recovery idempotent: repeated scans
+reuse the current revision, not a previously replaced occurrence for that date.
+The transition and successful occurrence state commit
 in one transaction under Campaign/global locks; obsolete occurrences terminate
 with a structured reason rather than rewriting campaign history.
+Changing an end date A to B and back to A is supported. Every replacement gets
+a fresh occurrence/revision and task root; prior terminal occurrences, task
+outcomes and replacement audit remain immutable. Only the current revision
+may execute lifecycle effects. Replaying an obsolete hint may acknowledge its
+cancellation, but cannot revive it or affect the replacement.
 
 Live delivery pause is orthogonal to lifecycle and global mode. It never changes
 an `active` Campaign to Testing, never changes live Submission classification,

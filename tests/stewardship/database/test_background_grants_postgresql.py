@@ -167,12 +167,10 @@ def test_both_background_roles_can_check_current_credential_gate_without_mutatio
         "SELECT ciphertext FROM stewardship_family_token",
         "SELECT session_id FROM stewardship_portal_session",
         "SELECT context FROM stewardship_audit_context",
-        "UPDATE stewardship_campaign SET state='active'",
         "UPDATE stewardship_campaign_credentials SET go_live_gate=false",
         "INSERT INTO stewardship_domain_rule DEFAULT VALUES",
         "DELETE FROM stewardship_task_event",
         "INSERT INTO stewardship_chair_seed_evidence DEFAULT VALUES",
-        "UPDATE stewardship_family_token SET digest=NULL",
         "UPDATE stewardship_family_campaign SET last_activity_at=now()",
         "UPDATE stewardship_source_family SET canonical='{}'",
     ],
@@ -189,6 +187,25 @@ def test_background_sql_cannot_read_private_payloads_or_expand_authority(
     ):
         cursor.execute(statement)
     assert error.value.__cause__.sqlstate == "42501"
+
+
+@pytest.mark.parametrize("service", [ServiceRole.WORKER, ServiceRole.SCHEDULER])
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "UPDATE stewardship_campaign SET state='active'",
+        "UPDATE stewardship_family_token SET digest=NULL",
+    ],
+)
+def test_empty_boundary_updates_match_guarded_worker_authority(service, statement):
+    """Empty updates have no row effects; populated denials live in boundary tests."""
+    with task_login(service), transaction.atomic(), connection.cursor() as cursor:
+        if service is ServiceRole.SCHEDULER:
+            with pytest.raises(DatabaseError), transaction.atomic():
+                cursor.execute(statement)
+        else:
+            cursor.execute(statement)
+            assert cursor.rowcount == 0
 
 
 @pytest.mark.parametrize("service", [ServiceRole.WORKER, ServiceRole.SCHEDULER])

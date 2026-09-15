@@ -22,7 +22,7 @@ ALTER TABLE ONLY public.stewardship_branding_asset
 
 -- CONSTRAINT: stewardship_campaign_boundary campaign_boundary_identity
 ALTER TABLE ONLY public.stewardship_campaign_boundary
-    ADD CONSTRAINT campaign_boundary_identity UNIQUE (campaign_id, kind, due_at);
+    ADD CONSTRAINT campaign_boundary_identity UNIQUE (campaign_id, kind, execution_revision);
 
 -- CONSTRAINT: stewardship_family_code_mac campaign_code_key_unique
 ALTER TABLE ONLY public.stewardship_family_code_mac
@@ -2420,6 +2420,21 @@ CREATE TRIGGER stewardship_campaign_projection_v1 BEFORE INSERT ON public.stewar
 -- TRIGGER: stewardship_campaign stewardship_campaign_runtime_v1
 CREATE TRIGGER stewardship_campaign_runtime_v1 BEFORE INSERT OR DELETE OR UPDATE ON public.stewardship_campaign FOR EACH ROW EXECUTE FUNCTION public.stewardship_campaign_runtime_v1();
 
+-- TRIGGER: stewardship_campaign_boundary stewardship_boundary_worker_transition
+CREATE TRIGGER stewardship_boundary_worker_transition
+    BEFORE UPDATE ON public.stewardship_campaign_boundary
+    FOR EACH ROW EXECUTE FUNCTION public.stewardship_boundary_worker_transition_v1();
+
+-- TRIGGER: stewardship_runtime_transition stewardship_boundary_worker_transition
+CREATE TRIGGER stewardship_boundary_worker_transition
+    BEFORE INSERT ON public.stewardship_runtime_transition
+    FOR EACH ROW EXECUTE FUNCTION public.stewardship_boundary_worker_transition_v1();
+
+-- TRIGGER: stewardship_campaign_transition stewardship_boundary_worker_transition
+CREATE TRIGGER stewardship_boundary_worker_transition
+    BEFORE INSERT ON public.stewardship_campaign_transition
+    FOR EACH ROW EXECUTE FUNCTION public.stewardship_boundary_worker_transition_v1();
+
 -- TRIGGER: stewardship_campaign_transition stewardship_campaign_transition_effect_v1
 CREATE TRIGGER stewardship_campaign_transition_effect_v1 AFTER INSERT ON public.stewardship_campaign_transition FOR EACH ROW EXECUTE FUNCTION public.stewardship_campaign_transition_effect_v1();
 
@@ -2582,11 +2597,23 @@ CREATE TRIGGER stewardship_family_presence_v1 BEFORE INSERT OR UPDATE ON public.
 -- TRIGGER: stewardship_family_session stewardship_family_session_epoch_v1
 CREATE TRIGGER stewardship_family_session_epoch_v1 BEFORE INSERT OR UPDATE ON public.stewardship_family_session FOR EACH ROW EXECUTE FUNCTION public.stewardship_family_session_epoch_v1();
 
+-- TRIGGER: stewardship_family_session stewardship_boundary_scrub
+CREATE TRIGGER stewardship_boundary_scrub BEFORE UPDATE ON public.stewardship_family_session
+    FOR EACH ROW EXECUTE FUNCTION public.stewardship_boundary_scrub_v1();
+
 -- TRIGGER: stewardship_family_session stewardship_family_session_mutable_guard_v1
 CREATE TRIGGER stewardship_family_session_mutable_guard_v1 BEFORE UPDATE ON public.stewardship_family_session FOR EACH ROW EXECUTE FUNCTION public.stewardship_family_session_mutable_v1();
 
+-- TRIGGER: stewardship_family_token_generation stewardship_boundary_scrub
+CREATE TRIGGER stewardship_boundary_scrub BEFORE UPDATE ON public.stewardship_family_token_generation
+    FOR EACH ROW EXECUTE FUNCTION public.stewardship_boundary_scrub_v1();
+
 -- TRIGGER: stewardship_family_token_generation stewardship_family_token_generation_mutable_guard_v1
 CREATE TRIGGER stewardship_family_token_generation_mutable_guard_v1 BEFORE UPDATE ON public.stewardship_family_token_generation FOR EACH ROW EXECUTE FUNCTION public.stewardship_family_token_generation_mutable_v1();
+
+-- TRIGGER: stewardship_family_token stewardship_boundary_scrub
+CREATE TRIGGER stewardship_boundary_scrub BEFORE UPDATE ON public.stewardship_family_token
+    FOR EACH ROW EXECUTE FUNCTION public.stewardship_boundary_scrub_v1();
 
 -- TRIGGER: stewardship_family_token stewardship_family_token_mutable_guard_v1
 CREATE TRIGGER stewardship_family_token_mutable_guard_v1 BEFORE UPDATE ON public.stewardship_family_token FOR EACH ROW EXECUTE FUNCTION public.stewardship_family_token_mutable_v1();

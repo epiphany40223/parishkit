@@ -108,7 +108,8 @@ authorized by this increment.
 
 The internal outbox and Production-cleanup journals are implemented. Three
 successful dual-source review/fix rounds and post-fix local validation are
-complete; protected delivery and complete final-head CI remain pending.
+complete. [Protected delivery](stewardship-delivery-reviews.md#protected-delivery)
+subsequently passed final-head and all merge-group checks; PR #31 is merged.
 No mixed-phase DAT-07 checkbox is newly complete.
 The checkpoint results below describe the initial implementation, not final-head
 acceptance. Follow-up evidence and dispositions are recorded in the

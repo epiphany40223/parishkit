@@ -102,7 +102,7 @@ CREATE TABLE public.stewardship_audit_context (
     context jsonb NOT NULL,
     event_id uuid NOT NULL,
     CONSTRAINT audit_context_actor_kind CHECK (((actor_kind)::text = ANY ((ARRAY['portal_user'::character varying, 'family'::character varying, 'system'::character varying, 'operator'::character varying])::text[]))),
-    CONSTRAINT audit_context_schema_safe CHECK ((((schema)::text = 'action'::text) AND public.stewardship_safe_context_v1((schema)::text, context)))
+    CONSTRAINT audit_context_schema_safe CHECK ((schema IN ('action','boundary') AND public.stewardship_safe_context_v1((schema)::text, context)))
 );
 
 -- TABLE: stewardship_audit_event
@@ -236,6 +236,9 @@ CREATE TABLE public.stewardship_campaign_boundary (
     campaign_id uuid NOT NULL,
     task_id uuid,
     transition_id uuid,
+    execution_revision bigint NOT NULL,
+    CONSTRAINT campaign_boundary_execution_revision CHECK (execution_revision >= 1),
+    CONSTRAINT stewardship_campaign_boundary_execution_revision_check CHECK (execution_revision >= 0),
     CONSTRAINT campaign_boundary_kind CHECK (((kind)::text = ANY ((ARRAY['start'::character varying, 'close'::character varying])::text[]))),
     CONSTRAINT campaign_boundary_result CHECK ((((completed_at IS NULL) AND ((state)::text = 'pending'::text) AND (transition_id IS NULL)) OR ((completed_at IS NOT NULL) AND ((state)::text = 'succeeded'::text) AND (transition_id IS NOT NULL)) OR ((completed_at IS NOT NULL) AND ((state)::text = 'skipped'::text) AND (transition_id IS NULL)))),
     CONSTRAINT campaign_boundary_state CHECK (((state)::text = ANY ((ARRAY['pending'::character varying, 'succeeded'::character varying, 'skipped'::character varying])::text[]))),
@@ -1190,7 +1193,14 @@ CREATE TABLE public.stewardship_operational_log (
     schema character varying(16) NOT NULL,
     context jsonb NOT NULL,
     CONSTRAINT operational_context_safe CHECK (public.stewardship_safe_context_v1((schema)::text, context)),
-    CONSTRAINT operational_event_safe CHECK (((event)::text = ANY ((ARRAY['configuration_rejected'::character varying, 'configuration_digest_mismatch'::character varying, 'startup_rejected'::character varying, 'startup_validated'::character varying, 'request_completed'::character varying, 'task_started'::character varying, 'task_completed'::character varying, 'task_failed'::character varying, 'unstructured_log_suppressed'::character varying, 'authentication_limits_weakened'::character varying, 'installer_request_failed'::character varying, 'source_refresh_invalid'::character varying, 'source_member_unusable'::character varying, 'source_refresh_held'::character varying, 'source_credential_failed'::character varying, 'source_provider_failed'::character varying, 'credential_handoff_key_mismatch'::character varying, 'setup_credential_staged'::character varying, 'setup_credential_scrubbed'::character varying])::text[]))),
+    CONSTRAINT operational_event_safe CHECK (event IN (
+        'configuration_rejected','configuration_digest_mismatch','startup_rejected',
+        'startup_validated','request_completed','task_started','task_completed',
+        'task_failed','unstructured_log_suppressed','authentication_limits_weakened',
+        'installer_request_failed','source_refresh_invalid','source_member_unusable',
+        'source_refresh_held','source_credential_failed','source_provider_failed',
+        'credential_handoff_key_mismatch','setup_credential_staged',
+        'setup_credential_scrubbed','campaign_boundary_lag')),
     CONSTRAINT operational_log_level CHECK (((level)::text = ANY ((ARRAY['DEBUG'::character varying, 'INFO'::character varying, 'WARNING'::character varying, 'ERROR'::character varying, 'CRITICAL'::character varying])::text[])))
 );
 

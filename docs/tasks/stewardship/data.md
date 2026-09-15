@@ -319,7 +319,9 @@ Three successful dual-source review/fix rounds and all 200 final focused
 PostgreSQL/schema regressions pass; the
 [review ledger](../../guides/stewardship-delivery-reviews.md#third-correction-review)
 retains endpoints, rejected/deferred findings and full earlier-head coverage.
-Final-head CI and protected delivery remain pending. Operational logs,
+Final-head CI and protected delivery subsequently passed in PR #31; see its
+[merge evidence](../../guides/stewardship-delivery-reviews.md#protected-delivery).
+OperationalLog's shared schema already exists; later event/report integration,
 compiled cleanup/dispatch owners, Staff follow-up and export/publication scope
 remain incomplete, so DAT-07.01–.05 are not marked wholly complete.
 

@@ -399,10 +399,29 @@ CREATE FUNCTION public.stewardship_boundary_audit_v1() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
+DECLARE event_id uuid := gen_random_uuid(); before_state text; after_state text;
 BEGIN
-    IF NEW.state='skipped' THEN
+    IF NEW.state IN ('succeeded','skipped') THEN
         INSERT INTO stewardship_audit_event(id,actor_id,correlation_id,event_type,subject_id,campaign_reference)
-        VALUES(gen_random_uuid(),NEW.actor_id,NEW.correlation_id,'campaign_boundary_skipped',NEW.id,NEW.campaign_id);
+        VALUES(event_id,NEW.actor_id,NEW.correlation_id,
+            CASE NEW.state WHEN 'skipped' THEN 'campaign_boundary_skipped' ELSE 'campaign_boundary_completed' END,
+            NEW.id,NEW.campaign_id);
+        IF NEW.transition_id IS NOT NULL THEN
+            SELECT t.before_state,t.after_state INTO before_state,after_state
+                FROM stewardship_campaign_transition t WHERE t.id=NEW.transition_id;
+        ELSE
+            SELECT c.state,c.state INTO before_state,after_state
+                FROM stewardship_campaign c WHERE c.id=NEW.campaign_id;
+        END IF;
+        INSERT INTO stewardship_audit_context(id,actor_id,correlation_id,event_id,actor_kind,schema,context)
+        VALUES(gen_random_uuid(),NEW.actor_id,NEW.correlation_id,event_id,
+            CASE NEW.reason WHEN 'boundary_replaced' THEN 'portal_user' ELSE 'system' END,
+            'boundary',jsonb_build_object(
+                'occurrence_id',NEW.id,'kind',NEW.kind,
+                'intended_unix_microseconds',(extract(epoch FROM NEW.due_at)*1000000)::bigint,
+                'actual_unix_microseconds',(extract(epoch FROM NEW.completed_at)*1000000)::bigint,
+                'lag_microseconds',greatest(0,(extract(epoch FROM NEW.completed_at-NEW.due_at)*1000000)::bigint),
+                'before_state',before_state,'after_state',after_state));
     END IF;
     RETURN NEW;
 END $$;
@@ -414,6 +433,7 @@ CREATE FUNCTION public.stewardship_boundary_guard_v1() RETURNS trigger
     AS $$
 DECLARE c stewardship_campaign%ROWTYPE; r stewardship_system_configuration%ROWTYPE;
     p stewardship_campaign_configuration%ROWTYPE; due timestamptz;
+    previous stewardship_campaign_boundary%ROWTYPE;
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
     IF TG_OP='DELETE' THEN RAISE EXCEPTION 'Boundary history cannot be deleted' USING ERRCODE='23514'; END IF;
@@ -422,7 +442,13 @@ BEGIN
     SELECT * INTO p FROM stewardship_campaign_configuration WHERE id=c.active_configuration_id;
     due:=CASE WHEN NEW.kind='start' THEN p.starts_at ELSE p.ends_at END;
     IF TG_OP='INSERT' THEN
+        SELECT * INTO previous FROM stewardship_campaign_boundary
+            WHERE campaign_id=NEW.campaign_id AND kind=NEW.kind
+            ORDER BY execution_revision DESC LIMIT 1;
         IF NEW.state<>'pending' OR NEW.version<>1 OR NEW.due_at<>due
+           OR NEW.execution_revision<>coalesce(previous.execution_revision,0)+1
+           OR previous.state='pending'
+           OR (previous.due_at=NEW.due_at AND previous.reason<>'boundary_replaced')
            OR NEW.task_id IS NOT NULL OR NEW.task_fence IS NOT NULL OR NEW.reason<>''
            OR c.id IS DISTINCT FROM r.current_campaign_id OR r.restore_review_required
            OR EXISTS(SELECT 1 FROM stewardship_campaign_work_gate WHERE campaign_id=c.id AND state IN ('preparing','running','tombstone')) THEN
@@ -621,7 +647,7 @@ CREATE FUNCTION public.stewardship_campaign_boundary_mutable_v1() RETURNS trigge
     LANGUAGE plpgsql
     AS $$
             BEGIN
-                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."campaign_id" IS DISTINCT FROM OLD."campaign_id" OR NEW."kind" IS DISTINCT FROM OLD."kind" OR NEW."due_at" IS DISTINCT FROM OLD."due_at" THEN
+                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."campaign_id" IS DISTINCT FROM OLD."campaign_id" OR NEW."kind" IS DISTINCT FROM OLD."kind" OR NEW."due_at" IS DISTINCT FROM OLD."due_at" OR NEW."execution_revision" IS DISTINCT FROM OLD."execution_revision" THEN
                     RAISE EXCEPTION 'Record identity and bindings are immutable'
                         USING ERRCODE = '23514';
                 END IF;
@@ -745,8 +771,12 @@ BEGIN
            OR (i.action='edit_end' AND (c.state NOT IN ('scheduled','active') OR stewardship_campaign_now_v1()>=prior.ends_at))
            OR (i.action='reopen' AND (c.state<>'closed' OR proposed.ends_at<=prior.ends_at))
            OR proposed.ends_at<=stewardship_campaign_now_v1()
-           OR EXISTS(SELECT 1 FROM stewardship_campaign_boundary b JOIN stewardship_task_run t ON t.id=b.task_id
-               WHERE b.campaign_id=c.id AND b.kind='close' AND b.state='pending' AND t.state IN ('running','abandoned'))
+           OR EXISTS(SELECT 1 FROM stewardship_campaign_boundary b
+               JOIN stewardship_task_run t ON t.domain_request_id=b.campaign_id AND t.task_type='campaign_boundary'
+               JOIN stewardship_task_run root ON root.id=t.root_id
+               WHERE b.campaign_id=c.id AND b.kind='close' AND b.state='pending'
+                   AND (t.id=b.task_id OR root.idempotency_key=b.id::text)
+                   AND t.state IN ('running','abandoned'))
            OR EXISTS(SELECT 1 FROM stewardship_campaign_work_gate WHERE state IN ('preparing','running')) THEN
             RAISE EXCEPTION 'End change requires current quiescent exceptional intent' USING ERRCODE='23514'; END IF;
     ELSIF EXISTS(SELECT 1 FROM stewardship_campaign_config_intent intent_row JOIN stewardship_config_activation a ON a.request_id=intent_row.request_id
@@ -772,6 +802,13 @@ BEGIN
     WHERE campaign_id=c.id AND kind='close' AND due_at<>p.ends_at AND state='pending';
     SELECT intent.* INTO i FROM stewardship_campaign_config_intent intent
         JOIN stewardship_config_activation a ON a.request_id=intent.request_id WHERE a.configuration_id=NEW.active_configuration_id;
+    IF i.action IN ('edit_end','reopen') THEN
+        INSERT INTO stewardship_campaign_boundary(id,campaign_id,kind,due_at,execution_revision,
+            state,reason,version,actor_id,correlation_id)
+        SELECT gen_random_uuid(),c.id,'close',p.ends_at,coalesce(max(execution_revision),0)+1,
+            'pending','',1,NEW.actor_id,NEW.correlation_id
+        FROM stewardship_campaign_boundary WHERE campaign_id=c.id AND kind='close';
+    END IF;
     IF i.action='reopen' THEN
         INSERT INTO stewardship_campaign_transition(id,campaign_id,request_id,action,expected_version,expected_runtime_version,
             before_state,after_state,before_mode,after_mode,configuration_id,prior_projection_id,token_generation_id,reason,actor_id,correlation_id)
@@ -4539,14 +4576,19 @@ BEGIN
         WHEN 'provider' THEN ARRAY['status','provider_fingerprint','outcome']
         WHEN 'exception' THEN ARRAY['outcome','retryable']
         WHEN 'action' THEN ARRAY['version','before_version','after_version','outcome','source_fingerprint','candidate_fingerprint','count']
+        WHEN 'boundary' THEN ARRAY['occurrence_id','kind','intended_unix_microseconds','actual_unix_microseconds','lag_microseconds','before_state','after_state']
         ELSE NULL END;
     IF allowed IS NULL OR jsonb_typeof(payload) IS DISTINCT FROM 'object' THEN RETURN false; END IF;
-    IF schema_name='member_source' AND NOT payload ?& allowed THEN RETURN false; END IF;
+    IF schema_name IN ('member_source','boundary') AND NOT payload ?& allowed THEN RETURN false; END IF;
     FOR key,value IN SELECT * FROM jsonb_each(payload) LOOP
         IF NOT key=ANY(allowed) THEN RETURN false; END IF;
         text_value=value#>>'{}';
         IF key='outcome' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('started','succeeded','denied','failed','retry','cancelled','changed') THEN RETURN false; END IF;
+        ELSIF key='kind' THEN
+            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('start','close') THEN RETURN false; END IF;
+        ELSIF key IN ('before_state','after_state') THEN
+            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('draft','scheduled','active','closed','archived','purged') THEN RETURN false; END IF;
         ELSIF key='field' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN (
                 'prefix','first_name','middle_name','last_name','suffix','nickname',
@@ -5430,6 +5472,175 @@ BEGIN
     );
 END $_$;
 
+-- FUNCTION: stewardship_boundary_write_admitted_v1(text, jsonb, jsonb)
+CREATE FUNCTION public.stewardship_boundary_write_admitted_v1(
+    relation_name text, proposed jsonb, prior jsonb
+) RETURNS boolean
+LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp AS $$
+DECLARE target_campaign uuid; claim public.stewardship_task_run%ROWTYPE;
+        transition public.stewardship_campaign_transition%ROWTYPE;
+BEGIN
+    -- Read-only evidence, never a caller-selected execution-context flag.
+    PERFORM pg_advisory_xact_lock(736220,1);
+    IF relation_name='stewardship_runtime_transition' THEN
+        SELECT event.* INTO transition FROM public.stewardship_campaign_transition event
+            WHERE event.id=(proposed->>'campaign_transition_id')::uuid;
+        RETURN transition.id IS NOT NULL AND proposed->>'action'='campaign'
+            AND proposed->>'reason'='' AND proposed->>'restore_id' IS NULL
+            AND proposed->>'backup_at' IS NULL
+            AND (proposed->>'request_id')::uuid=transition.request_id
+            AND (proposed->>'actor_id')::uuid=transition.actor_id
+            AND (proposed->>'correlation_id')::uuid=transition.correlation_id
+            AND public.stewardship_boundary_write_admitted_v1(
+                'stewardship_campaign_transition',to_jsonb(transition),NULL);
+    END IF;
+    IF relation_name NOT IN ('stewardship_campaign_boundary', 'stewardship_campaign',
+        'stewardship_system_configuration', 'stewardship_campaign_transition') THEN
+        RETURN false;
+    END IF;
+    target_campaign := CASE relation_name
+        WHEN 'stewardship_campaign' THEN (proposed->>'id')::uuid
+        WHEN 'stewardship_system_configuration' THEN (proposed->>'current_campaign_id')::uuid
+        ELSE (proposed->>'campaign_id')::uuid END;
+    SELECT task.* INTO claim FROM public.stewardship_task_run task
+        JOIN public.stewardship_task_run root ON root.id=task.root_id
+        JOIN public.stewardship_campaign_boundary target
+            ON root.idempotency_key=target.id::text AND target.campaign_id=target_campaign
+        JOIN public.stewardship_campaign c ON c.id=target_campaign
+        JOIN public.stewardship_campaign_configuration p ON p.id=c.active_configuration_id
+        JOIN public.stewardship_system_configuration r ON r.current_campaign_id=c.id
+        JOIN public.stewardship_campaign_credentials credentials
+            ON credentials.campaign_id=c.id AND NOT credentials.go_live_gate
+        WHERE task.task_type='campaign_boundary' AND task.domain_request_id=target_campaign
+            AND root.task_type=task.task_type AND root.domain_request_id=target_campaign
+            AND task.state='running' AND task.lease_expires_at>clock_timestamp()
+            AND task.worker_id=(proposed->>'actor_id')::uuid
+            AND task.correlation_id=(proposed->>'correlation_id')::uuid
+            AND r.mode='production' AND NOT r.restore_review_required
+            AND c.state IN ('scheduled','active','closed')
+            AND target.due_at=CASE target.kind WHEN 'start' THEN p.starts_at ELSE p.ends_at END
+            AND target.due_at<=public.stewardship_campaign_now_v1()
+            AND NOT EXISTS(SELECT 1 FROM public.stewardship_campaign_boundary newer
+                WHERE newer.campaign_id=target.campaign_id AND newer.kind=target.kind
+                    AND newer.execution_revision>target.execution_revision)
+            AND (target.state='pending' OR (target.task_id=task.id AND target.task_fence=task.fence))
+            AND NOT EXISTS(SELECT 1 FROM public.stewardship_campaign_work_gate g
+                WHERE g.campaign_id=c.id AND g.state<>'released');
+    IF claim.id IS NULL THEN RETURN false; END IF;
+    IF relation_name='stewardship_campaign_boundary' THEN
+        -- Initial predecessor allocation has no execution binding yet; its
+        -- ordinary guard still checks exact kind/date and immutable identity.
+        IF prior IS NULL THEN
+            RETURN proposed->>'state'='pending' AND proposed->>'task_id' IS NULL;
+        END IF;
+        IF (proposed->>'task_id')::uuid IS DISTINCT FROM claim.id
+            OR (proposed->>'task_fence')::bigint IS DISTINCT FROM claim.fence THEN
+            RETURN false;
+        END IF;
+        IF proposed->>'state'='pending' THEN
+            RETURN (proposed-ARRAY['task_id','task_fence','version','updated_at',
+                       'actor_id','correlation_id'])
+                = (prior-ARRAY['task_id','task_fence','version','updated_at',
+                       'actor_id','correlation_id']);
+        END IF;
+        RETURN (proposed-ARRAY['state','reason','completed_at','transition_id',
+                    'version','updated_at','actor_id','correlation_id'])
+                = (prior-ARRAY['state','reason','completed_at','transition_id',
+                    'version','updated_at','actor_id','correlation_id'])
+            AND ((proposed->>'state'='succeeded' AND proposed->>'reason'='')
+                OR (proposed->>'state'='skipped' AND proposed->>'reason'='not_applicable'))
+            AND (proposed->>'completed_at')::timestamptz=public.stewardship_campaign_now_v1();
+    ELSIF relation_name='stewardship_campaign_transition' THEN
+        RETURN proposed->>'action' IN ('start','close')
+            AND proposed->>'reason'='' AND proposed->>'prior_projection_id' IS NULL
+            AND proposed->>'token_generation_id' IS NULL
+            AND (proposed->>'task_fence')::bigint=claim.fence
+            AND EXISTS(SELECT 1 FROM public.stewardship_campaign_boundary b
+                WHERE b.id=(proposed->>'boundary_id')::uuid AND b.campaign_id=target_campaign
+                    AND b.task_id=claim.id AND b.task_fence=claim.fence AND b.state='pending');
+    END IF;
+    IF prior IS NULL THEN RETURN false; END IF;
+    SELECT event.* INTO transition FROM public.stewardship_campaign_transition event
+        WHERE event.campaign_id=target_campaign AND event.action IN ('start','close')
+            AND event.actor_id=claim.worker_id AND event.correlation_id=claim.correlation_id
+            AND event.task_fence=claim.fence
+            AND CASE relation_name WHEN 'stewardship_campaign'
+                THEN event.expected_version=(prior->>'version')::bigint
+                ELSE event.expected_runtime_version=(prior->>'version')::bigint END;
+    IF transition.id IS NULL THEN RETURN false; END IF;
+    IF relation_name='stewardship_campaign' THEN
+        RETURN proposed->>'state'=transition.after_state
+            AND (proposed-ARRAY['state','ever_active','active_token_generation_id',
+                'version','updated_at','actor_id','correlation_id'])
+                = (prior-ARRAY['state','ever_active','active_token_generation_id',
+                'version','updated_at','actor_id','correlation_id']);
+    END IF;
+    RETURN (proposed-ARRAY['version','updated_at','actor_id','correlation_id'])
+        = (prior-ARRAY['version','updated_at','actor_id','correlation_id']);
+END $$;
+
+-- FUNCTION: stewardship_boundary_worker_transition_v1()
+CREATE FUNCTION public.stewardship_boundary_worker_transition_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp AS $$
+BEGIN
+    -- Background roles have neither Admin control nor configuration-authoring
+    -- capabilities. Their added journal INSERT grant cannot activate or reopen.
+    IF NOT has_table_privilege(current_user,'public.stewardship_campaign_control','INSERT')
+       AND NOT has_table_privilege(current_user,'public.stewardship_configuration_version','INSERT')
+       AND public.stewardship_boundary_write_admitted_v1(
+           TG_TABLE_NAME,to_jsonb(NEW),
+           CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE THEN
+        RAISE EXCEPTION 'Worker lifecycle requires exact boundary ownership'
+            USING ERRCODE='42501';
+    END IF;
+    RETURN NEW;
+END $$;
+
+-- FUNCTION: stewardship_boundary_scrub_v1()
+CREATE FUNCTION public.stewardship_boundary_scrub_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp AS $$
+DECLARE target_campaign uuid; event public.stewardship_campaign_transition%ROWTYPE;
+        permitted boolean;
+BEGIN
+    -- Full credential owners retain their existing workflows. The general
+    -- worker gets only a close-triggered scrub, never secret read/replacement.
+    IF has_column_privilege(current_user,'public.stewardship_family_token','ciphertext','SELECT') THEN
+        RETURN NEW;
+    END IF;
+    PERFORM pg_advisory_xact_lock(736220,1);
+    IF TG_TABLE_NAME='stewardship_family_session' THEN
+        SELECT campaign_id INTO target_campaign FROM public.stewardship_family_campaign
+            WHERE id=NEW.family_id;
+        permitted := OLD.revoked_at IS NULL
+            AND NEW.revoked_at=greatest(public.stewardship_campaign_now_v1(),OLD.last_activity_at)
+            AND (to_jsonb(NEW)-ARRAY['revoked_at','version','updated_at'])
+                = (to_jsonb(OLD)-ARRAY['revoked_at','version','updated_at']);
+    ELSIF TG_TABLE_NAME='stewardship_family_token' THEN
+        target_campaign := NEW.campaign_id;
+        permitted := OLD.destroyed_at IS NULL AND NEW.ciphertext IS NULL AND NEW.digest IS NULL
+            AND NEW.destroyed_at=public.stewardship_campaign_now_v1()
+            AND (to_jsonb(NEW)-ARRAY['ciphertext','digest','destroyed_at','version','updated_at'])
+                = (to_jsonb(OLD)-ARRAY['ciphertext','digest','destroyed_at','version','updated_at']);
+    ELSE
+        target_campaign := NEW.campaign_id;
+        permitted := OLD.state NOT IN ('superseded','cancelled') AND NEW.state='superseded'
+            AND (to_jsonb(NEW)-ARRAY['state','version','updated_at'])
+                = (to_jsonb(OLD)-ARRAY['state','version','updated_at']);
+    END IF;
+    SELECT t.* INTO event FROM public.stewardship_campaign_transition t
+        JOIN public.stewardship_campaign c ON c.id=t.campaign_id
+        WHERE c.id=target_campaign AND c.state='closed' AND t.action='close'
+            AND c.version=t.expected_version+1 AND c.actor_id=t.actor_id
+            AND c.correlation_id=t.correlation_id;
+    IF permitted IS NOT TRUE OR event.id IS NULL OR
+        public.stewardship_boundary_write_admitted_v1(
+            'stewardship_campaign_transition',to_jsonb(event),NULL) IS NOT TRUE THEN
+        RAISE EXCEPTION 'Worker credential scrub requires its exact closing boundary'
+            USING ERRCODE='42501';
+    END IF;
+    RETURN NEW;
+END $$;
+
 -- FUNCTION: stewardship_setup_completion_write_v1()
 CREATE FUNCTION public.stewardship_setup_completion_write_v1() RETURNS trigger
     LANGUAGE plpgsql
@@ -5437,7 +5648,9 @@ CREATE FUNCTION public.stewardship_setup_completion_write_v1() RETURNS trigger
     AS $$
 BEGIN
     IF current_user='pk_stewardship_worker' AND
-        public.stewardship_setup_completion_context_v1() IS NULL THEN
+        public.stewardship_setup_completion_context_v1() IS NULL AND
+        public.stewardship_boundary_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
+            CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE THEN
         RAISE EXCEPTION 'Worker configuration effects require atomic setup ownership'
             USING ERRCODE='23514';
     END IF;
