@@ -143,6 +143,13 @@ def plan_recovery(
             return RecoveryPlan(
                 skipped=tuple(row.occurrence_id for row in candidates), reason=reason
             )
+        if not initial_delivered and any(
+            row.kind == "initial" and row.state == "failed" for row in overdue
+        ):
+            # A reminder cannot replace an unsuccessful initial invitation.
+            # Only explicit retry/resolution or the deliverability-recovery
+            # owner may supply a new initial attempt; never revive this row.
+            return RecoveryPlan(blocked=True)
         initials = [row for row in candidates if row.kind == "initial"]
         # Successful initial coverage is supplied independently of current
         # revision rows. It is not inferred from a coalesced or skipped outcome.

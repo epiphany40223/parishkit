@@ -27,6 +27,9 @@ SELECT o.id, o.definition_id, o.revision_id, o.state, o.version, o.outbox_id,
            OR (o.state IN ('pending','running') AND m.state IN ('delivered','permanent_failure'))
            OR (o.state IN ('succeeded','skipped','coalesced')
                AND m.state IN ('pending','retry_wait'))
+           OR (m.state='delivered' AND o.state<>'succeeded')
+           OR (m.state='permanent_failure' AND o.state<>'failed')
+           OR (m.state='cancelled' AND o.state='succeeded')
        ) IS TRUE AS blocking
 FROM public.stewardship_schedule_occurrence o
 JOIN public.stewardship_schedule_definition d ON d.id=o.definition_id

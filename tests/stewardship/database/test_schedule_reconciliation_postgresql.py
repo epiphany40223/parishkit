@@ -1,5 +1,6 @@
 """Schedule selection owns safe cancellation without rewriting delivery history."""
 
+from copy import deepcopy
 from uuid import uuid4
 
 import pytest
@@ -10,7 +11,10 @@ from parishkit.stewardship.accounts.configuration_installation import install_re
 from parishkit.stewardship.accounts.configuration_requests import record_request
 from parishkit.stewardship.accounts.schedule_preview import fingerprint, work_summary
 from parishkit.stewardship.audit.models import AuditContext
-from parishkit.stewardship.campaigns.admission import CampaignAdmissionUnavailable
+from parishkit.stewardship.campaigns.admission import (
+    CampaignAdmissionUnavailable,
+    validate_installation,
+)
 from parishkit.stewardship.campaigns.models import ScheduleDefinition
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
@@ -23,6 +27,7 @@ from parishkit.stewardship.storage import StaleRecordError
 
 from .campaign_builders import advance, campaign_clock, claimed_task, occurrence
 from .test_background_grants_postgresql import task_login
+from .test_clone_views_postgresql import setup as archived_setup
 from .test_family_auth_postgresql import family_service  # noqa: F401
 from .test_outbox_boundaries_postgresql import sealed_inputs  # noqa: F401
 from .test_outbox_postgresql import change, claim, permit, provider_evidence, submit
@@ -183,6 +188,55 @@ def test_failed_occurrence_stays_failed_and_loses_retry(scheduled_delivery):
     assert (
         AuditContext.objects.get(schema="schedule").context["failed_occurrences"] == 1
     )
+
+
+@pytest.mark.parametrize(
+    "occurrence_state,message_action",
+    [
+        ("failed", Action.ACCEPT),
+        ("succeeded", Action.FAIL_UNACCEPTED),
+        ("skipped", Action.ACCEPT),
+        ("skipped", Action.FAIL_UNACCEPTED),
+    ],
+)
+def test_contradictory_terminal_results_block_selection(
+    scheduled_delivery, occurrence_state, message_action
+):
+    """Provider acceptance cannot be forgotten by replacing conflicting history."""
+    store, definition, row, message, actor = scheduled_delivery
+    message = change(submit(message), message_action, evidence=provider_evidence())
+    run = claimed_task("schedule_occurrence", row.pk, actor)
+    row = advance(row, actor, "running", task_id=run.run_id, fence=run.fence)
+    advance(row, actor, occurrence_state, fence=run.fence, reason="synthetic_result")
+    before = store.active()
+    assert work_summary(definition.campaign_id)[str(definition.pk)]["blocking"] == 1
+    with pytest.raises(CampaignAdmissionUnavailable):
+        replace_schedule(store, definition, actor)
+    assert store.active() == before
+    assert OutboxMessage.objects.get(pk=message.message_id).state == message.state
+
+
+def test_preflight_queries_changed_definition_owner_without_current_campaign(
+    auth_service, monkeypatch
+):
+    """A noncurrent definition cannot bypass the retryable work-count preflight."""
+    from parishkit.stewardship.accounts import schedule_preview
+
+    campaign, _ = archived_setup(auth_service.store)
+    definition = ScheduleDefinition.objects.get(campaign=campaign)
+    document = deepcopy(auth_service.store.active().document())
+    document["sections"]["schedules"] = []
+    queried = []
+
+    def blocking_summary(identifier):
+        """Inject count-boundary input, not impossible archived in-flight rows."""
+        queried.append(identifier)
+        return {str(definition.pk): {"blocking": 1}}
+
+    monkeypatch.setattr(schedule_preview, "work_summary", blocking_summary)
+    with pytest.raises(CampaignAdmissionUnavailable, match="in-flight"):
+        validate_installation(document)
+    assert queried == [campaign.pk]
 
 
 @pytest.mark.parametrize("role", [ServiceRole.WEB, ServiceRole.CONFIG_INSTALLER])

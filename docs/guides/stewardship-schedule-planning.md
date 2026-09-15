@@ -123,3 +123,53 @@ unallocated pending work, and closed Production campaigns may retain missed
 Family slots as skipped outcomes. The separate claim guard still denies Family
 delivery after close. All other fingerprint categories and object counts are
 unchanged. The strict fingerprint was updated after this comparison.
+
+## Review round 1
+
+The complete `ce1e95d1..65c4768` diff was reviewed in Pika session
+`20260915-192104-f6f812`: two generated Claude shards covered all 45 manifest
+files, and Pika's Codex reviewer completed successfully in 543 seconds. Both
+Claude outputs passed validation and the exact permission preflight succeeded.
+Finalization has no degraded source, failed agent or verdict mismatch. Raw
+findings are nine Medium and seventeen Low; nine Medium findings were validated,
+with no High/Critical findings. This is not yet three-round acceptance.
+
+| Source/finding | Disposition |
+| --- | --- |
+| Claude 1: DST ordering | Rejected. The claimed reversed times omit their dates: March 7 at 07:30Z precedes March 8 at 07:00Z. An exact-cutoff probe includes both slots and confirms increasing UTC order. |
+| Claude 2: digest exclusion tests | Accepted. Added actual delivered-coverage and restore-hold tests, including restart, resolution and reconsideration by the same running producer. |
+| Claude 3: installer count scope | Accepted. Cache counts by each changed definition's owning campaign, including when there is no current campaign; a historical-owner preflight regression verifies the scope without inventing impossible archived in-flight rows. |
+| Claude 4: omit missed post-close Family rows | Rejected. The normative recovery policy requires durable skipped outcomes when close overtakes missed Family work. Pending-to-skipped is atomic and does not grant dispatch; fulfillment cannot substitute because its dispositions are delivered/coalesced. |
+| Claude 5: post-close due admission | Accepted. Family creation after close requires an original due instant inside the campaign interval; the independent claim guard still rejects post-close Family delivery. |
+| Claude 6: preview validation performance | Rejected at Medium severity. Five runs under concurrent validation took a median 7.9 ms, maximum 9.6 ms, for 196 one-time plus four digest previews. Even an invalid all-200-daily upper bound took about 18.1 ms. No material latency defect was demonstrated. |
+| Codex 1: repeated full digest scans | Accepted. Preserve exhausted cursors; only a changed count/version sum of retained restore inventory rewinds them, so resolved past holds are not lost. |
+| Codex 2: failed initial followed by reminder | Accepted. An unresolved failed initial blocks selecting reminders without successful initial coverage; terminal failure is neither retried nor rewritten, while inapplicable pending work can still receive skipped outcomes. |
+| Codex 3: contradictory terminal results | Accepted. Replacement blocks incompatible linked occurrence/outbox outcomes, including failed versus delivered and succeeded versus definitive failure; real storage transitions exercise the contradictions. |
+
+The rebuilt review image passed three disposable operational scenarios in
+277.83 seconds: configured development, complete initial setup, and configured
+Production topology. Four isolated full PostgreSQL partitions completed with
+2,866 passing cases and one failure. That failure confirms Claude 5: an old
+regression requires rejecting a Family due instant at the exclusive campaign
+end. It remains unchanged and passes after the guard correction. The failed
+partition is not counted as complete quality/coverage acceptance.
+
+The first correction runs pass 128 planner/recovery/review-guard tests in
+49.34 seconds and 46 schedule/reconciliation tests in 37.41 seconds. The new
+historical-owner test initially called the configuration document method as an
+attribute; that fixture mistake was corrected before the extended rerun.
+The fresh-install correction audit compares `65c4768` against the corrected SQL
+in new disposable databases `stewardship_schedule_review1_base_20260915` and
+`stewardship_schedule_review1_current_20260915`. Only the private
+`stewardship_schedule_work_row` view and `stewardship_occurrence_guard_v1()` differ;
+all object counts, other functions, constraints, indexes, triggers and policies
+are unchanged. Fingerprints were updated after the comparison. Extended
+validation and the next two completed review/fix rounds remain required.
+
+The extended correction run passes 65 tests in 55.37 seconds, including the
+strict fingerprint, historical owner scope, actual Admin previews and cloning.
+The full baseline passes 5,664 tests in 57.50 seconds, with 3,643 expected skips
+and two existing warnings. Ruff, formatting, Markdown and whitespace checks
+pass. Round 1's six accepted findings are fixed and its three rejected findings
+have the evidence above; Round 1 is complete. Final-head full CI/coverage and
+two additional completed review/fix rounds remain required.

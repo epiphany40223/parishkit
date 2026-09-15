@@ -3038,7 +3038,9 @@ BEGIN
            OR NOT EXISTS (SELECT 1 FROM stewardship_campaign_configuration p WHERE p.id=c.active_configuration_id
                AND ((instant>=p.starts_at AND instant<p.ends_at
                    AND ((NEW.mode='testing' AND c.state='draft') OR (NEW.mode='production' AND c.state IN ('scheduled','active'))))
-                   OR (NEW.mode='production' AND c.state='closed')))
+                   OR (NEW.mode='production' AND c.state='closed'
+                       AND (d.kind IN ('daily_digest','weekly_digest')
+                           OR (NEW.due_at>=p.starts_at AND NEW.due_at<p.ends_at)))))
            OR (NEW.mode='production' AND EXISTS(SELECT 1 FROM stewardship_activation_catchup WHERE campaign_id=c.id AND completed_at IS NULL))
            OR EXISTS (SELECT 1 FROM stewardship_schedule_fulfillment WHERE definition_id=d.id AND mode=NEW.mode AND target=NEW.target AND slot=NEW.slot) THEN
             RAISE EXCEPTION 'Occurrence creation is not admitted' USING ERRCODE='23514'; END IF;

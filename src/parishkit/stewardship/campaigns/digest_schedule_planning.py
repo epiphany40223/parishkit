@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from django.db import connection
+from django.db.models import Count, Sum
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.jobs.scheduler import SchedulerGuard
@@ -45,6 +46,7 @@ class DigestScheduleProducer:
             raise ValueError("Digest planning requires a bounded scheduler identity.")
         self.worker_id, self.limit = worker_id, limit
         self.cursors, self.last_definition = {}, None
+        self.hold_versions = {}
 
     def __call__(self, guard):
         """Materialize one finite page, alternating definitions even during backlog."""
@@ -73,6 +75,7 @@ class DigestScheduleProducer:
             )
             if not definitions:
                 self.cursors, self.last_definition = {}, None
+                self.hold_versions = {}
                 return ()
             if len(definitions) > 2:
                 raise StorageInvariantError(
@@ -92,9 +95,19 @@ class DigestScheduleProducer:
             plan = SchedulePlan.from_values(
                 revision.values, scope.campaign.active_configuration.values
             )
-            page = plan.page(
-                through=scope.instant, after=self.cursors.get(key), limit=self.limit
+            # A released historical hold must be revisited even after its
+            # original date cursor was consumed. Retained monotonic versions
+            # invalidate traversal only when the inventory actually changes.
+            holds = RestoreDeliveryHold.objects.filter(
+                definition=definition, mode=mode, target="admins"
             )
+            hold_version = holds.aggregate(count=Count("id"), versions=Sum("version"))
+            after = (
+                self.cursors.get(key)
+                if self.hold_versions.get(key) == hold_version
+                else None
+            )
+            page = plan.page(through=scope.instant, after=after, limit=self.limit)
             covered = set(
                 ScheduleFulfillment.objects.filter(
                     definition=definition,
@@ -104,10 +117,7 @@ class DigestScheduleProducer:
                 ).values_list("slot", flat=True)
             )
             held = set(
-                RestoreDeliveryHold.objects.filter(
-                    definition=definition,
-                    mode=mode,
-                    target="admins",
+                holds.filter(
                     slot__in=[slot.key for slot in page.slots],
                     state__in=("unreviewed", "assumed_delivered"),
                 ).values_list("slot", flat=True)
@@ -158,6 +168,10 @@ class DigestScheduleProducer:
         self.cursors = {
             key: value for key, value in self.cursors.items() if key in current
         }
-        self.cursors[key] = None if page.exhausted else page.cursor
+        self.cursors[key] = page.cursor
+        self.hold_versions = {
+            key: value for key, value in self.hold_versions.items() if key in current
+        }
+        self.hold_versions[key] = hold_version
         self.last_definition = definition.pk
         return (result,)

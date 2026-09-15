@@ -160,7 +160,7 @@ def validate_installation(document, *, request_id=None):
     schedules = document["sections"].get("schedules", [])
     proposed_schedules = {row["id"]: row["values"] for row in schedules}
     definitions = list(ScheduleDefinition.objects.select_related("current_revision"))
-    schedule_work = work_summary(current) if current is not None else {}
+    schedule_work = {}
     if (
         runtime is not None
         and runtime.restore_review_required
@@ -190,7 +190,9 @@ def validate_installation(document, *, request_id=None):
             raise CampaignAdmissionUnavailable(
                 "Schedule changes are held for restore review."
             )
-        if schedule_work.get(str(definition.pk), {}).get("blocking", 0):
+        if owner not in schedule_work:
+            schedule_work[owner] = work_summary(definition.campaign_id)
+        if schedule_work[owner].get(str(definition.pk), {}).get("blocking", 0):
             raise CampaignAdmissionUnavailable(
                 "Schedule replacement must wait for in-flight work."
             )
