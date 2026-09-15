@@ -440,6 +440,51 @@ def test_exhausted_crash_recovery_records_failure_and_allows_explicit_retry(
     assert act(resumed, Action.COMPLETE).state == "cleanup_complete"
 
 
+@pytest.mark.parametrize("phase", ["queued", "running", "checkpoint", "complete"])
+def test_task_recovery_success_requires_committed_domain_completion(intent, phase):
+    """Only a crash after domain completion may recover the task as succeeded."""
+    from parishkit.stewardship.jobs.storage import _status as task_status
+
+    from .test_taskrun_postgresql import act as task_act
+    from .test_taskrun_postgresql import expire
+
+    status = begin_transition(**intent)
+    if phase == "queued":
+        task = task_act(
+            task_status(TaskRun.objects.get(pk=status.task_id)),
+            "claim",
+            lease_seconds=1,
+        )
+    else:
+        status = start(status, lease_seconds=1)
+        if phase in {"checkpoint", "complete"}:
+            status = batch(status)
+        if phase == "complete":
+            status = act(status, Action.COMPLETE)
+        task = task_status(TaskRun.objects.get(pk=status.run_id))
+    abandoned = expire(task)
+    actor = uuid4()
+    if phase == "complete":
+        assert (
+            task_act(abandoned, "recovery_complete", actor_id=actor).state
+            == "succeeded"
+        )
+    else:
+        with pytest.raises(IntegrityError, match="committed cleanup completion"):
+            task_act(abandoned, "recovery_complete", actor_id=actor)
+        assert TaskRun.objects.get(pk=task.run_id).state == "abandoned"
+        assert (
+            task_act(abandoned, "recovery_retry", actor_id=actor).state == "retry_wait"
+        )
+    assert (
+        ProductionTransitionRequest.objects.get(pk=status.request_id).state
+        == status.state
+    )
+    assert CampaignCredentialState.objects.get(
+        campaign_id=status.campaign_id
+    ).go_live_gate
+
+
 def test_checkpoint_batch_identity_is_unique_even_with_a_new_command(intent):
     """Lost-response retries cannot consume remaining inventory twice."""
     intent["inventory"] = CleanupInventory("a" * 64, {"sessions": 2})
@@ -549,7 +594,15 @@ def test_production_transition_admission_pins_child_claim_and_exact_proposal(int
             for i, (sql, params) in enumerate(locks)
             if "stewardship_production_request" in sql
         )
-        assert child_lock < domain_lock
+        root_lock = next(
+            i
+            for i, (sql, params) in enumerate(locks)
+            if "stewardship_task_run" in sql and str(queued.task_id) in str(params)
+        )
+        campaign_lock = next(
+            i for i, (sql, _) in enumerate(locks) if '"stewardship_campaign"' in sql
+        )
+        assert campaign_lock < root_lock < child_lock < domain_lock
         return True
 
     options = dict(
@@ -584,15 +637,19 @@ def test_production_cancel_suboperations_retain_the_same_proposal(intent):
     assert all(proposal is calls[0][1] for _, proposal in calls)
 
 
-def test_production_claim_cannot_lock_an_unrelated_root(intent):
+@pytest.mark.parametrize("foreign", [False, True])
+def test_production_claim_cannot_lock_an_unrelated_root(intent, foreign):
     """Missing or foreign task IDs fail before admission or domain mutation."""
+    from .test_taskrun_postgresql import new
+
     status = begin_transition(**intent)
+    run_id = new().run_id if foreign else uuid4()
     called = []
     with pytest.raises(StorageInvariantError, match="does not belong"):
         act(
             status,
             Action.START,
-            run_id=uuid4(),
+            run_id=run_id,
             task_fence=1,
             admit=lambda *args: called.append(True) or True,
         )

@@ -11,6 +11,18 @@ BEGIN
         RAISE EXCEPTION 'Production task recovery requires an attributed actor'
             USING ERRCODE='23514';
     END IF;
+    -- A crash after the domain committed completion may finish its task. An
+    -- unfinished request instead needs recovery_retry or attributed failure;
+    -- succeeding its task first would remove every resumable domain edge.
+    IF NEW.task_type='production_cleanup' AND NEW.action='recovery_complete'
+       AND NOT EXISTS (
+           SELECT 1 FROM public.stewardship_production_request
+           WHERE id=NEW.domain_request_id AND task_id=NEW.root_id
+             AND run_id=NEW.id AND state='cleanup_complete'
+       ) THEN
+        RAISE EXCEPTION 'Production task recovery requires committed cleanup completion'
+            USING ERRCODE='23514';
+    END IF;
     RETURN NEW;
 END $$;
 

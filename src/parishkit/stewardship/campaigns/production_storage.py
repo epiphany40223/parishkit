@@ -278,7 +278,8 @@ def change_transition(
     Admission receives a fourth, frozen ProductionCommand after the proposed
     run is locked under this request's root. RECOVERY_FAIL mirrors an already
     committed TaskRun recovery_fail: supply its latest run ID, post-expiry fence
-    and recovery actor (not the dead worker). Worker identity comes from that run.
+    and the attributed recovery actor. The owner supplies the actual recovery
+    principal; worker identity comes from that run, not the actor argument.
     Nested cancellation/gate-release admission receives the same proposal.
     """
     _ids(request_id, command_id, actor_id, correlation_id, expected_version)
@@ -414,6 +415,10 @@ def checkpoint_cleanup(
     stale worker, invalid count or missing progress rolls back all those effects.
     The batch digest fingerprints exact batch membership, not just its counts or
     query: distinct groups of the same size must have different batch identities.
+    Checkpoint admission retains three arguments, including on replay. Its
+    compiled owner closes over the immutable batch/command inputs; it must not
+    expose a user-supplied callback. Replay checks the stored actor/digest/counts
+    and never invokes apply_batch again.
     """
     _ids(request_id, command_id, actor_id, correlation_id, expected_version)
     if (

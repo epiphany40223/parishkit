@@ -350,7 +350,12 @@ services with their state, ownership, scrubbing and concurrency tests. This is
 a coherent delivery-state foundation, not a PR per model. Its
 [scope and checkpoints](../../guides/stewardship-delivery-journal.md) preserve the
 later cleanup/scheduler/dispatch/UI owners and Gate 3 restrictions. No Phase 4
-task is yet claimed complete.
+task is yet claimed wholly complete. The journal slice now has three successful
+dual-source review/fix rounds and passing local regression/schema evidence in
+its [review ledger](../../guides/stewardship-delivery-reviews.md#third-correction-review).
+Final-head CI and protected delivery remain pending before branching the next
+BG-02 campaign-boundary increment; BG-03/04 continue after that in the order
+below.
 
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).

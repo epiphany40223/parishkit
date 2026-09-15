@@ -42,8 +42,9 @@ replaced it.
 
 Explicit failed-message or cleanup retry starts with `work_transaction()` before
 allocating its linked TaskRun retry, then advances the domain journal within
-that same transaction. Allocation itself enforces that order for these task
-types; acquiring the work lock after taking the root lock is too late.
+that same transaction. Allocation requires the work lock before acquiring its
+own root lock. Callers must not pre-lock the root themselves: the held-lock
+check cannot prove earlier acquisition order in arbitrary caller SQL.
 A plain `transaction.atomic()` is insufficient. Delivery
 transition admission receives a fourth, frozen `DeliveryCommand` argument with
 the exact proposed evidence/options and non-secret render/credential metadata;
@@ -58,7 +59,9 @@ Cleanup crash recovery may mirror a fenced terminal TaskRun `recovery_fail`
 without a live worker. It must bind the latest failed run, recovery actor and
 fence, retain completed checkpoints and continue holding the go-live gate.
 The TaskRun guard rejects a null recovery actor before recording terminal
-failure. Production transition admission receives a fourth frozen
+failure. Recovery may mark a task succeeded only when that exact run's cleanup
+request already committed `cleanup_complete`; unfinished cleanup must retry or
+fail with attribution. Production transition admission receives a fourth frozen
 `ProductionCommand`, including during replay and nested cancellation/gate
 release. Proposed claims are constrained to the owning retry root and locked
 before the request row and callback.
@@ -66,6 +69,9 @@ Checkpoint batches have a unique per-request digest as well as a command ID;
 retry a lost response with its original command. A deletion callback returns
 success only when actual per-category deletion counts equal the proposed batch,
 never merely because an already-deleted batch is harmless to repeat.
+Checkpoint admission retains three arguments on both fresh calls and replay;
+its compiled owner closes over immutable batch/command inputs. Replay verifies
+the stored actor, digest and counts without repeating deletion.
 
 Production submission independently checks current mode/campaign, restore/go-live
 gates and campaign pause state. Holds bind the actual paused version and release
@@ -100,8 +106,10 @@ authorized by this increment.
 
 ## Evidence
 
-The internal outbox and Production-cleanup journals are implemented. Validation
-and peer review are in progress; no DAT-07 checkbox is newly complete.
+The internal outbox and Production-cleanup journals are implemented. Three
+successful dual-source review/fix rounds and post-fix local validation are
+complete; protected delivery and complete final-head CI remain pending.
+No mixed-phase DAT-07 checkbox is newly complete.
 The checkpoint results below describe the initial implementation, not final-head
 acceptance. Follow-up evidence and dispositions are recorded in the
 [delivery review ledger](stewardship-delivery-reviews.md).
@@ -142,7 +150,7 @@ All 28 existing row policies are unchanged.
 The corrected candidate totals are 137 relations, 1,635 columns, 2,350 constraints,
 719 indexes, 335 functions, 333 triggers and 28 policies. Current audit evidence
 and the function fingerprint are in the
-[review ledger](stewardship-delivery-reviews.md#second-correction-review).
+[review ledger](stewardship-delivery-reviews.md#third-correction-review).
 The all-model comparison independently confirms current field types, defaults,
 nullability, foreign keys and complete constraint/index definitions. The strict
 fixture was updated only after inspecting the additive catalog delta.

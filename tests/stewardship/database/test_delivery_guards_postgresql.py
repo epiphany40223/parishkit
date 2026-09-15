@@ -269,19 +269,23 @@ def test_transition_admission_receives_exact_frozen_proof_and_locked_task(
     assert TaskRun.objects.get(pk=task.run_id).state == "running"
 
 
-def test_delivery_claim_cannot_lock_an_unrelated_root(inputs):  # noqa: F811
-    """A foreign claim is rejected before callback admission."""
+@pytest.mark.parametrize("missing", [False, True])
+def test_delivery_claim_cannot_lock_an_unrelated_root(inputs, missing):  # noqa: F811
+    """Missing and foreign claims are rejected before callback admission."""
     first = create_message(**inputs)
     other = create_message(
         **(inputs | {"identity": replace(inputs["identity"], semantic_key=uuid4())})
     )
     foreign = claim(other)
+    called = []
     with pytest.raises(StorageInvariantError, match="does not belong"):
         change(
             first,
             Action.SUBMIT,
-            run_id=foreign.run_id,
+            run_id=uuid4() if missing else foreign.run_id,
             task_fence=foreign.fence,
             actor_id=foreign.worker_id,
             provider_seconds=30,
+            admit=lambda *args: called.append(True) or True,
         )
+    assert not called

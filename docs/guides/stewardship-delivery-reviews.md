@@ -266,3 +266,52 @@ focused journal, shared TaskRun and strict schema suite passed 194 tests in
 completes round two. A third completed review/fix round and final-head protected
 CI remain required; the complete coverage checkpoint above is not relabeled as
 measurement of these later corrections.
+
+## Third correction review
+
+Session `20260915-075342-93133f` reviewed
+`f43585fac5656e4c0e9f54ce1d5005dc437cd46e` through
+`5093a9569a85064db92ae2a64e5c7cee44e91565`, tree
+`d87ada1fc877b72ebec4af03d4d9e40db9d291e7`, with the surrounding service and
+specification contracts. Permission probe `pika-review-permissions.nhKpr5`
+passed before either reviewer launched. Both sources completed successfully in
+388.74 seconds. Finalize retained all artifacts and reported one validated
+Medium (Claude), eight raw Low, no High/Critical, and no failed agents,
+degradation or verdict mismatch. Finalize artifact:
+`69b3110b9733024d46238857cc0d7cc8ce5e29053de52cbf085b6c14919a844b`.
+
+### Third-round dispositions
+
+| Source/severity | Concern | Disposition |
+| --- | --- | --- |
+| Claude Medium | Task recovery can succeed before unfinished cleanup can mirror it | Extend the new TaskRun guard: `recovery_complete` requires the exact owning request/run to have already committed `cleanup_complete`. Preserve legitimate recovery after that domain commit; reject queued/running/checkpoint-only success while permitting recovery retry. Four real-database cases prove both sides. |
+| Claude Low | Held-lock check cannot prove arbitrary earlier caller SQL order | Clarify the guide: retry allocation requires the work lock before its own root lock; callers remain responsible for not pre-locking the root. |
+| Claude Low | Recovery actor wording promises distinction from the dead worker | Clarify that the compiled owner supplies the actual recovery principal; the journal enforces attribution and separately derives worker identity. Principal authenticity remains owning admission, not UUID inequality. |
+| Claude Low | Generic retry names two journal-linked task types | Keep the closed, explicit two-type policy and its parameterized regression. Future journal owners must extend it with their integration tests; do not add a caller-selectable bypass or unused registry. |
+| Claude Low | Shared claim helper could remove duplicate code/query | Optional bounded-query refactor deferred to BG-03/06 integration; both current implementations enforce the same owning-root lock and now have missing/foreign tests. No correctness or scale requirement depends on removing this one query. |
+| Claude Low | Checkpoint admission's three-argument contract is undocumented | Document immutable batch/command closure ownership and replay's stored actor/digest/count checks. No deletion occurs on replay and no user callback is exposed. |
+| Claude Low | Missing/foreign claim tests cover only one case each | Parameterize both journal tests over missing and foreign claims and assert admission is never called. |
+| Claude Low | Lock-order test omits campaign/root ordering | Assert the full campaign → root → child → request ordering on fresh transition and replay. |
+| Codex Low | Production claim is fetched again for worker identity | Same bounded-query optimization as Claude's helper concern; retain the locked-row guarantee and defer the optional refactor to its worker integration owner. |
+
+The independent merged-base schema audit passed in 10.66 seconds. Existing
+catalog objects remain unchanged; counts and every fingerprint except the new
+function's body remain identical. The new function fingerprint is
+`2a5a1f3e4904659c304533a5ff4f69a9a988dc5921eac10cdfb5bd63c5f0a845`.
+The fixture was updated only after inspecting that exact delta.
+
+At reviewed head `5093a95`, the baseline passed 5,512 tests in 62.70 seconds,
+the image built successfully and all 30 opted-in Compose tests passed in
+130.25 seconds. Correction-specific final validation is recorded below before
+closing this third round. Final-head CI remains the complete current-head
+coverage/container/browser acceptance; earlier measurements retain their
+original commit attribution.
+
+The post-correction PostgreSQL runs passed all 200 tests: 118 Production,
+delivery-guard and shared TaskRun cases in 75.25 seconds, and 82 outbox/boundary
+and strict catalog/model cases in 52.67 seconds. Ruff check/format, Markdown,
+model-state drift and whitespace checks pass. This completes round three:
+all accepted Medium+ findings are corrected, the final round had no High or
+Critical findings, and all three successful rounds have passing post-fix
+validation. The two earlier degraded attempts remain excluded from that count.
+Protected delivery and complete final-head CI are still pending.
