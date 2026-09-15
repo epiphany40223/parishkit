@@ -28,6 +28,15 @@ integration. ADM-05 retains the Production activation UI. None of those later
 capabilities is enabled by incomplete scheduling work. Keep the fresh-install
 schema policy, restricted runtime grants and fake/disposable validation boundary.
 
+This slice durably coalesces complete, unallocated Family groups. Digest planning
+materializes bounded original slots only: the shared pure planner computes the
+missed-date range, while the following bounded recovery increment owns durable
+aggregate staging and coverage. BG-07 supplies pinned daily facts and final-weekly
+item/correction coverage before digest dispatch is enabled. Task/outbox-bound
+Family groups stay held for BG-06's journal-aware recovery; this slice never
+cancels such work merely because it appears overdue. Those boundaries do not
+claim completed mail delivery or a completed BG-04 package.
+
 ## Execution checkpoints
 
 - PR #33 delivery and its complete final-head/merge-group evidence are recorded
@@ -67,6 +76,23 @@ schema policy, restricted runtime grants and fake/disposable validation boundary
   full baseline passes 5,638 tests in 53.35 seconds, with 3,614 expected skips
   and two existing warnings. This total includes the subsequent pure recovery
   planner's 43 passing cases; durable scheduler integration remains open.
+- The next checkpoint integrates bounded Family and digest producers into the
+  actual scheduler process. Family groups commit selected/coalesced/skipped
+  outcomes atomically; digest keyset pages alternate definitions so a daily
+  backlog cannot starve the weekly schedule. Restarting repeats durable keys
+  without duplicating work. Neither producer allocates tasks or outbox messages.
+- The 92-test evaluator/recovery/planning run passes in 35.91 seconds with 92%
+  combined line/branch coverage across the five planning modules. Eighty adjacent
+  schedule/reconciliation/preview/runtime-grant tests pass in 56.17 seconds;
+  146 runtime-process/grant tests pass in 0.65 seconds. Actual restricted scheduler
+  logins can plan but cannot read Family codes, financial answers or outbox
+  messages, or claim/rewrite worker-owned occurrences. Further interruption and
+  traversal regressions, complete validation and all three reviews remain open.
+- The interruption/traversal extension and strict schema baseline pass all 48
+  checks in 33.32 seconds. The integrated full baseline passes 5,663 tests in
+  58.69 seconds, with 3,636 expected profile skips and two existing warnings.
+  Ruff, formatting and Markdown pass. The current application image rebuilt
+  successfully; disposable operational checks and review acceptance remain open.
 
 ## Fresh-install schema audit
 
@@ -88,3 +114,12 @@ The disposable audit databases on the owned PostgreSQL service at port 55442 are
 `stewardship_schedule_current_20260915`. They are reference evidence, not databases
 to upgrade. Later implementation changes require another explicit difference
 audit before updating the strict fingerprint again.
+
+The integrated-planner audit compares fresh installations at `e5b3fbe` and the
+working tree in `stewardship_family_plan_base_v2_20260915` and
+`stewardship_family_plan_current_v2_20260915` on the same disposable port. Only
+`stewardship_occurrence_guard_v1()` changes: the scheduler may reconcile only
+unallocated pending work, and closed Production campaigns may retain missed
+Family slots as skipped outcomes. The separate claim guard still denies Family
+delivery after close. All other fingerprint categories and object counts are
+unchanged. The strict fingerprint was updated after this comparison.

@@ -3038,11 +3038,27 @@ BEGIN
            OR NOT EXISTS (SELECT 1 FROM stewardship_campaign_configuration p WHERE p.id=c.active_configuration_id
                AND ((instant>=p.starts_at AND instant<p.ends_at
                    AND ((NEW.mode='testing' AND c.state='draft') OR (NEW.mode='production' AND c.state IN ('scheduled','active'))))
-                   OR (NEW.mode='production' AND c.state='closed' AND d.kind IN ('daily_digest','weekly_digest'))))
+                   OR (NEW.mode='production' AND c.state='closed')))
            OR (NEW.mode='production' AND EXISTS(SELECT 1 FROM stewardship_activation_catchup WHERE campaign_id=c.id AND completed_at IS NULL))
            OR EXISTS (SELECT 1 FROM stewardship_schedule_fulfillment WHERE definition_id=d.id AND mode=NEW.mode AND target=NEW.target AND slot=NEW.slot) THEN
             RAISE EXCEPTION 'Occurrence creation is not admitted' USING ERRCODE='23514'; END IF;
     ELSE
+        IF session_user='pk_stewardship_scheduler' AND (
+            OLD.state<>'pending' OR NEW.state NOT IN ('skipped','coalesced')
+            OR OLD.task_id IS NOT NULL OR OLD.outbox_id IS NOT NULL
+            OR NEW.revision_id IS DISTINCT FROM d.current_revision_id
+            OR c.id IS DISTINCT FROM r.current_campaign_id OR NEW.mode<>r.mode
+            OR r.restore_review_required
+            OR EXISTS(SELECT 1 FROM stewardship_campaign_work_gate
+                WHERE campaign_id=c.id AND state IN ('preparing','running','tombstone'))
+            OR (NEW.state='coalesced' AND NOT EXISTS(
+                SELECT 1 FROM stewardship_schedule_occurrence selected
+                WHERE selected.id=NEW.replacement_id AND selected.target=NEW.target
+                  AND selected.mode=NEW.mode AND selected.state='pending'
+                  AND selected.task_id IS NULL AND selected.outbox_id IS NULL
+            ))
+        ) THEN RAISE EXCEPTION 'Scheduler may only reconcile unallocated pending work'
+            USING ERRCODE='23514'; END IF;
         IF (OLD.state='pending' AND NEW.state NOT IN ('pending','running','skipped','coalesced'))
            OR (OLD.state='running' AND NEW.state NOT IN ('running','pending','delivery_unknown','succeeded','failed','skipped','coalesced'))
            OR (OLD.state='delivery_unknown' AND NEW.state NOT IN ('succeeded','pending','failed'))
