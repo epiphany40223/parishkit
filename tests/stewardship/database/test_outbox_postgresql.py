@@ -18,6 +18,7 @@ from parishkit.stewardship.accounts.configuration_installation import (
 from parishkit.stewardship.accounts.configuration_models import Parish
 from parishkit.stewardship.accounts.configuration_schema import validate_sections
 from parishkit.stewardship.audit.models import AuditEvent
+from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.delivery_states import DeliveryAction as Action
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.outbox_models import (
@@ -31,7 +32,7 @@ from parishkit.stewardship.jobs.outbox_validation import (
     DeliveryIdentity,
 )
 from parishkit.stewardship.jobs.storage import change_run, retry_failed
-from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
 from ..configuration_factory import configuration_version
 from ..test_outbox_validation import rendering
@@ -276,7 +277,7 @@ def test_unknown_cannot_blindly_retry_and_resolution_retains_old_attempt(inputs)
         )
     with pytest.raises(ValueError):
         change(unknown, Action.CANCEL_UNSENT)
-    with pytest.raises(ValueError), transaction.atomic():
+    with pytest.raises(ValueError), work_transaction():
         change(unknown, Action.RETRY_FAILED, render=inputs["render"])
     with pytest.raises(IntegrityError, match="attributed evidence"):
         change(unknown, Action.AUTHORIZE_RESEND)
@@ -326,10 +327,12 @@ def test_failed_delivery_requires_linked_task_retry_and_preserves_terminal_histo
     )
     with (
         pytest.raises(IntegrityError, match="explicit task retry"),
-        transaction.atomic(),
+        work_transaction(),
     ):
         change(failed, Action.RETRY_FAILED, render=inputs["render"])
-    with transaction.atomic():
+    with pytest.raises(StorageInvariantError, match="lock order"), transaction.atomic():
+        change(failed, Action.RETRY_FAILED, render=inputs["render"])
+    with work_transaction():
         retry = retry_failed(
             run_id=run.pk,
             command_id=uuid4(),

@@ -28,6 +28,7 @@ class ProductionAction(StrEnum):
     RECOVER = "recover"
     RETRY_LATER = "retry_later"
     FAIL = "fail"
+    RECOVERY_FAIL = "recovery_fail"
     RETRY_FAILED = "retry_failed"
     COMPLETE = "complete"
     ACTIVATE = "activate"
@@ -55,6 +56,16 @@ _TRANSITIONS = {
     ),
     ProductionAction.FAIL: (
         frozenset({ProductionState.RUNNING}),
+        ProductionState.FAILED,
+    ),
+    ProductionAction.RECOVERY_FAIL: (
+        frozenset(
+            {
+                ProductionState.QUEUED,
+                ProductionState.RUNNING,
+                ProductionState.RETRY_WAIT,
+            }
+        ),
         ProductionState.FAILED,
     ),
     ProductionAction.RETRY_FAILED: (

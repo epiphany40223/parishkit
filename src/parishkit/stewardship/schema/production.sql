@@ -39,7 +39,7 @@ BEGIN
         RAISE EXCEPTION 'Production activation requires its later owning workflow'
             USING ERRCODE='23514';
     END IF;
-    IF (NEW.failure_reason<>'') IS DISTINCT FROM (NEW.action IN ('fail','retry_later')) THEN
+    IF (NEW.failure_reason<>'') IS DISTINCT FROM (NEW.action IN ('fail','retry_later','recovery_fail')) THEN
         RAISE EXCEPTION 'Invalid cleanup failure reason for this action' USING ERRCODE='23514';
     END IF;
     IF NEW.inventory_total <> public.stewardship_cleanup_counts_v1(NEW.inventory_counts)
@@ -85,6 +85,9 @@ BEGIN
             ('cleanup_running','checkpoint','cleanup_running'),
             ('cleanup_running','retry_later','cleanup_retry_wait'),
             ('cleanup_running','fail','cleanup_failed'),
+            ('cleanup_queued','recovery_fail','cleanup_failed'),
+            ('cleanup_running','recovery_fail','cleanup_failed'),
+            ('cleanup_retry_wait','recovery_fail','cleanup_failed'),
             ('cleanup_failed','retry_failed','cleanup_queued'),
             ('cleanup_running','complete','cleanup_complete'),
             ('cleanup_queued','cancel','cancelled'),
@@ -99,8 +102,26 @@ BEGIN
     END IF;
     allowed := ARRAY['version','updated_at','actor_id','correlation_id','command_id',
                      'action','state','failure_reason'];
-    IF NEW.action IN ('start','recover') THEN
+    IF NEW.action IN ('start','recover','recovery_fail') THEN
         allowed := allowed || ARRAY['run_id','task_fence','worker_id'];
+    END IF;
+    IF NEW.action='recovery_fail' THEN
+        SELECT * INTO claim FROM public.stewardship_task_run
+            WHERE root_id=NEW.task_id ORDER BY retry_sequence DESC LIMIT 1;
+        -- Recovery first fences the dead worker and records a terminal TaskRun
+        -- outcome. This edge mirrors that exact result, not an unclaimed guess.
+        IF claim.id IS DISTINCT FROM NEW.run_id OR claim.state<>'failed'
+           OR claim.action<>'recovery_fail' OR claim.fence IS DISTINCT FROM NEW.task_fence
+           OR claim.worker_id IS DISTINCT FROM NEW.worker_id
+           OR NEW.actor_id IS DISTINCT FROM claim.actor_id OR NEW.actor_id IS NULL
+           OR (OLD.run_id IS NOT NULL AND NOT (
+               (NEW.run_id=OLD.run_id AND NEW.task_fence>OLD.task_fence)
+               OR (NEW.run_id<>OLD.run_id AND claim.retry_sequence>(
+                   SELECT retry_sequence FROM public.stewardship_task_run WHERE id=OLD.run_id
+               ))
+           )) THEN
+            RAISE EXCEPTION 'Cleanup recovery must match its fenced failed task' USING ERRCODE='23514';
+        END IF;
     END IF;
     IF NEW.action IN ('start','recover','checkpoint','retry_later','fail','complete') THEN
         SELECT * INTO claim FROM public.stewardship_task_run WHERE id=NEW.run_id;

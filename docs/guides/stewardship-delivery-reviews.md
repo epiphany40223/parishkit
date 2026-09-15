@@ -85,3 +85,115 @@ object counts are unchanged. The corrected function fingerprint is
 An initial combined invocation ran the external audit before the repository's
 fresh-seed fixture and consequently failed the later fixture after audit-test
 flush; audit and repository schema tests must run as separate invocations.
+
+## Successful replacement review
+
+The next full-diff attempt, session `20260914-190751-a1ee81`, reviewed head
+`2b8eddbf586fc8f8f073f37221d221b20adf8fa6`, tree
+`07d082b0bcbae92e578dae5aaf8bf70f439f93ea`, against the same merged base.
+Its three Claude shards completed, but Codex failed on quota before the human's
+usage reset. That attempt is not a completed round. Its finalize artifact is
+`79ab385af20a811553692f67fd219da7a3de3769891cc71509c6519a4be1bed1`.
+
+At the human's request, replacement session `20260914-214918-7f98cd` reran only
+Pika's failed Codex source. A fresh exact-command permission preflight passed.
+The base, head, tree, focus, full/shard diff bytes and Claude prompts were
+verified equivalent; the only prompt difference was the session path. Existing
+Claude outputs were copied byte-for-byte and revalidated, not rerun or rewritten.
+`reused-claude-provenance.json` preserves that provenance. Claude output mtimes
+in the replacement session are copy times, not fresh review durations.
+
+Codex completed successfully in 776 seconds. Finalization reported no failed
+agents, degradation, verdict mismatch or salvage requirement: 9 validated
+Medium findings, 0 High/Critical. The raw reports contain 10 Medium (one
+cross-source overlap) and 31 Low findings. Finalize artifact SHA-256:
+`47488e266c0af475a59d12b50f5e1d7bcb846f81887c20c4e39e23f4b3406aec`.
+Count this as the first successful dual-source review, not three separate rounds
+for the original failures and replacement. Post-fix validation completes the
+round; two further completed correction rounds remain required before a PR.
+
+### Replacement Medium dispositions
+
+All nine validated findings were verified and corrected under the standing
+autonomous triage authority. No additional approval or scope expansion was
+needed.
+
+| Concern | Correction |
+| --- | --- |
+| Testing retry reopens frozen cleanup inventory (agreed) | Recheck mode/gate/epoch on failed retry and other transitions back to unsent work. Regression proves linked task/render changes roll back after go-live begins. |
+| Missing independent SQL tests | Add raw ORM-bypass binding, render shape/template, hold, retry/completion clock, Production credential and checkpoint-event tests. The claimed missing go-live retention test already existed and remains. |
+| Retry lock-order inversion | Both journals require the outer work-order lock before retry-root allocation. Tests reject plain atomic transactions and preserve successful linked retries. |
+| Exhausted crash strands cleanup | Add attributed `recovery_fail`, bound to the latest fenced failed TaskRun; test both crash before domain start and crash after a checkpoint, then explicit retry. |
+| Key rotation breaks resealed replay | Exclude encryption key identity as well as randomized ciphertext from semantic replay; verify original envelopes and retained-key dependencies survive rotation. |
+| Admission cannot see proposed transition proof | Supply frozen `DeliveryCommand` with exact evidence/options and redacted metadata; pin the proposed submit task before admission and replay, including a child retry run. |
+| Production submit/pause fence absent | Check current Production mode/campaign and restore/go-live/pause gates; bind hold/release to actual pause/resume state. Exercise real synthetic lifecycle controls, not fabricated pause flags. |
+| Same cleanup batch counted twice | Unique per-request batch digest plus early replay-collision rejection; verify a new command cannot rerun its deletion callback or increase progress. |
+| Deferred render pin ignores intermediate history | Validate each trigger's captured render selection; prove a later valid selection cannot rescue an invalid intermediate event. |
+
+### Replacement raw Low dispositions
+
+All 31 below-cutoff findings were inspected. These dispositions preserve the
+original Low severity; they are not additional validated Medium findings.
+Deferred owner checks must be implemented before their workflow is exposed.
+
+| # | Concern | Disposition |
+| --- | --- | --- |
+| 1 | Checkpoint/transition command namespace collision fails late | Existing unique event command rolls back all database work. Defer early error classification to BG-03's compiled deletion owner. |
+| 2 | Null active configuration fails after callbacks | Existing non-null request constraint rolls back all effects; ADM-05 readiness must reject incomplete setup before intent. |
+| 3 | Unknown/wrong-root cleanup claim lookup | SQL rejects mismatched roots; global work-order serialization prevents the hypothesized lock cycle. BG-03 supplies owned run IDs and typed recovery errors. |
+| 4 | Binding/version errors precede admission | Internal storage only, with no runtime write grants or user-callable port. ADM-05/BG-03 must authorize callers before identifying private requests. |
+| 5 | Guide shows obsolete fingerprint | Corrected counts and linked the current ledger evidence. |
+| 6 | Redundant Production event checks for symmetry | Keep the binding trigger as authority: action matches the checked request; previous state matches prior immutable history. Additional checks are unnecessary for correctness. |
+| 7 | Action tuple assembly complexity | Preserve deterministic catalog ordering and the existing enum-derived vocabulary; no behavioral defect. |
+| 8 | Key-rotation replay | Fixed with the corresponding Medium finding. |
+| 9 | Replay requires original expected version | Explicitly document exact command replay, including expected version; changed intent remains a conflict. |
+| 10 | Release of unheld message reaches SQL error | SQL rejects atomically. Defer presentation/error translation to BG-06's resume workflow. |
+| 11 | Namespace validation occurs after admission | Callbacks perform no external work; rejected input rolls back. BG-06 must construct typed owner inputs before calling storage. |
+| 12 | Repeated delivery-purpose vocabulary | Existing pure matrix and schema/model equivalence tests cover current values. Defer optional enum refactoring to the first BG-06 consumer. |
+| 13 | Extra ciphertext-bearing ORM reads | Bounded internal transaction, no decryption or logging. Defer query trimming until BG-06 dispatch profiling establishes its workload. |
+| 14 | Broad history-update exception assertion | Existing immutable guard is the intended defense; dedicated new intermediate-render tests independently prove the specific history-binding boundary. |
+| 15 | Broad late-batch failure exception assertion | Existing tests assert rollback, with independent claim/category tests asserting specific guard messages. No accepted behavioral gap remains. |
+| 16 | One-second cleanup lease tests | Preserve genuine database-clock/fencing tests; no deadline relaxation. Investigate full-suite timing failures separately before final acceptance. |
+| 17 | Production token liveness | SQL currently proves identity binding; BG-06 owns current generation, token liveness and eligibility checks immediately before dispatch, now explicitly documented. |
+| 18 | Future SQL writers could omit work-order lock | Current writers serialize and no runtime generic port exists. BG-03/BG-06 compiled entry points must join the same work-order lock before any gate/inventory write. |
+| 19 | Redundant terminal-count scan | Retain the explicit nonterminal rejection for readability; no scale concern established for the once-per-campaign journal prerequisite. |
+| 20 | Raw insert could record stale gate version | Current owner captures the locked credential version and immutable request retains it. ADM-05's compiled port must derive, not accept, that value. |
+| 21 | Busy key lock and retired key share error | Both fail closed without provider work. BG-06 must classify transient key contention at its compiled boundary. |
+| 22 | Task/domain completion ordering | BG-03/BG-06 must reconcile domain outcome before marking tasks terminal; generic TaskRun success never proves delivery or cleanup success. |
+| 23 | SQL lower versus Python casefold | SQL supplies minimum shape checks; the typed renderer is intentionally stricter. BG-06 must use the canonical recipient validator. |
+| 24 | Shared UUID helper has delivery-specific name | Internal error naming only; defer shared-helper extraction until another public owner needs it. |
+| 25 | Redundant whitespace mailbox check | Retain inexpensive explicit defense in depth. |
+| 26 | Operational mail can carry campaign attribution | Intentional: deduplication scope is parish, while operational errors may identify their related campaign. Testing cleanup selects routing, not attribution. |
+| 27 | Whitespace reconciliation note | Nonempty verified digest and owning admission still required; BG-06's evidence resolver must require a meaningful human note rather than infer proof from note shape. |
+| 28 | Grant probe checks writes, not every SELECT | Current increment promises no generic mutation port; private read exposure remains covered by existing role contracts. BG-06 must test its exact decrypt/read surface when granted. |
+| 29 | Short outbox lease/retry test windows | Retain genuine timing boundaries; investigate failures without weakening leases or silently accepting flaky full-suite results. |
+| 30 | Broad immutability exception checks | Existing all-model immutability suite and new specific binding tests independently cover the boundaries; assertion-message tightening is optional. |
+| 31 | Function-local test imports | Retain the established fixture-import pattern; production fixtures are shared with boundary tests and broad import rearrangement is unnecessary. |
+
+### Correction validation
+
+The first correction run found two test-contract mismatches, not passing
+acceptance: an older retry test omitted the newly required work-order lock, and
+the synthetic Production fixture had not cleaned its rehearsal credentials.
+Both fixtures now use the actual owning workflows. The subsequent journal/SQL
+suite passed 106 tests in 74.68 seconds. The pure transition/input suite passed
+212 tests in 0.31 seconds; Django reported no model-state changes.
+The final focused run, including strict catalog/model checks and independent
+SQL guard tests, passed 39 tests in 29.00 seconds. Ruff lint and formatting pass.
+This completes the first review/fix round's applicable local validation; full
+same-tree quality remains a separate PR acceptance requirement.
+
+The independent merged-base audit passed in 11.32 seconds. All preexisting
+catalog objects remain unchanged. The correction adds one checkpoint uniqueness
+constraint and its index: 2,350 constraints and 719 indexes overall. Function
+fingerprint:
+`51fe2913061eaa7e7a74e3a4fef22e604df2601f31e5e7d65ba387bb2a2b02bc`.
+The strict fixture was updated only after that comparison.
+
+The earlier second full coverage run is also not acceptance: its four shards
+reported 644 passed; 649 passed/6 failed; 636 passed/14 failed; and 665 passed.
+The failures include authentication, timestamp and setup paths; the cause is
+not yet established. A new 300-sample read-only host/PostgreSQL probe showed no
+backward clock steps, with observed offsets from -4.505 to +7.291 milliseconds.
+That probe does not retroactively explain or excuse earlier failures. Final
+same-tree coverage and protected CI remain required.

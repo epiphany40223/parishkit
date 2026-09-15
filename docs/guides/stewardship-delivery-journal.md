@@ -34,6 +34,33 @@ process. Recovery producers pass that same initiator and fresh admission; a
 different actor cannot silently reuse the original command. Resealing the same
 credential is permitted on replay, but the first committed envelope is retained.
 Changed credential identity or render requires an explicit new preparation.
+This includes resealing after active-key rotation: key identity and randomized
+ciphertext do not define the semantic command. Replay must retain the original
+command ID, expected version and proof/options, not substitute a freshly loaded
+version. Dispatch must load the retained envelope, not assume its replay input
+replaced it.
+
+Explicit failed-message or cleanup retry starts with `work_transaction()` before
+allocating its linked TaskRun retry, then advances the domain journal within
+that same transaction. A plain `transaction.atomic()` is insufficient. Delivery
+transition admission receives a fourth, frozen `DeliveryCommand` argument with
+the exact proposed evidence/options and non-secret render/credential metadata;
+the proposed submit task is locked before admission, including replay. Other
+outbox admission callbacks retain their three-argument contract.
+
+Cleanup crash recovery may mirror a fenced terminal TaskRun `recovery_fail`
+without a live worker. It must bind the latest failed run, recovery actor and
+fence, retain completed checkpoints and continue holding the go-live gate.
+Checkpoint batches have a unique per-request digest as well as a command ID;
+retry a lost response with its original command. A deletion callback returns
+success only when actual per-category deletion counts equal the proposed batch,
+never merely because an already-deleted batch is harmless to repeat.
+
+Production submission independently checks current mode/campaign, restore/go-live
+gates and campaign pause state. Holds bind the actual paused version and release
+only after a later resume. BG-06 still owns full date/purpose, recipient, live
+token-generation and catch-up admission; operational notifications may retain
+campaign attribution while their deduplication scope remains the parish.
 
 ## Internal checkpoints
 
@@ -95,15 +122,15 @@ An independently created reference database was installed from merged
 `6c8cd512e5121095961ffbeb3f80f4dfd844043c`. Its full strict fingerprint matches
 that commit before comparison with the candidate. Every preexisting relation,
 column, constraint, index, function, trigger and policy is unchanged; none is
-removed. The additions are eight journal tables, 152 columns, 224 constraints,
-51 indexes, 20 functions and 20 triggers. The only new guard attached to an
+removed. The additions are eight journal tables, 152 columns, 225 constraints,
+52 indexes, 20 functions and 20 triggers. The only new guard attached to an
 existing table is the deferred go-live-gate pin on campaign credentials.
 All 28 existing row policies are unchanged.
 
-The candidate totals are 137 relations, 1,635 columns, 2,349 constraints,
-718 indexes, 334 functions, 332 triggers and 28 policies. The reviewed function
-fingerprint is
-`c37d10b60d33c4f27b5703509f088a812c59fd29cdc6963d47cedba15caabc86`.
+The corrected candidate totals are 137 relations, 1,635 columns, 2,350 constraints,
+719 indexes, 334 functions, 332 triggers and 28 policies. Current audit evidence
+and the function fingerprint are in the
+[review ledger](stewardship-delivery-reviews.md#successful-replacement-review).
 The all-model comparison independently confirms current field types, defaults,
 nullability, foreign keys and complete constraint/index definitions. The strict
 fixture was updated only after inspecting the additive catalog delta.

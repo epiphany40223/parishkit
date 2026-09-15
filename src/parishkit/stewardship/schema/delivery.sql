@@ -42,7 +42,8 @@ BEGIN
     END IF;
     -- Campaign Testing work is never an operational-mail exception. Recheck
     -- both allocation and the last local boundary before external submission.
-    IF NEW.routing='testing_override' AND (TG_OP='INSERT' OR NEW.action IN ('prepared','submit'))
+    IF NEW.routing='testing_override' AND (TG_OP='INSERT' OR NEW.action IN
+       ('prepared','submit','retry_failed','authorize_resend','retry_unaccepted','retry_idempotent'))
        AND NOT EXISTS (
            SELECT 1 FROM public.stewardship_campaign_credentials c
            JOIN public.stewardship_system_configuration s ON s.current_campaign_id=c.campaign_id
@@ -123,6 +124,15 @@ BEGIN
                    (OLD.pause_hold_id IS NULL OR NEW.pause_hold_id IS NOT NULL)) THEN
                 RAISE EXCEPTION 'Invalid delivery hold operation' USING ERRCODE='23514';
             END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM public.stewardship_campaign c
+                WHERE c.id=NEW.campaign_id AND NEW.routing='production'
+                  AND ((NEW.action='hold' AND c.delivery_paused AND c.pause_version=NEW.pause_version)
+                    OR (NEW.action='release_hold' AND NOT c.delivery_paused
+                        AND c.pause_version>OLD.pause_version))
+            ) THEN
+                RAISE EXCEPTION 'Delivery hold must match campaign pause state' USING ERRCODE='23514';
+            END IF;
         END IF;
     ELSE
         IF NOT EXISTS (
@@ -156,6 +166,19 @@ BEGIN
             SELECT * INTO claim FROM public.stewardship_task_run WHERE id=NEW.run_id;
             IF OLD.pause_hold_id IS NOT NULL THEN
                 RAISE EXCEPTION 'Delivery is paused' USING ERRCODE='23514';
+            END IF;
+            -- Minimum lifecycle fence even before per-message holds are attached.
+            -- The later owner also verifies dates, purpose-specific post-close
+            -- rules, recipient eligibility and catch-up readiness under this lock.
+            IF NEW.routing='production' AND NOT EXISTS (
+                SELECT 1 FROM public.stewardship_campaign c
+                JOIN public.stewardship_system_configuration s ON s.current_campaign_id=c.id
+                JOIN public.stewardship_campaign_credentials k ON k.campaign_id=c.id
+                WHERE c.id=NEW.campaign_id AND s.mode='production'
+                  AND NOT s.restore_review_required AND NOT k.go_live_gate
+                  AND c.state IN ('scheduled','active','closed') AND NOT c.delivery_paused
+            ) THEN
+                RAISE EXCEPTION 'Production delivery is not currently admitted' USING ERRCODE='23514';
             END IF;
             IF OLD.not_before > statement_timestamp() THEN
                 RAISE EXCEPTION 'Delivery retry is not yet due' USING ERRCODE='23514';
@@ -271,12 +294,12 @@ END $$;
 CREATE FUNCTION public.stewardship_outbox_render_pin_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp AS $$
 DECLARE
-    message public.stewardship_outbox_message%ROWTYPE;
     rendering public.stewardship_outbox_render%ROWTYPE;
 BEGIN
-    SELECT * INTO message FROM public.stewardship_outbox_message WHERE id=NEW.id;
-    SELECT * INTO rendering FROM public.stewardship_outbox_render WHERE id=message.render_id;
-    IF rendering.id IS NULL OR rendering.message_id IS DISTINCT FROM message.id THEN
+    -- Check every captured selection, not just the final mutable message row:
+    -- each intermediate selection already has an immutable history event.
+    SELECT * INTO rendering FROM public.stewardship_outbox_render WHERE id=NEW.render_id;
+    IF rendering.id IS NULL OR rendering.message_id IS DISTINCT FROM NEW.id THEN
         RAISE EXCEPTION 'Delivery render belongs to another message' USING ERRCODE='23514';
     END IF;
     RETURN NULL;

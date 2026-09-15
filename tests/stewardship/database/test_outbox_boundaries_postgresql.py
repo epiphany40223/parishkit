@@ -22,9 +22,11 @@ from parishkit.stewardship.accounts.cryptography import (
     Key,
     TokenPrivateKeyring,
 )
+from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.secret_models import SECRET_TARGETS
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.cipher_rotation import reencrypt_batch
+from parishkit.stewardship.campaigns.controls import change_control
 from parishkit.stewardship.campaigns.credential_keys import (
     add_rotation_key,
     key_set_lock,
@@ -35,9 +37,15 @@ from parishkit.stewardship.campaigns.credential_models import (
     RehearsalCredential,
 )
 from parishkit.stewardship.campaigns.key_retirement import retire_keys
-from parishkit.stewardship.campaigns.rehearsals import invalidate_rehearsal
+from parishkit.stewardship.campaigns.lifecycle import Action as CampaignAction
+from parishkit.stewardship.campaigns.rehearsals import (
+    cleanup_rehearsal,
+    invalidate_rehearsal,
+)
+from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.delivery_states import DeliveryAction as Action
+from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage, OutboxRender
 from parishkit.stewardship.jobs.outbox_storage import (
     create_message,
@@ -50,9 +58,11 @@ from parishkit.stewardship.jobs.outbox_validation import (
     SealedSubstitutions,
     substitution_context,
 )
+from parishkit.stewardship.jobs.storage import change_run, retry_failed
 from parishkit.stewardship.runtime_grants import runtime_grants
 
 from ..test_outbox_validation import rendering
+from .campaign_builders import command
 from .test_family_auth_postgresql import family_service  # noqa: F401
 from .test_key_retirement_postgresql import proof_owner
 from .test_outbox_postgresql import (  # noqa: F401
@@ -208,7 +218,7 @@ def test_terminal_outcomes_scrub_sealed_values_but_not_history(family_service, o
 
 
 def test_pause_is_orthogonal_and_stale_dispatch_cannot_cross_it(family_service):  # noqa: F811
-    """Synthetic Production routing proves hold mechanics, not live-mode admission."""
+    """Actual lifecycle controls fence dispatch even before its hold is attached."""
     family = FamilyCampaign.objects.get()
     campaign = family_service.campaign
     first = create_message(
@@ -238,6 +248,22 @@ def test_pause_is_orthogonal_and_stale_dispatch_cannot_cross_it(family_service):
         pause_version=1,
         admit=permit,
     )
+    with pytest.raises(IntegrityError, match="campaign pause state"):
+        hold_message(**hold)
+    task = claim(first)
+    with pytest.raises(
+        IntegrityError, match="Production delivery is not currently admitted"
+    ):
+        submit(first, task=task)
+    epoch = invalidate_rehearsal(campaign_id=campaign.pk, admit=permit)
+    while cleanup_rehearsal(epoch):
+        pass
+    command(campaign, uuid4(), CampaignAction.ACTIVATE)
+    control(campaign, "pause")
+    with pytest.raises(
+        IntegrityError, match="Production delivery is not currently admitted"
+    ):
+        submit(first, task=task)
     held = hold_message(**hold)
     assert (
         held.state == first.state
@@ -245,9 +271,19 @@ def test_pause_is_orthogonal_and_stale_dispatch_cannot_cross_it(family_service):
         and held.pause_hold_id is not None
     )
     assert hold_message(**hold) == held
-    task = claim(held)
     with pytest.raises(IntegrityError, match="Delivery is paused"):
         submit(held, task=task)
+    release = dict(
+        message_id=held.message_id,
+        expected_version=held.version,
+        command_id=uuid4(),
+        actor_id=uuid4(),
+        correlation_id=uuid4(),
+        admit=permit,
+    )
+    with pytest.raises(IntegrityError, match="campaign pause state"):
+        release_message_hold(**release)
+    control(campaign, "resume")
     resumed = release_message_hold(
         message_id=held.message_id,
         expected_version=held.version,
@@ -258,6 +294,22 @@ def test_pause_is_orthogonal_and_stale_dispatch_cannot_cross_it(family_service):
     )
     assert resumed.pause_hold_id is None and resumed.attempt == 0
     assert submit(resumed, task=task).attempt == 1
+
+
+def control(campaign, action):
+    """Use the durable pause/resume ledger, never patch the campaign flags."""
+    campaign.refresh_from_db()
+    return change_control(
+        campaign_id=campaign.pk,
+        request_id=uuid4(),
+        action=action,
+        expected_version=campaign.version,
+        expected_runtime_version=SystemConfiguration.objects.get().version,
+        actor_id=uuid4(),
+        correlation_id=uuid4(),
+        reason="Synthetic control",
+        admit=permit,
+    )
 
 
 @pytest.mark.parametrize(
@@ -512,3 +564,126 @@ def test_pending_testing_mail_blocks_cleanup_until_terminal(sealed_inputs, inten
     change(first, Action.CANCEL_UNSENT)
     intent["summary"] = replace(intent["summary"], messages=1, cancelled=1)
     assert begin_transition(**intent).state == "cleanup_queued"
+
+
+def test_failed_testing_retry_cannot_reopen_go_live_inventory(sealed_inputs, intent):  # noqa: F811
+    """A linked task retry rolls back if cleanup already froze terminal mail."""
+    from parishkit.stewardship.campaigns.production_storage import begin_transition
+
+    options, reseal = sealed_inputs
+    failed = change(
+        submit(create_message(**options)),
+        Action.FAIL_UNACCEPTED,
+        evidence=provider_evidence(),
+    )
+    task = TaskRun.objects.get(pk=failed.task_id)
+    change_run(
+        run_id=task.pk,
+        expected_version=task.version,
+        action="permanent_failure",
+        actor_id=task.worker_id,
+        fence=task.fence,
+        correlation_id=uuid4(),
+        admit=permit,
+    )
+    intent["summary"] = replace(intent["summary"], messages=1, failed=1)
+    begin_transition(**intent)
+    with (
+        pytest.raises(
+            IntegrityError, match="Testing delivery is not currently admitted"
+        ),
+        work_transaction(),
+    ):
+        retry_failed(
+            run_id=task.pk,
+            command_id=uuid4(),
+            actor_id=uuid4(),
+            correlation_id=uuid4(),
+            admit=permit,
+        )
+        change(failed, Action.RETRY_FAILED, render=options["render"], sealed=reseal())
+    retained = OutboxMessage.objects.get(pk=failed.message_id)
+    assert retained.state == "permanent_failure" and retained.sealed_key_id is None
+    assert retained.renders.count() == 1
+    assert TaskRun.objects.filter(root_id=task.pk).count() == 1
+
+
+def test_rotated_key_replays_keep_original_envelopes(sealed_inputs, family_service):  # noqa: F811
+    """Resealing after a key change neither conflicts nor retires the retained key."""
+    options, reseal = sealed_inputs
+    first = create_message(**options)
+    content = replace(options["render"], text="Updated")
+    preparation = dict(
+        message_id=first.message_id,
+        expected_version=first.version,
+        command_id=uuid4(),
+        actor_id=options["actor_id"],
+        correlation_id=uuid4(),
+        admit=permit,
+        render=content,
+        sealed=reseal(content),
+    )
+    prepared = prepare_message(**preparation)
+    rotated = TokenPrivateKeyring(
+        [Key("t1", "decrypt-only", b"t" * 32), Key("t2", "active", b"u" * 32)]
+    )
+    add_rotation_key(family_service.rings.public, rotated.public())
+
+    def rotated_seal(render):
+        """Encrypt the same credential using the newly active public key."""
+        return SealedSubstitutions(
+            rotated.public().encrypt(
+                b"synthetic-token",
+                context=substitution_context(options["identity"], render),
+            )
+        )
+
+    assert (
+        create_message(**(options | {"sealed": rotated_seal(options["render"])}))
+        == prepared
+    )
+    assert (
+        prepare_message(**(preparation | {"sealed": rotated_seal(content)})) == prepared
+    )
+    retained = OutboxMessage.objects.get(pk=first.message_id)
+    assert retained.sealed_substitutions == preparation["sealed"].envelope
+    assert retained.sealed_key_id == "t1" and retained.renders.count() == 2
+    reencrypt_batch(rotated, admit=permit)
+    with pytest.raises(CryptographicError, match="Retained delivery requires"):
+        retire_keys(
+            rotated,
+            TokenPrivateKeyring([rotated.active]),
+            admit=permit,
+            dependencies=proof_owner(),
+        )
+
+
+@pytest.mark.parametrize("restore_valid_selection", [False, True])
+def test_each_historical_render_selection_belongs_to_its_message(
+    inputs,  # noqa: F811
+    restore_valid_selection,
+):
+    """A later valid selector cannot hide an invalid intermediate history event."""
+    first = create_message(**inputs)
+    second = create_message(
+        **(inputs | {"identity": replace(inputs["identity"], semantic_key=uuid4())})
+    )
+    with (
+        pytest.raises(IntegrityError, match="belongs to another message"),
+        transaction.atomic(),
+    ):
+        OutboxMessage.objects.filter(pk=second.message_id).update(
+            action="prepared",
+            command_id=uuid4(),
+            version=F("version") + 1,
+            render_id=first.render_id,
+        )
+        if restore_valid_selection:
+            OutboxMessage.objects.filter(pk=second.message_id).update(
+                action="prepared",
+                command_id=uuid4(),
+                version=F("version") + 1,
+                render_id=second.render_id,
+            )
+    retained = OutboxMessage.objects.get(pk=second.message_id)
+    assert retained.version == 1 and retained.events.count() == 1

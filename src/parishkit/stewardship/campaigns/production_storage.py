@@ -31,7 +31,7 @@ from .production_models import (
 )
 from .production_states import ProductionAction, ProductionState, production_target
 from .rehearsals import invalidate_rehearsal, release_rehearsal_gate
-from .work_locks import work_transaction
+from .work_locks import require_work_order, work_transaction
 
 
 def _digest(value):
@@ -254,15 +254,25 @@ def change_transition(
     task_fence=None,
     failure_reason="",
 ):
-    """Advance cleanup state only; activation needs the later complete owner."""
+    """Advance cleanup state only; activation needs the later complete owner.
+
+    Explicit failed retry requires work_transaction before the caller allocates
+    its linked TaskRun retry and invokes this function in that transaction.
+    """
     _ids(request_id, command_id, actor_id, correlation_id, expected_version)
     if not isinstance(action, ProductionAction):
         raise TypeError("A typed Production action is required.")
+    if action is ProductionAction.RETRY_FAILED:
+        require_work_order()
     if action is ProductionAction.ACTIVATE:
         raise StorageInvariantError(
             "Production activation is not exposed by this journal."
         )
-    claim_action = action in (ProductionAction.START, ProductionAction.RECOVER)
+    claim_action = action in (
+        ProductionAction.START,
+        ProductionAction.RECOVER,
+        ProductionAction.RECOVERY_FAIL,
+    )
     if claim_action:
         identifier(run_id)
         if type(task_fence) is not int or task_fence < 1:
@@ -274,7 +284,12 @@ def change_transition(
     ):
         raise ValueError("Invalid cleanup failure reason.")
     if bool(failure_reason) != (
-        action in (ProductionAction.FAIL, ProductionAction.RETRY_LATER)
+        action
+        in (
+            ProductionAction.FAIL,
+            ProductionAction.RETRY_LATER,
+            ProductionAction.RECOVERY_FAIL,
+        )
     ):
         raise ValueError(
             "A cleanup failure reason belongs only to a failed or delayed operation."
@@ -332,8 +347,10 @@ def change_transition(
             failure_reason=failure_reason,
         )
         if claim_action:
-            TaskRun.objects.select_for_update().get(pk=run_id)
-            values.update(run_id=run_id, task_fence=task_fence, worker_id=actor_id)
+            task = TaskRun.objects.select_for_update().get(pk=run_id)
+            values.update(
+                run_id=run_id, task_fence=task_fence, worker_id=task.worker_id
+            )
         ProductionTransitionRequest.objects.filter(pk=request_id).update(**values)
         request.refresh_from_db()
         if action is ProductionAction.CANCEL:
@@ -358,7 +375,9 @@ def checkpoint_cleanup(
     """Commit one owner-selected Testing batch and its checkpoint together.
 
     apply_batch(status, batch) must recheck exact inventory membership and scope,
-    perform bounded database deletions only, and return exactly True. A failure,
+    perform bounded database deletions only, and return exactly True only when
+    the actual deleted category counts equal the batch counts. Zero-row replay
+    is not success: reuse the original command instead. A failure,
     stale worker, invalid count or missing progress rolls back all those effects.
     """
     _ids(request_id, command_id, actor_id, correlation_id, expected_version)
@@ -386,6 +405,12 @@ def checkpoint_cleanup(
             return _status(request)
         if request.version != expected_version:
             raise StaleRecordError("Production request version changed.")
+        if ProductionCleanupCheckpoint.objects.filter(
+            request=request, batch_digest=batch.digest
+        ).exists():
+            raise ValueError(
+                "Cleanup batch has already committed under another command."
+            )
         if request.state != "cleanup_running":
             raise StorageInvariantError("Cleanup requires a running request.")
         _admit(admit, "checkpoint", campaign, _status(request))

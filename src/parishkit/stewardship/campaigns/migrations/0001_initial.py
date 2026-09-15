@@ -3470,6 +3470,10 @@ class Migration(migrations.Migration):
                                 fields=("request", "command_id"),
                                 name="production_checkpoint_command",
                             ),
+                            models.UniqueConstraint(
+                                fields=("request", "batch_digest"),
+                                name="production_checkpoint_batch",
+                            ),
                             models.CheckConstraint(
                                 condition=models.Q(
                                     ("deleted_count__gte", 1),
@@ -3588,6 +3592,7 @@ class Migration(migrations.Migration):
                                     "checkpoint",
                                     "retry_later",
                                     "fail",
+                                    "recovery_fail",
                                     "retry_failed",
                                     "complete",
                                     "activate",

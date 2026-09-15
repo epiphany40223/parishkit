@@ -207,6 +207,9 @@ class ProductionCleanupCheckpoint(ImmutableRecord):
             models.UniqueConstraint(
                 fields=["request", "command_id"], name="production_checkpoint_command"
             ),
+            models.UniqueConstraint(
+                fields=["request", "batch_digest"], name="production_checkpoint_batch"
+            ),
             models.CheckConstraint(
                 condition=models.Q(
                     sequence__gte=1, deleted_count__gte=1, task_fence__gte=1

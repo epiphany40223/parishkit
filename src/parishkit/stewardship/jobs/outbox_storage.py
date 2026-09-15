@@ -8,14 +8,16 @@ later compiled dispatch and cleanup owners supply their real permission proof.
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import timedelta
 from uuid import UUID, uuid4
 
-from django.db import transaction
 from django.db.models.functions import Now
 
-from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.campaigns.work_locks import (
+    require_work_order,
+    work_transaction,
+)
 from parishkit.stewardship.observability import correlation
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
@@ -54,6 +56,31 @@ class DeliveryStatus:
     pause_hold_id: UUID | None
 
 
+@dataclass(frozen=True)
+class DeliveryCommand:
+    """Exact proposed transition proof; never includes content or ciphertext.
+
+    The admission owner receives this fourth argument for transitions and their
+    replays. The private reconciliation note is omitted from representations.
+    """
+
+    action: DeliveryAction
+    command_id: UUID
+    expected_version: int
+    actor_id: UUID
+    evidence: DeliveryEvidence = field(repr=False)
+    run_id: UUID | None
+    task_fence: int | None
+    provider_seconds: int | None
+    retry_seconds: int | None
+    render_digest: str | None
+    configuration_id: UUID | None
+    template_id: UUID | None
+    sealed_key_id: str | None
+    token_generation_id: UUID | None
+    credential_epoch_id: UUID | None
+
+
 def _status(message):
     """Detach operation identity from the mutable ORM row."""
     return DeliveryStatus(
@@ -76,11 +103,12 @@ def _status(message):
     )
 
 
-def _admit(callback, action, identity, status):
+def _admit(callback, action, identity, status, proposal=None):
     """A truthy placeholder is not owning-service admission, including on replay."""
     if not callable(callback):
         raise TypeError("Delivery admission callback is required.")
-    if callback(action, identity, status) is not True:
+    args = (action, identity, status)
+    if callback(*(args if proposal is None else (*args, proposal))) is not True:
         raise PermissionError("Delivery operation is not admitted.")
 
 
@@ -123,6 +151,7 @@ def _command_digest(*values):
             # Replays keep the first envelope; admission still verifies the owner.
             value = value.fields()
             value.pop("sealed_substitutions")
+            value.pop("sealed_key_id")
         elif isinstance(value, DeliveryIdentity | DeliveryEvidence):
             value = asdict(value)
         converted.append(value)
@@ -225,9 +254,12 @@ def change_message(
     """Apply a numbered attempt or evidence-backed resolution under owning locks.
 
     Admission must validate provider evidence, current mode/epoch, eligibility,
-    holds and authorization. An action enum or elapsed provider deadline cannot
+    holds and authorization using its fourth argument, a frozen DeliveryCommand
+    describing the exact proposed proof/options. SUBMIT pins its proposed task
+    before admission, including replay. An elapsed provider deadline cannot
     establish acceptance/nonacceptance. Explicit failed retry requires the owning
-    caller to allocate its linked TaskRun retry in this same outer transaction.
+    caller to enter work_transaction before allocating its linked TaskRun retry
+    and invoking this function in that same ordered transaction.
     """
     _operation_ids(command_id, actor_id, correlation_id)
     identifier(message_id)
@@ -252,9 +284,29 @@ def change_message(
         render,
         sealed,
     )
+    credentials = sealed.fields() if sealed is not None else {}
+    proposal = DeliveryCommand(
+        action=action,
+        command_id=command_id,
+        expected_version=expected_version,
+        actor_id=actor_id,
+        evidence=evidence,
+        run_id=run_id,
+        task_fence=task_fence,
+        provider_seconds=provider_seconds,
+        retry_seconds=retry_seconds,
+        render_digest=render.fields()["payload_digest"] if render is not None else None,
+        configuration_id=render.configuration_id if render is not None else None,
+        template_id=render.template_id if render is not None else None,
+        sealed_key_id=credentials.get("sealed_key_id"),
+        token_generation_id=credentials.get("token_generation_id"),
+        credential_epoch_id=credentials.get("credential_epoch_id"),
+    )
     with correlation(correlation_id), work_transaction():
         initial = OutboxMessage.objects.get(pk=message_id)
         TaskRun.objects.select_for_update().get(pk=initial.task_id)
+        if action is DeliveryAction.SUBMIT:
+            TaskRun.objects.select_for_update().get(pk=run_id)
         message = OutboxMessage.objects.select_for_update().get(pk=message_id)
         status = _status(message)
         previous = OutboxEvent.objects.filter(
@@ -271,12 +323,12 @@ def change_message(
                 )
             ):
                 raise ValueError("Delivery command is already bound.")
-            _admit(admit, "transition_replay", status.identity, status)
+            _admit(admit, "transition_replay", status.identity, status, proposal)
             return status
         if message.version != expected_version:
             raise StaleRecordError("Delivery version changed.")
         target = delivery_target(status.state, action)
-        _admit(admit, action, status.identity, status)
+        _admit(admit, action, status.identity, status, proposal)
         values = dict(
             state=target.value,
             action=action.value,
@@ -288,7 +340,6 @@ def change_message(
             **asdict(evidence),
         )
         if action is DeliveryAction.SUBMIT:
-            TaskRun.objects.select_for_update().get(pk=run_id)
             values.update(
                 attempt=message.attempt + 1,
                 run_id=run_id,
@@ -341,13 +392,13 @@ def _validate_options(
     elif retry_seconds is not None:
         raise ValueError("Unexpected delivery retry schedule.")
     if action is DeliveryAction.RETRY_FAILED:
-        if (
-            not isinstance(render, RenderInput)
-            or not transaction.get_connection().in_atomic_block
-        ):
+        require_work_order()
+        if not isinstance(render, RenderInput):
             raise StorageInvariantError(
-                "Failed delivery retry requires an owning transaction and fresh render."
+                "Failed delivery retry requires a fresh render."
             )
+        if sealed is not None and not isinstance(sealed, SealedSubstitutions):
+            raise TypeError("Typed sealed delivery credentials are required.")
     elif render is not None or sealed is not None:
         raise ValueError("Unexpected delivery preparation.")
 

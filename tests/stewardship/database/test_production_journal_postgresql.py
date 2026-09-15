@@ -16,6 +16,7 @@ from parishkit.stewardship.campaigns.credential_models import (
     RehearsalEpoch,
 )
 from parishkit.stewardship.campaigns.production_models import (
+    ProductionCleanupCheckpoint,
     ProductionTransitionRequest,
 )
 from parishkit.stewardship.campaigns.production_models import (
@@ -30,6 +31,7 @@ from parishkit.stewardship.campaigns.production_storage import (
     checkpoint_cleanup,
 )
 from parishkit.stewardship.campaigns.rehearsals import release_rehearsal_gate
+from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.storage import change_run, retry_failed
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
@@ -266,9 +268,11 @@ def test_exhausted_failure_keeps_gate_and_retry_preserves_checkpoints(intent):
     assert CampaignCredentialState.objects.get(
         campaign_id=failed.campaign_id
     ).go_live_gate
-    with pytest.raises(IntegrityError, match="explicit task retry"):
+    with pytest.raises(IntegrityError, match="explicit task retry"), work_transaction():
         act(failed, Action.RETRY_FAILED)
-    with transaction.atomic():
+    with pytest.raises(StorageInvariantError, match="lock order"), transaction.atomic():
+        act(failed, Action.RETRY_FAILED)
+    with work_transaction():
         task = retry_failed(
             run_id=failed.run_id,
             command_id=uuid4(),
@@ -358,7 +362,7 @@ def test_checkpoint_cannot_exceed_known_category_cumulative_inventory(intent):
     intent["inventory"] = CleanupInventory("a" * 64, {"sessions": 1, "other": 1})
     status = batch(start(begin_transition(**intent)))
     with pytest.raises(IntegrityError, match="exceeds its inventory"):
-        batch(status)
+        batch(status, batch=CleanupInventory("d" * 64, {"sessions": 1}))
     assert (
         ProductionTransitionRequest.objects.get(pk=status.request_id).processed_count
         == 1
@@ -374,3 +378,116 @@ def test_production_summary_must_match_actual_testing_delivery_totals(intent):
     assert not CampaignCredentialState.objects.get(
         campaign_id=intent["campaign_id"]
     ).go_live_gate
+
+
+@pytest.mark.parametrize("before_start", [False, True])
+def test_exhausted_crash_recovery_records_failure_and_allows_explicit_retry(
+    intent, before_start
+):
+    """Task recovery can finish before the domain starts or after a checkpoint."""
+    from parishkit.stewardship.jobs.storage import _status as task_status
+
+    from .test_taskrun_postgresql import act as task_act
+    from .test_taskrun_postgresql import expire
+
+    status = begin_transition(**intent)
+    if before_start:
+        task = task_act(
+            task_status(TaskRun.objects.get(pk=status.task_id)),
+            "claim",
+            lease_seconds=1,
+        )
+    else:
+        status = batch(start(status, lease_seconds=1))
+        task = task_status(TaskRun.objects.get(pk=status.run_id))
+    recovery_actor = uuid4()
+    recovery = dict(
+        run_id=task.run_id,
+        task_fence=task.fence,
+        actor_id=recovery_actor,
+        failure_reason="cleanup_exhausted",
+    )
+    with pytest.raises(IntegrityError, match="fenced failed task"):
+        act(status, Action.RECOVERY_FAIL, **recovery)
+    abandoned = expire(task)
+    dead = task_act(abandoned, "recovery_fail", actor_id=recovery_actor)
+    with pytest.raises(IntegrityError, match="fenced failed task"):
+        act(status, Action.RECOVERY_FAIL, **recovery)
+    recovery["task_fence"] = dead.fence
+    with pytest.raises(IntegrityError, match="fenced failed task"):
+        act(status, Action.RECOVERY_FAIL, **(recovery | {"actor_id": uuid4()}))
+    failed = act(status, Action.RECOVERY_FAIL, **recovery)
+    assert failed.state == "cleanup_failed"
+    assert failed.processed_count == (0 if before_start else 1)
+    assert CampaignCredentialState.objects.get(
+        campaign_id=status.campaign_id
+    ).go_live_gate
+    with work_transaction():
+        retry = retry_failed(
+            run_id=dead.run_id,
+            command_id=uuid4(),
+            actor_id=uuid4(),
+            correlation_id=uuid4(),
+            admit=permit,
+        )
+        queued = act(failed, Action.RETRY_FAILED)
+    resumed = start(queued, retry.run_id)
+    if before_start:
+        resumed = batch(resumed)
+    assert act(resumed, Action.COMPLETE).state == "cleanup_complete"
+
+
+def test_checkpoint_batch_identity_is_unique_even_with_a_new_command(intent):
+    """Lost-response retries cannot consume remaining inventory twice."""
+    intent["inventory"] = CleanupInventory("a" * 64, {"sessions": 2})
+    first = batch(start(begin_transition(**intent)))
+    calls = []
+    with pytest.raises(ValueError, match="already committed under another command"):
+        batch(first, apply_batch=lambda *args: calls.append(True) or True)
+    assert not calls
+    with (
+        pytest.raises(IntegrityError, match="production_checkpoint_batch"),
+        transaction.atomic(),
+    ):
+        ProductionCleanupCheckpoint.objects.create(
+            request_id=first.request_id,
+            command_id=uuid4(),
+            sequence=2,
+            counts={"sessions": 1},
+            deleted_count=1,
+            batch_digest="c" * 64,
+            run_id=first.run_id,
+            task_fence=first.task_fence,
+            worker_id=first.worker_id,
+            actor_id=first.worker_id,
+            correlation_id=uuid4(),
+        )
+    assert (
+        ProductionTransitionRequest.objects.get(pk=first.request_id).processed_count
+        == 1
+    )
+
+
+def test_orphan_checkpoint_cannot_commit_without_progress_event(intent):
+    """Even correct batch metadata must commit with its matching request update."""
+    first = start(begin_transition(**intent))
+    with (
+        pytest.raises(
+            IntegrityError, match="checkpoint must commit with its progress event"
+        ),
+        transaction.atomic(),
+    ):
+        ProductionCleanupCheckpoint.objects.create(
+            request_id=first.request_id,
+            command_id=uuid4(),
+            sequence=1,
+            counts={"sessions": 1},
+            deleted_count=1,
+            batch_digest="c" * 64,
+            run_id=first.run_id,
+            task_fence=first.task_fence,
+            worker_id=first.worker_id,
+            actor_id=first.worker_id,
+            correlation_id=uuid4(),
+        )
+    assert not ProductionCleanupCheckpoint.objects.exists()
