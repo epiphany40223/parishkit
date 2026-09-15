@@ -133,7 +133,7 @@ def _preview(
                 funds=form.fields["fund_duids"].choices,
             ),
             "schedules": [
-                _describe(row["values"])
+                _describe(row["values"], values)
                 for row in patch
                 if row["section"] == "schedules"
             ],

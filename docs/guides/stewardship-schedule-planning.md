@@ -32,5 +32,18 @@ schema policy, restricted runtime grants and fake/disposable validation boundary
 
 - PR #33 delivery and its complete final-head/merge-group evidence are recorded
   in the [cleanup guide](stewardship-production-cleanup.md#protected-delivery).
-- Repository/specification inspection is complete for the initial evaluator
-  work. Implementation, tests and all three review/fix rounds remain open.
+- The first implementation checkpoint adds the shared bounded civil-slot
+  evaluator and uses it in schedule-edit and archived-campaign clone previews.
+  Daily keys name the reported day, including the final day after close;
+  recurrence uses the existing gap/fold resolver. Keyset cursors advance over
+  wholly skipped days. An optional final weekly candidate is finite and does
+  not itself establish an item-coverage obligation or delivery permission.
+- The evaluator/form checks pass 50 tests; the actual Admin schedule, clone
+  and window workflows pass 25 PostgreSQL tests in 29.00 seconds. An initial
+  test queried a nonexistent request state field; the corrected test checks
+  unchanged request count and campaign configuration. The full baseline passes
+  5,582 tests in 50.42 seconds, with 3,594 expected environment skips and two
+  existing warnings. Ruff, formatting and Markdown pass.
+- Ordinary durable planning, replacement/removal effects, coalescing,
+  restricted-role/runtime integration and the three review/fix rounds remain
+  open. No BG-04 task is checked complete based on the evaluator checkpoint.

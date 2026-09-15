@@ -114,6 +114,30 @@ def test_schedule_pending_work_is_counted_then_cancelled_with_replacement(
     assert row.state == "skipped" and row.reason == "schedule_replaced"
 
 
+def test_preview_resolves_applied_and_proposed_times_in_their_own_campaign_zones(
+    auth_service, google
+):
+    """The signed Admin preview displays resolved instants, not just wall time."""
+    store = auth_service.store
+    campaign, path = setup(store)
+    browser, _ = signed_in()
+    data, _ = fields(store, campaign)
+    data["window-timezone"] = "America/Los_Angeles"
+    requests_before = ConfigurationChangeRequest.objects.count()
+    response = post(browser, path, data)
+    assert response.status_code == 200
+    assert b"2026-10-01T13:00:00+00:00" in response.content
+    assert b"2026-10-01T16:00:00+00:00" in response.content
+    assert b"America/New_York" in response.content
+    assert b"America/Los_Angeles" in response.content
+    assert b"data-local-instant" in response.content
+    assert b"not recipient eligibility or permission to send" in response.content
+    # Merely inspecting candidate instants cannot allocate or apply anything.
+    assert ConfigurationChangeRequest.objects.count() == requests_before
+    campaign.refresh_from_db()
+    assert campaign.active_configuration.values["timezone"] == "America/New_York"
+
+
 def test_new_occurrence_invalidates_a_previously_exact_schedule_preview(
     auth_service, google
 ):
@@ -129,6 +153,32 @@ def test_new_occurrence_invalidates_a_previously_exact_schedule_preview(
         post(browser, path, {"action": "confirm", "preview": proposal}).status_code
         == 409
     )
+
+
+def test_daily_preview_is_bounded_and_labels_reported_days(auth_service, google):
+    """Recurring mail uses the same bounded evaluator as the future work planner."""
+    store = auth_service.store
+    campaign, path = setup(store)
+    digest = schedule(str(campaign.pk), kind="daily_digest", date=None, time="00:15:00")
+    assert (
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [{"operation": "add", "section": "schedules", **digest}],
+        ).state
+        == "applied"
+    )
+    browser, _ = signed_in()
+    data, indexes = fields(store, campaign)
+    data[f"schedules-{indexes['daily_digest']}-time"] = "00:30:00"
+    response = post(browser, path, data)
+    assert response.status_code == 200
+    assert b"Only the first five schedule dates are previewed" in response.content
+    assert b"campaign day being reported" in response.content
+    assert b"2026-10-02T04:15:00+00:00" in response.content
+    assert b"2026-10-02T04:30:00+00:00" in response.content
+    assert response.content.count(b"data-local-instant") == 10
 
 
 def test_running_work_blocks_confirmation_without_claiming_it_can_be_cancelled(
