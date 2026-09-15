@@ -174,7 +174,8 @@ or recomputed because the Parish default changes.
 
 The scheduler owns persistence of date-driven campaign transitions. On every
 scan it inserts any due `start` or `close` CampaignBoundaryOccurrence with a
-unique campaign/kind/resolved-boundary key and queues an execution hint. A
+unique [execution-revision identity](../data/spec.md#campaign)
+and queues an execution hint. A
 restart scans from durable campaign state and creates overdue occurrences, so a
 scheduler outage cannot permanently strand `scheduled` or `active` state.
 
@@ -198,7 +199,10 @@ and does not dispatch campaign mail outside its interval. Restore release uses
 the same ordered catch-up policy while its maintenance gate remains closed.
 
 An end-date edit transaction replaces a not-yet-running close occurrence with
-one keyed to the new resolved boundary. It races safely under the Campaign lock:
+one with a fresh execution revision for the new resolved boundary, even when
+that date was used previously. Replaced occurrences and task history remain
+immutable; A → B → A creates three distinct execution revisions. It races safely
+under the Campaign lock:
 if closing wins first, changing the date requires the guarded reopen workflow.
 The locked start date cannot be rescheduled after Production readiness.
 
