@@ -29,6 +29,7 @@ def test_grant_registry_names_existing_models_and_excludes_unrelated_download_da
         "django_migrations",
         "stewardship_download_policy",  # Intentionally SQL-only singleton.
         "stewardship_current_chair",  # Narrow SQL-only source projection.
+        "stewardship_schedule_work_summary",  # Counts-only delivery projection.
     }
     assert WEB_INSERT_TABLES <= WEB_READ_TABLES
     assert WEB_UPDATE_TABLES <= WEB_READ_TABLES

@@ -25,6 +25,7 @@ def schema_sql():
                 "delivery",
                 "production",
                 "cleanup",
+                "schedule_reconciliation",
             )
         ]
     )

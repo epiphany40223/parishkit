@@ -1165,6 +1165,7 @@ CREATE UNIQUE INDEX postclose_task_once ON public.stewardship_postclose_resoluti
 
 -- INDEX: schedule_occurrence_due
 CREATE INDEX schedule_occurrence_due ON public.stewardship_schedule_occurrence USING btree (state, due_at);
+CREATE INDEX schedule_occurrence_outbox ON public.stewardship_schedule_occurrence (outbox_id) WHERE outbox_id IS NOT NULL;
 
 -- INDEX: secret_expiry
 CREATE INDEX secret_expiry ON public.stewardship_secret_request USING btree (state, expires_at);

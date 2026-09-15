@@ -44,10 +44,8 @@ def close_work_running(campaign_id):
 
 def validate_installation(document, *, request_id=None):
     """Reject unsupported draft operations without changing YAML or runtime state."""
-    from django.db.models import Q
-
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-    from parishkit.stewardship.jobs.models import NONTERMINAL_STATES
+    from parishkit.stewardship.accounts.schedule_preview import work_summary
 
     from .models import (
         Campaign,
@@ -162,6 +160,7 @@ def validate_installation(document, *, request_id=None):
     schedules = document["sections"].get("schedules", [])
     proposed_schedules = {row["id"]: row["values"] for row in schedules}
     definitions = list(ScheduleDefinition.objects.select_related("current_revision"))
+    schedule_work = work_summary(current) if current is not None else {}
     if (
         runtime is not None
         and runtime.restore_review_required
@@ -191,22 +190,7 @@ def validate_installation(document, *, request_id=None):
             raise CampaignAdmissionUnavailable(
                 "Schedule changes are held for restore review."
             )
-        if (
-            definition.scheduleoccurrence_set.filter(
-                revision=definition.current_revision
-            )
-            .filter(
-                Q(state__in=["running", "delivery_unknown"])
-                | (
-                    Q(state="pending")
-                    & (
-                        Q(outbox_id__isnull=False)
-                        | Q(task__state__in=NONTERMINAL_STATES)
-                    )
-                )
-            )
-            .exists()
-        ):
+        if schedule_work.get(str(definition.pk), {}).get("blocking", 0):
             raise CampaignAdmissionUnavailable(
                 "Schedule replacement must wait for in-flight work."
             )

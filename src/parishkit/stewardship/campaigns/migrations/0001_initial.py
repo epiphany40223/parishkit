@@ -3012,6 +3012,14 @@ class Migration(migrations.Migration):
                         fields=["state", "due_at"], name="schedule_occurrence_due"
                     ),
                 ),
+                migrations.AddIndex(
+                    model_name="scheduleoccurrence",
+                    index=models.Index(
+                        fields=["outbox_id"],
+                        condition=models.Q(outbox_id__isnull=False),
+                        name="schedule_occurrence_outbox",
+                    ),
+                ),
                 migrations.AddConstraint(
                     model_name="scheduleoccurrence",
                     constraint=models.CheckConstraint(

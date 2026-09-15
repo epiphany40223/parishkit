@@ -169,7 +169,12 @@ class ScheduleOccurrence(MutableRecord):
             ),
         ]
         indexes = [
-            models.Index(fields=["state", "due_at"], name="schedule_occurrence_due")
+            models.Index(fields=["state", "due_at"], name="schedule_occurrence_due"),
+            models.Index(
+                fields=["outbox_id"],
+                condition=models.Q(outbox_id__isnull=False),
+                name="schedule_occurrence_outbox",
+            ),
         ]
 
 

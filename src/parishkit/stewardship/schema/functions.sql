@@ -3072,7 +3072,10 @@ BEGIN
         END IF;
         IF OLD.state='running' AND (NEW.task_id IS DISTINCT FROM OLD.task_id OR NEW.worker_id IS DISTINCT FROM OLD.worker_id OR NEW.fence<>OLD.fence) THEN
             RAISE EXCEPTION 'Occurrence worker identity changed' USING ERRCODE='23514'; END IF;
-        IF OLD.state='running' AND NOT EXISTS(SELECT 1 FROM stewardship_task_run owner_task WHERE owner_task.id=OLD.task_id
+        IF OLD.state='running' AND NOT (
+            NEW.state='skipped' AND public.stewardship_schedule_effect_v1(
+                OLD.id,OLD.version,NEW.actor_id,NEW.correlation_id,NEW.reason)
+        ) AND NOT EXISTS(SELECT 1 FROM stewardship_task_run owner_task WHERE owner_task.id=OLD.task_id
             AND ((owner_task.state='running' AND owner_task.worker_id=NEW.actor_id AND owner_task.fence=NEW.fence AND owner_task.lease_expires_at>clock_timestamp())
                 OR (owner_task.state IN ('abandoned','cancelled','succeeded','failed') AND owner_task.fence>=OLD.fence AND NEW.actor_id IS NOT NULL
                     AND NEW.reason IN ('recovery_retry','recovery_unknown','recovery_complete','recovery_fail','recovery_skip','recovery_coalesce')))) THEN
@@ -4581,6 +4584,7 @@ BEGIN
         WHEN 'exception' THEN ARRAY['outcome','retryable']
         WHEN 'action' THEN ARRAY['version','before_version','after_version','outcome','source_fingerprint','candidate_fingerprint','count']
         WHEN 'boundary' THEN ARRAY['occurrence_id','kind','intended_unix_microseconds','actual_unix_microseconds','lag_microseconds','before_state','after_state']
+        WHEN 'schedule' THEN ARRAY['definition_id','previous_revision_id','selected_revision_id','cancelled_messages','skipped_occurrences','failed_occurrences','delivered_slots']
         ELSE NULL END;
     IF allowed IS NULL OR jsonb_typeof(payload) IS DISTINCT FROM 'object' THEN RETURN false; END IF;
     IF schema_name IN ('member_source','boundary') AND NOT payload ?& allowed THEN RETURN false; END IF;
@@ -4658,9 +4662,8 @@ BEGIN
     IF TG_OP='UPDATE' AND NEW.current_revision_id IS NOT DISTINCT FROM OLD.current_revision_id THEN
         RAISE EXCEPTION 'Schedule selection must change' USING ERRCODE='23514'; END IF;
     IF TG_OP='UPDATE' AND EXISTS (
-        SELECT 1 FROM stewardship_schedule_occurrence o LEFT JOIN stewardship_task_run t ON t.id=o.task_id
-        WHERE o.definition_id=NEW.id AND o.revision_id=OLD.current_revision_id
-          AND (o.state IN ('running','delivery_unknown') OR (o.state='pending' AND (o.outbox_id IS NOT NULL OR t.state IN ('queued','running','retry_wait','abandoned'))))
+        SELECT 1 FROM stewardship_schedule_work_row o
+        WHERE o.definition_id=NEW.id AND o.revision_id=OLD.current_revision_id AND o.blocking
     ) THEN RAISE EXCEPTION 'In-flight schedule work blocks replacement' USING ERRCODE='23514'; END IF;
     RETURN NEW;
 END $$;
@@ -4709,18 +4712,21 @@ CREATE FUNCTION public.stewardship_schedule_selection_effect_v1() RETURNS trigge
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
-DECLARE config uuid; prior uuid;
+DECLARE config uuid; prior uuid; evidence jsonb; event uuid:=gen_random_uuid();
 BEGIN
     SELECT active_configuration_id INTO config FROM stewardship_system_configuration;
     IF TG_OP='UPDATE' THEN prior:=OLD.current_revision_id; END IF;
     INSERT INTO stewardship_schedule_selection(id,definition_id,configuration_id,previous_revision_id,selected_revision_id,version,actor_id,correlation_id)
     VALUES(gen_random_uuid(),NEW.id,config,prior,NEW.current_revision_id,NEW.version,NEW.actor_id,NEW.correlation_id);
-    UPDATE stewardship_schedule_occurrence SET state='skipped',version=version+1,
-        reason=CASE WHEN NEW.current_revision_id IS NULL THEN 'schedule_removed' ELSE 'schedule_replaced' END,
-        actor_id=NEW.actor_id,correlation_id=NEW.correlation_id
-    WHERE definition_id=NEW.id AND revision_id=prior AND state IN ('pending','failed');
+    IF prior IS NOT NULL THEN
+        evidence:=public.stewardship_schedule_reconcile_v1(NEW.id,prior,NEW.actor_id,NEW.correlation_id);
+    END IF;
     INSERT INTO stewardship_audit_event(id,actor_id,correlation_id,event_type,subject_id,campaign_reference)
-    VALUES(gen_random_uuid(),NEW.actor_id,NEW.correlation_id,'schedule_selected',NEW.id,NEW.campaign_id);
+    VALUES(event,NEW.actor_id,NEW.correlation_id,'schedule_selected',NEW.id,NEW.campaign_id);
+    IF evidence IS NOT NULL THEN
+        INSERT INTO stewardship_audit_context(id,actor_id,correlation_id,event_id,actor_kind,schema,context)
+        VALUES(gen_random_uuid(),NEW.actor_id,NEW.correlation_id,event,'portal_user','schedule',evidence);
+    END IF;
     RETURN NEW;
 END $$;
 
