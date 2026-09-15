@@ -102,6 +102,8 @@ def scheduler_handlers():
     from .accounts.setup_mail_tasks import setup_mail_handler
     from .campaigns.boundary_production import TASK_TYPE as CAMPAIGN_BOUNDARY
     from .campaigns.boundary_tasks import boundary_handler
+    from .campaigns.cleanup_tasks import TASK_TYPE as PRODUCTION_CLEANUP
+    from .campaigns.cleanup_tasks import cleanup_handler as production_cleanup_handler
     from .campaigns.work_locks import work_transaction
     from .jobs.dispatch import Handler
     from .jobs.queues import WorkQueue
@@ -119,6 +121,7 @@ def scheduler_handlers():
 
     return {
         CAMPAIGN_BOUNDARY: boundary_handler(scheduler=True),
+        PRODUCTION_CLEANUP: production_cleanup_handler(scheduler=True),
         BRANDING_CLEANUP: cleanup_handler(),
         SETUP_CLEANUP: setup_cleanup_handler(scheduler=True),
         SETUP_MAIL: setup_mail_handler(scheduler=True),
@@ -247,6 +250,10 @@ def configure_background(configuration, *, stop, heartbeat):
         from .accounts.branding_cleanup import cleanup_handler
         from .campaigns.boundary_production import TASK_TYPE as CAMPAIGN_BOUNDARY
         from .campaigns.boundary_tasks import boundary_handler
+        from .campaigns.cleanup_tasks import TASK_TYPE as PRODUCTION_CLEANUP
+        from .campaigns.cleanup_tasks import (
+            cleanup_handler as production_cleanup_handler,
+        )
         from .source.effects import refresh_reconciler
         from .source.execution import refresh_handler
         from .source.requests import TASK_TYPE
@@ -257,6 +264,7 @@ def configure_background(configuration, *, stop, heartbeat):
 
         handlers = {
             CAMPAIGN_BOUNDARY: boundary_handler(),
+            PRODUCTION_CLEANUP: production_cleanup_handler(),
             BRANDING_CLEANUP: cleanup_handler(configuration.paths["media"]),
             SETUP_CLEANUP: setup_cleanup_handler(),
             SETUP_LOAD: setup_source_handler(),

@@ -275,7 +275,13 @@ deletes them in bounded transactions ordered by stable primary key. This
 includes Testing submissions/workflows/audit detail, `testing_override` outbox
 rows, and their Testing-only ScheduleOccurrence and ScheduleFulfillment rows.
 Each batch commits its high-water checkpoint and deleted counts with the
-deletion, making retry safe after interruption. It validates campaign ownership
+deletion, making retry safe after interruption. The scan budget limits examined
+inventory candidates, not just deletions after dependency filtering. A durable
+numeric position in the sealed canonical inventory permits scan-only checkpoints
+over blocked parents; later passes revisit them after their children are removed.
+Retained scan positions contain no Family or Member identifiers. A complete pass
+without any deletion fails instead of indefinitely renewing an unproductive task.
+It validates campaign ownership
 and immutable Testing routing on every batch, never follows broad cascades, and
 cannot select live or operational data. Completion verifies that no inventoried
 sensitive Testing detail remains before marking the request

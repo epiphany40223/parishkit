@@ -160,4 +160,7 @@ def task_runtime_grants(role):
     from parishkit.stewardship.campaigns.boundary_grants import add_boundary_grants
 
     add_boundary_grants(tables, columns, worker=role is ServiceRole.WORKER)
+    from parishkit.stewardship.campaigns.cleanup_grants import add_cleanup_grants
+
+    add_cleanup_grants(tables, columns, worker=role is ServiceRole.WORKER)
     return tables, columns

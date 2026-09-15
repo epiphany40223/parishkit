@@ -5478,6 +5478,7 @@ CREATE INDEX stewardship_production_event_request_id_6155bbb3 ON public.stewards
             CREATE FUNCTION "stewardship_outbox_render_immutable_v1"()
             RETURNS trigger LANGUAGE plpgsql AS $$
             BEGIN
+                IF TG_OP='DELETE' AND public.stewardship_cleanup_effect_v1('outbox_renders',OLD.id) THEN RETURN OLD; END IF;
                 RAISE EXCEPTION 'Historical records are append-only'
                     USING ERRCODE = '23514';
             END;
@@ -5489,6 +5490,7 @@ CREATE INDEX stewardship_production_event_request_id_6155bbb3 ON public.stewards
             CREATE FUNCTION "stewardship_outbox_event_immutable_v1"()
             RETURNS trigger LANGUAGE plpgsql AS $$
             BEGIN
+                IF TG_OP='DELETE' AND public.stewardship_cleanup_effect_v1('outbox_events',OLD.id) THEN RETURN OLD; END IF;
                 RAISE EXCEPTION 'Historical records are append-only'
                     USING ERRCODE = '23514';
             END;

@@ -24,6 +24,7 @@ def schema_sql():
                 "guards",
                 "delivery",
                 "production",
+                "cleanup",
             )
         ]
     )

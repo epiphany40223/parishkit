@@ -3020,7 +3020,10 @@ DECLARE d stewardship_schedule_definition%ROWTYPE; c stewardship_campaign%ROWTYP
     instant timestamptz := stewardship_campaign_now_v1();
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
-    IF TG_OP='DELETE' THEN RAISE EXCEPTION 'Occurrence history requires exceptional retention' USING ERRCODE='23514'; END IF;
+    IF TG_OP='DELETE' THEN
+        IF public.stewardship_cleanup_effect_v1('occurrences',OLD.id) THEN RETURN OLD; END IF;
+        RAISE EXCEPTION 'Occurrence history requires exceptional retention' USING ERRCODE='23514';
+    END IF;
     SELECT * INTO d FROM stewardship_schedule_definition WHERE id=NEW.definition_id FOR UPDATE;
     SELECT * INTO c FROM stewardship_campaign WHERE id=d.campaign_id;
     SELECT * INTO r FROM stewardship_system_configuration;
@@ -3120,6 +3123,7 @@ CREATE FUNCTION public.stewardship_occurrence_transition_immutable_v1() RETURNS 
     LANGUAGE plpgsql
     AS $$
             BEGIN
+                IF TG_OP='DELETE' AND public.stewardship_cleanup_effect_v1('occurrence_events',OLD.id) THEN RETURN OLD; END IF;
                 RAISE EXCEPTION 'Historical records are append-only'
                     USING ERRCODE = '23514';
             END;
@@ -4666,6 +4670,7 @@ CREATE FUNCTION public.stewardship_schedule_fulfillment_immutable_v1() RETURNS t
     LANGUAGE plpgsql
     AS $$
             BEGIN
+                IF TG_OP='DELETE' AND public.stewardship_cleanup_effect_v1('schedule_fulfillments',OLD.id) THEN RETURN OLD; END IF;
                 RAISE EXCEPTION 'Historical records are append-only'
                     USING ERRCODE = '23514';
             END;

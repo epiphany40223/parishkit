@@ -131,6 +131,11 @@ class SourceSnapshotPin(MutableRecord):
 
     class Meta(MutableRecord.Meta):
         db_table = "stewardship_source_pin"
+        indexes = [
+            models.Index(
+                fields=["parent_kind", "parent_id"], name="source_pin_owner_lookup"
+            )
+        ]
         constraints = MutableRecord.Meta.constraints + [
             models.UniqueConstraint(
                 fields=("snapshot", "parent_kind", "parent_id"),
