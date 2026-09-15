@@ -300,5 +300,14 @@ after this audit; all 17 strict schema/model checks then passed in 16.15 seconds
 This mechanical CI correction does not require an additional
 independent review round under the controlling material-change rule.
 
-Protected delivery remains pending a fully passing run on the corrected head,
-followed by all merge-group checks and verification on refreshed `origin/main`.
+Corrected-head PR CI run
+[34995526359](https://github.com/epiphany40223/parishkit/actions/runs/34995526359)
+passed all 24 jobs on `3f8f839a2f32d41a38d26ca63ca95de9c85cb2d5`; DCO also
+passed. Protected merge-group run
+[34996979773](https://github.com/epiphany40223/parishkit/actions/runs/34996979773)
+passed all 24 jobs, including every browser engine and PostgreSQL shard. Under
+the standing human delegation, PR #32 merged without protection bypasses as
+`5c85d26ff586cad5539ff2c324c89cd621cbcf9d` on September 15, 2026, verified on
+refreshed `origin/main`. The next
+[Production-cleanup increment](stewardship-production-cleanup.md) starts there;
+Gate 3, deployment and release remain outside this delivery.

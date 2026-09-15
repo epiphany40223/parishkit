@@ -364,8 +364,12 @@ Boundary delivery checkpoint: BG-02.01/.02/.04/.05 and BG-02.03's end-date
 replacement portion pass local acceptance and three dual-source review/fix
 rounds. The [boundary review ledger](../../guides/stewardship-campaign-boundaries.md#review-round-3)
 records exact heads, raw severities, dispositions and validation. BG-02.03
-remains unchecked for its Phase 6 token worker; PR CI and protected delivery
-remain pending before BG-03 starts from refreshed `origin/main`.
+remains unchecked for its Phase 6 token worker. All 24 final-head PR CI jobs
+and all 24 merge-group jobs passed. PR #32 merged as
+`5c85d26ff586cad5539ff2c324c89cd621cbcf9d`, verified on refreshed `origin/main`.
+BG-03 now starts from that tip on `pr/stewardship-production-cleanup`; its
+[scope and checkpoints](../../guides/stewardship-production-cleanup.md) retain
+the later readiness, mail and activation owners.
 
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).
