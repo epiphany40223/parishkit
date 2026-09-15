@@ -37,7 +37,8 @@ authorized by this increment. Gate 3 remains after complete Phase 4/5 integratio
 - Exact-head PR CI and all merge-group checks, then protected delivery and
   verification on refreshed `origin/main` before the next increment.
 
-Implementation is in progress. No BG-03 task or review gate is claimed complete.
+BG-03 implementation and local review acceptance are complete. Final-head PR and
+protected merge-group CI remain required before delivery; Gate 3 is not released.
 
 ## Implemented working-tree checkpoint
 
@@ -154,5 +155,151 @@ seconds (3,575 environment skips and two pre-existing warnings). Ruff, formattin
 Markdown, whitespace and Django model/migration-state checks pass. The five
 duplicate findings above are consolidated into their accepted corrections;
 all 12 remaining findings have implementation and regression coverage.
-Rebuilt-image operational validation is still running, and rounds 2/3 plus
-final-head and merge-group CI remain mandatory before delivery.
+The intermediate rebuilt image passed all eight operational Compose cases in
+767.32 seconds. That image predates the final batch performance correction, so
+it proves SQL packaging but is not final-head runtime evidence. The later full
+cleanup coverage run passed 84 tests with 93% scoped coverage in 136.41 seconds.
+Round 1 corrections are complete; later rounds and final-image/CI validation
+remain mandatory.
+
+## Round 2 correction review
+
+Pika session `20260915-161604-dcc885` reviewed `4800dd3b` against `1c61b595`.
+The generated Claude reviewer and Pika-managed Codex reviewer both completed
+without failures, degradations, mismatches or salvage. Finalization returned
+`COMMENT`: three validated Medium findings, no High/Critical, from 11 raw
+findings (four raw Medium observations, seven below-cutoff Low observations).
+The exact-command permission preflight passed independently with byte-identical
+fixture delivery and zero denials.
+
+| Finding | Severity | Disposition |
+| --- | --- | --- |
+| Agreed 1 | Medium | Accepted: cap examined candidates using an indexed durable numeric inventory cursor, not LIMIT after dependency filtering; add the source-pin parent lookup index and response-heavy regression/benchmark. |
+| Claude 1 | Medium | Partially accepted: capture now rejects inventoried occurrences referencing retained Production/operational outbox messages, with both actual guarded states tested. Other proposed cross-mode/campaign references are already impossible: `stewardship_fulfillment_guard_v1` requires matching mode and campaign, while baseline/submission guards select the predecessor from the same Family, mode and rehearsal epoch. Those ownership fields are immutable. |
+| Codex 1 | Medium | Accepted: check public namespace ownership rather than ownership of the request table. Restricted-role regressions assign the request table to the worker while leaving schema ownership separate, then restore fixture ownership before role cleanup. |
+
+Checkpoints now retain scanned count, numeric position and scan round. SQL owns
+these values, including scan-only progress over blocked prefixes, and rejects a
+full sweep without deletions. A 21-Family submitted-response regression exercises
+independent baselines, pins and receipts, advances past a zero-deletion window,
+replays it without rescanning, and revisits parents on subsequent sweeps. The
+ordinary worker also completes with two-row scan/deletion budgets. Regression
+tests verify the two new lookup indexes and rejection of a no-progress loop.
+
+Additional integration validation reproduced a Family logout HTTP 500 after
+inventory capture: ordinary logout attempted to delete the captured baseline's
+source pin. Logout now revokes access and detaches the browser while leaving
+Testing baseline/pin detail under the go-live gate for its cleanup worker;
+ordinary session retention skips those gated Testing sessions. The actual HTTP
+logout, subsequent retention run and final cleanup are exercised together.
+
+The independent PR #32 schema audit passes before accepting the new strict
+catalog fixture: four added tables, 33 columns, 53 constraints, 24 functions,
+15 indexes and 31 Stewardship triggers, with no removed objects. Existing
+changes remain the nine previously recorded functions, event constraint and
+the checkpoint progress constraint. PostgreSQL's named NOT NULL constraints
+are included in those counts. No retained database was upgraded or deleted.
+
+Post-correction validation passes 79 cleanup database tests in 160.91 seconds
+and 14 unit tests in 0.22 seconds, with combined scoped coverage of 93%; 86
+schema/storage/journal tests in 48.04 seconds; 42 adjacent authentication,
+baseline and source-promotion regressions in 47.24 seconds; and 5,554 baseline
+tests in 60.77 seconds (3,585 environment skips, two existing warnings). Ruff,
+formatting, Markdown, whitespace and model/migration-state checks pass. Strict
+model/schema validation caught equivalent-but-differently-ordered constraint
+expressions; the model/state now exactly match the installed constraint.
+
+The 501-submitted-Family benchmark captures 4,010 targets, including actual
+response baselines, submission pins and receipts. The real worker completed in
+5.526 seconds over 15 batches; its slowest batch took 0.513 seconds. Synthetic
+fixture allocation plus cleanup took 126.35 seconds. The normal regression uses
+21 submitted Families and a ten-row budget to exercise the same blocked-prefix
+behavior without this larger allocation cost.
+
+All three Round 2 findings have evidence-backed dispositions and passing
+correction validation. Current-image Compose validation, Round 3 and final-head/
+protected merge-group CI are still outstanding. The local runtime image predates
+only the equivalent model/state constraint-expression ordering correction;
+final CI must build the actual delivered head.
+
+## Round 3 review and correction
+
+Pika session `20260915-165018-330939` reviewed `15d2c08a` against `4800dd3b`.
+Both reviewers completed successfully after the exact permission preflight.
+Codex returned `APPROVED` with no findings; its review took 409 seconds without
+a timeout or stall. Claude reviewed all 19 manifest files. Finalization returned
+`COMMENT`, with one validated Medium finding from 12 raw observations (11 Low
+observations filtered out); no High/Critical, failed agents, degradations,
+verdict mismatches or salvage remain. Reviewer-local PostgreSQL tests were
+unavailable, so passing execution evidence comes from the independent local
+validation recorded here, not from the reviewers' statements.
+
+Claude's Medium reverse-reference finding is accepted defensively: capture now
+also rejects a retained occurrence or post-close resolution pointing at an
+inventoried Testing outbox message. The stated operational-routing example is
+already prohibited by `schedule_occurrence_routing`; post-close lifecycle and
+same-occurrence binding are also guarded. Nonetheless, a malformed retained
+UUID-only pointer must fail capture rather than become dangling. Regression
+fixtures explicitly install malformed historical pointers as the disposable
+schema owner, restore all guards, and verify atomic capture rejection without
+history/message changes. A valid same-inventory occurrence/message pair remains
+deletable through the ordinary worker. No runtime guard is weakened to arrange
+those fixtures.
+
+Correction commit `2d351f4` also exercises invalid request/command UUIDs and
+incapable/unbounded budgets. All 35 correction/capture/authority tests pass in
+52.25 seconds; the independent schema audit passes with unchanged object counts,
+and all 17 strict schema tests pass in 14.57 seconds after accepting only the
+reviewed manifest-guard function fingerprint change. These corrections complete
+the third review/fix round under the controlling delivery policy; a fourth round
+is not required solely because this round included its regression-tested fix.
+
+All eight intermediate-image operational Compose cases passed in 762.49 seconds.
+The final image was rebuilt after the reverse-reference correction; its
+provisioning/ingress checks, complete cleanup coverage run, final baseline,
+exact-head PR CI and protected merge-group checks supply the remaining delivery
+validation. No merge or next-increment start is claimed yet.
+
+## Local acceptance and delivery boundary
+
+The final fresh run passes all 100 cleanup tests in 160.04 seconds, with
+93.57% scoped line coverage (320/342 statements) and 81.15% branch coverage
+(99/122 branches). Both separate coverage floors exceed 80%; the displayed
+combined statement/branch metric is 90.30%. Final baseline validation passes
+5,554 tests in 51.75 seconds (3,592 environment skips, two existing warnings).
+The final rebuilt image passes provisioning and ingress checks in 3.20 seconds.
+Ruff, formatting, Markdown, whitespace and model/schema state checks pass.
+
+All three dual-source rounds are complete, the last has no High/Critical
+finding, and every accepted Medium-or-higher finding is resolved. Scope remains
+BG-03 only: cleanup does not activate Production, publish provider data, deploy,
+release or waive the later integrated gate. The owning checklist is locally
+complete; exact-head PR CI and every merge-group job remain mandatory before
+using the standing protected-merge/continue authority.
+
+## PR #33 CI correction
+
+The initial PR head `f34c809c611103a583b1bc9e672ea5860130a3bc` was consolidated
+from nine development commits to four signed-off commits. It is tree-identical
+to `0a2a527496adbb389e85f4669677089683aad9c8`, retained on review-only branch
+`jsq/pr/stewardship-cleanup-review-evidence-20260915`; both trees are
+`9c6feba8eed373519c098cf2c060dd85ffc14e17`. Never merge that backup history.
+
+[PR #33](https://github.com/epiphany40223/parishkit/pull/33) CI run
+`35024319557` completed with 22 successful jobs and one underlying test failure
+in database shard 5; the aggregate database gate correctly failed as a result.
+All browser engines and runtime configurations passed. The stale pre-BG-03
+delivery-grant matrix still denied every cleanup-control write. It now asserts
+only the compiled worker's exact 11 request command columns and checkpoint
+INSERT grant, while still rejecting generic delivery writes, private data
+mutation and protected inventory-field updates. The existing actual-row cleanup
+admission/denial tests remain intact. No runtime grants, application code or SQL
+guards changed for this CI correction, so this is a test-contract update rather
+than a material implementation fix requiring an additional review round.
+
+All 71 delivery-boundary and cleanup authority/worker regressions pass in
+81.28 seconds. The test correction was folded into the implementation commit;
+the four-commit structure remains. The post-fix unsquashed/squashed trees match
+(`638f300495ff42d2768316c2cb00369a6b56f6ed`) before this documentation update,
+and the runtime source/deployment diff against the original reviewed PR head is
+empty. Fresh final-head CI and all merge-group checks are still required.

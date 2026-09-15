@@ -61,17 +61,20 @@ These task completions do not release Gate 3 or enable later mail owners.
 
 Scope and dependencies: [BG-03 work package](../../plans/stewardship/background-processing.md#bg-03-production-transition-cleanup-worker).
 
-- [ ] BG-03.01 — Enforce the go-live gate and rehearsal invalidation.
-- [ ] BG-03.02 — Delete inventoried Testing and rehearsal credential detail in resumable batches.
-- [ ] BG-03.03 — Verify cleanup completeness before readiness.
-- [ ] BG-03.04 — Implement safe retry and cancellation semantics.
-- [ ] BG-03.05 — Test interrupted cleanup and concurrent Testing work.
+- [x] BG-03.01 — Enforce the go-live gate and rehearsal invalidation.
+- [x] BG-03.02 — Delete inventoried Testing and rehearsal credential detail in resumable batches.
+- [x] BG-03.03 — Verify cleanup completeness before readiness.
+- [x] BG-03.04 — Implement safe retry and cancellation semantics.
+- [x] BG-03.05 — Test interrupted cleanup and concurrent Testing work.
 
-Evidence: In progress on `pr/stewardship-production-cleanup`, based on verified
-PR #32 merge `5c85d26f`. The
-[increment guide](../../guides/stewardship-production-cleanup.md) records scope
-and checkpoints. No BG-03 task is yet claimed complete; actual Production
-activation remains held for ADM-05 and its other dependencies.
+Evidence: Implemented and locally accepted on `pr/stewardship-production-cleanup`,
+based on PR #32 merge `5c85d26f`. The
+[increment guide](../../guides/stewardship-production-cleanup.md) records all three
+complete dual-source review/fix rounds, 100 passing cleanup tests, 93.57% line
+and 81.15% branch coverage, schema/ownership/race/runtime validation and submitted-
+Family scale measurements. Final-head PR and protected merge-group CI are still
+required before delivery. This does not release Gate 3 or enable Production
+activation; ADM-05 and its other dependencies retain those boundaries.
 
 ## BG-04: Schedule revision, fulfillment, and mode routing
 
