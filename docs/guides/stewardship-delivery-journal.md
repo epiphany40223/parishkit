@@ -42,15 +42,26 @@ replaced it.
 
 Explicit failed-message or cleanup retry starts with `work_transaction()` before
 allocating its linked TaskRun retry, then advances the domain journal within
-that same transaction. A plain `transaction.atomic()` is insufficient. Delivery
+that same transaction. Allocation itself enforces that order for these task
+types; acquiring the work lock after taking the root lock is too late.
+A plain `transaction.atomic()` is insufficient. Delivery
 transition admission receives a fourth, frozen `DeliveryCommand` argument with
 the exact proposed evidence/options and non-secret render/credential metadata;
 the proposed submit task is locked before admission, including replay. Other
 outbox admission callbacks retain their three-argument contract.
+Preparation/hold owners close over their already-validated immutable inputs;
+they must not accept user-provided callbacks. Their compiled BG-06 ports must
+bind those exact inputs, including recipient/template/credential and pause
+selection, before exposing the workflow.
 
 Cleanup crash recovery may mirror a fenced terminal TaskRun `recovery_fail`
 without a live worker. It must bind the latest failed run, recovery actor and
 fence, retain completed checkpoints and continue holding the go-live gate.
+The TaskRun guard rejects a null recovery actor before recording terminal
+failure. Production transition admission receives a fourth frozen
+`ProductionCommand`, including during replay and nested cancellation/gate
+release. Proposed claims are constrained to the owning retry root and locked
+before the request row and callback.
 Checkpoint batches have a unique per-request digest as well as a command ID;
 retry a lost response with its original command. A deletion callback returns
 success only when actual per-category deletion counts equal the proposed batch,
@@ -123,14 +134,15 @@ An independently created reference database was installed from merged
 that commit before comparison with the candidate. Every preexisting relation,
 column, constraint, index, function, trigger and policy is unchanged; none is
 removed. The additions are eight journal tables, 152 columns, 225 constraints,
-52 indexes, 20 functions and 20 triggers. The only new guard attached to an
-existing table is the deferred go-live-gate pin on campaign credentials.
+52 indexes, 21 functions and 21 triggers. The two new guards attached to existing
+tables are the deferred go-live-gate pin on campaign credentials and the
+Production cleanup recovery-actor check on TaskRun.
 All 28 existing row policies are unchanged.
 
 The corrected candidate totals are 137 relations, 1,635 columns, 2,350 constraints,
-719 indexes, 334 functions, 332 triggers and 28 policies. Current audit evidence
+719 indexes, 335 functions, 333 triggers and 28 policies. Current audit evidence
 and the function fingerprint are in the
-[review ledger](stewardship-delivery-reviews.md#successful-replacement-review).
+[review ledger](stewardship-delivery-reviews.md#second-correction-review).
 The all-model comparison independently confirms current field types, defaults,
 nullability, foreign keys and complete constraint/index definitions. The strict
 fixture was updated only after inspecting the additive catalog delta.

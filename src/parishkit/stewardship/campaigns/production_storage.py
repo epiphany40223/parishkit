@@ -118,6 +118,19 @@ class ProductionStatus:
     checkpoint_sequence: int
 
 
+@dataclass(frozen=True)
+class ProductionCommand:
+    """Exact transition inputs for owning admission, including replay."""
+
+    action: ProductionAction
+    command_id: UUID
+    expected_version: int
+    actor_id: UUID
+    run_id: UUID | None
+    task_fence: int | None
+    failure_reason: str
+
+
 def _status(request):
     """Freeze current control metadata, never pass a mutable ORM row to an owner."""
     return ProductionStatus(
@@ -135,11 +148,14 @@ def _status(request):
     )
 
 
-def _admit(callback, action, campaign, status):
+def _admit(callback, action, campaign, status, proposal=None):
     """Every replay also needs fresh current-scope permission and readiness proof."""
     if not callable(callback):
         raise TypeError("Production admission callback is required.")
-    if callback(action, campaign, status) is not True:
+    args = (action, campaign, status)
+    if proposal is not None:
+        args += (proposal,)
+    if callback(*args) is not True:
         raise PermissionError("Production operation is not admitted.")
 
 
@@ -258,6 +274,12 @@ def change_transition(
 
     Explicit failed retry requires work_transaction before the caller allocates
     its linked TaskRun retry and invokes this function in that transaction.
+
+    Admission receives a fourth, frozen ProductionCommand after the proposed
+    run is locked under this request's root. RECOVERY_FAIL mirrors an already
+    committed TaskRun recovery_fail: supply its latest run ID, post-expiry fence
+    and recovery actor (not the dead worker). Worker identity comes from that run.
+    Nested cancellation/gate-release admission receives the same proposal.
     """
     _ids(request_id, command_id, actor_id, correlation_id, expected_version)
     if not isinstance(action, ProductionAction):
@@ -294,8 +316,17 @@ def change_transition(
         raise ValueError(
             "A cleanup failure reason belongs only to a failed or delayed operation."
         )
+    proposal = ProductionCommand(
+        action,
+        command_id,
+        expected_version,
+        actor_id,
+        run_id,
+        task_fence,
+        failure_reason,
+    )
     with correlation(correlation_id), work_transaction():
-        request, campaign = _locked(request_id)
+        request, campaign = _locked(request_id, run_id=run_id)
         previous = ProductionTransitionEvent.objects.filter(
             request=request, command_id=command_id
         ).first()
@@ -314,12 +345,12 @@ def change_transition(
                 )
             ):
                 raise ValueError("Production command is already bound.")
-            _admit(admit, "transition_replay", campaign, _status(request))
+            _admit(admit, "transition_replay", campaign, _status(request), proposal)
             return _status(request)
         if request.version != expected_version:
             raise StaleRecordError("Production request version changed.")
         target = production_target(ProductionState(request.state), action)
-        _admit(admit, action, campaign, _status(request))
+        _admit(admit, action, campaign, _status(request), proposal)
         if action is ProductionAction.CANCEL:
             current = (
                 TaskRun.objects.filter(root_id=request.task_id)
@@ -334,7 +365,7 @@ def change_transition(
                     actor_id=actor_id,
                     correlation_id=correlation_id,
                     admit=lambda kind, status: admit(
-                        "cancel_task", campaign, _status(request)
+                        "cancel_task", campaign, _status(request), proposal
                     ),
                 )
         values = dict(
@@ -347,7 +378,7 @@ def change_transition(
             failure_reason=failure_reason,
         )
         if claim_action:
-            task = TaskRun.objects.select_for_update().get(pk=run_id)
+            task = TaskRun.objects.get(pk=run_id)
             values.update(
                 run_id=run_id, task_fence=task_fence, worker_id=task.worker_id
             )
@@ -356,7 +387,9 @@ def change_transition(
         if action is ProductionAction.CANCEL:
             release_rehearsal_gate(
                 campaign_id=campaign.pk,
-                admit=lambda row: admit("release_gate", row, _status(request)),
+                admit=lambda row: admit(
+                    "release_gate", row, _status(request), proposal
+                ),
             )
         return _status(request)
 
@@ -379,6 +412,8 @@ def checkpoint_cleanup(
     the actual deleted category counts equal the batch counts. Zero-row replay
     is not success: reuse the original command instead. A failure,
     stale worker, invalid count or missing progress rolls back all those effects.
+    The batch digest fingerprints exact batch membership, not just its counts or
+    query: distinct groups of the same size must have different batch identities.
     """
     _ids(request_id, command_id, actor_id, correlation_id, expected_version)
     if (
@@ -450,10 +485,17 @@ def _ids(request_id, command_id, actor_id, correlation_id, version):
         raise ValueError("Invalid Production request version.")
 
 
-def _locked(request_id):
+def _locked(request_id, *, run_id=None):
     """Join campaign and retry-root order before locking the domain request."""
     initial = ProductionTransitionRequest.objects.get(pk=request_id)
     campaign = Campaign.objects.select_for_update().get(pk=initial.campaign_id)
     TaskRun.objects.select_for_update().get(pk=initial.task_id)
+    if (
+        run_id is not None
+        and not TaskRun.objects.select_for_update()
+        .filter(pk=run_id, root_id=initial.task_id)
+        .first()
+    ):
+        raise StorageInvariantError("Cleanup claim does not belong to this request.")
     request = ProductionTransitionRequest.objects.select_for_update().get(pk=request_id)
     return request, campaign

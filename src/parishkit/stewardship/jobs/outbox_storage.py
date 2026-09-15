@@ -62,6 +62,8 @@ class DeliveryCommand:
 
     The admission owner receives this fourth argument for transitions and their
     replays. The private reconciliation note is omitted from representations.
+    Replay metadata describes caller input, not a replacement of retained data;
+    dispatch must inspect the retained envelope/render after an accepted replay.
     """
 
     action: DeliveryAction
@@ -108,7 +110,9 @@ def _admit(callback, action, identity, status, proposal=None):
     if not callable(callback):
         raise TypeError("Delivery admission callback is required.")
     args = (action, identity, status)
-    if callback(*(args if proposal is None else (*args, proposal))) is not True:
+    if proposal is not None:
+        args += (proposal,)
+    if callback(*args) is not True:
         raise PermissionError("Delivery operation is not admitted.")
 
 
@@ -305,8 +309,14 @@ def change_message(
     with correlation(correlation_id), work_transaction():
         initial = OutboxMessage.objects.get(pk=message_id)
         TaskRun.objects.select_for_update().get(pk=initial.task_id)
-        if action is DeliveryAction.SUBMIT:
-            TaskRun.objects.select_for_update().get(pk=run_id)
+        if action is DeliveryAction.SUBMIT and not (
+            TaskRun.objects.select_for_update()
+            .filter(pk=run_id, root_id=initial.task_id)
+            .first()
+        ):
+            raise StorageInvariantError(
+                "Delivery claim does not belong to this message."
+            )
         message = OutboxMessage.objects.select_for_update().get(pk=message_id)
         status = _status(message)
         previous = OutboxEvent.objects.filter(

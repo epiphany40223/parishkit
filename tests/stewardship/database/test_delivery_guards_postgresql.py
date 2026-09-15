@@ -22,6 +22,7 @@ from parishkit.stewardship.jobs.outbox_validation import (
     substitution_context,
 )
 from parishkit.stewardship.jobs.storage import change_run, enqueue, retry_failed
+from parishkit.stewardship.storage import StorageInvariantError
 
 from .campaign_builders import prepared_tokens
 from .test_family_auth_postgresql import family_service  # noqa: F401
@@ -266,3 +267,21 @@ def test_transition_admission_receives_exact_frozen_proof_and_locked_task(
     with pytest.raises(PermissionError):
         change(first, Action.SUBMIT, **(options | {"admit": lambda *args: False}))
     assert TaskRun.objects.get(pk=task.run_id).state == "running"
+
+
+def test_delivery_claim_cannot_lock_an_unrelated_root(inputs):  # noqa: F811
+    """A foreign claim is rejected before callback admission."""
+    first = create_message(**inputs)
+    other = create_message(
+        **(inputs | {"identity": replace(inputs["identity"], semantic_key=uuid4())})
+    )
+    foreign = claim(other)
+    with pytest.raises(StorageInvariantError, match="does not belong"):
+        change(
+            first,
+            Action.SUBMIT,
+            run_id=foreign.run_id,
+            task_fence=foreign.fence,
+            actor_id=foreign.worker_id,
+            provider_seconds=30,
+        )

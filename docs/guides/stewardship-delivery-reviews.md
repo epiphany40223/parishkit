@@ -197,3 +197,72 @@ not yet established. A new 300-sample read-only host/PostgreSQL probe showed no
 backward clock steps, with observed offsets from -4.505 to +7.291 milliseconds.
 That probe does not retroactively explain or excuse earlier failures. Final
 same-tree coverage and protected CI remain required.
+
+## Passing complete coverage checkpoint
+
+At head `f43585fac5656e4c0e9f54ce1d5005dc437cd46e`, tree
+`443cd08aaacc5ddef9532572670f16c83340d461`, the complete four-shard rerun passed.
+The baseline passed 5,512 tests in 106.27 seconds. PostgreSQL shards passed
+652, 663, 657 and 672 tests respectively (2,644 total); the independent combine
+accounted for the exact complete collection and passed with 94.05% line and
+85.55% branch coverage. Shard wall times were 957.67, 946.50, 1,061.41 and
+1,054.83 seconds; shard one's baseline is additional. These are local four-way
+results, not the eight-runner GitHub CI results or proof about a later head.
+
+No earlier authentication failures recurred. The original cause remains
+unestablished; no production deadline, lease or session limit was relaxed.
+A 120-second stack dump during a long setup-disposal case showed its explicit
+Event wait for the real task/source/HTTP drain deadline. That case subsequently
+passed after 142.934 seconds including preparation, so this delay was not a
+deadlock. A separate dense 10,000-read clock probe observed no backward step.
+
+## Second correction review
+
+Session `20260915-072837-a10997` reviewed
+`2b8eddbf586fc8f8f073f37221d221b20adf8fa6` through
+`f43585fac5656e4c0e9f54ce1d5005dc437cd46e`, preserving surrounding journal/spec
+context. Both sources completed; the finalized 362.44-second round reported
+two validated Medium findings (Claude), no High/Critical, and 13 raw Low.
+There were no failed agents, degradation or verdict mismatch. Finalize artifact:
+`21486ed0ebcc1a06c18b95a90293cbb23c5d0743358f31d0cd9f433924b032d3`.
+
+The successful permission probe was `pika-review-permissions.DmITDS`. An earlier
+unused probe was discarded after the parent validator encountered a lean-ctx
+allowlist block. The needed parent tooling commands were explicitly allowed
+under the human's standing authority; reviewer processes retained the skill's
+narrow validator/move grants. No denied command was used as review evidence.
+
+### Second-round dispositions
+
+| Severity | Concern | Disposition |
+| --- | --- | --- |
+| Medium | Null TaskRun recovery actor strands the domain mirror | Reject unattributed `production_cleanup` recovery failure at the TaskRun SQL boundary; regression leaves the task abandoned and permits a subsequent attributed recovery. |
+| Medium | Production admission lacks proposed transition proof | Add frozen `ProductionCommand`, lock the proposed owning-root claim before the request/admission, and preserve the fourth argument for replays and nested cancellation/release checks. |
+| Low | Work lock may be acquired after retry-root allocation | Require work order inside linked TaskRun retry allocation itself, before its first root lock. Both relevant task types have regression coverage. |
+| Low | Replay proposal may describe discarded ciphertext metadata | Document that proposal describes caller input; dispatch loads the original retained envelope/render. |
+| Low | Preparation/hold callbacks remain three-argument | Explicitly document immutable-input closure responsibility and BG-06's compiled input-binding owner; no user-callable callback port exists. |
+| Low | Root-claim test alone cannot prove child locking | The existing child-claim parameter independently proves the corrected path. Added Production child-lock ordering assertions too. |
+| Low | Additional recovery/pause-gate branch cases | Add delayed-run/new-child recovery and stale prior-run rejection. Restore/non-current lifecycle integration remains BG-06/ADM-05's complete admission matrix. |
+| Low | Recovery calling convention insufficiently documented | Document latest failed run, post-expiry fence, recovery actor and derived worker identity. |
+| Low | Batch digest could describe only counts/query | Specify that it fingerprints exact batch membership, distinguishing equal-sized batches. |
+| Low | Proposed run may lock another root | Filter both journals' proposed locks by owning root and reject missing/foreign IDs before admission. |
+| Low | Conditional callback splat readability | Use a straightforward tuple with an optional fourth argument. |
+| Low | Repeated render fingerprint computation | Bounded immutable input; defer optional caching to BG-06 rendering integration rather than add a second digest representation here. |
+
+Pika finalized with automatic session cleanup, retaining Claude's report but
+removing the Codex raw artifact. Its three below-cutoff Low descriptions are
+therefore unavailable for detailed disposition; the finalized severity/source
+counts are preserved above. No Codex Medium-or-higher finding was reported.
+Subsequent finalizations retain artifacts explicitly to avoid this evidence gap.
+
+The initial post-fix regression passed 140 tests in 83.35 seconds. The independent
+merged-base catalog comparison passed in 10.45 seconds: no preexisting object
+changed or disappeared. One new function and TaskRun trigger enforce recovery
+attribution, bringing totals to 335 functions and 333 triggers. Function hash:
+`96f728f76c45b2d067aca396445b6db783c6adf3717b0d5d5e2c3a96dd606c1e`.
+The strict fixture was updated after examining these additions. The final
+focused journal, shared TaskRun and strict schema suite passed 194 tests in
+114.49 seconds; lint, formatting, Markdown and model-state checks pass. This
+completes round two. A third completed review/fix round and final-head protected
+CI remain required; the complete coverage checkpoint above is not relabeled as
+measurement of these later corrections.

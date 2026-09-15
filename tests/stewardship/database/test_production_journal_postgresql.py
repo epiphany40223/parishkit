@@ -1,6 +1,6 @@
 """Go-live journal proves atomic gate/checkpoint storage, not operational readiness."""
 
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, replace
 from datetime import timedelta
 from uuid import uuid4
 
@@ -410,6 +410,9 @@ def test_exhausted_crash_recovery_records_failure_and_allows_explicit_retry(
     with pytest.raises(IntegrityError, match="fenced failed task"):
         act(status, Action.RECOVERY_FAIL, **recovery)
     abandoned = expire(task)
+    with pytest.raises(IntegrityError, match="requires an attributed actor"):
+        task_act(abandoned, "recovery_fail", actor_id=None)
+    assert TaskRun.objects.get(pk=abandoned.run_id).state == "abandoned"
     dead = task_act(abandoned, "recovery_fail", actor_id=recovery_actor)
     with pytest.raises(IntegrityError, match="fenced failed task"):
         act(status, Action.RECOVERY_FAIL, **recovery)
@@ -491,3 +494,158 @@ def test_orphan_checkpoint_cannot_commit_without_progress_event(intent):
             correlation_id=uuid4(),
         )
     assert not ProductionCleanupCheckpoint.objects.exists()
+
+
+def test_production_transition_admission_pins_child_claim_and_exact_proposal(intent):
+    """Both fresh START and its replay validate the proposed child, not old status."""
+    status = act(
+        start(begin_transition(**intent)), Action.FAIL, failure_reason="exhausted"
+    )
+    finish_task(status, "permanent_failure")
+    with work_transaction():
+        child = retry_failed(
+            run_id=status.run_id,
+            command_id=uuid4(),
+            actor_id=uuid4(),
+            correlation_id=uuid4(),
+            admit=permit,
+        )
+        queued = act(status, Action.RETRY_FAILED)
+    claimed = change_run(
+        run_id=child.run_id,
+        action="claim",
+        expected_version=child.version,
+        actor_id=uuid4(),
+        correlation_id=uuid4(),
+        admit=permit,
+        lease_seconds=300,
+    )
+    queries, proposals = [], []
+
+    def record(execute, sql, params, many, context):
+        """Observe real locking SQL before owning admission runs."""
+        queries.append((sql, params))
+        return execute(sql, params, many, context)
+
+    def admitted(action, campaign, status, proposal):
+        """Proof is immutable and describes the exact newly locked child claim."""
+        proposals.append(proposal)
+        assert proposal.action is Action.START
+        assert (
+            proposal.run_id == claimed.run_id and proposal.task_fence == claimed.fence
+        )
+        assert proposal.actor_id == claimed.worker_id and proposal.failure_reason == ""
+        assert proposal.expected_version == queued.version
+        with pytest.raises(FrozenInstanceError):
+            proposal.task_fence = 999
+        locks = [(sql, params) for sql, params in queries if "FOR UPDATE" in sql]
+        child_lock = next(
+            i
+            for i, (sql, params) in enumerate(locks)
+            if "stewardship_task_run" in sql and str(claimed.run_id) in str(params)
+        )
+        domain_lock = next(
+            i
+            for i, (sql, params) in enumerate(locks)
+            if "stewardship_production_request" in sql
+        )
+        assert child_lock < domain_lock
+        return True
+
+    options = dict(
+        command_id=uuid4(),
+        run_id=claimed.run_id,
+        task_fence=claimed.fence,
+        actor_id=claimed.worker_id,
+        admit=admitted,
+    )
+    for _replay in (False, True):
+        queries.clear()
+        with connection.execute_wrapper(record):
+            started = act(queued, Action.START, **options)
+        assert started.state == "cleanup_running"
+    assert proposals[0] == proposals[1]
+    with pytest.raises(PermissionError):
+        act(queued, Action.START, **(options | {"admit": lambda *args: False}))
+
+
+def test_production_cancel_suboperations_retain_the_same_proposal(intent):
+    """Task cancellation and gate release cannot silently lose the fourth argument."""
+    status = begin_transition(**intent)
+    calls = []
+
+    def admitted(action, campaign, current, proposal):
+        """The owner verifies one original cancel intent across all nested effects."""
+        calls.append((action, proposal))
+        return True
+
+    assert act(status, Action.CANCEL, admit=admitted).state == "cancelled"
+    assert [kind for kind, _ in calls] == [Action.CANCEL, "cancel_task", "release_gate"]
+    assert all(proposal is calls[0][1] for _, proposal in calls)
+
+
+def test_production_claim_cannot_lock_an_unrelated_root(intent):
+    """Missing or foreign task IDs fail before admission or domain mutation."""
+    status = begin_transition(**intent)
+    called = []
+    with pytest.raises(StorageInvariantError, match="does not belong"):
+        act(
+            status,
+            Action.START,
+            run_id=uuid4(),
+            task_fence=1,
+            admit=lambda *args: called.append(True) or True,
+        )
+    assert not called
+
+
+@pytest.mark.parametrize("new_child", [False, True])
+def test_recovery_can_mirror_delayed_or_new_child_failures(intent, new_child):
+    """Recovery compares both same-run fences and later retry-chain positions."""
+    from parishkit.stewardship.jobs.storage import _status as task_status
+
+    from .test_taskrun_postgresql import act as task_act
+    from .test_taskrun_postgresql import expire
+
+    status = batch(start(begin_transition(**intent)))
+    previous = task_status(TaskRun.objects.get(pk=status.run_id))
+    if new_child:
+        status = act(status, Action.FAIL, failure_reason="exhausted")
+        task_act(previous, "permanent_failure")
+        with work_transaction():
+            task = retry_failed(
+                run_id=previous.run_id,
+                command_id=uuid4(),
+                actor_id=uuid4(),
+                correlation_id=uuid4(),
+                admit=permit,
+            )
+            status = act(status, Action.RETRY_FAILED)
+    else:
+        status = act(status, Action.RETRY_LATER, failure_reason="transient")
+        task = task_act(previous, "retryable_failure")
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_sleep(1.05)")
+    claimed = task_act(task, "claim", lease_seconds=1)
+    actor = uuid4()
+    dead = task_act(expire(claimed), "recovery_fail", actor_id=actor)
+    if new_child:
+        with pytest.raises(IntegrityError, match="fenced failed task"):
+            act(
+                status,
+                Action.RECOVERY_FAIL,
+                run_id=previous.run_id,
+                task_fence=previous.fence,
+                actor_id=actor,
+                failure_reason="exhausted",
+            )
+    failed = act(
+        status,
+        Action.RECOVERY_FAIL,
+        run_id=dead.run_id,
+        task_fence=dead.fence,
+        actor_id=actor,
+        failure_reason="exhausted",
+    )
+    assert failed.state == "cleanup_failed"
+    assert failed.processed_count == failed.checkpoint_sequence == 1

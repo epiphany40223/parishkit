@@ -17,6 +17,7 @@ from uuid import UUID, uuid4
 from django.db import connection, transaction
 from django.db.models.functions import Now
 
+from parishkit.stewardship.campaigns.work_locks import require_work_order
 from parishkit.stewardship.observability import correlation
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
@@ -161,10 +162,17 @@ def enqueue(
 
 
 def retry_failed(*, run_id, command_id, actor_id, correlation_id, admit):
-    """Deduplicate an explicit retry command under the immutable retry-root lock."""
+    """Deduplicate an explicit retry command under the immutable retry-root lock.
+
+    Delivery/cleanup owners must acquire the work order before allocation, not
+    merely before their later domain update; otherwise the root lock can invert
+    lifecycle serialization before the domain helper is even reached.
+    """
     for value in (run_id, command_id, actor_id, correlation_id):
         _uuid(value)
     original = TaskRun.objects.get(pk=run_id)
+    if original.task_type in ("outbox_delivery", "production_cleanup"):
+        require_work_order()
     with _locked(correlation_id, root_id=original.root_id):
         original.refresh_from_db()
         existing = TaskRun.objects.filter(

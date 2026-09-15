@@ -1,6 +1,24 @@
 -- Go-live journal foundation. Final activation remains deliberately unavailable
 -- until the compiled readiness/activation workflow owns every required effect.
 
+CREATE FUNCTION public.stewardship_production_task_actor_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp AS $$
+BEGIN
+    -- The domain journal must be able to mirror a terminal recovery outcome.
+    -- Reject missing attribution at its source, before the task can be stranded.
+    IF NEW.task_type='production_cleanup' AND NEW.action='recovery_fail'
+       AND NEW.actor_id IS NULL THEN
+        RAISE EXCEPTION 'Production task recovery requires an attributed actor'
+            USING ERRCODE='23514';
+    END IF;
+    RETURN NEW;
+END $$;
+
+CREATE TRIGGER stewardship_production_task_actor
+    BEFORE UPDATE ON public.stewardship_task_run
+    FOR EACH ROW EXECUTE FUNCTION public.stewardship_production_task_actor_v1();
+REVOKE ALL ON FUNCTION public.stewardship_production_task_actor_v1() FROM PUBLIC;
+
 CREATE FUNCTION public.stewardship_cleanup_counts_v1(counts jsonb) RETURNS bigint
 LANGUAGE plpgsql IMMUTABLE SET search_path TO pg_catalog, public, pg_temp AS $$
 DECLARE

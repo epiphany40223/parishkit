@@ -97,6 +97,30 @@ def retry(status, **kwargs):
     )
 
 
+@pytest.mark.parametrize("kind", ["outbox_delivery", "production_cleanup"])
+def test_domain_retry_requires_work_order_before_any_root_lock(kind):
+    """A later domain precondition cannot repair an already inverted retry lock."""
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+
+    failed = act(act(new(task_type=kind), "claim"), "permanent_failure")
+    queries = []
+
+    def record(execute, sql, params, many, context):
+        """Observe acquisition order without replacing the actual database locks."""
+        queries.append(sql)
+        return execute(sql, params, many, context)
+
+    with (
+        connection.execute_wrapper(record),
+        pytest.raises(StorageInvariantError, match="lock order"),
+        transaction.atomic(),
+    ):
+        retry(failed)
+    assert not any("FOR UPDATE" in sql for sql in queries)
+    with work_transaction():
+        assert retry(failed).state == "queued"
+
+
 def test_enqueue_claim_progress_heartbeat_completion_and_history():
     """All state and history survive reconnect; task success is not mail fulfillment."""
     status = new()
