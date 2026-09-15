@@ -117,9 +117,16 @@ def end_baseline(baseline, *, state):
 def cancel_session_baselines(session_ids):
     """Release unfinished form inputs before their owning sessions are removed."""
     require_work_order()
-    rows = FamilyFormBaseline.objects.filter(
-        family_session_id__in=session_ids, state="open"
-    ).order_by("pk")
+    # A sealed go-live inventory owns its Testing baseline/pin pairs. Logout
+    # still revokes session authority, but only that cleanup worker may remove
+    # these inputs. The shared work lock serializes gate capture/cancellation.
+    rows = (
+        FamilyFormBaseline.objects.filter(
+            family_session_id__in=session_ids, state="open"
+        )
+        .exclude(mode="test", family__campaign__credential_state__go_live_gate=True)
+        .order_by("pk")
+    )
     for row in rows:
         end_baseline(row, state="cancelled")
 

@@ -328,11 +328,16 @@ def cleanup_family_sessions(*, batch_size=500):
     with work_transaction():
         now = database_now()
         rows = list(
-            FamilySession.objects.select_for_update(skip_locked=True)
+            FamilySession.objects.select_for_update(of=("self",), skip_locked=True)
             .filter(
                 Q(revoked_at__isnull=False)
                 | Q(expires_at__lte=now)
                 | Q(last_activity_at__lte=now - FAMILY_IDLE)
+            )
+            # The cleanup manifest owns Testing session/baseline/pin units
+            # until cancellation releases the gate or its worker deletes them.
+            .exclude(
+                mode="testing", family__campaign__credential_state__go_live_gate=True
             )
             .order_by("expires_at", "pk")[:batch_size]
         )
