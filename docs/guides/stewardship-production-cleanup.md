@@ -303,3 +303,22 @@ the four-commit structure remains. The post-fix unsquashed/squashed trees match
 (`638f300495ff42d2768316c2cb00369a6b56f6ed`) before this documentation update,
 and the runtime source/deployment diff against the original reviewed PR head is
 empty. Fresh final-head CI and all merge-group checks are still required.
+
+## Protected delivery
+
+[PR #33](https://github.com/epiphany40223/parishkit/pull/33) passed all 24 jobs
+and DCO at final head `afe475adf77d3816bf5d96af2d655a43c903ac57` in
+[run 35026076159](https://github.com/epiphany40223/parishkit/actions/runs/35026076159).
+The eight shard receipts account for all 2,823 selected/completed database cases.
+Combined coverage is 94.05% lines and 85.48% branches. Every browser engine,
+operational scenario and core container check passed.
+
+The standard expected-head queue enqueue succeeded under the standing human
+delegation, without a queue jump or protection bypass. The CLI's attempted
+auto-merge is disabled by repository policy; the normal queue API was used.
+[Merge-group run 35027662420](https://github.com/epiphany40223/parishkit/actions/runs/35027662420)
+also passed all 24 jobs, with the same coverage totals. The merge landed at
+22:03:24 UTC on September 15, 2026 as
+`ce1e95d129646bae4d3f6fe2acdb0ad8dfd7767c`, verified on refreshed `origin/main`.
+Earlier pending-delivery checkpoints are superseded. No deployment, release,
+Production activation or Gate 3 release occurred.

@@ -72,8 +72,10 @@ based on PR #32 merge `5c85d26f`. The
 [increment guide](../../guides/stewardship-production-cleanup.md) records all three
 complete dual-source review/fix rounds, 100 passing cleanup tests, 93.57% line
 and 81.15% branch coverage, schema/ownership/race/runtime validation and submitted-
-Family scale measurements. Final-head PR and protected merge-group CI are still
-required before delivery. This does not release Gate 3 or enable Production
+Family scale measurements. PR #33 passed all 24 final-head and all 24 merge-group
+jobs and merged as `ce1e95d1`, verified on refreshed `origin/main`; see the guide's
+[delivery record](../../guides/stewardship-production-cleanup.md#protected-delivery).
+This does not release Gate 3 or enable Production
 activation; ADM-05 and its other dependencies retain those boundaries.
 
 ## BG-04: Schedule revision, fulfillment, and mode routing
@@ -87,7 +89,11 @@ Scope and dependencies: [BG-04 work package](../../plans/stewardship/background-
 - [ ] BG-04.05 — Implement missed-work coalescing and bounded asynchronous activation catch-up.
 - [ ] BG-04.06 — Test schedule, mode, revision, and restart combinations.
 
-Evidence: Not started.
+Execution checkpoint: `pr/stewardship-schedule-planning` starts from verified
+PR #33 merge `ce1e95d1`. The
+[increment scope](../../guides/stewardship-schedule-planning.md) covers campaign-local
+evaluation and ordinary schedule planning/reconciliation. Bounded activation
+catch-up follows as its own coherent increment. No BG-04 task is complete yet.
 
 ## BG-05: ParishSoft delta and full refresh
 

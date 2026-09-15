@@ -393,6 +393,14 @@ its findings still require triage.
 Goal: move a tested campaign safely to Production and run reliable scheduled
 communication through pause, restart, and failure.
 
+After PR #33, deliver BG-04's ordinary schedule planning/reconciliation before
+its bounded activation catch-up worker. The latter's multi-batch coalescing and
+preparation-hold recovery deserve a separate coherent review boundary; both use
+one shared schedule/semantic-identity contract. The
+[increment scope](../../guides/stewardship-schedule-planning.md) records partial
+ownership. Complete both increments before advancing to BG-08/BG-06; no gate
+criteria or direct-activation prerequisites are waived.
+
 Execute in this order:
 
 1. Complete **DAT-07** job/outbox/production-transition records and terminal
