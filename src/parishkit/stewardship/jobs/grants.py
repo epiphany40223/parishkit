@@ -157,4 +157,7 @@ def task_runtime_grants(role):
         )
 
         add_campaign_mail_grants(tables, columns, scheduler=True)
+    from parishkit.stewardship.campaigns.boundary_grants import add_boundary_grants
+
+    add_boundary_grants(tables, columns, worker=role is ServiceRole.WORKER)
     return tables, columns

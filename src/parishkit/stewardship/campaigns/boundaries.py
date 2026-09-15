@@ -2,11 +2,12 @@
 
 from uuid import UUID, uuid5
 
-from django.db.models import F
+from django.db.models import DateTimeField, F, Func
 
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .admission import CampaignAdmissionUnavailable
+from .boundary_revisions import current_boundary
 from .lifecycle import Action
 from .models import CampaignBoundaryOccurrence
 from .runtime import _emit, _now, campaign_transaction
@@ -48,11 +49,12 @@ def apply_due_boundaries(
             if due > now:
                 continue
             admit(kind, campaign, runtime, None)
-            occurrence, _ = CampaignBoundaryOccurrence.objects.get_or_create(
-                campaign=campaign,
+            occurrence = current_boundary(
+                campaign_id=campaign.pk,
                 kind=kind.value,
                 due_at=due,
-                defaults={"actor_id": actor_id, "correlation_id": correlation_id},
+                actor_id=actor_id,
+                correlation_id=correlation_id,
             )
             if occurrence.state != "pending":
                 results.append(occurrence)
@@ -68,7 +70,12 @@ def apply_due_boundaries(
             if campaign.state != source or runtime.mode != "production":
                 CampaignBoundaryOccurrence.objects.filter(pk=occurrence.pk).update(
                     state="skipped",
-                    completed_at=now,
+                    # Use this UPDATE's domain clock, matching the trigger proof.
+                    # An earlier SELECT has a different production statement time.
+                    completed_at=Func(
+                        function="stewardship_campaign_now_v1",
+                        output_field=DateTimeField(),
+                    ),
                     reason="not_applicable",
                     version=F("version") + 1,
                     actor_id=actor_id,

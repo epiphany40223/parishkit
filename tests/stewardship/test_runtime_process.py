@@ -303,6 +303,7 @@ def test_credential_service_publishes_only_after_admission(
         "mail",
         "slack",
         "campaign",
+        "boundary",
         "source",
         "cleanup",
         "setup_cleanup",
@@ -335,6 +336,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         if role is ServiceRole.SCHEDULER:
             outputs = {
                 "finalization": "finalization-receipt",
+                "boundary": "boundary-receipt",
                 "source": "source-receipt",
                 "cleanup": "cleanup-receipt",
                 "setup_cleanup": "setup-cleanup-receipt",
@@ -398,6 +400,11 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         slack_recovery,
     )
     setup_cleanup = Mock(return_value=("setup-cleanup-receipt",))
+    boundary = Mock(return_value=("boundary-receipt",))
+    monkeypatch.setattr(
+        "parishkit.stewardship.campaigns.boundary_production.produce_boundaries",
+        boundary,
+    )
     monkeypatch.setattr(
         "parishkit.stewardship.source.setup_cleanup.produce_setup_cleanup",
         setup_cleanup,
@@ -409,6 +416,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
             "mail": mail_recovery,
             "slack": slack_recovery,
             "campaign": campaign_recovery,
+            "boundary": boundary,
             "source": producer,
             "cleanup": cleanup,
             "setup_cleanup": setup_cleanup,
@@ -442,6 +450,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         if held:
             hold.assert_called_once_with(assembled.store)
             for operation in (
+                boundary,
                 producer,
                 cleanup,
                 mail_recovery,
@@ -451,14 +460,16 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                 operation.assert_not_called()
             return
         hold.assert_not_called()
+        boundary.assert_called_once_with(guard)
         producer.assert_called_once_with(guard)
         cleanup.assert_called_once_with(guard)
         expiry.assert_called_once_with(guard)
         mail_recovery.assert_called_once_with()
         campaign_recovery.assert_called_once_with()
         slack_recovery.assert_called_once_with()
-        assert guard.check.call_count == 16
+        assert guard.check.call_count == 18
     else:
+        boundary.assert_not_called()
         mail_recovery.assert_not_called()
         cleanup.assert_not_called()
         expiry.assert_not_called()

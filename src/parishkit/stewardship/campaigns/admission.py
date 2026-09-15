@@ -12,6 +12,36 @@ class CampaignAdmissionUnavailable(RuntimeError):
     """Deployment state temporarily blocks configuration; this is not invalid intent."""
 
 
+def close_work_running(campaign_id):
+    """Reject claimed or undrained close work, including pre-binding task claims."""
+    from django.db.models import CharField, Q
+    from django.db.models.functions import Cast
+
+    from parishkit.stewardship.jobs.models import TaskRun
+
+    from .models import CampaignBoundaryOccurrence
+
+    pending = CampaignBoundaryOccurrence.objects.filter(
+        campaign_id=campaign_id, kind="close", state="pending"
+    )
+    return (
+        TaskRun.objects.filter(
+            task_type="campaign_boundary",
+            domain_request_id=campaign_id,
+            state__in=["running", "abandoned"],
+        )
+        .filter(
+            Q(pk__in=pending.values("task_id"))
+            | Q(
+                root__idempotency_key__in=pending.annotate(
+                    key=Cast("pk", CharField())
+                ).values("key")
+            )
+        )
+        .exists()
+    )
+
+
 def validate_installation(document, *, request_id=None):
     """Reject unsupported draft operations without changing YAML or runtime state."""
     from django.db.models import Q
@@ -21,7 +51,6 @@ def validate_installation(document, *, request_id=None):
 
     from .models import (
         Campaign,
-        CampaignBoundaryOccurrence,
         CampaignConfigurationIntent,
         CampaignWorkGate,
         ScheduleDefinition,
@@ -66,15 +95,10 @@ def validate_installation(document, *, request_id=None):
         ):
             raise ConfigError("Exceptional edit requires a valid changed end date.")
         if (
-            # BG-02 may durably allocate/bind a pending boundary before execution.
-            # The current atomic executor serializes against the installer, but
-            # retained/restored pending work must also block stale end edits.
-            CampaignBoundaryOccurrence.objects.filter(
-                campaign=row,
-                kind="close",
-                state="pending",
-                task__state__in=NONTERMINAL_STATES,
-            ).exists()
+            # Both the allocation key and later execution binding matter. A
+            # worker can have claimed its root before binding the occurrence.
+            # Queued/backoff work is replaceable; running/undrained work is not.
+            close_work_running(row.pk)
             or CampaignWorkGate.objects.filter(
                 state__in=["preparing", "running"]
             ).exists()

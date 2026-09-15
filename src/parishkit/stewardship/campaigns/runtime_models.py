@@ -178,12 +178,14 @@ class CampaignBoundaryOccurrence(MutableRecord):
         "campaign_id",
         "kind",
         "due_at",
+        "execution_revision",
     )
     campaign = models.ForeignKey(
         "stewardship_campaigns.Campaign", on_delete=models.PROTECT
     )
     kind = models.CharField(max_length=8)
     due_at = UTCDateTimeField()
+    execution_revision = models.PositiveBigIntegerField(default=1)
     state = models.CharField(max_length=16, default="pending")
     task = models.ForeignKey(
         "stewardship_jobs.TaskRun", null=True, on_delete=models.PROTECT
@@ -199,7 +201,12 @@ class CampaignBoundaryOccurrence(MutableRecord):
         db_table = "stewardship_campaign_boundary"
         constraints = MutableRecord.Meta.constraints + [
             models.UniqueConstraint(
-                fields=["campaign", "kind", "due_at"], name="campaign_boundary_identity"
+                fields=["campaign", "kind", "execution_revision"],
+                name="campaign_boundary_identity",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(execution_revision__gte=1),
+                name="campaign_boundary_execution_revision",
             ),
             models.CheckConstraint(
                 condition=models.Q(kind__in=["start", "close"]),

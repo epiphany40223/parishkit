@@ -66,10 +66,10 @@ CONFIGURATION_GRANTS = {
     "stewardship_campaign_config_abort": {"SELECT"},
     "stewardship_campaign_control": {"SELECT"},
     "stewardship_campaign_transition": {"SELECT"},
-    # Every current-campaign activation executes the stale-boundary UPDATE,
-    # even when its predicate matches no rows. Exceptional reopen writes stay
-    # with the later ADM-06 owner, whose admission is not implemented here.
-    "stewardship_campaign_boundary": {"SELECT", "UPDATE"},
+    # End edits atomically retire old work and allocate a fresh close revision.
+    # Their trigger also writes a closed, metadata-only boundary audit context.
+    # Full reopen activation remains with the later ADM-06 owner.
+    "stewardship_campaign_boundary": {"SELECT", "INSERT", "UPDATE"},
     "stewardship_task_run": {"SELECT"},
     "stewardship_schedule_revision": {"SELECT", "INSERT"},
     "stewardship_schedule_definition": {"SELECT", "INSERT", "UPDATE"},
@@ -78,6 +78,7 @@ CONFIGURATION_GRANTS = {
     "stewardship_schedule_fulfillment": {"SELECT"},
     "stewardship_occurrence_transition": {"SELECT", "INSERT"},
     "stewardship_audit_event": {"INSERT"},
+    "stewardship_audit_context": {"INSERT"},
 }
 
 CONFIGURATION_COLUMNS = {

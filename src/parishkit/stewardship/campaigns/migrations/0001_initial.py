@@ -449,6 +449,10 @@ class Migration(migrations.Migration):
                         ("kind", models.CharField(max_length=8)),
                         ("task_fence", models.PositiveBigIntegerField(null=True)),
                         ("due_at", parishkit.stewardship.storage.UTCDateTimeField()),
+                        (
+                            "execution_revision",
+                            models.PositiveBigIntegerField(default=1),
+                        ),
                         ("state", models.CharField(default="pending", max_length=16)),
                         (
                             "completed_at",
@@ -2397,8 +2401,15 @@ class Migration(migrations.Migration):
                 migrations.AddConstraint(
                     model_name="campaignboundaryoccurrence",
                     constraint=models.UniqueConstraint(
-                        fields=("campaign", "kind", "due_at"),
+                        fields=("campaign", "kind", "execution_revision"),
                         name="campaign_boundary_identity",
+                    ),
+                ),
+                migrations.AddConstraint(
+                    model_name="campaignboundaryoccurrence",
+                    constraint=models.CheckConstraint(
+                        condition=models.Q(("execution_revision__gte", 1)),
+                        name="campaign_boundary_execution_revision",
                     ),
                 ),
                 migrations.AddConstraint(

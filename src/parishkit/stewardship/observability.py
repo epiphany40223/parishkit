@@ -22,6 +22,7 @@ class Event(StrEnum):
     TASK_STARTED = "task_started"
     TASK_COMPLETED = "task_completed"
     TASK_FAILED = "task_failed"
+    BOUNDARY_LAG = "campaign_boundary_lag"
     SOURCE_INVALID = "source_refresh_invalid"
     SOURCE_MEMBER_UNUSABLE = "source_member_unusable"
     SOURCE_HELD = "source_refresh_held"

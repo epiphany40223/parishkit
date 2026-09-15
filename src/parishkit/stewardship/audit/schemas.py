@@ -20,6 +20,7 @@ class ContextKind(StrEnum):
     PROVIDER = "provider"
     EXCEPTION = "exception"
     ACTION = "action"
+    BOUNDARY = "boundary"
 
 
 class Outcome(StrEnum):
@@ -90,6 +91,15 @@ MEMBER_SOURCE_FIELDS = frozenset(
 )
 
 FIELDS = {
+    ContextKind.BOUNDARY: {
+        "occurrence_id",
+        "kind",
+        "intended_unix_microseconds",
+        "actual_unix_microseconds",
+        "lag_microseconds",
+        "before_state",
+        "after_state",
+    },
     ContextKind.REQUEST: {"method", "status", "outcome", "source_fingerprint"},
     ContextKind.TASK: {"task_id", "count", "version", "outcome"},
     ContextKind.EMAIL: {"message_id", "recipient_count", "outcome"},
@@ -115,13 +125,29 @@ def sanitize(kind, values):
         raise ValueError("Context requires a canonical schema and mapping.")
     if values.keys() - FIELDS[kind]:
         raise ValueError("Context contains fields outside its approved schema.")
-    if kind is ContextKind.MEMBER_SOURCE and values.keys() != FIELDS[kind]:
-        raise ValueError("Member source diagnostics require complete identifiers.")
+    if (
+        kind in {ContextKind.MEMBER_SOURCE, ContextKind.BOUNDARY}
+        and values.keys() != FIELDS[kind]
+    ):
+        raise ValueError("Structured diagnostics require complete identifiers.")
     safe = {}
     for key, value in values.items():
         if key == "outcome":
             valid = isinstance(value, Outcome)
             safe[key] = value.value if valid else None
+        elif key == "kind":
+            valid = type(value) is str and value in {"start", "close"}
+            safe[key] = value
+        elif key in {"before_state", "after_state"}:
+            valid = type(value) is str and value in {
+                "draft",
+                "scheduled",
+                "active",
+                "closed",
+                "archived",
+                "purged",
+            }
+            safe[key] = value
         elif key == "field":
             valid = type(value) is str and value in MEMBER_SOURCE_FIELDS
             safe[key] = value
