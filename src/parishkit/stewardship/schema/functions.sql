@@ -8709,6 +8709,21 @@ BEGIN
             RAISE EXCEPTION 'Worker may release only unused response comparison inputs'
                 USING ERRCODE='23514';
         END IF;
+      ELSIF TG_OP='INSERT' AND NEW.parent_kind='facts' THEN
+        IF NEW.expires_at IS NOT NULL OR NOT EXISTS (
+            SELECT 1 FROM stewardship_task_run t JOIN stewardship_fact_demand d
+                ON d.id=t.domain_request_id
+            WHERE t.task_type='report_facts' AND t.state='running'
+                AND t.lease_expires_at>clock_timestamp()
+                AND d.population_scope='current'
+                AND d.requested_source_id=NEW.snapshot_id
+                AND d.claimed_generation_id IS NULL
+        ) OR NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+            AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
+            AND mode='ExclusiveLock' AND granted) THEN
+            RAISE EXCEPTION 'Worker fact input protection requires its live demand'
+                USING ERRCODE='23514';
+        END IF;
       ELSE
       IF (
         TG_OP <> 'INSERT' OR NEW.parent_kind <> 'submission' OR NEW.expires_at IS NOT NULL

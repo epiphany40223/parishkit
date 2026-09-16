@@ -17,6 +17,25 @@ from parishkit.stewardship.storage import (
 POPULATION_SCOPES = ("historical", "current")
 
 
+class FactBuildReceipt(ImmutableRecord):
+    """Permanent completion proof without pinning disposable calculated rows."""
+
+    task = models.OneToOneField("stewardship_jobs.TaskRun", on_delete=models.PROTECT)
+    run = models.ForeignKey(
+        "stewardship_jobs.TaskRun",
+        on_delete=models.PROTECT,
+        related_name="fact_receipts",
+    )
+    demand = models.ForeignKey("CampaignFactRebuildDemand", on_delete=models.PROTECT)
+    revision = models.PositiveBigIntegerField()
+    task_fence = models.PositiveBigIntegerField()
+    worker_id = models.UUIDField()
+    fact_set_id = models.UUIDField()
+
+    class Meta:
+        db_table = "stewardship_fact_build_receipt"
+
+
 class FactCompactionRecord(ImmutableRecord):
     """Permanent non-PII generation keys/counts, never duplicate calculated rows."""
 

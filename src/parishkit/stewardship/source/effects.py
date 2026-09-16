@@ -60,5 +60,8 @@ def _apply(snapshot, execution, claim, *, general, mac, public, suppressions):
             suppressed_addresses=suppressions(scope),
             admit=admit,
         )
+        from parishkit.stewardship.reports.fact_production import hint_current_facts
+
+        hint_current_facts(scope.campaign.pk, source_id=snapshot.pk)
     verify_refresh_attempt(attempt_id, execution, claim)
     return True

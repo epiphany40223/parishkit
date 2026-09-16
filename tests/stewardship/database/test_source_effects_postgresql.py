@@ -6,6 +6,7 @@ from parishkit.stewardship.accounts.chair_models import ChairReconciliation
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.jobs.models import TaskRun
+from parishkit.stewardship.reports.models import CampaignFactRebuildDemand
 from parishkit.stewardship.source.effects import refresh_reconciler
 from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSnapshot
 
@@ -56,6 +57,13 @@ def test_real_refresh_commits_all_available_phase_two_effects(
     assert FamilyCampaign.objects.exists() == with_campaign
     if with_campaign:
         assert FamilyCampaign.objects.get().source_generation == snapshot.generation
+        assert set(
+            CampaignFactRebuildDemand.objects.values_list(
+                "population_scope", "requested_source_id"
+            )
+        ) == {("historical", snapshot.pk), ("current", snapshot.pk)}
+    else:
+        assert not CampaignFactRebuildDemand.objects.exists()
     assert AuditEvent.objects.filter(
         pk=receipt.pk, event_type="chair_reconciled"
     ).exists()
@@ -64,7 +72,7 @@ def test_real_refresh_commits_all_available_phase_two_effects(
     assert ChairReconciliation.objects.count() == 1
 
 
-@pytest.mark.parametrize("failure", ["provider_failed", "wrong_type"])
+@pytest.mark.parametrize("failure", ["provider_failed", "wrong_type", "facts_failed"])
 def test_failed_family_dependency_rolls_back_earlier_chair_effects(
     tmp_path, monkeypatch, failure
 ):
@@ -78,7 +86,20 @@ def test_failed_family_dependency_rolls_back_earlier_chair_effects(
         assert ChairReconciliation.objects.exists()
         if failure == "provider_failed":
             raise RuntimeError("Synthetic suppression failure")
-        return None
+        return frozenset() if failure == "facts_failed" else None
+
+    if failure == "facts_failed":
+        from parishkit.stewardship.reports import fact_production
+
+        original = fact_production.hint_current_facts
+
+        def fail_hints(*args, **kwargs):
+            """An exception after both hints must roll back the entire promotion."""
+            original(*args, **kwargs)
+            assert CampaignFactRebuildDemand.objects.count() == 2
+            raise RuntimeError("Synthetic fact-hint failure")
+
+        monkeypatch.setattr(fact_production, "hint_current_facts", fail_hints)
 
     compiled = handler(
         tmp_path,
@@ -92,12 +113,13 @@ def test_failed_family_dependency_rolls_back_earlier_chair_effects(
     )
     request = command()
     fake_provider(monkeypatch, pages())
-    with pytest.raises(RuntimeError if failure == "provider_failed" else TypeError):
+    with pytest.raises(TypeError if failure == "wrong_type" else RuntimeError):
         run(request, compiled)
     assert SourceCurrent.objects.get().snapshot_id is None
     assert SourceSnapshot.objects.get().state == "ready"
     assert not ChairReconciliation.objects.exists()
     assert not FamilyCampaign.objects.exists()
+    assert not CampaignFactRebuildDemand.objects.exists()
     assert not AuditEvent.objects.filter(event_type="chair_reconciled").exists()
 
 

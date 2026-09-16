@@ -362,6 +362,7 @@ def serve_background(configuration, lease):
         from .campaigns.schedule_production import FamilyScheduleProducer
         from .jobs.processes import serve_consumer, serve_scheduler
         from .reports.export_cleanup import produce_cleanup as produce_export_cleanup
+        from .reports.fact_production import produce_facts
         from .source.production import SourceProducer
         from .source.setup_cleanup import produce_setup_cleanup
         from .source.setup_final_production import produce_finalization
@@ -412,6 +413,7 @@ def serve_background(configuration, lease):
                 *independent_producer(guard, producer, guard),
                 *independent_producer(guard, produce_cleanup, guard),
                 *independent_producer(guard, produce_export_cleanup, guard),
+                *independent_producer(guard, produce_facts, guard),
                 *independent_producer(guard, produce_setup_cleanup, guard),
             )
 
