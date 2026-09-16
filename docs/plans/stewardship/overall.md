@@ -393,6 +393,14 @@ its findings still require triage.
 Goal: move a tested campaign safely to Production and run reliable scheduled
 communication through pause, restart, and failure.
 
+After personalized Family preparation (PR #38), deliver isolated provider
+dispatch, definitive/uncertain outcomes, pause/restart handling and their tests
+as one coherent increment. Follow with the Admin delivery-resolution and
+verified-refusal-clear workflows before BG-07. This separates new external-call
+ownership from interactive human-evidence/resend authorization without omitting
+either from BG-06 or weakening Gate 3. See the
+[dispatch scope](../../guides/stewardship-family-mail-dispatch.md).
+
 After PR #33, deliver BG-04's ordinary schedule planning/reconciliation before
 its bounded activation catch-up worker. The latter's multi-batch coalescing and
 preparation-hold recovery deserve a separate coherent review boundary; both use

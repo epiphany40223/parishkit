@@ -197,6 +197,9 @@ merge-group jobs passing; its [protected delivery receipt](../../guides/stewards
 supersedes the pending-CI note. Work continues from verified fresh `origin/main`
 on `pr/stewardship-family-mail-dispatch`, connecting the prepared message to
 isolated provider submission and durable outcome/reconciliation ownership.
+The [dispatch increment guide](../../guides/stewardship-family-mail-dispatch.md)
+records its testable provider boundary and the subsequent Admin-resolution UI
+increment. Both precede BG-07 and full BG-06 completion.
 
 ## BG-07: Submission confirmations and Admin digests
 
