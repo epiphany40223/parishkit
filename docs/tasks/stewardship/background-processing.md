@@ -183,6 +183,15 @@ Work now continues from that verified merge on
 `pr/stewardship-family-mail-preparation`; its [guide](../../guides/stewardship-family-mail-preparation.md)
 defines the personalized outbox/credential outcome and remaining dispatch split.
 
+That preparation increment now has three completed dual-source review/fix
+rounds and passing full local validation: 3,075 PostgreSQL tests, 94.09% line/
+85.38% branch coverage, 5,827 baseline tests, 41 Compose/isolation checks and
+both full disposable setup layouts. See its guide's
+[final handoff](../../guides/stewardship-family-mail-preparation.md#final-local-validation-and-handoff).
+Protected exact-head CI and queue delivery remain required. BG-06.03/04's
+preparation behavior is implemented; dispatch-time integration and the full
+package checkboxes remain open, not silently completed by a prepared outbox.
+
 ## BG-07: Submission confirmations and Admin digests
 
 Scope and dependencies: [BG-07 work package](../../plans/stewardship/background-processing.md#bg-07-submission-confirmations-and-admin-digests).

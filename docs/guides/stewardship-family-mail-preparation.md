@@ -214,3 +214,38 @@ All PostgreSQL checks use owned disposable test instances. Baseline schema
 comparisons create new empty databases and never upgrade, adopt or delete an
 existing development database. These checkpoints do not claim BG-06 completion,
 Gate 3 release, or Production-readiness approval.
+
+## Final local validation and handoff
+
+Implementation and review corrections were consolidated into `d6b0bda`, whose
+tree `8d5a7a57332f83e13c9dd8afa3a60fb6c090ade3` is identical to pre-squash
+`6a88915`. The original reviewed history is retained locally, and the round
+endpoints above are not relabeled as reviews of an unrelated squash history.
+The later handoff commit changes documentation only.
+
+At that implementation tree:
+
+- All 3,075 PostgreSQL tests passed across eight isolated shards; the longest
+  shard took 10:47 locally. Combined Stewardship coverage passed at 94.09% lines
+  and 85.38% branches, with every collected database test accounted for.
+- The baseline passed 5,827 tests, with 3,883 explicitly environment-gated skips
+  and two existing Python/Valkey deprecation warnings. The focused pure
+  content-contract matrix passed 114 checks.
+- All 45 targeted PostgreSQL campaign-mail, setup-preview and content-editor
+  checks passed after correcting the full-run fixtures.
+- The rebuilt image passed 41 Compose/isolation checks. The separately opt-in
+  development smoke scenario remains assigned to protected CI.
+- Full original-browser initial setup passed in fresh development and
+  production-layout runtime projects, using synthetic providers and real
+  restricted service identities, in 2:11 and 2:33 respectively. An initial
+  concurrent fixed-subnet collision was retried sequentially; no runtime
+  isolation was weakened and no retained development services were changed.
+- Ruff, formatting, tracked Markdown, migration-state drift and whitespace
+  checks passed.
+
+This supersedes the pending local-validation checkpoints above. All three
+review/fix rounds have passing correction evidence, with no unresolved accepted
+Medium-or-higher issue and no High/Critical finding in the final round. Require
+all 24 exact-head CI jobs plus DCO and the protected merge-group checks before
+delivery; then verify fresh `origin/main` and continue the dispatch increment.
+Full BG-06 completion, Production activation and Gate 3 remain open.
