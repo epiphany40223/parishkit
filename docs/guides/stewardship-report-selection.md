@@ -41,13 +41,18 @@ complete by this partial consumer integration. Gate 3 remains closed.
   scope's graph. A generation removed before lock acquisition is not silently
   replaced by an arbitrary latest row.
 - `reports/documents.py` is shared with actual queued export rendering, so its
-  complete immutable series and metadata are identical for equal inputs.
+  complete immutable series and calculation metadata are identical for equal
+  inputs. Request-time context (Parish branding, requested-at and browser zone)
+  may differ; retained exports keep their original request context.
   Selecting a report does not allocate work or mutate its interactive pointer.
   Export allocation separately pins the immutable chosen generation.
 - Generation reads hold shared transaction advisory locks in namespace
   `736231`, keyed by PostgreSQL's hash of the canonical generation UUID.
   Hash collisions only delay optional cleanup. The compactor skips a locked
   generation; direct SQL day/header deletion must obtain the exclusive lock.
+  Readers also use a nonblocking acquisition: a generation already held by
+  cleanup is unavailable/retryable, not an unexpected database timeout. Cleanup
+  acquires its advisory lock only after source/row/disposability skip checks.
   This replaces row locking, which PostgreSQL forbids in the campaign guard's
   `READ ONLY` transaction, without making that transaction writable.
 - Current-scope verification checks the generation's durable source pin. SQL
@@ -57,10 +62,49 @@ complete by this partial consumer integration. Gate 3 remains closed.
 
 ## Validation and review checkpoint
 
-Implementation in progress; no completed review rounds or delivery claimed yet.
+Implementation and review in progress; protected delivery is not yet claimed.
 Initial focused validation: 56 PostgreSQL tests passed, including selection under
 the actual web role, shared export document parity, both verification scopes in
 read-only guards, and existing worker/export/retention behavior.
+
+At implementation commit `78ae496`, the full baseline passed 6,039 tests
+(4,127 profile skips, two existing client deprecation warnings); all eight
+database shards passed all 3,283 tests, with 94.00% scoped line coverage and
+85.19% branch coverage. Shard durations were approximately 10–12 minutes.
+The expanded pre-review focused checks also passed (34 role/race/worker tests
+and 17 selection checks). Ruff, formatting, Markdown and model drift passed.
+
+## Review round 1
+
+Pika session `20260916-162214-abdefc`, full diff `2eade2a5..78ae496`, completed
+both reviewers without degradation. Raw findings: two Medium, seven Low;
+no High/Critical. All dispositions below are complete. Post-fix focused
+validation passed 43 PostgreSQL tests (36.84s), plus Ruff, formatting, Markdown
+and model drift checks. No SQL body changed after the independent audit.
+
+- Codex Medium, busy reader timeout: fixed with a nonblocking shared advisory
+  acquisition returning `FactUnavailable`. The actual read-only race now proves
+  failure before cleanup is allowed to commit, then unavailability afterward.
+- Claude Medium, producer/selector input drift: added actual-database parity
+  tests for both scopes before/after a live submission. Both services use the
+  existing shared campaign SQL clock (the fixture can freeze that same clock).
+  Separate lock/SQL owners remain intact.
+- Claude Low, unnecessary cleanup lock retention: move advisory acquisition
+  after all source/row/disposability skips.
+- Claude Low, magic namespace: share `FACT_READ_NAMESPACE` between both Python
+  paths, retain the reviewed matching SQL guards and cross-path race tests.
+- Claude Low, Parish-name parity: clarify request-context versus calculation
+  metadata. Missing system configuration is already denied by campaign
+  admission; it is not a successful report context.
+- Claude Low, successful fallback/dedup tests: add exact-busy/pointer-success
+  and identical-exact/pointer single-attempt coverage.
+- Claude Low, web-role branch coverage: execute exact, unavailable and Staff
+  selection under actual restricted web credentials, in addition to stale data.
+- Claude Low, date-dependent fixture branch: stage one deterministic zero-
+  response series unconditionally, including a legitimate empty date range.
+- Claude Low, missing current-source pin: add the negative predicate regression
+  without bypassing SQL or deleting protected inputs. The function-local guard
+  import is consistent with other existing tests; no unrelated import churn.
 
 Fresh-install audit on disposable port `55440` independently compared verified
 base and current schemas in `stewardship_selection_base_20260916a` and

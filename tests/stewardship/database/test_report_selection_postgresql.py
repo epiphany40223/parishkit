@@ -1,6 +1,7 @@
 """Authorized current/stale report selection inside actual read-only guards."""
 
 from dataclasses import replace
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
@@ -12,6 +13,7 @@ from parishkit.stewardship.reports.facts import (
     begin_fact_set,
     fact_inputs,
     publish_fact_set,
+    stage_fact_days,
 )
 from parishkit.stewardship.reports.models import CampaignFactPointer
 from parishkit.stewardship.reports.selection import current_inputs, participation_report
@@ -47,8 +49,37 @@ def pointer(facts):
     )
 
 
+def ready_current(old):
+    """Stage a deterministic zero-response series, including an empty date range."""
+    from parishkit.stewardship.jobs.ownership import TaskClaim
+
+    inputs, _ = current_inputs(old.campaign_id, old.population_scope)
+    claim = TaskClaim(old.task_id, old.task_fence, old.worker_id)
+    exact = begin_fact_set(inputs, claim, admit=permit)
+    stage_fact_days(
+        exact.pk,
+        claim,
+        admit=permit,
+        days=[
+            dict(
+                local_date=exact.first_date + timedelta(days=index),
+                first_responses=0,
+                cumulative_responses=0,
+                cohort_denominator=10,
+                source_generation=old.source_generation,
+                source_as_of=old.source.promoted_at,
+                population_available=True,
+                pledge_available=False,
+                pledge_total=None,
+            )
+            for index in range(exact.expected_count)
+        ],
+    )
+    return publish_fact_set(exact.pk, claim, admit=permit), inputs
+
+
 def test_missing_generation_is_unavailable_not_a_zero_chart(scenario):  # noqa: F811
-    with select(scenario) as report:
+    with task_login(ServiceRole.WEB, reconnect=True), select(scenario) as report:
         assert report.status == "unavailable"
         assert report.updating
         assert report.document is report.selected is None
@@ -73,19 +104,10 @@ def test_stale_document_carries_its_own_asof_and_matches_export(scenario):  # no
 
 
 def test_exact_ready_generation_wins_without_mutating_pointer(scenario):  # noqa: F811
-    from parishkit.stewardship.jobs.ownership import TaskClaim
-
-    from .fact_builders import staged_facts
-
     _, _, old, _ = scenario
     reference = pointer(old)
-    inputs, _ = current_inputs(old.campaign_id, old.population_scope)
-    claim = TaskClaim(old.task_id, old.task_fence, old.worker_id)
-    exact = begin_fact_set(inputs, claim, admit=permit)
-    if exact.expected_count:
-        exact, _ = staged_facts(inputs, claim, old.source)
-    publish_fact_set(exact.pk, claim, admit=permit)
-    with select(scenario) as report:
+    exact, inputs = ready_current(old)
+    with task_login(ServiceRole.WEB, reconnect=True), select(scenario) as report:
         assert report.status == "current" and not report.updating
         assert report.selected == report.expected == inputs
         assert report.document.fact_set_id == exact.pk
@@ -127,7 +149,10 @@ def test_staff_can_read_and_leader_cannot_even_with_assignment(scenario):  # noq
     )
     store, _, facts, root = scenario
     staff = user("staff@example.org")
-    with select((store, staff, facts, root)) as report:
+    with (
+        task_login(ServiceRole.WEB, reconnect=True),
+        select((store, staff, facts, root)) as report,
+    ):
         assert report.document.fact_set_id == facts.pk
     leader = user("leader@example.org")
     with pytest.raises(PermissionError), select((store, leader, facts, root)):
@@ -218,3 +243,86 @@ def test_lost_candidate_reports_unavailable_without_substituting(scenario, monke
     with select(scenario) as report:
         assert report.status == "unavailable"
         assert report.document is None
+
+
+def test_busy_exact_candidate_uses_only_published_scoped_fallback(
+    scenario,  # noqa: F811
+    monkeypatch,
+):
+    """A busy exact generation cannot stop a complete, labeled fallback response."""
+    from contextlib import contextmanager
+
+    from parishkit.stewardship.reports import selection
+    from parishkit.stewardship.reports.facts import FactUnavailable
+
+    old = scenario[2]
+    pointer(old)
+    exact, _ = ready_current(old)
+    original = selection.read_fact_set
+    visited = []
+
+    @contextmanager
+    def busy(identifier, *, admit):
+        """Only the exact candidate loses; the pointer uses its real read lock."""
+        visited.append(identifier)
+        if identifier == exact.pk:
+            raise FactUnavailable("Exact generation is busy.")
+        with original(identifier, admit=admit) as record:
+            yield record
+
+    monkeypatch.setattr(selection, "read_fact_set", busy)
+    with select(scenario) as report:
+        assert report.document.fact_set_id == old.pk
+        assert report.status == "updating"
+        assert report.selected == fact_inputs(old)
+        assert visited == [exact.pk, old.pk]
+
+
+def test_exact_pointer_candidate_is_attempted_once(scenario, monkeypatch):  # noqa: F811
+    """Exact and pointer identity deduplicate even if read protection is busy."""
+    from contextlib import contextmanager
+
+    from parishkit.stewardship.reports import selection
+    from parishkit.stewardship.reports.facts import FactUnavailable
+
+    exact, _ = ready_current(scenario[2])
+    pointer(exact)
+    visited = []
+
+    @contextmanager
+    def busy(identifier, *, admit):
+        """Count attempts while preserving the real candidate-selection queries."""
+        visited.append(identifier)
+        raise FactUnavailable("Busy generation.")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(selection, "read_fact_set", busy)
+    with select(scenario) as report:
+        assert report.status == "unavailable"
+        assert visited == [exact.pk]
+
+
+@pytest.mark.parametrize("respond_first", [False, True])
+def test_request_inputs_match_real_producer_for_both_scopes(
+    live_response_service, respond_first
+):
+    """Prevent reader/producer drift while preserving their distinct lock owners."""
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+    from parishkit.stewardship.reports import fact_production
+    from parishkit.stewardship.reports.demand import requested_inputs
+
+    from .test_fact_materialization_postgresql import respond
+
+    harness = live_response_service
+    if respond_first:
+        respond(harness)
+    expected, _ = current_inputs(harness.campaign.pk, "historical")
+    # The fixture binds the shared campaign SQL clock. Both services must use
+    # that same production clock, rather than independently inventing "today".
+    with work_transaction():
+        demands = fact_production.hint_current_facts(harness.campaign.pk)
+    assert {row.population_scope for row in demands} == {"historical", "current"}
+    for row in demands:
+        assert requested_inputs(row) == replace(
+            expected, population_scope=row.population_scope
+        )

@@ -37,6 +37,17 @@ def test_verification_works_inside_actual_readonly_campaign_guard(
         assert verify_fact_set(record.pk, admit=permit) == ()
 
 
+def test_current_population_reader_rejects_missing_exact_input_pin(response_service):
+    """A retained source alone is not the claimed generation's input protection."""
+    from parishkit.stewardship.reports.facts import FactUnavailable
+
+    record, _ = allocation(response_service, population="historical")
+    # Historical allocations deliberately have no current-population source pin.
+    # Exercise the precise negative predicate without bypassing any SQL guard.
+    with pytest.raises(FactUnavailable, match="input protection"):
+        materialization._current_families(record, ())
+
+
 def test_compaction_skips_a_generation_being_recalculated(
     response_service, monkeypatch
 ):

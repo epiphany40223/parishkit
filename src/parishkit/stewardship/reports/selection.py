@@ -61,7 +61,7 @@ def current_inputs(campaign_id, population_scope):
             "SELECT c.active_configuration_id, p.end_date, p.timezone, "
             "s.snapshot_id, COALESCE((SELECT max(r.campaign_sequence) "
             "FROM stewardship_submission r WHERE r.campaign_id=c.id "
-            "AND r.mode='live'),0), statement_timestamp() "
+            "AND r.mode='live'),0), stewardship_campaign_now_v1() "
             "FROM stewardship_campaign c "
             "JOIN stewardship_campaign_configuration p "
             "ON p.id=c.active_configuration_id "

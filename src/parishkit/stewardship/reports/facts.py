@@ -19,6 +19,8 @@ from parishkit.stewardship.storage import StorageInvariantError
 from .inputs import FactInputs, expected_dates, validate_day
 from .models import CampaignDailyFact, CampaignDailyFactSet, CampaignFactPointer
 
+FACT_READ_NAMESPACE = 736231  # Matched by SQL fact day/header deletion guards.
+
 
 class FactUnavailable(RuntimeError):
     """An exact generation is not ready/retained or its build ownership changed."""
@@ -225,9 +227,13 @@ def read_fact_set(fact_set_id, *, admit):
             # transaction. SQL deletion guards take the exclusive counterpart,
             # so direct compaction cannot bypass a response-lifetime reader.
             cursor.execute(
-                "SELECT pg_advisory_xact_lock_shared(736231, hashtext(%s))",
-                (str(fact_set_id),),
+                "SELECT pg_try_advisory_xact_lock_shared(%s, hashtext(%s))",
+                (FACT_READ_NAMESPACE, str(fact_set_id)),
             )
+            if not cursor.fetchone()[0]:
+                raise FactUnavailable(
+                    "The exact fact generation is busy; retry shortly."
+                )
             cursor.execute(
                 "SELECT id FROM stewardship_daily_fact_set WHERE id=%s "
                 "AND state='ready'",

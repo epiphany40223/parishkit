@@ -14,7 +14,7 @@ from parishkit.stewardship.source.snapshot_models import (
     SourceSnapshotPin,
 )
 
-from .facts import FactUnavailable, _admit, fact_inputs
+from .facts import FACT_READ_NAMESPACE, FactUnavailable, _admit, fact_inputs
 from .models import CampaignDailyFactSet, CampaignFactPin, FactCompactionRecord
 
 
@@ -84,15 +84,6 @@ def compact_facts(campaign_id, claim, *, admit, limit=50):
             candidates = cursor.fetchall()
         removed = []
         for identifier, source_id in candidates:
-            # Do not wait for a report response or verifier. Hash collisions only
-            # postpone this optional cleanup; they never remove another guard.
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT pg_try_advisory_xact_lock(736231, hashtext(%s))",
-                    (str(identifier),),
-                )
-                if not cursor.fetchone()[0]:
-                    continue
             # Avoid waiting on an in-use source input or a live lazy renderer.
             if (
                 not SourceSnapshot.objects.select_for_update(skip_locked=True)
@@ -110,6 +101,15 @@ def compact_facts(campaign_id, claim, *, admit, limit=50):
             _admit(admit, "compact", fact_inputs(record))
             with connection.cursor() as cursor:
                 cursor.execute("SELECT stewardship_fact_disposable(%s)", (identifier,))
+                if not cursor.fetchone()[0]:
+                    continue
+                # Take the exclusive reader barrier only after all skip checks.
+                # A source/row contention skip must not leave an unnecessary
+                # advisory lock until the rest of this batch commits.
+                cursor.execute(
+                    "SELECT pg_try_advisory_xact_lock(%s, hashtext(%s))",
+                    (FACT_READ_NAMESPACE, str(identifier)),
+                )
                 if not cursor.fetchone()[0]:
                     continue
                 evidence = FactCompactionRecord.objects.create(

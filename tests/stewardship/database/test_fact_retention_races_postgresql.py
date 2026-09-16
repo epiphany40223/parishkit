@@ -67,10 +67,9 @@ def test_readonly_consumer_blocks_both_service_and_direct_sql_deletion(tmp_path)
 
 
 def test_deletion_winning_lock_rejects_later_readonly_consumer(tmp_path, monkeypatch):
-    """A reader waits for the exact deleting generation, then reports unavailable."""
+    """A busy reader fails immediately, even while compaction remains uncommitted."""
     inputs, owner, old, _ = superseded(tmp_path)
-    deleted, finish, started = Event(), Event(), Event()
-    reader_backend = []
+    deleted, finish = Event(), Event()
     original = retention.record_action
 
     def pause(*args, **kwargs):
@@ -88,15 +87,17 @@ def test_deletion_winning_lock_rejects_later_readonly_consumer(tmp_path, monkeyp
             connections.close_all()
 
     def reading():
-        """Observe the backend so the test waits for a real SQL lock, not sleep."""
+        """A real read-only guard must report contention, not a SQL timeout/500."""
         try:
-            with CampaignReadGuard(
-                [inputs.campaign_id], authorize=lambda guard: None, abort=lambda: None
+            with (
+                CampaignReadGuard(
+                    [inputs.campaign_id],
+                    authorize=lambda guard: None,
+                    abort=lambda: None,
+                ),
+                read_fact_set(old.pk, admit=permit),
             ):
-                reader_backend.append(backend_pid())
-                started.set()
-                with read_fact_set(old.pk, admit=permit):
-                    pytest.fail("A removed generation must not become readable")
+                pytest.fail("A removed generation must not become readable")
         finally:
             connections.close_all()
 
@@ -106,13 +107,16 @@ def test_deletion_winning_lock_rejects_later_readonly_consumer(tmp_path, monkeyp
         try:
             assert deleted.wait(10)
             reader = pool.submit(reading)
-            assert started.wait(10)
-            wait_for_lock(reader_backend[0])
+            with pytest.raises(FactUnavailable, match="busy"):
+                reader.result(timeout=2)
         finally:
             finish.set()
         assert cleaning_future.result(timeout=10) == [old.pk]
-        with pytest.raises(FactUnavailable):
-            reader.result(timeout=10)
+    with (
+        pytest.raises(FactUnavailable, match="not ready"),
+        read_fact_set(old.pk, admit=permit),
+    ):
+        pytest.fail("Completed cleanup must remain unavailable")
 
 
 def test_uncommitted_pin_wins_over_cleanup_selection(tmp_path):
