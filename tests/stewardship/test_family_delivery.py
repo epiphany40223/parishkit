@@ -12,6 +12,7 @@ import pytest
 from parishkit.stewardship.family_delivery import (
     FamilyDeliveryMail,
     FamilyDeliveryResult,
+    ProviderHealth,
     deliver_family,
 )
 from parishkit.stewardship.family_delivery import (
@@ -48,6 +49,7 @@ def delivery(
     international=False,
     credential_error=None,
     smtp_error=None,
+    stage_error=None,
 ):
     """Inject replies or failure at exact protocol boundaries, without network IO."""
     seen = []
@@ -72,7 +74,7 @@ def delivery(
     def response(step):
         seen.append(step)
         if failure == step:
-            raise TimeoutError("private SMTP response")
+            raise stage_error or TimeoutError("private SMTP response")
         return replies[step], b"private SMTP response"
 
     class SMTP:
@@ -162,8 +164,8 @@ def test_all_refused_never_submits_data(monkeypatch, first, second, status):
         ("ehlo", Status.UNAVAILABLE),
         ("auth", Status.UNAVAILABLE),
         ("mail", Status.UNAVAILABLE),
-        ("rcpt0", Status.TRANSIENT),
-        ("rcpt1", Status.TRANSIENT),
+        ("rcpt0", Status.UNAVAILABLE),
+        ("rcpt1", Status.UNAVAILABLE),
         ("data", Status.UNKNOWN),
     ],
 )
@@ -189,7 +191,14 @@ def test_data_reply_preserves_refusals_and_survives_quit(monkeypatch, code, stat
     result, _ = delivery(
         monkeypatch, replies={"rcpt0": 550, "data": code}, quit_error=True
     )
-    assert result == FamilyDeliveryResult(status, 2, permanent=(0,))
+    assert result == FamilyDeliveryResult(
+        status,
+        2,
+        permanent=(0,),
+        health=ProviderHealth.SYSTEMIC
+        if status is Status.UNKNOWN
+        else ProviderHealth.HEALTHY,
+    )
     assert "private" not in repr(result)
 
 
@@ -224,6 +233,8 @@ def test_mail_is_private_and_has_no_cross_family_headers():
         {"permanent": (0, 1)},
         {"status": "accepted"},
         {"transient": [0]},
+        {"health": "healthy"},
+        {"health": ProviderHealth.UNOBSERVED},
     ],
 )
 def test_result_rejects_contradictory_or_untyped_evidence(changes):
@@ -359,3 +370,63 @@ def test_token_certificate_failure_is_not_a_temporary_outage(monkeypatch):
         monkeypatch, credential_error=requests.exceptions.SSLError("private")
     )
     assert result.status is Status.SYSTEMIC and not seen
+
+
+@pytest.mark.parametrize("stage", ["mail", "rcpt1", "data"])
+@pytest.mark.parametrize(
+    "error,fault",
+    [
+        (ssl.SSLCertVerificationError("private"), Status.SYSTEMIC),
+        (ssl.SSLEOFError("private"), Status.UNAVAILABLE),
+        (ssl.SSLZeroReturnError("private"), Status.UNAVAILABLE),
+        (ssl.SSLSyscallError("private"), Status.UNAVAILABLE),
+        (smtplib.SMTPServerDisconnected("private"), Status.UNAVAILABLE),
+        (TimeoutError("private"), Status.UNAVAILABLE),
+        (ValueError("private"), Status.SYSTEMIC),
+    ],
+)
+def test_shared_fault_preserves_protocol_certainty_and_earlier_refusals(
+    monkeypatch, stage, error, fault
+):
+    """Connection health cannot erase prior RCPT refusal or invent DATA certainty."""
+    result, seen = delivery(
+        monkeypatch, failure=stage, stage_error=error, replies={"rcpt0": 550}
+    )
+    assert result.status is (Status.UNKNOWN if stage == "data" else fault)
+    assert result.health is ProviderHealth(fault.value)
+    assert result.permanent == (() if stage == "mail" else (0,))
+    assert seen[-1] == stage
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ssl.SSLEOFError("private"),
+        ssl.SSLZeroReturnError("private"),
+        ssl.SSLSyscallError("private"),
+        ssl.SSLCertVerificationError("private"),
+    ],
+)
+def test_token_tls_wrappers_preserve_typed_root_fault(monkeypatch, error):
+    """Requests/urllib3 wrapper text is private and irrelevant to classification."""
+    import requests
+    from urllib3.exceptions import MaxRetryError, SSLError
+
+    wrapped = requests.exceptions.SSLError(
+        MaxRetryError(None, "private", SSLError(error))
+    )
+    result, seen = delivery(monkeypatch, credential_error=wrapped)
+    assert not seen
+    assert result.status is (
+        Status.SYSTEMIC
+        if isinstance(error, ssl.SSLCertVerificationError)
+        else Status.UNAVAILABLE
+    )
+
+
+def test_unobserved_result_cannot_claim_a_recipient_refusal():
+    """The local-only result vocabulary cannot manufacture provider evidence."""
+    with pytest.raises(ValueError, match="Unobserved"):
+        FamilyDeliveryResult(
+            Status.PERMANENT, 2, permanent=(0,), health=ProviderHealth.UNOBSERVED
+        )

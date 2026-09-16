@@ -8,6 +8,7 @@ import pytest
 from parishkit.stewardship.family_delivery import (
     FamilyDeliveryMail,
     FamilyDeliveryResult,
+    ProviderHealth,
 )
 from parishkit.stewardship.family_delivery import (
     FamilyDeliveryStatus as Status,
@@ -107,7 +108,7 @@ def test_malformed_reply_is_unknown_not_retryable(monkeypatch, output):
 @pytest.mark.parametrize(
     "transport,status",
     [
-        (DeliveryOutcome.NOT_SENT, Status.TRANSIENT),
+        (DeliveryOutcome.NOT_SENT, Status.UNAVAILABLE),
         (DeliveryOutcome.UNKNOWN, Status.UNKNOWN),
     ],
 )
@@ -147,5 +148,9 @@ def test_local_validation_failure_never_becomes_uncertain(monkeypatch, mutation)
         check=lambda: None,
     )
     assert result == FamilyDeliveryResult(
-        Status.PERMANENT if mutation == "size" else Status.SYSTEMIC, 2
+        Status.PERMANENT if mutation == "size" else Status.SYSTEMIC,
+        2,
+        health=ProviderHealth.UNOBSERVED
+        if mutation == "size"
+        else ProviderHealth.SYSTEMIC,
     )

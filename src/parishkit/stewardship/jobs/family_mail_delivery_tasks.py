@@ -15,6 +15,7 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.family_delivery import (
     FamilyDeliveryResult,
     FamilyDeliveryStatus,
+    ProviderHealth,
 )
 from parishkit.stewardship.family_delivery_process import submit_family
 from parishkit.stewardship.provider_checks import ProviderCheckDrainFailure
@@ -40,7 +41,7 @@ from .storage import _status
 LOG = logging.getLogger(__name__)
 
 
-class DeliveryHealth:
+class DeliveryCircuit:
     """Bound shared-outage probes across Families within this worker lifetime.
 
     A known temporary handshake outage waits a minute before another probe;
@@ -56,21 +57,23 @@ class DeliveryHealth:
         self.failures = 0
         self.probe_after = 0.0
 
-    def is_set(self):
+    def blocks_new_send(self):
         """Admission alone observes the circuit; draining never consults it."""
         with self.lock:
             return self.halted.is_set() or monotonic() < self.probe_after
 
-    def observe(self, status):
+    def observe(self, health):
         """Return true when a shared failure newly stops this sending run."""
         with self.lock:
-            if status is FamilyDeliveryStatus.UNAVAILABLE:
+            if health is ProviderHealth.UNOBSERVED:
+                return False
+            if health is ProviderHealth.UNAVAILABLE:
                 self.failures += 1
                 self.probe_after = monotonic() + 60
             else:
                 self.failures = 0
                 self.probe_after = 0.0
-            if status is FamilyDeliveryStatus.SYSTEMIC or self.failures >= 3:
+            if health is ProviderHealth.SYSTEMIC or self.failures >= 3:
                 newly_halted = not self.halted.is_set()
                 self.halted.set()
                 return newly_halted
@@ -120,7 +123,7 @@ def recovery_plan(status):
     )
 
 
-def admit_task(action, status, *, store, halted):
+def admit_task(action, status, *, store, circuit):
     """Metadata/drain observes stored outcomes even after live scope is revoked."""
     row = bound_dispatch(status)
     if action == "lease_expired" or (
@@ -168,7 +171,7 @@ def admit_task(action, status, *, store, halted):
         return row.pause_hold_id is None or action in {"effect", "progress"}
     if reason is not None:
         return True
-    if halted.is_set():
+    if circuit.blocks_new_send():
         return False
     mail_authority(store)
     return True
@@ -180,10 +183,10 @@ def delivery_handler(
     """Schedulers own metadata only; mounted private keys stay in the mail worker."""
     if not scheduler and not isinstance(credential_path, Path):
         raise TypeError("Family dispatch requires an installed Workspace path.")
-    halted = DeliveryHealth()
+    circuit = DeliveryCircuit()
     return Handler(
         queue=WorkQueue.MAIL,
-        admit=partial(admit_task, store=store, halted=halted),
+        admit=partial(admit_task, store=store, circuit=circuit),
         recover=recovery_plan,
         execute=_unavailable
         if scheduler
@@ -192,7 +195,7 @@ def delivery_handler(
             private=private,
             public_origin=public_origin,
             credential_path=credential_path,
-            halted=halted,
+            circuit=circuit,
         ),
         scope=work_transaction,
     )
@@ -211,7 +214,7 @@ def _check(execution):
         connections.close_all()
 
 
-def _execute(execution, *, private, public_origin, credential_path, halted):
+def _execute(execution, *, private, public_origin, credential_path, circuit):
     """Pin credentials, durably begin, then run one bounded private submission."""
     if connection.in_atomic_block or not execution.control.active:
         raise StorageInvariantError("Family mail requires maintained worker lifetime.")
@@ -278,7 +281,9 @@ def _execute(execution, *, private, public_origin, credential_path, halted):
         # No helper has started yet, so an already elapsed launch budget is
         # definitive non-acceptance, unlike a lost acknowledgement after IO.
         result = FamilyDeliveryResult(
-            FamilyDeliveryStatus.TRANSIENT, len(mail.recipients)
+            FamilyDeliveryStatus.TRANSIENT,
+            len(mail.recipients),
+            health=ProviderHealth.UNOBSERVED,
         )
         if remaining > 0:
             launched = True
@@ -313,9 +318,10 @@ def _execute(execution, *, private, public_origin, credential_path, halted):
             if launched
             else FamilyDeliveryStatus.TRANSIENT,
             len(mail.recipients),
+            health=ProviderHealth.UNAVAILABLE,
         )
     status = finish_submission(message.pk, execution.claim, result)
-    if halted.observe(result.status):
+    if circuit.observe(result.health):
         LOG.critical("Family mail provider is unavailable; further sending is stopped.")
     if status.state.value == "retry_wait":
         execution.transition("retryable_failure", retry_seconds=retry_delay(attempt))

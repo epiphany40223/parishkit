@@ -10,6 +10,7 @@ from .family_delivery import (
     FamilyDeliveryMail,
     FamilyDeliveryResult,
     FamilyDeliveryStatus,
+    ProviderHealth,
     delivery_settings,
 )
 from .readiness_delivery import DeliveryOutcome
@@ -50,7 +51,9 @@ def submit_family(value, settings, mail, *, seconds, check):
         # rejection as possible SMTP acceptance, or suppress an untested address.
         return FamilyDeliveryResult(FamilyDeliveryStatus.SYSTEMIC, count)
     if len(payload) > MAX_INPUT:
-        return FamilyDeliveryResult(FamilyDeliveryStatus.PERMANENT, count)
+        return FamilyDeliveryResult(
+            FamilyDeliveryStatus.PERMANENT, count, health=ProviderHealth.UNOBSERVED
+        )
 
     def decode(output):
         """Reject extra fields, duplicate keys and another envelope's result."""
@@ -72,5 +75,5 @@ def submit_family(value, settings, mail, *, seconds, check):
     if isinstance(result, FamilyDeliveryResult):
         return result
     if result is DeliveryOutcome.NOT_SENT:
-        return FamilyDeliveryResult(FamilyDeliveryStatus.TRANSIENT, count)
+        return FamilyDeliveryResult(FamilyDeliveryStatus.UNAVAILABLE, count)
     return unknown

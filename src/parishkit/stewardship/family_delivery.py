@@ -37,6 +37,29 @@ class FamilyDeliveryStatus(StrEnum):
     SYSTEMIC = "systemic"
 
 
+class ProviderHealth(StrEnum):
+    """Connection health is independent of whether DATA acceptance is known."""
+
+    HEALTHY = "healthy"
+    UNOBSERVED = "unobserved"
+    UNAVAILABLE = "unavailable"
+    SYSTEMIC = "systemic"
+
+
+_RESULT_HEALTH = {
+    FamilyDeliveryStatus.ACCEPTED: (ProviderHealth.HEALTHY,),
+    FamilyDeliveryStatus.TRANSIENT: (
+        ProviderHealth.HEALTHY,
+        ProviderHealth.UNOBSERVED,
+        ProviderHealth.UNAVAILABLE,
+    ),
+    FamilyDeliveryStatus.PERMANENT: (ProviderHealth.HEALTHY, ProviderHealth.UNOBSERVED),
+    FamilyDeliveryStatus.UNKNOWN: (ProviderHealth.UNAVAILABLE, ProviderHealth.SYSTEMIC),
+    FamilyDeliveryStatus.UNAVAILABLE: (ProviderHealth.UNAVAILABLE,),
+    FamilyDeliveryStatus.SYSTEMIC: (ProviderHealth.SYSTEMIC,),
+}
+
+
 @dataclass(frozen=True)
 class FamilyDeliveryResult:
     """No response strings or addresses cross the private helper's output pipe.
@@ -50,6 +73,7 @@ class FamilyDeliveryResult:
     recipient_count: int
     permanent: tuple[int, ...] = ()
     transient: tuple[int, ...] = ()
+    health: ProviderHealth | None = None
 
     def __post_init__(self):
         """Reject malformed or contradictory outcomes at the process boundary."""
@@ -59,6 +83,17 @@ class FamilyDeliveryResult:
             or not 1 <= self.recipient_count <= 100
         ):
             raise ValueError("Invalid Family delivery outcome.")
+        if self.health is None:
+            object.__setattr__(self, "health", _RESULT_HEALTH[self.status][0])
+        if (
+            not isinstance(self.health, ProviderHealth)
+            or self.health not in _RESULT_HEALTH[self.status]
+        ):
+            raise ValueError("Invalid Family provider health.")
+        if self.health is ProviderHealth.UNOBSERVED and (
+            self.permanent or self.transient
+        ):
+            raise ValueError("Unobserved provider cannot supply recipient evidence.")
         for indices in (self.permanent, self.transient):
             if (
                 type(indices) is not tuple
@@ -80,6 +115,7 @@ class FamilyDeliveryResult:
             "recipient_count": self.recipient_count,
             "permanent": list(self.permanent),
             "transient": list(self.transient),
+            "health": self.health.value,
         }
 
     @classmethod
@@ -87,8 +123,10 @@ class FamilyDeliveryResult:
         """Bind a closed helper result to the parent's exact envelope size."""
         if (
             type(value) is not dict
-            or set(value) != {"status", "recipient_count", "permanent", "transient"}
+            or set(value)
+            != {"status", "recipient_count", "permanent", "transient", "health"}
             or type(value["status"]) is not str
+            or type(value["health"]) is not str
             or type(value["permanent"]) is not list
             or type(value["transient"]) is not list
             or value["recipient_count"] != recipient_count
@@ -99,6 +137,7 @@ class FamilyDeliveryResult:
             value["recipient_count"],
             tuple(value["permanent"]),
             tuple(value["transient"]),
+            ProviderHealth(value["health"]),
         )
 
 
@@ -220,8 +259,10 @@ def _submit(smtp, mail):
     count = len(mail.recipients)
     permanent, transient = [], []
 
-    def result(status):
-        return FamilyDeliveryResult(status, count, tuple(permanent), tuple(transient))
+    def result(status, health=None):
+        return FamilyDeliveryResult(
+            status, count, tuple(permanent), tuple(transient), health
+        )
 
     uncertain = False
     stage = "content"
@@ -271,7 +312,7 @@ def _submit(smtp, mail):
             # smtplib also raises here if the preliminary DATA reply was not
             # 354. An anomalous 250 exception is not final message acceptance.
             if type(code) is not int or not 400 <= code <= 599:
-                return result(FamilyDeliveryStatus.UNKNOWN)
+                return result(FamilyDeliveryStatus.UNKNOWN, ProviderHealth.SYSTEMIC)
         if type(code) is int:
             if code == 250:
                 return result(FamilyDeliveryStatus.ACCEPTED)
@@ -279,15 +320,14 @@ def _submit(smtp, mail):
                 return result(FamilyDeliveryStatus.TRANSIENT)
             if 500 <= code <= 599:
                 return result(FamilyDeliveryStatus.PERMANENT)
-        return result(FamilyDeliveryStatus.UNKNOWN)
+        return result(FamilyDeliveryStatus.UNKNOWN, ProviderHealth.SYSTEMIC)
     except Exception as error:
-        return result(
-            FamilyDeliveryStatus.UNKNOWN
-            if uncertain
-            else _connection_failure(error)
-            if stage == "mail"
-            else FamilyDeliveryStatus.TRANSIENT
-        )
+        if uncertain:
+            fault = _connection_failure(error)
+            return result(FamilyDeliveryStatus.UNKNOWN, ProviderHealth(fault.value))
+        if stage in {"mail", "rcpt"}:
+            return result(_connection_failure(error))
+        return result(FamilyDeliveryStatus.TRANSIENT, ProviderHealth.UNOBSERVED)
 
 
 def deliver_family(
@@ -311,8 +351,8 @@ def deliver_family(
     try:
         with session_factory() as session:
             credentials = _credentials(value, settings, session)
-    except (ssl.SSLError, requests.exceptions.SSLError):
-        return FamilyDeliveryResult(FamilyDeliveryStatus.SYSTEMIC, len(mail.recipients))
+    except (ssl.SSLError, requests.exceptions.SSLError) as error:
+        return FamilyDeliveryResult(_tls_failure(error), len(mail.recipients))
     except (
         OSError,
         requests.RequestException,
@@ -377,7 +417,7 @@ def _handshake_failure(code):
 def _connection_failure(error):
     """Separate temporary shared outages from deterministic TLS/protocol faults."""
     if isinstance(error, ssl.SSLError):
-        return FamilyDeliveryStatus.SYSTEMIC
+        return _tls_failure(error)
     if isinstance(error, smtplib.SMTPResponseException):
         return (
             _handshake_failure(error.smtp_code)
@@ -387,3 +427,33 @@ def _connection_failure(error):
     if isinstance(error, (smtplib.SMTPServerDisconnected, OSError)):
         return FamilyDeliveryStatus.UNAVAILABLE
     return FamilyDeliveryStatus.SYSTEMIC
+
+
+def _tls_failure(error):
+    """Inspect bounded typed exception causes, never provider response text.
+
+    Requests wraps urllib3 errors, whose reason/args retain the original SSL
+    exception. An EOF/closed/syscall interruption is temporary; certificate or
+    unclassified TLS protocol faults remain systemic. Cycles are harmless.
+    """
+    pending, seen, temporary = [error], set(), False
+    for _ in range(32):
+        if not pending:
+            break
+        current = pending.pop()
+        if not isinstance(current, BaseException) or id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, ssl.SSLCertVerificationError):
+            return FamilyDeliveryStatus.SYSTEMIC
+        if isinstance(
+            current, (ssl.SSLEOFError, ssl.SSLZeroReturnError, ssl.SSLSyscallError)
+        ):
+            temporary = True
+        pending.extend(current.args[:8])
+        pending.extend(
+            (current.__cause__, current.__context__, getattr(current, "reason", None))
+        )
+    return (
+        FamilyDeliveryStatus.UNAVAILABLE if temporary else FamilyDeliveryStatus.SYSTEMIC
+    )

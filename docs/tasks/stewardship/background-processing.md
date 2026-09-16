@@ -201,6 +201,17 @@ The [dispatch increment guide](../../guides/stewardship-family-mail-dispatch.md)
 records its testable provider boundary and the subsequent Admin-resolution UI
 increment. Both precede BG-07 and full BG-06 completion.
 
+The dispatch boundary now has three completed dual-source review/fix rounds,
+including every raw finding's disposition in the guide. Final local corrections
+pass 125 provider/private/circuit tests, 90 affected PostgreSQL cases and 5,952
+baseline tests. The guide distinguishes earlier passing full coverage from a
+later contended performance-test diagnostic and its passing isolated rerun.
+Protected final-head/merge-group CI remains required. Current-source rendering,
+private submission, partial refusals, uncertainty, retry/circuit control and
+pause/close/crash drainage are implemented; explicit Admin resolution/retry,
+verified refusal clearance and durable notification remain with the next
+increment. The package checkboxes and Gate 3 remain open.
+
 ## BG-07: Submission confirmations and Admin digests
 
 Scope and dependencies: [BG-07 work package](../../plans/stewardship/background-processing.md#bg-07-submission-confirmations-and-admin-digests).

@@ -1,5 +1,7 @@
 """Partial recipient evidence survives accepted, retryable and unknown outcomes."""
 
+import hashlib
+import json
 from dataclasses import replace
 from uuid import uuid4
 
@@ -25,7 +27,9 @@ from .test_recipient_suppressions_postgresql import remember
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def observed(harness, result, *, mode="production", corrupt=False):
+def observed(
+    harness, result, *, mode="production", corrupt=False, health_override=None
+):
     """Use real fenced Task/outbox history with synthetic provider observations."""
     family = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=1)
     semantic_key = uuid4()
@@ -51,6 +55,14 @@ def observed(harness, result, *, mode="production", corrupt=False):
         admit=permit,
     )
     evidence = result_evidence(result, semantic_key=semantic_key)
+    if health_override is not None:
+        payload = json.loads(evidence.evidence_note) | {"health": health_override}
+        note = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        evidence = replace(
+            evidence,
+            evidence_note=note,
+            evidence_digest=hashlib.sha256(note.encode()).hexdigest(),
+        )
     if corrupt:
         evidence = replace(evidence, evidence_digest="0" * 64)
     action = {
@@ -73,7 +85,15 @@ def observed(harness, result, *, mode="production", corrupt=False):
 
 
 @pytest.mark.parametrize(
-    "status", [Status.ACCEPTED, Status.TRANSIENT, Status.UNKNOWN, Status.PERMANENT]
+    "status",
+    [
+        Status.ACCEPTED,
+        Status.TRANSIENT,
+        Status.UNKNOWN,
+        Status.PERMANENT,
+        Status.UNAVAILABLE,
+        Status.SYSTEMIC,
+    ],
 )
 def test_partial_refusal_has_independent_immutable_evidence(response_service, status):
     """A definitive RCPT refusal is retained even if DATA succeeded or is unknown."""
@@ -146,3 +166,30 @@ def test_shared_outage_evidence_roundtrips_without_recipient_refusal(response_se
         with pytest.raises(PermissionError, match="definitive delivery"):
             remember(event)
         assert not RecipientRefusal.objects.exists()
+
+
+@pytest.mark.parametrize(
+    "status,health",
+    [
+        (Status.UNKNOWN, "healthy"),
+        (Status.ACCEPTED, "systemic"),
+        (Status.PERMANENT, "unobserved"),
+        (Status.PERMANENT, "invented"),
+    ],
+)
+def test_sql_and_python_reject_forged_health_evidence(response_service, status, health):
+    """A recomputed digest does not validate contradictory health/refusal facts."""
+    harness = activate_response_service(response_service)
+    with campaign_clock(harness.campaign.active_configuration.starts_at):
+        event = observed(
+            harness,
+            FamilyDeliveryResult(status, 2, permanent=(0,)),
+            health_override=health,
+        )
+        with pytest.raises(PermissionError, match="evidence"):
+            event_result(event)
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT stewardship_family_smtp_result_v1(%s)", [event.pk])
+            assert cursor.fetchone()[0] is None
+        with pytest.raises(PermissionError):
+            remember(event)

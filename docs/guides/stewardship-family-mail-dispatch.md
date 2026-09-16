@@ -50,19 +50,27 @@ ADM-06 retains the broader campaign-control UI. Gate 3 remains closed.
 - Shared temporary token/connection/handshake failures retain a definite-unsent
   retry outcome and impose a 60-second process-wide new-send cooldown. Three
   consecutive shared outages stop that sending run and log CRITICAL. An
-  observed non-shared result resets the consecutive-failure count; it cannot
-  undo an existing halt. Deterministic shared TLS/configuration/protocol faults
+  observed healthy provider result resets the consecutive-failure count; local
+  unobserved outcomes do not. No result can undo an existing halt. Deterministic
+  shared TLS/configuration/protocol faults
   stop immediately. Restart resets this process-owned circuit; BG-10 owns
   durable operational escalation. Already-submitted outcomes can always drain.
+- Delivery certainty and provider health are separate closed values in the
+  private IPC and SQL evidence. A DATA connection fault can be both uncertain
+  delivery and an unhealthy provider; it never becomes a safe resend. Earlier
+  exact RCPT refusals survive a subsequent shared fault. Temporary TLS EOF,
+  closed-connection and syscall failures use cooldown; certificate/protocol
+  faults stop the run. Local helper-launch failures also use shared cooldown.
 - Without SMTPUTF8, an unsupported Family address fails only that Family's
   message, with no fabricated RCPT refusal. The adapter does not silently remove
   a configured recipient to deliver an ASCII subset. The next Admin resolution
   increment owns retry after correcting the address or provider capability.
   Unsupported shared sender/Reply-To headers instead stop the sending run.
 
-Implementation and acceptance coverage are in progress. Final validation and
-the required review cycle are not complete. All checks use synthetic providers
-and owned disposable databases; existing development databases are untouched.
+Implementation and local correction validation of this dispatch boundary are
+complete; protected PR delivery is pending. All checks use synthetic
+providers and owned disposable databases; existing development databases are
+untouched. The follow-on Admin workflows and Gate 3 remain open.
 
 ## Fresh-install schema evidence
 
@@ -145,6 +153,30 @@ independent validation runs below supply executable evidence.
 | Codex 2 | Medium | Duplicate of Claude 1; same launch-certainty fix and real-worker clock-failure regression. |
 | Codex 3 | Medium | Fixed: explicit TLS, response-bearing exception and malformed-reply classification; observed protocol outcomes survive a failing QUIT. |
 
+Round 3, Pika `20260916-104656-947776`, reviewed `be5bbc1` through
+`b1b222babe7e7fa2d05be8c17d32361e5f6becd4` (tree
+`ecb6f96b896fd72e3ea003931c60bde0d15081b2`), broadening to unchanged dispatch,
+process ownership and SQL contracts. Exact-path permission preflight and both
+reviewers completed without degradation or verdict mismatch. All eight raw
+findings (four Medium and four Low; no High/Critical) are dispositioned here.
+Corrections and their validation belong to this third round under the
+[delivery-cycle contract](../plans/stewardship/overall.md#automated-phase-delivery-cycle).
+
+| Source/order | Raw severity | Disposition |
+| --- | --- | --- |
+| Claude 1 | Medium | Fixed: explicit unobserved health never resets the circuit; helper-launch failures and pre-launch shared failures participate in cooldown. Delivery certainty remains independently preserved. |
+| Claude 2 | Medium | Fixed: typed TLS EOF/closed/syscall interruptions are temporary; certificate and unclassified protocol faults are systemic. Bounded inspection handles requests/urllib3 wrappers without parsing provider prose. |
+| Claude 3 | Low | Duplicate of Codex 1; shared RCPT exceptions retain prior indices and affect the circuit. |
+| Claude 4 | Low | Rejected: a shared RCPT-stage failure may follow a genuine earlier RCPT 550. Neither Python nor SQL should discard that independent refusal. Added real database cases for unavailable/systemic results with an earlier permanent refusal. Unobserved outcomes, unlike shared faults, now explicitly forbid recipient evidence in both decoders. |
+| Claude 5 | Low | Fixed: DeliveryCircuit.blocks_new_send names the cooldown/halt behavior explicitly at admission call sites. |
+| Claude 6 | Low | Fixed: parametrized MAIL/RCPT/DATA fault tests, wrapped TLS tests, local-only circuit behavior and real unknown-delivery/systemic-halt worker coverage. |
+| Codex 1 | Medium | Fixed: MAIL and RCPT connection exceptions use the shared classifier without losing earlier refusal indices; unexpected numeric RCPT replies remain per-message bounded retries. |
+| Codex 2 | Medium | Fixed: UNKNOWN retains uncertain delivery while a separate closed health value triggers cooldown/halt. SQL rejects forged health/status combinations; observed acceptance survives QUIT. |
+
+The typed TLS distinctions follow the
+[Python SSL exception contract](https://docs.python.org/3.12/library/ssl.html#exceptions)
+and [urllib3's wrapped-error contract](https://urllib3.readthedocs.io/en/stable/reference/urllib3.exceptions.html#urllib3.exceptions.MaxRetryError).
+
 ## Validation receipts
 
 - Initial head `92db222`: image build, 12 container-isolation checks, 17
@@ -164,3 +196,17 @@ independent validation runs below supply executable evidence.
   adding the shared-unavailable result;
   the reference still matches PR #38 and the same 401-function/409-trigger
   catalog surface remains, with only the result decoder's body changed.
+- Reviewed head `b1b222b`: image build, 12 isolation checks, 17 runtime/
+  provisioning/ingress/broker checks and the synthetic configured Compose
+  startup passed. Its full local database rerun passed 3,140 cases but failed
+  one performance assertion under eight-way local contention (lookup p95
+  2.78 seconds, limit 2 seconds). The unchanged performance test passed alone:
+  5,000-Family lookup p95 0.021 seconds and 100-session page p95 0.038 seconds.
+  This failed full rerun is diagnostic evidence, not passing combined coverage.
+- Round-3 corrections: 125 provider/private/circuit cases pass. A new independent
+  fresh-schema audit again matched the PR #38 reference and updated only the
+  current result-decoder fingerprint. All 90 affected database cases and 5,952
+  credential-free baseline tests pass, as do Ruff check/format, all tracked
+  Markdown and the model-drift check. All three review/fix rounds are complete,
+  with no accepted Medium-or-higher issue unresolved and no High/Critical in
+  the final round. Final exact-head CI must pass before protected merge.

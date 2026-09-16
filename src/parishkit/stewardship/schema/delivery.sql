@@ -792,13 +792,21 @@ BEGIN
     BEGIN result:=e.evidence_note::jsonb;
     EXCEPTION WHEN invalid_text_representation THEN RETURN NULL; END;
     IF jsonb_typeof(result)<>'object' OR NOT result ?& ARRAY[
-        'protocol','status','recipient_count','permanent','transient']
-       OR result-ARRAY['protocol','status','recipient_count','permanent','transient']<>'{}'::jsonb
+        'protocol','status','recipient_count','permanent','transient','health']
+       OR result-ARRAY['protocol','status','recipient_count','permanent','transient','health']<>'{}'::jsonb
        OR result->>'protocol' IS DISTINCT FROM 'workspace_smtp_v1'
        OR result->>'recipient_count'!~'^[1-9][0-9]{0,2}$'
        OR jsonb_typeof(result->'recipient_count')<>'number'
        OR jsonb_typeof(result->'permanent')<>'array'
        OR jsonb_typeof(result->'transient')<>'array'
+       OR NOT EXISTS (SELECT 1 FROM (VALUES
+           ('accepted','healthy'),('transient','healthy'),('transient','unobserved'),
+           ('transient','unavailable'),('permanent','healthy'),('permanent','unobserved'),
+           ('unavailable','unavailable'),('systemic','systemic'),
+           ('delivery_unknown','unavailable'),('delivery_unknown','systemic')
+       ) pair(status,health) WHERE pair.status=result->>'status' AND pair.health=result->>'health')
+       OR (result->>'health'='unobserved' AND
+           (result->'permanent'<>'[]'::jsonb OR result->'transient'<>'[]'::jsonb))
        OR e.reason IS DISTINCT FROM 'smtp_'||(result->>'status')
        OR NOT EXISTS (SELECT 1 FROM (VALUES
            ('accepted','delivered'),('transient','retry_wait'),

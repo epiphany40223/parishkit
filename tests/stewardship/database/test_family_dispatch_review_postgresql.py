@@ -11,7 +11,7 @@ from parishkit.stewardship.accounts.key_files import write_private
 from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
-from parishkit.stewardship.family_delivery import FamilyDeliveryResult
+from parishkit.stewardship.family_delivery import FamilyDeliveryResult, ProviderHealth
 from parishkit.stewardship.family_delivery import FamilyDeliveryStatus as Status
 from parishkit.stewardship.jobs import family_mail_delivery_tasks as worker
 from parishkit.stewardship.jobs.family_mail_dispatch import (
@@ -131,20 +131,28 @@ def test_pre_provider_failures_remain_definitively_unsent(
         assert worker.preparation_attempts(_status(task)) == 0
 
 
+@pytest.mark.parametrize("status", [Status.SYSTEMIC, Status.UNKNOWN])
 def test_systemic_result_stops_new_admission_on_same_handler(
     dispatch_worker,  # noqa: F811
     monkeypatch,  # noqa: F811
+    status,
 ):
     """Real delivery sets the process-owned halt, not merely the result row."""
     harness, path = dispatch_worker
     monkeypatch.setattr(
         worker,
         "submit_family",
-        lambda *args, **kwargs: FamilyDeliveryResult(Status.SYSTEMIC, 1),
+        lambda *args, **kwargs: FamilyDeliveryResult(
+            status, 1, health=ProviderHealth.SYSTEMIC
+        ),
     )
     with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
         message = prepare(harness)
         owner = deliver(harness, path, message)
+    message.refresh_from_db()
+    assert message.state == (
+        "delivery_unknown" if status is Status.UNKNOWN else "permanent_failure"
+    )
     # Isolate the halt decision after the real worker sets it. Binding and
     # disposition have independent real-role coverage; neither may mask a halt.
     monkeypatch.setattr(
