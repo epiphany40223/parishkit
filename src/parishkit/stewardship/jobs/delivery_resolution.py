@@ -2,6 +2,10 @@
 
 from uuid import UUID
 
+from parishkit.stewardship.accounts.cryptography import (
+    GeneralKeyring,
+    TokenPublicKeyring,
+)
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.family_schedule_planning import _planning_scope
 from parishkit.stewardship.campaigns.schedule_models import ScheduleOccurrence
@@ -34,6 +38,15 @@ def _identity(message):
 
 def _prepare(message, *, general, public, public_origin):
     """Re-read source, template and retained credential references inside the lock."""
+    if (
+        not isinstance(general, GeneralKeyring)
+        or not isinstance(public, TokenPublicKeyring)
+        or not isinstance(public_origin, str)
+        or not public_origin
+    ):
+        raise ValueError(
+            "Retry preparation requires current public/general keys and origin."
+        )
     scope, epoch = _planning_scope(message.campaign_id)
     if scope.runtime.mode != message.mode or (
         message.mode == "testing" and epoch.pk != message.rehearsal_epoch_id
@@ -93,6 +106,7 @@ def resolve_delivery(
     general=None,
     public=None,
     public_origin=None,
+    preparation_inputs=None,
 ):
     """Bind one explicit command and all of its domain effects in a short commit.
 
@@ -161,6 +175,8 @@ def resolve_delivery(
             "accept": {"delivery_unknown"},
             "resend": {"delivery_unknown"},
             "retry_failed": {"permanent_failure"},
+            # Includes an attempt definitively not accepted by the provider;
+            # delivery_unknown always requires explicit duplicate-risk consent.
             "retry_unsent": {"pending", "retry_wait"},
         }
         if message.state not in expected_states[action]:
@@ -169,8 +185,18 @@ def resolve_delivery(
             )
         correlation_id = command_id
         if retry:
+            inputs = (
+                preparation_inputs()
+                if preparation_inputs
+                else dict(
+                    general=general,
+                    public=public,
+                    public_origin=public_origin,
+                )
+            )
             preparation = _prepare(
-                message, general=general, public=public, public_origin=public_origin
+                message,
+                **inputs,
             )
 
             def admit_retry(candidate, status):

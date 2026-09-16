@@ -1,4 +1,4 @@
-{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% extends 'stewardship/base.html' %}{% load i18n stewardship delivery %}
 {% block title %}{% translate "Verify refused address" %}{% endblock %}
 {% block content %}
 <p><a href="{% url 'admin:delivery_refusals' %}">{% translate "Refused addresses" %}</a></p>
@@ -8,10 +8,10 @@
 <p>{% translate "Clearance applies to this refusal only. Other unresolved refusals may still suppress this address; review the refused-address list afterward. Clearing a refusal does not send mail or repeat an invitation already accepted for another Family member." %}</p>
 {% if resolved %}
 <section class="panel"><h2>{% translate "This refusal has been resolved" %}</h2>
-<p>{{ resolved.reason }}</p><p>{{ resolved.evidence_note }}</p>
+<p>{{ resolved.reason|delivery_label }}</p><p>{{ resolved.evidence_note }}</p>
 <time datetime="{{ resolved.created_at|instant }}" data-local-instant>{{ resolved.created_at|instant }}</time>
 </section>
-{% elif source.snapshot_id %}
+{% elif source.snapshot_id and can_clear %}
 <form method="post" action="{% url 'admin:delivery_refusal_clear' refusal.id %}" class="panel">
   {% csrf_token %}
   <input type="hidden" name="command_id" value="{{ command_id }}">
@@ -23,5 +23,5 @@
   <label><input type="checkbox" name="verified" value="yes" required> {% translate "I verified this address for this Family and authorize removing this refusal." %}</label>
   <button type="submit">{% translate "Clear verified refusal" %}</button>
 </form>
-{% else %}<p>{% translate "Current source data is required before verification." %}</p>{% endif %}
+{% else %}<p>{% translate "Verification is unavailable. Current reconciled source data and an admitted campaign are required." %}</p>{% endif %}
 {% endblock %}

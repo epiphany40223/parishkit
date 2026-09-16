@@ -1,14 +1,16 @@
 """Admin-only mail metadata and evidence forms; private payloads never serialize."""
 
+from contextlib import contextmanager
 from uuid import UUID, uuid4
 
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import DatabaseError, transaction
+from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
 from django.utils.translation import gettext_lazy as _
+from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import require_POST, require_safe
 
 from parishkit.config import ConfigError
@@ -33,21 +35,34 @@ from parishkit.stewardship.web.contracts import (
 )
 
 from .delivery_admin import clear_recipient_refusal
-from .delivery_metadata import FIELDS, STATES, listing, messages
+from .delivery_metadata import FIELDS, STATES, family_duid, listing, messages
 from .delivery_resolution import resolve_delivery
 from .delivery_resolution_models import DeliveryResolution
 from .models import TaskRun
-from .outbox_models import OutboxEvent
+from .outbox_models import OutboxEvent, OutboxMessage
 from .recipient_models import RecipientRefusal, RecipientRefusalResolution
 from .storage import TaskRetryConflict
 
 UNAVAILABLE = (
     ConfigError,
     CryptographicError,
-    DatabaseError,
     LimiterUnavailable,
     ObjectDoesNotExist,
 )
+MISSING_TARGET = (
+    OutboxMessage.DoesNotExist,
+    RecipientRefusal.DoesNotExist,
+    TaskRun.DoesNotExist,
+)
+
+
+def _database_error(error):
+    """Distinguish rejected state from outages without disclosing SQL or values."""
+    if isinstance(error, IntegrityError) and getattr(
+        error.__cause__, "sqlstate", None
+    ) in {"23514", "23505"}:
+        return _error(ErrorCode.STALE, 409)
+    return _error(ErrorCode.UNAVAILABLE, 503)
 
 
 def _error(code, status):
@@ -77,6 +92,37 @@ def _principal(request, store, *, final=False, activity=False):
     if not allows(actor, Capability.BACKGROUND_WORK):
         raise PermissionError("Delivery administration is unavailable.")
     return actor
+
+
+@contextmanager
+def _command_scope(request, service, actor):
+    """Lock the live session after the work boundary and retain it through commit.
+
+    Initial form admission is not authority for a later effect. Logout or
+    revocation that wins this lock is observed before the command; expiry during
+    processing is checked again and rolls back every command-side effect.
+    """
+    with work_transaction():
+        current = _principal(request, service.store)
+        if current.identity != actor.identity:
+            raise PermissionError("Delivery command identity changed.")
+        yield
+        current = _principal(request, service.store, final=True)
+        if current.identity != actor.identity:
+            raise PermissionError("Delivery command identity changed.")
+
+
+def _retry_inputs():
+    """Load only public/general keys, and only for a new admitted preparation."""
+    from parishkit.stewardship.accounts.family_authentication import (
+        runtime as family_runtime,
+    )
+
+    keys = family_runtime()
+    origin = getattr(settings, "STEWARDSHIP_PUBLIC_ORIGIN", None)
+    if origin is None:
+        raise ConfigError("Mail preparation origin is unavailable.")
+    return dict(general=keys.general, public=keys.public, public_origin=origin)
 
 
 def _window(request, allowed):
@@ -118,6 +164,10 @@ def _page(request, template, load, *, subject=None):
         return response
     except PermissionError:
         return _error(ErrorCode.DENIED, 403)
+    except MISSING_TARGET:
+        return _error(ErrorCode.INVALID, 404)
+    except DatabaseError as error:
+        return _database_error(error)
     except UNAVAILABLE:
         return _error(ErrorCode.UNAVAILABLE, 503)
     except ValueError:
@@ -131,6 +181,15 @@ def _next(request, window, has_next):
     return values.urlencode() if has_next else None
 
 
+def _previous(request, window):
+    """History and notes share a page; always make earlier evidence reachable."""
+    if window.page == 1:
+        return None
+    values = request.GET.copy()
+    values["page"] = str(window.page - 1)
+    return values.urlencode()
+
+
 @require_safe
 def delivery_list(request):
     """Search exact operational identifiers without fetching message content."""
@@ -142,12 +201,11 @@ def delivery_list(request):
         rows, following = listing(window, state=state, query=query)
         return dict(
             deliveries=rows,
-            states=[
-                (state, _(state.replace("_", " ").capitalize())) for state in STATES
-            ],
+            states=STATES,
             selected_state=state,
             query=query,
             next_query=_next(request, window, following),
+            previous_query=_previous(request, window),
         ), len(rows)
 
     return _page(request, "stewardship/deliveries.html", load)
@@ -159,7 +217,7 @@ def delivery_detail(request, message_id):
 
     def load():
         """Pin history's upper version to the selected message observation."""
-        _, window = _window(request, set())
+        values, window = _window(request, set())
         message = messages().values(*FIELDS).get(pk=message_id)
         events, following = window.rows(
             OutboxEvent.objects.filter(
@@ -175,23 +233,30 @@ def delivery_detail(request, message_id):
             .first()
         )
         campaign = Campaign.objects.only("state").get(pk=message["campaign_id"])
-        actions = [] if campaign.state == "archived" else ["note"]
-        if task and task["state"] == "failed" and campaign.state != "archived":
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT stewardship_export_admitted_v1(%s,true), "
+                "stewardship_delivery_retry_admitted_v1(%s)",
+                (message["campaign_id"], message_id),
+            )
+            can_resolve, can_retry = cursor.fetchone()
+        actions = ["note"] if campaign.state != "archived" and can_resolve else []
+        if task and task["state"] == "failed" and actions:
             if message["state"] == "delivery_unknown":
                 actions.append("accept")
-                if campaign.state != "closed":
+                if can_retry:
                     actions.append("resend")
-            elif campaign.state != "closed":
+            elif can_retry:
                 if message["state"] == "permanent_failure":
                     actions.append("retry_failed")
                 elif message["state"] in {"pending", "retry_wait"}:
                     actions.append("retry_unsent")
         labels = {
-            "note": "Save evidence note",
-            "accept": "Confirm delivery using external evidence",
-            "resend": "Authorize potentially duplicate resend",
-            "retry_failed": "Retry failed delivery",
-            "retry_unsent": "Retry failed unsent preparation",
+            "note": _("Save evidence note"),
+            "accept": _("Confirm delivery using external evidence"),
+            "resend": _("Authorize potentially duplicate resend"),
+            "retry_failed": _("Retry failed delivery"),
+            "retry_unsent": _("Retry delivery not accepted by the provider"),
         }
         notes, notes_following = window.rows(
             DeliveryResolution.objects.filter(message_id=message_id)
@@ -203,11 +268,15 @@ def delivery_detail(request, message_id):
             events=events,
             task=task,
             notes=notes,
+            retry_unavailable=bool(
+                task and task["state"] == "failed" and not can_retry
+            ),
             commands=[
                 dict(action=action, label=labels[action], id=uuid4())
                 for action in actions
             ],
             next_query=_next(request, window, following or notes_following),
+            previous_query=_previous(request, window),
         ), len(events) + len(notes)
 
     return _page(request, "stewardship/delivery.html", load, subject=message_id)
@@ -224,15 +293,13 @@ def refusal_list(request):
             pk__in=RecipientRefusalResolution.objects.values("refusal_id")
         )
         if values.get("duid"):
-            duid = values["duid"]
-            if not duid.isascii() or not duid.isdecimal() or not 0 < int(duid) < 2**63:
-                raise ValueError("Use an exact Family DUID.")
-            query = query.filter(family_duid=int(duid))
+            query = query.filter(family_duid=family_duid(values["duid"]))
         rows, following = window.rows(query.order_by("family_duid", "address", "id"))
         return dict(
             refusals=rows,
             query=values.get("duid", ""),
             next_query=_next(request, window, following),
+            previous_query=_previous(request, window),
         ), len(rows)
 
     return _page(request, "stewardship/delivery-refusals.html", load)
@@ -250,10 +317,24 @@ def refusal_detail(request, refusal_id):
             refusal_id=refusal_id
         ).first()
         source = SourceCurrent.objects.first()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT EXISTS(SELECT 1 FROM stewardship_source_current cur "
+                "JOIN stewardship_system_configuration r ON true "
+                "JOIN stewardship_campaign c ON c.id=r.current_campaign_id "
+                "JOIN stewardship_campaign_credentials k ON k.campaign_id=c.id "
+                "WHERE cur.organization_id=%s AND cur.snapshot_id=k.source_snapshot_id "
+                "AND cur.generation=k.source_generation AND NOT k.population_dirty "
+                "AND c.state<>'archived' "
+                "AND stewardship_export_admitted_v1(c.id,true))",
+                (refusal.organization_id,),
+            )
+            can_clear = cursor.fetchone()[0]
         return dict(
             refusal=refusal,
             resolved=resolved,
             source=source,
+            can_clear=can_clear,
             command_id=uuid4(),
         ), 1
 
@@ -261,6 +342,7 @@ def refusal_detail(request, refusal_id):
 
 
 @require_POST
+@sensitive_post_parameters("note")
 def clear_refusal(request, refusal_id):
     """An explicit current-Admin command never runs in a GET or passive poll."""
     try:
@@ -280,16 +362,17 @@ def clear_refusal(request, refusal_id):
             or any(len(request.POST.getlist(key)) != 1 for key in request.POST)
         ):
             raise ValueError("Invalid verification fields.")
-        clear_recipient_refusal(
-            service.store,
-            actor.identity,
-            refusal_id=refusal_id,
-            command_id=UUID(request.POST["command_id"]),
-            source_snapshot_id=UUID(request.POST["source_snapshot_id"]),
-            source_generation=expected_version(request.POST["source_generation"]),
-            note=request.POST["note"],
-            verified=request.POST["verified"] == "yes",
-        )
+        with _command_scope(request, service, actor):
+            clear_recipient_refusal(
+                service.store,
+                actor.identity,
+                refusal_id=refusal_id,
+                command_id=UUID(request.POST["command_id"]),
+                source_snapshot_id=UUID(request.POST["source_snapshot_id"]),
+                source_generation=expected_version(request.POST["source_generation"]),
+                note=request.POST["note"],
+                verified=request.POST["verified"] == "yes",
+            )
         response = redirect("admin:delivery_refusal", refusal_id=refusal_id)
         response["Cache-Control"] = "no-store"
         return response
@@ -297,6 +380,10 @@ def clear_refusal(request, refusal_id):
         return _error(ErrorCode.STALE, 409)
     except PermissionError:
         return _error(ErrorCode.DENIED, 403)
+    except MISSING_TARGET:
+        return _error(ErrorCode.INVALID, 404)
+    except DatabaseError as error:
+        return _database_error(error)
     except UNAVAILABLE:
         return _error(ErrorCode.UNAVAILABLE, 503)
     except ValueError:
@@ -304,6 +391,7 @@ def clear_refusal(request, refusal_id):
 
 
 @require_POST
+@sensitive_post_parameters("note")
 def resolution_command(request, message_id):
     """Validate a closed evidence form; no status query or SMTP runs in web."""
     try:
@@ -318,30 +406,19 @@ def resolution_command(request, message_id):
             or any(len(request.POST.getlist(key)) != 1 for key in request.POST)
         ):
             raise ValueError("Invalid resolution fields.")
-        preparation = {}
-        if request.POST["action"] in {"resend", "retry_failed", "retry_unsent"}:
-            from parishkit.stewardship.accounts.family_authentication import (
-                runtime as family_runtime,
+        with _command_scope(request, service, actor):
+            resolve_delivery(
+                service.store,
+                actor.identity,
+                message_id=message_id,
+                command_id=UUID(request.POST["command_id"]),
+                expected_version=expected_version(request.POST["expected_version"]),
+                action=request.POST["action"],
+                note=request.POST["note"],
+                duplicate_acknowledged=request.POST.get("duplicate_acknowledged")
+                == "yes",
+                preparation_inputs=_retry_inputs,
             )
-
-            keys = family_runtime()
-            origin = getattr(settings, "STEWARDSHIP_PUBLIC_ORIGIN", None)
-            if origin is None:
-                raise ConfigError("Mail preparation origin is unavailable.")
-            preparation = dict(
-                general=keys.general, public=keys.public, public_origin=origin
-            )
-        resolve_delivery(
-            service.store,
-            actor.identity,
-            message_id=message_id,
-            command_id=UUID(request.POST["command_id"]),
-            expected_version=expected_version(request.POST["expected_version"]),
-            action=request.POST["action"],
-            note=request.POST["note"],
-            duplicate_acknowledged=request.POST.get("duplicate_acknowledged") == "yes",
-            **preparation,
-        )
         response = redirect("admin:delivery", message_id=message_id)
         response["Cache-Control"] = "no-store"
         return response
@@ -349,6 +426,10 @@ def resolution_command(request, message_id):
         return _error(ErrorCode.STALE, 409)
     except PermissionError:
         return _error(ErrorCode.DENIED, 403)
+    except MISSING_TARGET:
+        return _error(ErrorCode.INVALID, 404)
+    except DatabaseError as error:
+        return _database_error(error)
     except UNAVAILABLE:
         return _error(ErrorCode.UNAVAILABLE, 503)
     except ValueError:
@@ -371,7 +452,7 @@ def preparation_retry(request, task_id):
         ):
             raise ValueError("Invalid preparation retry fields.")
         command_id = UUID(request.POST["command_id"])
-        with work_transaction():
+        with _command_scope(request, service, actor):
             task = TaskRun.objects.get(pk=task_id, task_type=TASK_TYPE)
             runs = TaskRun.objects.filter(root_id=task.root_id)
             previous = runs.filter(retry_command_id=command_id).first()
@@ -393,6 +474,10 @@ def preparation_retry(request, task_id):
         return _error(ErrorCode.STALE, 409)
     except PermissionError:
         return _error(ErrorCode.DENIED, 403)
+    except MISSING_TARGET:
+        return _error(ErrorCode.INVALID, 404)
+    except DatabaseError as error:
+        return _database_error(error)
     except UNAVAILABLE:
         return _error(ErrorCode.UNAVAILABLE, 503)
     except ValueError:

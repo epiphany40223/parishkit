@@ -1,12 +1,12 @@
-{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% extends 'stewardship/base.html' %}{% load i18n stewardship delivery %}
 {% block title %}{% translate "Family mail delivery" %}{% endblock %}
 {% block content %}
 <p><a href="{% url 'admin:deliveries' %}">{% translate "Family mail" %}</a></p>
 <h1>{% translate "Family mail delivery" %}</h1>
 <p>{% translate "Family DUID:" %} {{ delivery.family__family_duid|number }}</p>
-<p>{{ delivery.purpose }} · {{ delivery.mode }} · {{ delivery.state }}</p>
+<p>{{ delivery.purpose|delivery_label }} · {{ delivery.mode|delivery_label }} · {{ delivery.state|delivery_label }}</p>
 <p>{% translate "Delivery ID:" %} {{ delivery.id }}</p>
-{% if task %}<p><a href="{% url 'admin:background_task_page' task.id %}">{% translate "Latest background task" %}</a>: {{ task.state }}</p>{% endif %}
+{% if task %}<p><a href="{% url 'admin:background_task_page' task.id %}">{% translate "Latest background task" %}</a>: {{ task.state|delivery_label }}</p>{% endif %}
 {% if delivery.state == 'delivery_unknown' %}
 <aside class="notice">
   <h2>{% translate "Delivery is unknown, not failed" %}</h2>
@@ -14,6 +14,7 @@
 </aside>
 {% endif %}
 {% for command in commands %}
+{% if forloop.first and retry_unavailable %}<p class="notice">{% translate "Retry is currently unavailable. Check campaign dates, delivery pause, source reconciliation, and existing delivery coverage before retrying." %}</p>{% endif %}
 <form method="post" action="{% url 'admin:delivery_resolve' delivery.id %}" class="panel">
   {% csrf_token %}
   <input type="hidden" name="command_id" value="{{ command.id }}">
@@ -21,22 +22,23 @@
   <input type="hidden" name="action" value="{{ command.action }}">
   <h2>{{ command.label }}</h2>
   <label for="evidence-{{ command.action }}">{% translate "Evidence or reason for this decision" %}</label>
-  <textarea id="evidence-{{ command.action }}" name="note" maxlength="2000" required aria-describedby="help-{{ command.action }}"></textarea>
+  <textarea id="evidence-{{ command.action }}" name="note" maxlength="2000" required aria-describedby="help-{{ command.action }}{% if command.action == 'accept' %} acceptance-help{% endif %}"></textarea>
   <p id="help-{{ command.action }}" class="help">{% translate "Keep evidence brief. Do not include passwords, Family links, codes, or complete provider responses." %}</p>
   {% if command.action == 'resend' %}<label><input type="checkbox" name="duplicate_acknowledged" value="yes" required> {% translate "The prior attempt may already have been delivered. I accept the duplicate risk and explicitly authorize another attempt." %}</label>{% endif %}
-  {% if command.action == 'accept' %}<p>{% translate "Use this only when external evidence confirms acceptance of this exact delivery, not merely because no error was reported." %}</p>{% endif %}
+  {% if command.action == 'accept' %}<p id="acceptance-help">{% translate "Use this only when external evidence confirms acceptance of this exact delivery, not merely because no error was reported." %}</p>{% endif %}
   <button type="submit">{{ command.label }}</button>
 </form>
 {% endfor %}
 <h2>{% translate "Admin evidence and decisions" %}</h2>
-{% for note in notes %}<section class="panel"><p>{{ note.action }} · <time datetime="{{ note.created_at|instant }}" data-local-instant>{{ note.created_at|instant }}</time></p><p>{{ note.evidence_note }}</p></section>
-{% empty %}<p>{% translate "No Admin evidence has been recorded." %}</p>{% endfor %}
+{% for note in notes %}<section class="panel"><p>{{ note.action|delivery_label }} · <time datetime="{{ note.created_at|instant }}" data-local-instant>{{ note.created_at|instant }}</time></p><p>{{ note.evidence_note }}</p></section>
+{% empty %}<p>{% translate "No Admin evidence on this page." %}</p>{% endfor %}
 <h2>{% translate "Attempt history" %}</h2>
 {% for event in events %}
 <section class="panel">
-  <p>{% translate "Attempt" %} {{ event.attempt|number }} · {{ event.action }} · {{ event.state }}</p>
+  <p>{% translate "Attempt" %} {{ event.attempt|number }} · {{ event.action|delivery_label }} · {{ event.state|delivery_label }}</p>
   <p><time datetime="{{ event.created_at|instant }}" data-local-instant>{{ event.created_at|instant }}</time></p>
 </section>
-{% empty %}<p>{% translate "No history is available." %}</p>{% endfor %}
+{% empty %}<p>{% translate "No attempt history on this page." %}</p>{% endfor %}
 {% if next_query %}<a href="?{{ next_query }}">{% translate "Next page" %}</a>{% endif %}
+{% if previous_query %}<a href="?{{ previous_query }}">{% translate "Previous page" %}</a>{% endif %}
 {% endblock %}

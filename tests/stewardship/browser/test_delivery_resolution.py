@@ -16,6 +16,10 @@ def test_keyboard_resend_requires_evidence_and_explicit_duplicate_ack(
 ):
     """Native validation and keyboard submission preserve closed form identity."""
     page.goto(component_origin + "/delivery")
+    assert "acceptance-help" in page.locator("#evidence-accept").get_attribute(
+        "aria-describedby"
+    )
+    assert "mark_unknown" not in page.locator("main").inner_text()
     form = page.locator("form").filter(
         has=page.locator('[name="action"][value="resend"]')
     )
@@ -63,7 +67,11 @@ def test_warning_polls_durable_count_and_survives_unavailable_response(
             route.fulfill(
                 json={
                     "counts": dict(
-                        queued=0, running=0, retry_wait=0, abandoned=0, active=0
+                        queued=99 if count[0] == "bad" else 0,
+                        running=0,
+                        retry_wait=0,
+                        abandoned=0,
+                        active=0,
                     ),
                     "delivery_unknown": count[0],
                 }
@@ -72,7 +80,8 @@ def test_warning_polls_durable_count_and_survives_unavailable_response(
     page.route("**/admin/background/counts", result)
     page.goto(component_origin + "/delivery")
     warning = page.locator("[data-delivery-warning]")
-    for value in (1234, None, 0):
+    assert warning.locator("..").get_attribute("aria-live") == "polite"
+    for value in (1234, None, "bad", 0):
         count[0] = value
         with page.expect_response("**/admin/background/counts"):
             page.clock.fast_forward(30000)
@@ -81,4 +90,6 @@ def test_warning_polls_durable_count_and_survives_unavailable_response(
         else:
             assert warning.is_visible()
             assert "1,234" in warning.inner_text()
-    assert len(requests) == 3 and all(request.method == "GET" for request in requests)
+        if value == "bad":
+            assert page.locator("[data-background-total]").inner_text() == "0"
+    assert len(requests) == 4 and all(request.method == "GET" for request in requests)

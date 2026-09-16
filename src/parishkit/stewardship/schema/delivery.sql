@@ -771,8 +771,8 @@ CREATE TABLE public.stewardship_recipient_resolution (
     reason varchar(32) NOT NULL,
     evidence_note varchar(2000) NOT NULL,
     CONSTRAINT recipient_resolution_reason CHECK(
-        (reason='source_changed' AND evidence_note='') OR
-        (reason='verified_admin' AND actor_id IS NOT NULL AND evidence_note<>'')),
+        (evidence_note='' AND reason='source_changed') OR
+        (actor_id IS NOT NULL AND reason='verified_admin' AND NOT evidence_note='')),
     CONSTRAINT recipient_resolution_generation CHECK(source_generation>0)
 );
 CREATE INDEX recipient_resolution_correlation ON public.stewardship_recipient_resolution(correlation_id);
@@ -906,6 +906,9 @@ BEGIN
            ) THEN RAISE EXCEPTION 'Refusal clearance requires current verified Admin evidence'
                USING ERRCODE='23514'; END IF;
         RETURN NEW;
+    END IF;
+    IF session_user='pk_stewardship_web' THEN
+        RAISE EXCEPTION 'Web cannot claim source-owned refusal correction' USING ERRCODE='23514';
     END IF;
     IF NEW.reason<>'source_changed' OR NEW.evidence_note<>'' THEN
         RAISE EXCEPTION 'Invalid refusal resolution kind' USING ERRCODE='23514';

@@ -8,6 +8,7 @@ from parishkit.stewardship.jobs.delivery_admin import (
     clear_recipient_refusal,
     evidence_note,
 )
+from parishkit.stewardship.jobs.delivery_metadata import family_duid
 from parishkit.stewardship.jobs.delivery_resolution import resolve_delivery
 
 
@@ -22,6 +23,44 @@ def test_evidence_is_required_bounded_and_private(value):
 def test_evidence_retains_exact_intent_including_whitespace():
     """Replay comparison must retain rather than normalize the submitted note."""
     assert evidence_note(" Confirmed\n") == " Confirmed\n"
+
+
+@pytest.mark.parametrize("value", ["12345", "12,345", "00012345"])
+def test_copied_family_identifier_accepts_display_grouping(value):
+    """The human-formatted US identifier remains a usable exact search key."""
+    assert family_duid(value) == 12345
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        True,
+        12,
+        "",
+        "0",
+        "12,34",
+        "01,234",
+        "1,234,",
+        "-1",
+        "١٢",
+        " 12",
+        "9" * 26,
+        str(2**63),
+    ],
+)
+def test_family_identifier_rejects_malformed_or_out_of_range_values(value):
+    """Grouping cannot smuggle non-identifiers into database predicates."""
+    with pytest.raises(ValueError):
+        family_duid(value)
+
+
+def test_missing_retry_keys_fail_before_database_access():
+    """Preparation rejects missing prerequisites with a stable validation error."""
+    from parishkit.stewardship.jobs.delivery_resolution import _prepare
+
+    with pytest.raises(ValueError, match="current public/general keys and origin"):
+        _prepare(None, general=None, public=None, public_origin=None)
 
 
 @pytest.mark.parametrize(

@@ -13,7 +13,9 @@ CREATE TABLE public.stewardship_delivery_resolution (
     previous_task_id uuid,
     retry_task_id uuid,
     preparation jsonb,
-    CONSTRAINT delivery_resolution_action CHECK(action IN ('note','accept','resend','retry_failed','retry_unsent')),
+    CONSTRAINT delivery_resolution_action CHECK(action::text=ANY(ARRAY[
+        'note'::varchar::text,'accept'::varchar::text,'resend'::varchar::text,
+        'retry_failed'::varchar::text,'retry_unsent'::varchar::text])),
     CONSTRAINT delivery_resolution_version CHECK(expected_version>0),
     CONSTRAINT delivery_resolution_scrubbed CHECK(preparation IS NULL)
 );
@@ -162,6 +164,10 @@ BEGIN
             THEN RAISE EXCEPTION 'Retry requires the exact new linked execution' USING ERRCODE='23514'; END IF;
             rendering:=public.stewardship_delivery_retry_render_v1(m.id,NEW.preparation,NEW.actor_id,NEW.id);
             sealed:=NEW.preparation->'sealed';
+            -- Resend records two separate facts: explicit duplicate-risk intent,
+            -- then current preparation. The first event retains NEW.id for the
+            -- occurrence recovery proof. Preparation gets a different command
+            -- ID to preserve outbox_command_once; message version advances twice.
             IF NEW.action='resend' THEN
                 UPDATE public.stewardship_outbox_message SET state='pending',action='authorize_resend',
                     command_id=NEW.id,command_digest=command_hash,evidence_note=NEW.evidence_note,

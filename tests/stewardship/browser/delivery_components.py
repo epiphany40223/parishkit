@@ -24,7 +24,7 @@ def components(now):
         "deliveries",
         dict(
             deliveries=[message],
-            states=[("all", "All"), ("delivery_unknown", "Delivery unknown")],
+            states=["all", "delivery_unknown"],
             selected_state="delivery_unknown",
             query="",
             next_query="page=2",
@@ -67,6 +67,7 @@ def components(now):
         "delivery-refusal",
         dict(
             refusal=refusal,
+            can_clear=True,
             source=dict(snapshot_id=uuid4(), generation=2),
             command_id=uuid4(),
         ),

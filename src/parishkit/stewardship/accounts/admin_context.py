@@ -6,8 +6,8 @@ from django.db.models import Count, Q
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
-from parishkit.stewardship.audit.models import OperationalLog
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
+from parishkit.stewardship.jobs.delivery_metadata import alert_counts
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
 
 from .policy import Capability, Principal, allows
@@ -73,12 +73,8 @@ def portal_chrome(request):
             running=Count("id", filter=Q(state="running", lease_expires_at__gt=now)),
         )
     parish = getattr(configuration.active_configuration, "parish", None)
-    critical_count = (
-        OperationalLog.objects.filter(
-            level="CRITICAL", created_at__gte=now - timedelta(hours=24)
-        ).count()
-        if admin
-        else 0
+    critical_count, delivery_unknown = (
+        alert_counts(now - timedelta(hours=24)) if admin else (0, None)
     )
     go_live = bool(
         campaign
@@ -98,7 +94,7 @@ def portal_chrome(request):
             "go_live": go_live,
             "critical_count": critical_count,
             "background": counts,
-            "delivery_unknown": _delivery_unknown() if admin else None,
+            "delivery_unknown": delivery_unknown,
             # Presence has its own passive endpoint. Do not repeat its current
             # epoch/population/session reads on every ordinary Admin page.
             "presence_count": None,
@@ -109,10 +105,3 @@ def portal_chrome(request):
             ),
         }
     }
-
-
-def _delivery_unknown():
-    """Unresolved durable delivery state is the warning's single source of truth."""
-    from parishkit.stewardship.jobs.delivery_metadata import unknown_count
-
-    return unknown_count()

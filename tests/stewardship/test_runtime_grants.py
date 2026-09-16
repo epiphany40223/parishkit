@@ -70,7 +70,7 @@ def test_recipient_evidence_writes_are_closed_across_all_installed_identities():
             expected = (
                 {"INSERT"}
                 if (
-                    role is ServiceRole.WORKER
+                    role in {ServiceRole.WORKER, ServiceRole.WEB}
                     and table == "stewardship_recipient_resolution"
                 )
                 or (

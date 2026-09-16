@@ -6,7 +6,7 @@
 <p>{% translate "Each refusal suppresses an address for one Family only. Verify the mailbox before clearing it. Clearance does not itself send a message." %}</p>
 <form method="get" class="panel">
   <label for="family-duid">{% translate "Exact Family DUID" %}</label>
-  <input id="family-duid" name="duid" value="{{ query }}" inputmode="numeric" maxlength="19">
+  <input id="family-duid" name="duid" value="{{ query }}" inputmode="numeric" maxlength="25">
   <button type="submit">{% translate "Show refusals" %}</button>
 </form>
 {% for refusal in refusals %}<section class="panel">
@@ -16,4 +16,5 @@
   <p>{% translate "Refusal ID:" %} {{ refusal.id }}</p>
 </section>{% empty %}<p>{% translate "No unresolved refusals match this view." %}</p>{% endfor %}
 {% if next_query %}<a href="?{{ next_query }}">{% translate "Next page" %}</a>{% endif %}
+{% if previous_query %}<a href="?{{ previous_query }}">{% translate "Previous page" %}</a>{% endif %}
 {% endblock %}

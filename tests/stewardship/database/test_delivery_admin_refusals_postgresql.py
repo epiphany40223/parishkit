@@ -141,3 +141,24 @@ def test_clearance_effect_and_audit_roll_back_together(scenario):
     assert not AuditEvent.objects.filter(
         event_type="recipient_refusal_cleared"
     ).exists()
+
+
+def test_web_cannot_impersonate_source_owned_refusal_correction(scenario):
+    """The new Web INSERT grant admits verified evidence, never source authority."""
+    _, principal, refusal, values = scenario
+    with (
+        task_login(ServiceRole.WEB, exact=True),
+        pytest.raises(DatabaseError, match="Web cannot claim source-owned") as error,
+        transaction.atomic(),
+    ):
+        RecipientRefusalResolution.objects.create(
+            refusal_id=refusal.pk,
+            source_snapshot_id=values["source_snapshot_id"],
+            source_generation=values["source_generation"],
+            reason="source_changed",
+            evidence_note="",
+            actor_id=principal.pk,
+        )
+    assert error.value.__cause__.sqlstate == "23514"
+    assert not RecipientRefusalResolution.objects.exists()
+    assert not FamilyCampaign.objects.get(family_duid=1).email_deliverable

@@ -99,10 +99,11 @@ def test_uncertainty_warns_once_and_admin_metadata_never_discloses_payload(
         result = browser.get("/admin/background/counts")
         assert result.json()["delivery_unknown"] == 1
     # Dashboard is activity; the status pages themselves must remain passive.
-    assert activity <= PortalSession.objects.get().last_activity_at
+    assert activity < PortalSession.objects.get().last_activity_at
     before = PortalSession.objects.get().last_activity_at
-    assert browser.get("/admin/deliveries").status_code == 200
-    assert PortalSession.objects.get().last_activity_at == before
+    for path in ("/admin/deliveries", f"/admin/deliveries/{message.pk}"):
+        assert browser.get(path).status_code == 200
+        assert PortalSession.objects.get().last_activity_at == before
 
 
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])
@@ -206,8 +207,10 @@ def test_verified_clearance_form_is_audited_and_replay_safe(response_service, go
         note="Verified with the Family <script>not executable</script>",
     )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        activity = PortalSession.objects.get().last_activity_at
         page = browser.get(path)
         assert page.status_code == 200 and b"csrfmiddlewaretoken" in page.content
+        assert PortalSession.objects.get().last_activity_at == activity
         assert browser.post(path + "/clear", values).status_code == 403
         for _ in range(2):
             result = browser.post(
@@ -234,7 +237,12 @@ def test_delivery_forms_apply_once_with_current_session_and_csrf(
 ):
     """Actual evidence forms bind exact state and never perform provider work."""
     from parishkit.stewardship.accounts import family_authentication
+    from parishkit.stewardship.campaigns.schedule_models import (
+        ScheduleFulfillment,
+        ScheduleOccurrence,
+    )
     from parishkit.stewardship.jobs.delivery_resolution_models import DeliveryResolution
+    from parishkit.stewardship.jobs.models import TaskRun
 
     from .test_delivery_resolution_postgresql import failed_delivery
 
@@ -246,6 +254,7 @@ def test_delivery_forms_apply_once_with_current_session_and_csrf(
     }.get(action, FamilyDeliveryStatus.UNKNOWN)
     with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
         message = failed_delivery(family_mail, status)
+        old_version, old_attempt = message.version, message.attempt
         browser, _ = signed_in()
         path = f"/admin/deliveries/{message.pk}"
         values = dict(
@@ -270,6 +279,46 @@ def test_delivery_forms_apply_once_with_current_session_and_csrf(
             assert b"&lt;script&gt;evidence&lt;/script&gt;" in result.content
             assert b"<script>evidence</script>" not in result.content
         assert DeliveryResolution.objects.count() == 1
+        message.refresh_from_db()
+        command = DeliveryResolution.objects.get()
+        assert command.preparation is None
+        assert message.attempt == old_attempt
+        retrying = action in {"resend", "retry_failed", "retry_unsent"}
+        assert message.state == (
+            "pending"
+            if retrying
+            else "delivered"
+            if action == "accept"
+            else "delivery_unknown"
+        )
+        assert message.version == old_version + (
+            0 if action == "note" else 2 if action == "resend" else 1
+        )
+        assert TaskRun.objects.get(pk=message.task_id).state == "failed"
+        assert TaskRun.objects.filter(root_id=message.task_id).count() == (
+            2 if retrying else 1
+        )
+        if retrying:
+            child = TaskRun.objects.get(pk=command.retry_task_id)
+            assert child.state == "queued" and child.parent_id == message.task_id
+        assert ScheduleFulfillment.objects.count() == (1 if action == "accept" else 0)
+        if action == "accept":
+            assert (
+                ScheduleOccurrence.objects.get(pk=message.semantic_key).state
+                == "succeeded"
+            )
+        assert AuditEvent.objects.filter(subject_id=command.pk).count() == 1
+        if action != "note":
+            stale = values | {"command_id": str(uuid4())}
+            assert (
+                browser.post(
+                    path + "/resolve",
+                    stale,
+                    HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value,
+                ).status_code
+                == 409
+            )
+            assert DeliveryResolution.objects.count() == 1
 
 
 def test_invalid_form_has_private_accessible_recovery(family_mail, google):  # noqa: F811

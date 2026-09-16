@@ -9,7 +9,7 @@ from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.storage import StaleRecordError
 
-from .recipient_models import RecipientRefusalResolution
+from .recipient_models import RecipientRefusal, RecipientRefusalResolution
 
 
 def authorize(store, user_id):
@@ -82,6 +82,7 @@ def clear_recipient_refusal(
             ):
                 raise ValueError("Verification command is already bound.")
             return previous
+        RecipientRefusal.objects.only("id").get(pk=refusal_id)
         if RecipientRefusalResolution.objects.filter(refusal_id=refusal_id).exists():
             raise StaleRecordError("This refusal has already been resolved.")
         with connection.cursor() as cursor:
