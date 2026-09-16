@@ -80,9 +80,13 @@ deployment, or release is authorized by this increment.
 
 ## Validation checkpoint
 
-Local implementation validation and three dual-source review/fix rounds are
-complete. Protected PR/merge-group CI and fresh-main verification still
-determine delivery; they are not yet claimed here.
+Delivered in PR #41: exact-head run `35141293392` passed all 24 jobs and DCO;
+protected merge-group run `35143121665` passed all 24 jobs. It merged as
+`2eade2a53163d621ade3145ede092f7316055bda` at 2026-09-16 20:10:11 UTC,
+verified on freshly fetched `origin/main`. The following
+[consumer increment](stewardship-report-selection.md) integrates read-only
+selection/verification before queued exact-request ownership. The partial
+package boundaries above remain unchanged.
 
 Passed so far:
 

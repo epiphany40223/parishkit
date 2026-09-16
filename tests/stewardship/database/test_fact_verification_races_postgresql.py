@@ -22,10 +22,36 @@ from .test_source_snapshots_postgresql import permit
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
+@pytest.mark.parametrize("population", ["historical", "current"])
+def test_verification_works_inside_actual_readonly_campaign_guard(
+    response_service, population
+):
+    """Both generation and current-source protection must support READ ONLY."""
+    from parishkit.stewardship.campaigns.read_guards import CampaignReadGuard
+
+    record, claim = allocation(response_service, population=population)
+    materialize_fact_set(record.pk, claim, admit=permit)
+    with CampaignReadGuard(
+        [record.campaign_id], authorize=lambda guard: None, abort=lambda: None
+    ):
+        assert verify_fact_set(record.pk, admit=permit) == ()
+
+
+def test_current_population_reader_rejects_missing_exact_input_pin(response_service):
+    """A retained source alone is not the claimed generation's input protection."""
+    from parishkit.stewardship.reports.facts import FactUnavailable
+
+    record, _ = allocation(response_service, population="historical")
+    # Historical allocations deliberately have no current-population source pin.
+    # Exercise the precise negative predicate without bypassing any SQL guard.
+    with pytest.raises(FactUnavailable, match="input protection"):
+        materialization._current_families(record, ())
+
+
 def test_compaction_skips_a_generation_being_recalculated(
     response_service, monkeypatch
 ):
-    """Hold actual FOR SHARE locks, not a mocked pin or an expiring heartbeat."""
+    """Hold actual shared locks, not a mocked pin or an expiring heartbeat."""
     first, claim = allocation(response_service, population="current")
     materialize_fact_set(first.pk, claim, admit=permit, interactive=True)
     inputs = fact_inputs(first)

@@ -6,7 +6,7 @@ Historical scope uses permanent manifests/provenance, not source membership maps
 """
 
 from contextlib import contextmanager
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from django.db import connection, transaction
 
@@ -19,9 +19,15 @@ from parishkit.stewardship.storage import StorageInvariantError
 from .inputs import FactInputs, expected_dates, validate_day
 from .models import CampaignDailyFact, CampaignDailyFactSet, CampaignFactPointer
 
+FACT_READ_NAMESPACE = 736231  # Matched by SQL fact day/header deletion guards.
+
 
 class FactUnavailable(RuntimeError):
     """An exact generation is not ready/retained or its build ownership changed."""
+
+
+class FactBusy(FactUnavailable):
+    """Transient read contention; callers can retry without parsing error text."""
 
 
 def _admit(admit, action, inputs):
@@ -217,11 +223,22 @@ def read_fact_set(fact_set_id, *, admit):
     HTTP/download consumers additionally own the bounded campaign read guard;
     this generation lock does not replace authorization or response deadlines.
     """
+    if not isinstance(fact_set_id, UUID):
+        raise ValueError("Fact reads require a canonical generation UUID.")
     with transaction.atomic():
         with connection.cursor() as cursor:
+            # Advisory protection is valid in CampaignReadGuard's READ ONLY
+            # transaction. SQL deletion guards take the exclusive counterpart,
+            # so direct compaction cannot bypass a response-lifetime reader.
+            cursor.execute(
+                "SELECT pg_try_advisory_xact_lock_shared(%s, hashtext(%s))",
+                (FACT_READ_NAMESPACE, str(fact_set_id)),
+            )
+            if not cursor.fetchone()[0]:
+                raise FactBusy("The exact fact generation is busy; retry shortly.")
             cursor.execute(
                 "SELECT id FROM stewardship_daily_fact_set WHERE id=%s "
-                "AND state='ready' FOR SHARE",
+                "AND state='ready'",
                 (fact_set_id,),
             )
             if cursor.fetchone() is None:

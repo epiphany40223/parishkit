@@ -169,7 +169,7 @@ def test_failure_after_deletion_rolls_back_rows_pins_and_evidence(
 
 
 def test_active_lazy_reader_blocks_cleanup_until_serialization_finishes(tmp_path):
-    """Cross-connection FOR SHARE protection lasts through the actual last query."""
+    """Cross-connection shared protection lasts through the actual last query."""
     inputs, owner, old, _ = superseded(tmp_path)
     entered, finish = Event(), Event()
 

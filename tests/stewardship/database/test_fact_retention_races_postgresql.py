@@ -5,10 +5,11 @@ from threading import Event
 from uuid import uuid4
 
 import pytest
-from django.db import connections, transaction
+from django.db import IntegrityError, connection, connections, transaction
 
+from parishkit.stewardship.campaigns.read_guards import CampaignReadGuard
 from parishkit.stewardship.reports import retention
-from parishkit.stewardship.reports.facts import FactUnavailable
+from parishkit.stewardship.reports.facts import FactBusy, FactUnavailable, read_fact_set
 from parishkit.stewardship.reports.retention import (
     compact_facts,
     pin_facts,
@@ -20,6 +21,195 @@ from .test_fact_retention_postgresql import superseded
 from .test_source_snapshots_postgresql import permit
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+
+def test_readonly_consumer_blocks_both_service_and_direct_sql_deletion(tmp_path):
+    """A generation lock protects lazy queries without requiring UPDATE grants."""
+    inputs, owner, old, _ = superseded(tmp_path)
+    entered, finish = Event(), Event()
+
+    def reading():
+        """Keep the actual READ ONLY transaction alive through the final query."""
+        try:
+            with (
+                CampaignReadGuard(
+                    [inputs.campaign_id],
+                    authorize=lambda guard: None,
+                    abort=lambda: None,
+                ),
+                read_fact_set(old.pk, admit=permit) as record,
+            ):
+                entered.set()
+                assert finish.wait(10)
+                return record.days.count()
+        finally:
+            connections.close_all()
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(reading)
+        try:
+            assert entered.wait(10)
+            assert compact_facts(inputs.campaign_id, owner, admit=permit) == []
+            for table, field in (
+                ("stewardship_daily_fact", "fact_set_id"),
+                ("stewardship_daily_fact_set", "id"),
+            ):
+                with (
+                    pytest.raises(IntegrityError, match="protected"),
+                    transaction.atomic(),
+                    connection.cursor() as cursor,
+                ):
+                    cursor.execute(f"DELETE FROM {table} WHERE {field}=%s", (old.pk,))
+        finally:
+            finish.set()
+        assert future.result(timeout=10) == 2
+    assert compact_facts(inputs.campaign_id, owner, admit=permit) == [old.pk]
+
+
+def test_deletion_winning_lock_rejects_later_readonly_consumer(tmp_path, monkeypatch):
+    """A busy reader fails immediately, even while compaction remains uncommitted."""
+    inputs, owner, old, _ = superseded(tmp_path)
+    deleted, finish = Event(), Event()
+    original = retention.record_action
+
+    def pause(*args, **kwargs):
+        """Hold cleanup uncommitted after deletion, with both locks still owned."""
+        result = original(*args, **kwargs)
+        deleted.set()
+        assert finish.wait(10)
+        return result
+
+    def cleaning():
+        """Finish the real fenced cleanup on an independent SQL session."""
+        try:
+            return compact_facts(inputs.campaign_id, owner, admit=permit)
+        finally:
+            connections.close_all()
+
+    def reading():
+        """A real read-only guard must report contention, not a SQL timeout/500."""
+        try:
+            with (
+                CampaignReadGuard(
+                    [inputs.campaign_id],
+                    authorize=lambda guard: None,
+                    abort=lambda: None,
+                ),
+                read_fact_set(old.pk, admit=permit),
+            ):
+                pytest.fail("A removed generation must not become readable")
+        finally:
+            connections.close_all()
+
+    monkeypatch.setattr(retention, "record_action", pause)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        cleaning_future = pool.submit(cleaning)
+        try:
+            assert deleted.wait(10)
+            reader = pool.submit(reading)
+            with pytest.raises(FactBusy):
+                reader.result(timeout=2)
+        finally:
+            finish.set()
+        assert cleaning_future.result(timeout=10) == [old.pk]
+    with (
+        pytest.raises(FactUnavailable, match="not ready"),
+        read_fact_set(old.pk, admit=permit),
+    ):
+        pytest.fail("Completed cleanup must remain unavailable")
+
+
+def test_skipping_active_reader_releases_candidate_rows_before_batch_end(tmp_path):
+    """A skipped candidate cannot block later pin/source work until batch commit."""
+    from parishkit.stewardship.reports.models import CampaignDailyFactSet
+    from parishkit.stewardship.source.snapshot_models import SourceSnapshot
+
+    inputs, owner, old, _ = superseded(tmp_path)
+    skipped, finish = Event(), Event()
+
+    def cleaning():
+        """Leave the outer batch open after it has skipped this protected reader."""
+        try:
+            with transaction.atomic():
+                assert compact_facts(inputs.campaign_id, owner, admit=permit) == []
+                skipped.set()
+                assert finish.wait(10)
+        finally:
+            connections.close_all()
+
+    with read_fact_set(old.pk, admit=permit), ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(cleaning)
+        try:
+            assert skipped.wait(10)
+            # These would raise immediately if the skipped candidate retained
+            # either FOR UPDATE lock in the still-open batch transaction.
+            assert (
+                SourceSnapshot.objects.select_for_update(nowait=True)
+                .filter(pk=old.source_id)
+                .exists()
+            )
+            assert (
+                CampaignDailyFactSet.objects.select_for_update(nowait=True)
+                .filter(pk=old.pk)
+                .exists()
+            )
+        finally:
+            finish.set()
+        pending.result(timeout=10)
+
+
+@pytest.mark.parametrize("protect_first", [False, True])
+def test_mixed_batch_skip_preserves_other_successful_deletion(tmp_path, protect_first):
+    """A candidate rollback neither undoes earlier deletions nor prevents later ones."""
+    from dataclasses import replace
+
+    from parishkit.stewardship.reports.facts import publish_fact_set
+    from parishkit.stewardship.reports.models import (
+        CampaignDailyFactSet,
+        FactCompactionRecord,
+    )
+
+    from .fact_builders import staged_facts
+
+    inputs, owner, old, middle = superseded(tmp_path)
+    latest, _ = staged_facts(replace(inputs, submission_watermark=3), owner, old.source)
+    publish_fact_set(latest.pk, owner, admit=permit, interactive=True)
+    protected, disposable = (old, middle) if protect_first else (middle, old)
+    processed, finish = Event(), Event()
+
+    def cleaning():
+        """Expose the batch before commit, after both candidate savepoints finish."""
+        try:
+            with transaction.atomic():
+                assert compact_facts(inputs.campaign_id, owner, admit=permit) == [
+                    disposable.pk
+                ]
+                processed.set()
+                assert finish.wait(10)
+        finally:
+            connections.close_all()
+
+    with (
+        read_fact_set(protected.pk, admit=permit),
+        ThreadPoolExecutor(max_workers=1) as pool,
+    ):
+        pending = pool.submit(cleaning)
+        try:
+            assert processed.wait(10)
+            assert (
+                CampaignDailyFactSet.objects.select_for_update(nowait=True)
+                .filter(pk=protected.pk)
+                .exists()
+            )
+            # The successful candidate remains invisible until the outer batch
+            # commits, despite its own savepoint having completed already.
+            assert CampaignDailyFactSet.objects.filter(pk=disposable.pk).exists()
+        finally:
+            finish.set()
+        pending.result(timeout=10)
+    assert not CampaignDailyFactSet.objects.filter(pk=disposable.pk).exists()
+    assert CampaignDailyFactSet.objects.filter(pk=protected.pk).exists()
+    assert FactCompactionRecord.objects.get().fact_set_id == disposable.pk
 
 
 def test_uncommitted_pin_wins_over_cleanup_selection(tmp_path):

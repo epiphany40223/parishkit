@@ -2401,7 +2401,8 @@ BEGIN
     IF TG_OP='DELETE' THEN
         SELECT * INTO parent FROM stewardship_daily_fact_set
             WHERE id=OLD.fact_set_id FOR UPDATE;
-        IF NOT stewardship_fact_disposable(parent.id) THEN
+        IF NOT pg_try_advisory_xact_lock(736231, hashtext(OLD.fact_set_id::text))
+            OR NOT stewardship_fact_disposable(parent.id) THEN
             RAISE EXCEPTION 'Fact rows are protected from compaction'
                 USING ERRCODE='23514';
         END IF;
@@ -2704,7 +2705,8 @@ DECLARE projection stewardship_campaign_configuration%ROWTYPE;
         actual bigint;
 BEGIN
     IF TG_OP='DELETE' THEN
-        IF NOT stewardship_fact_disposable(OLD.id) THEN
+        IF NOT pg_try_advisory_xact_lock(736231, hashtext(OLD.id::text))
+            OR NOT stewardship_fact_disposable(OLD.id) THEN
             RAISE EXCEPTION 'Fact generation is protected from compaction'
                 USING ERRCODE='23514';
         END IF;

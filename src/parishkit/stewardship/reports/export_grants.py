@@ -14,6 +14,11 @@ def add_export_grants(tables, columns, *, role):
         for name in ("request", "cancellation", "download_grant", "download_use"):
             tables["stewardship_export_" + name].add("INSERT")
         tables.setdefault("stewardship_daily_fact_set", set()).add("SELECT")
+        for name in ("daily_fact", "fact_pointer"):
+            tables.setdefault("stewardship_" + name, set()).add("SELECT")
+        columns.setdefault("stewardship_submission", {}).setdefault(
+            "SELECT", set()
+        ).update({"campaign_id", "mode", "campaign_sequence"})
         tables.setdefault("stewardship_fact_pin", set()).update({"SELECT", "INSERT"})
         columns.setdefault("stewardship_daily_fact_set", {}).setdefault(
             "UPDATE", set()
