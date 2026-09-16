@@ -21,6 +21,7 @@ from parishkit.stewardship.storage import StorageInvariantError
 
 from .artifacts import write_artifact
 from .charts import render_participation
+from .documents import participation_document
 from .export_models import (
     ExportAttempt,
     ExportCancellation,
@@ -28,9 +29,8 @@ from .export_models import (
     ExportRequest,
 )
 from .export_services import TASK_TYPE, admit_campaign, authorize
-from .inputs import DAY_FIELDS
 from .models import CampaignDailyFactSet, CampaignFactPin
-from .participation import ParticipationDay, ParticipationDocument, participation_csv
+from .participation import participation_csv
 
 
 def bound_request(status):
@@ -127,33 +127,18 @@ def _abort_render_worker():
 
 def load_document(request):
     """Load exactly one pinned ready generation inside the caller's campaign guard."""
-    facts = CampaignDailyFactSet.objects.select_related(
-        "source", "timezone_configuration"
-    ).get(pk=request.fact_set_id, campaign_id=request.campaign_id, state="ready")
+    facts = CampaignDailyFactSet.objects.get(
+        pk=request.fact_set_id, campaign_id=request.campaign_id, state="ready"
+    )
     if not CampaignFactPin.objects.filter(
         fact_set=facts, parent_kind="export", parent_id=request.pk
     ).exists():
         raise StorageInvariantError("Export calculation pin is unavailable.")
-    projection = facts.timezone_configuration
-    return ParticipationDocument(
-        campaign_id=request.campaign_id,
-        fact_set_id=facts.pk,
+    return participation_document(
+        facts,
         parish_name=request.configuration.parish.name,
-        campaign_name=projection.name,
-        population_scope=facts.population_scope,
-        campaign_timezone=projection.timezone,
         browser_timezone=request.browser_timezone,
-        source_generation=facts.source_generation,
-        source_as_of=facts.source.promoted_at,
-        submission_watermark=facts.submission_watermark,
         requested_at=request.created_at,
-        first_date=facts.first_date,
-        last_date=facts.last_date,
-        financial_enabled=projection.values.get("financial") is not None,
-        days=tuple(
-            ParticipationDay(**row)
-            for row in facts.days.order_by("local_date").values(*sorted(DAY_FIELDS))
-        ),
     )
 
 

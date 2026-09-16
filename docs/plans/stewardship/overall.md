@@ -402,11 +402,15 @@ either from BG-06 or weakening Gate 3. See the
 [dispatch scope](../../guides/stewardship-family-mail-dispatch.md).
 
 After PR #40, deliver ordinary RPT-02/RPT-03 calculation/materialization as one
-coherent scheduler-to-published-facts increment. Follow with queued exact-input
-requests, priority/pinning, selection and scheduled verification before BG-07;
-do not mark the full fact-materialization package complete until both are done.
-This separates ordinary event-window ownership from retained export/digest
-request lifetimes. See the [increment boundary](../../guides/stewardship-report-facts.md).
+coherent scheduler-to-published-facts increment. After PR #41, integrate
+authorized current/stale selection, shared export documents and read-only
+verification/compaction protection as one independently testable consumer
+increment. This isolates the response-lifetime locking contract from queued
+exact-request ownership. Then deliver queued exact-input requests,
+priority/pinning and scheduled verification before BG-07; do not mark the full
+fact-materialization package complete until all of these are done. See the
+[ordinary increment](../../guides/stewardship-report-facts.md) and
+[consumer increment](../../guides/stewardship-report-selection.md).
 
 After PR #33, deliver BG-04's ordinary schedule planning/reconciliation before
 its bounded activation catch-up worker. The latter's multi-batch coalescing and

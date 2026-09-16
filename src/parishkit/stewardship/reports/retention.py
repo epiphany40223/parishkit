@@ -84,6 +84,15 @@ def compact_facts(campaign_id, claim, *, admit, limit=50):
             candidates = cursor.fetchall()
         removed = []
         for identifier, source_id in candidates:
+            # Do not wait for a report response or verifier. Hash collisions only
+            # postpone this optional cleanup; they never remove another guard.
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT pg_try_advisory_xact_lock(736231, hashtext(%s))",
+                    (str(identifier),),
+                )
+                if not cursor.fetchone()[0]:
+                    continue
             # Avoid waiting on an in-use source input or a live lazy renderer.
             if (
                 not SourceSnapshot.objects.select_for_update(skip_locked=True)

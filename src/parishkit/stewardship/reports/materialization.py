@@ -15,8 +15,10 @@ from parishkit.stewardship.campaigns.domain import Money
 from parishkit.stewardship.campaigns.models import CampaignConfiguration
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.responses.models import Submission
-from parishkit.stewardship.source.snapshot_models import SourceSnapshot
-from parishkit.stewardship.source.snapshots import read_snapshot
+from parishkit.stewardship.source.snapshot_models import (
+    SourceSnapshot,
+    SourceSnapshotPin,
+)
 from parishkit.stewardship.source.version_models import SnapshotFamily
 
 from .calculations import (
@@ -39,37 +41,51 @@ from .money import MoneyAmount
 from .participation import ParticipationDay
 
 
-def _current_families(source_id, families):
-    """Resolve eligible identities only from the exact protected membership map."""
+def _current_families(record, families):
+    """Use the protected generation's permanent source pin, including in READ ONLY.
+
+    Both callers own this generation: construction holds its building lease/row
+    and verification holds its read lock. SQL forbids releasing a fact input
+    pin while that generation exists, so source compaction cannot remove these
+    memberships. A second FOR SHARE source lock would reject read-only guards.
+    """
+    source_id = record.source_id
+    if not SourceSnapshotPin.objects.filter(
+        snapshot_id=source_id,
+        parent_kind="facts",
+        parent_id=record.pk,
+        snapshot__state="promoted",
+        snapshot__compacted_at__isnull=True,
+    ).exists():
+        raise FactUnavailable("Fact population input protection is unavailable.")
     by_duid = {row["family_duid"]: row["id"] for row in families}
     selected = set()
-    with read_snapshot(source_id, metadata_only=True):
-        for key, canonical in (
-            SnapshotFamily.objects.filter(snapshot_id=source_id)
-            .values_list("source_key", "payload__canonical")
-            .iterator(chunk_size=500)
+    for key, canonical in (
+        SnapshotFamily.objects.filter(snapshot_id=source_id)
+        .values_list("source_key", "payload__canonical")
+        .iterator(chunk_size=500)
+    ):
+        payload = json.loads(canonical)
+        if (
+            payload.get("schema_version") != 1
+            or type(payload.get("schema_version")) is not int
+            or any(
+                type(payload.get(field)) is not bool
+                for field in ("active", "parishioner", "portal_eligible")
+            )
+            or payload["portal_eligible"]
+            != (payload["active"] and payload["parishioner"])
+            or not key.isascii()
+            or not key.isdecimal()
+            or str(int(key)) != key
+            or not 0 < int(key) < 2**31
         ):
-            payload = json.loads(canonical)
-            if (
-                payload.get("schema_version") != 1
-                or type(payload.get("schema_version")) is not int
-                or any(
-                    type(payload.get(field)) is not bool
-                    for field in ("active", "parishioner", "portal_eligible")
-                )
-                or payload["portal_eligible"]
-                != (payload["active"] and payload["parishioner"])
-                or not key.isascii()
-                or not key.isdecimal()
-                or str(int(key)) != key
-                or not 0 < int(key) < 2**31
-            ):
-                raise FactUnavailable("Fact population source is inconsistent.")
-            if payload["portal_eligible"]:
-                identity = by_duid.get(int(key))
-                if identity is None:
-                    raise FactUnavailable("Fact population provenance is incomplete.")
-                selected.add(identity)
+            raise FactUnavailable("Fact population source is inconsistent.")
+        if payload["portal_eligible"]:
+            identity = by_duid.get(int(key))
+            if identity is None:
+                raise FactUnavailable("Fact population provenance is incomplete.")
+            selected.add(identity)
     return frozenset(selected)
 
 
@@ -103,7 +119,7 @@ def _load_calculation(record):
         )
     )
     current = (
-        _current_families(source.pk, families)
+        _current_families(record, families)
         if inputs.population_scope == "current"
         else frozenset()
     )

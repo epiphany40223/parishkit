@@ -5,10 +5,11 @@ from threading import Event
 from uuid import uuid4
 
 import pytest
-from django.db import connections, transaction
+from django.db import IntegrityError, connection, connections, transaction
 
+from parishkit.stewardship.campaigns.read_guards import CampaignReadGuard
 from parishkit.stewardship.reports import retention
-from parishkit.stewardship.reports.facts import FactUnavailable
+from parishkit.stewardship.reports.facts import FactUnavailable, read_fact_set
 from parishkit.stewardship.reports.retention import (
     compact_facts,
     pin_facts,
@@ -20,6 +21,98 @@ from .test_fact_retention_postgresql import superseded
 from .test_source_snapshots_postgresql import permit
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+
+def test_readonly_consumer_blocks_both_service_and_direct_sql_deletion(tmp_path):
+    """A generation lock protects lazy queries without requiring UPDATE grants."""
+    inputs, owner, old, _ = superseded(tmp_path)
+    entered, finish = Event(), Event()
+
+    def reading():
+        """Keep the actual READ ONLY transaction alive through the final query."""
+        try:
+            with (
+                CampaignReadGuard(
+                    [inputs.campaign_id],
+                    authorize=lambda guard: None,
+                    abort=lambda: None,
+                ),
+                read_fact_set(old.pk, admit=permit) as record,
+            ):
+                entered.set()
+                assert finish.wait(10)
+                return record.days.count()
+        finally:
+            connections.close_all()
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(reading)
+        try:
+            assert entered.wait(10)
+            assert compact_facts(inputs.campaign_id, owner, admit=permit) == []
+            for table, field in (
+                ("stewardship_daily_fact", "fact_set_id"),
+                ("stewardship_daily_fact_set", "id"),
+            ):
+                with (
+                    pytest.raises(IntegrityError, match="protected"),
+                    transaction.atomic(),
+                    connection.cursor() as cursor,
+                ):
+                    cursor.execute(f"DELETE FROM {table} WHERE {field}=%s", (old.pk,))
+        finally:
+            finish.set()
+        assert future.result(timeout=10) == 2
+    assert compact_facts(inputs.campaign_id, owner, admit=permit) == [old.pk]
+
+
+def test_deletion_winning_lock_rejects_later_readonly_consumer(tmp_path, monkeypatch):
+    """A reader waits for the exact deleting generation, then reports unavailable."""
+    inputs, owner, old, _ = superseded(tmp_path)
+    deleted, finish, started = Event(), Event(), Event()
+    reader_backend = []
+    original = retention.record_action
+
+    def pause(*args, **kwargs):
+        """Hold cleanup uncommitted after deletion, with both locks still owned."""
+        result = original(*args, **kwargs)
+        deleted.set()
+        assert finish.wait(10)
+        return result
+
+    def cleaning():
+        """Finish the real fenced cleanup on an independent SQL session."""
+        try:
+            return compact_facts(inputs.campaign_id, owner, admit=permit)
+        finally:
+            connections.close_all()
+
+    def reading():
+        """Observe the backend so the test waits for a real SQL lock, not sleep."""
+        try:
+            with CampaignReadGuard(
+                [inputs.campaign_id], authorize=lambda guard: None, abort=lambda: None
+            ):
+                reader_backend.append(backend_pid())
+                started.set()
+                with read_fact_set(old.pk, admit=permit):
+                    pytest.fail("A removed generation must not become readable")
+        finally:
+            connections.close_all()
+
+    monkeypatch.setattr(retention, "record_action", pause)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        cleaning_future = pool.submit(cleaning)
+        try:
+            assert deleted.wait(10)
+            reader = pool.submit(reading)
+            assert started.wait(10)
+            wait_for_lock(reader_backend[0])
+        finally:
+            finish.set()
+        assert cleaning_future.result(timeout=10) == [old.pk]
+        with pytest.raises(FactUnavailable):
+            reader.result(timeout=10)
 
 
 def test_uncommitted_pin_wins_over_cleanup_selection(tmp_path):

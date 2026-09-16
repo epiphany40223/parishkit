@@ -6,7 +6,7 @@ Historical scope uses permanent manifests/provenance, not source membership maps
 """
 
 from contextlib import contextmanager
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from django.db import connection, transaction
 
@@ -217,11 +217,20 @@ def read_fact_set(fact_set_id, *, admit):
     HTTP/download consumers additionally own the bounded campaign read guard;
     this generation lock does not replace authorization or response deadlines.
     """
+    if not isinstance(fact_set_id, UUID):
+        raise ValueError("Fact reads require a canonical generation UUID.")
     with transaction.atomic():
         with connection.cursor() as cursor:
+            # Advisory protection is valid in CampaignReadGuard's READ ONLY
+            # transaction. SQL deletion guards take the exclusive counterpart,
+            # so direct compaction cannot bypass a response-lifetime reader.
+            cursor.execute(
+                "SELECT pg_advisory_xact_lock_shared(736231, hashtext(%s))",
+                (str(fact_set_id),),
+            )
             cursor.execute(
                 "SELECT id FROM stewardship_daily_fact_set WHERE id=%s "
-                "AND state='ready' FOR SHARE",
+                "AND state='ready'",
                 (fact_set_id,),
             )
             if cursor.fetchone() is None:

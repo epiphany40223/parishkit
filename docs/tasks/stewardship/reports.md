@@ -39,7 +39,7 @@ open for their later consumers.
 In-progress evidence: the [ordinary report-fact increment](../../guides/stewardship-report-facts.md)
 adds historical/current populations, first/latest live response and exact pledge
 series calculations, plus real source/response integration tests. Its local
-validation and three review/fix rounds are complete, pending protected delivery.
+validation, three review/fix rounds and protected delivery are complete in PR #41.
 Full package
 acceptance remains open; the guide records the remaining consumer calculations.
 
@@ -59,6 +59,11 @@ connects existing fact storage/demand/retention to compiled scheduler/worker
 calculation and immutable publication. Queued exact-input priority and consumer
 selection/verification scheduling remain a following prerequisite increment;
 interactive reports remain Phase 5. No RPT-03 task is yet claimed complete.
+
+In-progress consumer evidence: the [report selection increment](../../guides/stewardship-report-selection.md)
+integrates authorized current/stale selection, shared export documents and
+read-only verification/compaction guards. Queued exact requests and scheduled
+verification still follow before BG-07; all package checkboxes remain open.
 
 ## RPT-04: Additional-information workflow report
 
