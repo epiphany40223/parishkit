@@ -2,6 +2,7 @@
 
 import json
 import re
+from uuid import uuid4
 
 from django.db import DatabaseError, transaction
 from django.db.models import Count, Q
@@ -291,6 +292,10 @@ def task_page(request, task_id):
         {
             "work": work,
             "task": work["task"],
+            "export_cleanup_retry_key": str(uuid4())
+            if work["task"]["type"] == "report_export_cleanup"
+            and work["task"]["state"] == "failed"
+            else None,
             "next_query": following.urlencode(),
         },
     )

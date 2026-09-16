@@ -63,8 +63,10 @@ retry, not deletion. Requests, publications, cleanup receipts and fact pins rema
 retained. A renderer exceeding its read-guard deadline hard-stops the isolated
 solo worker; Compose restart and lease recovery preserve the unfinished outcome.
 Exhausted cleanup records one durable critical operational signal per failed run;
-an Admin service can explicitly retry the same root after repairing the cause.
-BG-10 owns notification transport; Phase 5 owns the additional report-job controls.
+the Admin task-detail page can explicitly retry the same root after repairing
+the cause. Its CSRF-protected, idempotent form cannot retry unrelated task kinds
+or grant Staff operational privileges. BG-10 owns notification transport;
+Phase 5 owns the additional report-job controls.
 Download grants and uses are retained audit-adjacent parish security metadata,
 not temporary report bytes. The exceptional purge owner controls their eventual
 disposition; seven-day artifact cleanup does not erase access history.
@@ -155,3 +157,46 @@ PostgreSQL service for one shard also suffered an OOM crash; its replacement
 completed all 743 tests. These partial results are not final combined coverage.
 Final integrated validation must use one frozen source tree and successful
 receipts from every shard. Retained development databases were not modified.
+
+## Incomplete second review attempt and corrections
+
+Pika session `20260916-021907-f20cec` reviewed the correction delta from
+`d16f18df` through `05e050bed981f1db69594fe55b48bcde9943375d`, tree
+`807f20d640b0203668345470e070aa41d2e53a5c`. The permission preflight passed;
+Claude completed all 20 files with **2 Medium and 10 Low** raw findings.
+Pika's Codex watchdog terminated its reviewer after 477 wall seconds because
+no output event arrived during the built-in 300-second idle window. Finalize
+reported `codex-reviewer: stalled (no new output within the idle window) —
+treated as timed out`. Artifacts were retained. This is **not a completed
+dual-source round** and does not advance the required round count. No fallback
+approval or reviewer substitution is inferred; rerun the dual-source review.
+
+Claude findings from that incomplete attempt still require disposition:
+
+| Finding | Severity | Disposition |
+| --- | --- | --- |
+| 1 | Medium | Fixed: catch safe storage/configuration failures before generic ValueError in every export endpoint. Test all endpoints and a real grant with unavailable artifact storage. |
+| 2 | Medium | Fixed: ship the Admin task-detail cleanup retry form now, with exact failed-run selection, POST/CSRF/replay protection, restricted web grants, Staff denial and real worker completion. |
+| 3 | Low | Added exhaustion-count admission checks and premature-failure regression. Retain atomic alert insertion within the owning transition transaction: failed transitions roll it back; duplicate recovery/dispatch emits no second alert. A generic post-transition callback refactor is not needed for this bounded owner. |
+| 4 | Low | Rejected additional current-Admin condition at render time: retry allocation checks the command actor; worker authority belongs to the retained requester, not to continued employment of the Admin who clicked retry. SQL still binds the exact immutable root, live run/fence/worker and original authorized requester. |
+| 5 | Low | Fixed: resolve the canonical cleanup root before selecting/replaying its retry chain. |
+| 6 | Low | Fixed: both retry services execute under actual web SQL privileges; the cleanup form also exercises its real web path. |
+| 7 | Low | Fixed: build-context tests derive expected SQL assets from the schema directory while Docker allowlists remain explicit. |
+| 8 | Low | Strengthened: frozen aliases and canonical names must agree on winter/summer offsets, in addition to PostgreSQL enumeration compatibility. |
+| 9 | Low | Fixed: hoist uuid4 import. |
+| 10 | Low | Clarified the controlling report spec: immutable request/data-as-of timestamps, not a later retry's render time. |
+| 11 | Low | Added SQL comment preserving the intentional deparsed CHECK form. |
+| 12 | Low | Fixed: restore the previous download pool before dropping its disposable SQL role. Completed responses already close their zero-idle dedicated connections. |
+
+The frozen `05e050b` tree passed the complete eight-shard local gate: **5,741
+baseline tests**, **2,996 PostgreSQL tests**, **94.13% line coverage** and
+**85.53% branch coverage**. Each shard produced a successful same-tree receipt;
+combination independently accounted for every database test. The lower-memory
+disposable services completed without the earlier OOM. Rebuilt-image configured
+development/production Compose checks and both Docker build-context checks also
+passed. These measurements precede the corrections above, which require their
+own regressions and final-head CI before acceptance.
+
+The new cleanup form additionally passed nine Chromium/Firefox/WebKit checks:
+mobile/desktop accessibility and responsive layout, plus explicit keyboard POST
+with only CSRF and replay identity. No provider was contacted.

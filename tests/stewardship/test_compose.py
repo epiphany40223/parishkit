@@ -365,15 +365,10 @@ def test_build_context_excludes_synthetic_private_files(tmp_path, ignore_kind):
         "src/parishkit/static/logo.svg",
         "src/parishkit/templates/page.html",
         "src/parishkit/stewardship/accounts/timezone_names_v1.txt",
-        "src/parishkit/stewardship/schema/functions.sql",
-        "src/parishkit/stewardship/schema/tables.sql",
-        "src/parishkit/stewardship/schema/seed.sql",
-        "src/parishkit/stewardship/schema/guards.sql",
-        "src/parishkit/stewardship/schema/delivery.sql",
-        "src/parishkit/stewardship/schema/production.sql",
-        "src/parishkit/stewardship/schema/cleanup.sql",
-        "src/parishkit/stewardship/schema/schedule_reconciliation.sql",
-        "src/parishkit/stewardship/schema/exports.sql",
+        *(
+            asset.relative_to(ROOT).as_posix()
+            for asset in (ROOT / "src/parishkit/stewardship/schema").glob("*.sql")
+        ),
     }
     denied = {
         ".git/config",

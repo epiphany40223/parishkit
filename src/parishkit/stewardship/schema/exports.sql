@@ -12,6 +12,9 @@ CREATE INDEX "stewardship_export_request_correlation_id_2a35f42f" ON "stewardshi
 CREATE INDEX "stewardship_export_request_campaign_id_f253c145" ON "stewardship_export_request" ("campaign_id");
 CREATE INDEX "stewardship_export_request_fact_set_id_5d0c1ba5" ON "stewardship_export_request" ("fact_set_id");
 CREATE INDEX "stewardship_export_request_configuration_id_f6866b66" ON "stewardship_export_request" ("configuration_id");
+-- The request table's export_format_known check intentionally retains the
+-- PostgreSQL-deparsed ANY/ARRAY form required by model/schema comparison.
+-- Replacing it with equivalent IN syntax changes the fresh-baseline contract.
 CREATE INDEX "export_requester_history" ON "stewardship_export_request" ("requester_id", "created_at");
 ALTER TABLE "stewardship_export_attempt" ADD CONSTRAINT "stewardship_export_a_request_id_21bce85e_fk_stewardsh" FOREIGN KEY ("request_id") REFERENCES "stewardship_export_request" ("id") DEFERRABLE INITIALLY DEFERRED;
 ALTER TABLE "stewardship_export_attempt" ADD CONSTRAINT "stewardship_export_a_run_id_4efd4d0b_fk_stewardsh" FOREIGN KEY ("run_id") REFERENCES "stewardship_task_run" ("id") DEFERRABLE INITIALLY DEFERRED;

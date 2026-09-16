@@ -755,6 +755,23 @@ def component_origin():
         )
     for path, template, extra in (
         (
+            "/export-cleanup-task",
+            "background-task",
+            {
+                "task": {
+                    "id": uuid4(),
+                    "type": "report_export_cleanup",
+                    "state": "failed",
+                    "created_at": NOW.isoformat(),
+                    "attempt": 5,
+                    "retry_sequence": 0,
+                    "progress": {"phase": "queued", "current": 0, "total": 0},
+                },
+                "work": {"events": []},
+                "export_cleanup_retry_key": str(uuid4()),
+            },
+        ),
+        (
             "/background-task",
             "background-task",
             {

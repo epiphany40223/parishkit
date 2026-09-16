@@ -1,6 +1,7 @@
 """Bounded artifact expiry/crash cleanup, preserving requests, receipts and pins."""
 
 from pathlib import Path
+from uuid import uuid4
 
 from django.db import OperationalError, connection
 from django.db.models import BooleanField, Exists, Func, OuterRef, Value
@@ -91,12 +92,15 @@ def admit_cleanup(action, status):
     """Only the file-owning worker can create a receipt; scheduler owns hints only."""
     attempt = _attempt(status, creating=action == "enqueue")
     if action == "permanent_failure":
+        if status.attempt < 5:
+            return False
         _exhausted(status)
         return True
+    if action == "retryable_failure":
+        return status.attempt < 5
     if action in {
         "lease_expired",
         "recovery_hint",
-        "retryable_failure",
     }:
         return True
     if action in {"complete", "recovery_complete"}:
@@ -134,23 +138,30 @@ def _exhausted(status):
     )
 
 
-def retry_cleanup(store, user_id, attempt_id, *, request_key):
+def retry_cleanup(store, user_id, attempt_id, *, request_key, run_id=None):
     """An Admin may explicitly retry the same bounded cleanup root after repair."""
-    from uuid import uuid4
-
     with work_transaction():
         principal = authorize(store, user_id)
         if "administrator" not in principal.roles:
             raise PermissionError("Export cleanup requires an Administrator.")
         attempt = ExportAttempt.objects.select_related("request").get(pk=attempt_id)
         admit_campaign(attempt.request.campaign_id, mutating=True)
-        runs = TaskRun.objects.filter(task_type=TASK_TYPE, domain_request_id=attempt.pk)
+        # Production uses the one canonical enqueue key per attempt. Scope all
+        # retry selection and replay to that root, like the TaskRun journal does.
+        root = TaskRun.objects.get(
+            task_type=TASK_TYPE,
+            domain_request_id=attempt.pk,
+            idempotency_key=str(attempt.pk),
+            retry_sequence=0,
+        )
+        runs = root.chain_runs
         previous = runs.filter(retry_command_id=request_key).first()
         latest = runs.order_by("-retry_sequence").first()
         if latest is None:
             raise ValueError("Export cleanup has not been scheduled.")
         return retry_failed(
-            run_id=previous.parent_id if previous is not None else latest.pk,
+            run_id=run_id
+            or (previous.parent_id if previous is not None else latest.pk),
             command_id=request_key,
             actor_id=user_id,
             correlation_id=uuid4(),

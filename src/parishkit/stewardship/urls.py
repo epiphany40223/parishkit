@@ -189,6 +189,11 @@ admin_patterns = [
         name="background_task_page",
     ),
     path("background/tasks", job_views.task_list, name="background_tasks"),
+    path(
+        "background/tasks/<uuid:task_id>/retry-export-cleanup",
+        export_views.retry_cleanup_command,
+        name="retry_export_cleanup",
+    ),
     path("background/counts", job_views.task_counts, name="background_counts"),
     path(
         "background/tasks/<uuid:task_id>",

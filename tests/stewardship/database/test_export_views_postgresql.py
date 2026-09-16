@@ -117,11 +117,15 @@ def restricted_download_pool(settings):
             )
         database = deepcopy(connection.settings_dict)
         database.update(USER=role, PASSWORD="disposable-download-test-only")
+        original_pool = settings.STEWARDSHIP_DOWNLOAD_POOL
         settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(
             ReadLimits(process_pool_size=1), database=database
         )
-        with web_login():
-            yield
+        try:
+            with web_login():
+                yield
+        finally:
+            settings.STEWARDSHIP_DOWNLOAD_POOL = original_pool
 
 
 @pytest.mark.parametrize("format", ["csv", "png", "pdf"])

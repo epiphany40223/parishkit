@@ -28,6 +28,7 @@ from .test_export_jobs_postgresql import (  # noqa: F401
     scenario,
 )
 from .test_policy_postgresql import user
+from .test_runtime_auth_grants_postgresql import web_login
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -106,7 +107,8 @@ def test_admin_retries_staff_export_without_changing_owner(scenario):  # noqa: F
         claimed = act(_status(request.task), "claim")
         act(claimed, "permanent_failure")
     key = uuid4()
-    retried = retry_export(store, admin.pk, request.pk, request_key=key)
+    with web_login():
+        retried = retry_export(store, admin.pk, request.pk, request_key=key)
     assert retry_export(store, admin.pk, request.pk, request_key=key) == retried
     assert TaskRun.objects.get(pk=retried.run_id).initiated_by_id == admin.pk
     assert execute_hint(
@@ -213,6 +215,7 @@ def test_non_render_roles_cannot_forge_publications(role):
 
 def test_pinned_timezone_catalog_is_supported_by_python_and_postgres():
     """Every admitted browser zone must render and pass the database constraint."""
+    from datetime import UTC, datetime
     from zoneinfo import ZoneInfo
 
     from parishkit.stewardship.schema_primitives import timezone_names
@@ -230,7 +233,14 @@ def test_pinned_timezone_catalog_is_supported_by_python_and_postgres():
         normalized = dict(cursor.fetchall())
     assert set(normalized.values()) <= postgres
     for name in sorted(names):
-        assert ZoneInfo(name).key == name
+        for instant in (
+            datetime(2026, 1, 1, tzinfo=UTC),
+            datetime(2026, 7, 1, tzinfo=UTC),
+        ):
+            assert (
+                instant.astimezone(ZoneInfo(name)).utcoffset()
+                == instant.astimezone(ZoneInfo(normalized[name])).utcoffset()
+            )
 
 
 def test_historical_browser_timezone_alias_is_preserved(scenario):  # noqa: F811

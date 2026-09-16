@@ -28,6 +28,7 @@ from .test_export_jobs_postgresql import (  # noqa: F401
     run_export,
     scenario,
 )
+from .test_runtime_auth_grants_postgresql import web_login
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -202,9 +203,18 @@ def test_exhausted_cleanup_alerts_once_and_admin_can_retry(
     with scheduler_session() as guard:
         task = produce_cleanup(guard)[0]
     # Reach the fifth claim through the actual journal, not an unguarded UPDATE.
-    for _ in range(4):
+    for attempt_number in range(4):
         with work_transaction():
-            task = act(act(task, "claim"), "retryable_failure")
+            claimed = act(task, "claim")
+            if attempt_number == 0:
+                with pytest.raises(PermissionError):
+                    act(
+                        claimed, "permanent_failure", admit=export_cleanup.admit_cleanup
+                    )
+                assert not OperationalLog.objects.filter(
+                    event="task_failed", level="CRITICAL"
+                ).exists()
+            task = act(claimed, "retryable_failure")
         with connection.cursor() as cursor:
             cursor.execute("SELECT pg_sleep(1.05)")
     options = dict(
@@ -237,9 +247,10 @@ def test_exhausted_cleanup_alerts_once_and_admin_can_retry(
     with scheduler_session() as guard:
         assert produce_cleanup(guard) == ()
     command = uuid4()
-    retried = export_cleanup.retry_cleanup(
-        store, principal.pk, publication.attempt_id, request_key=command
-    )
+    with web_login():
+        retried = export_cleanup.retry_cleanup(
+            store, principal.pk, publication.attempt_id, request_key=command
+        )
     assert (
         export_cleanup.retry_cleanup(
             store, principal.pk, publication.attempt_id, request_key=command

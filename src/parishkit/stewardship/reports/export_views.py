@@ -10,6 +10,7 @@ from uuid import UUID
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
 from django.http import JsonResponse
+from django.shortcuts import redirect
 from django.views.decorators.http import require_GET, require_POST
 
 from parishkit.config import ConfigError
@@ -19,10 +20,14 @@ from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, Outcome
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
+from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.ownership import database_now
+from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.responses import campaign_response
 
 from .artifacts import ArtifactChunks, ArtifactReceipt
+from .export_cleanup import TASK_TYPE as CLEANUP_TASK_TYPE
+from .export_cleanup import retry_cleanup
 from .export_models import ExportPublication
 from .export_services import (
     ExportConflict,
@@ -95,10 +100,10 @@ def create(request, campaign_id):
             request_key=UUID(values["request_key"]),
         )
         return _json({"id": str(result.pk)}, status=202)
-    except ValueError:
-        return _json({"error": "Invalid export request."}, status=400)
     except SAFE_FAILURES:
         return denial()
+    except ValueError:
+        return _json({"error": "Invalid export request."}, status=400)
 
 
 @require_GET
@@ -110,10 +115,10 @@ def status(request, request_id):
         service = runtime()
         principal = _principal(request, service.store)
         return _json(export_status(service.store, principal.identity, request_id))
-    except ValueError:
-        return _json({"error": "Invalid export request."}, status=400)
     except SAFE_FAILURES:
         return denial()
+    except ValueError:
+        return _json({"error": "Invalid export request."}, status=400)
 
 
 @require_POST
@@ -127,10 +132,10 @@ def cancel(request, request_id):
         return _json({"id": str(request_id), "state": "cancelled"})
     except ExportConflict:
         return _json({"error": "Export cannot be cancelled."}, status=409)
-    except ValueError:
-        return _json({"error": "Invalid export request."}, status=400)
     except SAFE_FAILURES:
         return denial()
+    except ValueError:
+        return _json({"error": "Invalid export request."}, status=400)
 
 
 @require_POST
@@ -144,10 +149,40 @@ def download_grant(request, request_id):
         return _json(
             {"grant": str(grant.pk), "expires_at": grant.expires_at.isoformat()}
         )
-    except ValueError:
-        return _json({"error": "Invalid export request."}, status=400)
     except SAFE_FAILURES:
         return denial()
+    except ValueError:
+        return _json({"error": "Invalid export request."}, status=400)
+
+
+@require_POST
+def retry_cleanup_command(request, task_id):
+    """An Admin retries only the selected failed cleanup, with a replay-safe POST."""
+    try:
+        values = _body(request, {"request_key"})
+        service = runtime()
+        principal = _principal(request, service.store)
+        if "administrator" not in principal.roles:
+            raise PermissionError("Export cleanup requires an Administrator.")
+        task = TaskRun.objects.get(pk=task_id, task_type=CLEANUP_TASK_TYPE)
+        result = retry_cleanup(
+            service.store,
+            principal.identity,
+            task.domain_request_id,
+            request_key=UUID(values["request_key"]),
+            run_id=task_id,
+        )
+        response = redirect("admin:background_task_page", task_id=result.run_id)
+        response["Cache-Control"] = "no-store"
+        return response
+    except StorageInvariantError:
+        return _json(
+            {"error": "Only the latest failed cleanup can be retried."}, status=409
+        )
+    except SAFE_FAILURES:
+        return denial()
+    except ValueError:
+        return _json({"error": "Invalid cleanup retry request."}, status=400)
 
 
 @require_POST
@@ -215,10 +250,10 @@ def download(request):
         )
         handed_off = response.status_code == 200 and response.streaming
         return response
-    except ValueError:
-        return _json({"error": "Invalid download grant."}, status=400)
     except SAFE_FAILURES:
         return denial()
+    except ValueError:
+        return _json({"error": "Invalid download grant."}, status=400)
     finally:
         if finish is not None and not handed_off:
             finish(False)
