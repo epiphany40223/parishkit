@@ -131,6 +131,7 @@ def test_background_assembly_binds_exact_keys_role_and_closed_registry(
         assert calls == ["mounts", "lifecycle", "django", "grants", "coherence"]
         assert runtime.broker.service is role and runtime.broker.stop is stop
         expected = {
+            "report_facts",
             "family_mail_prepare",
             "report_export",
             "report_export_cleanup",
@@ -206,6 +207,7 @@ def test_scheduler_registry_is_metadata_only():
     """Both compiled types refuse even direct provider/file execution attempts."""
     handlers = background.scheduler_handlers()
     assert set(handlers) == {
+        "report_facts",
         "family_mail_prepare",
         "report_export",
         "report_export_cleanup",
@@ -405,6 +407,7 @@ def test_only_bootstrap_worker_can_omit_installed_source_key(
     )
     try:
         assert set(runtime.handlers) == {
+            "report_facts",
             "family_mail_prepare",
             "report_export",
             "report_export_cleanup",

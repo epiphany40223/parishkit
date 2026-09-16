@@ -1,4 +1,4 @@
-"""Transactional fact-generation storage; report calculations are a later owner.
+"""Transactional fact-generation storage for the compiled calculation worker.
 
 Only a running, freshly admitted internal task can stage or publish calculations.
 An exact current-scope input pins the complete source corpus before construction.

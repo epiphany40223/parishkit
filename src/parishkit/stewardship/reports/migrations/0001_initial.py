@@ -24,6 +24,66 @@ class Migration(migrations.Migration):
         migrations.SeparateDatabaseAndState(
             state_operations=[
                 migrations.CreateModel(
+                    name="FactBuildReceipt",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        ("revision", models.PositiveBigIntegerField()),
+                        ("task_fence", models.PositiveBigIntegerField()),
+                        ("worker_id", models.UUIDField()),
+                        ("fact_set_id", models.UUIDField()),
+                        (
+                            "demand",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_reports.campaignfactrebuilddemand",
+                            ),
+                        ),
+                        (
+                            "run",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                related_name="fact_receipts",
+                                to="stewardship_jobs.taskrun",
+                            ),
+                        ),
+                        (
+                            "task",
+                            models.OneToOneField(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_jobs.taskrun",
+                            ),
+                        ),
+                    ],
+                    options={"db_table": "stewardship_fact_build_receipt"},
+                ),
+                migrations.CreateModel(
                     name="CampaignDailyFactSet",
                     fields=[
                         (

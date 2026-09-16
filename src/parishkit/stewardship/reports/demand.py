@@ -13,28 +13,17 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.jobs.ownership import database_now, lock_task_claim
 from parishkit.stewardship.source.snapshot_models import SourceSnapshot
 
+from .fact_fields import REQUEST_UPDATE_FIELDS
 from .facts import (
     FactUnavailable,
     _admit,
+    _publish_pointer,
     begin_fact_set,
     fact_inputs,
     require_fact_transaction,
 )
 from .inputs import FactInputs
 from .models import CampaignDailyFactSet, CampaignFactRebuildDemand
-
-REQUEST_UPDATE_FIELDS = (
-    "requested_source",
-    "requested_source_generation",
-    "requested_submission_watermark",
-    "requested_timezone_configuration",
-    "requested_through_date",
-    "pending_revision",
-    "pending_first_at",
-    "pending_last_at",
-    "pending_due_at",
-    "version",
-)
 
 
 def requested_inputs(demand):
@@ -141,10 +130,12 @@ def claim_rebuild(campaign_id, population_scope, claim, *, admit):
         return row
 
 
-def complete_rebuild(demand_id, claim, *, revision, admit):
+def complete_rebuild(demand_id, claim, *, revision, admit, interactive=False):
     """Release only this claimed generation; never clear newer pending events."""
     if type(revision) is not int or revision < 1:
         raise ValueError("An exact positive demand revision is required.")
+    if type(interactive) is not bool:
+        raise ValueError("Interactive completion must be an explicit boolean.")
     with transaction.atomic():
         lock_task_claim(claim)
         campaign_id = CampaignFactRebuildDemand.objects.values_list(
@@ -165,6 +156,10 @@ def complete_rebuild(demand_id, claim, *, revision, admit):
         _admit(admit, "complete", fact_inputs(record))
         if record.state != "ready":
             raise FactUnavailable("Rebuild completion requires ready facts.")
+        # Exact generations may have been built for a non-interactive consumer.
+        # Reuse still needs the same non-regressing pointer selection as a build.
+        if interactive:
+            _publish_pointer(record)
         row.claimed_generation = row.claimed_task = None
         row.claimed_task_fence = row.claimed_worker_id = None
         row.version += 1

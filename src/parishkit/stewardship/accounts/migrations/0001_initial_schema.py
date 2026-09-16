@@ -29,6 +29,7 @@ def schema_sql():
                 "schedule_reconciliation",
                 "exports",
                 "delivery_resolution",
+                "report_facts",
             )
         ]
     )

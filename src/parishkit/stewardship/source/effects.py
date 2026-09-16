@@ -60,5 +60,18 @@ def _apply(snapshot, execution, claim, *, general, mac, public, suppressions):
             suppressed_addresses=suppressions(scope),
             admit=admit,
         )
+        from parishkit.stewardship.reports.export_services import admit_campaign
+        from parishkit.stewardship.reports.fact_production import hint_current_facts
+
+        try:
+            admit_campaign(scope.campaign.pk, mutating=True)
+        except PermissionError:
+            # This verified refresh owns the current campaign. Report writes
+            # have narrower admission (notably during go-live cleanup); the
+            # scheduler reconciles current inputs once report admission opens.
+            # Do not swallow failures from an admitted hint's actual effects.
+            pass
+        else:
+            hint_current_facts(scope.campaign.pk, source_id=snapshot.pk)
     verify_refresh_attempt(attempt_id, execution, claim)
     return True

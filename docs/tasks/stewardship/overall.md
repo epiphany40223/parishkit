@@ -425,6 +425,19 @@ PR #39's provider-dispatch increment has now merged as `9e5b6e99` after all
 [Admin-resolution increment](../../guides/stewardship-family-mail-resolution.md)
 before BG-07; BG-06 and Gate 3 remain open.
 
+PR #40's Admin-resolution increment merged as `737be049` after all 24
+exact-head jobs (run `35129776022`) and all 24 protected merge-group jobs
+(run `35131554150`) passed. Its merge is verified on freshly fetched
+`origin/main`. Branch `pr/stewardship-report-facts` starts at that merge and
+implements the dependency-ready RPT-02/RPT-03 calculation/materialization
+prerequisite below. BG-07, the full report UI, and Gate 3 remain open.
+
+The [ordinary report-fact increment](../../guides/stewardship-report-facts.md)
+has completed implementation, local validation and three dual-source review/fix
+rounds. Its protected PR/queue delivery is next; no merged state is claimed at
+this checkpoint. After delivery, continue queued exact-input priority, consumer
+selection and scheduled verification before BG-07, as bounded by the guide.
+
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).
 3. Complete required [RPT-02](reports.md#rpt-02-population-and-calculation-library) calculations and the [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics) fact-materialization service before [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests); report UI remains in Phase 5.

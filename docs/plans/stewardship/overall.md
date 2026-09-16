@@ -401,6 +401,13 @@ ownership from interactive human-evidence/resend authorization without omitting
 either from BG-06 or weakening Gate 3. See the
 [dispatch scope](../../guides/stewardship-family-mail-dispatch.md).
 
+After PR #40, deliver ordinary RPT-02/RPT-03 calculation/materialization as one
+coherent scheduler-to-published-facts increment. Follow with queued exact-input
+requests, priority/pinning, selection and scheduled verification before BG-07;
+do not mark the full fact-materialization package complete until both are done.
+This separates ordinary event-window ownership from retained export/digest
+request lifetimes. See the [increment boundary](../../guides/stewardship-report-facts.md).
+
 After PR #33, deliver BG-04's ordinary schedule planning/reconciliation before
 its bounded activation catch-up worker. The latter's multi-batch coalescing and
 preparation-hold recovery deserve a separate coherent review boundary; both use
