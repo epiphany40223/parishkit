@@ -72,7 +72,9 @@ def test_real_refresh_commits_all_available_phase_two_effects(
     assert ChairReconciliation.objects.count() == 1
 
 
-@pytest.mark.parametrize("failure", ["provider_failed", "wrong_type", "facts_failed"])
+@pytest.mark.parametrize(
+    "failure", ["provider_failed", "wrong_type", "facts_failed", "facts_denied"]
+)
 def test_failed_family_dependency_rolls_back_earlier_chair_effects(
     tmp_path, monkeypatch, failure
 ):
@@ -86,9 +88,9 @@ def test_failed_family_dependency_rolls_back_earlier_chair_effects(
         assert ChairReconciliation.objects.exists()
         if failure == "provider_failed":
             raise RuntimeError("Synthetic suppression failure")
-        return frozenset() if failure == "facts_failed" else None
+        return frozenset() if failure.startswith("facts_") else None
 
-    if failure == "facts_failed":
+    if failure.startswith("facts_"):
         from parishkit.stewardship.reports import fact_production
 
         original = fact_production.hint_current_facts
@@ -97,6 +99,8 @@ def test_failed_family_dependency_rolls_back_earlier_chair_effects(
             """An exception after both hints must roll back the entire promotion."""
             original(*args, **kwargs)
             assert CampaignFactRebuildDemand.objects.count() == 2
+            if failure == "facts_denied":
+                raise PermissionError("Synthetic admitted fact-hint denial")
             raise RuntimeError("Synthetic fact-hint failure")
 
         monkeypatch.setattr(fact_production, "hint_current_facts", fail_hints)
@@ -113,7 +117,11 @@ def test_failed_family_dependency_rolls_back_earlier_chair_effects(
     )
     request = command()
     fake_provider(monkeypatch, pages())
-    with pytest.raises(TypeError if failure == "wrong_type" else RuntimeError):
+    expected_error = {
+        "wrong_type": TypeError,
+        "facts_denied": PermissionError,
+    }.get(failure, RuntimeError)
+    with pytest.raises(expected_error):
         run(request, compiled)
     assert SourceCurrent.objects.get().snapshot_id is None
     assert SourceSnapshot.objects.get().state == "ready"

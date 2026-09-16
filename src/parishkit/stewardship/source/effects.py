@@ -66,8 +66,9 @@ def _apply(snapshot, execution, claim, *, general, mac, public, suppressions):
         try:
             admit_campaign(scope.campaign.pk, mutating=True)
         except PermissionError:
-            # Source refresh is allowed during go-live cleanup, unlike report
-            # writes. The scheduler reconciles these inputs after that hold.
+            # This verified refresh owns the current campaign. Report writes
+            # have narrower admission (notably during go-live cleanup); the
+            # scheduler reconciles current inputs once report admission opens.
             # Do not swallow failures from an admitted hint's actual effects.
             pass
         else:

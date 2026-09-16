@@ -373,6 +373,71 @@ def test_retry_exhaustion_preserves_explicit_retry_and_pending_window(
             assert len(produce()) == 1
 
 
+@pytest.mark.parametrize("schedule_first", [False, True])
+def test_new_revision_supersedes_only_unfrozen_terminal_root(
+    response_service, schedule_first
+):
+    """An obsolete manual retry cannot race the newer revision in either order."""
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+    from parishkit.stewardship.jobs.storage import _status, retry_failed
+    from parishkit.stewardship.reports.fact_production import hint_current_facts
+
+    from .test_taskrun_postgresql import act
+
+    root = produce()[1]
+    failed = act(
+        act(_status(TaskRun.objects.get(pk=root)), "claim"), "permanent_failure"
+    )
+    tomorrow = response_service.campaign.active_configuration.starts_at + timedelta(
+        days=1
+    )
+    with patch(
+        "parishkit.stewardship.reports.fact_production._now", return_value=tomorrow
+    ):
+        with work_transaction():
+            instant = database_now() - timedelta(seconds=6)
+            with patch(
+                "parishkit.stewardship.reports.demand.database_now",
+                return_value=instant,
+            ):
+                hint_current_facts(response_service.campaign.pk)
+        replacements = produce() if schedule_first else ()
+        with pytest.raises(PermissionError), work_transaction():
+            retry_failed(
+                run_id=failed.run_id,
+                command_id=uuid4(),
+                actor_id=uuid4(),
+                correlation_id=uuid4(),
+                admit=fact_handler().admit,
+            )
+        if not schedule_first:
+            replacements = produce()
+    assert len(replacements) == 1 and replacements[0] != root
+    assert TaskRun.objects.filter(root_id=root).count() == 1
+    with task_login(ServiceRole.WORKER, exact=True):
+        assert execute(replacements[0])
+    assert TaskRun.objects.get(pk=root).state == "failed"
+    assert not FactBuildReceipt.objects.filter(task_id=root).exists()
+    assert FactBuildReceipt.objects.filter(task_id=replacements[0]).exists()
+
+
+def test_unfrozen_nonterminal_root_claims_latest_pending_inputs(response_service):
+    """New events coalesce into queued work rather than making its key stale."""
+    root = produce()[1]
+    tomorrow = response_service.campaign.active_configuration.starts_at + timedelta(
+        days=1
+    )
+    with patch(
+        "parishkit.stewardship.reports.fact_production._now", return_value=tomorrow
+    ):
+        assert produce() == ()
+    with task_login(ServiceRole.WORKER, exact=True):
+        assert execute(root)
+    record = CampaignDailyFactSet.objects.get()
+    assert record.expected_count == 2
+    assert FactBuildReceipt.objects.get(task_id=root).revision == 2
+
+
 def test_restore_hold_fences_expired_work_without_spending_retry_budget(
     response_service,
 ):

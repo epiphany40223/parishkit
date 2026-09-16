@@ -62,11 +62,16 @@ deployment, or release is authorized by this increment.
   binding before using these storage primitives; it must not simply exempt
   other task types. OPS-07 separately owns compactor grants (compaction deletes
   generations, rather than updating the builder's checkpoint).
-- Five abandoned attempts exhaust automatic recovery. Failed task metadata and
+- Abandonment at five attempts exhausts automatic recovery. Failed task metadata and
   attempt history remain visible in the existing Admin task list. A frozen
   generation/demand stays protected for the canonical explicit linked retry;
   later demand stays pending until that checkpoint completes. Neither a tick
   nor a later hint resets that root's budget or discards its frozen inputs.
+  A terminal root that never froze inputs is different: a later demand revision
+  may allocate an independent root. Explicit retry of the obsolete pre-claim
+  root is denied, both before and after that replacement is queued. An existing
+  nonterminal, unfrozen root still coalesces new events and claims the latest
+  pending inputs normally.
   The report selection/status and operator retry controls remain later RPT-03
   integration; this increment tests the actual retry service under worker grants.
 
@@ -187,5 +192,50 @@ all 12 raw findings are dispositioned below, including eight Low findings.
 Round-1 post-fix validation passed: 32 PostgreSQL materialization, worker,
 source-effect and verification-race tests (63.96s), 196 focused pure/runtime
 tests (1.08s), Ruff and Markdown checks. Two more successful dual-source
-review/fix rounds, final-head PR checks, protected merge-group checks and fresh
-main verification remain required; no routine human approval pause is required.
+review/fix rounds were still required at that checkpoint. The full subsequent
+baseline also passed: 6,038 tests, 4,100 profile-specific skips, two existing
+client deprecation warnings (55.72s); model drift, Ruff and Markdown passed.
+
+### Round 2
+
+Correction range `80b6bf5..be5784f`, Pika session
+`20260916-151218-fa901a`: both sources completed without degradation or repair.
+Codex approved with no findings; Claude supplied two Medium and five Low
+findings. Every raw finding is dispositioned here:
+
+- Claude 1, Medium, pre-claim supersession documentation/coverage: fixed the
+  distinction above. A later revision can replace a terminal root with no
+  checkpoint; it never resets that root or discards frozen inputs. New tests
+  exercise replacement and separately show queued roots still coalesce events.
+- Claude 2, Medium, obsolete explicit retry racing replacement: fixed. An
+  unclaimed terminal root must still match the pending revision's execution key
+  to admit a new explicit retry. Retry/replay also denies another nonterminal
+  root for the same demand. Tests cover both orders: superseding hint before
+  retry, and replacement allocation before retry. Frozen-root retry still owns
+  its original inputs and does not compare against a newer pending revision.
+- Claude 3, Low, backward-clock chronology: retained fail-closed validation.
+  The earlier calculation could count a Family first on two dates; SQL complete-
+  series validation already rejected that result. This moves rejection earlier,
+  rather than introducing an inability to publish an otherwise valid series.
+  Reinterpreting immutable response timestamps/first-submission identity is not
+  a permitted automatic report repair; failed task evidence remains visible.
+- Claude 4, Low, admitted hint exception coverage: the existing `facts_failed`
+  case already proves RuntimeError rollback. Added `facts_denied` to prove a
+  PermissionError raised after admitted hint effects also rolls everything back.
+- Claude 5, Low, exhaustion fixture wording: clarified the attempt-counter
+  criterion above. Attempts 1–4 seed real retryable-failure transitions; attempt
+  5 uses actual expiry/recovery. The separate restore-hold test already drives
+  real earlier recovery into `retry_wait` without spending attempts while held.
+- Claude 6, Low, real one-second retry waits: retained the actual PostgreSQL
+  timing/transition guards. These two cases add about ten seconds across the
+  partitioned suite; replacing immutable task timing or disabling guards would
+  weaken the regression. No long lease sleeps or busy polling were added.
+- Claude 7, Low, current-campaign hint commentary: clarified the verified current
+  campaign ownership and narrower report admission. The suggested non-current
+  refresh cannot reach these effects: `require_source_refresh` and the repeated
+  `verify_refresh_attempt` require the current campaign under the work-order lock.
+
+Round-2 post-fix validation passed: 24 PostgreSQL worker/source-effect tests
+(55.39s), 196 focused pure/runtime tests, Ruff and Markdown. One more successful
+dual-source round, final-head PR checks, protected merge-group checks and fresh-main
+verification remain required; no routine human approval pause is required.

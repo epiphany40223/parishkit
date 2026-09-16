@@ -5,6 +5,8 @@ not the running generation. Domain completion and task completion commit togethe
 an interrupted publication resumes its original generation before newer demand.
 """
 
+from uuid import uuid5
+
 from django.db import connection
 
 from parishkit.stewardship.campaigns.work_locks import (
@@ -12,7 +14,7 @@ from parishkit.stewardship.campaigns.work_locks import (
     work_transaction,
 )
 from parishkit.stewardship.jobs.dispatch import Handler, RecoveryPlan
-from parishkit.stewardship.jobs.models import TaskRun
+from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
 from parishkit.stewardship.jobs.ownership import database_now, lock_task_claim
 from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.storage import _status
@@ -120,6 +122,28 @@ def admit_facts(action, status):
         return TaskRun.objects.filter(
             pk=demand.claimed_task_id, root_id=status.root_id
         ).exists()
+    if (
+        action == "explicit_retry"
+        and not TaskRun.objects.filter(
+            pk=status.root_id,
+            idempotency_key=str(
+                uuid5(demand.pk, f"report-facts:{demand.pending_revision}")
+            ),
+        ).exists()
+    ):
+        # No inputs were frozen: a newer demand revision is independent work,
+        # not authority to revive an obsolete terminal root against that window.
+        return False
+    if action in {"explicit_retry", "explicit_retry_replay"} and (
+        TaskRun.objects.filter(
+            task_type=TASK_TYPE,
+            domain_request_id=demand.pk,
+            state__in=NONTERMINAL_STATES,
+        )
+        .exclude(root_id=status.root_id)
+        .exists()
+    ):
+        return False
     return demand.pending_due_at is not None and demand.pending_due_at <= database_now()
 
 
