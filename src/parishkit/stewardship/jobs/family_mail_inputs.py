@@ -58,7 +58,7 @@ def load_family_mail_source(family):
     ):
         raise PermissionError("Family mail requires current source reconciliation.")
     key = str(family.family_duid)
-    with read_snapshot(current.snapshot_id):
+    with read_snapshot(current.snapshot_id, metadata_only=True):
         row = (
             SnapshotFamily.objects.filter(
                 snapshot_id=current.snapshot_id, source_key=key

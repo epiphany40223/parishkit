@@ -1,0 +1,20 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Refused addresses" %}{% endblock %}
+{% block content %}
+<p><a href="{% url 'admin:deliveries' %}">{% translate "Family mail" %}</a></p>
+<h1>{% translate "Refused addresses" %}</h1>
+<p>{% translate "Each refusal suppresses an address for one Family only. Verify the mailbox before clearing it. Clearance does not itself send a message." %}</p>
+<form method="get" class="panel">
+  <label for="family-duid">{% translate "Exact Family DUID" %}</label>
+  <input id="family-duid" name="duid" value="{{ query }}" inputmode="numeric" maxlength="25">
+  <button type="submit">{% translate "Show refusals" %}</button>
+</form>
+{% for refusal in refusals %}<section class="panel">
+  <h2><a href="{% url 'admin:delivery_refusal' refusal.id %}">{{ refusal.address }}</a></h2>
+  <p>{% translate "Family DUID:" %} {{ refusal.family_duid|number }}</p>
+  <p>{% translate "Refused at:" %} <time datetime="{{ refusal.created_at|instant }}" data-local-instant>{{ refusal.created_at|instant }}</time></p>
+  <p>{% translate "Refusal ID:" %} {{ refusal.id }}</p>
+</section>{% empty %}<p>{% translate "No unresolved refusals match this view." %}</p>{% endfor %}
+{% if next_query %}<a href="?{{ next_query }}">{% translate "Next page" %}</a>{% endif %}
+{% if previous_query %}<a href="?{{ previous_query }}">{% translate "Previous page" %}</a>{% endif %}
+{% endblock %}

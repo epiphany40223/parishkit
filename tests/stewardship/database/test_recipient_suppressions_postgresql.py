@@ -331,7 +331,7 @@ def test_partial_refusal_keeps_other_head_address_deliverable(response_service):
     ],
 )
 def test_refusal_writes_wait_for_compiled_dispatch_owner(response_service, role):
-    """Only the compiled dispatcher records refusals; source work resolves them."""
+    """Dispatcher records refusals; source work and verified Admins resolve them."""
     with (
         task_login(role, exact=True),
         transaction.atomic(),
@@ -349,7 +349,7 @@ def test_refusal_writes_wait_for_compiled_dispatch_owner(response_service, role)
                 assert cursor.fetchone()[0] is (
                     (
                         (
-                            role is ServiceRole.WORKER
+                            role in {ServiceRole.WORKER, ServiceRole.WEB}
                             and table == "stewardship_recipient_resolution"
                         )
                         or (

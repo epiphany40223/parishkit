@@ -346,6 +346,30 @@ def runtime_grants(role, *, target=None):
         from .responses.grants import add_response_web_grants
 
         add_response_web_grants(tables, columns)
+        # Verified clearance is append-only and independently admitted by SQL;
+        # its trigger owns the one-Family eligibility effect, not the web login.
+        tables["stewardship_recipient_refusal"] = {"SELECT"}
+        tables["stewardship_recipient_resolution"] = {"SELECT", "INSERT"}
+        tables["stewardship_delivery_resolution"] = {"SELECT", "INSERT"}
+        from .jobs.family_dispatch_grants import METADATA_FIELDS
+
+        columns["stewardship_outbox_message"] = {
+            "SELECT": set(METADATA_FIELDS) | {"created_at", "updated_at", "finished_at"}
+        }
+        columns["stewardship_outbox_event"] = {
+            "SELECT": {
+                "id",
+                "message_id",
+                "created_at",
+                "version",
+                "state",
+                "action",
+                "attempt",
+                "actor_id",
+                "reason",
+                "run_id",
+            }
+        }
     from .reports.export_grants import add_export_grants
 
     add_export_grants(

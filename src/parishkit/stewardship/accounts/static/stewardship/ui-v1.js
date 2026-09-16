@@ -316,8 +316,17 @@
       if (values.some((value) => !Number.isSafeInteger(value) || value < 0)) throw new Error("Invalid counts");
       const total = values.slice(0, 4).reduce((sum, value) => sum + value, 0);
       if (!Number.isSafeInteger(total)) throw new Error("Invalid total");
+      const deliveryWarning = document.querySelector("[data-delivery-warning]");
+      if (deliveryWarning && (!Number.isSafeInteger(result.delivery_unknown) || result.delivery_unknown < 0)) throw new Error("Invalid delivery count");
       backgroundIndicator.querySelector("[data-background-total]").textContent = total.toLocaleString("en-US");
       backgroundIndicator.querySelector("[data-background-running]").textContent = values[4].toLocaleString("en-US");
+      if (deliveryWarning) {
+        const count = deliveryWarning.querySelector("[data-delivery-unknown]");
+        const formatted = result.delivery_unknown.toLocaleString("en-US");
+        if (count.textContent !== formatted) count.textContent = formatted;
+        const hidden = result.delivery_unknown === 0;
+        if (deliveryWarning.hidden !== hidden) deliveryWarning.hidden = hidden;
+      }
       if (unavailable) unavailable.hidden = true;
     } catch {
       if (unavailable) unavailable.hidden = false;

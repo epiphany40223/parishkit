@@ -419,6 +419,12 @@ Deliver it through exact-head CI and the protected queue, verify its merge on
 fresh `origin/main`, then continue the guide's provider-dispatch increment
 without a routine human-approval stop.
 
+PR #39's provider-dispatch increment has now merged as `9e5b6e99` after all
+24 exact-head and 24 protected merge-group jobs passed, verified on refreshed
+`origin/main`. Continue the dependency-ready
+[Admin-resolution increment](../../guides/stewardship-family-mail-resolution.md)
+before BG-07; BG-06 and Gate 3 remain open.
+
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).
 3. Complete required [RPT-02](reports.md#rpt-02-population-and-calculation-library) calculations and the [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics) fact-materialization service before [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests); report UI remains in Phase 5.

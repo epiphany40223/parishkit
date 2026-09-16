@@ -430,6 +430,10 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
     # checkpoints. Verify its exact enabled trigger/function/body, not an
     # exception from SQL immutability merely because the shared name differs.
     shared_immutable_guards = {
+        "stewardship_delivery_resolution": (
+            "delivery_resolution_immutable",
+            "stewardship_recipient_immutable_v1",
+        ),
         "stewardship_family_mail_preparation": (
             "family_mail_ticket_guard",
             "stewardship_family_mail_ticket_v1",

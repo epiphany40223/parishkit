@@ -320,15 +320,15 @@ def test_sql_rejects_forged_source_recipient_or_mail_setting(
     family_mail, monkeypatch, field, value
 ):
     """Worker SQL independently binds routing/settings, not just Python callbacks."""
-    from parishkit.stewardship.jobs import family_mail_preparation as preparation
+    from parishkit.stewardship.jobs import family_mail_rendering as rendering
 
-    original = preparation.render_family_mail
+    original = rendering.render_family_mail
 
     def forged(**kwargs):
         """Inject a shape-valid rendering after normal source-aware construction."""
         return replace(original(**kwargs), **{field: value})
 
-    monkeypatch.setattr(preparation, "render_family_mail", forged)
+    monkeypatch.setattr(rendering, "render_family_mail", forged)
     due = ScheduleDefinition.objects.get().current_revision.due_at
     with campaign_clock(due):
         ticket, owner = allocate(), handler(family_mail)

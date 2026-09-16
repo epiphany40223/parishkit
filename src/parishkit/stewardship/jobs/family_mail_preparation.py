@@ -2,8 +2,6 @@
 
 from uuid import UUID
 
-from parishkit.stewardship.accounts.configuration_models import AppliedIntegration
-from parishkit.stewardship.accounts.content_models import ContentVersion
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.family_schedule_planning import (
     _planning_scope,
@@ -13,9 +11,9 @@ from parishkit.stewardship.campaigns.schedule_models import ScheduleOccurrence
 from parishkit.stewardship.campaigns.work_locks import require_work_order
 from parishkit.stewardship.storage import StorageInvariantError
 
-from .family_mail_content import FamilyMailTemplate, render_family_mail
 from .family_mail_credentials import seal_current_credentials
-from .family_mail_inputs import load_family_mail_source, public_values
+from .family_mail_inputs import load_family_mail_source
+from .family_mail_rendering import current_render
 from .family_mail_tasks import _row, disposition, owned_preparation
 from .outbox_storage import create_message
 from .outbox_validation import DeliveryIdentity
@@ -60,14 +58,6 @@ def prepare_occurrence(ticket, claim, *, general, mac, public, public_origin):
     source = load_family_mail_source(family)
     if not source.recipients.status.email_deliverable:
         raise PermissionError("Family recipients require current reconciliation.")
-    version = scope.runtime.active_configuration
-    template = ContentVersion.objects.get(
-        configuration=version,
-        campaign_id=scope.campaign.pk,
-        kind="email",
-        record_id=UUID(row.revision.values["template_version"]),
-    )
-    content = FamilyMailTemplate(template.subject, template.html, template.text)
     if ticket.mode == "testing":
         from parishkit.stewardship.campaigns.lifecycle import CampaignWorkKind
         from parishkit.stewardship.campaigns.rehearsals import prepare_rehearsals
@@ -92,7 +82,6 @@ def prepare_occurrence(ticket, claim, *, general, mac, public, public_origin):
             actor_id=claim.worker_id,
             correlation_id=claim.run_id,
         )
-    email = AppliedIntegration.objects.get(configuration=version, kind="email")
     identity = DeliveryIdentity(
         scope_id=scope.campaign.pk,
         campaign_id=scope.campaign.pk,
@@ -106,23 +95,12 @@ def prepare_occurrence(ticket, claim, *, general, mac, public, public_origin):
         else "rehearsal",
         rehearsal_epoch_id=ticket.rehearsal_epoch_id,
     )
-    render = render_family_mail(
-        identity=identity,
-        configuration_id=version.pk,
-        template_id=template.pk,
-        template=content,
-        values=public_values(
-            source,
-            parish=version.canonical_document["sections"]["parish"][0]["values"],
-            campaign=scope.campaign.active_configuration.values,
-            public_origin=public_origin,
-        ),
-        sender=email.settings["sender"],
-        reply_to=email.settings["reply_to"],
-        intended_recipients=source.recipients.deliverable,
-        testing_recipient=scope.runtime.testing_recipient
-        if ticket.mode == "testing"
-        else None,
+    render = current_render(
+        identity,
+        row,
+        scope,
+        source,
+        public_origin=public_origin,
     )
     sealed = seal_current_credentials(
         identity=identity,

@@ -1,10 +1,7 @@
 """Dispatch-only current rendering and in-memory reusable-token resolution."""
 
 from html import escape
-from uuid import UUID
 
-from parishkit.stewardship.accounts.configuration_models import AppliedIntegration
-from parishkit.stewardship.accounts.content_models import ContentVersion
 from parishkit.stewardship.accounts.cryptography import token_digest
 from parishkit.stewardship.campaigns.credential_keys import key_set_lock
 from parishkit.stewardship.campaigns.credential_models import (
@@ -24,12 +21,11 @@ from parishkit.stewardship.family_delivery import FamilyDeliveryMail
 from .family_mail_content import (
     CODE_PLACEHOLDER,
     LINK_PLACEHOLDER,
-    FamilyMailTemplate,
     open_family_credentials,
-    render_family_mail,
     seal_family_credentials,
 )
-from .family_mail_inputs import load_family_mail_source, public_values
+from .family_mail_inputs import load_family_mail_source
+from .family_mail_rendering import current_render
 from .outbox_storage import _status
 from .outbox_validation import RenderInput, SealedSubstitutions
 
@@ -109,31 +105,12 @@ def current_content(message, occurrence, scope, *, private, public_origin):
             "id", "campaign_id", "family_duid", "source_generation"
         ).get(pk=message.family_id)
         source = load_family_mail_source(family)
-        version = scope.runtime.active_configuration
-        template = ContentVersion.objects.get(
-            configuration=version,
-            campaign_id=message.campaign_id,
-            kind="email",
-            record_id=UUID(occurrence.revision.values["template_version"]),
-        )
-        email = AppliedIntegration.objects.get(configuration=version, kind="email")
-        render = render_family_mail(
-            identity=identity,
-            configuration_id=version.pk,
-            template_id=template.pk,
-            template=FamilyMailTemplate(template.subject, template.html, template.text),
-            values=public_values(
-                source,
-                parish=version.canonical_document["sections"]["parish"][0]["values"],
-                campaign=scope.campaign.active_configuration.values,
-                public_origin=public_origin,
-            ),
-            sender=email.settings["sender"],
-            reply_to=email.settings["reply_to"],
-            intended_recipients=source.recipients.deliverable,
-            testing_recipient=scope.runtime.testing_recipient
-            if message.mode == "testing"
-            else None,
+        render = current_render(
+            identity,
+            occurrence,
+            scope,
+            source,
+            public_origin=public_origin,
         )
         sealed = seal_family_credentials(
             identity=identity,

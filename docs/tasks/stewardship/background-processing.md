@@ -212,6 +212,23 @@ pause/close/crash drainage are implemented; explicit Admin resolution/retry,
 verified refusal clearance and durable notification remain with the next
 increment. The package checkboxes and Gate 3 remain open.
 
+PR #39 subsequently passed all 24 exact-head jobs, DCO and all 24 protected
+merge-group jobs, then merged as `9e5b6e99`, verified on fresh `origin/main`.
+Its [protected delivery receipt](../../guides/stewardship-family-mail-dispatch.md#protected-delivery)
+supersedes the pending-CI note. The next
+[Admin-resolution increment](../../guides/stewardship-family-mail-resolution.md)
+is in progress on `pr/stewardship-family-mail-resolution`.
+
+The increment now implements Admin evidence, acceptance/retry, verified refusal
+clearance and persistent uncertainty warnings, with three independent review
+results and every raw finding dispositioned in its guide. Full local validation
+at `7ada2ce` passed 5,994 baseline and 3,217 PostgreSQL tests with 93.97% line /
+85.19% branch coverage; later corrections have focused regression evidence.
+Protected final-head/queue CI and verified main delivery remain pending. BG-10
+retains operational email/Slack escalation; the full package and Gate 3 remain
+open, and the next dependency-ready increment is RPT-02/RPT-03's Phase 4 fact
+calculation/materialization prerequisite before BG-07.
+
 ## BG-07: Submission confirmations and Admin digests
 
 Scope and dependencies: [BG-07 work package](../../plans/stewardship/background-processing.md#bg-07-submission-confirmations-and-admin-digests).

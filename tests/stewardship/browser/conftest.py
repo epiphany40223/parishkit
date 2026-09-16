@@ -45,6 +45,7 @@ from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.web.security import CSP
 
 from ..campaign_factory import campaign, schedule
+from .delivery_components import components as delivery_components
 
 NOW = datetime(2026, 9, 10, 12, tzinfo=UTC)
 
@@ -1001,6 +1002,14 @@ def component_origin():
             render_to_string(
                 f"stewardship/{template}.html",
                 context | {"admin_chrome": admin} | extra,
+            ),
+        )
+    for path, template, extra in delivery_components(NOW):
+        responses[path] = (
+            "text/html",
+            render_to_string(
+                f"stewardship/{template}.html",
+                context | {"admin_chrome": admin | {"delivery_unknown": 1}} | extra,
             ),
         )
     for filename, kind in (
