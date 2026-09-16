@@ -10,7 +10,7 @@ from uuid import UUID
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
 from django.http import JsonResponse
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render
 from django.views.decorators.http import require_GET, require_POST
 
 from parishkit.config import ConfigError
@@ -159,11 +159,11 @@ def download_grant(request, request_id):
 def retry_cleanup_command(request, task_id):
     """An Admin retries only the selected failed cleanup, with a replay-safe POST."""
     try:
-        values = _body(request, {"request_key"})
         service = runtime()
         principal = _principal(request, service.store)
-        if "administrator" not in principal.roles:
+        if not allows(principal, Capability.BACKGROUND_WORK):
             raise PermissionError("Export cleanup requires an Administrator.")
+        values = _body(request, {"request_key"})
         task = TaskRun.objects.get(pk=task_id, task_type=CLEANUP_TASK_TYPE)
         result = retry_cleanup(
             service.store,
@@ -176,13 +176,25 @@ def retry_cleanup_command(request, task_id):
         response["Cache-Control"] = "no-store"
         return response
     except StorageInvariantError:
-        return _json(
-            {"error": "Only the latest failed cleanup can be retried."}, status=409
-        )
+        return _cleanup_error(request, task_id, status=409)
     except SAFE_FAILURES:
         return denial()
     except ValueError:
-        return _json({"error": "Invalid cleanup retry request."}, status=400)
+        return _cleanup_error(request, task_id, status=400)
+
+
+def _cleanup_error(request, task_id, *, status):
+    """A conventional form failure needs an accessible recovery page, not JSON."""
+    response = render(
+        request,
+        "stewardship/export-cleanup-error.html",
+        {"task_id": task_id, "conflict": status == 409},
+        status=status,
+    )
+    # Only fixed text and the router's parsed UUID reach this typed error page.
+    response.stewardship_safe_error = True
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 @require_POST

@@ -51,7 +51,13 @@ class RecoveryPlan:
 
 @dataclass(frozen=True)
 class Handler:
-    """Compiled-in owning implementation; never populated from request payloads."""
+    """Compiled-in owning implementation; never populated from request payloads.
+
+    ``after_transition`` records owning database effects after an actual journal
+    transition, inside the same transaction. It must not perform external I/O:
+    callback failure rolls back both those effects and the transition. Admission
+    predicates remain read-only and may safely be evaluated more than once.
+    """
 
     queue: WorkQueue
     admit: Callable
@@ -59,6 +65,7 @@ class Handler:
     recover: Callable | None = None
     scope: Callable = nullcontext
     pulse: Callable | None = None
+    after_transition: Callable | None = None
 
     def __post_init__(self):
         """Reject incomplete handlers before any durable task can be claimed."""
@@ -69,6 +76,10 @@ class Handler:
             )
             or (self.recover is not None and not callable(self.recover))
             or (self.pulse is not None and not callable(self.pulse))
+            or (
+                self.after_transition is not None
+                and not callable(self.after_transition)
+            )
         ):
             raise ValueError("A complete internal task handler is required.")
 
@@ -124,6 +135,8 @@ class Execution:
                     admit=self.handler.admit,
                     **options,
                 )
+                if self.handler.after_transition is not None:
+                    self.handler.after_transition(action, result)
             if result.state != "running":
                 self.control.finished.set()
             return result
@@ -249,7 +262,7 @@ def recover_hint(run_id, *, queue, worker_id, handlers):
             return False
         if not isinstance(plan, RecoveryPlan):
             raise ValueError("Recovery requires a verified internal disposition.")
-        change_run(
+        result = change_run(
             run_id=row.pk,
             expected_version=row.version,
             action=plan.action,
@@ -258,4 +271,6 @@ def recover_hint(run_id, *, queue, worker_id, handlers):
             admit=handler.admit,
             retry_seconds=plan.retry_seconds,
         )
+        if handler.after_transition is not None:
+            handler.after_transition(plan.action, result)
         return True

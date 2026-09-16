@@ -224,7 +224,13 @@ def test_exhausted_cleanup_alerts_once_and_admin_can_retry(
     )
     if crashed:
         with work_transaction():
-            expire(act(task, "claim", lease_seconds=1))
+            claimed = act(task, "claim", lease_seconds=1)
+            for _ in range(2):
+                assert export_cleanup.admit_cleanup("permanent_failure", claimed)
+            assert not OperationalLog.objects.filter(
+                event="task_failed", level="CRITICAL"
+            ).exists()
+            expire(claimed)
         with task_login(ServiceRole.WORKER):
             assert recover_hint(task.run_id, **options)
             assert not recover_hint(task.run_id, **options)

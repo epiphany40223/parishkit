@@ -155,3 +155,53 @@ def test_verified_recovery_preserves_retry_delay_and_execution_identity():
     assert TaskRun.objects.get(pk=task.run_id).state == "retry_wait"
     assert not execute_hint(task.run_id, **arguments)
     assert TaskRun.objects.count() == 1
+
+
+@pytest.mark.parametrize("recovery", [False, True])
+@pytest.mark.parametrize("fail_callback", [False, True])
+def test_post_transition_hook_is_atomic_and_not_replayed(recovery, fail_callback):
+    """Callbacks observe the written state; failure rolls back state and diagnostics."""
+    from parishkit.stewardship.audit.models import OperationalLog
+    from parishkit.stewardship.audit.schemas import ContextKind
+    from parishkit.stewardship.audit.services import operational
+    from parishkit.stewardship.observability import Event
+
+    task = expired_task() if recovery else queued()
+    calls = []
+
+    def after(action, status):
+        """Only an actual journal transition may create its matching diagnostic."""
+        assert connection.in_atomic_block
+        assert (
+            status.state == TaskRun.objects.get(pk=status.run_id).state == "succeeded"
+        )
+        calls.append(action)
+        operational(
+            Event.TASK_COMPLETED,
+            schema=ContextKind.TASK,
+            context={"task_id": status.run_id},
+        )
+        if fail_callback:
+            raise RuntimeError("synthetic post-transition fault")
+
+    handler = Handler(
+        WorkQueue.GENERAL,
+        lambda *args: True,
+        lambda execution: execution.transition("complete"),
+        recover=lambda status: RecoveryPlan("recovery_complete"),
+        after_transition=after,
+    )
+    invoke = recover_hint if recovery else execute_hint
+    options = dict(
+        queue=WorkQueue.GENERAL, worker_id=uuid4(), handlers={"dispatch_probe": handler}
+    )
+    if fail_callback:
+        with pytest.raises(RuntimeError, match="post-transition fault"):
+            invoke(task.run_id, **options)
+        assert TaskRun.objects.get(pk=task.run_id).state == "running"
+        assert not OperationalLog.objects.exists()
+    else:
+        assert invoke(task.run_id, **options)
+        assert not invoke(task.run_id, **options)
+        assert OperationalLog.objects.count() == 1
+    assert calls == ["recovery_complete" if recovery else "complete"]

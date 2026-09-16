@@ -23,7 +23,6 @@ def add_export_grants(tables, columns, *, role):
             tables["stewardship_export_" + name].add("INSERT")
         for name in ("daily_fact_set", "daily_fact", "fact_pin", "assignment_overlay"):
             tables.setdefault("stewardship_" + name, set()).add("SELECT")
-    if role == "worker":
         columns.setdefault("stewardship_portal_user", {}).setdefault(
             "SELECT", set()
         ).update({"id", "email", "hosted_domain", "disabled"})

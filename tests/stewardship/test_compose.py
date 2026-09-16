@@ -356,6 +356,8 @@ def test_build_context_excludes_synthetic_private_files(tmp_path, ignore_kind):
             DEPLOY / "Dockerfile.dockerignore",
             dockerfile.with_name("Dockerfile.dockerignore"),
         )
+    assets = tuple((ROOT / "src/parishkit/stewardship/schema").glob("*.sql"))
+    assert {"functions.sql", "exports.sql"} <= {asset.name for asset in assets}
     allowed = {
         "README.md",
         "pyproject.toml",
@@ -365,10 +367,7 @@ def test_build_context_excludes_synthetic_private_files(tmp_path, ignore_kind):
         "src/parishkit/static/logo.svg",
         "src/parishkit/templates/page.html",
         "src/parishkit/stewardship/accounts/timezone_names_v1.txt",
-        *(
-            asset.relative_to(ROOT).as_posix()
-            for asset in (ROOT / "src/parishkit/stewardship/schema").glob("*.sql")
-        ),
+        *(asset.relative_to(ROOT).as_posix() for asset in assets),
     }
     denied = {
         ".git/config",

@@ -136,6 +136,12 @@ def _detail(identifier, window, instant):
     return {
         "as_of": instant,
         "task": _task(row, instant),
+        "latest_run_id": str(
+            TaskRun.objects.filter(root_id=row.root_id)
+            .order_by("-retry_sequence")
+            .values_list("pk", flat=True)
+            .first()
+        ),
         "page": window.page,
         "size": window.size,
         "has_next": has_next,
@@ -295,6 +301,7 @@ def task_page(request, task_id):
             "export_cleanup_retry_key": str(uuid4())
             if work["task"]["type"] == "report_export_cleanup"
             and work["task"]["state"] == "failed"
+            and work["latest_run_id"] == work["task"]["id"]
             else None,
             "next_query": following.urlencode(),
         },

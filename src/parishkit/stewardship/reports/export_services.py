@@ -183,6 +183,8 @@ def retry_export(store, user_id, request_id, *, request_key):
 
     The command actor owns this retry journal entry; the immutable export and
     root task retain the original requester whose policy the worker rechecks.
+    This service is exercised here; its requester-facing controls belong to the
+    Phase 5 report-job UI. Operational cleanup already has its own Admin form.
     """
     from .export_tasks import admit_export
 

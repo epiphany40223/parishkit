@@ -755,6 +755,16 @@ def component_origin():
         )
     for path, template, extra in (
         (
+            "/export-cleanup-conflict",
+            "export-cleanup-error",
+            {"task_id": uuid4(), "conflict": True},
+        ),
+        (
+            "/export-cleanup-invalid",
+            "export-cleanup-error",
+            {"task_id": uuid4(), "conflict": False},
+        ),
+        (
             "/export-cleanup-task",
             "background-task",
             {

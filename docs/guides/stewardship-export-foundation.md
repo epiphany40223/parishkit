@@ -177,7 +177,7 @@ Claude findings from that incomplete attempt still require disposition:
 | --- | --- | --- |
 | 1 | Medium | Fixed: catch safe storage/configuration failures before generic ValueError in every export endpoint. Test all endpoints and a real grant with unavailable artifact storage. |
 | 2 | Medium | Fixed: ship the Admin task-detail cleanup retry form now, with exact failed-run selection, POST/CSRF/replay protection, restricted web grants, Staff denial and real worker completion. |
-| 3 | Low | Added exhaustion-count admission checks and premature-failure regression. Retain atomic alert insertion within the owning transition transaction: failed transitions roll it back; duplicate recovery/dispatch emits no second alert. A generic post-transition callback refactor is not needed for this bounded owner. |
+| 3 | Low | Added exhaustion-count admission checks and premature-failure regression. Round 2 below supersedes the initial admission-side implementation with a transactional post-transition callback after the complete review identified duplicate-probe risk. |
 | 4 | Low | Rejected additional current-Admin condition at render time: retry allocation checks the command actor; worker authority belongs to the retained requester, not to continued employment of the Admin who clicked retry. SQL still binds the exact immutable root, live run/fence/worker and original authorized requester. |
 | 5 | Low | Fixed: resolve the canonical cleanup root before selecting/replaying its retry chain. |
 | 6 | Low | Fixed: both retry services execute under actual web SQL privileges; the cleanup form also exercises its real web path. |
@@ -200,3 +200,44 @@ own regressions and final-head CI before acceptance.
 The new cleanup form additionally passed nine Chromium/Firefox/WebKit checks:
 mobile/desktop accessibility and responsive layout, plus explicit keyboard POST
 with only CSRF and replay identity. No provider was contacted.
+
+## Review round 2
+
+Fresh Pika session `20260916-024453-45d173` reviewed `d16f18df` through
+`893a3fe0bdb3b99acd2d87f2fe746ebd8155287b`, tree
+`3dbb784daa20e4a823d35b445e05463989ec6fc2`, after a successful exact-path
+permission preflight. Both required reviewers completed. Retained-artifact
+finalization reported no degradation, failed agent, mismatch or salvage.
+Raw severities were **0 High, 4 Medium and 8 Low**; four findings survived
+filtering. `A` is Claude and `C` is Codex, using raw one-based finding positions.
+
+| Finding | Severity | Disposition and evidence |
+| --- | --- | --- |
+| A1 | Medium | Fixed: a supplied cleanup run must belong to the resolved canonical root; actual restricted-web regression rejects another attempt's root. Only omitted run IDs trigger retry-chain selection queries. |
+| A2 | Medium | Fixed: Staff-denial regression now targets an existing failed cleanup task, so missing-object denial cannot mask a missing authorization check. |
+| A3 | Medium | Fixed: admission stays pure. Compiled owning dispatch invokes `after_transition` inside the same transaction only after a real journal change. Recovery/worker tests verify rollback, duplicate-hint suppression and no critical alert from repeated admission probes. |
+| A4 | Medium | Fixed: only the latest failed cleanup offers a retry form; historical task pages link to the latest run. Conflict/invalid form submissions render accessible HTML recovery pages. |
+| A5 | Low | Clarified `retry_export` is the tested owning service; its report-job UI remains explicitly assigned to Phase 5, unlike the operational cleanup recovery form delivered here. |
+| A6 | Low | Fixed: consolidate adjacent worker-role grant conditions without changing privileges. |
+| A7 | Low | Fixed: check current `BACKGROUND_WORK` capability before parsing the cleanup command; the owning service still independently requires Admin. |
+| A8 | Low | Fixed: Docker schema inventory tests require known `functions.sql` and `exports.sql` assets, preventing an empty glob from passing. |
+| A9 | Low | Fixed: move the PostgreSQL deparse comment directly before its table definition. |
+| A10 | Low | Fixed: hoist the browser test's `parse_qs` import. |
+| A11 | Low | Clarified immutable request timestamps apply to every format, including CSV; wrap the specification consistently. |
+| C1 | Low | Duplicate of A4; the latest-run-only form and HTML recovery fix address it. |
+
+Before these corrections, frozen `893a3fe` passed **5,741 baseline tests** and
+all **3,005 PostgreSQL tests** across eight independently receipted shards,
+with **94.15% line** and **85.54% branch coverage**. Rebuilt-image configured
+Compose checks passed for both development and production; both build-context
+checks passed. No retained database or real provider was used.
+
+Post-fix focused dispatch/cleanup/retry tests passed **26 PostgreSQL tests**;
+dispatch/build unit tests passed **58 tests**. **21** Chromium/Firefox/WebKit
+checks cover mobile/desktop accessibility and keyboard form behavior, including
+both new recovery pages. The first focused run caught the recovery template in
+the wrong directory; moving it into the installed application resolved the
+failure. Final frozen-tree integration and the third review round follow.
+An additional ten HTTP regressions passed after marking the fixed-text HTML
+validation response as safe for the existing security middleware; otherwise
+that middleware correctly replaces unmarked 400 responses with plain text.

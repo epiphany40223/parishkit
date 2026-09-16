@@ -1,7 +1,7 @@
 """WCAG automated checks plus keyboard, mobile, timezone and activity behavior."""
 
 from datetime import timedelta
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -196,6 +196,8 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/presence",
         "/background-task",
         "/export-cleanup-task",
+        "/export-cleanup-conflict",
+        "/export-cleanup-invalid",
         "/content-settings",
         "/content-preview",
         "/content-history",
@@ -276,8 +278,6 @@ def test_export_cleanup_keyboard_form_posts_only_csrf_and_replay_identity(
         "**/admin/background/tasks/*/retry-export-cleanup"
     ) as submitted:
         button.press("Enter")
-    from urllib.parse import parse_qs
-
     assert submitted.value.method == "POST"
     assert set(parse_qs(submitted.value.post_data)) == {
         "csrfmiddlewaretoken",

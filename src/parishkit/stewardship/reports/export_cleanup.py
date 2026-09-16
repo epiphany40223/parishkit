@@ -92,10 +92,7 @@ def admit_cleanup(action, status):
     """Only the file-owning worker can create a receipt; scheduler owns hints only."""
     attempt = _attempt(status, creating=action == "enqueue")
     if action == "permanent_failure":
-        if status.attempt < 5:
-            return False
-        _exhausted(status)
-        return True
+        return status.attempt >= 5
     if action == "retryable_failure":
         return status.attempt < 5
     if action in {
@@ -107,8 +104,6 @@ def admit_cleanup(action, status):
         return _complete(attempt)
     if action in {"recovery_retry", "recovery_fail"}:
         plan = recover_cleanup(status)
-        if plan is not None and action == plan.action == "recovery_fail":
-            _exhausted(status)
         return plan is not None and action == plan.action
     return action in {
         "enqueue",
@@ -122,14 +117,21 @@ def admit_cleanup(action, status):
     } and (_complete(attempt) or _eligible(attempt))
 
 
-def _exhausted(status):
+def _after_transition(action, status):
     """Persist a privacy-safe critical signal with the owning terminal transition.
 
     Do not manufacture new automatic roots indefinitely after bounded retries.
     The Admin operational log/task history identifies the failed cleanup; BG-10
     owns notification transport and Phase 5 owns additional report-job controls.
-    A failed state transition rolls this signal back with its transaction.
+    Only the owning dispatcher invokes this after a real journal transition,
+    inside its transaction. Admission probes are pure; a failed transaction
+    rolls the alert back together with its state/event changes.
     """
+    if action not in {"permanent_failure", "recovery_fail"}:
+        return
+    _attempt(status)
+    if status.state != "failed" or status.attempt < 5:
+        raise StorageInvariantError("Cleanup exhaustion requires a failed run.")
     operational(
         Event.TASK_FAILED,
         level="CRITICAL",
@@ -155,13 +157,14 @@ def retry_cleanup(store, user_id, attempt_id, *, request_key, run_id=None):
             retry_sequence=0,
         )
         runs = root.chain_runs
-        previous = runs.filter(retry_command_id=request_key).first()
-        latest = runs.order_by("-retry_sequence").first()
-        if latest is None:
-            raise ValueError("Export cleanup has not been scheduled.")
+        if run_id is None:
+            previous = runs.filter(retry_command_id=request_key).first()
+            latest = runs.order_by("-retry_sequence").first()
+            run_id = previous.parent_id if previous is not None else latest.pk
+        elif not runs.filter(pk=run_id).exists():
+            raise PermissionError("This run does not belong to the cleanup root.")
         return retry_failed(
-            run_id=run_id
-            or (previous.parent_id if previous is not None else latest.pk),
+            run_id=run_id,
             command_id=request_key,
             actor_id=user_id,
             correlation_id=uuid4(),
@@ -217,6 +220,7 @@ def cleanup_handler(root=None):
         execute,
         recover=recover_cleanup,
         scope=work_transaction,
+        after_transition=_after_transition,
     )
 
 
