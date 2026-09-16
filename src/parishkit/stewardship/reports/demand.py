@@ -10,6 +10,7 @@ from datetime import timedelta
 from django.db import transaction
 
 from parishkit.stewardship.campaigns.models import Campaign
+from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
 from parishkit.stewardship.jobs.ownership import database_now, lock_task_claim
 from parishkit.stewardship.source.snapshot_models import SourceSnapshot
 
@@ -24,6 +25,7 @@ from .facts import (
 )
 from .inputs import FactInputs
 from .models import CampaignDailyFactSet, CampaignFactRebuildDemand
+from .recovery import recover_fact_set
 
 
 def requested_inputs(demand):
@@ -111,6 +113,18 @@ def claim_rebuild(campaign_id, population_scope, claim, *, admit):
         if row.pending_due_at > database_now():
             return None
         record = begin_fact_set(inputs, claim, admit=admit)
+        if record.state != "ready":
+            owner = TaskRun.objects.get(pk=record.task_id)
+            if (
+                owner.task_type == "report_exact_export"
+                and not TaskRun.objects.filter(
+                    root_id=owner.root_id, state__in=NONTERMINAL_STATES
+                ).exists()
+            ):
+                # A cancelled/exhausted exact consumer must not strand the
+                # shared calculation. This ordinary owner freezes its own due
+                # window below; it never revives the former export request.
+                record = recover_fact_set(record.pk, claim, admit=admit)
         if record.state != "ready" and (
             record.state != "building"
             or record.task_id != claim.run_id

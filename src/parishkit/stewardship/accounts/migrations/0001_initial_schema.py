@@ -30,6 +30,7 @@ def schema_sql():
                 "exports",
                 "delivery_resolution",
                 "report_facts",
+                "exact_exports",
             )
         ]
     )

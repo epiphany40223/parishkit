@@ -436,12 +436,15 @@ The [ordinary report-fact increment](../../guides/stewardship-report-facts.md)
 landed in PR #41 as `2eade2a5` after three dual-source review/fix rounds,
 all 24 exact-head jobs plus DCO (run `35141293392`), and all 24 protected
 merge-group jobs (run `35143121665`). Fresh `origin/main` was verified.
-The [consumer increment](../../guides/stewardship-report-selection.md) has
-completed implementation, local validation and three dual-source review/fix
-rounds, pending protected delivery. It integrates authorized current/stale
-selection and read-only verification before queued exact-input priority and
-scheduled verification. BG-07 and Gate 3 remain
-open; no complete RPT-03 task is claimed by these partial increments.
+The [consumer increment](../../guides/stewardship-report-selection.md) landed
+in PR #42 as `c72b8bdb` after three dual-source review/fix rounds, all 24
+exact-head jobs plus DCO (run `35149391133`) and all 24 protected merge-group
+jobs (run `35151238864`). Fresh `origin/main` was verified. Branch
+`pr/stewardship-exact-report-facts` starts there and implements the next
+[queued exact-export increment](../../guides/stewardship-exact-exports.md).
+Scheduled verification and remaining RPT-02 statistics still precede BG-07.
+BG-07 and Gate 3 remain open; no complete RPT-03 task is claimed by these
+partial increments.
 
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).

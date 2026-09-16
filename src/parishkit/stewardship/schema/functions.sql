@@ -2605,6 +2605,12 @@ CREATE FUNCTION public.stewardship_fact_disposable(identifier uuid) RETURNS bool
         WHERE old.id=identifier AND old.state='ready')
     AND NOT EXISTS(SELECT 1 FROM stewardship_fact_pointer WHERE fact_set_id=identifier)
     AND NOT EXISTS(SELECT 1 FROM stewardship_fact_pin WHERE fact_set_id=identifier)
+    AND NOT EXISTS(SELECT 1 FROM stewardship_exact_export_request r
+        JOIN stewardship_daily_fact_set f ON f.id=identifier
+        WHERE ROW(r.campaign_id,r.population_scope,r.source_id,r.submission_watermark,
+                r.timezone_configuration_id,r.through_date)=
+            ROW(f.campaign_id,f.population_scope,f.source_id,f.submission_watermark,
+                f.timezone_configuration_id,f.through_date))
     AND NOT EXISTS(SELECT 1 FROM stewardship_fact_demand
         WHERE claimed_generation_id=identifier);
 $$;
@@ -8712,7 +8718,7 @@ BEGIN
                 USING ERRCODE='23514';
         END IF;
       ELSIF TG_OP='INSERT' AND NEW.parent_kind='facts' THEN
-        IF NEW.expires_at IS NOT NULL OR NOT EXISTS (
+        IF NEW.expires_at IS NOT NULL OR NOT (EXISTS (
             SELECT 1 FROM stewardship_task_run t JOIN stewardship_fact_demand d
                 ON d.id=t.domain_request_id
             WHERE t.task_type='report_facts' AND t.state='running'
@@ -8720,7 +8726,16 @@ BEGIN
                 AND d.population_scope='current'
                 AND d.requested_source_id=NEW.snapshot_id
                 AND d.claimed_generation_id IS NULL
-        ) OR NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+        ) OR EXISTS (
+            SELECT 1 FROM stewardship_task_run t JOIN stewardship_exact_export_request r
+                ON r.id=t.domain_request_id AND r.task_id=t.root_id
+            WHERE t.task_type='report_exact_export' AND t.state='running'
+                AND t.lease_expires_at>clock_timestamp() AND r.population_scope='current'
+                AND r.source_id=NEW.snapshot_id
+                AND stewardship_export_authorized_v1(r.requester_id)
+                AND stewardship_export_admitted_v1(r.campaign_id,true)
+                AND NOT EXISTS(SELECT 1 FROM stewardship_exact_export_cancel WHERE request_id=r.id)
+        )) OR NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
             AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
             AND mode='ExclusiveLock' AND granted) THEN
             RAISE EXCEPTION 'Worker fact input protection requires its live demand'
@@ -8752,9 +8767,20 @@ BEGIN
     IF current_user='pk_stewardship_web' THEN
       IF (
         (TG_OP <> 'INSERT' AND OLD.parent_kind <> 'form_baseline') OR
-        (TG_OP <> 'DELETE' AND NEW.parent_kind NOT IN ('form_baseline','submission'))
+        (TG_OP <> 'DELETE' AND NEW.parent_kind NOT IN ('form_baseline','submission','report'))
     ) THEN
         RAISE EXCEPTION 'Web source protection is limited to Family forms'
+            USING ERRCODE='23514';
+    END IF;
+    IF TG_OP='INSERT' AND NEW.parent_kind='report' AND (
+        NEW.expires_at IS NOT NULL OR NOT EXISTS (
+            SELECT 1 FROM stewardship_exact_export_request r
+            WHERE r.id=NEW.parent_id AND r.source_id=NEW.snapshot_id
+                AND r.population_scope='current'
+                AND stewardship_export_authorized_v1(r.requester_id)
+                AND stewardship_export_admitted_v1(r.campaign_id,true)
+        )) THEN
+        RAISE EXCEPTION 'Web report protection requires its exact retained request'
             USING ERRCODE='23514';
     END IF;
     IF TG_OP='INSERT' AND NEW.parent_kind='form_baseline' AND NOT EXISTS (

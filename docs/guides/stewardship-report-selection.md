@@ -26,6 +26,12 @@ complete by this partial consumer integration. Gate 3 remains closed.
 
 ## Consumer contract
 
+Delivery checkpoint: PR #42 merged as
+`c72b8bdb1fa37c555ee68ca926ff187a7ab52d7b` on September 16, 2026. Exact-head
+run `35149391133` passed all 24 jobs plus DCO; protected merge-group run
+`35151238864` passed all 24 jobs. Freshly fetched `origin/main` contained that
+merge before the next branch was created.
+
 - `reports/selection.py` authorizes current Admin/Staff policy inside a bounded
   `CampaignReadGuard`. Ministry leaders cannot read parish-wide participation
   or financial data. The caller supplies the real response-abort hook and keeps

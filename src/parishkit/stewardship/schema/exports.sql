@@ -72,15 +72,23 @@ END $$;
 CREATE FUNCTION public.stewardship_export_request_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE facts stewardship_daily_fact_set%ROWTYPE;
+        handoff boolean;
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
+    SELECT EXISTS(SELECT 1 FROM stewardship_exact_export_resolution x
+        JOIN stewardship_exact_export_request r ON r.id=x.request_id
+        WHERE x.export_id=NEW.id AND x.fact_set_id=NEW.fact_set_id
+          AND ROW(NEW.campaign_id,NEW.requester_id,NEW.request_key,NEW.configuration_id,NEW.format,NEW.browser_timezone)=
+              ROW(r.campaign_id,r.requester_id,NEW.id,r.configuration_id,r.format,r.browser_timezone)
+          AND stewardship_fact_live(x.run_id,x.fence,x.worker_id)) INTO handoff;
     SELECT * INTO facts FROM stewardship_daily_fact_set WHERE id=NEW.fact_set_id FOR SHARE;
     IF facts.id IS NULL OR facts.state<>'ready' OR facts.campaign_id<>NEW.campaign_id
        OR NEW.actor_id IS DISTINCT FROM NEW.requester_id
        OR NOT stewardship_export_authorized_v1(NEW.requester_id)
        OR NOT stewardship_export_admitted_v1(NEW.campaign_id,true)
-       OR NOT EXISTS(SELECT 1 FROM stewardship_system_configuration
-           WHERE active_configuration_id=NEW.configuration_id)
+       OR (NOT handoff AND NOT EXISTS(SELECT 1 FROM stewardship_system_configuration
+           WHERE active_configuration_id=NEW.configuration_id))
+       OR (current_user='pk_stewardship_worker' AND NOT handoff)
        OR NEW.authorization_scope<>'{"capability":"campaign_report"}'::jsonb
        OR NEW.parameters<>jsonb_build_object('population_scope',facts.population_scope,
            'sort','date_asc','selected_ids','[]'::jsonb,'filters','{}'::jsonb)
