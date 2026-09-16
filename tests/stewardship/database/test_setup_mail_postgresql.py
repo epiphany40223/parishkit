@@ -134,7 +134,7 @@ def test_only_mail_worker_can_submit_and_terminal_result_cannot_replay(
             SetupMailDelivery.objects.update(state="queued", version=F("version") + 1)
         for statement in (
             "SELECT ciphertext FROM stewardship_setup_sealed_credential",
-            "SELECT canonical FROM stewardship_source_family",
+            "SELECT code_ciphertext FROM stewardship_family_campaign",
             "SELECT session_id FROM stewardship_portal_session",
         ):
             with (

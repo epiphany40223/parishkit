@@ -44,9 +44,19 @@ def record_refusal(*, event_id, address, actor_id, correlation_id):
     if normalized_email(address) != address:
         raise ValueError("Refusal address must be canonical.")
     event = OutboxEvent.objects.select_related("message", "render").get(pk=event_id)
+    definitive = (
+        event.state == "permanent_failure" and event.reason == "recipient_refused"
+    )
+    if event.reason.startswith("smtp_"):
+        from .family_mail_results import event_result
+
+        result = event_result(event)
+        definitive = any(
+            event.render.routed_recipients[index] == address
+            for index in result.permanent
+        )
     if (
-        event.state != "permanent_failure"
-        or event.reason != "recipient_refused"
+        not definitive
         or event.message.mode != "production"
         or event.message.routing != "production"
         or event.message.family_id is None
@@ -62,7 +72,9 @@ def record_refusal(*, event_id, address, actor_id, correlation_id):
     ).first()
     if previous is not None:
         return previous
-    family = FamilyCampaign.objects.get(pk=event.message.family_id)
+    family = FamilyCampaign.objects.only("id", "campaign_id", "family_duid").get(
+        pk=event.message.family_id
+    )
     population = CampaignCredentialState.objects.get(campaign_id=family.campaign_id)
     organization_id = SourceSnapshot.objects.get(
         pk=population.source_snapshot_id

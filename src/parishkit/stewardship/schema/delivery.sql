@@ -769,6 +769,70 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
     )
 $$;
 
+-- The immutable event carries a closed helper result. Integer positions refer
+-- only to its own exact routed envelope; response prose and credential values
+-- are never accepted as provider evidence. This validates recorded observations,
+-- not SMTP itself: the isolated compiled mail worker remains the provider owner.
+CREATE FUNCTION public.stewardship_family_smtp_result_v1(event uuid) RETURNS jsonb
+LANGUAGE plpgsql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE e public.stewardship_outbox_event%ROWTYPE;
+    r public.stewardship_outbox_render%ROWTYPE;
+    m public.stewardship_outbox_message%ROWTYPE;
+    result jsonb; item jsonb; count_recipients integer; indices integer[]:=ARRAY[]::integer[];
+    position integer; previous integer; field text;
+BEGIN
+    SELECT * INTO e FROM public.stewardship_outbox_event WHERE id=event;
+    SELECT * INTO r FROM public.stewardship_outbox_render WHERE id=e.render_id;
+    SELECT * INTO m FROM public.stewardship_outbox_message WHERE id=e.message_id;
+    IF e.id IS NULL OR r.id IS NULL OR m.id IS NULL OR e.previous_state<>'submitting'
+       OR m.purpose NOT IN ('initial','reminder') OR e.attempt<1
+       OR e.evidence_digest<>encode(sha256(convert_to(e.evidence_note,'UTF8')),'hex')
+       OR e.provider_key_digest<>encode(sha256(convert_to(m.semantic_key::text,'UTF8')),'hex')
+       THEN RETURN NULL; END IF;
+    BEGIN result:=e.evidence_note::jsonb;
+    EXCEPTION WHEN invalid_text_representation THEN RETURN NULL; END;
+    IF jsonb_typeof(result)<>'object' OR NOT result ?& ARRAY[
+        'protocol','status','recipient_count','permanent','transient','health']
+       OR result-ARRAY['protocol','status','recipient_count','permanent','transient','health']<>'{}'::jsonb
+       OR result->>'protocol' IS DISTINCT FROM 'workspace_smtp_v1'
+       OR result->>'recipient_count'!~'^[1-9][0-9]{0,2}$'
+       OR jsonb_typeof(result->'recipient_count')<>'number'
+       OR jsonb_typeof(result->'permanent')<>'array'
+       OR jsonb_typeof(result->'transient')<>'array'
+       OR NOT EXISTS (SELECT 1 FROM (VALUES
+           ('accepted','healthy'),('transient','healthy'),('transient','unobserved'),
+           ('transient','unavailable'),('permanent','healthy'),('permanent','unobserved'),
+           ('unavailable','unavailable'),('systemic','systemic'),
+           ('delivery_unknown','unavailable'),('delivery_unknown','systemic')
+       ) pair(status,health) WHERE pair.status=result->>'status' AND pair.health=result->>'health')
+       OR (result->>'health'='unobserved' AND
+           (result->'permanent'<>'[]'::jsonb OR result->'transient'<>'[]'::jsonb))
+       OR e.reason IS DISTINCT FROM 'smtp_'||(result->>'status')
+       OR NOT EXISTS (SELECT 1 FROM (VALUES
+           ('accepted','delivered'),('transient','retry_wait'),
+           ('unavailable','retry_wait'),('unavailable','permanent_failure'),
+           ('transient','permanent_failure'),('permanent','permanent_failure'),
+           ('delivery_unknown','delivery_unknown'),('systemic','permanent_failure')
+       ) pair(status,state) WHERE pair.status=result->>'status' AND pair.state=e.state)
+       THEN RETURN NULL; END IF;
+    count_recipients:=(result->>'recipient_count')::integer;
+    IF count_recipients>100 OR count_recipients<>jsonb_array_length(r.routed_recipients)
+       THEN RETURN NULL; END IF;
+    FOREACH field IN ARRAY ARRAY['permanent','transient'] LOOP
+        previous:=-1;
+        FOR item IN SELECT value FROM jsonb_array_elements(result->field) LOOP
+            IF jsonb_typeof(item)<>'number' OR item::text!~'^[0-9]{1,2}$' THEN RETURN NULL; END IF;
+            position:=item::text::integer;
+            IF position<=previous OR position>=count_recipients OR position=ANY(indices)
+               THEN RETURN NULL; END IF;
+            indices:=array_append(indices,position); previous:=position;
+        END LOOP;
+    END LOOP;
+    IF result->>'status' IN ('accepted','delivery_unknown') AND cardinality(indices)=count_recipients
+       THEN RETURN NULL; END IF;
+    RETURN result;
+END $$;
+
 CREATE FUNCTION public.stewardship_recipient_refusal_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
@@ -784,7 +848,11 @@ BEGIN
           AND f.family_duid=NEW.family_duid AND s.organization_id=NEW.organization_id
           AND e.actor_id=NEW.actor_id
           AND m.mode='production' AND m.routing='production'
-          AND e.state='permanent_failure' AND e.reason='recipient_refused'
+          AND ((e.state='permanent_failure' AND e.reason='recipient_refused') OR EXISTS (
+              SELECT 1 FROM jsonb_array_elements(
+                  public.stewardship_family_smtp_result_v1(e.id)->'permanent') item
+              WHERE r.routed_recipients->>(item::text::integer)=NEW.address
+          ))
           AND r.routed_recipients ? NEW.address AND r.intended_recipients ? NEW.address
     ) THEN RAISE EXCEPTION 'Refusal requires exact Production recipient evidence'
         USING ERRCODE='23514'; END IF;
@@ -833,7 +901,7 @@ CREATE TRIGGER recipient_immutable BEFORE UPDATE OR DELETE ON public.stewardship
 REVOKE ALL ON FUNCTION public.stewardship_recipient_immutable_v1() FROM PUBLIC;
 
 CREATE FUNCTION public.stewardship_refusal_family_effect_v1() RETURNS trigger
-LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE deliverable boolean; target_family uuid;
 BEGIN
     -- This executes under the refusal guard's work-order lock. Update only

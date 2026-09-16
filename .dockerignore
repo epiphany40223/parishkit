@@ -21,6 +21,7 @@
 !src/parishkit/stewardship/schema/seed.sql
 !src/parishkit/stewardship/schema/guards.sql
 !src/parishkit/stewardship/schema/delivery.sql
+!src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql
 !src/parishkit/stewardship/schema/cleanup.sql
 !src/parishkit/stewardship/schema/schedule_reconciliation.sql

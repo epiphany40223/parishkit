@@ -249,3 +249,30 @@ Medium-or-higher issue and no High/Critical finding in the final round. Require
 all 24 exact-head CI jobs plus DCO and the protected merge-group checks before
 delivery; then verify fresh `origin/main` and continue the dispatch increment.
 Full BG-06 completion, Production activation and Gate 3 remain open.
+
+## Protected delivery
+
+PR #38 merged on September 16, 2026 at 13:03:20 UTC as
+`72787c28d9108fee0c48e570e09b167d13e9f860`. All 24 exact-head CI jobs
+and DCO passed at `214b9fd3dfba524d9a0eb308534624b48817f0bd`
+(run `35095792454`); all 24 protected merge-group jobs passed in run
+`35097721514`. The merge was verified on freshly fetched `origin/main`
+before creating `pr/stewardship-family-mail-dispatch`.
+
+The first PR CI run exposed a browser-test synchronization race: the new-Member
+helper captured its baseline before the Family form finished rendering. The
+independent test-only correction waits for the Add button before capturing
+existing Members, then verifies exactly one new editor. All 45 affected browser
+checks passed across three engines, and the original Firefox case passed three
+additional independent runs. Supplemental dual-source review
+`20260916-082612-162cad` covered `158a2ef` through `214b9fd`, with both sources
+successful and no Medium-or-higher findings. Codex reported no findings; Claude's
+single Low comment-clarity suggestion was considered and the comment retained:
+the client renders existing Member editors synchronously before exposing the
+Add button, which establishes the baseline invariant. The reviewer's inability
+to bind a local socket did not replace the implementing agent's passing browser
+validation. No failed CI attempt is counted as passing evidence.
+
+The final exact-head PostgreSQL aggregate accounts for all 3,075 tests with
+94.10% line and 85.39% branch coverage. This supersedes the pending protected
+delivery requirement above, without completing BG-06 or releasing Gate 3.

@@ -332,7 +332,7 @@ def test_actual_runtime_grants_do_not_expose_generic_delivery_mutation(
     role,
     target,
 ):
-    """Delivery stays closed; BG-03 exposes only its compiled cleanup control port."""
+    """Compiled preparation/dispatch grants do not expose arbitrary row mutation."""
     first = create_message(**inputs)
     name = "delivery_probe_" + uuid4().hex
     with connection.cursor() as cursor:
@@ -385,12 +385,27 @@ def test_actual_runtime_grants_do_not_expose_generic_delivery_mutation(
                         }
                         and privilege == "INSERT"
                     )
+                    dispatch_write = role is ServiceRole.MAIL_DISPATCH and (
+                        (
+                            table == "stewardship_outbox_message"
+                            and privilege == "UPDATE"
+                        )
+                        or (
+                            table
+                            in {
+                                "stewardship_outbox_render",
+                                "stewardship_outbox_event",
+                                "stewardship_delivery_pause_hold",
+                            }
+                            and privilege == "INSERT"
+                        )
+                    )
                     cursor.execute(
                         "SELECT has_table_privilege(%s,%s,%s)",
                         [name, table, privilege],
                     )
                     assert cursor.fetchone() == (
-                        checkpoint_insert or preparation_insert,
+                        checkpoint_insert or preparation_insert or dispatch_write,
                     ), (
                         role,
                         table,
@@ -402,7 +417,10 @@ def test_actual_runtime_grants_do_not_expose_generic_delivery_mutation(
                             [name, table, privilege],
                         )
                         assert cursor.fetchone() == (
-                            checkpoint_insert or request_update or preparation_insert,
+                            checkpoint_insert
+                            or request_update
+                            or preparation_insert
+                            or dispatch_write,
                         ), (role, table, privilege)
                     if request_update:
                         # Independently constrain the new command fields, not
@@ -428,7 +446,7 @@ def test_actual_runtime_grants_do_not_expose_generic_delivery_mutation(
                             "worker_id",
                         }
             with (
-                pytest.raises(ProgrammingError, match="permission denied"),
+                pytest.raises((ProgrammingError, IntegrityError)) as denied,
                 transaction.atomic(),
                 connection.cursor() as cursor,
             ):
@@ -446,6 +464,12 @@ def test_actual_runtime_grants_do_not_expose_generic_delivery_mutation(
                         f'UPDATE "{table}" SET actor_id=%s WHERE id=%s',
                         [uuid4(), first.message_id],
                     )
+            assert denied.value.__cause__.sqlstate == (
+                "23514"
+                if role is ServiceRole.MAIL_DISPATCH
+                and table == "stewardship_outbox_message"
+                else "42501"
+            )
     finally:
         with connection.cursor() as cursor:
             cursor.execute(f'DROP OWNED BY "{name}"')

@@ -177,4 +177,8 @@ def task_runtime_grants(role):
     from .family_mail_grants import add_family_mail_grants
 
     add_family_mail_grants(tables, columns, worker=role is ServiceRole.WORKER)
+    if role is ServiceRole.SCHEDULER:
+        from .family_dispatch_grants import add_dispatch_scheduler_reads
+
+        add_dispatch_scheduler_reads(tables, columns)
     return tables, columns
