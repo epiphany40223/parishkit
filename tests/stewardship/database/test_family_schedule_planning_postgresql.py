@@ -251,11 +251,11 @@ def test_no_recipient_records_skip_but_no_message(family_service):  # noqa: F811
     )
 
 
-def test_corrected_recipient_retains_diagnostic_initial_hold(
+def test_corrected_recipient_recovers_initial_and_coalesces_overdue_reminders(
     family_service,  # noqa: F811
     auth_service,
 ):
-    """BG-06 owns a new catch-up initial; ordinary planning cannot bypass it."""
+    """BG-06 retains the skipped attempt and recovers its same semantic slot."""
     campaign, actor = family_service.campaign, uuid4()
     family_id = FamilyCampaign.objects.get().pk
     populate(
@@ -281,10 +281,20 @@ def test_corrected_recipient_retains_diagnostic_initial_hold(
     due = ScheduleDefinition.objects.get(
         pk=UUID(reminders[1]["id"])
     ).current_revision.due_at
-    with campaign_clock(due), scheduler_session() as guard:
+    with (
+        campaign_clock(due),
+        task_login(ServiceRole.SCHEDULER, exact=True),
+        scheduler_session() as guard,
+    ):
         result = plan_family(guard, family_id=family_id, worker_id=actor)
-        assert result.held and result.reason == "initial_unfulfilled"
-        assert result.selected is None and result.coalesced == result.skipped == 0
+        assert not result.held and result.created == 3 and result.coalesced == 2
+        recovered = ScheduleOccurrence.objects.get(pk=result.selected)
+        assert recovered.definition_id == initial.definition_id
+        assert recovered.slot == initial.slot == "once"
+        assert recovered.recovery_generation > 0
+        assert recovered.occurrence_key != initial.occurrence_key
+        again = plan_family(guard, family_id=family_id, worker_id=actor)
+        assert again.created == 0 and again.selected == recovered.pk
     initial.refresh_from_db()
     assert initial.state == "skipped" and initial.reason == "no_deliverable_recipient"
     assert not OutboxMessage.objects.exists()

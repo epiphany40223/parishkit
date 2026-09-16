@@ -30,7 +30,7 @@ def _identifiers(*required, optional=()):
         raise TypeError("Occurrence identifiers must be canonical UUIDs.")
 
 
-def occurrence_key(revision_id, mode, target, slot):
+def occurrence_key(revision_id, mode, target, slot, *, recovery_generation=0):
     """Hash an unambiguous revision-specific identity; no private values in errors."""
     if not isinstance(revision_id, UUID) or mode not in {"testing", "production"}:
         raise ValueError("Invalid occurrence revision or mode.")
@@ -39,9 +39,14 @@ def occurrence_key(revision_id, mode, target, slot):
         for value in (target, slot)
     ):
         raise ValueError("Invalid semantic occurrence identity.")
+    if type(recovery_generation) is not int or not 0 <= recovery_generation < 2**63:
+        raise ValueError("Invalid deliverability recovery generation.")
+    identity = [str(revision_id), mode, target, slot]
+    if recovery_generation:
+        identity.append(recovery_generation)
     return hashlib.sha256(
         json.dumps(
-            [str(revision_id), mode, target, slot],
+            identity,
             ensure_ascii=True,
             separators=(",", ":"),
         ).encode()

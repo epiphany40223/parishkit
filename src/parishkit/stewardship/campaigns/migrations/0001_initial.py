@@ -1936,6 +1936,10 @@ class Migration(migrations.Migration):
                             models.CharField(max_length=64, unique=True),
                         ),
                         ("state", models.CharField(default="pending", max_length=24)),
+                        (
+                            "recovery_generation",
+                            models.PositiveBigIntegerField(default=0, db_default=0),
+                        ),
                         ("outbox_id", models.UUIDField(null=True)),
                         ("worker_id", models.UUIDField(null=True)),
                         ("fence", models.PositiveBigIntegerField(default=0)),
@@ -3101,7 +3105,13 @@ class Migration(migrations.Migration):
                 migrations.AddConstraint(
                     model_name="scheduleoccurrence",
                     constraint=models.UniqueConstraint(
-                        fields=("revision", "mode", "target", "slot"),
+                        fields=(
+                            "revision",
+                            "mode",
+                            "target",
+                            "slot",
+                            "recovery_generation",
+                        ),
                         name="schedule_occurrence_semantic_revision",
                     ),
                 ),

@@ -198,7 +198,7 @@ ALTER TABLE ONLY public.stewardship_schedule_fulfillment
 
 -- CONSTRAINT: stewardship_schedule_occurrence schedule_occurrence_semantic_revision
 ALTER TABLE ONLY public.stewardship_schedule_occurrence
-    ADD CONSTRAINT schedule_occurrence_semantic_revision UNIQUE (revision_id, mode, target, slot);
+    ADD CONSTRAINT schedule_occurrence_semantic_revision UNIQUE (revision_id, mode, target, slot, recovery_generation);
 
 -- CONSTRAINT: stewardship_schedule_revision schedule_revision_identity
 ALTER TABLE ONLY public.stewardship_schedule_revision

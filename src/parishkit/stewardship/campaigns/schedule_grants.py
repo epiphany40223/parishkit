@@ -3,6 +3,9 @@
 
 def add_schedule_planning_grants(tables, columns):
     """Permit bounded allocation/coverage and only unallocated pending transitions."""
+    columns.setdefault("stewardship_family_eligibility", {}).setdefault(
+        "SELECT", set()
+    ).update({"family_id", "family_version", "created_at", "email_deliverable"})
     for table in (
         "stewardship_schedule_definition",
         "stewardship_schedule_revision",
