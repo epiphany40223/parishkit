@@ -36,6 +36,11 @@ cover the financial prerequisite portions of .01/.03, not the full population,
 history, denominator, timezone, or report-service scope; all four tasks remain
 open for their later consumers.
 
+In-progress evidence: the [ordinary report-fact increment](../../guides/stewardship-report-facts.md)
+adds historical/current populations, first/latest live response and exact pledge
+series calculations, plus real source/response integration tests. Full package
+acceptance remains open; the guide records the remaining consumer calculations.
+
 ## RPT-03: Participation graph and campaign statistics
 
 Scope and dependencies: [RPT-03 work package](../../plans/stewardship/reports.md#rpt-03-participation-graph-and-campaign-statistics).
@@ -47,7 +52,11 @@ Scope and dependencies: [RPT-03 work package](../../plans/stewardship/reports.md
 - [ ] RPT-03.05 — Share facts with tables, images, and digests.
 - [ ] RPT-03.06 — Test rebuild races, cutoffs, parity, and accessible fallback.
 
-Evidence: Not started.
+In-progress evidence: the [ordinary report-fact increment](../../guides/stewardship-report-facts.md)
+connects existing fact storage/demand/retention to compiled scheduler/worker
+calculation and immutable publication. Queued exact-input priority and consumer
+selection/verification scheduling remain a following prerequisite increment;
+interactive reports remain Phase 5. No RPT-03 task is yet claimed complete.
 
 ## RPT-04: Additional-information workflow report
 
