@@ -94,6 +94,7 @@ sections:
     "Weekly additional-information digest": [BG-07]
     "Post-close reporting obligations": [BG-07]
     "Exports and graph rendering": [BG-08]
+    "Export cleanup recovery": [BG-08, ADM-03]
     "ParishSoft publication": [BG-09, ADM-09]
     "Critical errors and notification": [BG-10]
     "Shutdown and upgrade behavior": [BG-10]

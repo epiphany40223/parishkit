@@ -265,7 +265,7 @@ All finding numbers below refer to Claude's one-based raw list.
 | 4 | Low | Fixed: validate the three optional callable hooks through one explicit tuple. |
 | 5 | Low | Already covered: the restricted-web HTTP regression executes the real supplied-run service and replay twice; it is stronger than another isolated duplicate. Separate direct service tests cover omitted selection/replay and cross-root rejection. No mocked service hides the production path. |
 | 6 | Low | Rejected speculative absent-root case: the viewed TaskRun itself belongs to the nonnullable, protected root chain. Under the same read transaction the query cannot be empty; nullable roots are not a supported future contract. Do not silently hide structurally corrupt history. |
-| 7 | Low | Retain one indexed chain query for consistent JSON/HTML detail, including navigation from historical runs. The loaded row cannot prove it has no later child without querying. Any measured polling optimization belongs with ADM-05 operational UI completion. |
+| 7 | Low | Retain one indexed chain query for consistent JSON/HTML detail, including navigation from historical runs. The loaded row cannot prove it has no later child without querying. Any measured polling optimization belongs with the ADM-03 background-indicator/detail owner. |
 | 8 | Low | Added the historical cleanup page to browser fixtures and accessibility/mobile checks, with the latest-retry link and no retry form. |
 | 9 | Low | Already handled: explicit fresh-baseline `schema_sql()` reads all nine required assets, so a missing file fails migration loading and the configured-image tests. The two sentinels protect against a vacuous glob; dynamic build-context enumeration avoids a third manually duplicated schema list. |
 | 10 | Low | Added the authoritative Admin cleanup-recovery behavior under the background-processing spec and cross-linked it from the reports spec. The guide remains evidence, not the sole behavior contract. |
@@ -286,3 +286,16 @@ Protected delivery remains pending, and BG-08 retains its Phase 5 scope.
 The complete pre-correction component fixture also passed all **450 browser
 checks**; the separate 27-check post-fix run includes the new historical-task
 variant. Exact-head CI will run the complete updated browser matrix again.
+
+## CI correction
+
+The first PR run caught a missing acceptance-map entry for the final-round
+`Export cleanup recovery` specification heading. Assign it to BG-08 and ADM-03
+in the existing manifest; retain the strict traceability test unchanged.
+This is a documentation ownership correction, not an application behavior or
+review-scope change. Revalidate the complete credential-free baseline before
+pushing the corrected head; prior-head CI is not final delivery evidence.
+That complete post-correction baseline passed **5,742 tests** in 55.33 seconds,
+with the expected environment-gated skips. The baseline, container-baseline and
+first PostgreSQL shard failures in the original CI run all named this same
+missing heading; no application assertion was weakened or suppressed.
