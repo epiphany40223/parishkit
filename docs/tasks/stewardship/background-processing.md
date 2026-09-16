@@ -165,7 +165,12 @@ unreviewed initial hold as delivered or send that reminder ahead of required
 initial recovery. This dispatch prerequisite must pass before ADM-05 activation
 is enabled; preparation completion itself grants no provider permission.
 
-Evidence: Not started.
+Evidence: In progress on `pr/stewardship-family-deliverability`, beginning at
+verified PR #36 merge. The [increment guide](../../guides/stewardship-family-deliverability.md)
+records scope, internal checkpoints and validation. Recipient projection,
+source/refusal integration and scheduler/activation recovery pass focused
+tests; complete validation and reviews remain open.
+No provider dispatch or Production activation is enabled by this preparation.
 
 ## BG-07: Submission confirmations and Admin digests
 
@@ -200,8 +205,10 @@ Evidence: In progress on `pr/stewardship-export-foundation` after verified PR #3
 delivery. The [increment record](../../guides/stewardship-export-foundation.md)
 defines the Phase 4 substrate and preserves the Phase 5 completion boundary.
 The compiled participation export and Admin cleanup-recovery slice passed three
-dual-source review/fix rounds and full local validation; protected PR delivery
-is pending. The unchecked items retain their later full-catalog/UI integration
+dual-source review/fix rounds and full local validation. PR #36 passed exact-head
+and merge-group CI and landed as `7d9a3b0`; see its
+[protected-delivery evidence](../../guides/stewardship-export-foundation.md#protected-delivery).
+The unchecked items retain their later full-catalog/UI integration
 scope rather than claiming this substrate completes the entire work package.
 
 ## BG-09: ParishSoft publication worker
