@@ -101,7 +101,12 @@ class DigestScheduleProducer:
             holds = RestoreDeliveryHold.objects.filter(
                 definition=definition, mode=mode, target="admins"
             )
-            hold_version = holds.aggregate(count=Count("id"), versions=Sum("version"))
+            hold_version = {
+                **holds.aggregate(count=Count("id"), versions=Sum("version")),
+                # Date-only edits intentionally keep the revision identity.
+                # Moving a draft's start earlier still introduces past slots.
+                "configuration": scope.campaign.active_configuration_id,
+            }
             after = (
                 self.cursors.get(key)
                 if self.hold_versions.get(key) == hold_version

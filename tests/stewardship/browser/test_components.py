@@ -12,6 +12,22 @@ pytestmark = pytest.mark.parametrize(
 )
 
 
+@pytest.mark.parametrize("width", [320, 1280])
+def test_schedule_preview_distinguishes_parish_intent_from_browser_time(
+    page, component_origin, width
+):
+    """Keep parish civil time visible while converting the resolved UTC instant."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + "/schedule-preview")
+    instant = page.locator("time[data-local-instant]").first
+    assert instant.get_attribute("datetime") == "2026-10-01T13:00:00+00:00"
+    assert "6:00" in instant.inner_text() and "PDT" in instant.inner_text()
+    text = page.locator("main").inner_text()
+    assert "09:00:00" in text and "America/New_York" in text
+    assert "not recipient eligibility or permission to send" in text
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
+
 @pytest.mark.parametrize("clock_skew_hours", [-48, 0, 48])
 def test_setup_progress_only_polls_visible_correlated_work_and_stops_at_deadline(
     page, component_origin, clock_skew_hours

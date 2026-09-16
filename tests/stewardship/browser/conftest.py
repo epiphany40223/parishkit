@@ -23,6 +23,7 @@ from parishkit.stewardship.accounts.integration_forms import (
 )
 from parishkit.stewardship.accounts.parish_views import ParishForm
 from parishkit.stewardship.accounts.schedule_forms import Schedules, ScheduleWindow
+from parishkit.stewardship.accounts.schedule_views import _describe
 from parishkit.stewardship.accounts.setup_branding_views import SetupLogoForm
 from parishkit.stewardship.accounts.setup_campaign_views import SetupCampaignForm
 from parishkit.stewardship.accounts.setup_confirmation_views import (
@@ -312,7 +313,7 @@ def component_origin():
                     {
                         "label": "Reminder",
                         "operation": "remove",
-                        "before": mail["values"],
+                        "before": _describe(mail["values"], mail_campaign["values"]),
                         "after": None,
                         "impact": {
                             "delivered": 1234,

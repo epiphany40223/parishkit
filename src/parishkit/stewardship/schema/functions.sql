@@ -3030,6 +3030,13 @@ BEGIN
     IF NOT EXISTS(SELECT 1 FROM stewardship_schedule_revision WHERE id=NEW.revision_id AND record_id=d.id AND campaign_id=d.campaign_id)
        OR NEW.target='' OR NEW.slot='' OR NEW.occurrence_key !~ '^[0-9a-f]{64}$' THEN
         RAISE EXCEPTION 'Invalid occurrence identity' USING ERRCODE='23514'; END IF;
+    IF NEW.state IN ('succeeded','failed','skipped','coalesced') AND EXISTS (
+        SELECT 1 FROM stewardship_outbox_message m WHERE m.id=NEW.outbox_id
+          AND ((m.state='delivered' AND NEW.state<>'succeeded')
+            OR (m.state='permanent_failure' AND NEW.state<>'failed')
+            OR (m.state='cancelled' AND NEW.state='succeeded'))
+    ) THEN RAISE EXCEPTION 'Occurrence outcome contradicts terminal delivery'
+        USING ERRCODE='23514'; END IF;
     IF TG_OP='INSERT' THEN
         IF NEW.state<>'pending' OR NEW.version<>1 OR NEW.fence<>0 OR NEW.attempts<>0
            OR NEW.revision_id IS DISTINCT FROM d.current_revision_id

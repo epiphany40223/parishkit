@@ -144,7 +144,8 @@ def plan_recovery(
                 skipped=tuple(row.occurrence_id for row in candidates), reason=reason
             )
         if not initial_delivered and any(
-            row.kind == "initial" and row.state == "failed" for row in overdue
+            row.kind == "initial" and row.state in {"failed", "skipped", "coalesced"}
+            for row in overdue
         ):
             # A reminder cannot replace an unsuccessful initial invitation.
             # Only explicit retry/resolution or the deliverability-recovery

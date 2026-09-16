@@ -134,6 +134,50 @@ def test_exhausted_cursor_resumes_only_new_due_dates(
             )
 
 
+def test_earlier_draft_start_rewinds_same_revision_cursor(
+    family_service,  # noqa: F811
+    auth_service,
+):
+    """A date-only draft edit exposes earlier slots without replacing cadence."""
+    campaign = family_service.campaign
+    identifier = add_digest(auth_service.store, campaign)
+    producer = DigestScheduleProducer(uuid4())
+    with (
+        campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)),
+        scheduler_session() as guard,
+    ):
+        (first,) = producer(guard)
+        assert first.created == 3
+        revision = (
+            ScheduleOccurrence.objects.filter(definition_id=identifier)
+            .first()
+            .revision_id
+        )
+        assert (
+            change(
+                auth_service.store,
+                auth_service.store.active(),
+                uuid4(),
+                [
+                    {
+                        "operation": "update",
+                        "section": "campaigns",
+                        "id": str(campaign.pk),
+                        "values": {"start_date": "2026-09-29"},
+                    }
+                ],
+            ).state
+            == "applied"
+        )
+        (replanned,) = producer(guard)
+        assert replanned.created == 2
+        assert set(
+            ScheduleOccurrence.objects.filter(
+                definition_id=identifier, slot__lt="2026-10-01"
+            ).values_list("slot", "revision_id")
+        ) == {("2026-09-29", revision), ("2026-09-30", revision)}
+
+
 def test_digest_coverage_and_restore_holds_survive_restart_and_resolution(
     family_service,  # noqa: F811
     auth_service,

@@ -57,9 +57,10 @@ def test_latest_overdue_reminder_wins_after_initial_fulfillment():
     assert plan.coalesced == tuple(row.occurrence_id for row in rows[:-1])
 
 
-def test_failed_initial_holds_reminders_without_retrying_the_initial():
+@pytest.mark.parametrize("state", ["failed", "skipped", "coalesced"])
+def test_unsuccessful_initial_holds_reminders_without_retrying_the_initial(state):
     """A pending reminder cannot stand in for an unresolved initial failure."""
-    rows = (slot(1, kind="initial", state="failed"), slot(2), slot(3))
+    rows = (slot(1, kind="initial", state=state), slot(2), slot(3))
     assert plan_recovery(rows, cutoff=NOW) == RecoveryPlan(blocked=True)
     assert plan_recovery(rows, cutoff=NOW, initial_delivered=True).selected == (
         rows[-1].occurrence_id

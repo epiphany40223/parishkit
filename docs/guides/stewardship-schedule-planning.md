@@ -173,3 +173,58 @@ and two existing warnings. Ruff, formatting, Markdown and whitespace checks
 pass. Round 1's six accepted findings are fixed and its three rejected findings
 have the evidence above; Round 1 is complete. Final-head full CI/coverage and
 two additional completed review/fix rounds remain required.
+
+## Review round 2
+
+Pika session `20260915-194837-08a854` reviewed the correction delta
+`65c4768..456d161`, with surrounding contracts and the Round 1 dispositions.
+The exact permission preflight passed. Claude reviewed all ten manifest files;
+Codex finished in 361 seconds and explicitly reported no actionable findings.
+Finalization has no failed/degraded source or verdict mismatch. Claude reported
+four validated Medium findings and six Low findings, with no High/Critical.
+
+| Finding | Disposition |
+| --- | --- |
+| Successful-delivery negative control | Accepted. A delivered message, succeeded occurrence and delivered semantic coverage permit replacement; the contradictory-pair tests still block it. |
+| Earlier draft start behind digest cursor | Accepted. Cursor invalidation now includes the immutable active campaign-configuration identity. A real date-only edit introduces earlier daily slots without changing the cadence revision or restarting the producer. |
+| Irreversible contradictory terminal states | Partially accepted. Occurrence outcome writes now reject an already-terminal contradictory delivery result. The adversarial persisted-corruption test first verifies that denial, then uses explicit disposable schema-owner fixture writes to verify replacement still fails closed. Automatic rewriting of conflicting terminal history is deliberately rejected; see the corruption boundary below. |
+| Skipped/coalesced initial before reminders | Accepted. All non-delivered terminal initial states hold reminder selection unless successful initial coverage is supplied. Parameterized pure tests retain inapplicable-work skips without reviving the initial. |
+
+The corrupted-history boundary is intentional: immutable accepted-provider and
+occurrence evidence must not be guessed away by a schedule edit. A discovered
+contradiction requires operator investigation and separately authorized repair,
+not an automatic retry, recall, success claim or bypass. The new guard prevents
+an occurrence writer from contradicting an already-terminal provider result;
+it does not suppress a later truthful provider journal entry. BG-06/BG-07 retain
+responsibility for coordinated completion/recovery before enabling dispatch.
+This increment adds no repair backdoor or development-database upgrade path.
+
+Round 1's corrected five planning modules passed 105 cases with 97.00% line and
+90.32% branch coverage. Its rebuilt development and Production runtime scenarios
+passed in 126.86 seconds. Eighteen existing schedule-page browser cases passed
+across Chromium, Firefox and WebKit. Their fixture was then extended to use the
+actual resolved preview, with six additional cases verifying the parish's civil
+time remains visible while its UTC instant displays in the browser timezone.
+All 24 cases passed in 28.39 seconds. These browser-only additions are included
+in the next review, not claimed as part of the Round 2 reviewed SHA.
+
+The Round 2 planner/recovery changes pass 71 tests in 28.41 seconds; the full
+baseline passes 5,666 tests in 57.36 seconds, with 3,651 expected profile skips
+and two existing warnings. The corruption fixture initially called a
+transaction-owning service inside its raw fixture transaction; it now injects
+only the corrupt row with explicit SQL, after separately asserting the actual
+service is denied. The extended regression run remains pending.
+
+Fresh databases `stewardship_schedule_review2_base_20260915` and
+`stewardship_schedule_review2_current_20260915` independently compare `456d161`
+against this correction. Only `stewardship_occurrence_guard_v1()` differs; all
+other objects, counts, constraints, triggers, policies and functions are unchanged.
+The strict fingerprint was updated after this comparison. The third completed
+review/fix round and final-head CI remain required before protected delivery.
+
+The extended suite passes all 148 schedule, campaign-mail, adversarial recovery
+and strict-schema checks in 158.32 seconds, including the existing real lease/drain
+tests. Ruff, formatting, Markdown and whitespace validation pass. Round 2 is
+complete with the dispositions above; no accepted Medium-or-higher finding is
+left unresolved. The browser fixture/timezone tests remain explicitly included
+in the upcoming third-review delta.

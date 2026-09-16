@@ -16,6 +16,7 @@ from parishkit.stewardship.campaigns.admission import (
     validate_installation,
 )
 from parishkit.stewardship.campaigns.models import ScheduleDefinition
+from parishkit.stewardship.campaigns.schedules import record_fulfillment
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.delivery_states import DeliveryAction as Action
@@ -25,7 +26,13 @@ from parishkit.stewardship.jobs.outbox_storage import create_message
 from parishkit.stewardship.jobs.storage import change_run, retry_failed
 from parishkit.stewardship.storage import StaleRecordError
 
-from .campaign_builders import advance, campaign_clock, claimed_task, occurrence
+from .campaign_builders import (
+    admit_test_work,
+    advance,
+    campaign_clock,
+    claimed_task,
+    occurrence,
+)
 from .test_background_grants_postgresql import task_login
 from .test_clone_views_postgresql import setup as archived_setup
 from .test_family_auth_postgresql import family_service  # noqa: F401
@@ -207,13 +214,49 @@ def test_contradictory_terminal_results_block_selection(
     message = change(submit(message), message_action, evidence=provider_evidence())
     run = claimed_task("schedule_occurrence", row.pk, actor)
     row = advance(row, actor, "running", task_id=run.run_id, fence=run.fence)
-    advance(row, actor, occurrence_state, fence=run.fence, reason="synthetic_result")
+    with pytest.raises(IntegrityError, match="contradicts terminal delivery"):
+        advance(
+            row, actor, occurrence_state, fence=run.fence, reason="synthetic_result"
+        )
+    # Simulate corrupt persisted input using this disposable schema owner's
+    # authority. Runtime writers retain every guard and cannot create it.
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(
+            "ALTER TABLE stewardship_schedule_occurrence DISABLE TRIGGER USER"
+        )
+        cursor.execute(
+            "UPDATE stewardship_schedule_occurrence SET state=%s, "
+            "lease_expires_at=NULL, heartbeat_at=NULL, reason='synthetic_result', "
+            "version=version+1 WHERE id=%s",
+            [occurrence_state, row.pk],
+        )
+        cursor.execute(
+            "ALTER TABLE stewardship_schedule_occurrence ENABLE TRIGGER USER"
+        )
     before = store.active()
     assert work_summary(definition.campaign_id)[str(definition.pk)]["blocking"] == 1
     with pytest.raises(CampaignAdmissionUnavailable):
         replace_schedule(store, definition, actor)
     assert store.active() == before
     assert OutboxMessage.objects.get(pk=message.message_id).state == message.state
+
+
+def test_consistent_delivered_pair_permits_replacement(scheduled_delivery):
+    """A completed successful delivery must not look like contradictory history."""
+    store, definition, row, message, actor = scheduled_delivery
+    change(submit(message), Action.ACCEPT, evidence=provider_evidence())
+    run = claimed_task("schedule_occurrence", row.pk, actor)
+    row = advance(row, actor, "running", task_id=run.run_id, fence=run.fence)
+    advance(row, actor, "succeeded", fence=run.fence)
+    record_fulfillment(
+        occurrence_id=row.pk,
+        disposition="delivered",
+        actor_id=actor,
+        correlation_id=uuid4(),
+        admit=admit_test_work,
+    )
+    assert work_summary(definition.campaign_id)[str(definition.pk)]["blocking"] == 0
+    assert replace_schedule(store, definition, actor).state == "applied"
 
 
 def test_preflight_queries_changed_definition_owner_without_current_campaign(
