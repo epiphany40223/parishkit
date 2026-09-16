@@ -168,8 +168,9 @@ is enabled; preparation completion itself grants no provider permission.
 Evidence: In progress on `pr/stewardship-family-deliverability`, beginning at
 verified PR #36 merge. The [increment guide](../../guides/stewardship-family-deliverability.md)
 records scope, internal checkpoints and validation. Recipient projection,
-source/refusal integration and scheduler/activation recovery pass focused
-tests; complete validation and reviews remain open.
+source/refusal integration and scheduler/activation recovery pass complete and
+focused validation; three dual-source review/fix rounds are recorded there.
+Protected PR delivery is pending; the full BG-06 checkboxes remain open.
 No provider dispatch or Production activation is enabled by this preparation.
 BG-06.05 also owns the [partial-refusal dispatch prerequisite](../../guides/stewardship-family-deliverability.md#partial-refusal-dispatch-prerequisite):
 remaining usable head addresses must continue through definitive-unaccepted

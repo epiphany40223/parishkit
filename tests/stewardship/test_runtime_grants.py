@@ -56,6 +56,30 @@ def test_web_only_reads_source_owned_assignment_overlays():
     assert "stewardship_assignment_overlay" not in columns
 
 
+def test_recipient_evidence_writes_are_closed_across_all_installed_identities():
+    """Future unrelated services cannot accidentally inherit suppression writes."""
+    writes = {"INSERT", "UPDATE", "DELETE", "TRUNCATE"}
+    for _, _, role, target in database_identities():
+        if role is ServiceRole.MIGRATION:
+            continue
+        grants, columns = runtime_grants(role, target=target)
+        for table in (
+            "stewardship_recipient_refusal",
+            "stewardship_recipient_resolution",
+        ):
+            expected = (
+                {"INSERT"}
+                if role is ServiceRole.WORKER
+                and table == "stewardship_recipient_resolution"
+                else set()
+            )
+            assert grants.get(table, set()) & writes == expected
+            assert not set(columns.get(table, {})) & writes
+    for role in (ServiceRole.BACKUP_WORKER, ServiceRole.TOKEN_KEY_ROTATION):
+        with pytest.raises(ConfigError):
+            runtime_grants(role)
+
+
 def test_config_installer_can_replace_boundaries_without_audit_or_family_reads():
     """Trigger-owned replacement is writable without broadening private reads."""
     tables, columns = runtime_grants(ServiceRole.CONFIG_INSTALLER)

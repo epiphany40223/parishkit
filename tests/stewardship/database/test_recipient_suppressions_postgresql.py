@@ -235,6 +235,10 @@ def test_unresolved_refusal_survives_a_new_annual_campaign(
         )
         assert receipt.state == "applied"
         successor = replace(harness, campaign=Campaign.objects.get(pk=row["id"]))
+        prior_family = FamilyCampaign.objects.filter(pk=event.message.family_id)
+        prior_status = prior_family.values_list(
+            "version", "email_deliverable", "deliverability_reason"
+        ).get()
         if timing == "before_population":
             # The current campaign has no Family rows yet. The trigger is a
             # deliberate no-op; first population must still apply this refusal.
@@ -247,6 +251,12 @@ def test_unresolved_refusal_survives_a_new_annual_campaign(
                 campaign=successor.campaign, family_duid=1
             ).email_deliverable
             remember(event)
+        assert (
+            prior_family.values_list(
+                "version", "email_deliverable", "deliverability_reason"
+            ).get()
+            == prior_status
+        )
     refusal = RecipientRefusal.objects.get(event_id=event.pk)
     current = FamilyCampaign.objects.get(campaign=successor.campaign, family_duid=1)
     assert current.pk != refusal.family_id and current.email_eligible

@@ -25,7 +25,7 @@ increment. Preparation grants no provider permission, enables no Production
 activation, and does not release Gate 3. Full BG-06 checkboxes remain open until
 their complete acceptance criteria pass.
 
-## Work in progress
+## Implemented preparation
 
 The shared source recipient projection now supplies both identity status and
 sorted, deduplicated eligible/deliverable head addresses. Its focused unit tests
@@ -37,8 +37,8 @@ deliverability immediately, remain Family-scoped, and resolve atomically when
 the source address changes. Merely inactivating a Member does not clear a
 refusal. Recovery references immutable eligibility-history versions, preserves
 the initial semantic slot, and works under both scheduler and activation-worker
-ownership. These are internal checkpoints: complete validation and the three
-dual-source review/fix rounds remain open.
+ownership. The chronological validation and three dual-source review/fix rounds
+are recorded below. Full BG-06 dispatch and activation remain separate work.
 
 ## Fresh-install schema audit
 
@@ -151,3 +151,38 @@ tests and 40 focused unit tests. Ruff, formatting, tracked Markdown, whitespace
 and Django model-state checks pass. The independently audited schema differs
 from the preceding correction only in the immutable function's fixed search
 path; all object counts and other fingerprints are unchanged.
+
+## Round 3 review and corrections
+
+Pika session `20260916-051829-4c3e85` reviewed the correction delta from
+`80416f2b1dc91cd54500198b1cce2c03cd428d4d` through
+`d2bfc0c4baf2b0ff82011718df3ddfb9611aa987`, tree
+`65839158428f227d7a4d5d6891e07629521451f9`, with surrounding integration context.
+Both sources completed successfully; Codex reported no findings. Claude covered
+all five files and reported two Low test-coverage items. Finalize approved with
+no validated findings, degradation, failed agent, mismatch or salvage. There
+were no raw Medium, High or Critical findings.
+
+- Claude L1: added explicit before/after equality of the archived Family's
+  version, deliverability and reason for every annual-rollover timing. Late
+  evidence affects only the current population; it cannot rewrite the old row.
+- Claude L2: added a closed mutation-grant matrix over every installed runtime
+  identity and each credential-installer target, including column grants and
+  TRUNCATE. Only WORKER can append resolution. Reserved backup/key-rotation
+  profiles remain rejected; migration/provisioning schema-owner authority is
+  deliberately outside the online-role claim. This supplements the real
+  four-role PostgreSQL ACL assertions rather than pretending unimplemented
+  services already exist.
+
+The third reviewed head passes the complete baseline: 5,756 tests, 3,845
+environment-gated skips and two warnings in 56.67 seconds. Its rebuilt image
+passes both configured runtime profiles in 111.74 seconds. The final corrections
+change regression assertions only; no application or schema behavior changed
+after the third reviewed head. Exact-head CI and protected queue evidence remain
+required before delivery.
+
+Both final test corrections pass: sixteen PostgreSQL refusal/lifecycle tests
+and 27 runtime-grant unit tests, plus formatting, Ruff, Markdown and whitespace
+checks. All three rounds therefore have passing post-correction evidence, with
+no unresolved accepted Medium-or-higher finding. The following protected PR
+run must validate the final complete head, including the added grant test.
