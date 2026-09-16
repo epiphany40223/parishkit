@@ -60,9 +60,11 @@ calculation and immutable publication. Queued exact-input priority and consumer
 selection/verification scheduling remain a following prerequisite increment;
 interactive reports remain Phase 5. No RPT-03 task is yet claimed complete.
 
-In-progress consumer evidence: the [report selection increment](../../guides/stewardship-report-selection.md)
-integrates authorized current/stale selection, shared export documents and
-read-only verification/compaction guards. Queued exact requests and scheduled
+Consumer evidence: the [report selection increment](../../guides/stewardship-report-selection.md)
+has completed implementation, local validation and three dual-source review/fix
+rounds for authorized current/stale selection, shared export documents and
+read-only verification/compaction guards. Protected delivery is pending.
+Queued exact requests and scheduled
 verification still follow before BG-07; all package checkboxes remain open.
 
 ## RPT-04: Additional-information workflow report

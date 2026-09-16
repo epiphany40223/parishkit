@@ -66,7 +66,8 @@ complete by this partial consumer integration. Gate 3 remains closed.
 
 ## Validation and review checkpoint
 
-Implementation and review in progress; protected delivery is not yet claimed.
+Implementation, local validation and three dual-source review/fix rounds are
+complete. Protected PR/merge-group delivery is not yet claimed.
 Initial focused validation: 56 PostgreSQL tests passed, including selection under
 the actual web role, shared export document parity, both verification scopes in
 read-only guards, and existing worker/export/retention behavior.
@@ -138,6 +139,26 @@ passed 45 PostgreSQL tests (48.87s), Ruff, formatting and Markdown.
 The Codex reviewer could not run PostgreSQL tests in its read-only sandbox
 without a writable temporary directory. This did not degrade its completed
 structured review; parent-run PostgreSQL results provide execution evidence.
+
+## Review round 3
+
+Pika session `20260916-164859-e82165`, correction diff `f1930f6..799d0f5`,
+completed both reviewers without degradation or verdict mismatch. Codex
+approved with zero findings; Claude reported two Low test-strength suggestions,
+with no Medium/High/Critical. Both suggestions are implemented:
+
+- After releasing actual exclusive contention, the same web-role selection
+  must return the exact generation as current, proving the lock caused fallback.
+- A two-candidate compaction batch tests both orders of a protected skip and a
+  successful deletion. The skipped generation's row is lockable before batch
+  completion, the deletion remains invisible until batch commit, and the
+  successful deletion/evidence survive the other candidate's rollback.
+
+Final post-correction validation passed 47 PostgreSQL tests (51.59s), Ruff,
+formatting, Markdown and whitespace checks. No accepted Medium-or-higher
+finding remains. The baseline at `799d0f5` passed 6,039 tests (4,134 profile
+skips, two existing warnings, 60.96s). Third-round corrections change only
+regression tests and evidence, not implementation or SQL.
 
 Fresh-install audit on disposable port `55440` independently compared verified
 base and current schemas in `stewardship_selection_base_20260916a` and

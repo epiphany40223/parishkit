@@ -371,3 +371,6 @@ def test_actual_busy_generation_selects_labeled_fallback(scenario):  # noqa: F81
         finally:
             finish.set()
         pending.result(timeout=10)
+    with task_login(ServiceRole.WEB, reconnect=True), select(scenario) as report:
+        assert report.status == "current"
+        assert report.document.fact_set_id == exact.pk

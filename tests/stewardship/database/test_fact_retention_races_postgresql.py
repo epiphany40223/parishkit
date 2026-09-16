@@ -158,6 +158,60 @@ def test_skipping_active_reader_releases_candidate_rows_before_batch_end(tmp_pat
         pending.result(timeout=10)
 
 
+@pytest.mark.parametrize("protect_first", [False, True])
+def test_mixed_batch_skip_preserves_other_successful_deletion(tmp_path, protect_first):
+    """A candidate rollback neither undoes earlier deletions nor prevents later ones."""
+    from dataclasses import replace
+
+    from parishkit.stewardship.reports.facts import publish_fact_set
+    from parishkit.stewardship.reports.models import (
+        CampaignDailyFactSet,
+        FactCompactionRecord,
+    )
+
+    from .fact_builders import staged_facts
+
+    inputs, owner, old, middle = superseded(tmp_path)
+    latest, _ = staged_facts(replace(inputs, submission_watermark=3), owner, old.source)
+    publish_fact_set(latest.pk, owner, admit=permit, interactive=True)
+    protected, disposable = (old, middle) if protect_first else (middle, old)
+    processed, finish = Event(), Event()
+
+    def cleaning():
+        """Expose the batch before commit, after both candidate savepoints finish."""
+        try:
+            with transaction.atomic():
+                assert compact_facts(inputs.campaign_id, owner, admit=permit) == [
+                    disposable.pk
+                ]
+                processed.set()
+                assert finish.wait(10)
+        finally:
+            connections.close_all()
+
+    with (
+        read_fact_set(protected.pk, admit=permit),
+        ThreadPoolExecutor(max_workers=1) as pool,
+    ):
+        pending = pool.submit(cleaning)
+        try:
+            assert processed.wait(10)
+            assert (
+                CampaignDailyFactSet.objects.select_for_update(nowait=True)
+                .filter(pk=protected.pk)
+                .exists()
+            )
+            # The successful candidate remains invisible until the outer batch
+            # commits, despite its own savepoint having completed already.
+            assert CampaignDailyFactSet.objects.filter(pk=disposable.pk).exists()
+        finally:
+            finish.set()
+        pending.result(timeout=10)
+    assert not CampaignDailyFactSet.objects.filter(pk=disposable.pk).exists()
+    assert CampaignDailyFactSet.objects.filter(pk=protected.pk).exists()
+    assert FactCompactionRecord.objects.get().fact_set_id == disposable.pk
+
+
 def test_uncommitted_pin_wins_over_cleanup_selection(tmp_path):
     """Cleanup skips a generation even before its newly locked pin is committed."""
     inputs, owner, old, _ = superseded(tmp_path)
