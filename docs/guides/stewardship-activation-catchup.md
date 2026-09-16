@@ -51,3 +51,26 @@ these owners, release Gate 3 or imply a completed end-to-end mail campaign.
 
 These are internal checkpoints, not separate PRs or requests for routine human
 approval. All implementation and acceptance work is open at branch creation.
+
+## Allocation checkpoint
+
+Direct activation now allocates its canonical TaskRun and binds the token
+generation's source in the same transaction as the lifecycle change. A deferred
+database constraint rejects activation without this final binding. Pre-start
+activation creates neither demand nor task. Allocation failure rolls back the
+mode, lifecycle, demand and task together; exact replay keeps the original cutoff.
+
+Actual web-role execution exposed missing column-level lifecycle grants for
+locking/activating the prepared token generation and releasing the go-live gate.
+Those narrowly scoped grants retain the existing transition guards; web cannot
+prepare token material. Scheduler recovery reads and compiled worker ownership
+are being implemented separately from executable preparation integration.
+
+September 16 UTC checkpoint validation: 86 PostgreSQL tests passed in 49.18s,
+covering allocation, restricted-role ownership/recovery, baseline integrity,
+boundary/catch-up history, lifecycle corrections and adjacent digest planning.
+The fresh-install audit compared separate disposable installs against PR #34's
+baseline: exactly one allocation-check function, one deferred constraint and its
+trigger were added. Other schema inventories were unchanged; the strict baseline
+fingerprints were updated only after inspecting that audit. No retained database
+was altered or deleted. This is not full worker or increment acceptance.

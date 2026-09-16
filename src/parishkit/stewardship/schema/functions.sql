@@ -1463,6 +1463,27 @@ BEGIN
     RETURN NEW;
 END $$;
 
+-- Recheck the final row at commit: the INSERT event's original task pointer is
+-- null while activation's owning transaction allocates and binds its root.
+CREATE FUNCTION public.stewardship_catchup_allocation_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM public.stewardship_activation_catchup d
+        JOIN public.stewardship_campaign_transition a ON a.id=d.activation_id
+        JOIN public.stewardship_family_token_generation g ON g.id=a.token_generation_id
+        JOIN public.stewardship_task_run t ON t.id=d.task_root_id
+        WHERE d.id=NEW.id AND t.root_id=t.id
+          AND t.task_type='activation_catchup' AND t.domain_request_id=d.id
+          AND t.idempotency_key=d.id::text
+          AND t.initiated_by_id IS NOT DISTINCT FROM a.actor_id
+          AND d.source_snapshot_id=g.source_snapshot_id
+          AND g.campaign_id=d.campaign_id
+    ) THEN RAISE EXCEPTION 'Activation requires its atomic catch-up task binding'
+        USING ERRCODE='23514'; END IF;
+    RETURN NULL;
+END $$;
+
 -- FUNCTION: stewardship_chair_decisions_v1(uuid)
 CREATE FUNCTION public.stewardship_chair_decisions_v1(configuration uuid) RETURNS jsonb
     LANGUAGE sql STABLE

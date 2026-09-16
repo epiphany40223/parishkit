@@ -2463,6 +2463,12 @@ CREATE TRIGGER stewardship_catchup_failure_immutable_guard_v1 BEFORE DELETE OR U
 -- TRIGGER: stewardship_activation_catchup stewardship_catchup_guard_v1
 CREATE TRIGGER stewardship_catchup_guard_v1 BEFORE INSERT OR DELETE OR UPDATE ON public.stewardship_activation_catchup FOR EACH ROW EXECUTE FUNCTION public.stewardship_catchup_guard_v1();
 
+CREATE CONSTRAINT TRIGGER stewardship_catchup_atomic_allocation
+    AFTER INSERT ON public.stewardship_activation_catchup
+    DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
+    EXECUTE FUNCTION public.stewardship_catchup_allocation_v1();
+REVOKE ALL ON FUNCTION public.stewardship_catchup_allocation_v1() FROM PUBLIC;
+
 -- TRIGGER: stewardship_chair_reconciliation stewardship_chair_reconciliation_effects
 CREATE TRIGGER stewardship_chair_reconciliation_effects AFTER INSERT ON public.stewardship_chair_reconciliation FOR EACH ROW EXECUTE FUNCTION public.stewardship_chair_reconciliation_effects_v1();
 

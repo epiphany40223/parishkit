@@ -99,7 +99,7 @@ def _emit(
         if action is Action.WITHDRAW
         else runtime.mode
     )
-    return CampaignTransition.objects.create(
+    result = CampaignTransition.objects.create(
         campaign=campaign,
         request_id=request_id,
         action=action.value,
@@ -117,6 +117,11 @@ def _emit(
         actor_id=actor_id,
         correlation_id=correlation_id,
     )
+    if action is Action.ACTIVATE and target is CampaignState.ACTIVE:
+        from .catchup_allocation import allocate_activation
+
+        allocate_activation(result.pk)
+    return result
 
 
 def transition_campaign(

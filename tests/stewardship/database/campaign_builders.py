@@ -206,13 +206,20 @@ def add_draft(store, version, actor, row=None):
 
 def claimed_task(kind, domain_id, actor):
     """Allocate and claim actual durable TaskRun metadata for a synthetic worker."""
-    run = enqueue(
-        task_type=kind,
-        domain_request_id=domain_id,
-        actor_id=actor,
-        correlation_id=uuid4(),
-        admit=admit_task_work,
-    )
+    if kind == "activation_catchup":
+        from parishkit.stewardship.jobs.models import TaskRun
+        from parishkit.stewardship.jobs.storage import _status
+
+        demand = ActivationCatchUpDemand.objects.get(pk=domain_id)
+        run = _status(TaskRun.objects.get(pk=demand.task_root_id))
+    else:
+        run = enqueue(
+            task_type=kind,
+            domain_request_id=domain_id,
+            actor_id=actor,
+            correlation_id=uuid4(),
+            admit=admit_task_work,
+        )
     return change_run(
         run_id=run.run_id,
         action="claim",
@@ -235,7 +242,7 @@ def complete_empty_catchup(campaign, actor):
     bind_catchup(
         demand_id=demand.pk,
         task_root_id=run.root_id,
-        source_snapshot_id=uuid4(),
+        source_snapshot_id=demand.source_snapshot_id,
         actor_id=actor,
         correlation_id=uuid4(),
         admit=admit_test_work,

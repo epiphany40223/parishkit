@@ -278,16 +278,22 @@ def runtime_grants(role, *, target=None):
             "stewardship_campaign_credentials",
             "stewardship_rehearsal_credential",
             "stewardship_family_token",
+            "stewardship_family_token_generation",
         ):
             columns[table] = {"UPDATE": {"id"}}
         columns["stewardship_family_campaign"] = {
             "UPDATE": {"last_activity_at", "version"}
         }
+        # Lifecycle activation selects a fully prepared generation. Its guard
+        # requires the matching campaign transition; web cannot prepare tokens.
+        columns["stewardship_family_token_generation"]["UPDATE"].update(
+            {"state", "version"}
+        )
         # The statement-level Family update trigger executes this UPDATE even
         # for activity-only changes; eligibility predicates and row guards still
         # prevent web from changing source-population authority.
         columns["stewardship_campaign_credentials"]["UPDATE"].update(
-            {"population_dirty", "version"}
+            {"population_dirty", "go_live_gate", "version"}
         )
         for privilege, names in (
             ("INSERT", WEB_INSERT_TABLES),

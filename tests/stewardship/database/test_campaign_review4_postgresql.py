@@ -329,7 +329,7 @@ def test_catchup_failure_obeys_restore_gate(tmp_path):
     bind_catchup(
         demand_id=demand.pk,
         task_root_id=task.root_id,
-        source_snapshot_id=uuid4(),
+        source_snapshot_id=demand.source_snapshot_id,
         actor_id=actor,
         correlation_id=uuid4(),
         admit=admit_test_work,

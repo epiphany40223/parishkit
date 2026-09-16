@@ -162,7 +162,7 @@ def test_catchup_checkpoint_is_exact_fenced_and_independent_of_task_completion(
     bind_catchup(
         demand_id=demand.pk,
         task_root_id=run.root_id,
-        source_snapshot_id=uuid4(),
+        source_snapshot_id=demand.source_snapshot_id,
         actor_id=actor,
         correlation_id=uuid4(),
         admit=admit_test_work,
@@ -247,7 +247,7 @@ def test_catchup_final_checkpoint_releases_hold_and_cannot_be_rewritten(tmp_path
     bind_catchup(
         demand_id=demand.pk,
         task_root_id=run.root_id,
-        source_snapshot_id=uuid4(),
+        source_snapshot_id=demand.source_snapshot_id,
         actor_id=actor,
         correlation_id=uuid4(),
         admit=admit_test_work,
@@ -286,7 +286,7 @@ def test_catchup_binding_replay_cannot_rebind_source_or_execution(tmp_path):
     args = dict(
         demand_id=demand.pk,
         task_root_id=run.root_id,
-        source_snapshot_id=uuid4(),
+        source_snapshot_id=demand.source_snapshot_id,
         actor_id=actor,
         correlation_id=uuid4(),
         admit=admit_test_work,
