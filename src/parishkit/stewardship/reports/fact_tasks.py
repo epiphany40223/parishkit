@@ -85,6 +85,8 @@ def recover_facts(status):
     except PermissionError:
         return None
     if status.attempt >= 5:
+        # Keep the frozen demand/checkpoint for an explicit linked retry. A new
+        # root here would discard ownership and silently reset the retry budget.
         return RecoveryPlan("recovery_fail")
     return RecoveryPlan(
         "recovery_retry", min(30 * 2 ** max(status.attempt - 1, 0), 600)
@@ -172,9 +174,7 @@ def _execute(execution):
         generation = demand.claimed_generation
         revision = demand.claimed_revision
     if generation.state != "ready":
-        materialize_fact_set(
-            generation.pk, execution.claim, admit=admit, interactive=True
-        )
+        materialize_fact_set(generation.pk, execution.claim, admit=admit)
     with execution.effect():
         task = lock_task_claim(execution.claim)
         FactBuildReceipt.objects.create(

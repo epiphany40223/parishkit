@@ -57,6 +57,18 @@ deployment, or release is authorized by this increment.
   not prevent compaction of superseded unpinned calculations. SQL checks require
   an actual owned ready generation; worker input pins require their exact
   retained builder. Scheduler grants exclude response answers and pledge values.
+- Runtime SQL deliberately admits only the compiled ordinary builder in this
+  increment. The queued exact-request owner must add its own closed task/input
+  binding before using these storage primitives; it must not simply exempt
+  other task types. OPS-07 separately owns compactor grants (compaction deletes
+  generations, rather than updating the builder's checkpoint).
+- Five abandoned attempts exhaust automatic recovery. Failed task metadata and
+  attempt history remain visible in the existing Admin task list. A frozen
+  generation/demand stays protected for the canonical explicit linked retry;
+  later demand stays pending until that checkpoint completes. Neither a tick
+  nor a later hint resets that root's budget or discards its frozen inputs.
+  The report selection/status and operator retry controls remain later RPT-03
+  integration; this increment tests the actual retry service under worker grants.
 
 ## Validation checkpoint
 
@@ -83,8 +95,10 @@ Passed so far:
 An earlier baseline run found 31 integration-expectation failures: the new
 handler/producer was absent from runtime test expectations and the root Docker
 allowlist needed the new schema asset. The focused 203-test rerun above passes;
-the subsequent full baseline also passes. The eight-shard coverage run remains
-required.
+the subsequent full baseline also passes. The full eight-shard run at
+`80b6bf5` also passed: all 3,253 PostgreSQL tests accounted for, 93.98% line
+coverage and 85.16% branch coverage. Individual database shard times were
+approximately 9–12 minutes on the local disposable fixtures.
 
 ## Fresh schema audit
 
@@ -111,7 +125,67 @@ The audit created only the two named databases and deleted no existing data.
 
 ## Review ledger
 
-Three successful dual-source review/fix rounds remain required before delivery.
-Record their exact heads, every raw finding's disposition and post-fix validation
-here. Exact-head PR checks, protected merge-group checks and verification on
-freshly fetched main follow; no routine human approval pause is required.
+This section is a delivery ledger, including temporary local evidence above,
+not a promise that another maintainer has those local paths or databases.
+Durable CI evidence and the merge checkpoint supersede in-progress statements.
+
+### Round 1
+
+Full PR range `737be049..80b6bf5`, Pika session
+`20260916-145332-44e885`: both sources completed without degradation or repair.
+Pika requested changes: one High and three Medium findings passed its filter;
+all 12 raw findings are dispositioned below, including eight Low findings.
+
+- Claude 1, High, source/report admission: accepted and fixed. Source refresh
+  explicitly remains admitted during go-live cleanup; report writes do not.
+  The source owner now defers only an admission-denied hint, with a real
+  go-live/release/scheduler regression. Admitted hint failures still roll back
+  source promotion. Restore and purge were already denied by source admission.
+- Claude 2, Medium, failed roots returned by the producer: fixed the misleading
+  allocation result. A replayed terminal root is no longer returned as newly
+  queued work. Rejected silently allocating a replacement or clearing the
+  checkpoint: the normative [TaskRun retry contract](../specs/stewardship/background-processing/spec.md#durable-scheduling-and-task-execution)
+  requires an explicit linked retry after terminal failure, retaining the
+  unchanged domain checkpoint. Exhaustion-before/after-freeze regressions prove
+  that behavior and preservation of the newer pending window.
+- Claude 3, Medium, future exact/compactor writers: documented the closed
+  current binding and the next owner's required extension above. Rejected
+  pre-authorizing unimplemented task types. Exact requests and periodic
+  compaction have explicit later owners; the current compactor uses DELETE,
+  outside this INSERT/UPDATE binding trigger.
+- Claude 4, Low, ready-checkpoint recovery coverage: fixed. A failed completion
+  acknowledgment is followed by actual linked retry, reuse without calculation,
+  one receipt and demand release. Exhaustion regressions cover both claim cases.
+- Claude 5 and Codex 2, Low, duplicate pointer publication: fixed once for both.
+  Only successful demand completion selects the interactive pointer; the ready
+  generation remains recoverable if that completion transaction fails.
+- Claude 6, Low, repeated historical scans: deferred to the remaining RPT-02
+  calculation/performance matrix. The complete small campaign series is an
+  expressly permitted rebuild strategy; retain the simpler deterministic
+  implementation until measurements justify another cursor/index algorithm.
+- Claude 7, Low, contradictory per-Family sequence/timestamp ordering: fixed.
+  Detached inputs now reject such chronology before calculation, with a pure
+  regression; no response can be counted as first on two dates.
+- Claude 8, Low, pre-start empty generations: retained intentionally. Exact
+  source/date hints and empty series obey the same provenance/deduplication
+  contract before start; these are two bounded local builds per day, not
+  provider calls. Any optimization must preserve exact-input selection.
+- Claude 9, Low, temporary evidence/in-progress prose: addressed as this explicit
+  delivery ledger; the permanent validation entry points are already named.
+  Final-head CI and merge evidence will be appended before claiming delivery.
+- Claude 10, Low, receipt zero revision/fence: rejected as already guarded.
+  The receipt must match an actual claimed demand revision and live task fence;
+  demand claim requires the positive pending revision, and task claim increments
+  the fence. The zero-capable column constraints follow Django's existing
+  PositiveBigIntegerField baseline; zero cannot satisfy the receipt guard.
+- Codex 1, Medium, exhaustion retaining the checkpoint: rejected the proposed
+  automatic discard/restart for the same retry-contract reason as Claude 2.
+  Terminal failure is visible through the existing task status/event UI, not
+  represented as successful facts. The new five-attempt regressions exercise
+  actual recovery, retained ownership, explicit retry and pending follow-up.
+
+Round-1 post-fix validation passed: 32 PostgreSQL materialization, worker,
+source-effect and verification-race tests (63.96s), 196 focused pure/runtime
+tests (1.08s), Ruff and Markdown checks. Two more successful dual-source
+review/fix rounds, final-head PR checks, protected merge-group checks and fresh
+main verification remain required; no routine human approval pause is required.

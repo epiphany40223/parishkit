@@ -63,6 +63,7 @@ def test_real_producer_and_worker_publish_both_scopes(response_service):
         assert verify_fact_set(receipt.fact_set_id, admit=permit) == ()
         assert not execute(root)
     assert CampaignFactPointer.objects.count() == 2
+    assert set(CampaignFactPointer.objects.values_list("version", flat=True)) == {1}
     assert not CampaignFactRebuildDemand.objects.filter(
         claimed_generation__isnull=False
     ).exists()
@@ -244,7 +245,12 @@ def test_midnight_rollover_builds_new_day_without_new_responses(response_service
 
 
 def test_receipt_immutability_and_atomic_acknowledgment(response_service, monkeypatch):
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
     from parishkit.stewardship.jobs.dispatch import Execution
+    from parishkit.stewardship.jobs.storage import _status, retry_failed
+    from parishkit.stewardship.reports import fact_tasks
+
+    from .test_taskrun_postgresql import act
 
     root = produce()[0]
     original = Execution.transition
@@ -267,6 +273,104 @@ def test_receipt_immutability_and_atomic_acknowledgment(response_service, monkey
         ).claimed_generation_id
         is not None
     )
+    assert not CampaignFactPointer.objects.exists()
+
+    def no_recalculation(*args, **kwargs):
+        """A ready checkpoint must be reused, not recalculated after a crash."""
+        pytest.fail("Ready generation was recalculated")
+
+    monkeypatch.setattr(fact_tasks, "materialize_fact_set", no_recalculation)
+    with work_transaction():
+        failed = act(_status(TaskRun.objects.get(pk=root)), "permanent_failure")
+        retry = retry_failed(
+            run_id=failed.run_id,
+            command_id=uuid4(),
+            actor_id=uuid4(),
+            correlation_id=uuid4(),
+            admit=fact_handler().admit,
+        )
+    with task_login(ServiceRole.WORKER, exact=True):
+        assert execute(retry.run_id)
+    assert FactBuildReceipt.objects.filter(task_id=root).count() == 1
+    assert CampaignFactPointer.objects.count() == 1
+    assert not CampaignFactRebuildDemand.objects.filter(
+        claimed_task_id=retry.run_id
+    ).exists()
+
+
+@pytest.mark.parametrize("freeze", [False, True])
+def test_retry_exhaustion_preserves_explicit_retry_and_pending_window(
+    response_service, freeze
+):
+    """Exhaustion is visible failure, not permission to discard or restart work."""
+    from django.db import connection
+
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+    from parishkit.stewardship.jobs.dispatch import recover_hint
+    from parishkit.stewardship.jobs.ownership import TaskClaim
+    from parishkit.stewardship.jobs.storage import _status, retry_failed
+    from parishkit.stewardship.reports.demand import claim_rebuild
+
+    from .test_taskrun_postgresql import act, expire
+
+    root = produce()[1]
+    status = _status(TaskRun.objects.get(pk=root))
+    for _ in range(4):
+        status = act(act(status, "claim"), "retryable_failure", retry_seconds=1)
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_sleep(1.05)")
+    status = act(status, "claim", lease_seconds=1)
+    assert status.attempt == 5
+    if freeze:
+        with task_login(ServiceRole.WORKER, exact=True), work_transaction():
+            demand = claim_rebuild(
+                response_service.campaign.pk,
+                "current",
+                TaskClaim(status.run_id, status.fence, status.worker_id),
+                admit=permit,
+            )
+        assert demand.claimed_generation_id is not None
+    expire(status)
+    with task_login(ServiceRole.WORKER, exact=True):
+        assert recover_hint(
+            root,
+            queue=WorkQueue.GENERAL,
+            worker_id=uuid4(),
+            handlers={TASK_TYPE: fact_handler()},
+        )
+    assert TaskRun.objects.get(pk=root).state == "failed"
+    assert produce() == ()
+    assert TaskRun.objects.filter(task_type=TASK_TYPE).count() == 2
+    if freeze:
+        tomorrow = response_service.campaign.active_configuration.starts_at + timedelta(
+            days=1
+        )
+        with patch(
+            "parishkit.stewardship.reports.fact_production._now", return_value=tomorrow
+        ):
+            assert produce() == ()
+        demand.refresh_from_db()
+        assert demand.pending_revision == 2 and demand.pending_due_at is not None
+    with work_transaction():
+        retry = retry_failed(
+            run_id=root,
+            command_id=uuid4(),
+            actor_id=uuid4(),
+            correlation_id=uuid4(),
+            admit=fact_handler().admit,
+        )
+    with task_login(ServiceRole.WORKER, exact=True):
+        assert execute(retry.run_id)
+    assert TaskRun.objects.get(pk=root).state == "failed"
+    assert FactBuildReceipt.objects.filter(task_id=root).count() == 1
+    if freeze:
+        demand.refresh_from_db()
+        assert demand.claimed_generation_id is None
+        assert demand.pending_revision == 2 and demand.pending_due_at is not None
+        with patch(
+            "parishkit.stewardship.reports.fact_production._now", return_value=tomorrow
+        ):
+            assert len(produce()) == 1
 
 
 def test_restore_hold_fences_expired_work_without_spending_retry_budget(

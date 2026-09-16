@@ -221,6 +221,18 @@ def test_pre_start_is_empty_and_end_caps_the_series():
     )
 
 
+def test_reject_response_chronology_that_would_move_the_first_response():
+    context = calculation()
+    responses = tuple(
+        replace(row, submitted_at=START - timedelta(seconds=1))
+        if row.sequence == 3
+        else row
+        for row in context.responses
+    )
+    with pytest.raises(ValueError, match="chronology"):
+        replace(context, responses=responses)
+
+
 @pytest.mark.parametrize(
     "changes",
     [

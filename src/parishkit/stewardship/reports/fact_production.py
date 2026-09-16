@@ -131,6 +131,10 @@ def produce_facts(guard):
                 ),
                 admit=admit,
             )
-            result.append(task.root_id)
+            # A failed pre-claim root still owns this execution key. Only an
+            # explicit linked retry can resume it; do not report it as new work
+            # or silently reset its exhausted retry budget on every tick.
+            if task.state == "queued":
+                result.append(task.root_id)
         guard.check()
         return tuple(result)

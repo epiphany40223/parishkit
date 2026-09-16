@@ -129,6 +129,12 @@ class Calculation:
             or any(row.sequence > self.submission_watermark for row in self.responses)
         ):
             raise ValueError("Calculation inputs do not belong to their frozen cutoff.")
+        latest_instants = {}
+        for response in sorted(self.responses, key=lambda row: row.sequence):
+            prior = latest_instants.get(response.family_id)
+            if prior is not None and response.submitted_at < prior:
+                raise ValueError("Family response chronology contradicts its sequence.")
+            latest_instants[response.family_id] = response.submitted_at
 
 
 def calculate_participation(inputs):
