@@ -5569,3 +5569,7 @@ CREATE TRIGGER recovery_replacement_guard BEFORE INSERT
     EXECUTE FUNCTION public.stewardship_recovery_replacement_v1();
 REVOKE ALL ON public.stewardship_recovery_replacement FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.stewardship_recovery_replacement_v1() FROM PUBLIC;
+-- Only guarded campaign transitions may perform these credential effects;
+-- web retains row-lock authority, not direct token-state/gate mutation.
+REVOKE ALL ON FUNCTION public.stewardship_token_campaign_effects_v1() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.stewardship_token_gate_release_v1() FROM PUBLIC;

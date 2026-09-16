@@ -3,7 +3,7 @@
 from datetime import timedelta
 
 import pytest
-from django.db import IntegrityError
+from django.db import IntegrityError, ProgrammingError, connection
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.catchup_allocation import allocate_activation
@@ -131,3 +131,24 @@ def test_real_web_role_commits_activation_and_canonical_task(tmp_path):
         assert (
             TaskRun.objects.get(pk=demand.task_root_id).domain_request_id == demand.pk
         )
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "UPDATE stewardship_family_token_generation "
+        "SET state='cancelled',version=version+1",
+        "UPDATE stewardship_campaign_credentials "
+        "SET go_live_gate=false,version=version+1",
+    ],
+)
+def test_web_cannot_directly_mutate_activation_credential_effects(tmp_path, statement):
+    """Row-lock authority does not grant token cancellation or gate release."""
+    _, campaign, actor = draft_campaign(tmp_path)
+    prepared_tokens(campaign, actor)
+    with (
+        task_login(ServiceRole.WEB, exact=True),
+        connection.cursor() as cursor,
+        pytest.raises(ProgrammingError, match="permission denied"),
+    ):
+        cursor.execute(statement)

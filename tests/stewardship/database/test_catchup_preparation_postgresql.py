@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 from django.db import IntegrityError, OperationalError, transaction
 
+from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.boundaries import apply_due_boundaries
 from parishkit.stewardship.campaigns.catchup_preparation import prepare_batch
 from parishkit.stewardship.campaigns.catchup_tasks import (
@@ -13,6 +14,7 @@ from parishkit.stewardship.campaigns.catchup_tasks import (
     admit_catchup,
     catchup_handler,
 )
+from parishkit.stewardship.campaigns.controls import change_control
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.family_identity import FamilyStatus
 from parishkit.stewardship.campaigns.lifecycle import Action
@@ -20,6 +22,7 @@ from parishkit.stewardship.campaigns.models import (
     ActivationCatchUpDemand,
     CatchUpCheckpoint,
     CatchUpFailure,
+    ScheduleDefinition,
     ScheduleFulfillment,
     ScheduleOccurrence,
     ScheduleRecoveryReplacement,
@@ -37,6 +40,7 @@ from parishkit.stewardship.jobs.storage import _status, retry_failed
 from ..campaign_factory import campaign as campaign_record
 from .campaign_builders import (
     admit_test_work,
+    advance,
     campaign_clock,
     change,
     claimed_task,
@@ -414,3 +418,89 @@ def test_revision_change_after_partial_coverage_retains_all_original_dates(tmp_p
     assert len(set(first + second)) == 109
     assert ScheduleFulfillment.objects.filter(occurrence=previous).count() == 99
     assert not OutboxMessage.objects.exists()
+
+
+def test_weekly_preparation_selects_latest_and_retains_exact_original_slots(tmp_path):
+    """Weekly coverage uses the latest scheduled identity, not a daily aggregate."""
+    store, campaign, actor = draft_campaign(tmp_path)
+    definition = add_digest(store, campaign, weekly=True)
+    with campaign_clock(datetime(2026, 10, 25, 12, tzinfo=UTC)):
+        command(campaign, actor, Action.ACTIVATE)
+        demand = ActivationCatchUpDemand.objects.get()
+        with task_login(ServiceRole.WORKER, exact=True):
+            assert execute_hint(**execution_arguments(demand))
+    rows = ScheduleOccurrence.objects.filter(definition_id=definition)
+    selected = rows.get(state="pending")
+    assert selected.slot == "2026-10-21"
+    assert rows.filter(state="coalesced").count() == 2
+    assert len(covered_dates(selected.pk)) == 3
+    demand.refresh_from_db()
+    assert demand.completed_at is not None and not OutboxMessage.objects.exists()
+
+
+def test_preparation_completes_during_delivery_pause_without_releasing_it(tmp_path):
+    """The preparation hold and live-delivery pause have independent lifetimes."""
+    _, campaign, actor, _ = family_campaign(tmp_path)
+    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+        command(campaign, actor, Action.ACTIVATE)
+        campaign.refresh_from_db()
+        change_control(
+            campaign_id=campaign.pk,
+            request_id=uuid4(),
+            action="pause",
+            expected_version=campaign.version,
+            expected_runtime_version=SystemConfiguration.objects.get().version,
+            actor_id=actor,
+            correlation_id=uuid4(),
+            admit=admit_test_work,
+            reason="Synthetic delivery pause",
+        )
+        demand = ActivationCatchUpDemand.objects.get()
+        with task_login(ServiceRole.WORKER, exact=True):
+            assert execute_hint(**execution_arguments(demand))
+        campaign.refresh_from_db()
+        demand.refresh_from_db()
+        assert demand.completed_at is not None and campaign.delivery_paused
+        selected = ScheduleOccurrence.objects.get(state="pending")
+        assert selected.pause_version == campaign.pause_version
+        run = claimed_task("schedule_occurrence", selected.pk, actor)
+        with pytest.raises(IntegrityError, match="current fenced work"):
+            advance(selected, actor, "running", task_id=run.run_id, fence=run.fence)
+    assert not OutboxMessage.objects.exists()
+
+
+def test_removed_schedule_is_not_revived_when_preparation_restarts(tmp_path):
+    """A current revision tombstone outranks activation-time schedule metadata."""
+    store, campaign, actor, _ = family_campaign(tmp_path, count=2)
+    definition = ScheduleDefinition.objects.get()
+    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+        command(campaign, actor, Action.ACTIVATE)
+        demand = ActivationCatchUpDemand.objects.get()
+        execution = claim_hint(**execution_arguments(demand))
+        with maintain_execution(execution):
+            with execution.effect():
+                prepare_batch(demand, execution.claim)
+            original = ScheduleOccurrence.objects.get()
+            assert (
+                change(
+                    store,
+                    store.active(),
+                    actor,
+                    [
+                        {
+                            "operation": "remove",
+                            "section": "schedules",
+                            "id": str(definition.pk),
+                        }
+                    ],
+                ).state
+                == "applied"
+            )
+            with task_login(ServiceRole.WORKER, exact=True):
+                execution.handler.execute(execution)
+    demand.refresh_from_db()
+    original.refresh_from_db()
+    assert demand.completed_at is not None
+    assert original.state == "skipped" and original.reason == "schedule_removed"
+    assert ScheduleOccurrence.objects.count() == 1
+    assert not ScheduleFulfillment.objects.exists()

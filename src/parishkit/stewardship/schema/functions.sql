@@ -9259,7 +9259,7 @@ END $$;
 
 -- FUNCTION: stewardship_token_campaign_effects_v1()
 CREATE FUNCTION public.stewardship_token_campaign_effects_v1() RETURNS trigger
-    LANGUAGE plpgsql
+    LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$ BEGIN
     IF NEW.active_token_generation_id IS DISTINCT FROM OLD.active_token_generation_id AND NEW.active_token_generation_id IS NOT NULL THEN
@@ -9279,7 +9279,7 @@ END $$;
 
 -- FUNCTION: stewardship_token_gate_release_v1()
 CREATE FUNCTION public.stewardship_token_gate_release_v1() RETURNS trigger
-    LANGUAGE plpgsql
+    LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$ BEGIN
     IF NEW.active_token_generation_id IS NOT NULL AND NEW.active_token_generation_id IS DISTINCT FROM OLD.active_token_generation_id THEN

@@ -62,9 +62,10 @@ mode, lifecycle, demand and task together; exact replay keeps the original cutof
 
 Actual web-role execution exposed missing column-level lifecycle grants for
 locking/activating the prepared token generation and releasing the go-live gate.
-Those narrowly scoped grants retain the existing transition guards; web cannot
-prepare token material. Scheduler recovery reads and compiled worker ownership
-are being implemented separately from executable preparation integration.
+The follow-up permission audit narrowed these to row-lock grants only; guarded
+lifecycle trigger effects own token activation and go-live release, and direct
+web credential-state/gate writes are denied. The real web-role positive activation
+and negative direct-write cases pass alongside worker ownership checks.
 
 September 16 UTC checkpoint validation: 86 PostgreSQL tests passed in 49.18s,
 covering allocation, restricted-role ownership/recovery, baseline integrity,
@@ -117,3 +118,20 @@ admission functions; policies and unrelated objects are unchanged. Separate
 fresh installs at the committed allocation checkpoint and current working tree
 were compared before updating fingerprints. The model-to-database contract test
 passes. No historical upgrade or retained-database mutation was introduced.
+
+## Pre-review validation checkpoint
+
+The complete local database run collected 2,916 tests: 2,915 passed and one
+immutable-record inventory test failed because it assumed a per-table trigger
+name rather than the deliberately shared immutable trigger. Its correction
+still checks the enabled trigger, exact function and unconditional rejection;
+the subsequent 74-test focused run passed in 58.19s, including that test, the
+strict schema baseline and actual web/worker role behavior. This records the
+original failure rather than describing the original full run as green.
+
+The latest baseline run passed 5,674 tests in 63.12s; environment-gated checks
+remain separate. Additional acceptance checks cover weekly latest-slot coverage,
+independent delivery pause and schedule removal during preparation. The image
+has been rebuilt after privilege narrowing; configured development/production
+Compose checks passed (2 tests in 123.26s). The three review/fix rounds are still
+pending.
