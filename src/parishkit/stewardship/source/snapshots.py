@@ -291,12 +291,14 @@ def promote_snapshot(snapshot_id, claim, *, admit, reconcile):
 
 
 @contextmanager
-def read_snapshot(snapshot_id=None):
+def read_snapshot(snapshot_id=None, *, metadata_only=False):
     """Keep a shared row lock through every lazy corpus query and serialization.
 
     Concurrent readers share this lock. Compaction and new protection references
     use the same snapshot row. A selector losing a race to compaction receives
     an explicit unavailable result, never a partial or substituted pinned corpus.
+    Metadata-only consumers retain identical locking without fetching source
+    validation/cursor details they neither use nor have permission to read.
     """
     with transaction.atomic():
         if snapshot_id is None:
@@ -311,7 +313,10 @@ def read_snapshot(snapshot_id=None):
                 raise InvalidSourcePayload(
                     "The requested source corpus is unavailable."
                 )
-        yield SourceSnapshot.objects.get(pk=snapshot_id)
+        snapshots = SourceSnapshot.objects
+        if metadata_only:
+            snapshots = snapshots.only("id", "state", "compacted_at")
+        yield snapshots.get(pk=snapshot_id)
 
 
 def reconstruct_snapshot(snapshot_id=None):
