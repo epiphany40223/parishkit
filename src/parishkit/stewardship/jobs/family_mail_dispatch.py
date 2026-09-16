@@ -50,6 +50,10 @@ PROVIDER_SECONDS = 30
 RETRY_BASE_SECONDS = 30
 
 
+class FamilyDeliveryHeld(PermissionError):
+    """Temporary admission loss is not a failed provider or rendering attempt."""
+
+
 def retry_delay(attempt):
     """Use one bounded schedule for the provider journal and its Task hint."""
     return min(600, RETRY_BASE_SECONDS * 2 ** (attempt - 1))
@@ -120,16 +124,19 @@ def disposition(message):
         or scope.campaign.state in {"closed", "archived"}
     ):
         return "campaign_closed"
-    _planning_scope(message.campaign_id)
+    try:
+        _planning_scope(message.campaign_id)
+    except PermissionError:
+        raise FamilyDeliveryHeld("Family delivery awaits current scope.") from None
     if message.mode == "production" and scope.campaign.delivery_paused:
         return "delivery_paused"
-    if population.population_dirty:
-        raise PermissionError("Family delivery awaits source reconciliation.")
+    if population is None or population.population_dirty:
+        raise FamilyDeliveryHeld("Family delivery awaits source reconciliation.")
     if not SourceCurrent.objects.filter(
         snapshot_id=population.source_snapshot_id,
         generation=population.source_generation,
     ).exists():
-        raise PermissionError("Family delivery awaits source reconciliation.")
+        raise FamilyDeliveryHeld("Family delivery awaits source reconciliation.")
     if (
         OutboxMessage.objects.filter(
             family_id=message.family_id,
@@ -140,7 +147,9 @@ def disposition(message):
         .exclude(pk=message.pk)
         .exists()
     ):
-        raise PermissionError("Family delivery awaits an unresolved provider outcome.")
+        raise FamilyDeliveryHeld(
+            "Family delivery awaits an unresolved provider outcome."
+        )
     if (
         message.purpose == "reminder"
         and RestoreDeliveryHold.objects.filter(
@@ -152,9 +161,9 @@ def disposition(message):
             state="unreviewed",
         ).exists()
     ):
-        raise PermissionError("Family delivery awaits initial recovery review.")
+        raise FamilyDeliveryHeld("Family delivery awaits initial recovery review.")
     if message.not_before > database_now():
-        raise PermissionError("Family delivery retry is not due.")
+        raise FamilyDeliveryHeld("Family delivery retry is not due.")
     return None
 
 
@@ -199,7 +208,15 @@ def _occurrence_change(row, claim, **values):
     row.refresh_from_db()
 
 
-def begin_submission(identifier, claim, *, private, public_origin):
+def begin_submission(
+    identifier,
+    claim,
+    *,
+    private,
+    public_origin,
+    metadata_only=False,
+    configuration_id=None,
+):
     """Resolve private content only under final admission, then commit before IO.
 
     A None return means cancellation, coalescing or a pause, not acceptance.
@@ -245,11 +262,22 @@ def begin_submission(identifier, claim, *, private, public_origin):
             if row.state == "pending":
                 _occurrence_change(row, claim, state="skipped", reason=reason)
             return None
+        # The no-send caller has not loaded Workspace credentials. A resumed
+        # scope must not promote that caller into a submitting provider attempt.
+        if metadata_only:
+            return None
+        if (
+            configuration_id is not None
+            and not SystemConfiguration.objects.filter(
+                active_configuration_id=configuration_id
+            ).exists()
+        ):
+            raise FamilyDeliveryHeld("Family delivery configuration changed.")
         decision = plan_family(
             claim, family_id=message.family_id, worker_id=claim.worker_id
         )
         if decision.held:
-            raise PermissionError("Family delivery recovery is held.")
+            raise FamilyDeliveryHeld("Family delivery recovery is held.")
         if decision.selected != row.pk:
             return None
         scope, _ = _planning_scope(message.campaign_id)

@@ -44,7 +44,6 @@ def add_dispatch_grants(tables, columns):
         "stewardship_schedule_revision",
         "stewardship_activation_catchup",
         "stewardship_restore_delivery_hold",
-        "stewardship_recipient_refusal",
         "stewardship_recipient_resolution",
         "stewardship_family_mail_preparation",
         "stewardship_family_eligibility",

@@ -12,9 +12,13 @@ from email import policy
 from enum import StrEnum
 from uuid import UUID
 
+import requests
+from google.auth.exceptions import RefreshError, TransportError
+
 from parishkit.email.base import Email, build_message
 from parishkit.email.google_workspace import xoauth2_string
 
+from .accounts.credential_errors import CredentialValidationUnavailable
 from .accounts.policy_schema import normalized_email
 from .jobs.outbox_validation import mailbox, recipients
 from .provider_check_worker import CheckSession
@@ -220,17 +224,25 @@ def _submit(smtp, mail):
 
     uncertain = False
     try:
-        addresses = (mail.sender, *mail.recipients)
+        addresses = (mail.sender, mail.reply_to, *mail.recipients)
         international = any(not address.isascii() for address in addresses)
         if international and not smtp.has_extn("smtputf8"):
-            return result(FamilyDeliveryStatus.SYSTEMIC)
+            # A Family's unsupported address must not halt other Families or
+            # fabricate a provider refusal for an address never sent to RCPT.
+            return result(
+                FamilyDeliveryStatus.SYSTEMIC
+                if not mail.sender.isascii() or not mail.reply_to.isascii()
+                else FamilyDeliveryStatus.PERMANENT
+            )
         message = mail.message().as_bytes(
-            policy=policy.SMTPUTF8 if international else policy.SMTP
+            policy=(policy.SMTPUTF8 if international else policy.SMTP).clone(
+                cte_type="7bit"
+            )
         )
         options = ["SMTPUTF8", "BODY=8BITMIME"] if international else []
         code = _reply(smtp.mail(mail.sender, options=options))
         if code != 250:
-            return result(FamilyDeliveryStatus.SYSTEMIC)
+            return result(_handshake_failure(code))
         for index, address in enumerate(mail.recipients):
             code = _reply(smtp.rcpt(address))
             if code in (250, 251):
@@ -240,7 +252,7 @@ def _submit(smtp, mail):
             elif 500 <= code <= 599:
                 permanent.append(index)
             else:
-                return result(FamilyDeliveryStatus.SYSTEMIC)
+                return result(FamilyDeliveryStatus.PERMANENT)
         if len(permanent) + len(transient) == count:
             return result(
                 FamilyDeliveryStatus.TRANSIENT
@@ -290,35 +302,58 @@ def deliver_family(
         getattr(mail, name) != settings[name] for name in ("sender", "reply_to")
     ):
         raise ValueError("Family mail differs from its admitted context.")
-    result = FamilyDeliveryResult(FamilyDeliveryStatus.SYSTEMIC, len(mail.recipients))
     try:
         with session_factory() as session:
             credentials = _credentials(value, settings, session)
-        result = FamilyDeliveryResult(
+    except (
+        OSError,
+        requests.RequestException,
+        TransportError,
+        CredentialValidationUnavailable,
+    ):
+        return FamilyDeliveryResult(
             FamilyDeliveryStatus.TRANSIENT, len(mail.recipients)
         )
+    except RefreshError as error:
+        return FamilyDeliveryResult(
+            FamilyDeliveryStatus.TRANSIENT
+            if error.retryable
+            else FamilyDeliveryStatus.SYSTEMIC,
+            len(mail.recipients),
+        )
+    except Exception:
+        return FamilyDeliveryResult(FamilyDeliveryStatus.SYSTEMIC, len(mail.recipients))
+    result = FamilyDeliveryResult(FamilyDeliveryStatus.TRANSIENT, len(mail.recipients))
+    try:
         with smtp_factory(
             "smtp.gmail.com", 465, timeout=10, context=ssl.create_default_context()
         ) as smtp:
-            result = FamilyDeliveryResult(
-                FamilyDeliveryStatus.SYSTEMIC, len(mail.recipients)
-            )
-            if _reply(smtp.ehlo()) != 250:
-                return result
-            if (
-                _reply(
-                    smtp.docmd(
-                        "AUTH",
-                        "XOAUTH2 "
-                        + xoauth2_string(
-                            settings["delegated_email"], credentials.token
-                        ),
-                    )
+            code = _reply(smtp.ehlo())
+            if code != 250:
+                return FamilyDeliveryResult(
+                    _handshake_failure(code), len(mail.recipients)
                 )
-                != 235
-            ):
-                return result
+            code = _reply(
+                smtp.docmd(
+                    "AUTH",
+                    "XOAUTH2 "
+                    + xoauth2_string(settings["delegated_email"], credentials.token),
+                )
+            )
+            if code != 235:
+                return FamilyDeliveryResult(
+                    _handshake_failure(code), len(mail.recipients)
+                )
             result = _submit(smtp, mail)
     except Exception:
         pass
     return result
+
+
+def _handshake_failure(code):
+    """Temporary server replies before DATA are safe to retry, not global halts."""
+    return (
+        FamilyDeliveryStatus.TRANSIENT
+        if 400 <= code <= 499
+        else FamilyDeliveryStatus.SYSTEMIC
+    )

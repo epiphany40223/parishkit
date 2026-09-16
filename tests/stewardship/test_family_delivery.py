@@ -37,7 +37,16 @@ def sample():
     )
 
 
-def delivery(monkeypatch, *, replies=None, failure=None, quit_error=False, mail=None):
+def delivery(
+    monkeypatch,
+    *,
+    replies=None,
+    failure=None,
+    quit_error=False,
+    mail=None,
+    international=False,
+    credential_error=None,
+):
     """Inject replies or failure at exact protocol boundaries, without network IO."""
     seen = []
     replies = {
@@ -48,9 +57,14 @@ def delivery(monkeypatch, *, replies=None, failure=None, quit_error=False, mail=
         "rcpt1": 250,
         "data": 250,
     } | (replies or {})
+
+    def credentials(*args):
+        if credential_error is not None:
+            raise credential_error
+        return SimpleNamespace(token="synthetic-private-token")
+
     monkeypatch.setattr(
-        "parishkit.stewardship.family_delivery._credentials",
-        lambda *args: SimpleNamespace(token="synthetic-private-token"),
+        "parishkit.stewardship.family_delivery._credentials", credentials
     )
 
     def response(step):
@@ -81,20 +95,26 @@ def delivery(monkeypatch, *, replies=None, failure=None, quit_error=False, mail=
             return response("auth")
 
         def mail(self, sender, *, options):
-            assert sender == SETTINGS["sender"] and options == []
+            assert sender == SETTINGS["sender"]
+            assert options == (["SMTPUTF8", "BODY=8BITMIME"] if international else [])
             return response("mail")
+
+        def has_extn(self, name):
+            assert name == "smtputf8"
+            return international
 
         def rcpt(self, address):
             self.addresses.append(address)
             return response("rcpt" + str(len(self.addresses) - 1))
 
         def data(self, content):
-            assert b"Synthetic private code" in content
+            if not international:
+                assert content.isascii()
             return response("data")
 
     return deliver_family(
         b"synthetic-key",
-        SETTINGS,
+        SETTINGS | ({"reply_to": mail.reply_to} if mail else {}),
         mail or sample(),
         smtp_factory=SMTP,
         session_factory=nullcontext,
@@ -135,8 +155,8 @@ def test_all_refused_never_submits_data(monkeypatch, first, second, status):
 @pytest.mark.parametrize(
     "step,status",
     [
-        ("ehlo", Status.SYSTEMIC),
-        ("auth", Status.SYSTEMIC),
+        ("ehlo", Status.TRANSIENT),
+        ("auth", Status.TRANSIENT),
         ("mail", Status.TRANSIENT),
         ("rcpt0", Status.TRANSIENT),
         ("rcpt1", Status.TRANSIENT),
@@ -173,7 +193,8 @@ def test_data_reply_preserves_refusals_and_survives_quit(monkeypatch, code, stat
 def test_invalid_handshake_stops_before_data(monkeypatch, stage):
     """Unexpected statuses are not fabricated as address-specific refusals."""
     result, seen = delivery(monkeypatch, replies={stage: 299})
-    assert result.status is Status.SYSTEMIC and "data" not in seen
+    assert result.status is (Status.PERMANENT if stage == "rcpt0" else Status.SYSTEMIC)
+    assert "data" not in seen
 
 
 def test_mail_is_private_and_has_no_cross_family_headers():
@@ -233,3 +254,53 @@ def test_data_exception_with_definitive_code_is_not_unknown(monkeypatch, code, s
 
     smtp.data = refused
     assert _submit(smtp, sample()).status is status
+
+
+@pytest.mark.parametrize("stage", ["ehlo", "auth", "mail"])
+@pytest.mark.parametrize("code", [421, 451, 454])
+def test_temporary_handshake_reply_retries_without_halting(monkeypatch, stage, code):
+    """No DATA was sent; short provider outages cannot permanently fail a Family."""
+    result, seen = delivery(monkeypatch, replies={stage: code})
+    assert result.status is Status.TRANSIENT and "data" not in seen
+
+
+@pytest.mark.parametrize("retryable", [False, True])
+def test_token_refusal_distinguishes_retryable_provider_failure(monkeypatch, retryable):
+    """Credential refusal and temporary token service failure are separate."""
+    from google.auth.exceptions import RefreshError
+
+    result, seen = delivery(
+        monkeypatch, credential_error=RefreshError("private", retryable=retryable)
+    )
+    assert not seen
+    assert result.status is (Status.TRANSIENT if retryable else Status.SYSTEMIC)
+
+
+def test_token_timeout_is_definitively_unsent(monkeypatch):
+    """Token exchange precedes SMTP, so its timeout needs no duplicate-risk review."""
+    result, seen = delivery(monkeypatch, credential_error=TimeoutError("private"))
+    assert not seen and result.status is Status.TRANSIENT
+
+
+@pytest.mark.parametrize("international", [False, True])
+def test_international_family_does_not_halt_other_families(monkeypatch, international):
+    """Lack of SMTPUTF8 is not evidence that an address was refused by RCPT."""
+    mail = replace(sample(), recipients=("a@éxample.org", "b@example.org"))
+    result, seen = delivery(monkeypatch, mail=mail, international=international)
+    assert result.status is (Status.ACCEPTED if international else Status.PERMANENT)
+    assert result.permanent == ()
+    assert ("data" in seen) is international
+
+
+def test_unicode_body_uses_seven_bit_transfer_encoding(monkeypatch):
+    """ASCII envelopes do not silently send raw eight-bit bodies without negotiation."""
+    mail = replace(sample(), html="<p>Église</p>", text="Église")
+    result, seen = delivery(monkeypatch, mail=mail)
+    assert result.status is Status.ACCEPTED and "data" in seen
+
+
+def test_unicode_reply_to_participates_in_utf8_negotiation(monkeypatch):
+    """Shared address headers use the same SMTPUTF8 decision as the envelope."""
+    mail = replace(sample(), reply_to="reply@éxample.org")
+    result, seen = delivery(monkeypatch, mail=mail, international=True)
+    assert result.status is Status.ACCEPTED and "data" in seen

@@ -23,17 +23,32 @@ from parishkit.stewardship.storage import StorageInvariantError
 from .dispatch import Handler, RecoveryPlan
 from .family_mail_dispatch import (
     MAX_ATTEMPTS,
+    FamilyDeliveryHeld,
     begin_submission,
     bound_dispatch,
     disposition,
     finish_submission,
     retry_delay,
 )
+from .models import TaskRunEvent
 from .ownership import database_now, lock_task_claim
+from .phases import TaskPhase
 from .queues import WorkQueue
 from .storage import _status
 
 LOG = logging.getLogger(__name__)
+
+
+def preparation_attempts(status):
+    """Exclude journaled admission holds from the bounded pre-provider budget."""
+    held = TaskRunEvent.objects.filter(
+        run_id=status.run_id, action="retryable_failure", phase=TaskPhase.RECONCILING
+    ).count()
+    current_hold = (
+        status.state in {"running", "abandoned"}
+        and status.phase is TaskPhase.RECONCILING
+    )
+    return max(0, status.attempt - held - int(current_hold))
 
 
 def recovery_plan(status):
@@ -56,6 +71,8 @@ def recovery_plan(status):
         "pending": "recovery_retry",
         "retry_wait": "recovery_retry",
     }[row.state]
+    if action == "recovery_retry" and preparation_attempts(status) >= MAX_ATTEMPTS:
+        action = "recovery_fail"
     return (
         RecoveryPlan(action, retry_seconds=30)
         if action == "recovery_retry"
@@ -87,11 +104,12 @@ def admit_task(action, status, *, store, halted):
         return row.state == "cancelled"
     if action == "permanent_failure":
         return row.state in {"permanent_failure", "delivery_unknown"} or (
-            row.state in {"pending", "retry_wait"} and status.attempt >= MAX_ATTEMPTS
+            row.state in {"pending", "retry_wait"}
+            and preparation_attempts(status) >= MAX_ATTEMPTS
         )
     if action == "retryable_failure":
         return row.state in {"pending", "retry_wait"}
-    if action == "heartbeat":
+    if action in {"heartbeat", "progress"}:
         return True
     if row.state in {
         "delivered",
@@ -189,6 +207,7 @@ def _execute(execution, *, private, public_origin, credential_path, halted):
                 execution.claim,
                 private=private,
                 public_origin=public_origin,
+                metadata_only=True,
             )
             _finish_no_send(execution)
             return
@@ -197,44 +216,48 @@ def _execute(execution, *, private, public_origin, credential_path, halted):
             raise PermissionError("Installed Workspace credential differs.")
         execution.check()
         prepared = begin_submission(
-            message.pk, execution.claim, private=private, public_origin=public_origin
+            message.pk,
+            execution.claim,
+            private=private,
+            public_origin=public_origin,
+            configuration_id=configuration_id,
         )
         if prepared is None:
             _finish_no_send(execution)
             return
-        mail, deadline, applied_id, attempt = prepared
+        mail, deadline, _, attempt = prepared
         submitted = True
-        # A settings change between initial file check and the final locked
-        # rendering is not permission to submit with the old credential context.
-        if applied_id != configuration_id:
-            result = FamilyDeliveryResult(
-                FamilyDeliveryStatus.TRANSIENT, len(mail.recipients)
+        settings = workspace.settings | {
+            "sender": mail.sender,
+            "reply_to": mail.reply_to,
+        }
+        with work_transaction():
+            remaining = (deadline - database_now()).total_seconds()
+        connections.close_all()
+        # No helper has started yet, so an already elapsed launch budget is
+        # definitive non-acceptance, unlike a lost acknowledgement after IO.
+        result = FamilyDeliveryResult(
+            FamilyDeliveryStatus.TRANSIENT, len(mail.recipients)
+        )
+        if remaining > 0:
+            result = submit_family(
+                candidate,
+                settings,
+                mail,
+                seconds=min(30, remaining),
+                check=lambda: _check(execution),
             )
-        else:
-            settings = workspace.settings | {
-                "sender": mail.sender,
-                "reply_to": mail.reply_to,
-            }
-            with work_transaction():
-                remaining = (deadline - database_now()).total_seconds()
-            connections.close_all()
-            result = FamilyDeliveryResult(
-                FamilyDeliveryStatus.UNKNOWN, len(mail.recipients)
-            )
-            if remaining > 0:
-                result = submit_family(
-                    candidate,
-                    settings,
-                    mail,
-                    seconds=min(30, remaining),
-                    check=lambda: _check(execution),
-                )
     except ProviderCheckDrainFailure:
         raise
+    except FamilyDeliveryHeld:
+        _defer_held(execution)
+        return
     except Exception:
         if not submitted:
             with work_transaction():
-                attempt = lock_task_claim(execution.claim).attempt
+                attempt = preparation_attempts(
+                    _status(lock_task_claim(execution.claim))
+                )
             if attempt >= MAX_ATTEMPTS:
                 LOG.error("Family mail preparation failed after bounded retries.")
                 execution.transition("permanent_failure")
@@ -265,4 +288,10 @@ def _finish_no_send(execution):
     if current.state == "cancelled":
         execution.transition("safe_cancel")
     else:
-        execution.transition("retryable_failure", retry_seconds=30)
+        _defer_held(execution)
+
+
+def _defer_held(execution):
+    """Retain an ordinary admission hold without charging the failure budget."""
+    execution.progress(0, 0, phase=TaskPhase.RECONCILING)
+    execution.transition("retryable_failure", retry_seconds=30)

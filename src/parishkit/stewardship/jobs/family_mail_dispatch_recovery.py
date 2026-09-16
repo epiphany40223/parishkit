@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from parishkit.stewardship.campaigns.schedule_models import ScheduleOccurrence
 from parishkit.stewardship.campaigns.work_locks import require_work_order
+from parishkit.stewardship.storage import StorageInvariantError
 
 from .delivery_states import DeliveryAction
 from .family_mail_dispatch import bound_dispatch
@@ -43,7 +44,7 @@ def record_abandoned_submission(status, *, actor_id):
         admit=admit,
     )
     occurrence = ScheduleOccurrence.objects.get(pk=row.semantic_key)
-    ScheduleOccurrence.objects.filter(
+    updated = ScheduleOccurrence.objects.filter(
         pk=occurrence.pk, version=occurrence.version
     ).update(
         state="delivery_unknown",
@@ -53,4 +54,6 @@ def record_abandoned_submission(status, *, actor_id):
         correlation_id=status.run_id,
         version=occurrence.version + 1,
     )
+    if updated != 1:
+        raise StorageInvariantError("Family recovery lost its occurrence version.")
     return result

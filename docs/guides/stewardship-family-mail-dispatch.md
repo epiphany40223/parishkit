@@ -45,8 +45,8 @@ ADM-06 retains the broader campaign-control UI. Gate 3 remains closed.
   retains them and blocks automatic resend. Task abandonment plus elapsed
   provider deadline is uncertainty, not proof of non-acceptance.
 
-Implementation and acceptance coverage are in progress. No review round or
-final validation is claimed yet. All checks use synthetic providers and owned
+Implementation and acceptance coverage are in progress. Final validation and
+the required review cycle are not complete. All checks use synthetic providers and owned
 disposable databases; existing development databases are untouched.
 
 ## Fresh-install schema evidence
@@ -58,8 +58,62 @@ occurrence guard, refusal guard, refusal-effect function and scheduling work
 view, and removes nothing. Columns, constraints, indexes and policies are
 unchanged. The updated baseline records 401 functions and 409 triggers; it is
 not an upgrade path or a promise of development-database compatibility.
+The committed [catalog fingerprint](../../tests/stewardship/database/schema-baseline.json)
+and [fresh-schema test](../../tests/stewardship/database/test_schema_baseline_postgresql.py)
+enforce this locally captured evidence independently of model declarations.
 
 The refusal-effect trigger uses a fixed search path and owner privileges only
 to derive deliverability from validated immutable refusal evidence. It has no
 callable runtime/public entry point. MAIL has no general Family UPDATE grant;
 the real-role permission tests check both boundaries.
+
+## Review evidence
+
+Round 1, Pika `20260916-095640-8749e8`, reviewed the full branch from
+`72787c28d9108fee0c48e570e09b167d13e9f860` through
+`92db22265b09d8e9ef4a20b00e757ea31fed70a8` (tree
+`8b2453ab7dcb286ba6ce01aea992d8dabe5d53b5`). Exact-path permission preflight
+passed; both Claude shards and Codex completed without degradation. There were
+20 raw findings: one High, seven Medium and 12 Low. All are dispositioned here,
+including the 12 below Pika's displayed cutoff. Post-fix validation passed:
+112 provider/private-transport tests, 73 affected database cases, a final
+59-case dispatch database batch, and 5,908 credential-free baseline tests.
+Ruff check/format and this guide's Markdown lint also passed. This completes
+round 1; the High finding was fixed and subsequent independent rounds remain
+required.
+
+| Source/order | Raw severity | Disposition |
+| --- | --- | --- |
+| Claude 1/1 | High | Fixed: metadata-only admission can never commit SUBMIT after resume; real-worker race regression. |
+| Claude 1/2 | Medium | Fixed for in-flight holds: typed holds retain journaled reconciliation retries outside the failure budget. Pre-claim holds were already excluded by admission. |
+| Claude 1/3 | Medium | Fixed known pre-launch validation and elapsed-budget outcomes. Lost ownership remains fatal, not a fabricated receipt: that exception is a BaseException and never entered the claimed generic handler. |
+| Claude 1/4 | Medium | Fixed per-Family SMTPUTF8/malformed-recipient classification; only shared provider/configuration faults halt the current worker run. Restart resets that process-owned halt. |
+| Claude 1/5 | Low | Fixed: recovery requires exactly one optimistic occurrence update and rolls back on mismatch. |
+| Claude 1/6 | Low | Fixed defensively: absent population is a typed hold in either mode. |
+| Claude 1/7 | Low | Retained safety/performance trade-off: each private-helper poll rechecks ownership and releases its database connection. The shared finite transport uses this pattern; pooling/throttling must preserve those fences and can be measured with BG-10 operational work. |
+| Claude 1/8 | Medium | Fixed: added real-worker regression coverage for resume, credentials/configuration, launch deadline, admission holds, crash budget and actual systemic halt. |
+| Claude 1/9 | Low | Fixed: configuration identity is checked before SUBMIT, so an edited configuration no longer generates a fictitious SMTP transient attempt. |
+| Claude 2/1 | Medium | Fixed with Codex 1: transient token/EHLO/AUTH/MAIL errors retry; definitive shared credential/configuration refusals remain systemic. |
+| Claude 2/2 | Low | Fixed with Claude 1/4: unsupported Family addresses do not halt others or invent RCPT refusal evidence. |
+| Claude 2/3 | Low | Duplicate of Claude 1/5; same checked-update fix and regression. |
+| Claude 2/4 | Low | Retained conservative boundary: after helper launch a hard deadline with no receipt is unknown, even if the child might not have reached DATA. Inferring its protocol position would be unsafe. Per-operation budget optimization is not required for correctness. |
+| Claude 2/5 | Low | Fixed: temporary handshake, token outage/refusal, Unicode body and address negotiation tests. |
+| Claude 2/6 | Low | Fixed: removed duplicate refusal SELECT entry. |
+| Claude 2/7 | Low | Clarified evidence links to the committed catalog fixture and real schema test; the independent local comparison was already performed and passed. |
+| Codex 1 | Medium | Fixed with Claude 2/1: temporary MAIL refusal is definitely unsent and retryable. |
+| Codex 2 | Medium | Fixed: abandoned unsent work honors the preparation failure budget, excluding journaled admission holds. |
+| Codex 3 | Low | Fixed: Reply-To participates in SMTPUTF8 negotiation; seven-bit body encoding avoids unadvertised raw eight-bit content. |
+| Codex 4 | Low | Rejected: RFC 5321 section 4.3.2 lists RCPT success as 250/251; 252 belongs to VRFY/EXPN. No DATA is sent for an unexpected RCPT response, and it now fails only that message rather than halting the worker. |
+
+The SMTP classifications and Unicode serialization were checked against
+[RFC 5321 command/reply sequences](https://www.rfc-editor.org/rfc/rfc5321.html#section-4.3.2)
+and [Python email policy](https://docs.python.org/3/library/email.policy.html#email.policy.Policy.cte_type).
+
+Round-1 correction checks so far: 112 provider/private-transport tests and 73
+real database worker/affected permission tests passed. The first full eight-shard
+run exercised all 3,125 database cases but failed five outdated assertions about
+the newly compiled MAIL grant surface; all five now pass in the affected batch.
+Its successful credential-free baseline had 5,888 passes. That failed full run
+is diagnostic evidence only, not a passing coverage receipt. Image build,
+12 container-isolation checks, 17 runtime/provisioning/ingress/broker checks and
+one fake-backed configured Compose startup scenario passed on the initial head.

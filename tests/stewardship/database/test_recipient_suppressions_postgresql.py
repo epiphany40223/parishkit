@@ -331,7 +331,7 @@ def test_partial_refusal_keeps_other_head_address_deliverable(response_service):
     ],
 )
 def test_refusal_writes_wait_for_compiled_dispatch_owner(response_service, role):
-    """No current runtime login receives the future dispatcher write capability."""
+    """Only the compiled dispatcher records refusals; source work resolves them."""
     with (
         task_login(role, exact=True),
         transaction.atomic(),
@@ -347,16 +347,26 @@ def test_refusal_writes_wait_for_compiled_dispatch_owner(response_service, role)
                     (table, privilege),
                 )
                 assert cursor.fetchone()[0] is (
-                    role is ServiceRole.WORKER
-                    and table == "stewardship_recipient_resolution"
+                    (
+                        (
+                            role is ServiceRole.WORKER
+                            and table == "stewardship_recipient_resolution"
+                        )
+                        or (
+                            role is ServiceRole.MAIL_DISPATCH
+                            and table == "stewardship_recipient_refusal"
+                        )
+                    )
                     and privilege == "INSERT"
                 )
             cursor.execute(
                 "SELECT has_any_column_privilege(current_user,%s,'UPDATE')", (table,)
             )
             assert not cursor.fetchone()[0]
-        with pytest.raises(ProgrammingError, match="permission denied") as error:
+        with pytest.raises((ProgrammingError, IntegrityError)) as error:
             cursor.execute(
                 "INSERT INTO stewardship_recipient_refusal(id) VALUES (%s)", (uuid4(),)
             )
-        assert error.value.__cause__.sqlstate == "42501"
+        assert error.value.__cause__.sqlstate == (
+            "23514" if role is ServiceRole.MAIL_DISPATCH else "42501"
+        )

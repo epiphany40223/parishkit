@@ -123,3 +123,27 @@ def test_missing_helper_and_lost_acknowledgement_differ(monkeypatch, transport, 
         ).status
         is status
     )
+
+
+@pytest.mark.parametrize("mutation", ["settings", "size", "seconds", "candidate"])
+def test_local_validation_failure_never_becomes_uncertain(monkeypatch, mutation):
+    """All validation here precedes process launch and cannot imply acceptance."""
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("A private helper was launched")
+
+    monkeypatch.setattr(
+        "parishkit.stewardship.family_delivery_process._submit_private", forbidden
+    )
+    if mutation == "size":
+        monkeypatch.setattr(
+            "parishkit.stewardship.family_delivery_process.MAX_INPUT", 1
+        )
+    result = submit_family(
+        b"" if mutation == "candidate" else b"synthetic",
+        SETTINGS | ({"extra": "private"} if mutation == "settings" else {}),
+        sample(),
+        seconds=0 if mutation == "seconds" else 5,
+        check=lambda: None,
+    )
+    assert result == FamilyDeliveryResult(Status.PERMANENT, 2)
