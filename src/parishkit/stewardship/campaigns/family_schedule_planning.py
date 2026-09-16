@@ -222,7 +222,11 @@ def plan_family(guard, *, family_id, worker_id):
         )
         if not decision.blocked:
             _persist_decision(
-                rows, decision, worker_id=worker_id, correlation_id=correlation_id
+                rows,
+                decision,
+                worker_id=worker_id,
+                correlation_id=correlation_id,
+                check=check,
             )
         if catchup and not decision.blocked:
             from .catchup_family_coverage import forward_family_coverage
@@ -298,12 +302,13 @@ def _planning_scope(campaign_id, *, postclose=False):
     return scope, epoch
 
 
-def _persist_decision(rows, decision, *, worker_id, correlation_id):
+def _persist_decision(rows, decision, *, worker_id, correlation_id, check):
     """Commit every covered semantic slot in the same transaction as its outcome."""
     for row, _ in rows:
         if row.pk not in decision.coalesced and row.pk not in decision.skipped:
             continue
         coalesced = row.pk in decision.coalesced
+        check()
         ScheduleOccurrence.objects.filter(pk=row.pk, version=row.version).update(
             state="coalesced" if coalesced else "skipped",
             reason=decision.reason,
@@ -313,6 +318,7 @@ def _persist_decision(rows, decision, *, worker_id, correlation_id):
             correlation_id=correlation_id,
         )
         if coalesced:
+            check()
             ScheduleFulfillment.objects.create(
                 definition_id=row.definition_id,
                 mode=row.mode,

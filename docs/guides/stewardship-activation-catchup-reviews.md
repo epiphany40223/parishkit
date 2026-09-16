@@ -161,3 +161,78 @@ environment-gated suites explicitly skipped. Lint, formatting and all tracked
 Markdown passed. Rebuilt-image configured development and production Compose
 checks passed (2 tests in 106.04s). All six accepted Medium findings are fixed;
 round two is complete. Full corrected coverage and round three follow.
+
+## Round 3
+
+Correction delta `74a25903eb92d0c9ae35ad6c3c84cb99fe823c13` →
+`41ded629b5117275f3c20b9fd73339c0c5a8226f`, Pika session
+`20260915-233340-451d6a`. Both reviewers completed successfully; Codex took
+296 seconds and Claude delivered after roughly nine minutes. Finalized result:
+**COMMENT**, three Medium findings, no High/Critical, nine raw Low findings.
+There were no failed agents, mismatches, timeouts, stalls or degradations.
+
+### Round-three validated findings
+
+| ID | Source / raw severity | Disposition and evidence |
+| --- | --- | --- |
+| C1 | Claude / Medium | Tightened the independent Family receipt proof: semantic coverage excludes uncertain work, but cannot itself bypass checking a coalesced outcome's exact fulfillment. Only an independent restore hold excludes that outcome. The existing fulfillment-write guard already forbids the cited corrupt records; added actual-worker tests confirm both wrong disposition and wrong replacement roll back the group. |
+| C2 | Claude / Medium | Rejected as conflating preparation with delivery. The shared planner excludes independently held slots without marking them delivered, creates no outbox, and grants no dispatch permission. Reinstating a whole-preparation hold would contradict the release-only-own-hold contract. BG-06 explicitly retains delivery-time rechecking of unfulfilled initial recovery, including unreviewed initial holds; this prerequisite is now stated beside its task list and must pass before ADM-05 activation. The cited data-spec sentence prohibits configuring reminders without an initial definition, not preparing remaining slots while an existing initial is independently held. |
+| X1 | Codex / Medium | Fixed: the recovery-edge write guard rejects a replacement whose slot is already covered or independently restore-held. An actual-worker regression tries the held current initial alongside the selected current reminder, verifies rollback, then completes with the correct reminder edge while retaining the hold. |
+
+### Round-three raw Low findings
+
+1. Live-applicability cases: add an actual accepted live response followed by a
+   forged pending-work receipt, and isolate inactive status with otherwise
+   deliverable email. Email-ineligible/deliverable is intentionally not a valid
+   FamilyStatus combination, so those disjuncts cannot be isolated by inventing
+   inconsistent source state.
+2. Remaining duplicate slot-exclusion predicates: consolidated the Family
+   missing-slot and digest date-page checks into the shared helper.
+3. More than 100 digest predecessors: rejected for admitted history. Each
+   definition/revision has one selected recovery identity; forwarded ancestors
+   have an outgoing edge and leave the predecessor query. A new batch forwards
+   its predecessor before another revision can cancel its successor. Repeated
+   replacements form a chain, not 100 unforwarded branches. No valid fixture or
+   owner can produce the claimed inventory; do not enlarge scans for fabricated
+   history.
+4. Family effect-loop consistency: fixed; the shared Family outcome writer now
+   calls its existing ownership check before every update and fulfillment insert,
+   whether owned by the scheduler or activation worker.
+5. SQL predicate performance: retained the clear indexed slot lookups. Family
+   groups are at most 100 definitions and digest inputs are campaign-local dates;
+   no measured regression supports replacing them with a less readable plan hint.
+6. Forged-receipt early count: deferred minor optimization. The indexed count is
+   bounded by configured Family definitions and adds no authority. Existing
+   shape/cohort checks still reject invalid receipts.
+7. SQL argument names: retained positional references, consistent with surrounding
+   helpers. A hypothetical future ambiguous rewrite is not an existing defect.
+8. Paragraph wrapping: completed the reflow.
+9. Aggregate immediate ownership check: restored the explicit check immediately
+   before aggregate creation. An injected loss at that boundary raises typed
+   TaskOwnershipLost and commits neither aggregate, coverage nor checkpoint.
+
+### Round-three validation checkpoint
+
+The full same-tree run at reviewed `41ded62` passed all 2,950 PostgreSQL tests
+across four isolated disposable clusters, with 94.10% line and 85.51% branch
+coverage. Shards passed 728/739/734/749 database tests. One cleanup case printed
+the 120-second diagnostic stack while in its bounded cleanup wait, then passed
+at 143 seconds; the longest shard finished in 1,014.57 seconds. No test was
+silently dropped or timeout reclassified as a pass.
+
+The final correction's separate fresh-install audit against `41ded62` changes
+only the checkpoint, digest-receipt and recovery-edge functions. No object,
+grant, column, constraint, index or policy is added/removed. Baseline fingerprints
+were updated after inspection; retained databases remain untouched. The added
+live-submission fixture initially used the Testing acknowledgement and correctly
+failed validation; changing the fixture to Production acknowledgement fixed it.
+The final corrected regression set passed 147 PostgreSQL tests in 79.61s. The
+baseline passed 5,674 tests in 55.90s; lint, formatting, tracked Markdown and
+schema/model drift passed. Rebuilt-image configured development/production
+Compose checks passed (2 tests in 116.46s).
+
+Round three is complete: no accepted Medium-or-higher finding remains unresolved,
+and the final round had no validated High/Critical finding. The three-round exit
+criterion is satisfied without inventing an additional finding-free-round
+requirement. Final-head PR CI still must provide its own complete coverage and
+browser/container checks, followed by protected merge-group validation.

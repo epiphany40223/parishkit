@@ -412,8 +412,8 @@ def test_worker_cannot_checkpoint_inapplicable_pending_family_work(
                         family.family_duid,
                         inapplicable != "inactive",
                         inapplicable != "inactive",
-                        inapplicable not in ("inactive", "ineligible"),
-                        False,
+                        inapplicable != "ineligible",
+                        inapplicable == "inactive",
                     )
                 ],
                 generation=2,

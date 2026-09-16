@@ -1824,13 +1824,7 @@ BEGIN
                         AND NOT EXISTS(SELECT 1 FROM stewardship_schedule_occurrence o
                             WHERE o.revision_id=v.id AND o.mode='production'
                                 AND o.target='family:'||family::text AND o.slot='once')
-                        AND NOT EXISTS(SELECT 1 FROM stewardship_schedule_fulfillment f
-                            WHERE f.definition_id=s.id AND f.mode='production'
-                                AND f.target='family:'||family::text AND f.slot='once')
-                        AND NOT EXISTS(SELECT 1 FROM stewardship_restore_delivery_hold h
-                            WHERE h.definition_id=s.id AND h.mode='production'
-                                AND h.target='family:'||family::text AND h.slot='once'
-                                AND h.state IN ('unreviewed','assumed_delivered'))
+                        AND NOT public.stewardship_schedule_slot_excluded_v1(s.id,'production','family:'||family::text,'once')
                 )
                 OR pending_count>1
                 OR (pending_count>0 AND EXISTS(SELECT 1 FROM public.stewardship_family_campaign f
@@ -1854,10 +1848,17 @@ BEGIN
                     JOIN public.stewardship_schedule_definition s ON s.current_revision_id=o.revision_id
                     WHERE s.campaign_id=d.campaign_id AND s.kind IN ('initial','reminder')
                         AND o.mode='production' AND o.target='family:'||family::text AND o.due_at<=d.cutoff
-                        AND NOT public.stewardship_schedule_slot_excluded_v1(o.definition_id,o.mode,o.target,o.slot)
-                        AND (o.state IN ('running','delivery_unknown')
-                            OR (o.state='pending' AND (o.task_id IS NOT NULL OR o.outbox_id IS NOT NULL))
-                            OR (o.state='coalesced' AND NOT EXISTS(SELECT 1 FROM public.stewardship_schedule_fulfillment f
+                        AND ((NOT public.stewardship_schedule_slot_excluded_v1(o.definition_id,o.mode,o.target,o.slot)
+                                AND (o.state IN ('running','delivery_unknown')
+                                    OR (o.state='pending' AND (o.task_id IS NOT NULL OR o.outbox_id IS NOT NULL))))
+                            -- Coverage is the evidence being checked here, not
+                            -- permission to skip its integrity check. Only an
+                            -- independent restore hold excludes this outcome.
+                            OR (o.state='coalesced'
+                                AND NOT EXISTS(SELECT 1 FROM public.stewardship_restore_delivery_hold h
+                                    WHERE h.definition_id=o.definition_id AND h.mode=o.mode AND h.target=o.target
+                                        AND h.slot=o.slot AND h.state IN ('unreviewed','assumed_delivered'))
+                                AND NOT EXISTS(SELECT 1 FROM public.stewardship_schedule_fulfillment f
                                 WHERE f.definition_id=o.definition_id AND f.mode=o.mode AND f.target=o.target
                                     AND f.slot=o.slot AND f.disposition='coalesced' AND f.occurrence_id=o.replacement_id))))
                 THEN RAISE EXCEPTION 'Catch-up Family receipt lacks cutoff outcomes' USING ERRCODE='23514'; END IF;
@@ -3204,11 +3205,8 @@ BEGIN
                 AND NOT EXISTS(SELECT 1 FROM public.stewardship_schedule_occurrence o
                     WHERE o.revision_id=v.id AND o.mode='production' AND o.target='admins'
                         AND o.slot=last_day AND o.due_at=due)
-                AND NOT EXISTS(SELECT 1 FROM public.stewardship_schedule_fulfillment f
-                    WHERE f.definition_id=d.id AND f.mode='production' AND f.target='admins' AND f.slot=last_day)
-                AND NOT EXISTS(SELECT 1 FROM public.stewardship_restore_delivery_hold h
-                    WHERE h.definition_id=d.id AND h.mode='production' AND h.target='admins' AND h.slot=last_day
-                        AND h.state IN ('unreviewed','assumed_delivered')) THEN RETURN false; END IF;
+                AND NOT public.stewardship_schedule_slot_excluded_v1(d.id,'production','admins',last_day)
+                THEN RETURN false; END IF;
             candidate:=candidate+step;
         END LOOP;
         stage:=CASE WHEN exhausted THEN 'cover' ELSE 'dates' END;
@@ -9714,6 +9712,8 @@ BEGIN
         OR previous.state<>'skipped' OR previous.reason NOT IN ('schedule_replaced','schedule_removed')
         OR replacement.state<>'pending' OR replacement.task_id IS NOT NULL
         OR replacement.outbox_id IS NOT NULL
+        OR public.stewardship_schedule_slot_excluded_v1(
+            replacement.definition_id,replacement.mode,replacement.target,replacement.slot)
         OR NOT EXISTS(SELECT 1 FROM public.stewardship_schedule_definition s
             JOIN public.stewardship_schedule_definition old_s ON old_s.id=previous.definition_id
             WHERE s.id=replacement.definition_id AND s.campaign_id=demand.campaign_id

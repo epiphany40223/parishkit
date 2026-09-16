@@ -190,6 +190,7 @@ def prepare_digest(demand, claim, scope, definition, cursor):
     created = 0
     if selected is None and (choice == "aggregate" or previous):
         latest = pending.order_by("-due_at", "-id").first()
+        lock_task_claim(claim)
         selected = _new_occurrence(
             claim,
             correlation,

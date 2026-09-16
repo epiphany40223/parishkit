@@ -145,3 +145,28 @@ audit adds three validation functions and one successor index; only the named
 catch-up guards change. Renaming the materialization helper's argument changes
 its inventory label, not its three-UUID callable signature. No retained schema
 or data was modified.
+
+## Local acceptance and delivery handoff
+
+BG-04.05's bounded activation-preparation scope passes its local acceptance
+checks and three completed dual-source review/fix rounds. The
+[complete review ledger](stewardship-activation-catchup-reviews.md) records all
+findings, rejections, corrections and exact reviewed commits. Full coverage at
+`41ded62` accounts for every one of 2,950 PostgreSQL tests (94.10% lines, 85.51%
+branches); final small corrections passed 147 PostgreSQL regressions and 5,674
+baseline tests, plus strict fresh-schema/model parity, lint, formatting, tracked
+Markdown and rebuilt-image configured development/production Compose checks.
+The latter passed in 116.46s. All credentials/provider fixtures are synthetic.
+
+The worker releases only its preparation hold. Current restore-held initial
+slots are not delivered evidence; later BG-06 delivery must recheck initial
+recovery rather than blindly dispatch a prepared reminder. BG-06/BG-07 retain
+provider dispatch, live-response confirmations and pinned report facts, and
+ADM-05 remains disabled until those prerequisites pass. BG-04's mixed receipt,
+routing and end-to-end test tasks remain open. No formal gate is released here.
+
+Next: push the final implementation head, create its PR, require every exact-head
+CI check and protected merge-group check (including all browser engines), verify
+the merge on refreshed `origin/main`, and start the Phase 4 BG-08 authorized
+export-job/deterministic-chart foundation on a new branch. The human's standing
+merge/continue authority applies; deployment, release and Gate 5 approval do not.

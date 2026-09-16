@@ -86,7 +86,7 @@ Scope and dependencies: [BG-04 work package](../../plans/stewardship/background-
 - [ ] BG-04.02 — Implement revision and semantic-fulfillment identity.
 - [x] BG-04.03 — Implement locked replacement, removal, and cancellation.
 - [ ] BG-04.04 — Enforce immutable Testing/Production/operational routing.
-- [ ] BG-04.05 — Implement missed-work coalescing and bounded asynchronous activation catch-up.
+- [x] BG-04.05 — Implement missed-work coalescing and bounded asynchronous activation catch-up.
 - [ ] BG-04.06 — Test schedule, mode, revision, and restart combinations.
 
 Execution checkpoint: `pr/stewardship-schedule-planning` starts from verified
@@ -105,6 +105,16 @@ and merged as `db8aee09`, verified on `origin/main`. The preceding pending-CI
 note is superseded. The [activation catch-up increment](../../guides/stewardship-activation-catchup.md)
 continues bounded preparation, recovery and hold enforcement; mixed tasks remain
 open until their complete scope is accepted.
+
+September 16 local acceptance: BG-04.05 is implemented and passes three completed
+dual-source review/fix rounds. See the
+[activation acceptance record](../../guides/stewardship-activation-catchup.md#local-acceptance-and-delivery-handoff)
+and [review evidence](../../guides/stewardship-activation-catchup-reviews.md).
+The full reviewed-tree run passed 2,950 PostgreSQL tests; final corrections passed
+147 database regressions, 5,674 baseline tests and both configured Compose checks.
+Exact-head PR and protected merge-group CI remain pending. BG-04.02/.04/.06 stay
+open for their receipt/dispatch and integrated mode/consumer scope; completing
+preparation is not completion of BG-06/BG-07 or release of Gate 3.
 
 ## BG-05: ParishSoft delta and full refresh
 
@@ -149,6 +159,11 @@ Scope and dependencies: [BG-06 work package](../../plans/stewardship/background-
 Family selection replacement during activation retains immutable recovery edges
 for its already-coalesced reminder coverage. The delivery owner must preserve
 that lineage and never interpret a cancelled predecessor as successful delivery.
+Preparation may select remaining reminders while the initial slot is independently
+restore-held. BG-06's delivery-time missed-work recheck must not treat an
+unreviewed initial hold as delivered or send that reminder ahead of required
+initial recovery. This dispatch prerequisite must pass before ADM-05 activation
+is enabled; preparation completion itself grants no provider permission.
 
 Evidence: Not started.
 

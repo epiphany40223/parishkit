@@ -33,13 +33,16 @@ from .test_family_schedule_planning_postgresql import add_reminders
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def stage_family_pending(demand, claim, family):
+def stage_family_pending(demand, claim, family, *, definition_ids=None):
     """Model a crash after valid materialization but before group reconciliation."""
     with work_transaction():
         correlation = claim_event(claim)
-        for definition in ScheduleDefinition.objects.select_related(
+        definitions = ScheduleDefinition.objects.select_related(
             "current_revision"
-        ).filter(current_revision__due_at__lte=demand.cutoff):
+        ).filter(current_revision__due_at__lte=demand.cutoff)
+        if definition_ids is not None:
+            definitions = definitions.filter(pk__in=definition_ids)
+        for definition in definitions:
             ScheduleOccurrence.objects.create(
                 definition=definition,
                 revision_id=definition.current_revision_id,

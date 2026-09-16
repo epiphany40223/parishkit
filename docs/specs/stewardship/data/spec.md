@@ -299,9 +299,9 @@ selected. Removing all Family schedules preserves history without reviving mail;
 configuration continues to forbid reminders without an initial invitation.
 Digest generation and post-close obligation resolution must follow this lineage
 to include every original covered date, including dates covered before the
-configuration edit. Removal
-without a replacement preserves unresolved history for the ordinary explicit
-post-close resolution workflow; it does not claim delivery.
+configuration edit. Removal without a replacement preserves unresolved history
+for the ordinary explicit post-close resolution workflow; it does not claim
+delivery.
 
 `PostCloseMailResolution` stores Campaign, immutable mode, semantic obligation
 key (receipt submission identity or digest schedule UUID/slot), exact covered
