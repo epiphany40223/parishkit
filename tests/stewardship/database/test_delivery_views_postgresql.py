@@ -278,6 +278,8 @@ def test_delivery_forms_apply_once_with_current_session_and_csrf(
             result = browser.get(path)
             assert b"&lt;script&gt;evidence&lt;/script&gt;" in result.content
             assert b"<script>evidence</script>" not in result.content
+            if action == "accept":
+                assert b"Retry is currently unavailable" not in result.content
         assert DeliveryResolution.objects.count() == 1
         message.refresh_from_db()
         command = DeliveryResolution.objects.get()

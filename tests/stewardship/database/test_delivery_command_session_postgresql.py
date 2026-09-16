@@ -2,14 +2,20 @@
 
 # ruff: noqa: F811 -- pytest injects the imported fixture by name.
 
+from concurrent.futures import ThreadPoolExecutor
+from importlib import import_module
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from django.conf import settings
+from django.contrib.sessions.models import Session
+from django.db import DatabaseError, connection, connections, transaction
 from django.db.models import F
 
 from parishkit.stewardship.accounts import sessions
 from parishkit.stewardship.accounts.models import PortalSession
+from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs import delivery_views, family_mail_tasks
@@ -83,7 +89,7 @@ def form(family_mail, google, request):
 
 def submit(form):
     """Run the actual POST endpoint under the exact restricted Web SQL identity."""
-    with task_login(ServiceRole.WEB, exact=True):
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         return form.browser.post(
             form.path,
             form.values,
@@ -125,6 +131,7 @@ def test_expiry_after_domain_effect_rolls_back_all_commands(form, monkeypatch):
     monkeypatch.setattr(form.owner, form.function, expires)
     assert submit(form).status_code == 403
     assert not form.recorded()
+    assert AuditEvent.objects.filter(event_type="admin_timeout").count() == 1
 
 
 def test_private_post_evidence_is_marked_for_error_report_redaction(form):
@@ -133,3 +140,67 @@ def test_private_post_evidence_is_marked_for_error_report_redaction(form):
     assert response.status_code == 302
     if "note" in form.values:
         assert response.wsgi_request.sensitive_post_parameters == ("note",)
+
+
+def test_authority_change_during_command_never_sets_rolled_back_cookie(
+    form, monkeypatch
+):
+    """A changed fingerprint is denied inside effects and rotated after rollback."""
+    original, first = delivery_views._principal, [True]
+
+    def change_authority(*args, **kwargs):
+        """Model a newly computed policy fingerprint after initial admission."""
+        actor = original(*args, **kwargs)
+        if first[0]:
+            first[0] = False
+            monkeypatch.setattr(sessions, "_authority_fingerprint", lambda _: "changed")
+        return actor
+
+    monkeypatch.setattr(delivery_views, "_principal", change_authority)
+    response = submit(form)
+    assert response.status_code == 403 and not form.recorded()
+    key = response.wsgi_request.session.session_key
+    assert response.cookies["pk_admin"].value == key
+    assert Session.objects.filter(session_key=key).exists()
+    assert PortalSession.objects.get(session_id=key).revoked_at is None
+    assert PortalSession.objects.filter(revoked_at__isnull=False).count() == 1
+    assert AuditEvent.objects.filter(event_type="admin_privileges_changed").count() == 1
+
+
+def test_logout_cannot_interleave_between_command_effect_and_commit(form, monkeypatch):
+    """An independent exact-Web connection demonstrably waits for session ownership."""
+    key = PortalSession.objects.get().session_id
+    original = getattr(form.owner, form.function)
+
+    def logout_with_timeout():
+        """Use actual logout, bounded SQL waiting, and a separate request/session."""
+        connections.close_all()
+        request = SimpleNamespace(
+            session=import_module(settings.SESSION_ENGINE).SessionStore(session_key=key)
+        )
+        try:
+            with transaction.atomic(), connection.cursor() as cursor:
+                cursor.execute("SET LOCAL lock_timeout='200ms'")
+                sessions.end_admin(request)
+        except DatabaseError as error:
+            return error.__cause__.sqlstate
+        finally:
+            connections.close_all()
+        return "unexpectedly_unblocked"
+
+    def pause_after_effect(*args, **kwargs):
+        """The second connection must time out while the command owns its row."""
+        result = original(*args, **kwargs)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            assert executor.submit(logout_with_timeout).result(timeout=5) == "55P03"
+        return result
+
+    monkeypatch.setattr(form.owner, form.function, pause_after_effect)
+    assert submit(form).status_code == 302 and form.recorded()
+    with task_login(ServiceRole.WEB, exact=True):
+        request = SimpleNamespace(
+            session=import_module(settings.SESSION_ENGINE).SessionStore(session_key=key)
+        )
+        sessions.end_admin(request)
+    assert PortalSession.objects.get(session_id=key).revoked_at is not None
+    assert form.recorded()

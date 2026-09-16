@@ -24,6 +24,7 @@ FIELDS = (
     "updated_at",
     "finished_at",
 )
+PURPOSES = ("initial", "reminder")
 STATES = (
     "all",
     "delivery_unknown",
@@ -38,7 +39,7 @@ STATES = (
 
 def messages():
     """Keep later receipt/digest owners outside this increment's operational view."""
-    return OutboxMessage.objects.filter(purpose__in=("initial", "reminder"))
+    return OutboxMessage.objects.filter(purpose__in=PURPOSES)
 
 
 def unknown_count():
@@ -57,8 +58,8 @@ def alert_counts(since):
             "SELECT (SELECT count(*) FROM stewardship_operational_log "
             "WHERE level='CRITICAL' AND created_at>=%s), "
             "(SELECT count(*) FROM stewardship_outbox_message "
-            "WHERE state='delivery_unknown' AND purpose IN ('initial','reminder'))",
-            (since,),
+            "WHERE state='delivery_unknown' AND purpose=ANY(%s))",
+            (since, list(PURPOSES)),
         )
         return cursor.fetchone()
 

@@ -36,8 +36,8 @@ message already accepted for another head in the same Family.
 4. Integrated validation, three dual-source review/fix rounds, exact-head CI,
    protected queue, verified main ancestry, then the next dependency-ready work.
 
-Implementation is present and integrated validation is in progress; no review
-round is claimed complete. Fresh-install baseline changes only; no upgrade compatibility
+Implementation is present; two review/fix rounds are complete, with round 1's
+full validation and round 2's focused regressions. Fresh-install baseline changes only; no upgrade compatibility
 or retained development-database deletion. BG-10 retains operational email/Slack
 escalation, ADM-06 retains broader campaign controls, and Gate 3 remains closed.
 
@@ -144,8 +144,7 @@ SQL allowlists, stale Web-grant and immutable-guard inventory assertions, and
 one extra query beyond the unchanged Admin budget. Those are corrected, without
 weakening assertions or raising the budget. The first run's local artifacts
 remain under `/tmp/parishkit-resolution-quality.PU6Xks`; no failed receipt counts
-as passing evidence. Post-correction integration validation and the two further
-required review rounds remain in progress.
+as passing evidence.
 
 Post-correction checks so far: 35 real-database form/recovery/refusal tests,
 42 pure command-validation tests, 41 storage/query-budget tests, and 36 browser
@@ -156,3 +155,46 @@ definitions with equivalent logic but nonidentical deparsed forms; the SQL now
 matches the model without weakening the contract. A fresh independent comparison
 after that correction retained all object counts and changed only the constraint
 fingerprint to `79c7c444f7b7c1250bbd45511bcae9f9f301bf50f00754b2aff05f39873e9889`.
+
+The full frozen-tree run at `7ada2ced960b258a93afc9182a1b8be216f714e0`
+passed all 5,994 baseline tests and all 3,217 PostgreSQL tests across eight
+isolated shards. The longest database shard took 687.52 seconds. The repository
+`quality_ci combine` command verified complete, disjoint test accounting and
+reported 93.97% line / 85.19% branch coverage, above both 80% requirements.
+Local receipts and combined report are under
+`/tmp/parishkit-resolution-quality.VQ9QPL`. This completes round 1; subsequent
+corrections retain their separate validation rather than relabeling this tree.
+
+## Review round 2
+
+Pika session `20260916-131540-43efe0` reviewed the exact correction delta
+`c43b5e9d48bc072b7c429fac3eb263b8132da662` to
+`7ada2ced960b258a93afc9182a1b8be216f714e0`, with surrounding service, SQL,
+session, rendering and specification context. Its fresh exact-path permission
+probe passed. Both manifest reviewers completed normally; finalization retained
+the artifacts with no degradation, mismatch, failed agent or salvage. Eleven
+raw findings: one Medium, ten Low; no High or Critical. One finding passed the
+finalizer cutoff. Both reviewers independently confirmed the isolated dispatch
+rerender/credential boundary behind round 1's rejected High premise.
+
+| Source/item | Raw severity | Disposition and evidence |
+| --- | --- | --- |
+| Claude 1: retry warning after acceptance | Medium | Fixed: show the warning only for retry-capable message states. Actual post-acceptance page rendering must not claim a delivered message needs retry recovery. |
+| Claude 2: rollback can discard session rotation | Low | Fixed: explicitly retain the session row lock, perform non-mutating in-transaction authorization, and do timeout/revocation/rotation maintenance only after effect rollback. The replacement browser cookie must name committed session records. |
+| Claude 3: lock retention lacks concurrent test | Low | Fixed: for each command type, a second restricted Web connection calls real logout and hits bounded SQL lock timeout while the effect owns its session; logout succeeds after commit without removing the command receipt. |
+| Claude 4: repeated warning purpose filter | Low | Fixed: a single `PURPOSES` tuple supplies both the ORM polling query and the parameterized initial-page count. |
+| Claude 5: clearance gate omits snapshot predicates | Low | Already handled by `stewardship_source_current_guard`: its pointer must identify a promoted, non-compacted snapshot with matching generation and organization. The UI reads that pointer; the command independently revalidates under its owning locks. No weaker command admission or speculative new definer was added. |
+| Claude 6: SQL authorization denials share conflict response | Low | Intentional fail-closed boundary: Python's current Admin checks return 403; SQL state/version/admission rejection returns a fixed 409 without exposing SQL details. The source-impersonation branch is unreachable through the closed form. No write is accepted on either response. |
+| Claude 7: eager and lazy preparation ambiguity | Low | Fixed: reject mixed input sources and non-callable lazy providers explicitly. Retain eager inputs for existing internal callers and lazy input for browser replay. |
+| Claude 8: key loading under global lock | Low | False-positive premise: `family_authentication.runtime()` only retrieves the already constructed settings bundle; it reads no mounted files or network under the lock. |
+| Claude 9: unused `values` binding | Low | Fixed by selecting the window directly. Restoring `_` as suggested would shadow the gettext function and break command labels. |
+| Claude 10: unchanged live-region reannouncement | Low | Fixed: change warning text/visibility only when the value changes. A browser MutationObserver asserts that an identical poll causes no warning mutation. |
+| Codex 1: retry warning after acceptance | Low | Duplicate of Claude 1; same correction and real POST/render regression. |
+
+Round 2 corrections pass 40 command/session/view/recovery PostgreSQL tests and
+12 additional refusal/query-budget tests, 44 pure command cases, and six
+three-engine keyboard/polling browser cases. The 15 session cases were rerun
+with additional actual `pk_admin` response-cookie and durable timeout-audit
+assertions; all pass. Ruff, formatting, tracked Markdown and migration-state
+checks pass. This completes round 2; the third independent review and protected
+final-head CI remain required. No merge, deployment or Gate 3 release is implied.

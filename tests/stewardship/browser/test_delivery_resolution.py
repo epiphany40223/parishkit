@@ -81,7 +81,7 @@ def test_warning_polls_durable_count_and_survives_unavailable_response(
     page.goto(component_origin + "/delivery")
     warning = page.locator("[data-delivery-warning]")
     assert warning.locator("..").get_attribute("aria-live") == "polite"
-    for value in (1234, None, "bad", 0):
+    for index, value in enumerate((1234, 1234, None, "bad", 0)):
         count[0] = value
         with page.expect_response("**/admin/background/counts"):
             page.clock.fast_forward(30000)
@@ -92,4 +92,14 @@ def test_warning_polls_durable_count_and_survives_unavailable_response(
             assert "1,234" in warning.inner_text()
         if value == "bad":
             assert page.locator("[data-background-total]").inner_text() == "0"
-    assert len(requests) == 4 and all(request.method == "GET" for request in requests)
+        if index == 0:
+            warning.evaluate("""element => {
+                window.warningMutations = 0;
+                new MutationObserver(records => {
+                    window.warningMutations += records.length;
+                })
+                  .observe(element, {childList: true, subtree: true, attributes: true});
+            }""")
+        elif index == 1:
+            assert page.evaluate("window.warningMutations") == 0
+    assert len(requests) == 5 and all(request.method == "GET" for request in requests)

@@ -17,6 +17,7 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.authentication import runtime
 from parishkit.stewardship.accounts.cryptography import CryptographicError
 from parishkit.stewardship.accounts.limiting import LimiterUnavailable
+from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
@@ -102,14 +103,25 @@ def _command_scope(request, service, actor):
     revocation that wins this lock is observed before the command; expiry during
     processing is checked again and rolls back every command-side effect.
     """
-    with work_transaction():
-        current = _principal(request, service.store)
-        if current.identity != actor.identity:
-            raise PermissionError("Delivery command identity changed.")
-        yield
-        current = _principal(request, service.store, final=True)
-        if current.identity != actor.identity:
-            raise PermissionError("Delivery command identity changed.")
+    try:
+        with work_transaction():
+            # Lock without rotating cookies or writing session maintenance in a
+            # transaction that the domain command may subsequently roll back.
+            PortalSession.objects.select_for_update().filter(
+                session_id=request.session.session_key
+            ).first()
+            current = _principal(request, service.store, final=True)
+            if current.identity != actor.identity:
+                raise PermissionError("Delivery command identity changed.")
+            yield
+            current = _principal(request, service.store, final=True)
+            if current.identity != actor.identity:
+                raise PermissionError("Delivery command identity changed.")
+    except PermissionError:
+        # Persist timeout/revocation audit or authority rotation only after the
+        # effect rollback. A replacement cookie must name a committed session.
+        _principal(request, service.store)
+        raise
 
 
 def _retry_inputs():
@@ -217,7 +229,7 @@ def delivery_detail(request, message_id):
 
     def load():
         """Pin history's upper version to the selected message observation."""
-        values, window = _window(request, set())
+        window = _window(request, set())[1]
         message = messages().values(*FIELDS).get(pk=message_id)
         events, following = window.rows(
             OutboxEvent.objects.filter(
@@ -269,7 +281,11 @@ def delivery_detail(request, message_id):
             task=task,
             notes=notes,
             retry_unavailable=bool(
-                task and task["state"] == "failed" and not can_retry
+                task
+                and task["state"] == "failed"
+                and not can_retry
+                and message["state"]
+                in {"delivery_unknown", "permanent_failure", "pending", "retry_wait"}
             ),
             commands=[
                 dict(action=action, label=labels[action], id=uuid4())

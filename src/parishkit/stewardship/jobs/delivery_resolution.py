@@ -129,6 +129,11 @@ def resolve_delivery(
         raise ValueError(
             "Resending requires an explicit duplicate-risk acknowledgement."
         )
+    if preparation_inputs is not None and (
+        not callable(preparation_inputs)
+        or any(value is not None for value in (general, public, public_origin))
+    ):
+        raise ValueError("Use one unambiguous preparation input source.")
     intent = dict(
         actor_id=user_id,
         message_id=message_id,
@@ -187,7 +192,7 @@ def resolve_delivery(
         if retry:
             inputs = (
                 preparation_inputs()
-                if preparation_inputs
+                if preparation_inputs is not None
                 else dict(
                     general=general,
                     public=public,

@@ -321,8 +321,11 @@
       backgroundIndicator.querySelector("[data-background-total]").textContent = total.toLocaleString("en-US");
       backgroundIndicator.querySelector("[data-background-running]").textContent = values[4].toLocaleString("en-US");
       if (deliveryWarning) {
-        deliveryWarning.querySelector("[data-delivery-unknown]").textContent = result.delivery_unknown.toLocaleString("en-US");
-        deliveryWarning.hidden = result.delivery_unknown === 0;
+        const count = deliveryWarning.querySelector("[data-delivery-unknown]");
+        const formatted = result.delivery_unknown.toLocaleString("en-US");
+        if (count.textContent !== formatted) count.textContent = formatted;
+        const hidden = result.delivery_unknown === 0;
+        if (deliveryWarning.hidden !== hidden) deliveryWarning.hidden = hidden;
       }
       if (unavailable) unavailable.hidden = true;
     } catch {

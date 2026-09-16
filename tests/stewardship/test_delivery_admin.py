@@ -76,6 +76,8 @@ def test_missing_retry_keys_fail_before_database_access():
         dict(action="resend"),
         dict(duplicate_acknowledged=1),
         dict(note=""),
+        dict(preparation_inputs="invalid"),
+        dict(preparation_inputs=lambda: {}, public_origin="http://localhost"),
     ],
 )
 def test_resolution_rejects_invalid_intent_before_database(override):
