@@ -192,6 +192,7 @@ class TaskRunEvent(ImmutableRecord):
 
 
 # Model discovery stays here; delivery records have their own focused owner.
+from .family_mail_models import FamilyMailPreparation  # noqa: E402,F401
 from .outbox_models import (  # noqa: E402,F401
     DeliveryPauseHold,
     OutboxEvent,

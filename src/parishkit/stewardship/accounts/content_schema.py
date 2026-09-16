@@ -11,7 +11,11 @@ import json
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.schema_primitives import invalid, typed
-from parishkit.stewardship.web.content import prepare_content, validate_template
+from parishkit.stewardship.web.content import (
+    prepare_content,
+    validate_family_email,
+    validate_template,
+)
 
 SCHEMA = "campaign-content-v5"
 REQUEST_SCHEMA = "campaign-content-patch-v5"
@@ -79,6 +83,10 @@ def validate_content_records(document):
                 if type(value["subject"]) is not str or not value["subject"].strip():
                     invalid()
                 validate_template(value["subject"], subject=True)
+                if slot in {"initial", "reminder"}:
+                    validate_family_email(
+                        value["subject"], value["html"], value["text"]
+                    )
             elif value["subject"] is not None:
                 invalid()
         except (ValueError, TypeError):

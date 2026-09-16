@@ -11,6 +11,7 @@ from parishkit.stewardship.web.content import (
     PLACEHOLDERS,
     prepare_content,
     render_template,
+    validate_family_email,
     validate_template,
 )
 from parishkit.stewardship.web.presentation import campaign_year, parish_date
@@ -84,12 +85,19 @@ class ContentForm(forms.Form):
     )
     clear = forms.BooleanField(label=_("Remove this selected content"), required=False)
 
-    def __init__(self, *args, kind, **kwargs):
+    def __init__(self, *args, kind, slot=None, **kwargs):
         """Page content cannot carry a subject or masquerade as an email template."""
         self.kind = kind
+        self.slot = slot
         super().__init__(*args, **kwargs)
         if kind == "page":
             del self.fields["subject"]
+        elif slot in {"initial", "reminder"}:
+            self.fields["text"].help_text = _(
+                "Both body versions require {{ family_code }} and {{ family_url }}. "
+                "Edit plain text if the generated version omits a link. "
+                "Keep credentials out of the subject."
+            )
 
     def clean(self):
         """Validate sanitized output and substitutions before creating any request."""
@@ -104,7 +112,6 @@ class ContentForm(forms.Form):
             validate_template(prepared.text)
             if self.kind == "email":
                 validate_template(values["subject"], subject=True)
-            values["prepared"] = prepared
         except ValueError:
             self.add_error(
                 None,
@@ -113,6 +120,25 @@ class ContentForm(forms.Form):
                     "Email subjects must be one line."
                 ),
             )
+            return values
+        if self.kind == "email" and self.slot in {"initial", "reminder"}:
+            try:
+                validate_family_email(values["subject"], prepared.html, prepared.text)
+            except ValueError:
+                self.add_error(
+                    None,
+                    forms.ValidationError(
+                        _(
+                            "Initial invitations and reminders require "
+                            "{{ family_code }} and {{ family_url }} in both body "
+                            "versions, and neither in the subject. Do not use "
+                            "reserved system markers."
+                        ),
+                        code="family_access",
+                    ),
+                )
+                return values
+        values["prepared"] = prepared
         return values
 
     def values(self, *, campaign_id, slot):

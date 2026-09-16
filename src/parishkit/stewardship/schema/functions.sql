@@ -3531,8 +3531,11 @@ BEGIN
                OR NEW.lease_expires_at>t.lease_expires_at OR NEW.heartbeat_at>clock_timestamp()
                OR NEW.revision_id IS DISTINCT FROM d.current_revision_id
                OR c.id IS DISTINCT FROM r.current_campaign_id OR NEW.mode<>r.mode OR r.restore_review_required
-               OR t.domain_request_id IS DISTINCT FROM NEW.id
-               OR t.task_type<>'schedule_occurrence'
+               OR NOT ((t.task_type='schedule_occurrence' AND t.domain_request_id IS NOT DISTINCT FROM NEW.id)
+                   OR (t.task_type='family_mail_prepare' AND EXISTS (
+                       SELECT 1 FROM public.stewardship_family_mail_preparation q
+                       WHERE q.id=t.domain_request_id AND q.task_id=t.root_id
+                         AND q.occurrence_id=NEW.id AND q.mode=NEW.mode)))
                OR NOT EXISTS(SELECT 1 FROM stewardship_campaign_configuration p WHERE p.id=c.active_configuration_id
                    AND ((instant>=p.starts_at AND instant<p.ends_at
                        AND ((NEW.mode='testing' AND c.state='draft') OR (NEW.mode='production' AND c.state IN ('scheduled','active'))))
@@ -6192,6 +6195,8 @@ BEGIN
         public.stewardship_boundary_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
             CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE AND
         public.stewardship_catchup_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
+            CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE AND
+        public.stewardship_family_mail_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
             CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE THEN
         RAISE EXCEPTION 'Worker configuration effects require atomic setup ownership'
             USING ERRCODE='23514';

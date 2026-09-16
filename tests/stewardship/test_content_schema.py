@@ -83,6 +83,23 @@ def test_email_requires_valid_subject(subject):
         configuration_version(document)
 
 
+@pytest.mark.parametrize("field", ["html", "text", "subject"])
+@pytest.mark.parametrize("slot", ["initial", "reminder"])
+@pytest.mark.parametrize("credential", ["family_code", "family_url"])
+def test_family_access_contract_is_enforced_at_configuration_apply(
+    field, slot, credential
+):
+    """Raw YAML or a bypassed form cannot select an unusable Family email."""
+    document = content_document()
+    owner = document["sections"]["campaigns"][0]["id"]
+    row = content(owner, kind="email", slot=slot)
+    document["sections"]["content"].append(row)
+    assert configuration_version(document)
+    row["values"][field] = "{{ " + credential + " }}"
+    with pytest.raises(ConfigError):
+        configuration_version(document)
+
+
 @pytest.mark.parametrize("mismatch", [None, "subject", "kind", "owner"])
 def test_schedule_template_reference(mismatch):
     """A resolved schedule template has the same owner, kind and exact subject."""

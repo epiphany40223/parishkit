@@ -5,6 +5,7 @@ from uuid import UUID
 from django.db import connection
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+from parishkit.stewardship.jobs.family_mail_epochs import ensure_preparation_epoch
 from parishkit.stewardship.jobs.scheduler import SchedulerGuard
 from parishkit.stewardship.observability import emit_failure
 from parishkit.stewardship.storage import StorageInvariantError
@@ -45,6 +46,12 @@ class FamilyScheduleProducer:
             self.campaign_id, self.cursor = current, None
         if current is None:
             return ()
+        try:
+            ensure_preparation_epoch(guard, current, self.worker_id)
+        except PermissionError:
+            # Source/setup/lifecycle gates hold preparation without creating a
+            # dummy epoch or a ticket that could later change its namespace.
+            return ()
         rows = FamilyCampaign.objects.filter(campaign_id=current)
         if self.cursor is not None:
             rows = rows.filter(id__gt=self.cursor)
@@ -55,9 +62,16 @@ class FamilyScheduleProducer:
         for identifier in identifiers:
             guard.check()
             try:
-                results.append(
-                    plan_family(guard, family_id=identifier, worker_id=self.worker_id)
+                result = plan_family(
+                    guard, family_id=identifier, worker_id=self.worker_id
                 )
+                results.append(result)
+                if result.selected is not None and not result.held:
+                    from parishkit.stewardship.jobs.family_mail_tasks import (
+                        enqueue_preparation,
+                    )
+
+                    enqueue_preparation(guard, result.selected)
             except PermissionError:
                 # Current campaign/Family may change between enumeration and
                 # locked admission. No earlier scope survives that boundary.

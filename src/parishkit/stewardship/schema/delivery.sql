@@ -3,6 +3,355 @@
 -- with the later workflow; UUIDs, action names and admission callbacks are not
 -- a substitute for those PostgreSQL permission boundaries.
 
+CREATE FUNCTION public.stewardship_family_mail_epoch_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+BEGIN
+    IF current_user<>'pk_stewardship_scheduler' THEN RETURN NEW; END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+        AND locktype='advisory' AND classid=736229 AND objid=1 AND objsubid=2 AND granted)
+       OR NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+        AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2 AND granted)
+       OR NOT EXISTS (
+           SELECT 1 FROM public.stewardship_campaign c
+           JOIN public.stewardship_campaign_configuration p ON p.id=c.active_configuration_id
+           JOIN public.stewardship_system_configuration r ON r.current_campaign_id=c.id
+           JOIN public.stewardship_campaign_credentials population ON population.campaign_id=c.id
+           JOIN public.stewardship_source_current source ON source.snapshot_id=population.source_snapshot_id
+           WHERE c.id=NEW.campaign_id AND c.state='draft' AND r.mode='testing'
+             AND NOT r.restore_review_required AND NOT population.go_live_gate
+             AND NOT population.population_dirty AND population.rehearsal_epoch_id IS NULL
+             AND population.source_generation=source.generation
+             AND public.stewardship_campaign_now_v1()>=p.starts_at
+             AND public.stewardship_campaign_now_v1()<p.ends_at
+             AND NOT EXISTS (SELECT 1 FROM public.stewardship_campaign_work_gate
+                 WHERE campaign_id=c.id AND state<>'released')
+       ) THEN
+        RAISE EXCEPTION 'Scheduler rehearsal initialization is not admitted' USING ERRCODE='23514';
+    END IF;
+    IF TG_TABLE_NAME='stewardship_rehearsal_epoch' THEN
+        IF TG_OP<>'INSERT' OR NEW.state<>'active' OR NEW.invalidated_at IS NOT NULL
+           OR NEW.actor_id IS NULL OR NEW.correlation_id<>NEW.campaign_id THEN
+            RAISE EXCEPTION 'Scheduler may only create a new active rehearsal' USING ERRCODE='23514';
+        END IF;
+    ELSE
+        IF TG_OP<>'UPDATE' OR OLD.rehearsal_epoch_id IS NOT NULL
+           OR NEW.rehearsal_epoch_id IS NULL
+           OR (to_jsonb(NEW)-ARRAY['rehearsal_epoch_id','actor_id','correlation_id','version','updated_at'])
+                IS DISTINCT FROM
+              (to_jsonb(OLD)-ARRAY['rehearsal_epoch_id','actor_id','correlation_id','version','updated_at'])
+           OR NOT EXISTS (SELECT 1 FROM public.stewardship_rehearsal_epoch e
+               WHERE e.id=NEW.rehearsal_epoch_id AND e.campaign_id=NEW.campaign_id
+                 AND e.state='active' AND e.actor_id=NEW.actor_id
+                 AND e.correlation_id=NEW.correlation_id) THEN
+            RAISE EXCEPTION 'Scheduler may only select a newly initialized rehearsal' USING ERRCODE='23514';
+        END IF;
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER family_mail_epoch_initialization BEFORE INSERT OR UPDATE ON public.stewardship_rehearsal_epoch
+FOR EACH ROW EXECUTE FUNCTION public.stewardship_family_mail_epoch_v1();
+CREATE TRIGGER family_mail_epoch_selection BEFORE UPDATE ON public.stewardship_campaign_credentials
+FOR EACH ROW EXECUTE FUNCTION public.stewardship_family_mail_epoch_v1();
+
+CREATE FUNCTION public.stewardship_family_mail_ticket_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+BEGIN
+    IF TG_OP<>'INSERT' THEN
+        RAISE EXCEPTION 'Family preparation tickets are immutable' USING ERRCODE='23514';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+        AND locktype='advisory' AND classid=736229 AND objid=1 AND objsubid=2
+        AND mode='ExclusiveLock' AND granted)
+       OR NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+        AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
+        AND mode='ExclusiveLock' AND granted)
+       OR NOT EXISTS (
+        SELECT 1 FROM public.stewardship_schedule_occurrence o
+        JOIN public.stewardship_schedule_definition d ON d.id=o.definition_id
+        JOIN public.stewardship_system_configuration r ON r.current_campaign_id=d.campaign_id
+        JOIN public.stewardship_campaign_credentials c ON c.campaign_id=d.campaign_id
+        JOIN public.stewardship_task_run t ON t.id=NEW.task_id
+        WHERE o.id=NEW.occurrence_id AND o.state='pending' AND o.outbox_id IS NULL
+          AND o.mode=NEW.mode AND o.mode=r.mode AND d.current_revision_id=o.revision_id
+          AND d.kind IN ('initial','reminder') AND o.target LIKE 'family:%'
+          AND NOT r.restore_review_required AND NOT c.go_live_gate
+          AND (NEW.mode='production' OR EXISTS (
+              SELECT 1 FROM public.stewardship_rehearsal_epoch e
+              WHERE e.id=NEW.rehearsal_epoch_id AND e.id=c.rehearsal_epoch_id
+                AND e.campaign_id=c.campaign_id AND e.state='active'))
+          AND t.root_id=t.id AND t.state='queued' AND t.task_type='family_mail_prepare'
+          AND t.domain_request_id=NEW.id AND t.idempotency_key=NEW.id::text
+          AND t.initiated_by_id IS NULL AND NEW.actor_id IS NULL
+          AND NEW.correlation_id=o.id
+       ) THEN
+        RAISE EXCEPTION 'Family preparation requires owned current allocation'
+            USING ERRCODE='23514';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER family_mail_ticket_guard BEFORE INSERT OR UPDATE OR DELETE
+ON public.stewardship_family_mail_preparation
+FOR EACH ROW EXECUTE FUNCTION public.stewardship_family_mail_ticket_v1();
+
+-- Invoker rights, not a privileged mutation entry point. No caller-controlled
+-- session value can stand in for the original task's live database claim.
+CREATE FUNCTION public.stewardship_family_mail_render_admitted_v1(
+    proposed jsonb, family uuid, configuration uuid, revision uuid, mode text
+) RETURNS boolean LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE expected jsonb; email jsonb; template uuid; test_recipient text;
+BEGIN
+    SELECT settings INTO email FROM public.stewardship_applied_integration
+        WHERE configuration_id=configuration AND kind='email';
+    SELECT content.id INTO template FROM public.stewardship_content_version content
+        JOIN public.stewardship_schedule_revision schedule
+          ON content.record_id=(schedule.values->>'template_version')::uuid
+            AND content.campaign_id=schedule.campaign_id
+        WHERE schedule.id=revision AND content.configuration_id=configuration
+          AND content.kind='email';
+    SELECT testing_recipient INTO test_recipient FROM public.stewardship_system_configuration;
+    SELECT coalesce(jsonb_agg(address ORDER BY address),'[]'::jsonb) INTO expected FROM (
+        SELECT DISTINCT item->>'value' AS address
+        FROM public.stewardship_family_campaign f
+        JOIN public.stewardship_source_current s ON true
+        JOIN public.stewardship_snapshot_family sf
+          ON sf.snapshot_id=s.snapshot_id AND sf.source_key=f.family_duid::text
+        JOIN public.stewardship_source_family payload ON payload.id=sf.payload_id
+        CROSS JOIN LATERAL jsonb_array_elements(payload.canonical::jsonb->'active_head_duids') head
+        JOIN public.stewardship_snapshot_contact sc ON sc.snapshot_id=s.snapshot_id
+          AND sc.source_key='member:'||(head#>>'{}')
+        JOIN public.stewardship_source_contact contact ON contact.id=sc.payload_id
+        CROSS JOIN LATERAL jsonb_array_elements(contact.canonical::jsonb->'emails') item
+        WHERE f.id=family AND item->'valid'='true'::jsonb AND NOT EXISTS (
+            SELECT 1 FROM public.stewardship_recipient_refusal refusal
+            WHERE refusal.organization_id=s.organization_id AND refusal.family_duid=f.family_duid
+              AND refusal.address=item->>'value' AND NOT EXISTS (
+                SELECT 1 FROM public.stewardship_recipient_resolution resolution
+                WHERE resolution.refusal_id=refusal.id))
+    ) recipients;
+    RETURN template IS NOT NULL AND email IS NOT NULL
+       AND (proposed->>'configuration_id')::uuid=configuration
+       AND (proposed->>'template_id')::uuid=template
+       AND proposed->>'sender'=email->>'sender' AND proposed->>'reply_to'=email->>'reply_to'
+       AND jsonb_array_length(expected)>0 AND proposed->'intended_recipients'=expected
+       AND proposed->'routed_recipients'=CASE mode WHEN 'testing'
+           THEN jsonb_build_array(test_recipient) ELSE expected END;
+END $$;
+
+CREATE FUNCTION public.stewardship_family_mail_write_admitted_v1(
+    table_name text, proposed jsonb, previous jsonb
+) RETURNS boolean LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE
+    t public.stewardship_task_run%ROWTYPE;
+    q public.stewardship_family_mail_preparation%ROWTYPE;
+    o public.stewardship_schedule_occurrence%ROWTYPE;
+    d public.stewardship_schedule_definition%ROWTYPE;
+    c public.stewardship_campaign%ROWTYPE;
+    r public.stewardship_system_configuration%ROWTYPE;
+BEGIN
+    IF table_name NOT IN ('stewardship_schedule_occurrence','stewardship_occurrence_transition',
+        'stewardship_schedule_fulfillment','stewardship_outbox_message',
+        'stewardship_outbox_render','stewardship_outbox_event',
+        'stewardship_rehearsal_credential','stewardship_rehearsal_code_mac') THEN RETURN false; END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+        AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
+        AND mode='ExclusiveLock' AND granted) THEN RETURN false; END IF;
+    SELECT * INTO t FROM public.stewardship_task_run
+        WHERE id=(proposed->>'correlation_id')::uuid;
+    IF t.id IS NULL OR t.task_type<>'family_mail_prepare' OR t.state<>'running'
+       OR t.worker_id IS DISTINCT FROM (proposed->>'actor_id')::uuid
+       OR t.lease_expires_at<=clock_timestamp() THEN RETURN false; END IF;
+    SELECT * INTO q FROM public.stewardship_family_mail_preparation
+        WHERE id=t.domain_request_id AND task_id=t.root_id;
+    SELECT * INTO o FROM public.stewardship_schedule_occurrence WHERE id=q.occurrence_id;
+    SELECT * INTO d FROM public.stewardship_schedule_definition WHERE id=o.definition_id;
+    SELECT * INTO c FROM public.stewardship_campaign WHERE id=d.campaign_id;
+    SELECT * INTO r FROM public.stewardship_system_configuration;
+    IF q.id IS NULL OR o.id IS NULL OR c.id IS DISTINCT FROM r.current_campaign_id
+       OR r.restore_review_required OR q.mode<>r.mode OR o.mode<>q.mode
+       OR d.current_revision_id IS DISTINCT FROM o.revision_id
+       OR (q.mode='production' AND c.delivery_paused)
+       OR NOT EXISTS (SELECT 1 FROM public.stewardship_campaign_configuration p
+           WHERE p.id=c.active_configuration_id
+             AND public.stewardship_campaign_now_v1()>=p.starts_at
+             AND public.stewardship_campaign_now_v1()<p.ends_at
+             AND ((q.mode='testing' AND c.state='draft')
+                OR (q.mode='production' AND c.state IN ('scheduled','active'))))
+       OR EXISTS (SELECT 1 FROM public.stewardship_campaign_work_gate
+           WHERE campaign_id=c.id AND state<>'released')
+       OR (q.mode='production' AND EXISTS (SELECT 1 FROM public.stewardship_activation_catchup
+           WHERE campaign_id=c.id AND completed_at IS NULL))
+       OR NOT EXISTS (SELECT 1 FROM public.stewardship_campaign_credentials p
+           WHERE p.campaign_id=c.id AND NOT p.go_live_gate
+             AND (q.mode='production' OR EXISTS (
+                 SELECT 1 FROM public.stewardship_rehearsal_epoch e
+                 WHERE e.id=q.rehearsal_epoch_id AND e.id=p.rehearsal_epoch_id
+                   AND e.campaign_id=c.id AND e.state='active')))
+       THEN RETURN false; END IF;
+    IF table_name='stewardship_rehearsal_credential' THEN
+        RETURN previous IS NULL AND q.mode='testing'
+           AND (proposed->>'epoch_id')::uuid=q.rehearsal_epoch_id
+           AND o.target='family:'||(proposed->>'family_id')
+           AND o.state='pending' AND o.outbox_id IS NULL;
+    END IF;
+    IF table_name='stewardship_rehearsal_code_mac' THEN
+        RETURN previous IS NULL AND q.mode='testing' AND EXISTS (
+            SELECT 1 FROM public.stewardship_rehearsal_credential credential
+            WHERE credential.id=(proposed->>'credential_id')::uuid
+              AND credential.epoch_id=(proposed->>'epoch_id')::uuid
+              AND credential.epoch_id=q.rehearsal_epoch_id
+              AND o.target='family:'||credential.family_id::text
+              AND credential.correlation_id=t.id AND credential.actor_id=t.worker_id);
+    END IF;
+    IF table_name='stewardship_schedule_occurrence' THEN
+        RETURN proposed->>'target'=o.target AND proposed->>'mode'=o.mode
+           AND EXISTS (SELECT 1 FROM public.stewardship_schedule_definition other
+               WHERE other.id=(proposed->>'definition_id')::uuid
+                 AND other.campaign_id=c.id AND other.kind IN ('initial','reminder'))
+           AND ((proposed->>'state' IN ('skipped','coalesced')
+               AND previous->>'state'='pending' AND previous->>'outbox_id' IS NULL
+               AND previous->>'task_id' IS NULL)
+             OR ((proposed->>'id')::uuid=o.id
+               AND (proposed->>'task_id')::uuid=t.id
+               AND (proposed->>'fence')::bigint=t.fence
+               AND (proposed->>'worker_id')::uuid=t.worker_id
+               AND proposed->>'state' IN ('running','pending'))
+             OR (previous IS NULL AND proposed->>'state'='pending'));
+    END IF;
+    IF table_name IN ('stewardship_occurrence_transition','stewardship_schedule_fulfillment') THEN
+        RETURN EXISTS (SELECT 1 FROM public.stewardship_schedule_occurrence other
+            JOIN public.stewardship_schedule_definition definition ON definition.id=other.definition_id
+            WHERE other.id=(proposed->>'occurrence_id')::uuid
+              AND definition.campaign_id=c.id AND other.target=o.target
+              AND other.mode=q.mode AND definition.kind IN ('initial','reminder')
+              AND (table_name<>'stewardship_occurrence_transition' OR (
+                  other.version=(proposed->>'version')::bigint
+                  AND other.state=proposed->>'after_state'
+                  AND other.fence=(proposed->>'fence')::bigint
+                  AND other.attempts=(proposed->>'attempts')::bigint
+                  AND other.actor_id=(proposed->>'actor_id')::uuid
+                  AND other.correlation_id=(proposed->>'correlation_id')::uuid)));
+    END IF;
+    IF o.task_id IS DISTINCT FROM t.id OR o.state<>'running' OR o.fence<>t.fence
+       OR o.worker_id IS DISTINCT FROM t.worker_id OR o.lease_expires_at<=clock_timestamp()
+       THEN RETURN false; END IF;
+    IF table_name='stewardship_outbox_message' THEN
+        RETURN previous IS NULL AND proposed->>'action'='created'
+           AND proposed->>'state'='pending' AND (proposed->>'semantic_key')::uuid=o.id
+           AND (proposed->>'campaign_id')::uuid=c.id AND proposed->>'mode'=q.mode
+           AND proposed->>'purpose'=d.kind AND proposed->>'routing'=o.routing
+           AND o.target='family:'||(proposed->>'family_id')
+           AND (proposed->>'rehearsal_epoch_id')::uuid IS NOT DISTINCT FROM q.rehearsal_epoch_id
+           AND proposed->>'credential_namespace'=CASE q.mode WHEN 'testing' THEN 'rehearsal' ELSE 'production' END
+           AND (q.mode='testing' OR EXISTS (
+               SELECT 1 FROM public.stewardship_family_token_generation generation
+               JOIN public.stewardship_credential_deployment deployment
+                 ON generation.credential_epoch=deployment.family_link_epoch
+               WHERE generation.id=c.active_token_generation_id AND generation.state='active'
+                 AND generation.id=(proposed->>'token_generation_id')::uuid
+                 AND generation.credential_epoch=(proposed->>'credential_epoch_id')::uuid))
+           AND EXISTS (SELECT 1 FROM public.stewardship_family_campaign f
+               JOIN public.stewardship_campaign_credentials p ON p.campaign_id=f.campaign_id
+               JOIN public.stewardship_source_current s ON s.snapshot_id=p.source_snapshot_id
+               WHERE f.id=(proposed->>'family_id')::uuid AND f.campaign_id=c.id
+                 AND f.active AND f.email_eligible AND f.email_deliverable
+                 AND NOT p.population_dirty AND f.source_generation=s.generation
+                 AND p.source_generation=s.generation
+                 AND ((q.mode='production' AND f.effective_submission_id IS NULL)
+                   OR (q.mode='testing' AND NOT EXISTS (
+                       SELECT 1 FROM public.stewardship_submission sub
+                       WHERE sub.family_id=f.id AND sub.mode='test'
+                         AND sub.rehearsal_epoch_id=q.rehearsal_epoch_id))));
+    END IF;
+    RETURN previous IS NULL AND EXISTS (SELECT 1 FROM public.stewardship_outbox_message m
+        WHERE m.id=(proposed->>'message_id')::uuid AND m.semantic_key=o.id
+          AND m.correlation_id=t.id AND m.actor_id=t.worker_id AND m.state='pending'
+          AND m.version=1 AND m.mode=q.mode
+          AND ((table_name='stewardship_outbox_render' AND m.render_id=(proposed->>'id')::uuid
+              AND public.stewardship_family_mail_render_admitted_v1(
+                  proposed,m.family_id,r.active_configuration_id,o.revision_id,q.mode) IS TRUE)
+            OR (table_name='stewardship_outbox_event' AND proposed->>'version'='1')));
+END $$;
+
+CREATE FUNCTION public.stewardship_family_mail_outbox_write_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+BEGIN
+    IF current_user='pk_stewardship_worker' AND
+       public.stewardship_family_mail_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),NULL) IS NOT TRUE THEN
+        RAISE EXCEPTION 'Family outbox insertion requires current preparation ownership'
+            USING ERRCODE='23514';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER family_mail_outbox_write BEFORE INSERT ON public.stewardship_outbox_message
+FOR EACH ROW EXECUTE FUNCTION public.stewardship_family_mail_outbox_write_v1();
+
+CREATE FUNCTION public.stewardship_family_mail_receipt_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE q public.stewardship_family_mail_preparation%ROWTYPE;
+BEGIN
+    SELECT request.* INTO q FROM public.stewardship_family_mail_preparation request
+        JOIN public.stewardship_task_run t ON t.root_id=request.task_id
+        WHERE t.id=NEW.correlation_id AND t.task_type='family_mail_prepare';
+    IF q.id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM public.stewardship_schedule_occurrence o
+        WHERE o.id=q.occurrence_id AND o.outbox_id=NEW.id
+          AND o.task_id=NEW.correlation_id AND o.mode=q.mode
+          AND NEW.semantic_key=o.id AND o.state='pending'
+    ) THEN
+        RAISE EXCEPTION 'Prepared Family mail requires its atomic occurrence receipt'
+            USING ERRCODE='23514';
+    END IF;
+    RETURN NULL;
+END $$;
+CREATE CONSTRAINT TRIGGER family_mail_receipt
+AFTER INSERT ON public.stewardship_outbox_message DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION public.stewardship_family_mail_receipt_v1();
+CREATE TRIGGER family_mail_render_write BEFORE INSERT ON public.stewardship_outbox_render
+FOR EACH ROW EXECUTE FUNCTION public.stewardship_family_mail_outbox_write_v1();
+CREATE TRIGGER family_mail_event_write BEFORE INSERT ON public.stewardship_outbox_event
+FOR EACH ROW EXECUTE FUNCTION public.stewardship_family_mail_outbox_write_v1();
+CREATE TRIGGER family_mail_credential_write BEFORE INSERT ON public.stewardship_rehearsal_credential
+FOR EACH ROW EXECUTE FUNCTION public.stewardship_family_mail_outbox_write_v1();
+CREATE TRIGGER family_mail_fingerprint_write BEFORE INSERT ON public.stewardship_rehearsal_code_mac
+FOR EACH ROW EXECUTE FUNCTION public.stewardship_family_mail_outbox_write_v1();
+
+CREATE FUNCTION public.stewardship_family_mail_reservation_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+BEGIN
+    -- Reservations deliberately have no retained Family/epoch/actor binding.
+    -- The compiled credential owner computes the domain-separated MAC; SQL has
+    -- no MAC/decryption key. Require its active task and an actually used key.
+    IF current_user='pk_stewardship_worker' AND NOT EXISTS (
+        SELECT 1 FROM public.stewardship_rehearsal_credential credential
+        JOIN public.stewardship_rehearsal_epoch epoch ON epoch.id=credential.epoch_id
+        JOIN public.stewardship_task_run task ON task.id=credential.correlation_id
+          AND task.state='running' AND task.task_type='family_mail_prepare'
+          AND task.worker_id=credential.actor_id AND task.lease_expires_at>clock_timestamp()
+        WHERE epoch.campaign_id=NEW.campaign_id
+          AND EXISTS (SELECT 1 FROM public.stewardship_task_event claim
+              WHERE claim.run_id=task.id AND claim.fence=task.fence
+                AND claim.action='claim' AND credential.created_at>=claim.created_at)
+          AND EXISTS (SELECT 1 FROM public.stewardship_rehearsal_code_mac fingerprint
+              WHERE fingerprint.credential_id=credential.id AND fingerprint.key_id=NEW.key_id)
+          AND public.stewardship_family_mail_write_admitted_v1(
+              'stewardship_rehearsal_credential',jsonb_build_object(
+                  'family_id',credential.family_id,'epoch_id',credential.epoch_id,
+                  'actor_id',credential.actor_id,'correlation_id',credential.correlation_id),NULL) IS TRUE
+    ) THEN
+        RAISE EXCEPTION 'Rehearsal reservations require current preparation ownership'
+            USING ERRCODE='23514';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER family_mail_reservation_write BEFORE INSERT ON public.stewardship_rehearsal_reservation
+FOR EACH ROW EXECUTE FUNCTION public.stewardship_family_mail_reservation_v1();
+
+REVOKE ALL ON FUNCTION public.stewardship_family_mail_epoch_v1() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.stewardship_family_mail_ticket_v1() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.stewardship_family_mail_outbox_write_v1() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.stewardship_family_mail_receipt_v1() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.stewardship_family_mail_reservation_v1() FROM PUBLIC;
+
 CREATE FUNCTION public.stewardship_outbox_state_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp AS $$
 DECLARE
@@ -328,7 +677,8 @@ BEGIN
     IF NEW.subject ~ E'[\r\n]' OR btrim(NEW.subject)=''
        OR btrim(NEW.html)='' OR btrim(NEW.text)=''
        OR octet_length(NEW.html)>1048576 OR octet_length(NEW.text)>1048576
-       OR NEW.sender ~ E'[\r\n]' OR NEW.sender NOT LIKE '%@%' THEN
+       OR NEW.sender ~ E'[\r\n]' OR NEW.sender NOT LIKE '%@%'
+       OR NEW.reply_to ~ E'[\r\n]' OR NEW.reply_to NOT LIKE '%@%' THEN
         RAISE EXCEPTION 'Invalid delivery render' USING ERRCODE='23514';
     END IF;
     FOREACH recipients IN ARRAY ARRAY[NEW.intended_recipients,NEW.routed_recipients] LOOP

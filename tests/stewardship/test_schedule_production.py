@@ -6,6 +6,9 @@ from uuid import uuid4
 import pytest
 
 from parishkit.stewardship.campaigns import schedule_production as module
+from parishkit.stewardship.campaigns.family_schedule_planning import (
+    FamilyPlanningResult,
+)
 from parishkit.stewardship.jobs.scheduler import SchedulerGuard
 from parishkit.stewardship.storage import StorageInvariantError
 
@@ -58,10 +61,12 @@ def test_one_failed_group_does_not_starve_the_next(monkeypatch, error):
     monkeypatch.setattr(module, "SystemConfiguration", runtime)
     monkeypatch.setattr(module, "FamilyCampaign", families)
     monkeypatch.setattr(module, "emit_failure", failure)
-    planner = Mock(side_effect=[error, "completed"])
+    monkeypatch.setattr(module, "ensure_preparation_epoch", Mock())
+    completed = FamilyPlanningResult(identifiers[-1])
+    planner = Mock(side_effect=[error, completed])
     monkeypatch.setattr(module, "plan_family", planner)
     producer = module.FamilyScheduleProducer(uuid4(), limit=2)
-    assert producer(Mock(spec=SchedulerGuard)) == ("completed",)
+    assert producer(Mock(spec=SchedulerGuard)) == (completed,)
     assert producer.cursor == identifiers[-1]
     assert planner.call_count == 2
     assert failure.call_count == int(isinstance(error, StorageInvariantError))

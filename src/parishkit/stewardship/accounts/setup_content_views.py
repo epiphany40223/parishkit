@@ -92,6 +92,7 @@ def setup_content_edit(request, kind, slot):
         form = SetupContentForm(
             request.POST if request.method == "POST" else None,
             kind=kind,
+            slot=slot,
             initial=initial,
         )
         _closed(request, {*form.fields, "version"})

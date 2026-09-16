@@ -37,6 +37,9 @@ PLACEHOLDERS = frozenset(
     }
 )
 PLACEHOLDER = re.compile(r"{{\s*([a-z_]+)\s*}}")
+FAMILY_CREDENTIAL_PLACEHOLDERS = frozenset({"family_code", "family_url"})
+FAMILY_CODE_MARKER = "PARISHKIT_REDACTED_FAMILY_CODE"
+FAMILY_LINK_MARKER = "https://parishkit.invalid/redacted-family-link"
 SHARE_PLACEHOLDERS = frozenset(
     {
         "parish_name",
@@ -156,6 +159,26 @@ def render_template(value, substitutions, *, html=False, subject=False):
         raise ValueError("Invalid email subject substitution.")
     bounded_text(rendered)
     return sanitize_html(rendered) if html else rendered
+
+
+def validate_family_email(subject, html, text):
+    """Share the invitation/reminder contract across editing, apply and rendering.
+
+    Access credentials belong in both body alternatives, never a subject/header.
+    Generated plaintext is checked after HTML extraction, so an href-only link
+    cannot silently disappear from that alternative. Authors can edit the plain
+    text explicitly when extraction cannot preserve the required placeholders.
+    """
+    if validate_template(subject, subject=True) & FAMILY_CREDENTIAL_PLACEHOLDERS:
+        raise ValueError("Family credentials belong in email bodies, not subjects.")
+    for value in (subject, html, text):
+        if FAMILY_CODE_MARKER in value or FAMILY_LINK_MARKER in value:
+            raise ValueError("Family email contains a reserved placeholder.")
+    if any(
+        not validate_template(value) >= FAMILY_CREDENTIAL_PLACEHOLDERS
+        for value in (html, text)
+    ):
+        raise ValueError("Each Family email body requires its code and link.")
 
 
 def validate_share_label(value):

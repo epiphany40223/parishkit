@@ -99,6 +99,8 @@ def scheduler_handlers():
     from .campaigns.cleanup_tasks import cleanup_handler as production_cleanup_handler
     from .campaigns.work_locks import work_transaction
     from .jobs.dispatch import Handler
+    from .jobs.family_mail_tasks import TASK_TYPE as FAMILY_MAIL_PREPARE
+    from .jobs.family_mail_tasks import preparation_handler
     from .jobs.queues import WorkQueue
     from .reports.export_cleanup import TASK_TYPE as EXPORT_CLEANUP
     from .reports.export_cleanup import cleanup_handler as export_cleanup_handler
@@ -117,6 +119,7 @@ def scheduler_handlers():
         raise PermissionError("The scheduler cannot execute provider work.")
 
     return {
+        FAMILY_MAIL_PREPARE: preparation_handler(scheduler=True),
         REPORT_EXPORT: export_handler(scheduler=True),
         EXPORT_CLEANUP: export_cleanup_handler(),
         CAMPAIGN_BOUNDARY: boundary_handler(scheduler=True),
@@ -256,6 +259,8 @@ def configure_background(configuration, *, stop, heartbeat):
         from .campaigns.cleanup_tasks import (
             cleanup_handler as production_cleanup_handler,
         )
+        from .jobs.family_mail_tasks import TASK_TYPE as FAMILY_MAIL_PREPARE
+        from .jobs.family_mail_tasks import preparation_handler
         from .reports.export_cleanup import TASK_TYPE as EXPORT_CLEANUP
         from .reports.export_cleanup import cleanup_handler as export_cleanup_handler
         from .reports.export_services import TASK_TYPE as REPORT_EXPORT
@@ -269,6 +274,12 @@ def configure_background(configuration, *, stop, heartbeat):
         from .source.setup_execution import setup_source_handler
 
         handlers = {
+            FAMILY_MAIL_PREPARE: preparation_handler(
+                general=rings["general_encryption"],
+                mac=rings["family_code_mac"],
+                public=rings["token_public"],
+                public_origin=configuration.public_origin,
+            ),
             EXPORT_CLEANUP: export_cleanup_handler(configuration.paths["reports"]),
             REPORT_EXPORT: export_handler(
                 store=store, root=configuration.paths["reports"]

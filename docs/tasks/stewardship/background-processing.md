@@ -176,6 +176,13 @@ BG-06.05 also owns the [partial-refusal dispatch prerequisite](../../guides/stew
 remaining usable head addresses must continue through definitive-unaccepted
 outbox retry ownership, not a fabricated Family deliverability edge.
 
+PR #37 has since merged after all 24 exact-head and all 24 merge-group jobs
+passed. The pending-delivery note above is superseded by its guide's
+[protected delivery evidence](../../guides/stewardship-family-deliverability.md#protected-delivery).
+Work now continues from that verified merge on
+`pr/stewardship-family-mail-preparation`; its [guide](../../guides/stewardship-family-mail-preparation.md)
+defines the personalized outbox/credential outcome and remaining dispatch split.
+
 ## BG-07: Submission confirmations and Admin digests
 
 Scope and dependencies: [BG-07 work package](../../plans/stewardship/background-processing.md#bg-07-submission-confirmations-and-admin-digests).
