@@ -36,8 +36,8 @@ message already accepted for another head in the same Family.
 4. Integrated validation, three dual-source review/fix rounds, exact-head CI,
    protected queue, verified main ancestry, then the next dependency-ready work.
 
-Implementation is present; two review/fix rounds are complete, with round 1's
-full validation and round 2's focused regressions. Fresh-install baseline changes only; no upgrade compatibility
+Implementation is present; the three-review cycle is documented below, with
+protected CI/merge still pending. Fresh-install baseline changes only; no upgrade compatibility
 or retained development-database deletion. BG-10 retains operational email/Slack
 escalation, ADM-06 retains broader campaign controls, and Gate 3 remains closed.
 
@@ -198,3 +198,32 @@ with additional actual `pk_admin` response-cookie and durable timeout-audit
 assertions; all pass. Ruff, formatting, tracked Markdown and migration-state
 checks pass. This completes round 2; the third independent review and protected
 final-head CI remain required. No merge, deployment or Gate 3 release is implied.
+
+## Review round 3
+
+Pika session `20260916-133355-c55f80` reviewed
+`7ada2ced960b258a93afc9182a1b8be216f714e0` through
+`d592d47a1fa89f2a30034e224d50d7c9be4b7451`, with surrounding authorization,
+transaction, SQL, dispatch and rendering context. Its fresh exact-path permission
+probe passed. Both exact manifest reviewers completed with exit zero. Codex's
+raw result is `APPROVED` with no findings; Claude reported five Low findings.
+Finalization approved with no degradation, failed reviewer, mismatch or salvage.
+No raw Medium, High or Critical finding was reported.
+
+| Source/item | Raw severity | Disposition and evidence |
+| --- | --- | --- |
+| Claude 1: rotation test only covers pre-effect change | Low | Fixed: parameterize all three command types for before-effect and after-real-effect fingerprint changes; both assert effect rollback, actual committed `pk_admin` cookie, replacement session and one authority-change audit. |
+| Claude 2: command still repeats purpose tuple | Low | Fixed: the command now uses the shared `PURPOSES` constant as well as both metadata readers. |
+| Claude 3: retry-state mapping could be centralized | Low | Optional refactor not taken: the closed state vocabulary is consistent, and service admission and UI commands intentionally retain independently readable conditions. Per-action effect tests plus paused/accepted rendering regressions cover their consistency. No functional defect or new state is left unresolved. |
+| Claude 4: maintenance failure supersedes denial | Low | Documented intentional fail-closed priority: if post-rollback session maintenance is unavailable, return fixed private 503, not a claim that current session authority was established. Added all-three-command regression coverage; no receipt commits. |
+| Claude 5: concurrency diagnostic assumes exception cause | Low | Fixed: read SQLSTATE defensively. The probe invokes actual `end_admin`, whose sole lock is its selected PortalSession row; a second connection must block and then succeed after commit. Additional lock-catalog instrumentation is unnecessary for this concrete causal test. |
+
+At the reviewed head, the standard baseline suite passes 5,996 tests (4,067
+explicitly gated integration/browser/container skips and two existing warnings)
+in 55.78 seconds. Those skips are not substituted for the separately recorded
+real database/browser checks or required protected CI. Final round-three focused
+validation passes 40 PostgreSQL session/resolution cases in 91.93 seconds and
+44 pure input cases, plus Ruff, formatting, Markdown and whitespace checks.
+There are no unresolved accepted Medium-or-higher findings. Round 3 is complete.
+The existing three-round contract includes these
+corrections within round 3 and does not demand a fourth finding-free review.

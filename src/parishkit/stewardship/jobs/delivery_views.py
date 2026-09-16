@@ -120,6 +120,8 @@ def _command_scope(request, service, actor):
     except PermissionError:
         # Persist timeout/revocation audit or authority rotation only after the
         # effect rollback. A replacement cookie must name a committed session.
+        # If maintenance itself is unavailable, deliberately report 503: no
+        # effect committed and current session authority could not be established.
         _principal(request, service.store)
         raise
 

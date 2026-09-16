@@ -13,6 +13,7 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.storage import StaleRecordError
 
 from .delivery_admin import authorize, evidence_note
+from .delivery_metadata import PURPOSES
 from .delivery_resolution_models import ACTIONS, DeliveryResolution
 from .family_dispatch_grants import METADATA_FIELDS
 from .family_mail_credentials import seal_current_credentials
@@ -152,7 +153,7 @@ def resolve_delivery(
                 raise ValueError("Resolution command is already bound.")
             return previous
         message = OutboxMessage.objects.only(*METADATA_FIELDS).get(
-            pk=message_id, purpose__in=("initial", "reminder")
+            pk=message_id, purpose__in=PURPOSES
         )
         if message.version != expected_version:
             raise StaleRecordError("Delivery changed; review it again.")

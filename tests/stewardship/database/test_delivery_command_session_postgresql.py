@@ -142,21 +142,27 @@ def test_private_post_evidence_is_marked_for_error_report_redaction(form):
         assert response.wsgi_request.sensitive_post_parameters == ("note",)
 
 
+@pytest.mark.parametrize("when", ["before_effect", "after_effect"])
 def test_authority_change_during_command_never_sets_rolled_back_cookie(
-    form, monkeypatch
+    form, monkeypatch, when
 ):
-    """A changed fingerprint is denied inside effects and rotated after rollback."""
-    original, first = delivery_views._principal, [True]
+    """Pre/post-effect authority change denies the command and commits rotation."""
+    owner, name = (
+        (delivery_views, "_principal")
+        if when == "before_effect"
+        else (form.owner, form.function)
+    )
+    original, first = getattr(owner, name), [True]
 
     def change_authority(*args, **kwargs):
-        """Model a newly computed policy fingerprint after initial admission."""
+        """Change the fingerprint at the selected admission or real effect boundary."""
         actor = original(*args, **kwargs)
         if first[0]:
             first[0] = False
             monkeypatch.setattr(sessions, "_authority_fingerprint", lambda _: "changed")
         return actor
 
-    monkeypatch.setattr(delivery_views, "_principal", change_authority)
+    monkeypatch.setattr(owner, name, change_authority)
     response = submit(form)
     assert response.status_code == 403 and not form.recorded()
     key = response.wsgi_request.session.session_key
@@ -183,7 +189,7 @@ def test_logout_cannot_interleave_between_command_effect_and_commit(form, monkey
                 cursor.execute("SET LOCAL lock_timeout='200ms'")
                 sessions.end_admin(request)
         except DatabaseError as error:
-            return error.__cause__.sqlstate
+            return getattr(error.__cause__, "sqlstate", None)
         finally:
             connections.close_all()
         return "unexpectedly_unblocked"
@@ -204,3 +210,24 @@ def test_logout_cannot_interleave_between_command_effect_and_commit(form, monkey
         sessions.end_admin(request)
     assert PortalSession.objects.get(session_id=key).revoked_at is not None
     assert form.recorded()
+
+
+def test_unavailable_post_rollback_session_maintenance_is_private_503(
+    form, monkeypatch
+):
+    """Do not claim known session authority when its maintenance dependency fails."""
+    original, calls = delivery_views._principal, [0]
+
+    def fail_maintenance(*args, **kwargs):
+        """Deny the final post-effect check, then lose the maintenance database."""
+        calls[0] += 1
+        if calls[0] == 3:
+            raise PermissionError("Changed authority")
+        if calls[0] == 4:
+            raise DatabaseError("private-maintenance-marker")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(delivery_views, "_principal", fail_maintenance)
+    response = submit(form)
+    assert response.status_code == 503 and not form.recorded()
+    assert b"private-maintenance-marker" not in response.content
