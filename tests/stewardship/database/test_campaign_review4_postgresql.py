@@ -9,7 +9,7 @@ from django.db import IntegrityError, connection, transaction
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.admission import validate_installation
-from parishkit.stewardship.campaigns.catchup import bind_catchup, record_catchup_failure
+from parishkit.stewardship.campaigns.catchup import record_catchup_failure
 from parishkit.stewardship.campaigns.lifecycle import Action
 from parishkit.stewardship.campaigns.models import (
     ActivationCatchUpDemand,
@@ -326,14 +326,6 @@ def test_catchup_failure_obeys_restore_gate(tmp_path):
         command(campaign, actor, Action.ACTIVATE)
     demand = ActivationCatchUpDemand.objects.get()
     task = claimed_task("activation_catchup", demand.pk, actor)
-    bind_catchup(
-        demand_id=demand.pk,
-        task_root_id=task.root_id,
-        source_snapshot_id=demand.source_snapshot_id,
-        actor_id=actor,
-        correlation_id=uuid4(),
-        admit=admit_test_work,
-    )
     demand.refresh_from_db()
     args = dict(
         demand_id=demand.pk,

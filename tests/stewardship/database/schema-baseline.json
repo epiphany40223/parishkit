@@ -8,12 +8,12 @@
     "sha256": "ec2ec941516f17572ef5ef7d72d02d685815d7d1f6a8fb2b2b48aa9794151897"
   },
   "functions": {
-    "count": 369,
-    "sha256": "cfb065b31b843a3f57fbe33606d892de9d16c1e652e1d8e5eb342f535630ea9f"
+    "count": 372,
+    "sha256": "9553151c6b6549f0384117d7e81f993bf8b7ac8bedca0cde080d51fae308ba46"
   },
   "indexes": {
-    "count": 740,
-    "sha256": "9e5d730fda3a418c01e28e0a6860679f110c7dd8b4f5749eea5043912a24522b"
+    "count": 741,
+    "sha256": "d2f8f4b64fe2ec5ead894fa96e821e5ced0c3a065d3139c368b0f407767f5da5"
   },
   "policies": {
     "count": 28,

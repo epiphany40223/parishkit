@@ -78,6 +78,7 @@ def plan_family(guard, *, family_id, worker_id):
             "current_campaign_id", flat=True
         ).first()
         if catchup:
+            from .catchup_ownership import claim_event
             from .catchup_tasks import eligible as catchup_eligible
             from .catchup_tasks import owned_demand
 
@@ -90,7 +91,7 @@ def plan_family(guard, *, family_id, worker_id):
                 raise PermissionError("Catch-up Family preparation is held.")
             scope, epoch = _scope(demand.campaign_id), None
             through = min(demand.cutoff, scope.instant)
-            correlation_id = guard.run_id
+            correlation_id = claim_event(guard)
         else:
             try:
                 scope, epoch = _planning_scope(campaign_id, postclose=True)
@@ -223,6 +224,10 @@ def plan_family(guard, *, family_id, worker_id):
             _persist_decision(
                 rows, decision, worker_id=worker_id, correlation_id=correlation_id
             )
+        if catchup and not decision.blocked:
+            from .catchup_family_coverage import forward_family_coverage
+
+            forward_family_coverage(demand, guard, family_id, decision.selected)
         check()
         return FamilyPlanningResult(
             family_id,

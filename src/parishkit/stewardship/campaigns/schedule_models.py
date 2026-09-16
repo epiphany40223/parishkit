@@ -259,7 +259,8 @@ class ScheduleRecoveryReplacement(ImmutableRecord):
         indexes = [
             models.Index(
                 fields=["demand", "replacement"], name="schedule_recovery_demand"
-            )
+            ),
+            models.Index(fields=["replacement"], name="schedule_recovery_successor"),
         ]
 
 

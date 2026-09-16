@@ -7,11 +7,12 @@ from django.db import connection
 
 
 def covered_dates(occurrence_id, *, after=None, limit=100):
-    """Return exact retained date identities; these are not pinned report facts.
+    """Return Production Admin-digest dates; these are not pinned report facts.
 
     Follow predecessor edges, not just the latest aggregate's direct coverage.
     UNION prevents accidental cycles from making a corrupted inventory loop;
     ordinary constraints only permit forward, current-revision replacement.
+    Family and Testing occurrences have no dates in this purpose-specific reader.
     """
     if (
         not isinstance(occurrence_id, UUID)

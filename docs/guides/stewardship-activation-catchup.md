@@ -135,3 +135,13 @@ independent delivery pause and schedule removal during preparation. The image
 has been rebuilt after privilege narrowing; configured development/production
 Compose checks passed (2 tests in 123.26s). The three review/fix rounds are still
 pending.
+
+The [review ledger](stewardship-activation-catchup-reviews.md) records findings,
+corrections and rejected claims. Round-one corrections bind preparation effects
+to immutable claim-event fencing, require database proof for bounded digest
+receipts, and retain Family as well as digest selection lineage. They add an
+observed two-connection race and forged-write tests. The fresh-install correction
+audit adds three validation functions and one successor index; only the named
+catch-up guards change. Renaming the materialization helper's argument changes
+its inventory label, not its three-UUID callable signature. No retained schema
+or data was modified.

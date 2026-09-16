@@ -102,7 +102,7 @@ def scheduler_handlers():
     from .accounts.setup_mail_tasks import setup_mail_handler
     from .campaigns.boundary_production import TASK_TYPE as CAMPAIGN_BOUNDARY
     from .campaigns.boundary_tasks import boundary_handler
-    from .campaigns.catchup_tasks import TASK_TYPE as ACTIVATION_CATCHUP
+    from .campaigns.catchup_allocation import TASK_TYPE as ACTIVATION_CATCHUP
     from .campaigns.catchup_tasks import catchup_handler
     from .campaigns.cleanup_tasks import TASK_TYPE as PRODUCTION_CLEANUP
     from .campaigns.cleanup_tasks import cleanup_handler as production_cleanup_handler
@@ -253,7 +253,7 @@ def configure_background(configuration, *, stop, heartbeat):
         from .accounts.branding_cleanup import cleanup_handler
         from .campaigns.boundary_production import TASK_TYPE as CAMPAIGN_BOUNDARY
         from .campaigns.boundary_tasks import boundary_handler
-        from .campaigns.catchup_tasks import TASK_TYPE as ACTIVATION_CATCHUP
+        from .campaigns.catchup_allocation import TASK_TYPE as ACTIVATION_CATCHUP
         from .campaigns.catchup_tasks import catchup_handler
         from .campaigns.cleanup_tasks import TASK_TYPE as PRODUCTION_CLEANUP
         from .campaigns.cleanup_tasks import (

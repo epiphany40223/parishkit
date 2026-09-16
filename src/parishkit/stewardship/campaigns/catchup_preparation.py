@@ -76,6 +76,9 @@ def prepare_batch(demand, claim):
         if family is not None:
             result = plan_family(claim, family_id=family, worker_id=claim.worker_id)
             if result.held:
+                # Do not waive unresolved initial/delivery work to release the
+                # campaign hold. BG-06 owns deliverability/terminal recovery;
+                # the retained cursor identifies the next unresolved Family.
                 raise CatchUpPreparationHeld("Catch-up Family group requires recovery.")
             return _checkpoint(
                 current,

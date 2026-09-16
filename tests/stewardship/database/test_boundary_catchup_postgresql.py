@@ -10,7 +10,6 @@ from django.db.models import F
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.boundaries import apply_due_boundaries
 from parishkit.stewardship.campaigns.catchup import (
-    bind_catchup,
     checkpoint_catchup,
     record_catchup_failure,
 )
@@ -159,14 +158,6 @@ def test_catchup_checkpoint_is_exact_fenced_and_independent_of_task_completion(
         command(campaign, actor, Action.ACTIVATE)
     demand = ActivationCatchUpDemand.objects.get()
     run = claimed_task("activation_catchup", demand.pk, actor)
-    bind_catchup(
-        demand_id=demand.pk,
-        task_root_id=run.root_id,
-        source_snapshot_id=demand.source_snapshot_id,
-        actor_id=actor,
-        correlation_id=uuid4(),
-        admit=admit_test_work,
-    )
     arguments = dict(
         demand_id=demand.pk,
         group_key="first",
@@ -244,14 +235,6 @@ def test_catchup_final_checkpoint_releases_hold_and_cannot_be_rewritten(tmp_path
         command(campaign, actor, Action.ACTIVATE)
     demand = ActivationCatchUpDemand.objects.get()
     run = claimed_task("activation_catchup", demand.pk, actor)
-    bind_catchup(
-        demand_id=demand.pk,
-        task_root_id=run.root_id,
-        source_snapshot_id=demand.source_snapshot_id,
-        actor_id=actor,
-        correlation_id=uuid4(),
-        admit=admit_test_work,
-    )
     checkpoint_catchup(
         demand_id=demand.pk,
         group_key="complete",
@@ -276,33 +259,31 @@ def test_catchup_final_checkpoint_releases_hold_and_cannot_be_rewritten(tmp_path
         )
 
 
-def test_catchup_binding_replay_cannot_rebind_source_or_execution(tmp_path):
-    """The immutable activation cutoff and worker inputs survive exact retries."""
+def test_activation_binding_cannot_rebind_source_or_execution(tmp_path):
+    """The sole activation owner fixes worker inputs before its transaction commits."""
     _, campaign, actor = draft_campaign(tmp_path)
     with campaign_clock(campaign.active_configuration.starts_at):
         command(campaign, actor, Action.ACTIVATE)
     demand = ActivationCatchUpDemand.objects.get()
-    run = claimed_task("activation_catchup", demand.pk, actor)
-    args = dict(
-        demand_id=demand.pk,
-        task_root_id=run.root_id,
-        source_snapshot_id=demand.source_snapshot_id,
-        actor_id=actor,
-        correlation_id=uuid4(),
-        admit=admit_test_work,
-    )
-    first = bind_catchup(**args)
-    replay = bind_catchup(**args)
-    assert (replay.pk, replay.version, replay.cutoff) == (
-        first.pk,
-        first.version,
-        first.cutoff,
+    assert demand.task_root_id is not None and demand.source_snapshot_id is not None
+    previous = (
+        demand.version,
+        demand.cutoff,
+        demand.task_root_id,
+        demand.source_snapshot_id,
     )
     for field in ("task_root_id", "source_snapshot_id"):
-        with pytest.raises(StorageInvariantError, match="already bound"):
-            bind_catchup(**(args | {field: uuid4()}))
+        with transaction.atomic(), pytest.raises(IntegrityError):
+            ActivationCatchUpDemand.objects.filter(pk=demand.pk).update(
+                **{field: uuid4(), "version": demand.version + 1}
+            )
     demand.refresh_from_db()
-    assert demand.version == first.version
+    assert (
+        demand.version,
+        demand.cutoff,
+        demand.task_root_id,
+        demand.source_snapshot_id,
+    ) == previous
 
 
 def test_prestart_activation_and_withdrawal_need_no_catchup(tmp_path):

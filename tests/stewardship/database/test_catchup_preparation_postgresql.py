@@ -504,3 +504,60 @@ def test_removed_schedule_is_not_revived_when_preparation_restarts(tmp_path):
     assert original.state == "skipped" and original.reason == "schedule_removed"
     assert ScheduleOccurrence.objects.count() == 1
     assert not ScheduleFulfillment.objects.exists()
+
+
+@pytest.mark.parametrize("remove", [False, True])
+def test_replaced_family_selection_forwards_already_coalesced_reminders(
+    tmp_path, remove
+):
+    """A cancelled selection cannot leave surviving reminders covered by dead work."""
+    store, campaign, actor, _ = family_campaign(tmp_path, count=2)
+    initial = ScheduleDefinition.objects.get()
+    add_reminders(store, campaign, actor)
+    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+        command(campaign, actor, Action.ACTIVATE)
+        demand = ActivationCatchUpDemand.objects.get()
+        execution = claim_hint(**execution_arguments(demand))
+        with maintain_execution(execution):
+            with execution.effect():
+                prepare_batch(demand, execution.claim)
+            previous = ScheduleOccurrence.objects.get(state="pending")
+            assert ScheduleFulfillment.objects.filter(occurrence=previous).count() == 2
+            mutation = {
+                "operation": "remove" if remove else "update",
+                "section": "schedules",
+                "id": str(initial.pk),
+            }
+            mutations = [mutation]
+            if remove:
+                mutations += [
+                    {
+                        "operation": "remove",
+                        "section": "schedules",
+                        "id": str(identifier),
+                    }
+                    for identifier in ScheduleDefinition.objects.filter(
+                        kind="reminder"
+                    ).values_list("id", flat=True)
+                ]
+            else:
+                mutation["values"] = {"time": "02:15:00"}
+            assert change(store, store.active(), actor, mutations).state == "applied"
+            with task_login(ServiceRole.WORKER, exact=True):
+                execution.handler.execute(execution)
+    demand.refresh_from_db()
+    assert demand.completed_at is not None
+    if remove:
+        assert not ScheduleOccurrence.objects.filter(state="pending").exists()
+        assert not ScheduleRecoveryReplacement.objects.exists()
+    else:
+        selected = ScheduleOccurrence.objects.get(
+            target=previous.target, state="pending"
+        )
+        assert selected.definition.kind == "initial"
+        assert (
+            ScheduleRecoveryReplacement.objects.get(previous=previous).replacement
+            == selected
+        )
+    assert ScheduleFulfillment.objects.filter(occurrence=previous).count() == 2
+    assert not OutboxMessage.objects.exists()

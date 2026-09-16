@@ -76,6 +76,9 @@ def eligible(demand):
     Neither grants permission to dispatch. Restore, go-live cleanup and purge
     remain independent holds; a configuration replacement is re-evaluated by
     each bounded group rather than pinning obsolete schedules at activation.
+    If admission is revoked between effects, do not write failure/progress
+    through that hold. Lease abandonment and recovery resume the retained cursor
+    after admission returns; only an admitted local group failure records retry.
     """
     scope = _scope(demand.campaign_id)
     return (

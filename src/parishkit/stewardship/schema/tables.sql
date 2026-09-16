@@ -2542,4 +2542,5 @@ CREATE TABLE public.stewardship_recovery_replacement (
     demand_id uuid NOT NULL
 );
 CREATE INDEX schedule_recovery_demand ON public.stewardship_recovery_replacement(demand_id,replacement_id);
+CREATE INDEX schedule_recovery_successor ON public.stewardship_recovery_replacement(replacement_id);
 CREATE INDEX schedule_recovery_correlation ON public.stewardship_recovery_replacement(correlation_id);

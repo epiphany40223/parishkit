@@ -146,6 +146,10 @@ Scope and dependencies: [BG-06 work package](../../plans/stewardship/background-
 - [ ] BG-06.06 — Implement pause holds, close cancellation, and resume.
 - [ ] BG-06.07 — Test recipients, suppression, routing, races, and failures.
 
+Family selection replacement during activation retains immutable recovery edges
+for its already-coalesced reminder coverage. The delivery owner must preserve
+that lineage and never interpret a cancelled predecessor as successful delivery.
+
 Evidence: Not started.
 
 ## BG-07: Submission confirmations and Admin digests

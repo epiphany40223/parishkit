@@ -1,8 +1,7 @@
-"""Bounded catch-up persistence; enumeration and external outcomes belong to BG-02."""
+"""Catch-up storage primitives; the compiled BG-04 owner verifies preparation."""
 
 from uuid import UUID
 
-from django.db.models import F
 from django.db.models.functions import Now
 
 from parishkit.stewardship.jobs.models import TaskRun
@@ -98,45 +97,6 @@ def record_catchup_failure(
         return CatchUpFailure.objects.create(
             id=request_id, **values, correlation_id=correlation_id
         )
-
-
-def bind_catchup(
-    *, demand_id, task_root_id, source_snapshot_id, actor_id, correlation_id, admit
-):
-    """Bind durable worker inputs once, without changing activation's cutoff."""
-    if not callable(admit) or any(
-        not isinstance(value, UUID)
-        for value in (
-            demand_id,
-            task_root_id,
-            source_snapshot_id,
-            actor_id,
-        )
-    ):
-        raise TypeError("Catch-up binding requires attributed immutable identifiers.")
-    demand = ActivationCatchUpDemand.objects.get(pk=demand_id)
-    with campaign_transaction(demand.campaign_id, correlation_id=correlation_id) as (
-        campaign,
-        runtime,
-    ):
-        demand.refresh_from_db()
-        admit("catchup_bind", campaign, runtime, demand)
-        if demand.task_root_id is not None:
-            if (demand.task_root_id, demand.source_snapshot_id) != (
-                task_root_id,
-                source_snapshot_id,
-            ):
-                raise StorageInvariantError("Catch-up inputs are already bound.")
-            return demand
-        ActivationCatchUpDemand.objects.filter(pk=demand.pk).update(
-            task_root_id=task_root_id,
-            source_snapshot_id=source_snapshot_id,
-            version=F("version") + 1,
-            actor_id=actor_id,
-            correlation_id=correlation_id,
-        )
-        demand.refresh_from_db()
-        return demand
 
 
 def checkpoint_catchup(

@@ -13,6 +13,7 @@ from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .catchup_errors import CatchUpPreparationHeld
+from .catchup_ownership import claim_event
 from .catchup_preparation import _checkpoint, receipt_key
 from .models import RestoreDeliveryHold
 from .schedule_evaluation import SchedulePlan
@@ -44,7 +45,7 @@ def _new_occurrence(demand, claim, scope, definition, slot, due):
         if scope.campaign.delivery_paused
         else None,
         actor_id=claim.worker_id,
-        correlation_id=claim.run_id,
+        correlation_id=claim_event(claim),
     )
 
 
@@ -81,7 +82,7 @@ def prepare_digest(demand, claim, scope, definition, cursor):
             after=date.fromisoformat(after) if after else None,
             limit=LIMIT,
         )
-        slots = {slot.key: slot for slot in page.slots}
+        slots = {slot.key for slot in page.slots}
         excluded = set(
             ScheduleFulfillment.objects.filter(
                 definition=definition,
@@ -106,12 +107,15 @@ def prepare_digest(demand, claim, scope, definition, cursor):
                 slot__in=slots,
             ).values_list("slot", flat=True)
         )
+        excluded |= existing
         created = 0
         for slot in page.slots:
             lock_task_claim(claim)
-            if slot.key not in excluded | existing:
+            if slot.key not in excluded:
                 _new_occurrence(demand, claim, scope, definition, slot.key, slot.due_at)
                 created += 1
+        # Cover retains the exhausted date cursor as the SQL page-chain proof;
+        # selection resumption itself uses outstanding semantic outcomes.
         next_date = page.cursor.isoformat() if page.cursor else ""
         stage = "cover" if page.exhausted else "dates"
         return _checkpoint(
@@ -156,7 +160,10 @@ def prepare_digest(demand, claim, scope, definition, cursor):
         .filter(
             Q(
                 pk__in=ScheduleFulfillment.objects.filter(
-                    disposition="coalesced"
+                    definition=definition,
+                    mode="production",
+                    target="admins",
+                    disposition="coalesced",
                 ).values("occurrence_id")
             )
             | Q(
@@ -203,7 +210,7 @@ def prepare_digest(demand, claim, scope, definition, cursor):
             previous=row,
             replacement=selected,
             actor_id=claim.worker_id,
-            correlation_id=claim.run_id,
+            correlation_id=claim_event(claim),
         )
     rows = list(pending.order_by("id")[: LIMIT - created - len(previous)])
     for row in rows:
@@ -216,7 +223,7 @@ def prepare_digest(demand, claim, scope, definition, cursor):
             else "missed_weekly_recovery",
             version=row.version + 1,
             actor_id=claim.worker_id,
-            correlation_id=claim.run_id,
+            correlation_id=claim_event(claim),
         )
         ScheduleFulfillment.objects.create(
             definition=definition,
@@ -226,7 +233,7 @@ def prepare_digest(demand, claim, scope, definition, cursor):
             disposition="coalesced",
             occurrence=selected,
             actor_id=claim.worker_id,
-            correlation_id=claim.run_id,
+            correlation_id=claim_event(claim),
         )
     more = pending.exists() or predecessors.exists()
     return _checkpoint(

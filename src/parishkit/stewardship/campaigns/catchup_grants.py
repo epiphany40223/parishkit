@@ -7,9 +7,10 @@ def add_catchup_grants(tables, columns, *, worker):
         tables.setdefault(table, set()).add("SELECT")
         if worker:
             tables[table].add("INSERT")
-    tables["stewardship_recovery_replacement"] = {"SELECT"}
     if worker:
-        tables["stewardship_recovery_replacement"].add("INSERT")
+        tables.setdefault("stewardship_recovery_replacement", set()).update(
+            {"SELECT", "INSERT"}
+        )
         from .schedule_grants import add_schedule_planning_grants
 
         add_schedule_planning_grants(tables, columns)

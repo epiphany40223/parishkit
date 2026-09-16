@@ -31,9 +31,15 @@ def allocate_activation(transition_id):
     demand = ActivationCatchUpDemand.objects.select_for_update().get(
         activation_id=transition.pk, campaign_id=transition.campaign_id
     )
-    source = FamilyAccessTokenGeneration.objects.values_list(
-        "source_snapshot_id", flat=True
-    ).get(pk=transition.token_generation_id, campaign_id=transition.campaign_id)
+    source = (
+        FamilyAccessTokenGeneration.objects.filter(
+            pk=transition.token_generation_id, campaign_id=transition.campaign_id
+        )
+        .values_list("source_snapshot_id", flat=True)
+        .first()
+    )
+    if source is None:
+        raise StorageInvariantError("Activation lacks its prepared source binding.")
 
     def admit(action, status):
         """Accept only this transition's root, not an arbitrary queue payload."""
@@ -60,7 +66,5 @@ def allocate_activation(transition_id):
             task_root_id=task.root_id,
             source_snapshot_id=source,
             version=F("version") + 1,
-            actor_id=transition.actor_id,
-            correlation_id=transition.correlation_id,
         )
     return task

@@ -18,7 +18,7 @@ from parishkit.stewardship.accounts.configuration_requests import (
 from parishkit.stewardship.accounts.configuration_schema import validate_sections
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.boundaries import apply_due_boundaries
-from parishkit.stewardship.campaigns.catchup import bind_catchup, checkpoint_catchup
+from parishkit.stewardship.campaigns.catchup import checkpoint_catchup
 from parishkit.stewardship.campaigns.configuration_intents import (
     bind_configuration_intent,
 )
@@ -239,14 +239,6 @@ def complete_empty_catchup(campaign, actor):
         assert campaign.state == "scheduled"
         return
     run = claimed_task("activation_catchup", demand.pk, actor)
-    bind_catchup(
-        demand_id=demand.pk,
-        task_root_id=run.root_id,
-        source_snapshot_id=demand.source_snapshot_id,
-        actor_id=actor,
-        correlation_id=uuid4(),
-        admit=admit_test_work,
-    )
     checkpoint_catchup(
         demand_id=demand.pk,
         group_key="complete",
