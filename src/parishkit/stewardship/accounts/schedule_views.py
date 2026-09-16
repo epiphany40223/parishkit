@@ -92,15 +92,19 @@ def _preview(
         if value != campaign.active_configuration.values[key]
     }
     patch = schedules.patch()
-    if schedule_window_changed(campaign.active_configuration.values, window.values()):
-        explicit = {row["id"] for row in patch}
-        # Identical civil mail fields still acquire a new cadence/window when
-        # the campaign moves. Include them in the reviewed work inventory too.
-        patch.extend(
-            {"operation": "update", "section": "schedules", **row}
-            for row in schedules.previous
-            if row["id"] not in explicit
+    explicit = {row["id"] for row in patch}
+    # A new timezone or digest date window also replaces unchanged civil mail
+    # fields. Include their existing work in the reviewed cancellation inventory.
+    patch.extend(
+        {"operation": "update", "section": "schedules", **row}
+        for row in schedules.previous
+        if row["id"] not in explicit
+        and schedule_window_changed(
+            campaign.active_configuration.values,
+            window.values(),
+            kind=row["values"]["kind"],
         )
+    )
     schedule_changes = list(patch)
     if changed:
         patch.append(

@@ -263,11 +263,14 @@ def validate_campaign_change(before, after):
             invalid()
 
 
-def schedule_window_changed(before, after):
-    """A changed timezone reinterprets cadence even with identical mail fields.
+def schedule_window_changed(before, after, *, kind):
+    """Timezone and digest date bounds reinterpret otherwise identical cadence.
 
-    Date-only interval changes do not reinterpret an in-range mailing's time.
+    Date-only interval changes do not reinterpret an in-range Family mailing.
     Out-of-range Family mail must instead be explicitly edited or removed by
     the combined configuration validator; unrelated work stays unchanged.
     """
-    return before["timezone"] != after["timezone"]
+    return before["timezone"] != after["timezone"] or (
+        kind in {"daily_digest", "weekly_digest"}
+        and any(before[field] != after[field] for field in ("start_date", "end_date"))
+    )

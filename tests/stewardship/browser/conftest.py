@@ -265,7 +265,7 @@ def component_origin():
                         "after": "2027-10-01 through 2027-10-31",
                     }
                 ],
-                "schedules": [mail["values"]],
+                "schedules": [_describe(mail["values"], mail_campaign["values"])],
                 "preview": "synthetic-preview",
                 "content_previews": [
                     {

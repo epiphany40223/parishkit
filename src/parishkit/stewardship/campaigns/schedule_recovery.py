@@ -122,7 +122,7 @@ def plan_recovery(
         or (row.state in {"pending", "running"} and not row.safely_cancellable)
         for row in overdue
     ):
-        return RecoveryPlan(blocked=True)
+        return RecoveryPlan(blocked=True, reason="delivery_unresolved")
     candidates = [row for row in overdue if row.state in {"pending", "running"}]
     if not candidates:
         return RecoveryPlan()
@@ -150,7 +150,7 @@ def plan_recovery(
             # A reminder cannot replace an unsuccessful initial invitation.
             # Only explicit retry/resolution or the deliverability-recovery
             # owner may supply a new initial attempt; never revive this row.
-            return RecoveryPlan(blocked=True)
+            return RecoveryPlan(blocked=True, reason="initial_unfulfilled")
         initials = [row for row in candidates if row.kind == "initial"]
         # Successful initial coverage is supplied independently of current
         # revision rows. It is not inferred from a coalesced or skipped outcome.

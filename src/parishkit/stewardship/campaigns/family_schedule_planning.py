@@ -45,6 +45,7 @@ class FamilyPlanningResult:
     skipped: int = 0
     selected: UUID | None = None
     held: bool = False
+    reason: str = ""
 
 
 def plan_family(guard, *, family_id, worker_id):
@@ -71,7 +72,7 @@ def plan_family(guard, *, family_id, worker_id):
         try:
             scope, epoch = _planning_scope(campaign_id, postclose=True)
         except PermissionError:
-            return FamilyPlanningResult(family_id, held=True)
+            return FamilyPlanningResult(family_id, held=True, reason="scope_held")
         family = (
             FamilyCampaign.objects.filter(pk=family_id, campaign_id=campaign_id)
             .values(*FAMILY_FIELDS)
@@ -206,6 +207,7 @@ def plan_family(guard, *, family_id, worker_id):
             len(decision.skipped),
             decision.selected,
             decision.blocked,
+            decision.reason,
         )
 
 

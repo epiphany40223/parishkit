@@ -10,6 +10,7 @@ from parishkit.stewardship.campaigns.digest_schedule_planning import (
 )
 from parishkit.stewardship.campaigns.models import (
     RestoreDeliveryHold,
+    ScheduleDefinition,
     ScheduleOccurrence,
 )
 from parishkit.stewardship.campaigns.resolutions import resolve_restore_hold
@@ -134,11 +135,11 @@ def test_exhausted_cursor_resumes_only_new_due_dates(
             )
 
 
-def test_earlier_draft_start_rewinds_same_revision_cursor(
+def test_earlier_draft_start_replaces_revision_and_rewinds_cursor(
     family_service,  # noqa: F811
     auth_service,
 ):
-    """A date-only draft edit exposes earlier slots without replacing cadence."""
+    """A wider digest window replaces stale work and exposes the added dates."""
     campaign = family_service.campaign
     identifier = add_digest(auth_service.store, campaign)
     producer = DigestScheduleProducer(uuid4())
@@ -170,12 +171,117 @@ def test_earlier_draft_start_rewinds_same_revision_cursor(
             == "applied"
         )
         (replanned,) = producer(guard)
-        assert replanned.created == 2
+        assert replanned.created == 5
+        current = ScheduleDefinition.objects.get(pk=identifier).current_revision_id
+        assert current != revision
+        assert set(
+            ScheduleOccurrence.objects.filter(revision_id=revision).values_list(
+                "state", "reason"
+            )
+        ) == {("skipped", "schedule_replaced")}
         assert set(
             ScheduleOccurrence.objects.filter(
                 definition_id=identifier, slot__lt="2026-10-01"
             ).values_list("slot", "revision_id")
-        ) == {("2026-09-29", revision), ("2026-09-30", revision)}
+        ) == {("2026-09-29", current), ("2026-09-30", current)}
+
+
+@pytest.mark.parametrize("weekly", [False, True])
+@pytest.mark.parametrize(
+    "field,value", [("start_date", "2026-10-08"), ("end_date", "2026-10-10")]
+)
+def test_narrowed_digest_window_cancels_old_work_and_can_return_to_original_dates(
+    family_service,  # noqa: F811
+    auth_service,
+    weekly,
+    field,
+    value,
+):
+    """Both contraction directions retire old work without making A-B-A unusable."""
+    campaign, store, actor = family_service.campaign, auth_service.store, uuid4()
+    original = campaign.active_configuration.values[field]
+    initial = ScheduleDefinition.objects.get()
+    assert (
+        change(
+            store,
+            store.active(),
+            actor,
+            [{"operation": "remove", "section": "schedules", "id": str(initial.pk)}],
+        ).state
+        == "applied"
+    )
+    identifier = add_digest(store, campaign, weekly=weekly)
+    producer = DigestScheduleProducer(actor)
+    with scheduler_session() as guard:
+        with campaign_clock(datetime(2026, 10, 20, tzinfo=UTC)):
+            (first,) = producer(guard)
+            assert first.created > 0
+            old_rows = list(ScheduleOccurrence.objects.filter(pk__in=first.occurrences))
+            previous = old_rows[0].revision_id
+            assert (
+                change(
+                    store,
+                    store.active(),
+                    actor,
+                    [
+                        {
+                            "operation": "update",
+                            "section": "campaigns",
+                            "id": str(campaign.pk),
+                            "values": {field: value},
+                        }
+                    ],
+                ).state
+                == "applied"
+            )
+        current = ScheduleDefinition.objects.get(pk=identifier).current_revision_id
+        assert current != previous
+        assert set(
+            ScheduleOccurrence.objects.filter(revision_id=previous).values_list(
+                "state", "reason"
+            )
+        ) == {("skipped", "schedule_replaced")}
+        # Stay inside the contracted draft window; do not infer post-close
+        # Testing permission from production's completed-day reporting policy.
+        review_day = 20 if field == "start_date" else 10
+        with campaign_clock(datetime(2026, 10, review_day, 12, tzinfo=UTC)):
+            (contracted,) = producer(guard)
+            assert contracted.created > 0
+            slots = list(
+                ScheduleOccurrence.objects.filter(revision_id=current).values_list(
+                    "slot", flat=True
+                )
+            )
+            assert all(
+                slot >= value if field == "start_date" else slot <= value
+                for slot in slots
+            )
+            assert (
+                change(
+                    store,
+                    store.active(),
+                    actor,
+                    [
+                        {
+                            "operation": "update",
+                            "section": "campaigns",
+                            "id": str(campaign.pk),
+                            "values": {field: original},
+                        }
+                    ],
+                ).state
+                == "applied"
+            )
+        restored = ScheduleDefinition.objects.get(pk=identifier).current_revision_id
+        assert restored not in {previous, current}
+        with campaign_clock(datetime(2026, 10, 20, tzinfo=UTC)):
+            (reopened,) = producer(guard)
+            assert reopened.created == first.created
+        assert set(
+            ScheduleOccurrence.objects.filter(revision_id=restored).values_list(
+                "slot", flat=True
+            )
+        ) == {row.slot for row in old_rows}
 
 
 def test_digest_coverage_and_restore_holds_survive_restart_and_resolution(

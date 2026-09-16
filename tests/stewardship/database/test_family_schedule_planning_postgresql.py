@@ -123,7 +123,8 @@ def test_bound_running_work_holds_recovery_group(family_service, auth_service): 
         row = ScheduleOccurrence.objects.get(pk=first.selected)
         task = claimed_task("schedule_occurrence", row.pk, actor)
         advance(row, actor, "running", task_id=task.run_id, fence=task.fence)
-        assert plan_family(guard, family_id=family_id, worker_id=actor).held
+        held = plan_family(guard, family_id=family_id, worker_id=actor)
+        assert held.held and held.reason == "delivery_unresolved"
         row.refresh_from_db()
         assert row.state == "running"
 
@@ -248,6 +249,45 @@ def test_no_recipient_records_skip_but_no_message(family_service):  # noqa: F811
     assert (
         not OutboxMessage.objects.exists() and not ScheduleFulfillment.objects.exists()
     )
+
+
+def test_corrected_recipient_retains_diagnostic_initial_hold(
+    family_service,  # noqa: F811
+    auth_service,
+):
+    """BG-06 owns a new catch-up initial; ordinary planning cannot bypass it."""
+    campaign, actor = family_service.campaign, uuid4()
+    family_id = FamilyCampaign.objects.get().pk
+    populate(
+        campaign,
+        family_service.rings,
+        [FamilyStatus(1, True, True, True, False)],
+        generation=2,
+    )
+    definition = ScheduleDefinition.objects.get()
+    with (
+        campaign_clock(definition.current_revision.due_at),
+        scheduler_session() as guard,
+    ):
+        assert plan_family(guard, family_id=family_id, worker_id=actor).skipped == 1
+    initial = ScheduleOccurrence.objects.get()
+    populate(
+        campaign,
+        family_service.rings,
+        [FamilyStatus(1, True, True, True, True)],
+        generation=3,
+    )
+    reminders = add_reminders(auth_service.store, campaign, actor)
+    due = ScheduleDefinition.objects.get(
+        pk=UUID(reminders[1]["id"])
+    ).current_revision.due_at
+    with campaign_clock(due), scheduler_session() as guard:
+        result = plan_family(guard, family_id=family_id, worker_id=actor)
+        assert result.held and result.reason == "initial_unfulfilled"
+        assert result.selected is None and result.coalesced == result.skipped == 0
+    initial.refresh_from_db()
+    assert initial.state == "skipped" and initial.reason == "no_deliverable_recipient"
+    assert not OutboxMessage.objects.exists()
 
 
 def test_source_inactivation_skips_existing_work_without_new_allocation(family_service):  # noqa: F811

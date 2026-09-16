@@ -190,14 +190,10 @@ four validated Medium findings and six Low findings, with no High/Critical.
 | Irreversible contradictory terminal states | Partially accepted. Occurrence outcome writes now reject an already-terminal contradictory delivery result. The adversarial persisted-corruption test first verifies that denial, then uses explicit disposable schema-owner fixture writes to verify replacement still fails closed. Automatic rewriting of conflicting terminal history is deliberately rejected; see the corruption boundary below. |
 | Skipped/coalesced initial before reminders | Accepted. All non-delivered terminal initial states hold reminder selection unless successful initial coverage is supplied. Parameterized pure tests retain inapplicable-work skips without reviving the initial. |
 
-The corrupted-history boundary is intentional: immutable accepted-provider and
-occurrence evidence must not be guessed away by a schedule edit. A discovered
-contradiction requires operator investigation and separately authorized repair,
-not an automatic retry, recall, success claim or bypass. The new guard prevents
-an occurrence writer from contradicting an already-terminal provider result;
-it does not suppress a later truthful provider journal entry. BG-06/BG-07 retain
-responsibility for coordinated completion/recovery before enabling dispatch.
-This increment adds no repair backdoor or development-database upgrade path.
+The [normative replacement contract](../specs/stewardship/background-processing/spec.md#schedule-replacement-and-removal)
+controls corrupted-history handling. BG-06/BG-07 retain responsibility for
+coordinated completion/recovery before enabling dispatch. This increment adds
+no repair backdoor or development-database upgrade path.
 
 Round 1's corrected five planning modules passed 105 cases with 97.00% line and
 90.32% branch coverage. Its rebuilt development and Production runtime scenarios
@@ -228,3 +224,102 @@ tests. Ruff, formatting, Markdown and whitespace validation pass. Round 2 is
 complete with the dispositions above; no accepted Medium-or-higher finding is
 left unresolved. The browser fixture/timezone tests remain explicitly included
 in the upcoming third-review delta.
+
+## Review round 3
+
+Pika session `20260915-200635-501234` reviewed `456d161..fb53d32`, including the
+browser additions and surrounding scheduling contracts. Claude covered all ten
+manifest files; Codex completed in 317 seconds and Claude in 563 seconds. Both
+sources passed validation, with no failure, degradation or verdict mismatch.
+Raw results are five Medium and seven Low, with no High/Critical; all five
+Medium findings validated. The exact permission preflight passed.
+
+| Finding | Disposition |
+| --- | --- |
+| Clone browser preview still uses raw values | Fixed. Both preview fixtures use the production resolved-slot presenter; the mobile/desktop timezone regression covers both routes on all three engines. |
+| Terminal contradiction policy missing from controlling spec | Fixed. Added the rule to the linked replacement contract, replacing this guide's duplicate normative prose with that link. |
+| Unsuccessful initial hold is opaque | Partially accepted. Pure and durable results now distinguish `initial_unfulfilled`, `delivery_unresolved` and `scope_held`. Actual contact correction plus a later reminder retains a diagnostic hold. Reject bypassing an unsent initial: BG-06.02 explicitly owns a distinct deliverability-recovery attempt, and dispatch is not enabled here. No terminal occurrence is revived. |
+| Contracted digest window leaves old slots pending | Fixed through existing atomic revision replacement, not an ad hoc deletion pass. Date-only digest changes now replace revisions in Python preflight, Admin impact preview and SQL selection. Actual daily/weekly start/end contraction and A-B-A restoration tests retain skipped history and create fresh execution revisions. In-range Family mail remains unchanged. Running digest work blocks date edits through both admission layers. |
+| Duplicated/incomplete terminal conflict predicate | Fixed. One immutable state-only SQL function serves both the count view and occurrence-write guard, including pending/retry-wait messages versus succeeded/skipped/coalesced occurrences. No private row-read authority is added. |
+
+The first correction suite had 105 passes and three fixture failures: coalesced
+outcomes lacked their mandatory replacement and a worker-fencing negative
+control reached the newly stronger message guard first. Corrected fixtures
+provide valid replacement identities and safely cancel the message before
+testing forged worker authority; neither guard was relaxed. The extended run
+passes 140 tests in 60.23 seconds. The full baseline passes 5,666 tests in
+55.89 seconds, with 3,671 expected profile skips and two existing warnings.
+Twelve resolved-preview browser cases pass in 14.69 seconds. Ruff and format
+checks pass. Additional terminal-negative controls and final lint remain pending.
+
+The additional cancelled/coalesced controls and successful-delivery preservation
+assertions pass all 35 reconciliation cases in 31.46 seconds. The deliberate
+corruption fixture drains its real deferred replacement FK before restoring
+triggers; no runtime constraint is disabled. Ruff, format, all tracked Markdown,
+and whitespace validation pass. Round 3's accepted findings are corrected,
+completing the required three review/fix rounds with no final-round High/Critical
+or unresolved accepted Medium. Exact-head CI remains required before merge.
+The final application image rebuilt successfully and passed both configured
+development and Production operational scenarios in 111.89 seconds. These are
+disposable container checks, not deployment to a parish environment.
+The final focused coverage run passes 113 checks in 40.16 seconds: 357 of 368
+lines (97.01%) and 112 of 124 branches (90.32%) across the five planning modules.
+
+Fresh databases `stewardship_schedule_review3_base_20260915` and
+`stewardship_schedule_review3_current_20260915` independently compare `fb53d32`
+against the corrections. The sole added function is the pure conflict predicate;
+the occurrence guard, schedule-selection function and private work-row view
+change. All other objects, constraints, indexes, triggers, policies and ACLs
+remain unchanged. The strict fingerprint was updated after this comparison.
+No retained database was upgraded or deleted.
+
+### Below-cutoff review observations
+
+These are explicit dispositions, not unrecorded accepted blockers. The review
+loop's acceptance threshold remains Medium. The implementing Phase 4 owner owns
+the deferred test/documentation refinements below before integrated Gate 3.
+
+- Round 2's redundant predicate is removed by the Round 3 shared function.
+  Hold-fingerprint collision is rejected for ordinary planning: retained hold
+  identity is append-only outside exceptional cleanup, which independently
+  closes planning. Adding `Max(id)` would not prove collision freedom.
+- Round 2's proposed digest SQL date bounds are deferred to BG-07's final-weekly,
+  explicit post-close resolution and aggregate-slot contract. This increment's
+  finite evaluator is tested and grants no dispatch; a simple due-before-end
+  rule would reject legitimate completed-day reports and recovery aggregates.
+- Round 2's additional owner-cache and committed cross-DST ordering assertions
+  are low-priority Gate 3 test refinements. Existing tests establish owner scope
+  and exact gap/fold instants; no functional counterexample was demonstrated.
+- Round 2 and Round 3's restore-held-initial concern is rejected against the
+  explicit spec: an unreviewed/assumed-delivered hold excludes its semantic
+  occurrence but does not block a different future reminder. The held row must
+  not be consumed or reinterpreted as success.
+- Round 3's successful-delivery preservation and cancelled/coalesced contradiction
+  controls are accepted as small additional regression tests.
+- Round 3's insert-branch placement and cursor-map naming are nonfunctional
+  readability refinements deferred to the Phase 4 integration pass. The guard
+  does not query messages for valid pending inserts; configuration identity
+  remains an intentional defensive cursor input.
+- Round 3's suggested session-wide replication-role bypass is rejected. The
+  deliberate corruption fixture requires the disposable schema owner and an
+  exclusive transactional table lock, so other writers cannot observe disabled
+  triggers. Runtime roles never receive bypass authority. Suppressed history is
+  intentional corrupt-input injection, not an application mutation path.
+- Round 3's missing Low-disposition observation is addressed by this ledger.
+
+## PR validation correction
+
+PR #34's first exact-head run `35040794976` at `b53f1db` completed all jobs.
+All browser engines, container scenarios, baseline checks and six PostgreSQL
+shards passed. Shards 3 and 4 each exposed one parameter of the same cleanup
+fixture: it linked a terminal skipped occurrence to a pending external message.
+The stronger occurrence guard correctly rejects that setup before the intended
+cleanup external-reference check. The fixture now cancels its external message
+through the ordinary outbox journal first, preserving that retained reference
+and leaving the cleanup denial assertion unchanged. No production code, guard,
+schema or test assertion is weakened. This is a test-fixture correction to the
+Round 3 guard, not a newly accepted application defect or a clean CI claim.
+The corrected fixture, adjacent cleanup inventory and full schedule
+reconciliation suite pass all 56 cases in 51.92 seconds. Ruff, formatting,
+Markdown and whitespace checks pass. The fixture correction is folded into
+the logical Round 3 commit; the changed head requires fresh CI.

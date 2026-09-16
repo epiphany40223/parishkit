@@ -204,6 +204,9 @@ def test_failed_occurrence_stays_failed_and_loses_retry(scheduled_delivery):
         ("succeeded", Action.FAIL_UNACCEPTED),
         ("skipped", Action.ACCEPT),
         ("skipped", Action.FAIL_UNACCEPTED),
+        ("succeeded", Action.CANCEL_UNSENT),
+        ("coalesced", Action.ACCEPT),
+        ("coalesced", Action.FAIL_UNACCEPTED),
     ],
 )
 def test_contradictory_terminal_results_block_selection(
@@ -211,12 +214,26 @@ def test_contradictory_terminal_results_block_selection(
 ):
     """Provider acceptance cannot be forgotten by replacing conflicting history."""
     store, definition, row, message, actor = scheduled_delivery
-    message = change(submit(message), message_action, evidence=provider_evidence())
+    message = (
+        change(message, message_action)
+        if message_action == Action.CANCEL_UNSENT
+        else change(submit(message), message_action, evidence=provider_evidence())
+    )
     run = claimed_task("schedule_occurrence", row.pk, actor)
     row = advance(row, actor, "running", task_id=run.run_id, fence=run.fence)
+    replacement = (
+        occurrence(row.definition, actor, target="family:replacement").pk
+        if occurrence_state == "coalesced"
+        else None
+    )
     with pytest.raises(IntegrityError, match="contradicts terminal delivery"):
         advance(
-            row, actor, occurrence_state, fence=run.fence, reason="synthetic_result"
+            row,
+            actor,
+            occurrence_state,
+            fence=run.fence,
+            reason="synthetic_result",
+            replacement_id=replacement,
         )
     # Simulate corrupt persisted input using this disposable schema owner's
     # authority. Runtime writers retain every guard and cannot create it.
@@ -227,9 +244,12 @@ def test_contradictory_terminal_results_block_selection(
         cursor.execute(
             "UPDATE stewardship_schedule_occurrence SET state=%s, "
             "lease_expires_at=NULL, heartbeat_at=NULL, reason='synthetic_result', "
-            "version=version+1 WHERE id=%s",
-            [occurrence_state, row.pk],
+            "replacement_id=%s, version=version+1 WHERE id=%s",
+            [occurrence_state, replacement, row.pk],
         )
+        # The real replacement FK remains enforced. Drain its deferred event
+        # before restoring table triggers in this corruption-only transaction.
+        cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
         cursor.execute(
             "ALTER TABLE stewardship_schedule_occurrence ENABLE TRIGGER USER"
         )
@@ -241,10 +261,44 @@ def test_contradictory_terminal_results_block_selection(
     assert OutboxMessage.objects.get(pk=message.message_id).state == message.state
 
 
+@pytest.mark.parametrize("state", ["succeeded", "skipped", "coalesced"])
+@pytest.mark.parametrize("waiting", [False, True])
+def test_unaccepted_message_cannot_have_terminal_occurrence(
+    scheduled_delivery, state, waiting
+):
+    """The shared predicate rejects unsent/terminal pairs before immutable history."""
+    _, _, row, message, actor = scheduled_delivery
+    if waiting:
+        change(
+            submit(message),
+            Action.RETRY_UNACCEPTED,
+            retry_seconds=30,
+            evidence=provider_evidence(),
+        )
+    run = claimed_task("schedule_occurrence", row.pk, actor)
+    row = advance(row, actor, "running", task_id=run.run_id, fence=run.fence)
+    replacement = (
+        occurrence(row.definition, actor, target="family:replacement").pk
+        if state == "coalesced"
+        else None
+    )
+    with pytest.raises(IntegrityError, match="contradicts terminal delivery"):
+        advance(
+            row,
+            actor,
+            state,
+            fence=run.fence,
+            reason="synthetic_result",
+            replacement_id=replacement,
+        )
+    row.refresh_from_db()
+    assert row.state == "running"
+
+
 def test_consistent_delivered_pair_permits_replacement(scheduled_delivery):
     """A completed successful delivery must not look like contradictory history."""
     store, definition, row, message, actor = scheduled_delivery
-    change(submit(message), Action.ACCEPT, evidence=provider_evidence())
+    delivered = change(submit(message), Action.ACCEPT, evidence=provider_evidence())
     run = claimed_task("schedule_occurrence", row.pk, actor)
     row = advance(row, actor, "running", task_id=run.run_id, fence=run.fence)
     advance(row, actor, "succeeded", fence=run.fence)
@@ -257,6 +311,14 @@ def test_consistent_delivered_pair_permits_replacement(scheduled_delivery):
     )
     assert work_summary(definition.campaign_id)[str(definition.pk)]["blocking"] == 0
     assert replace_schedule(store, definition, actor).state == "applied"
+    retained = OutboxMessage.objects.get(pk=message.message_id)
+    row.refresh_from_db()
+    assert retained.state == "delivered" and retained.version == delivered.version
+    assert row.state == "succeeded"
+    assert work_summary(definition.campaign_id)[str(definition.pk)]["delivered"] == 1
+    evidence = AuditContext.objects.get(schema="schedule").context
+    assert evidence["cancelled_messages"] == evidence["skipped_occurrences"] == 0
+    assert evidence["delivered_slots"] == 1
 
 
 def test_preflight_queries_changed_definition_owner_without_current_campaign(
@@ -385,7 +447,10 @@ def test_malformed_link_cannot_cancel_unrelated_work(scheduled_delivery, malform
 
 def test_forged_effect_reason_does_not_impersonate_a_live_worker(scheduled_delivery):
     """The narrow proof is transaction-owned, not a magic reason or actor field."""
-    _, _, row, _, actor = scheduled_delivery
+    _, _, row, message, actor = scheduled_delivery
+    # Satisfy the independent message-outcome guard so this negative control
+    # still proves the forged reason cannot replace actual worker authority.
+    change(message, Action.CANCEL_UNSENT)
     run = claimed_task("schedule_occurrence", row.pk, actor)
     row = advance(row, actor, "running", task_id=run.run_id, fence=run.fence)
     with (

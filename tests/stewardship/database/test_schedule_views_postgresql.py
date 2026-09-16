@@ -21,6 +21,7 @@ from .campaign_builders import (
 )
 from .test_background_grants_postgresql import task_login
 from .test_campaign_views_postgresql import apply, post
+from .test_digest_schedule_planning_postgresql import add_digest
 from .test_parish_views_postgresql import token
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -108,6 +109,30 @@ def test_schedule_pending_work_is_counted_then_cancelled_with_replacement(
     data, indexes = fields(store, campaign)
     data[f"schedules-{indexes['reminder']}-date"] = "2026-10-19"
     preview = post(browser, path, data)
+    assert b"Safely cancellable occurrences" in preview.content
+    apply(store, post(browser, path, {"action": "confirm", "preview": token(preview)}))
+    row.refresh_from_db()
+    assert row.state == "skipped" and row.reason == "schedule_replaced"
+
+
+def test_date_only_digest_change_includes_cancellation_inventory(auth_service, google):
+    """Unchanged digest fields still appear in the exact date-edit confirmation."""
+    from datetime import UTC, datetime
+
+    store = auth_service.store
+    campaign, path = setup(store)
+    identifier = add_digest(store, campaign)
+    definition = ScheduleDefinition.objects.get(pk=identifier)
+    due = datetime(2026, 10, 3, tzinfo=UTC)
+    with campaign_clock(due):
+        row = occurrence(
+            definition, uuid4(), target="admins", slot="2026-10-01", due_at=due
+        )
+    browser, _ = signed_in()
+    data, _ = fields(store, campaign)
+    data["window-end_date"] = "2026-10-30"
+    preview = post(browser, path, data)
+    assert preview.status_code == 200
     assert b"Safely cancellable occurrences" in preview.content
     apply(store, post(browser, path, {"action": "confirm", "preview": token(preview)}))
     row.refresh_from_db()

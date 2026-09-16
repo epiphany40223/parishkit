@@ -3010,6 +3010,19 @@ BEGIN
     RETURN NEW;
 END $$;
 
+-- One pure predicate shared by write admission and replacement inventory.
+-- A later truthful provider result is never suppressed by this occurrence rule.
+CREATE FUNCTION public.stewardship_occurrence_delivery_conflict_v1(
+    occurrence_state text,message_state text
+) RETURNS boolean LANGUAGE sql IMMUTABLE
+SET search_path TO pg_catalog,public,pg_temp AS $$
+    SELECT ((occurrence_state IN ('succeeded','skipped','coalesced')
+                AND message_state IN ('pending','retry_wait'))
+        OR (message_state='delivered' AND occurrence_state<>'succeeded')
+        OR (message_state='permanent_failure' AND occurrence_state<>'failed')
+        OR (message_state='cancelled' AND occurrence_state='succeeded')) IS TRUE
+$$;
+
 -- FUNCTION: stewardship_occurrence_guard_v1()
 CREATE FUNCTION public.stewardship_occurrence_guard_v1() RETURNS trigger
     LANGUAGE plpgsql
@@ -3032,9 +3045,7 @@ BEGIN
         RAISE EXCEPTION 'Invalid occurrence identity' USING ERRCODE='23514'; END IF;
     IF NEW.state IN ('succeeded','failed','skipped','coalesced') AND EXISTS (
         SELECT 1 FROM stewardship_outbox_message m WHERE m.id=NEW.outbox_id
-          AND ((m.state='delivered' AND NEW.state<>'succeeded')
-            OR (m.state='permanent_failure' AND NEW.state<>'failed')
-            OR (m.state='cancelled' AND NEW.state='succeeded'))
+          AND public.stewardship_occurrence_delivery_conflict_v1(NEW.state,m.state)
     ) THEN RAISE EXCEPTION 'Occurrence outcome contradicts terminal delivery'
         USING ERRCODE='23514'; END IF;
     IF TG_OP='INSERT' THEN
@@ -4790,6 +4801,9 @@ BEGIN
             WHERE old_revision.id=previous.current_revision_id
               AND old_revision.values=revision.values
               AND old_campaign.timezone=new_campaign.timezone
+              AND (revision.kind NOT IN ('daily_digest','weekly_digest')
+                  OR (old_campaign.start_date=new_campaign.start_date
+                      AND old_campaign.end_date=new_campaign.end_date))
         ) THEN
             UPDATE stewardship_schedule_definition SET current_revision_id=revision.id,removed_at=NULL,
                 version=version+1,actor_id=NEW.actor_id,correlation_id=NEW.correlation_id WHERE id=previous.id;

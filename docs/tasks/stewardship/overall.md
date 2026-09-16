@@ -376,8 +376,10 @@ merge-group CI subsequently passed, all 24 jobs in each run. PR #33 merged as
 The next branch, `pr/stewardship-schedule-planning`, begins BG-04's ordinary
 schedule planning and reconciliation; see its
 [scope and checkpoints](../../guides/stewardship-schedule-planning.md).
-Bounded activation catch-up follows before BG-04 completion. This checkpoint
-does not release Gate 3.
+BG-04.01/.03 now pass local acceptance and three completed dual-source review/fix
+rounds; final-head and merge-group CI remain pending. Bounded activation catch-up
+and durable digest recovery follow before BG-04 completion. This checkpoint
+does not release Gate 3 or enable mail dispatch.
 
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).

@@ -13,12 +13,13 @@ pytestmark = pytest.mark.parametrize(
 
 
 @pytest.mark.parametrize("width", [320, 1280])
+@pytest.mark.parametrize("path", ["/schedule-preview", "/clone-preview"])
 def test_schedule_preview_distinguishes_parish_intent_from_browser_time(
-    page, component_origin, width
+    page, component_origin, width, path
 ):
     """Keep parish civil time visible while converting the resolved UTC instant."""
     page.set_viewport_size({"width": width, "height": 900})
-    page.goto(component_origin + "/schedule-preview")
+    page.goto(component_origin + path)
     instant = page.locator("time[data-local-instant]").first
     assert instant.get_attribute("datetime") == "2026-10-01T13:00:00+00:00"
     assert "6:00" in instant.inner_text() and "PDT" in instant.inner_text()

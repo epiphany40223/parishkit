@@ -181,7 +181,9 @@ def validate_installation(document, *, request_id=None):
             owner in existing
             and owner in candidates
             and schedule_window_changed(
-                existing[owner].active_configuration.values, candidates[owner]["values"]
+                existing[owner].active_configuration.values,
+                candidates[owner]["values"],
+                kind=definition.kind,
             )
         )
         if proposed == old and (old is None or not changed_window):

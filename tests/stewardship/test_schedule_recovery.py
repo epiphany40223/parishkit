@@ -61,7 +61,9 @@ def test_latest_overdue_reminder_wins_after_initial_fulfillment():
 def test_unsuccessful_initial_holds_reminders_without_retrying_the_initial(state):
     """A pending reminder cannot stand in for an unresolved initial failure."""
     rows = (slot(1, kind="initial", state=state), slot(2), slot(3))
-    assert plan_recovery(rows, cutoff=NOW) == RecoveryPlan(blocked=True)
+    assert plan_recovery(rows, cutoff=NOW) == RecoveryPlan(
+        blocked=True, reason="initial_unfulfilled"
+    )
     assert plan_recovery(rows, cutoff=NOW, initial_delivered=True).selected == (
         rows[-1].occurrence_id
     )
@@ -97,8 +99,9 @@ def test_inapplicable_family_work_has_reasoned_skips(field, reason):
 @pytest.mark.parametrize("state", ["pending", "running", "delivery_unknown"])
 def test_uncertain_work_holds_whole_group_even_when_other_rows_are_cancellable(state):
     rows = (slot(1, state=state, safely_cancellable=False), slot(2))
-    assert plan_recovery(rows, cutoff=NOW) == RecoveryPlan(blocked=True)
-    assert plan_recovery(rows, cutoff=NOW, closed=True) == RecoveryPlan(blocked=True)
+    expected = RecoveryPlan(blocked=True, reason="delivery_unresolved")
+    assert plan_recovery(rows, cutoff=NOW) == expected
+    assert plan_recovery(rows, cutoff=NOW, closed=True) == expected
 
 
 @pytest.mark.parametrize("state", ["succeeded", "failed", "skipped", "coalesced"])
