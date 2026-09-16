@@ -62,8 +62,8 @@ deployment, or release is authorized by this increment.
   binding before using these storage primitives; it must not simply exempt
   other task types. OPS-07 separately owns compactor grants (compaction deletes
   generations, rather than updating the builder's checkpoint).
-- Abandonment at five attempts exhausts automatic recovery. Failed task metadata and
-  attempt history remain visible in the existing Admin task list. A frozen
+- Abandonment at five attempts exhausts automatic recovery. Failed task metadata
+  and attempt history remain visible in the existing Admin task list. A frozen
   generation/demand stays protected for the canonical explicit linked retry;
   later demand stays pending until that checkpoint completes. Neither a tick
   nor a later hint resets that root's budget or discards its frozen inputs.
@@ -72,12 +72,17 @@ deployment, or release is authorized by this increment.
   root is denied, both before and after that replacement is queued. An existing
   nonterminal, unfrozen root still coalesces new events and claims the latest
   pending inputs normally.
+  Replaying an already-bound retry command returns that run's actual status
+  after fresh campaign admission; it allocates/restarts nothing, even when a
+  newer revision has superseded the run. This is distinct from a new retry.
   The report selection/status and operator retry controls remain later RPT-03
   integration; this increment tests the actual retry service under worker grants.
 
 ## Validation checkpoint
 
-Implementation validation is ongoing; reviews and final CI are not yet claimed.
+Local implementation validation and three dual-source review/fix rounds are
+complete. Protected PR/merge-group CI and fresh-main verification still
+determine delivery; they are not yet claimed here.
 
 Passed so far:
 
@@ -209,8 +214,10 @@ findings. Every raw finding is dispositioned here:
   exercise replacement and separately show queued roots still coalesce events.
 - Claude 2, Medium, obsolete explicit retry racing replacement: fixed. An
   unclaimed terminal root must still match the pending revision's execution key
-  to admit a new explicit retry. Retry/replay also denies another nonterminal
-  root for the same demand. Tests cover both orders: superseding hint before
+  to admit a new explicit retry. At this checkpoint an additional competing-root
+  check applied to retry/replay; Round 3 below replaces that redundant branch
+  with correct read-only replay behavior. Tests cover both orders for the key
+  check: superseding hint before
   retry, and replacement allocation before retry. Frozen-root retry still owns
   its original inputs and does not compare against a newer pending revision.
 - Claude 3, Low, backward-clock chronology: retained fail-closed validation.
@@ -239,3 +246,43 @@ Round-2 post-fix validation passed: 24 PostgreSQL worker/source-effect tests
 (55.39s), 196 focused pure/runtime tests, Ruff and Markdown. One more successful
 dual-source round, final-head PR checks, protected merge-group checks and fresh-main
 verification remain required; no routine human approval pause is required.
+
+### Round 3
+
+Correction range `be5784f..d8f6557`, Pika session
+`20260916-152323-937bc0`: both sources completed without degradation or repair.
+There were no High/Critical findings. One Medium and five Low raw findings are
+dispositioned below; corrections are part of this third round, not a requirement
+for an otherwise finding-free fourth round.
+
+- Claude 1, Medium, untested competing-root/replay branch: fixed. Removed the
+  redundant competing-root query: the window-key check, unique execution key,
+  and work-order-serialized producer's nonterminal exclusion already prevent a
+  competing new retry. Added real saved-command replay tests before and after
+  supersession/replacement completion; they prove no run is allocated or revived.
+  Corrected Round 2's coverage wording above.
+- Claude 2, Low, replay depending on mutable demand state: fixed. A repeated
+  command returns its already-bound persisted result after fresh campaign
+  admission, independent of current debounce/claim ownership. The test also
+  proves restore admission still denies replay; no new-work gate is bypassed.
+- Claude 3, Low, newly postponed queued window: added a separate not-yet-due
+  regression proving the root stays queued at attempt zero with the new window
+  intact. The existing due-window test proves later latest-input claiming.
+- Claude 4, Low, paragraph wrapping: fixed.
+- Codex 1, Low, missing replay test: fixed by the same saved-command regression
+  as Claude 1; its outcome follows the corrected read-only replay contract.
+- Codex 2, Low, duplicated execution-key formula: fixed. Allocation and admission
+  share the pure `rebuild_execution_key`; a unit test fixes the existing UUID
+  derivation and rejects malformed identity/revision inputs.
+
+The broader 72-test PostgreSQL fact storage/demand/materialization/recovery/
+retention/race suite passed at the reviewed head (85.01s). The full baseline at
+that head passed 6,038 tests with 4,104 profile-specific skips and two existing
+client deprecation warnings (57.37s). Final post-fix validation passed:
+26 PostgreSQL worker/source-effect tests (56.37s), 35 pure calculation/runtime
+tests (0.15s), and the full baseline (6,039 passed, 4,106 profile-specific skips,
+two existing client warnings, 59.21s). Ruff, Markdown, model drift and whitespace
+checks passed. There are no unresolved accepted Medium-or-higher findings.
+All 25 raw findings across three successful rounds have recorded dispositions.
+Protected CI/merge evidence belongs to the PR delivery record and the next
+increment's verified-main checkpoint; this ledger does not claim a merge yet.

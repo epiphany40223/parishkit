@@ -5,7 +5,6 @@ also reconciles current inputs, including local midnight and configuration
 changes, so a restart cannot strand a day with no submissions or source poll.
 """
 
-from uuid import uuid5
 from zoneinfo import ZoneInfo
 
 from django.db import connection
@@ -28,6 +27,7 @@ from parishkit.stewardship.storage import StorageInvariantError
 
 from .demand import request_rebuild
 from .export_services import admit_campaign
+from .fact_fields import rebuild_execution_key
 from .fact_tasks import TASK_TYPE
 from .inputs import FactInputs
 from .models import CampaignFactRebuildDemand
@@ -126,8 +126,8 @@ def produce_facts(guard):
                 domain_request_id=demand.pk,
                 actor_id=None,
                 correlation_id=demand.pk,
-                idempotency_key=uuid5(
-                    demand.pk, f"report-facts:{demand.pending_revision}"
+                idempotency_key=rebuild_execution_key(
+                    demand.pk, demand.pending_revision
                 ),
                 admit=admit,
             )

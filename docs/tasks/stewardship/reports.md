@@ -38,7 +38,9 @@ open for their later consumers.
 
 In-progress evidence: the [ordinary report-fact increment](../../guides/stewardship-report-facts.md)
 adds historical/current populations, first/latest live response and exact pledge
-series calculations, plus real source/response integration tests. Full package
+series calculations, plus real source/response integration tests. Its local
+validation and three review/fix rounds are complete, pending protected delivery.
+Full package
 acceptance remains open; the guide records the remaining consumer calculations.
 
 ## RPT-03: Participation graph and campaign statistics

@@ -421,6 +421,74 @@ def test_new_revision_supersedes_only_unfrozen_terminal_root(
     assert FactBuildReceipt.objects.filter(task_id=replacements[0]).exists()
 
 
+def test_retry_command_replay_reports_bound_run_after_supersession(response_service):
+    """A replay reads the existing result, never creates or restarts obsolete work."""
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+    from parishkit.stewardship.jobs.storage import _status, retry_failed
+
+    from .campaign_builders import restored_runtime
+    from .test_taskrun_postgresql import act
+
+    root = produce()[1]
+    act(act(_status(TaskRun.objects.get(pk=root)), "claim"), "permanent_failure")
+    options = dict(
+        run_id=root,
+        command_id=uuid4(),
+        actor_id=uuid4(),
+        correlation_id=uuid4(),
+        admit=fact_handler().admit,
+    )
+    with work_transaction():
+        retry = retry_failed(**options)
+        assert retry_failed(**options).run_id == retry.run_id
+    act(act(retry, "claim"), "permanent_failure")
+    tomorrow = response_service.campaign.active_configuration.starts_at + timedelta(
+        days=1
+    )
+    with patch(
+        "parishkit.stewardship.reports.fact_production._now", return_value=tomorrow
+    ):
+        replacement = produce()
+    assert len(replacement) == 1
+    count = TaskRun.objects.count()
+    with work_transaction():
+        replay = retry_failed(**options)
+        assert replay.run_id == retry.run_id and replay.state == "failed"
+        instant = database_now()
+    with restored_runtime(instant), pytest.raises(PermissionError), work_transaction():
+        retry_failed(**options)
+    with task_login(ServiceRole.WORKER, exact=True):
+        assert execute(replacement[0])
+    with work_transaction():
+        assert retry_failed(**options).run_id == retry.run_id
+    assert TaskRun.objects.count() == count
+    assert TaskRun.objects.get(pk=retry.run_id).state == "failed"
+
+
+def test_undue_new_hint_keeps_unfrozen_root_queued_without_an_attempt(response_service):
+    """Debounce postpones queued work without spending its failure budget."""
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+    from parishkit.stewardship.reports.fact_production import hint_current_facts
+
+    root = produce()[1]
+    tomorrow = response_service.campaign.active_configuration.starts_at + timedelta(
+        days=1
+    )
+    with (
+        patch(
+            "parishkit.stewardship.reports.fact_production._now", return_value=tomorrow
+        ),
+        work_transaction(),
+    ):
+        hint_current_facts(response_service.campaign.pk)
+    with pytest.raises(PermissionError):
+        execute(root)
+    row = TaskRun.objects.get(pk=root)
+    assert row.state == "queued" and row.attempt == 0
+    demand = CampaignFactRebuildDemand.objects.get(pk=row.domain_request_id)
+    assert demand.pending_revision == 2 and demand.claimed_generation_id is None
+
+
 def test_unfrozen_nonterminal_root_claims_latest_pending_inputs(response_service):
     """New events coalesce into queued work rather than making its key stale."""
     root = produce()[1]
