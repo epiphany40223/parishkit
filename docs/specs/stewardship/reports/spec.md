@@ -59,12 +59,18 @@ Generated-file downloads also use the deployment-wide bounded admission and
 dedicated pool defined by [campaign read guards](../data/spec.md#campaign-read-guards).
 When capacity is busy, show the retryable response without discarding the
 generated export; a retry performs fresh authorization and purge checks.
+Admin recovery of expired-file housekeeping is a separate operational workflow
+defined by [export cleanup recovery](../background-processing/spec.md#export-cleanup-recovery),
+not a permission granted by ordinary report access.
 
 CSV is UTF-8 with a header row and CRLF-compatible output. Cells beginning with
 formula-significant characters are neutralized. XLSX uses freeze panes,
 filters, meaningful widths, types, repeated print headings, and no macros. PDF
-uses parish branding, generation/data-as-of time, page numbers, repeated table
-headings, and legible landscape layout where needed.
+uses parish branding, report-request/data-as-of time, page numbers, repeated
+table headings, and legible landscape layout where needed.
+In every output format, including CSV, the report-request timestamp is
+immutable across render retries; output labels must not describe it as the
+wall-clock time of a later rendering attempt.
 
 All charts have title, legend, labeled axes with units, accessible color/line
 patterns, hover/focus values, and equivalent data tables. They download as PNG

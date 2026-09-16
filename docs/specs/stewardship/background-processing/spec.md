@@ -729,6 +729,22 @@ through the complete download response, including streaming, so purge file
 cleanup cannot race an admitted download. Worker deletion admission and
 pre-first-batch drainage use that same service.
 
+### Export cleanup recovery
+
+Artifact cleanup retries are bounded. Exhaustion records a durable CRITICAL
+operational signal with the failed task transition; admission checks alone
+must not emit that signal. Cleanup preserves retained requests, receipts,
+audit history and calculation pins independently of artifact expiry.
+
+After repairing the cause, an Admin can retry the latest failed cleanup run
+from its background-task detail page. The CSRF-protected POST is replay-safe
+and selects the same canonical cleanup root, never an unrelated task or a new
+unbounded automatic retry series. Older task pages link to the latest run and
+do not offer a stale retry form. Staff and Ministry leaders cannot use this
+operational action. Conflicting or invalid form submissions show a safe HTML
+recovery page with a task-detail link; unrelated internal failures report
+unavailability, not a retry conflict.
+
 ## ParishSoft publication
 
 Publication runs in a dedicated queue with lower concurrency and uses the same

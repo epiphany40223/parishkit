@@ -25,6 +25,10 @@ from .models import TaskRun
 from .phases import TaskPhase
 
 
+class TaskRetryConflict(StorageInvariantError):
+    """A user-selected run is no longer the chain's latest failed execution."""
+
+
 @dataclass(frozen=True)
 class TaskStatus:
     """An immutable callback/status view without mutable ORM state or task payloads."""
@@ -175,6 +179,8 @@ def retry_failed(*, run_id, command_id, actor_id, correlation_id, admit):
         "outbox_delivery",
         "production_cleanup",
         "activation_catchup",
+        "report_export",
+        "report_export_cleanup",
     ):
         require_work_order()
     with _locked(correlation_id, root_id=original.root_id):
@@ -193,7 +199,7 @@ def retry_failed(*, run_id, command_id, actor_id, correlation_id, admit):
             .first()
         )
         if latest.pk != run_id or original.state != "failed":
-            raise StorageInvariantError("Only the latest failed run can be retried.")
+            raise TaskRetryConflict("Only the latest failed run can be retried.")
         _admit(admit, "explicit_retry", _status(original))
         run = TaskRun(
             root_id=original.root_id,

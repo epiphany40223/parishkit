@@ -1,7 +1,7 @@
 """WCAG automated checks plus keyboard, mobile, timezone and activity behavior."""
 
 from datetime import timedelta
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -195,6 +195,10 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/share-preview",
         "/presence",
         "/background-task",
+        "/export-cleanup-task",
+        "/export-cleanup-stale",
+        "/export-cleanup-conflict",
+        "/export-cleanup-invalid",
         "/content-settings",
         "/content-preview",
         "/content-history",
@@ -258,6 +262,28 @@ def test_components_accessible_and_responsive(
         id, impact, targets: nodes.map(n => n.target)
     }))""")
     assert violations == []
+
+
+def test_export_cleanup_keyboard_form_posts_only_csrf_and_replay_identity(
+    page, component_origin
+):
+    """Recovery is an accessible explicit form action, never a GET or auto-poll."""
+    page.route(
+        "**/admin/background/tasks/*/retry-export-cleanup",
+        lambda route: route.fulfill(content_type="text/html", body="Retry queued"),
+    )
+    page.goto(component_origin + "/export-cleanup-task")
+    button = page.get_by_role("button", name="Retry export cleanup", exact=True)
+    button.focus()
+    with page.expect_request(
+        "**/admin/background/tasks/*/retry-export-cleanup"
+    ) as submitted:
+        button.press("Enter")
+    assert submitted.value.method == "POST"
+    assert set(parse_qs(submitted.value.post_data)) == {
+        "csrfmiddlewaretoken",
+        "request_key",
+    }
 
 
 def test_setup_confirmation_requires_acknowledgement_and_stores_no_draft(

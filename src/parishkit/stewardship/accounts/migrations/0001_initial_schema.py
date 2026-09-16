@@ -26,6 +26,7 @@ def schema_sql():
                 "production",
                 "cleanup",
                 "schedule_reconciliation",
+                "exports",
             )
         ]
     )

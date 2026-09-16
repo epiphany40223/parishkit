@@ -345,6 +345,11 @@ def runtime_grants(role, *, target=None):
         from .responses.grants import add_response_web_grants
 
         add_response_web_grants(tables, columns)
+    from .reports.export_grants import add_export_grants
+
+    add_export_grants(
+        tables, columns, role=role.value if role is ServiceRole.WEB else role
+    )
     return tables, columns
 
 

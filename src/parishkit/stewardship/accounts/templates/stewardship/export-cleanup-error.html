@@ -1,0 +1,8 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Cleanup retry unavailable" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Cleanup retry unavailable" %}</h1>
+{% if conflict %}<p role="alert">{% translate "Only the latest failed cleanup can be retried. Another request may already have queued a retry." %}</p>
+{% else %}<p role="alert">{% translate "The retry request was invalid. Return to the task details and use a fresh retry form." %}</p>{% endif %}
+<p><a href="{% url 'admin:background_task_page' task_id %}">{% translate "Return to task details" %}</a></p>
+{% endblock %}

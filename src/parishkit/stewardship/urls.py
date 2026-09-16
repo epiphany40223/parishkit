@@ -36,6 +36,7 @@ from .accounts import (
     share_views,
 )
 from .jobs import views as job_views
+from .reports import export_views
 from .responses import views as response_views
 
 public_patterns = [
@@ -56,6 +57,19 @@ family_patterns = [
     path("logout", family_authentication.logout, name="logout"),
 ]
 admin_patterns = [
+    path(
+        "campaign/<uuid:campaign_id>/exports/participation",
+        export_views.create,
+        name="export_create",
+    ),
+    path("exports/download", export_views.download, name="export_download"),
+    path("exports/<uuid:request_id>", export_views.status, name="export_status"),
+    path("exports/<uuid:request_id>/cancel", export_views.cancel, name="export_cancel"),
+    path(
+        "exports/<uuid:request_id>/download-grant",
+        export_views.download_grant,
+        name="export_download_grant",
+    ),
     path(
         "setup/slack-test",
         setup_notification_views.setup_notification,
@@ -175,6 +189,11 @@ admin_patterns = [
         name="background_task_page",
     ),
     path("background/tasks", job_views.task_list, name="background_tasks"),
+    path(
+        "background/tasks/<uuid:task_id>/retry-export-cleanup",
+        export_views.retry_cleanup_command,
+        name="retry_export_cleanup",
+    ),
     path("background/counts", job_views.task_counts, name="background_counts"),
     path(
         "background/tasks/<uuid:task_id>",

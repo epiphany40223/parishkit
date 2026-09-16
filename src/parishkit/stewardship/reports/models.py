@@ -313,3 +313,14 @@ class CampaignFactRebuildDemand(MutableRecord):
             ),
         ]
         indexes = [models.Index(fields=("pending_due_at",), name="fact_demand_due")]
+
+
+from .export_models import (  # noqa: E402,F401
+    ExportArtifactCleanup,
+    ExportAttempt,
+    ExportCancellation,
+    ExportDownloadGrant,
+    ExportDownloadUse,
+    ExportPublication,
+    ExportRequest,
+)

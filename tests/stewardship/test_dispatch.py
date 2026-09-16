@@ -30,6 +30,17 @@ def test_handler_rejects_runtime_strings_and_incomplete_callbacks(
         Handler(queue, admit, execute, recover)
 
 
+def test_post_transition_hook_must_be_compiled_callable():
+    """A dynamic hook string never becomes executable transition behavior."""
+    with pytest.raises(ValueError):
+        Handler(
+            WorkQueue.GENERAL,
+            lambda *args: True,
+            lambda _: None,
+            after_transition="module.callback",
+        )
+
+
 @pytest.mark.parametrize(
     "action,delay",
     [

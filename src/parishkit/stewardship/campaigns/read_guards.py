@@ -378,7 +378,7 @@ class GuardedResponse:
                 self.guard.close()
 
 
-def acquire_campaign_drain(campaigns, *, limits=DEFAULT_LIMITS):
+def acquire_campaign_drain(campaigns, *, limits=DEFAULT_LIMITS, wait_seconds=None):
     """Acquire ordered exclusive read barriers inside the destructive owner's tx.
 
     DAT-09/BG-11 must close admission first, then call this before any deletion.
@@ -388,13 +388,17 @@ def acquire_campaign_drain(campaigns, *, limits=DEFAULT_LIMITS):
     identifiers = tuple(campaigns)
     if not identifiers or any(not isinstance(value, UUID) for value in identifiers):
         raise TypeError("Drain requires canonical campaign identifiers.")
+    if wait_seconds is None:
+        wait_seconds = limits.drain_seconds
+    if type(wait_seconds) is not int or not 1 <= wait_seconds <= limits.drain_seconds:
+        raise ValueError("Drain wait must fit the admitted lifetime budget.")
     db = connections["default"]
     if db.vendor != "postgresql" or not db.in_atomic_block:
         raise StorageInvariantError("Campaign drainage requires an owning transaction.")
     with db.cursor() as cursor:
         cursor.execute(
             "SELECT set_config('lock_timeout', %s, true)",
-            [str(limits.drain_seconds * 1000)],
+            [str(wait_seconds * 1000)],
         )
         for identifier in sorted(set(identifiers)):
             cursor.execute(

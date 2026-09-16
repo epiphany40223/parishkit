@@ -109,6 +109,10 @@ def scheduler_handlers():
     from .campaigns.work_locks import work_transaction
     from .jobs.dispatch import Handler
     from .jobs.queues import WorkQueue
+    from .reports.export_cleanup import TASK_TYPE as EXPORT_CLEANUP
+    from .reports.export_cleanup import cleanup_handler as export_cleanup_handler
+    from .reports.export_services import TASK_TYPE as REPORT_EXPORT
+    from .reports.export_tasks import export_handler
     from .source.outcomes import admit_refresh_metadata, recovery_plan
     from .source.requests import TASK_TYPE
     from .source.setup_admission import TASK_TYPE as SETUP_LOAD
@@ -122,6 +126,8 @@ def scheduler_handlers():
         raise PermissionError("The scheduler cannot execute provider work.")
 
     return {
+        REPORT_EXPORT: export_handler(scheduler=True),
+        EXPORT_CLEANUP: export_cleanup_handler(),
         CAMPAIGN_BOUNDARY: boundary_handler(scheduler=True),
         ACTIVATION_CATCHUP: catchup_handler(scheduler=True),
         PRODUCTION_CLEANUP: production_cleanup_handler(scheduler=True),
@@ -259,6 +265,10 @@ def configure_background(configuration, *, stop, heartbeat):
         from .campaigns.cleanup_tasks import (
             cleanup_handler as production_cleanup_handler,
         )
+        from .reports.export_cleanup import TASK_TYPE as EXPORT_CLEANUP
+        from .reports.export_cleanup import cleanup_handler as export_cleanup_handler
+        from .reports.export_services import TASK_TYPE as REPORT_EXPORT
+        from .reports.export_tasks import export_handler
         from .source.effects import refresh_reconciler
         from .source.execution import refresh_handler
         from .source.requests import TASK_TYPE
@@ -268,6 +278,10 @@ def configure_background(configuration, *, stop, heartbeat):
         from .source.setup_execution import setup_source_handler
 
         handlers = {
+            EXPORT_CLEANUP: export_cleanup_handler(configuration.paths["reports"]),
+            REPORT_EXPORT: export_handler(
+                store=store, root=configuration.paths["reports"]
+            ),
             CAMPAIGN_BOUNDARY: boundary_handler(),
             ACTIVATION_CATCHUP: catchup_handler(),
             PRODUCTION_CLEANUP: production_cleanup_handler(),

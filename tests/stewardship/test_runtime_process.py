@@ -309,6 +309,7 @@ def test_credential_service_publishes_only_after_admission(
         "source",
         "cleanup",
         "setup_cleanup",
+        "export_cleanup",
     ],
 )
 def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
@@ -343,6 +344,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                 "digests": "digest-receipt",
                 "source": "source-receipt",
                 "cleanup": "cleanup-receipt",
+                "export_cleanup": "export-cleanup-receipt",
                 "setup_cleanup": "setup-cleanup-receipt",
             }
             assert kwargs["produce"](guard) == (
@@ -368,6 +370,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
     schedules = Mock(return_value=("schedule-receipt",))
     digests = Mock(return_value=("digest-receipt",))
     guard, cleanup = Mock(), Mock(return_value=("cleanup-receipt",))
+    export_cleanup = Mock(return_value=("export-cleanup-receipt",))
     expiry = Mock(return_value=0)
     matching.side_effect = lambda _: expiry.assert_called_once_with(guard)
     if held:
@@ -391,6 +394,9 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
     )
     monkeypatch.setattr(
         "parishkit.stewardship.accounts.branding_cleanup.produce_cleanup", cleanup
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.reports.export_cleanup.produce_cleanup", export_cleanup
     )
     monkeypatch.setattr(
         "parishkit.stewardship.accounts.setup_staging.produce_setup_expiry", expiry
@@ -436,6 +442,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
             "source": producer,
             "cleanup": cleanup,
             "setup_cleanup": setup_cleanup,
+            "export_cleanup": export_cleanup,
         }[failing_producer].side_effect = RuntimeError("synthetic-owner-failure")
     monkeypatch.setattr("parishkit.stewardship.jobs.processes.serve_consumer", serve)
     monkeypatch.setattr("parishkit.stewardship.jobs.processes.serve_scheduler", serve)
@@ -471,6 +478,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                 digests,
                 producer,
                 cleanup,
+                export_cleanup,
                 mail_recovery,
                 campaign_recovery,
                 slack_recovery,
@@ -483,15 +491,17 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         digests.assert_called_once_with(guard)
         producer.assert_called_once_with(guard)
         cleanup.assert_called_once_with(guard)
+        export_cleanup.assert_called_once_with(guard)
         expiry.assert_called_once_with(guard)
         mail_recovery.assert_called_once_with()
         campaign_recovery.assert_called_once_with()
         slack_recovery.assert_called_once_with()
-        assert guard.check.call_count == 22
+        assert guard.check.call_count == 24
     else:
         boundary.assert_not_called()
         mail_recovery.assert_not_called()
         cleanup.assert_not_called()
+        export_cleanup.assert_not_called()
         expiry.assert_not_called()
 
 

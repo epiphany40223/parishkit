@@ -170,3 +170,16 @@ CI check and protected merge-group check (including all browser engines), verify
 the merge on refreshed `origin/main`, and start the Phase 4 BG-08 authorized
 export-job/deterministic-chart foundation on a new branch. The human's standing
 merge/continue authority applies; deployment, release and Gate 5 approval do not.
+
+## Protected delivery
+
+[PR #35](https://github.com/epiphany40223/parishkit/pull/35) merged on September
+16, 2026 at 04:31:15 UTC as `e1e575ddb4971de9bfd5247a54dd2d95180af28f`.
+Its final head was `317863b504b12013ce2632df6683204c192f1877`. Exact-head CI
+`35053877560` passed all 24 jobs and DCO passed. Protected merge-group CI
+`35054940433` also passed all 24 jobs, including every browser engine. Both
+database runs passed all 2,955 tests with 94.11% line and 85.53% branch coverage.
+The merged commit was verified on freshly fetched `origin/main` before starting
+the [export foundation](stewardship-export-foundation.md) on its new branch.
+This supersedes the pending-delivery paragraph above, not the remaining task or
+formal-gate boundaries.
