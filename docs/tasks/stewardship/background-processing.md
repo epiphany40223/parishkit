@@ -171,6 +171,9 @@ records scope, internal checkpoints and validation. Recipient projection,
 source/refusal integration and scheduler/activation recovery pass focused
 tests; complete validation and reviews remain open.
 No provider dispatch or Production activation is enabled by this preparation.
+BG-06.05 also owns the [partial-refusal dispatch prerequisite](../../guides/stewardship-family-deliverability.md#partial-refusal-dispatch-prerequisite):
+remaining usable head addresses must continue through definitive-unaccepted
+outbox retry ownership, not a fabricated Family deliverability edge.
 
 ## BG-07: Submission confirmations and Admin digests
 

@@ -18,7 +18,7 @@ from parishkit.stewardship.jobs.scheduler import scheduler_session
 from parishkit.stewardship.runtime_background import (
     bind_authority,
     matching_authority,
-    pre_delivery_suppressions,
+    source_refusal_suppressions,
 )
 from parishkit.stewardship.source.effects import refresh_reconciler
 from parishkit.stewardship.source.production import SourceProducer
@@ -54,7 +54,7 @@ def test_restricted_worker_observes_promotes_and_reconciles(
             general=ring.general,
             mac=ring.mac,
             public=ring.public,
-            suppressions=pre_delivery_suppressions,
+            suppressions=source_refusal_suppressions,
         ),
     )
     request = command()
@@ -129,7 +129,7 @@ def test_restricted_worker_failure_and_fallback_remain_durable(
             general=ring.general,
             mac=ring.mac,
             public=ring.public,
-            suppressions=pre_delivery_suppressions,
+            suppressions=source_refusal_suppressions,
         ),
     )
     request = (

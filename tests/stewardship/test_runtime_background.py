@@ -448,5 +448,5 @@ def test_source_refresh_uses_durable_suppression_owner_in_each_mode(monkeypatch,
         suppressions,
     )
     scope = SimpleNamespace(runtime=SimpleNamespace(mode=mode))
-    assert background.pre_delivery_suppressions(scope) is expected
+    assert background.source_refusal_suppressions(scope) is expected
     assert calls == [scope]

@@ -21,9 +21,15 @@ def prepare_initial_recovery(
     avoids mistaking unrelated eligibility-history updates for recovery. Source
     changes during an unresolved attempt do not authorize another attempt after
     it eventually fails: the qualifying edge must follow its terminal outcome.
+    Both owners acquire the work-order lock before their mutation statements;
+    terminal rows cannot receive a metadata-only timestamp update. Comparing
+    their statement timestamps therefore follows the serialized owner order.
     """
     require_work_order()
-    if previous.state not in {"failed", "skipped"}:
+    if previous.state not in {"failed", "skipped"} or (
+        previous.state == "skipped"
+        and previous.reason not in {"no_deliverable_recipient", "family_ineligible"}
+    ):
         return previous
     history = FamilyEligibilityChange.objects.filter(family_id=family_id)
     last_false = (

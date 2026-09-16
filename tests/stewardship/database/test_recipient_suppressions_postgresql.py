@@ -5,12 +5,17 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, ProgrammingError, connection, transaction
 
+from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+from parishkit.stewardship.campaigns.lifecycle import Action
+from parishkit.stewardship.campaigns.models import Campaign
+from parishkit.stewardship.campaigns.runtime import return_to_testing
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.delivery_states import DeliveryAction
+from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.outbox_models import OutboxEvent
 from parishkit.stewardship.jobs.outbox_storage import create_message
 from parishkit.stewardship.jobs.outbox_validation import DeliveryIdentity
@@ -22,20 +27,29 @@ from parishkit.stewardship.jobs.recipient_suppressions import (
     record_refusal,
     source_suppressions,
 )
+from parishkit.stewardship.jobs.storage import _status
 from parishkit.stewardship.source.leases import release_source
 from parishkit.stewardship.source.snapshots import promote_snapshot
 
+from ..campaign_factory import campaign as campaign_record
 from ..test_outbox_validation import rendering
-from .campaign_builders import campaign_clock
+from .campaign_builders import (
+    add_draft,
+    admit_test_work,
+    campaign_clock,
+    close_campaign,
+    command,
+)
 from .response_builders import activate_response_service, response_source
 from .test_background_grants_postgresql import task_login
 from .test_outbox_postgresql import change, permit, provider_evidence, submit
 from .test_source_families_postgresql import prepare, reconcile
+from .test_taskrun_postgresql import act
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def refused(harness, *, mode="production", address="valid@example.org"):
+def refused(harness, *, mode="production", address="valid@example.org", intended=None):
     """Record a synthetic provider refusal through real task/outbox state edges."""
     family = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=1)
     status = create_message(
@@ -50,7 +64,7 @@ def refused(harness, *, mode="production", address="valid@example.org"):
         ),
         render=rendering(
             configuration_id=harness.campaign.active_configuration.configuration_id,
-            intended_recipients=(address,),
+            intended_recipients=(address,) if intended is None else intended,
             routed_recipients=(address,)
             if mode == "production"
             else ("test@example.org",),
@@ -174,3 +188,90 @@ def test_inactivation_does_not_clear_unchanged_contact_refusal(response_service)
         assert not RecipientRefusalResolution.objects.exists()
         refresh(harness, response_source())
         assert not FamilyCampaign.objects.get(family_duid=1).email_deliverable
+
+
+def test_refusal_requires_intended_as_well_as_routed_address(response_service):
+    """The Python evidence boundary rejects mismatched routing before SQL writes."""
+    harness = activate_response_service(response_service)
+    with campaign_clock(harness.campaign.active_configuration.starts_at):
+        event = refused(harness, intended=("another@example.org",))
+        with pytest.raises(PermissionError, match="definitive delivery"):
+            remember(event)
+    assert not RecipientRefusal.objects.exists()
+
+
+def test_unresolved_refusal_survives_a_new_annual_campaign(
+    response_service, auth_service
+):
+    """New campaign-specific Family IDs cannot reset an unchanged refused address."""
+    harness = activate_response_service(response_service)
+    actor = uuid4()
+    with campaign_clock(harness.campaign.active_configuration.starts_at):
+        refusal = remember(refused(harness))
+        close_campaign(harness.campaign, actor)
+    # Settle synthetic fixture tasks through their real terminal owner, without
+    # deleting delivery/source history or bypassing campaign archive guards.
+    for row in TaskRun.objects.filter(state="running"):
+        act(_status(row), "permanent_failure")
+    with campaign_clock(harness.campaign.active_configuration.ends_at):
+        command(harness.campaign, actor, Action.ARCHIVE)
+        runtime = SystemConfiguration.objects.get()
+        return_to_testing(
+            campaign_id=harness.campaign.pk,
+            request_id=uuid4(),
+            expected_runtime_version=runtime.version,
+            actor_id=actor,
+            correlation_id=uuid4(),
+            admit=admit_test_work,
+        )
+        receipt, row, _ = add_draft(
+            auth_service.store,
+            auth_service.store.active(),
+            actor,
+            campaign_record(name="Following annual campaign"),
+        )
+        assert receipt.state == "applied"
+        successor = replace(harness, campaign=Campaign.objects.get(pk=row["id"]))
+        refresh(successor, response_source())
+    current = FamilyCampaign.objects.get(campaign=successor.campaign, family_duid=1)
+    assert current.pk != refusal.family_id and current.email_eligible
+    assert not current.email_deliverable
+    assert not RecipientRefusalResolution.objects.exists()
+
+
+def test_partial_refusal_keeps_other_head_address_deliverable(response_service):
+    """Remaining-recipient dispatch belongs to BG-06, not a fabricated boolean edge."""
+    harness = activate_response_service(response_service)
+    with campaign_clock(harness.campaign.active_configuration.starts_at):
+        data = response_source()
+        data.members[3]["emailAddress"] = "valid@example.org; remaining@example.org"
+        refresh(harness, data)
+        remember(refused(harness))
+        family = FamilyCampaign.objects.get(family_duid=1)
+        assert family.email_deliverable
+        with work_transaction():
+            selection = source_suppressions(SimpleNamespace(campaign=harness.campaign))
+        assert selection.entries == frozenset({(1, "valid@example.org")})
+
+
+@pytest.mark.parametrize(
+    "role",
+    [
+        ServiceRole.WEB,
+        ServiceRole.WORKER,
+        ServiceRole.SCHEDULER,
+        ServiceRole.MAIL_DISPATCH,
+    ],
+)
+def test_refusal_writes_wait_for_compiled_dispatch_owner(response_service, role):
+    """No current runtime login receives the future dispatcher write capability."""
+    with (
+        task_login(role, exact=True),
+        transaction.atomic(),
+        connection.cursor() as cursor,
+    ):
+        with pytest.raises(ProgrammingError, match="permission denied") as error:
+            cursor.execute(
+                "INSERT INTO stewardship_recipient_refusal(id) VALUES (%s)", (uuid4(),)
+            )
+        assert error.value.__cause__.sqlstate == "42501"

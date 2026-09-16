@@ -55,6 +55,8 @@ class Migration(migrations.Migration):
                             ),
                         ),
                         ("family_id", models.UUIDField()),
+                        ("organization_id", models.PositiveBigIntegerField()),
+                        ("family_duid", models.PositiveBigIntegerField()),
                         ("event_id", models.UUIDField()),
                         ("address", models.CharField(max_length=254)),
                     ],
@@ -63,13 +65,22 @@ class Migration(migrations.Migration):
                         "indexes": [
                             models.Index(
                                 fields=["family_id"], name="recipient_refusal_family"
-                            )
+                            ),
+                            models.Index(
+                                fields=["organization_id", "family_duid"],
+                                name="recipient_refusal_identity",
+                            ),
                         ],
                         "constraints": [
                             models.UniqueConstraint(
                                 fields=["event_id", "address"],
                                 name="recipient_refusal_event_address",
-                            )
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(organization_id__gt=0)
+                                & models.Q(family_duid__gt=0),
+                                name="recipient_refusal_identity_positive",
+                            ),
                         ],
                     },
                 ),

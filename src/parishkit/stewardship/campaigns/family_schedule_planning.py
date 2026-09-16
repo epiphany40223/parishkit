@@ -335,7 +335,9 @@ def _persist_decision(rows, decision, *, worker_id, correlation_id, check):
             continue
         coalesced = row.pk in decision.coalesced
         check()
-        ScheduleOccurrence.objects.filter(pk=row.pk, version=row.version).update(
+        updated = ScheduleOccurrence.objects.filter(
+            pk=row.pk, version=row.version
+        ).update(
             state="coalesced" if coalesced else "skipped",
             reason=decision.reason,
             replacement_id=decision.selected if coalesced else None,
@@ -343,6 +345,8 @@ def _persist_decision(rows, decision, *, worker_id, correlation_id, check):
             actor_id=worker_id,
             correlation_id=correlation_id,
         )
+        if updated != 1:
+            raise StorageInvariantError("Family planning lost its occurrence version.")
         if coalesced:
             check()
             ScheduleFulfillment.objects.create(

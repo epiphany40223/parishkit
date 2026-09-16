@@ -78,7 +78,7 @@ def bind_authority(handlers, store, *, heartbeat=None):
     }
 
 
-def pre_delivery_suppressions(scope):
+def source_refusal_suppressions(scope):
     """Bind the durable Family-scoped refusal owner to source promotion."""
     from .jobs.recipient_suppressions import source_suppressions
 
@@ -287,7 +287,7 @@ def configure_background(configuration, *, stop, heartbeat):
                     general=rings["general_encryption"],
                     mac=rings["family_code_mac"],
                     public=rings["token_public"],
-                    suppressions=pre_delivery_suppressions,
+                    suppressions=source_refusal_suppressions,
                 ),
             )
     handlers = bind_authority(handlers, store, heartbeat=heartbeat)

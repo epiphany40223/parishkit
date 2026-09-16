@@ -1,10 +1,13 @@
 """Durable source transitions recover initial mail without rewriting history."""
 
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
 from django.db import IntegrityError, transaction
+from django.db.models.query import QuerySet
 
+from parishkit.stewardship.accounts.configuration_installation import install_request
 from parishkit.stewardship.campaigns.credential_models import (
     FamilyCampaign,
     FamilyEligibilityChange,
@@ -22,14 +25,120 @@ from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.dispatch import claim_hint
 from parishkit.stewardship.jobs.lifetime import maintain_execution
 from parishkit.stewardship.jobs.scheduler import scheduler_session
+from parishkit.stewardship.storage import StorageInvariantError
 
-from .campaign_builders import advance, campaign_clock, claimed_task, command
+from .campaign_builders import (
+    admit_test_work,
+    advance,
+    campaign_clock,
+    claimed_task,
+    close_campaign,
+    command,
+    end_request,
+)
 from .credential_builders import family_campaign, populate
 from .test_background_grants_postgresql import task_login
 from .test_catchup_preparation_postgresql import execution_arguments
 from .test_family_auth_postgresql import family_service  # noqa: F401
+from .test_family_schedule_planning_postgresql import add_reminders
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+
+def test_closed_skip_stays_terminal_after_actual_reopen_and_source_transition(tmp_path):
+    """Reopening does not turn a closed skip into authorized invitation recovery."""
+    store, campaign, actor, rings = family_campaign(tmp_path)
+    family = FamilyCampaign.objects.get()
+    with campaign_clock(campaign.active_configuration.starts_at):
+        command(campaign, actor, Action.ACTIVATE)
+    close_campaign(campaign, actor)
+    with (
+        campaign_clock(campaign.active_configuration.ends_at),
+        scheduler_session() as guard,
+    ):
+        assert plan(guard, family.pk, actor).skipped == 1
+    original = ScheduleOccurrence.objects.get()
+    instant = campaign.active_configuration.ends_at + timedelta(days=1)
+    with campaign_clock(instant):
+        request, _ = end_request(store, campaign, actor, "reopen", "2026-11-10")
+        assert (
+            install_request(
+                store,
+                request_id=request.request_id,
+                correlation_id=uuid4(),
+                admit_campaign=admit_test_work,
+            ).state
+            == "applied"
+        )
+        populate(
+            campaign, rings, [FamilyStatus(1, True, True, True, False)], generation=2
+        )
+        populate(
+            campaign, rings, [FamilyStatus(1, True, True, True, True)], generation=3
+        )
+        with scheduler_session() as guard:
+            result = plan(guard, family.pk, actor)
+            assert result.created == 0 and result.selected is None
+        generation = (
+            FamilyEligibilityChange.objects.filter(family=family)
+            .latest("family_version")
+            .family_version
+        )
+        with (
+            pytest.raises(IntegrityError, match="new deliverability transition"),
+            transaction.atomic(),
+        ):
+            ScheduleOccurrence.objects.create(
+                definition_id=original.definition_id,
+                revision_id=original.revision_id,
+                mode=original.mode,
+                routing=original.routing,
+                target=original.target,
+                slot="once",
+                due_at=original.due_at,
+                recovery_generation=generation,
+                occurrence_key=occurrence_key(
+                    original.revision_id,
+                    original.mode,
+                    original.target,
+                    "once",
+                    recovery_generation=generation,
+                ),
+                actor_id=actor,
+                correlation_id=uuid4(),
+            )
+    original.refresh_from_db()
+    assert original.state == "skipped" and original.reason == "campaign_closed"
+
+
+def test_missed_optimistic_update_cannot_create_false_coverage(
+    family_service,  # noqa: F811
+    auth_service,
+    monkeypatch,
+):
+    """A future nonserialized writer must still cause rollback, never false coverage."""
+    actor, family = uuid4(), FamilyCampaign.objects.get()
+    definitions = add_reminders(auth_service.store, family_service.campaign, actor)
+    due = ScheduleDefinition.objects.get(
+        pk=definitions[1]["id"]
+    ).current_revision.due_at
+    update = QuerySet.update
+
+    def lost_version(query, **values):
+        """Model one optimistic miss while leaving all other owners untouched."""
+        if query.model is ScheduleOccurrence:
+            return 0
+        return update(query, **values)
+
+    with campaign_clock(due), scheduler_session() as guard:
+        with monkeypatch.context() as patch:
+            patch.setattr(QuerySet, "update", lost_version)
+            with pytest.raises(
+                StorageInvariantError, match="lost its occurrence version"
+            ):
+                plan(guard, family.pk, actor)
+        assert not ScheduleOccurrence.objects.exists()
+        assert plan(guard, family.pk, actor).coalesced == 2
 
 
 def test_source_recovery_can_finish_held_activation_preparation(tmp_path):

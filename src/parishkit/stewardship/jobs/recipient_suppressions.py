@@ -8,11 +8,17 @@ email preferences can create refusals.
 
 from uuid import UUID
 
+from django.db.models import BooleanField
+from django.db.models.expressions import RawSQL
+
 from parishkit.stewardship.accounts.policy_schema import normalized_email
-from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+from parishkit.stewardship.campaigns.credential_models import (
+    CampaignCredentialState,
+    FamilyCampaign,
+)
 from parishkit.stewardship.campaigns.work_locks import require_work_order
 from parishkit.stewardship.source.families import FamilySuppressions
-from parishkit.stewardship.source.snapshot_models import SourceCurrent
+from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSnapshot
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .outbox_models import OutboxEvent
@@ -41,6 +47,7 @@ def record_refusal(*, event_id, address, actor_id, correlation_id):
         or event.message.routing != "production"
         or event.message.family_id is None
         or address not in event.render.routed_recipients
+        or address not in event.render.intended_recipients
     ):
         raise PermissionError(
             "Recipient refusal requires definitive delivery evidence."
@@ -50,9 +57,16 @@ def record_refusal(*, event_id, address, actor_id, correlation_id):
     ).first()
     if previous is not None:
         return previous
+    family = FamilyCampaign.objects.get(pk=event.message.family_id)
+    population = CampaignCredentialState.objects.get(campaign_id=family.campaign_id)
+    organization_id = SourceSnapshot.objects.get(
+        pk=population.source_snapshot_id
+    ).organization_id
     return RecipientRefusal.objects.create(
         event_id=event_id,
         family_id=event.message.family_id,
+        organization_id=organization_id,
+        family_duid=family.family_duid,
         address=address,
         actor_id=actor_id,
         correlation_id=correlation_id,
@@ -67,38 +81,42 @@ def source_suppressions(scope):
     eligible heads, so reactivation cannot silently reset a known refusal.
     Retained manifests and refusal/resolution records provide durable provenance.
     """
-    from django.db import connection
-
     require_work_order()
     if scope.campaign is None:
         raise StorageInvariantError("Recipient suppression requires campaign scope.")
     current = SourceCurrent.objects.select_related("snapshot").get(singleton=True)
     if current.snapshot_id is None or current.snapshot.state != "promoted":
         raise StorageInvariantError("Recipient suppression requires promoted source.")
-    families = dict(
-        FamilyCampaign.objects.filter(campaign_id=scope.campaign.pk).values_list(
-            "id", "family_duid"
+    # Stable organization/DUID scope deliberately survives annual Campaign rows.
+    # The new campaign's population may not yet exist during its first promotion.
+    refusals = (
+        RecipientRefusal.objects.filter(organization_id=current.organization_id)
+        .exclude(pk__in=RecipientRefusalResolution.objects.values("refusal_id"))
+        .annotate(
+            present=RawSQL(
+                "stewardship_refusal_address_present_v1(%s,family_duid,address)",
+                (current.snapshot_id,),
+                output_field=BooleanField(),
+            )
         )
     )
-    refusals = RecipientRefusal.objects.filter(family_id__in=families).exclude(
-        pk__in=RecipientRefusalResolution.objects.values("refusal_id")
-    )
-    entries = set()
+    entries, resolutions = set(), []
     for refusal in refusals.iterator(chunk_size=500):
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT stewardship_refusal_address_present_v1(%s,%s,%s)",
-                (current.snapshot_id, refusal.family_id, refusal.address),
-            )
-            present = cursor.fetchone()[0]
-        if present:
-            entries.add((families[refusal.family_id], refusal.address))
+        if refusal.present:
+            entries.add((refusal.family_duid, refusal.address))
         else:
-            RecipientRefusalResolution.objects.create(
-                refusal_id=refusal.pk,
-                source_snapshot_id=current.snapshot_id,
-                source_generation=current.generation,
-                actor_id=current.snapshot.actor_id,
-                correlation_id=current.snapshot.correlation_id,
+            resolutions.append(
+                RecipientRefusalResolution(
+                    refusal_id=refusal.pk,
+                    source_snapshot_id=current.snapshot_id,
+                    source_generation=current.generation,
+                    actor_id=current.snapshot.actor_id,
+                    correlation_id=current.snapshot.correlation_id,
+                )
             )
+        if len(resolutions) == 500:
+            RecipientRefusalResolution.objects.bulk_create(resolutions, batch_size=500)
+            resolutions.clear()
+    if resolutions:
+        RecipientRefusalResolution.objects.bulk_create(resolutions, batch_size=500)
     return FamilySuppressions(frozenset(entries))

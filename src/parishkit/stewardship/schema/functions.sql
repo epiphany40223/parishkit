@@ -3438,10 +3438,12 @@ BEGIN
     IF event_time IS NULL OR prior_deliverable IS DISTINCT FROM false THEN RETURN false; END IF;
     SELECT * INTO predecessor FROM public.stewardship_schedule_occurrence o
     WHERE o.definition_id=(proposed->>'definition_id')::uuid
+      AND o.revision_id=(proposed->>'revision_id')::uuid
       AND o.mode=proposed->>'mode' AND o.target=proposed->>'target'
       AND o.slot=proposed->>'slot'
-    ORDER BY o.created_at DESC,o.id DESC LIMIT 1;
+    ORDER BY o.recovery_generation DESC LIMIT 1;
     IF predecessor.id IS NULL OR predecessor.state NOT IN ('failed','skipped')
+       OR (predecessor.state='skipped' AND predecessor.reason NOT IN ('no_deliverable_recipient','family_ineligible'))
        OR predecessor.recovery_generation>=generation OR predecessor.updated_at>=event_time
        OR EXISTS (
            SELECT 1 FROM public.stewardship_schedule_occurrence o
@@ -5158,10 +5160,7 @@ CREATE FUNCTION public.stewardship_schedule_occurrence_mutable_v1() RETURNS trig
     LANGUAGE plpgsql
     AS $$
             BEGIN
-                IF NEW.recovery_generation IS DISTINCT FROM OLD.recovery_generation THEN
-                    RAISE EXCEPTION 'Recovery generation is immutable' USING ERRCODE='23514';
-                END IF;
-                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."definition_id" IS DISTINCT FROM OLD."definition_id" OR NEW."revision_id" IS DISTINCT FROM OLD."revision_id" OR NEW."mode" IS DISTINCT FROM OLD."mode" OR NEW."routing" IS DISTINCT FROM OLD."routing" OR NEW."target" IS DISTINCT FROM OLD."target" OR NEW."slot" IS DISTINCT FROM OLD."slot" OR NEW."due_at" IS DISTINCT FROM OLD."due_at" OR NEW."occurrence_key" IS DISTINCT FROM OLD."occurrence_key" THEN
+                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."definition_id" IS DISTINCT FROM OLD."definition_id" OR NEW."revision_id" IS DISTINCT FROM OLD."revision_id" OR NEW."mode" IS DISTINCT FROM OLD."mode" OR NEW."routing" IS DISTINCT FROM OLD."routing" OR NEW."target" IS DISTINCT FROM OLD."target" OR NEW."slot" IS DISTINCT FROM OLD."slot" OR NEW."due_at" IS DISTINCT FROM OLD."due_at" OR NEW."occurrence_key" IS DISTINCT FROM OLD."occurrence_key" OR NEW."recovery_generation" IS DISTINCT FROM OLD."recovery_generation" THEN
                     RAISE EXCEPTION 'Record identity and bindings are immutable'
                         USING ERRCODE = '23514';
                 END IF;
