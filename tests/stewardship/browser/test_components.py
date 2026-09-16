@@ -196,6 +196,7 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/presence",
         "/background-task",
         "/export-cleanup-task",
+        "/export-cleanup-stale",
         "/export-cleanup-conflict",
         "/export-cleanup-invalid",
         "/content-settings",

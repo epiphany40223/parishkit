@@ -22,6 +22,7 @@ from parishkit.stewardship.audit.schemas import Action, Outcome
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.ownership import database_now
+from parishkit.stewardship.jobs.storage import TaskRetryConflict
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.responses import campaign_response
 
@@ -175,8 +176,10 @@ def retry_cleanup_command(request, task_id):
         response = redirect("admin:background_task_page", task_id=result.run_id)
         response["Cache-Control"] = "no-store"
         return response
-    except StorageInvariantError:
+    except TaskRetryConflict:
         return _cleanup_error(request, task_id, status=409)
+    except StorageInvariantError:
+        return _json({"error": "Export cleanup is unavailable."}, status=503)
     except SAFE_FAILURES:
         return denial()
     except ValueError:

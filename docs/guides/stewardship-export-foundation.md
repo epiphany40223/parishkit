@@ -90,8 +90,9 @@ created disposable databases, adds seven tables, 57 columns, 91 constraints,
 The baseline fingerprint records that inspected fresh-install result. No upgrade
 path was introduced and no retained development database was modified.
 
-Full local validation, three dual-source review/fix rounds and protected delivery
-are still pending. BG-08 remains in progress; the complete report catalog,
+At this initial checkpoint, local validation, three dual-source review/fix
+rounds and protected delivery were pending; subsequent evidence below
+supersedes that status. BG-08 remains in progress; the complete report catalog,
 priority materialization, interactive screens and ministry-scoped export owners
 remain assigned to their later tasks.
 
@@ -241,3 +242,47 @@ failure. Final frozen-tree integration and the third review round follow.
 An additional ten HTTP regressions passed after marking the fixed-text HTML
 validation response as safe for the existing security middleware; otherwise
 that middleware correctly replaces unmarked 400 responses with plain text.
+
+## Review round 3
+
+Pika session `20260916-030919-d95ace` reviewed the correction delta from
+`893a3fe` through `f2c0e0f49cf3f855b51198749f7368d10c1f79db`, tree
+`f375a4359c8ea43da5fcbbc08f11acbf4e469e5f`. Its focus explicitly broadened
+to surrounding shared-dispatch callers, transaction rollback and recovery.
+The fresh exact-path permission preflight and both required reviewers
+completed. Retained-artifact finalization reported APPROVE with no failed or
+degraded source, mismatch or salvage. Codex reported no actionable findings;
+Claude reported **12 Low**, **0 Medium**, **0 High** and **0 Critical** findings.
+No severity-filtered finding is treated as disposition by itself.
+
+All finding numbers below refer to Claude's one-based raw list.
+
+| Finding | Severity | Disposition and evidence |
+| --- | --- | --- |
+| 1 | Low | Fixed documentation: the hook covers worker-driven Execution transitions and verified recovery dispositions, not claim/lease-expiry bookkeeping. Existing rollback/duplicate tests assert exactly those invocations. |
+| 2 | Low | Fixed: a dedicated `TaskRetryConflict` preserves the existing base exception contract while distinguishing a stale selected run from an internal invariant fault. Only that conflict receives HTML 409; unrelated invariant failures return privacy-safe 503, with an HTTP regression. |
+| 3 | Low | Fixed: share `MAX_CLEANUP_ATTEMPTS` across admission, recovery, failure selection and exhaustion verification. |
+| 4 | Low | Fixed: validate the three optional callable hooks through one explicit tuple. |
+| 5 | Low | Already covered: the restricted-web HTTP regression executes the real supplied-run service and replay twice; it is stronger than another isolated duplicate. Separate direct service tests cover omitted selection/replay and cross-root rejection. No mocked service hides the production path. |
+| 6 | Low | Rejected speculative absent-root case: the viewed TaskRun itself belongs to the nonnullable, protected root chain. Under the same read transaction the query cannot be empty; nullable roots are not a supported future contract. Do not silently hide structurally corrupt history. |
+| 7 | Low | Retain one indexed chain query for consistent JSON/HTML detail, including navigation from historical runs. The loaded row cannot prove it has no later child without querying. Any measured polling optimization belongs with ADM-05 operational UI completion. |
+| 8 | Low | Added the historical cleanup page to browser fixtures and accessibility/mobile checks, with the latest-retry link and no retry form. |
+| 9 | Low | Already handled: explicit fresh-baseline `schema_sql()` reads all nine required assets, so a missing file fails migration loading and the configured-image tests. The two sentinels protect against a vacuous glob; dynamic build-context enumeration avoids a third manually duplicated schema list. |
+| 10 | Low | Added the authoritative Admin cleanup-recovery behavior under the background-processing spec and cross-linked it from the reports spec. The guide remains evidence, not the sole behavior contract. |
+| 11 | Low | Negligible presentation suggestion: the heading and readable paragraph already convey the failure independently of live-region announcement. Axe/keyboard coverage passes; retaining `role=alert` does not make access depend on an announcement or violate WCAG. |
+| 12 | Low | Fixed: distinguish `first_publication` from `other_task` in the cross-root regression. |
+
+The frozen reviewed tree passed **5,742 baseline tests** and **3,010 PostgreSQL
+tests** across all eight verified shards: **94.16% line coverage**, **85.57%
+branch coverage**. Its rebuilt image passed both configured Compose profiles
+and both real build-context checks. Ruff, formatting, all tracked Markdown and
+fresh-model/schema drift checks passed. Final-round corrections use focused
+post-fix regressions; exact-head protected CI remains required before delivery.
+
+Final-round corrections passed **94 PostgreSQL regressions**, **58 unit/build
+tests** and **27 three-engine browser checks**. All accepted fixes are resolved;
+the three completed dual-source review/fix rounds meet the per-PR exit rule.
+Protected delivery remains pending, and BG-08 retains its Phase 5 scope.
+The complete pre-correction component fixture also passed all **450 browser
+checks**; the separate 27-check post-fix run includes the new historical-task
+variant. Exact-head CI will run the complete updated browser matrix again.

@@ -177,13 +177,39 @@ def test_cleanup_retry_cannot_select_a_different_attempt_root(http_scenario):  #
     from parishkit.stewardship.reports.export_cleanup import retry_cleanup
 
     setup, _ = http_scenario
-    _, first = failed_cleanup(http_scenario)
-    second, _ = failed_cleanup(http_scenario)
+    _, first_publication = failed_cleanup(http_scenario)
+    other_task, _ = failed_cleanup(http_scenario)
     with web_login(), pytest.raises(PermissionError, match="cleanup root"):
         retry_cleanup(
             setup[0],
             setup[1].pk,
-            first.attempt_id,
+            first_publication.attempt_id,
             request_key=uuid4(),
-            run_id=second.run_id,
+            run_id=other_task.run_id,
         )
+
+
+def test_internal_cleanup_invariant_is_not_presented_as_a_retry_conflict(
+    http_scenario,  # noqa: F811
+    monkeypatch,
+):
+    """Programming/storage faults never masquerade as a stale user-selected run."""
+    from parishkit.stewardship.reports import export_views
+    from parishkit.stewardship.storage import StorageInvariantError
+
+    _, browser = http_scenario
+    task, _ = failed_cleanup(http_scenario)
+
+    def unavailable(*args, **kwargs):
+        """Represent an unrelated internal failure without exposing its details."""
+        raise StorageInvariantError("synthetic-private-invariant-detail")
+
+    monkeypatch.setattr(export_views, "retry_cleanup", unavailable)
+    response = post(
+        browser,
+        f"/admin/background/tasks/{task.run_id}/retry-export-cleanup",
+        {"request_key": str(uuid4())},
+    )
+    assert response.status_code == 503
+    assert response["Cache-Control"] == "no-store"
+    assert b"synthetic-private" not in response.content

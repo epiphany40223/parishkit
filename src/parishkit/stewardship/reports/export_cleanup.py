@@ -28,6 +28,7 @@ from .export_models import ExportArtifactCleanup, ExportAttempt
 from .export_services import admit_campaign, authorize
 
 TASK_TYPE = "report_export_cleanup"
+MAX_CLEANUP_ATTEMPTS = 5
 
 
 def _attempt(status, *, creating=False):
@@ -83,7 +84,7 @@ def recover_cleanup(status):
         return None
     return (
         RecoveryPlan("recovery_fail")
-        if status.attempt >= 5
+        if status.attempt >= MAX_CLEANUP_ATTEMPTS
         else RecoveryPlan("recovery_retry", 60)
     )
 
@@ -92,9 +93,9 @@ def admit_cleanup(action, status):
     """Only the file-owning worker can create a receipt; scheduler owns hints only."""
     attempt = _attempt(status, creating=action == "enqueue")
     if action == "permanent_failure":
-        return status.attempt >= 5
+        return status.attempt >= MAX_CLEANUP_ATTEMPTS
     if action == "retryable_failure":
-        return status.attempt < 5
+        return status.attempt < MAX_CLEANUP_ATTEMPTS
     if action in {
         "lease_expired",
         "recovery_hint",
@@ -130,7 +131,7 @@ def _after_transition(action, status):
     if action not in {"permanent_failure", "recovery_fail"}:
         return
     _attempt(status)
-    if status.state != "failed" or status.attempt < 5:
+    if status.state != "failed" or status.attempt < MAX_CLEANUP_ATTEMPTS:
         raise StorageInvariantError("Cleanup exhaustion requires a failed run.")
     operational(
         Event.TASK_FAILED,
@@ -209,9 +210,10 @@ def cleanup_handler(root=None):
                 execution.transition("complete")
         except (ConfigError, OperationalError):
             task = TaskRun.objects.get(pk=execution.claim.run_id)
+            exhausted = task.attempt >= MAX_CLEANUP_ATTEMPTS
             execution.transition(
-                "permanent_failure" if task.attempt >= 5 else "retryable_failure",
-                **({} if task.attempt >= 5 else {"retry_seconds": 60}),
+                "permanent_failure" if exhausted else "retryable_failure",
+                **({} if exhausted else {"retry_seconds": 60}),
             )
 
     return Handler(

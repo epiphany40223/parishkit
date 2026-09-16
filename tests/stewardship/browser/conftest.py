@@ -765,6 +765,22 @@ def component_origin():
             {"task_id": uuid4(), "conflict": False},
         ),
         (
+            "/export-cleanup-stale",
+            "background-task",
+            {
+                "task": {
+                    "id": uuid4(),
+                    "type": "report_export_cleanup",
+                    "state": "failed",
+                    "created_at": NOW.isoformat(),
+                    "attempt": 5,
+                    "retry_sequence": 0,
+                    "progress": {"phase": "queued", "current": 0, "total": 0},
+                },
+                "work": {"events": [], "latest_run_id": str(uuid4())},
+            },
+        ),
+        (
             "/export-cleanup-task",
             "background-task",
             {

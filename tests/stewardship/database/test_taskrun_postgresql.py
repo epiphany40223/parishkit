@@ -22,7 +22,12 @@ from parishkit.stewardship.accounts.configuration_models import Parish
 from parishkit.stewardship.accounts.configuration_schema import validate_sections
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.jobs.models import TaskRun, TaskRunEvent
-from parishkit.stewardship.jobs.storage import change_run, enqueue, retry_failed
+from parishkit.stewardship.jobs.storage import (
+    TaskRetryConflict,
+    change_run,
+    enqueue,
+    retry_failed,
+)
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
 from ..configuration_factory import configuration_version
@@ -329,7 +334,7 @@ def test_explicit_retry_preserves_failed_history_and_command_binding():
     assert child.retry_sequence == 1
     with pytest.raises(ValueError, match="already bound"):
         retry(initial, command_id=command)
-    with pytest.raises(StorageInvariantError):
+    with pytest.raises(TaskRetryConflict):
         retry(initial)
     failed_again = act(act(second, "claim"), "permanent_failure")
     third = retry(failed_again)

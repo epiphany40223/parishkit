@@ -53,8 +53,10 @@ class RecoveryPlan:
 class Handler:
     """Compiled-in owning implementation; never populated from request payloads.
 
-    ``after_transition`` records owning database effects after an actual journal
-    transition, inside the same transaction. It must not perform external I/O:
+    ``after_transition`` records owning database effects after worker-driven
+    Execution transitions and verified recovery dispositions, inside the same
+    transaction. Claim and lease-expiry bookkeeping do not invoke this hook.
+    It must not perform external I/O:
     callback failure rolls back both those effects and the transition. Admission
     predicates remain read-only and may safely be evaluated more than once.
     """
@@ -74,11 +76,9 @@ class Handler:
             or not all(
                 callable(value) for value in (self.admit, self.execute, self.scope)
             )
-            or (self.recover is not None and not callable(self.recover))
-            or (self.pulse is not None and not callable(self.pulse))
-            or (
-                self.after_transition is not None
-                and not callable(self.after_transition)
+            or any(
+                value is not None and not callable(value)
+                for value in (self.recover, self.pulse, self.after_transition)
             )
         ):
             raise ValueError("A complete internal task handler is required.")
