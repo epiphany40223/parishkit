@@ -326,7 +326,6 @@ def test_catchup_failure_obeys_restore_gate(tmp_path):
         command(campaign, actor, Action.ACTIVATE)
     demand = ActivationCatchUpDemand.objects.get()
     task = claimed_task("activation_catchup", demand.pk, actor)
-    demand.refresh_from_db()
     args = dict(
         demand_id=demand.pk,
         request_id=uuid4(),

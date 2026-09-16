@@ -84,3 +84,80 @@ before updating the strict baseline. Rebuilt-image configured development and
 production Compose checks passed (2 tests in 109.11s), as did full tracked
 Markdown validation. No accepted Medium-or-higher round-one finding remains
 unresolved. Independent correction review follows before PR delivery.
+
+## Round 2
+
+Correction delta `3ddfbc28a52319a23a846f973f405d805f11fe0e` →
+`74a25903eb92d0c9ae35ad6c3c84cb99fe823c13`, Pika session
+`20260915-230544-6c8a1b`. Claude and Codex both completed successfully. Finalized
+result: **COMMENT**, six Medium findings, no High/Critical, and ten raw Low
+findings below cutoff. There were no failed agents, mismatches or degradations.
+
+### Round-two validated findings
+
+| ID | Source / raw severity | Disposition and evidence |
+| --- | --- | --- |
+| C1 | Claude / Medium | Fixed: resolve the immutable claim event once per digest batch, retaining per-effect ownership checks. The real digest test observes exactly one resolution for each date/cover batch. |
+| C2 | Claude / Medium | Fixed: recheck the exact TaskClaim before each Family lineage insert. SQL independently checks the event against the live lease; the additional Python check keeps all effect loops consistent. |
+| C3 | Claude / Medium | Fixed: any semantic coverage or independent unreviewed/assumed-delivered restore hold excludes the initial slot consistently in SQL and Python. A real worker can prepare remaining reminders without consuming the initial's restore hold. |
+| C4 | Claude / Medium | Fixed: aggregate date selection excludes covered/restore-held originals and synthetic recovery slots. A newest-held-date regression completes the aggregate at the latest eligible date and retains the held original. |
+| X1 | Codex / Medium | Fixed: the Family receipt guard requires forwarding every cancelled coverage predecessor when a current selection exists. Suppressing the Python forwarding call now rejects and rolls back the receipt/new selection; original fulfillment remains intact. |
+| X2 | Codex / Medium | Fixed: pending applicable Family selection count must be zero when current eligibility, response or close state requires a skip. Actual-worker forged receipts fail for inactive, email-ineligible, undeliverable and closed cases. |
+
+A related self-audit corrected Family pending-count/unresolved checks and digest
+uncertainty checks to use the same exclusion set. Independent restore holds are
+not preparation failures and remain unchanged after preparation completes. The
+shared read-only SQL predicate consolidates these repeated checks without adding
+writer authority. Completion and coverage are still not provider permission.
+
+### Round-two raw Low findings
+
+1. More than 100 Family predecessors: rejected as the claimed accumulated-chain
+   failure. The query selects only predecessors without a successor; successfully
+   forwarded earlier links leave that set. Repeated replacements do not accumulate
+   100 unforwarded ancestors. The bound detects corrupt/unhandled inventory;
+   changing its exception to retryable would not make that inventory progress.
+2. Claim-event uniqueness: already enforced by event-to-current-run binding,
+   sequential event versions and increment-on-claim fences. Arbitrary duplicate
+   claim events cannot be inserted under the existing guards. Do not choose an
+   arbitrary latest row to hide broken history.
+3. Multiple unfinished activation demands: already prevented by draft-only
+   Testing-to-Production activation and unique demand per immutable activation.
+   No admitted transition returns a campaign to draft for another activation.
+   A redundant partial index is not needed to fix a reachable selection ambiguity.
+4. Broad forged-receipt assertion: fixed. Digest cases now require the specific
+   inventory-proof error; completion requires its own completion-proof error.
+5. Prepared-source diagnostic distinctions: deferred wording/test refinement.
+   Missing or unbound source is the same closed invariant failure at this
+   boundary, and allocation rollback is tested. No private source details should
+   be exposed and no fallback allocation is allowed.
+6. Specification wrapping: fixed.
+7. Real retry delay: retained the short database wait because task lease/backoff
+   time deliberately uses wall time, not the campaign clock. Added an explicit
+   successful-reclaim assertion so future timing changes fail diagnostically;
+   direct mutation of immutable retry evidence is not a suitable substitute.
+8. Redundant demand refresh: removed.
+9. Post-correction full-suite evidence: the round-one ledger explicitly labels
+   the full suite's pre-correction SHA and corrected subsets. Final-tree full
+   coverage remains required before delivery; no subset is presented as that run.
+10. Intermediate cover progress inflation: retained as a Low limitation of
+    count-only preparation telemetry. A fabricated positive intermediate receipt
+    cannot settle outcomes or release preparation; the final receipt independently
+    proves the full inventory. Binding counts to each effect would require new
+    batch attribution, not timestamp guesses. No denominator/percentage or delivery
+    success is inferred from these counters.
+
+### Round-two validation checkpoint
+
+The first added-test run exposed invalid eligibility fixture combinations and
+missing maintained execution in the restore harness, not accepted runtime
+behavior. After correcting the harness, all 42 focused PostgreSQL tests passed
+in 47.59s. The fresh-install audit against `74a2590` verified exactly one added
+read-only helper and the three intended guard changes; all other inventories
+are unchanged. The strict baseline was updated only after that comparison.
+The broader corrected suite passed 142 PostgreSQL tests in 71.73s, including
+the strict schema baseline. The baseline passed 5,674 tests in 54.57s, with
+environment-gated suites explicitly skipped. Lint, formatting and all tracked
+Markdown passed. Rebuilt-image configured development and production Compose
+checks passed (2 tests in 106.04s). All six accepted Medium findings are fixed;
+round two is complete. Full corrected coverage and round three follow.

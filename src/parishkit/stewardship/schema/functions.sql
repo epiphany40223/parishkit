@@ -1764,13 +1764,26 @@ BEGIN
     RETURN NEW;
 END $$;
 
+-- Semantic coverage and independent restore decisions exclude a slot from
+-- preparation, not from history. Keep every SQL proof on the same input set.
+CREATE FUNCTION public.stewardship_schedule_slot_excluded_v1(
+    definition uuid,mode text,target text,slot text
+) RETURNS boolean LANGUAGE sql STABLE
+SET search_path TO pg_catalog,public,pg_temp AS $$
+    SELECT EXISTS(SELECT 1 FROM public.stewardship_schedule_fulfillment f
+        WHERE f.definition_id=$1 AND f.mode=$2 AND f.target=$3 AND f.slot=$4)
+    OR EXISTS(SELECT 1 FROM public.stewardship_restore_delivery_hold h
+        WHERE h.definition_id=$1 AND h.mode=$2 AND h.target=$3 AND h.slot=$4
+            AND h.state IN ('unreviewed','assumed_delivered'))
+$$;
+
 -- FUNCTION: stewardship_checkpoint_guard_v1()
 CREATE FUNCTION public.stewardship_checkpoint_guard_v1() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
 DECLARE d stewardship_activation_catchup%ROWTYPE; t stewardship_task_run%ROWTYPE; r stewardship_system_configuration%ROWTYPE;
-        projection uuid; prefix text; family uuid;
+        projection uuid; prefix text; family uuid; pending_count integer;
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
     SELECT * INTO r FROM stewardship_system_configuration FOR UPDATE;
@@ -1793,6 +1806,12 @@ BEGIN
         END IF;
         IF NEW.phase='families' THEN
             family:=split_part(NEW.group_key,':',3)::uuid;
+            SELECT count(*) INTO pending_count FROM public.stewardship_schedule_occurrence o
+                JOIN public.stewardship_schedule_definition s ON s.current_revision_id=o.revision_id
+                WHERE s.campaign_id=d.campaign_id AND s.kind IN ('initial','reminder')
+                    AND o.mode='production' AND o.target='family:'||family::text
+                    AND o.due_at<=d.cutoff AND o.state='pending'
+                    AND NOT public.stewardship_schedule_slot_excluded_v1(o.definition_id,o.mode,o.target,o.slot);
             IF NEW.group_key<>prefix||'family:'||family::text
                 OR NEW.cursor<>prefix||'families:'||replace(family::text,'-','')
                 OR NOT EXISTS(SELECT 1 FROM stewardship_family_campaign f
@@ -1813,15 +1832,29 @@ BEGIN
                                 AND h.target='family:'||family::text AND h.slot='once'
                                 AND h.state IN ('unreviewed','assumed_delivered'))
                 )
-                OR (SELECT count(*) FROM public.stewardship_schedule_occurrence o
-                    JOIN public.stewardship_schedule_definition s ON s.current_revision_id=o.revision_id
+                OR pending_count>1
+                OR (pending_count>0 AND EXISTS(SELECT 1 FROM public.stewardship_family_campaign f
+                    JOIN public.stewardship_campaign_configuration p ON p.id=projection
+                    WHERE f.id=family AND (NOT f.active OR NOT f.email_eligible OR NOT f.email_deliverable
+                        OR f.effective_submission_id IS NOT NULL OR public.stewardship_campaign_now_v1()>=p.ends_at)))
+                -- A current selection must carry all interrupted predecessor
+                -- coverage. With no selection (removal/ineligibility), retain
+                -- the old immutable history without inventing replacement mail.
+                OR (pending_count>0 AND EXISTS(SELECT 1 FROM public.stewardship_schedule_occurrence o
+                    JOIN public.stewardship_schedule_definition s ON s.id=o.definition_id
                     WHERE s.campaign_id=d.campaign_id AND s.kind IN ('initial','reminder')
                         AND o.mode='production' AND o.target='family:'||family::text
-                        AND o.due_at<=d.cutoff AND o.state='pending')>1
+                        AND o.state='skipped' AND o.reason IN ('schedule_replaced','schedule_removed')
+                        AND NOT EXISTS(SELECT 1 FROM public.stewardship_recovery_replacement e WHERE e.previous_id=o.id)
+                        AND (EXISTS(SELECT 1 FROM public.stewardship_schedule_fulfillment f
+                                WHERE f.mode=o.mode AND f.target=o.target AND f.disposition='coalesced' AND f.occurrence_id=o.id)
+                            OR EXISTS(SELECT 1 FROM public.stewardship_recovery_replacement e
+                                WHERE e.demand_id=d.id AND e.replacement_id=o.id))))
                 OR EXISTS(SELECT 1 FROM public.stewardship_schedule_occurrence o
                     JOIN public.stewardship_schedule_definition s ON s.current_revision_id=o.revision_id
                     WHERE s.campaign_id=d.campaign_id AND s.kind IN ('initial','reminder')
                         AND o.mode='production' AND o.target='family:'||family::text AND o.due_at<=d.cutoff
+                        AND NOT public.stewardship_schedule_slot_excluded_v1(o.definition_id,o.mode,o.target,o.slot)
                         AND (o.state IN ('running','delivery_unknown')
                             OR (o.state='pending' AND (o.task_id IS NOT NULL OR o.outbox_id IS NOT NULL))
                             OR (o.state='coalesced' AND NOT EXISTS(SELECT 1 FROM public.stewardship_schedule_fulfillment f
@@ -3192,16 +3225,13 @@ BEGIN
     -- unbound selection may remain; every other date needs a terminal outcome.
     IF EXISTS(SELECT 1 FROM public.stewardship_schedule_occurrence o
         WHERE o.revision_id=v.id AND o.mode='production' AND o.target='admins' AND o.due_at<=demand.cutoff
+            AND NOT public.stewardship_schedule_slot_excluded_v1(o.definition_id,o.mode,o.target,o.slot)
             AND (o.state IN ('running','delivery_unknown')
                 OR (o.state='pending' AND (o.task_id IS NOT NULL OR o.outbox_id IS NOT NULL)))) THEN RETURN false; END IF;
     SELECT count(*) INTO pending_count FROM public.stewardship_schedule_occurrence o
         WHERE o.revision_id=v.id AND o.mode='production' AND o.target='admins' AND o.due_at<=demand.cutoff
             AND o.state='pending'
-            AND NOT EXISTS(SELECT 1 FROM public.stewardship_schedule_fulfillment f
-                WHERE f.definition_id=d.id AND f.mode='production' AND f.target='admins' AND f.slot=o.slot)
-            AND NOT EXISTS(SELECT 1 FROM public.stewardship_restore_delivery_hold h
-                WHERE h.definition_id=d.id AND h.mode='production' AND h.target='admins' AND h.slot=o.slot
-                    AND h.state IN ('unreviewed','assumed_delivered'));
+            AND NOT public.stewardship_schedule_slot_excluded_v1(o.definition_id,o.mode,o.target,o.slot);
     RETURN pending_count<=1 AND NOT EXISTS(
         SELECT 1 FROM public.stewardship_schedule_occurrence o
         WHERE o.revision_id=v.id AND o.mode='production' AND o.target='admins'
@@ -3286,7 +3316,9 @@ BEGIN
         WHERE o.definition_id=d.id AND o.mode='production' AND o.target='admins'
             AND o.id<>(proposed->>'id')::uuid AND o.due_at<=demand.cutoff
             AND ((o.revision_id=d.current_revision_id AND o.state='pending'
-                    AND o.task_id IS NULL AND o.outbox_id IS NULL)
+                    AND o.task_id IS NULL AND o.outbox_id IS NULL
+                    AND NOT starts_with(o.slot,'recovery:')
+                    AND NOT public.stewardship_schedule_slot_excluded_v1(o.definition_id,o.mode,o.target,o.slot))
                 OR (o.state='skipped' AND o.reason='schedule_replaced'
                     AND (EXISTS(SELECT 1 FROM public.stewardship_schedule_fulfillment f
                             WHERE f.occurrence_id=o.id AND f.disposition='coalesced')
@@ -3328,9 +3360,7 @@ BEGIN
                 AND NOT EXISTS(SELECT 1 FROM public.stewardship_schedule_definition s
                     JOIN public.stewardship_schedule_revision v ON v.id=s.current_revision_id
                     WHERE s.campaign_id=d.campaign_id AND s.kind='initial' AND v.due_at<=demand.cutoff
-                        AND NOT EXISTS(SELECT 1 FROM public.stewardship_schedule_fulfillment f
-                            WHERE f.definition_id=s.id AND f.mode='production' AND f.target=proposed->>'target'
-                                AND f.slot='once' AND f.disposition='delivered'))))
+                        AND NOT public.stewardship_schedule_slot_excluded_v1(s.id,'production',proposed->>'target','once'))))
         ELSE selected.definition_id=d.id AND selected.due_at>=expected
             AND (d.kind<>'daily_digest' OR selected.slot='recovery:'||demand.id::text)
             AND proposed->>'reason'=CASE d.kind

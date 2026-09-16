@@ -12,6 +12,7 @@ from django.db import IntegrityError, close_old_connections, connection, transac
 from parishkit.stewardship.campaigns.catchup_ownership import claim_event
 from parishkit.stewardship.campaigns.catchup_preparation import prepare_batch
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+from parishkit.stewardship.campaigns.family_identity import FamilyStatus
 from parishkit.stewardship.campaigns.family_schedule_planning import plan_family
 from parishkit.stewardship.campaigns.lifecycle import Action
 from parishkit.stewardship.campaigns.models import (
@@ -31,10 +32,11 @@ from parishkit.stewardship.jobs.storage import _status
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .campaign_builders import campaign_clock, change, command, draft_campaign
-from .credential_builders import family_campaign
+from .credential_builders import family_campaign, populate
 from .lock_observer import backend_pid, wait_for_lock
 from .test_background_grants_postgresql import task_login
 from .test_catchup_preparation_postgresql import execution_arguments
+from .test_catchup_restore_proofs_postgresql import stage_family_pending
 from .test_digest_schedule_planning_postgresql import add_digest
 from .test_family_schedule_planning_postgresql import add_reminders
 from .test_taskrun_postgresql import act
@@ -65,7 +67,10 @@ def test_worker_cannot_forge_digest_inventory_receipts(tmp_path, forgery):
                 "cover": (f"cover:{definition}:2", f"digests:{definition.hex}:cover:"),
                 "complete": ("complete", "complete:"),
             }[forgery]
-            with transaction.atomic(), pytest.raises(IntegrityError, match="Catch-up"):
+            expected = (
+                "completion requires" if forgery == "complete" else "inventory proof"
+            )
+            with transaction.atomic(), pytest.raises(IntegrityError, match=expected):
                 CatchUpCheckpoint.objects.create(
                     demand=demand,
                     sequence=2,
@@ -176,6 +181,7 @@ def test_prior_claim_event_cannot_authorize_writes_after_same_worker_reclaims(tm
             cursor.execute("SELECT pg_sleep(1.05)")
         with task_login(ServiceRole.WORKER, exact=True):
             replacement = claim_hint(**options)
+            assert replacement is not None
             assert replacement.claim.fence > execution.claim.fence
             with work_transaction():
                 current_event = claim_event(replacement.claim)
@@ -336,3 +342,106 @@ def test_web_cannot_close_campaign_without_guarded_transition_evidence(tmp_path)
             )
     campaign.refresh_from_db()
     assert campaign.state == "active"
+
+
+def test_family_receipt_requires_forwarded_predecessor_coverage(tmp_path, monkeypatch):
+    """Omitting the application forwarding call cannot commit a new Family receipt."""
+    store, campaign, actor, _ = family_campaign(tmp_path)
+    initial = ScheduleDefinition.objects.get()
+    add_reminders(store, campaign, actor)
+    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+        command(campaign, actor, Action.ACTIVATE)
+        demand = ActivationCatchUpDemand.objects.get()
+        execution = claim_hint(**execution_arguments(demand))
+        with task_login(ServiceRole.WORKER, exact=True), work_transaction():
+            prepare_batch(demand, execution.claim)
+        previous = ScheduleOccurrence.objects.get(state="pending")
+        assert (
+            change(
+                store,
+                store.active(),
+                actor,
+                [
+                    {
+                        "operation": "update",
+                        "section": "schedules",
+                        "id": str(initial.pk),
+                        "values": {"time": "02:15:00"},
+                    }
+                ],
+            ).state
+            == "applied"
+        )
+        monkeypatch.setattr(
+            "parishkit.stewardship.campaigns.catchup_family_coverage.forward_family_coverage",
+            lambda *args: None,
+        )
+        with (
+            task_login(ServiceRole.WORKER, exact=True),
+            work_transaction(),
+            pytest.raises(IntegrityError, match="Family receipt lacks"),
+        ):
+            prepare_batch(demand, execution.claim)
+    assert CatchUpCheckpoint.objects.count() == 1
+    assert ScheduleFulfillment.objects.filter(occurrence=previous).count() == 2
+    assert not ScheduleRecoveryReplacement.objects.exists()
+    assert not ScheduleOccurrence.objects.filter(state="pending").exists()
+
+
+@pytest.mark.parametrize(
+    "inapplicable", ["inactive", "ineligible", "undeliverable", "closed"]
+)
+def test_worker_cannot_checkpoint_inapplicable_pending_family_work(
+    tmp_path, inapplicable
+):
+    """The live Family/close decision is database evidence, not a planner promise."""
+    _, campaign, actor, rings = family_campaign(tmp_path)
+    family = FamilyCampaign.objects.get()
+    with campaign_clock(datetime(2026, 10, 5, tzinfo=UTC)):
+        command(campaign, actor, Action.ACTIVATE)
+        demand = ActivationCatchUpDemand.objects.get()
+        with task_login(ServiceRole.WORKER, exact=True):
+            execution = claim_hint(**execution_arguments(demand))
+            stage_family_pending(demand, execution.claim, family)
+        if inapplicable != "closed":
+            populate(
+                campaign,
+                rings,
+                [
+                    FamilyStatus(
+                        family.family_duid,
+                        inapplicable != "inactive",
+                        inapplicable != "inactive",
+                        inapplicable not in ("inactive", "ineligible"),
+                        False,
+                    )
+                ],
+                generation=2,
+            )
+        instant = (
+            campaign.active_configuration.ends_at
+            if inapplicable == "closed"
+            else datetime(2026, 10, 5, tzinfo=UTC)
+        )
+        campaign.refresh_from_db()
+        prefix = campaign.active_configuration_id.hex + ":"
+        with (
+            campaign_clock(instant),
+            task_login(ServiceRole.WORKER, exact=True),
+            work_transaction(),
+            pytest.raises(IntegrityError, match="Family receipt lacks"),
+        ):
+            CatchUpCheckpoint.objects.create(
+                demand=demand,
+                sequence=1,
+                group_key=prefix + f"family:{family.pk}",
+                cursor=prefix + "families:" + family.pk.hex,
+                items=1,
+                phase="families",
+                task_id=execution.claim.run_id,
+                fence=execution.claim.fence,
+                actor_id=execution.claim.worker_id,
+                correlation_id=execution.claim.run_id,
+            )
+    assert not CatchUpCheckpoint.objects.exists()
+    assert ScheduleOccurrence.objects.get().state == "pending"

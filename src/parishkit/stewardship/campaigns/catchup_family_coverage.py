@@ -2,6 +2,7 @@
 
 from django.db.models import Q
 
+from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .catchup_ownership import claim_event
@@ -50,6 +51,7 @@ def forward_family_coverage(demand, claim, family_id, selected_id):
         raise StorageInvariantError("Family recovery predecessors exceed group bounds.")
     correlation = claim_event(claim)
     for row in prior:
+        lock_task_claim(claim)
         ScheduleRecoveryReplacement.objects.create(
             demand=demand,
             previous=row,

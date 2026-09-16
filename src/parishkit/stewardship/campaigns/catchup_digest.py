@@ -28,7 +28,7 @@ from .schedules import occurrence_key
 LIMIT = 100
 
 
-def _new_occurrence(demand, claim, scope, definition, slot, due):
+def _new_occurrence(claim, correlation, scope, definition, slot, due):
     """Allocate ordinary schedule identity; no outbox or execution hint is created."""
     return ScheduleOccurrence.objects.create(
         definition=definition,
@@ -45,7 +45,7 @@ def _new_occurrence(demand, claim, scope, definition, slot, due):
         if scope.campaign.delivery_paused
         else None,
         actor_id=claim.worker_id,
-        correlation_id=claim_event(claim),
+        correlation_id=correlation,
     )
 
 
@@ -65,6 +65,7 @@ def _excluded(definition):
 
 def prepare_digest(demand, claim, scope, definition, cursor):
     """Examine or reconcile no more than 100 original occurrence outcomes."""
+    correlation = claim_event(claim)
     configuration = scope.campaign.active_configuration_id
     prefix = configuration.hex + ":"
     parts = cursor.split(":")
@@ -112,7 +113,9 @@ def prepare_digest(demand, claim, scope, definition, cursor):
         for slot in page.slots:
             lock_task_claim(claim)
             if slot.key not in excluded:
-                _new_occurrence(demand, claim, scope, definition, slot.key, slot.due_at)
+                _new_occurrence(
+                    claim, correlation, scope, definition, slot.key, slot.due_at
+                )
                 created += 1
         # Cover retains the exhausted date cursor as the SQL page-chain proof;
         # selection resumption itself uses outstanding semantic outcomes.
@@ -188,8 +191,8 @@ def prepare_digest(demand, claim, scope, definition, cursor):
     if selected is None and (choice == "aggregate" or previous):
         latest = pending.order_by("-due_at", "-id").first()
         selected = _new_occurrence(
-            demand,
             claim,
+            correlation,
             scope,
             definition,
             recovery_slot,
@@ -210,7 +213,7 @@ def prepare_digest(demand, claim, scope, definition, cursor):
             previous=row,
             replacement=selected,
             actor_id=claim.worker_id,
-            correlation_id=claim_event(claim),
+            correlation_id=correlation,
         )
     rows = list(pending.order_by("id")[: LIMIT - created - len(previous)])
     for row in rows:
@@ -223,7 +226,7 @@ def prepare_digest(demand, claim, scope, definition, cursor):
             else "missed_weekly_recovery",
             version=row.version + 1,
             actor_id=claim.worker_id,
-            correlation_id=claim_event(claim),
+            correlation_id=correlation,
         )
         ScheduleFulfillment.objects.create(
             definition=definition,
@@ -233,7 +236,7 @@ def prepare_digest(demand, claim, scope, definition, cursor):
             disposition="coalesced",
             occurrence=selected,
             actor_id=claim.worker_id,
-            correlation_id=claim_event(claim),
+            correlation_id=correlation,
         )
     more = pending.exists() or predecessors.exists()
     return _checkpoint(
