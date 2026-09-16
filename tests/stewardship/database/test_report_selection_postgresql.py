@@ -311,18 +311,63 @@ def test_request_inputs_match_real_producer_for_both_scopes(
     from parishkit.stewardship.reports import fact_production
     from parishkit.stewardship.reports.demand import requested_inputs
 
+    from .campaign_builders import campaign_clock
     from .test_fact_materialization_postgresql import respond
 
     harness = live_response_service
     if respond_first:
         respond(harness)
-    expected, _ = current_inputs(harness.campaign.pk, "historical")
-    # The fixture binds the shared campaign SQL clock. Both services must use
-    # that same production clock, rather than independently inventing "today".
-    with work_transaction():
-        demands = fact_production.hint_current_facts(harness.campaign.pk)
+    # Explicitly bind the shared SQL clock: this assertion must stay stable even
+    # if the outer response fixture later stops freezing campaign time.
+    with campaign_clock(harness.campaign.active_configuration.starts_at):
+        expected, _ = current_inputs(harness.campaign.pk, "historical")
+        with work_transaction():
+            demands = fact_production.hint_current_facts(harness.campaign.pk)
     assert {row.population_scope for row in demands} == {"historical", "current"}
     for row in demands:
         assert requested_inputs(row) == replace(
             expected, population_scope=row.population_scope
         )
+
+
+def test_actual_busy_generation_selects_labeled_fallback(scenario):  # noqa: F811
+    """Real contention rolls back only the read savepoint, then selects a fallback."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    from django.db import connections, transaction
+
+    from parishkit.stewardship.reports.facts import FACT_READ_NAMESPACE
+
+    old = scenario[2]
+    pointer(old)
+    exact, _ = ready_current(old)
+    held, finish = Event(), Event()
+
+    def hold():
+        """Represent an in-progress cleanup using its actual exclusive key."""
+        try:
+            with transaction.atomic(), connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT pg_advisory_xact_lock(%s, hashtext(%s))",
+                    (FACT_READ_NAMESPACE, str(exact.pk)),
+                )
+                held.set()
+                assert finish.wait(10)
+        finally:
+            connections.close_all()
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(hold)
+        try:
+            assert held.wait(10)
+            with (
+                task_login(ServiceRole.WEB, reconnect=True),
+                select(scenario) as report,
+            ):
+                assert report.status == "updating"
+                assert report.document.fact_set_id == old.pk
+                assert report.selected == fact_inputs(old)
+        finally:
+            finish.set()
+        pending.result(timeout=10)

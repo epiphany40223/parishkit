@@ -48,11 +48,15 @@ complete by this partial consumer integration. Gate 3 remains closed.
   Export allocation separately pins the immutable chosen generation.
 - Generation reads hold shared transaction advisory locks in namespace
   `736231`, keyed by PostgreSQL's hash of the canonical generation UUID.
-  Hash collisions only delay optional cleanup. The compactor skips a locked
+  Hash collisions can delay optional cleanup or briefly make an unrelated
+  generation busy/retryable. The compactor skips a locked
   generation; direct SQL day/header deletion must obtain the exclusive lock.
   Readers also use a nonblocking acquisition: a generation already held by
-  cleanup is unavailable/retryable, not an unexpected database timeout. Cleanup
-  acquires its advisory lock only after source/row/disposability skip checks.
+  cleanup raises `FactBusy` (a `FactUnavailable` subclass), not an unexpected
+  database timeout. Cleanup acquires its advisory lock only after source/row/
+  disposability skip checks. Every skipped candidate rolls back its own
+  savepoint to release acquired row locks before the batch continues; successful
+  deletions still commit atomically with the whole batch.
   This replaces row locking, which PostgreSQL forbids in the campaign guard's
   `READ ONLY` transaction, without making that transaction writable.
 - Current-scope verification checks the generation's durable source pin. SQL
@@ -105,6 +109,35 @@ and model drift checks. No SQL body changed after the independent audit.
 - Claude Low, missing current-source pin: add the negative predicate regression
   without bypassing SQL or deleting protected inputs. The function-local guard
   import is consistent with other existing tests; no unrelated import churn.
+
+## Review round 2
+
+Pika session `20260916-163942-a4b288`, correction diff `78ae496..f1930f6`,
+completed both reviewers without degradation. Raw findings: seven Low, no
+Medium/High/Critical. All dispositions below are complete; post-fix validation
+passed 45 PostgreSQL tests (48.87s), Ruff, formatting and Markdown.
+
+- Claude and Codex Low, collision availability: corrected the shared-key
+  documentation; collisions may temporarily defer reads as well as cleanup.
+- Claude Low, error classification: add `FactBusy` for typed retryable
+  contention, preserving existing `FactUnavailable` fallback handling.
+- Claude Low, SQL namespace drift test: already covered by direct-SQL day and
+  header deletion races. They require a `protected` rejection while the Python
+  reader owns the key; a mismatched SQL namespace instead reaches a different
+  deferred constraint and fails these tests. A textual function-definition
+  assertion would add less behavioral coverage than these existing checks.
+- Claude Low, real selection contention: added the complete actual web-role
+  selection path while another SQL connection owns the exclusive generation
+  key, proving savepoint recovery and labeled pointer fallback.
+- Claude Low, parity fixture clock: explicitly freeze the shared campaign clock
+  within the test rather than relying only on its outer fixture.
+- Codex Low, skipped candidate row locks: give each candidate a savepoint and
+  roll it back on every skip. A new race leaves the batch open after a reader-
+  conflict skip and proves source/generation rows are immediately lockable.
+
+The Codex reviewer could not run PostgreSQL tests in its read-only sandbox
+without a writable temporary directory. This did not degrade its completed
+structured review; parent-run PostgreSQL results provide execution evidence.
 
 Fresh-install audit on disposable port `55440` independently compared verified
 base and current schemas in `stewardship_selection_base_20260916a` and

@@ -9,7 +9,7 @@ from django.db import IntegrityError, connection, connections, transaction
 
 from parishkit.stewardship.campaigns.read_guards import CampaignReadGuard
 from parishkit.stewardship.reports import retention
-from parishkit.stewardship.reports.facts import FactUnavailable, read_fact_set
+from parishkit.stewardship.reports.facts import FactBusy, FactUnavailable, read_fact_set
 from parishkit.stewardship.reports.retention import (
     compact_facts,
     pin_facts,
@@ -107,7 +107,7 @@ def test_deletion_winning_lock_rejects_later_readonly_consumer(tmp_path, monkeyp
         try:
             assert deleted.wait(10)
             reader = pool.submit(reading)
-            with pytest.raises(FactUnavailable, match="busy"):
+            with pytest.raises(FactBusy):
                 reader.result(timeout=2)
         finally:
             finish.set()
@@ -117,6 +117,45 @@ def test_deletion_winning_lock_rejects_later_readonly_consumer(tmp_path, monkeyp
         read_fact_set(old.pk, admit=permit),
     ):
         pytest.fail("Completed cleanup must remain unavailable")
+
+
+def test_skipping_active_reader_releases_candidate_rows_before_batch_end(tmp_path):
+    """A skipped candidate cannot block later pin/source work until batch commit."""
+    from parishkit.stewardship.reports.models import CampaignDailyFactSet
+    from parishkit.stewardship.source.snapshot_models import SourceSnapshot
+
+    inputs, owner, old, _ = superseded(tmp_path)
+    skipped, finish = Event(), Event()
+
+    def cleaning():
+        """Leave the outer batch open after it has skipped this protected reader."""
+        try:
+            with transaction.atomic():
+                assert compact_facts(inputs.campaign_id, owner, admit=permit) == []
+                skipped.set()
+                assert finish.wait(10)
+        finally:
+            connections.close_all()
+
+    with read_fact_set(old.pk, admit=permit), ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(cleaning)
+        try:
+            assert skipped.wait(10)
+            # These would raise immediately if the skipped candidate retained
+            # either FOR UPDATE lock in the still-open batch transaction.
+            assert (
+                SourceSnapshot.objects.select_for_update(nowait=True)
+                .filter(pk=old.source_id)
+                .exists()
+            )
+            assert (
+                CampaignDailyFactSet.objects.select_for_update(nowait=True)
+                .filter(pk=old.pk)
+                .exists()
+            )
+        finally:
+            finish.set()
+        pending.result(timeout=10)
 
 
 def test_uncommitted_pin_wins_over_cleanup_selection(tmp_path):

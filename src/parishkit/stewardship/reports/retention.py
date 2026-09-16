@@ -84,72 +84,83 @@ def compact_facts(campaign_id, claim, *, admit, limit=50):
             candidates = cursor.fetchall()
         removed = []
         for identifier, source_id in candidates:
-            # Avoid waiting on an in-use source input or a live lazy renderer.
-            if (
-                not SourceSnapshot.objects.select_for_update(skip_locked=True)
-                .filter(pk=source_id)
-                .exists()
-            ):
-                continue
-            record = (
-                CampaignDailyFactSet.objects.select_for_update(skip_locked=True)
-                .filter(pk=identifier)
-                .first()
-            )
-            if record is None:
-                continue
-            _admit(admit, "compact", fact_inputs(record))
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT stewardship_fact_disposable(%s)", (identifier,))
-                if not cursor.fetchone()[0]:
-                    continue
-                # Take the exclusive reader barrier only after all skip checks.
-                # A source/row contention skip must not leave an unnecessary
-                # advisory lock until the rest of this batch commits.
-                cursor.execute(
-                    "SELECT pg_try_advisory_xact_lock(%s, hashtext(%s))",
-                    (FACT_READ_NAMESPACE, str(identifier)),
-                )
-                if not cursor.fetchone()[0]:
-                    continue
-                evidence = FactCompactionRecord.objects.create(
-                    campaign_id=record.campaign_id,
-                    fact_set_id=record.pk,
-                    population_scope=record.population_scope,
-                    source_generation=record.source_generation,
-                    submission_watermark=record.submission_watermark,
-                    timezone_configuration_id=record.timezone_configuration_id,
-                    through_date=record.through_date,
-                    row_count=record.expected_count,
-                    task_id=claim.run_id,
-                    task_fence=claim.fence,
-                    worker_id=claim.worker_id,
-                    actor_id=claim.worker_id,
-                )
-                cursor.execute(
-                    "DELETE FROM stewardship_daily_fact WHERE fact_set_id=%s",
-                    (identifier,),
-                )
-                cursor.execute(
-                    "DELETE FROM stewardship_daily_fact_set WHERE id=%s", (identifier,)
-                )
-            inputs = fact_inputs(record)
-            for pin in SourceSnapshotPin.objects.filter(
-                snapshot_id=source_id, parent_kind="facts", parent_id=identifier
-            ):
-                release_snapshot_pin(
-                    pin.pk,
-                    parent_kind="facts",
-                    parent_id=identifier,
-                    admit=lambda *args, inputs=inputs: admit("compact", inputs),
-                )
-            record_action(
-                Action.FACTS_COMPACTED,
-                actor_kind=ActorKind.SYSTEM,
-                actor_id=claim.worker_id,
-                subject_id=evidence.pk,
-                context={"count": record.expected_count, "outcome": Outcome.SUCCEEDED},
-            )
-            removed.append(identifier)
+            with transaction.atomic():
+                if _compact_candidate(identifier, source_id, claim, admit):
+                    removed.append(identifier)
+                else:
+                    # Release this skipped candidate's source/generation locks,
+                    # not merely its advisory lock, before the next candidate.
+                    # Successful deletions still commit with the whole batch.
+                    transaction.set_rollback(True)
         lock_task_claim(claim)
         return removed
+
+
+def _compact_candidate(identifier, source_id, claim, admit):
+    """Delete one eligible generation inside its caller-owned candidate savepoint.
+
+    False means skip and rollback that savepoint; any real error propagates and
+    rolls back the entire batch. No network or unbounded calculation runs here.
+    """
+    if (
+        not SourceSnapshot.objects.select_for_update(skip_locked=True)
+        .filter(pk=source_id)
+        .exists()
+    ):
+        return False
+    record = (
+        CampaignDailyFactSet.objects.select_for_update(skip_locked=True)
+        .filter(pk=identifier)
+        .first()
+    )
+    if record is None:
+        return False
+    _admit(admit, "compact", fact_inputs(record))
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT stewardship_fact_disposable(%s)", (identifier,))
+        if not cursor.fetchone()[0]:
+            return False
+        cursor.execute(
+            "SELECT pg_try_advisory_xact_lock(%s, hashtext(%s))",
+            (FACT_READ_NAMESPACE, str(identifier)),
+        )
+        if not cursor.fetchone()[0]:
+            return False
+        evidence = FactCompactionRecord.objects.create(
+            campaign_id=record.campaign_id,
+            fact_set_id=record.pk,
+            population_scope=record.population_scope,
+            source_generation=record.source_generation,
+            submission_watermark=record.submission_watermark,
+            timezone_configuration_id=record.timezone_configuration_id,
+            through_date=record.through_date,
+            row_count=record.expected_count,
+            task_id=claim.run_id,
+            task_fence=claim.fence,
+            worker_id=claim.worker_id,
+            actor_id=claim.worker_id,
+        )
+        cursor.execute(
+            "DELETE FROM stewardship_daily_fact WHERE fact_set_id=%s", (identifier,)
+        )
+        cursor.execute(
+            "DELETE FROM stewardship_daily_fact_set WHERE id=%s", (identifier,)
+        )
+    inputs = fact_inputs(record)
+    for pin in SourceSnapshotPin.objects.filter(
+        snapshot_id=source_id, parent_kind="facts", parent_id=identifier
+    ):
+        release_snapshot_pin(
+            pin.pk,
+            parent_kind="facts",
+            parent_id=identifier,
+            admit=lambda *args: admit("compact", inputs),
+        )
+    record_action(
+        Action.FACTS_COMPACTED,
+        actor_kind=ActorKind.SYSTEM,
+        actor_id=claim.worker_id,
+        subject_id=evidence.pk,
+        context={"count": record.expected_count, "outcome": Outcome.SUCCEEDED},
+    )
+    return True

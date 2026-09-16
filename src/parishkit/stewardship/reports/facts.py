@@ -26,6 +26,10 @@ class FactUnavailable(RuntimeError):
     """An exact generation is not ready/retained or its build ownership changed."""
 
 
+class FactBusy(FactUnavailable):
+    """Transient read contention; callers can retry without parsing error text."""
+
+
 def _admit(admit, action, inputs):
     """Owning policy must explicitly authorize every transaction under its locks."""
     if not callable(admit) or admit(action, inputs) is not True:
@@ -231,9 +235,7 @@ def read_fact_set(fact_set_id, *, admit):
                 (FACT_READ_NAMESPACE, str(fact_set_id)),
             )
             if not cursor.fetchone()[0]:
-                raise FactUnavailable(
-                    "The exact fact generation is busy; retry shortly."
-                )
+                raise FactBusy("The exact fact generation is busy; retry shortly.")
             cursor.execute(
                 "SELECT id FROM stewardship_daily_fact_set WHERE id=%s "
                 "AND state='ready'",
