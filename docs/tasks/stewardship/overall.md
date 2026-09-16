@@ -381,6 +381,13 @@ rounds; final-head and merge-group CI remain pending. Bounded activation catch-u
 and durable digest recovery follow before BG-04 completion. This checkpoint
 does not release Gate 3 or enable mail dispatch.
 
+Delivery update: PR #34 merged as `db8aee09` after all 24 final-head and all
+24 merge-group jobs passed. The merge is verified on refreshed `origin/main`.
+Branch `pr/stewardship-activation-catchup` now continues the dependency-ready
+[bounded recovery increment](../../guides/stewardship-activation-catchup.md).
+Earlier pending-CI notes are superseded; the remaining Phase 4 owners and Gate 3
+stay in force.
+
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).
 3. Complete required [RPT-02](reports.md#rpt-02-population-and-calculation-library) calculations and the [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics) fact-materialization service before [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests); report UI remains in Phase 5.

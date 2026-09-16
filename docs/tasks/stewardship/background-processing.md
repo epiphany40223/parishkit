@@ -100,6 +100,12 @@ baseline and browser evidence. Final-head PR/merge-group CI remains pending.
 Receipt identity, bounded activation/digest recovery and dispatch routing keep
 the remaining mixed tasks open. Gate 3 is not released.
 
+Delivery update: PR #34 passed all 24 final-head and all 24 merge-group CI jobs
+and merged as `db8aee09`, verified on `origin/main`. The preceding pending-CI
+note is superseded. The [activation catch-up increment](../../guides/stewardship-activation-catchup.md)
+continues bounded preparation, recovery and hold enforcement; mixed tasks remain
+open until their complete scope is accepted.
+
 ## BG-05: ParishSoft delta and full refresh
 
 Scope and dependencies: [BG-05 work package](../../plans/stewardship/background-processing.md#bg-05-parishsoft-delta-and-full-refresh).
