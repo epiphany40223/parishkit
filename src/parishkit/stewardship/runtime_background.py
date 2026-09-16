@@ -79,19 +79,10 @@ def bind_authority(handlers, store, *, heartbeat=None):
 
 
 def pre_delivery_suppressions(scope):
-    """Testing has no live address refusals before the Phase 4 delivery owner.
+    """Bind the durable Family-scoped refusal owner to source promotion."""
+    from .jobs.recipient_suppressions import source_suppressions
 
-    This is an explicit phase admission boundary, not a default success callback:
-    Production source effects remain disabled until BG-06 wires durable provider
-    suppressions. Testing messages use the single test recipient and cannot
-    suppress real Family recipients.
-    """
-    from .campaigns.work_locks import require_work_order
-
-    require_work_order()
-    if scope.runtime.mode != "testing":
-        raise ConfigError("Production refresh requires the delivery suppression owner.")
-    return frozenset()
+    return source_suppressions(scope)
 
 
 def scheduler_handlers():

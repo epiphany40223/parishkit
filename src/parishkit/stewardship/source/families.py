@@ -6,6 +6,8 @@ Provider suppression is an explicit input, never inferred from publishability
 or from a Family's proposed census email preference.
 """
 
+from dataclasses import dataclass, field
+
 from django.db import connection
 
 from parishkit.config import ConfigError
@@ -25,15 +27,69 @@ from .snapshots import read_snapshot
 from .version_models import ENTITY_MODELS
 
 
+@dataclass(frozen=True)
+class FamilySuppressions:
+    """Family-scoped canonical refusals; a shared email never crosses households."""
+
+    entries: frozenset[tuple[int, str]] = field(repr=False)
+
+    def __post_init__(self):
+        """Reject mutable, coerced or noncanonical refusal identities."""
+        if type(self.entries) is not frozenset:
+            raise TypeError("Family suppressions require immutable entries.")
+        try:
+            for entry in self.entries:
+                if (
+                    type(entry) is not tuple
+                    or len(entry) != 2
+                    or type(entry[0]) is not int
+                    or not 1 <= entry[0] < 2**31
+                    or normalized_email(entry[1]) != entry[1]
+                ):
+                    raise ValueError
+        except (ConfigError, TypeError, ValueError):
+            raise ValueError(
+                "Family suppressions require canonical identities."
+            ) from None
+
+
+@dataclass(frozen=True)
+class FamilyRecipients:
+    """One source Family's status and deterministic, private head-address sets.
+
+    These are source facts, not permission to send. The delivery owner must
+    recheck campaign, response, suppression and credential scope before dispatch.
+    Keep addresses out of repr so ordinary diagnostic context cannot expose PII.
+    """
+
+    status: FamilyStatus
+    eligible: tuple[str, ...] = field(repr=False)
+    deliverable: tuple[str, ...] = field(repr=False)
+
+
 def family_statuses(corpus, *, suppressed_addresses):
+    """Derive identity and mail status from the same recipient projection."""
+    return tuple(
+        row.status
+        for row in family_recipients(corpus, suppressed_addresses=suppressed_addresses)
+    )
+
+
+def family_recipients(corpus, *, suppressed_addresses):
     """Use only valid active-head addresses; one unsuppressed address suffices.
 
     Suppression owners supply a transactionally current, canonical set. Requiring
     it explicitly prevents a future caller from accidentally ignoring bounces.
     Malformed/legacy payloads fail rather than silently removing Family access.
     """
-    if not isinstance(suppressed_addresses, frozenset):
+    if not isinstance(suppressed_addresses, (frozenset, FamilySuppressions)):
         raise TypeError("Family reconciliation requires an explicit suppression set.")
+    by_family = None
+    if isinstance(suppressed_addresses, FamilySuppressions):
+        by_family = {}
+        for duid, address in suppressed_addresses.entries:
+            by_family.setdefault(str(duid), set()).add(address)
+        suppressed_addresses = frozenset()
     try:
         if any(normalized_email(value) != value for value in suppressed_addresses):
             raise ConfigError("Noncanonical suppression address.")
@@ -41,7 +97,14 @@ def family_statuses(corpus, *, suppressed_addresses):
         raise ValueError("Suppression addresses must be canonical emails.") from None
     try:
         return tuple(
-            _status(key, family, corpus, suppressed_addresses)
+            _recipients(
+                key,
+                family,
+                corpus,
+                by_family.get(key, frozenset())
+                if by_family is not None
+                else suppressed_addresses,
+            )
             for key, family in sorted(corpus["family"].items())
         )
     except (KeyError, TypeError, ValueError, ConfigError):
@@ -50,7 +113,7 @@ def family_statuses(corpus, *, suppressed_addresses):
         ) from None
 
 
-def _status(key, family, corpus, suppressed):
+def _recipients(key, family, corpus, suppressed):
     """Cross-check normalized eligibility against the same snapshot's head contacts."""
     if str(int(key)) != key or not 1 <= int(key) < 2**31:
         raise ValueError("Invalid Family identity.")
@@ -105,7 +168,7 @@ def _status(key, family, corpus, suppressed):
     ):
         raise ValueError("Contradictory source eligibility.")
     deliverable = email_eligible and bool(addresses - suppressed)
-    return FamilyStatus(
+    status = FamilyStatus(
         int(key),
         family["active"],
         eligible,
@@ -123,6 +186,11 @@ def _status(key, family, corpus, suppressed):
         else "deliverable"
         if deliverable
         else "provider_suppressed",
+    )
+    return FamilyRecipients(
+        status,
+        tuple(sorted(addresses)) if email_eligible else (),
+        tuple(sorted(addresses - suppressed)) if email_eligible else (),
     )
 
 

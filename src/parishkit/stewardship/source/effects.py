@@ -19,9 +19,11 @@ from .refresh_models import SourceRefreshAttempt
 def refresh_reconciler(*, general, mac, public, suppressions):
     """Bind explicit keys and a transactionally fresh suppression-set provider.
 
-    ``suppressions(scope)`` returns the exact canonical frozenset consumed by
-    Family reconciliation. There is intentionally no implicit empty default that
-    could ignore a subsequently implemented provider-suppression owner.
+    ``suppressions(scope)`` returns the exact canonical Family-scoped refusals
+    consumed by Family reconciliation (or an explicit uniform frozenset for
+    isolated storage tests). No implicit empty default can ignore provider
+    refusal evidence. The compiled owner resolves corrected source values in
+    the same promotion transaction.
     """
     if not callable(suppressions):
         raise TypeError("Refresh effects require an explicit suppression owner.")
