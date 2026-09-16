@@ -192,6 +192,12 @@ Protected exact-head CI and queue delivery remain required. BG-06.03/04's
 preparation behavior is implemented; dispatch-time integration and the full
 package checkboxes remain open, not silently completed by a prepared outbox.
 
+PR #38 subsequently merged with all 24 exact-head jobs, DCO and all 24
+merge-group jobs passing; its [protected delivery receipt](../../guides/stewardship-family-mail-preparation.md#protected-delivery)
+supersedes the pending-CI note. Work continues from verified fresh `origin/main`
+on `pr/stewardship-family-mail-dispatch`, connecting the prepared message to
+isolated provider submission and durable outcome/reconciliation ownership.
+
 ## BG-07: Submission confirmations and Admin digests
 
 Scope and dependencies: [BG-07 work package](../../plans/stewardship/background-processing.md#bg-07-submission-confirmations-and-admin-digests).
