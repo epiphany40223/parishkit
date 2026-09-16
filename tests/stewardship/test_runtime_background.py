@@ -132,6 +132,7 @@ def test_background_assembly_binds_exact_keys_role_and_closed_registry(
         assert runtime.broker.service is role and runtime.broker.stop is stop
         expected = {
             "campaign_boundary",
+            "activation_catchup",
             "production_cleanup",
             "source_refresh",
             "setup_finalize",
@@ -202,6 +203,7 @@ def test_scheduler_registry_is_metadata_only():
     handlers = background.scheduler_handlers()
     assert set(handlers) == {
         "campaign_boundary",
+        "activation_catchup",
         "production_cleanup",
         "source_refresh",
         "branding_cleanup",
@@ -397,6 +399,7 @@ def test_only_bootstrap_worker_can_omit_installed_source_key(
     try:
         assert set(runtime.handlers) == {
             "campaign_boundary",
+            "activation_catchup",
             "production_cleanup",
             "setup_source_load",
             "branding_cleanup",

@@ -197,5 +197,6 @@ from .schedule_models import (  # noqa: E402,F401
     ScheduleDefinition,
     ScheduleFulfillment,
     ScheduleOccurrence,
+    ScheduleRecoveryReplacement,
     ScheduleSelection,
 )

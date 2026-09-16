@@ -25,6 +25,27 @@ STATES = frozenset(
 )
 
 
+def digest_recovery_kind(kind, candidate_count):
+    """Choose from a complete count, never a partial materialization page.
+
+    Durable owners retain the exact original rows and can apply this decision
+    in bounded coverage batches. A count is selection metadata, not proof that
+    enumeration, coverage or provider delivery has completed.
+    """
+    if (
+        type(kind) is not str
+        or kind not in {"daily_digest", "weekly_digest"}
+        or type(candidate_count) is not int
+        or candidate_count < 0
+    ):
+        raise ValueError("Digest recovery requires a complete candidate count.")
+    if candidate_count == 0:
+        return "empty"
+    if kind == "daily_digest" and candidate_count > 1:
+        return "aggregate"
+    return "latest"
+
+
 @dataclass(frozen=True)
 class RecoverySlot:
     """Nonprivate locked-input projection; cancellation proof remains with owner."""
@@ -157,7 +178,7 @@ def plan_recovery(
         if initial_delivered and initials:
             raise ValueError("Fulfilled initial slots must be excluded by their owner.")
         selected = initials[0] if initials else candidates[-1]
-    elif kind == "daily_digest" and len(candidates) > 1:
+    elif digest_recovery_kind(kind, len(candidates)) == "aggregate":
         dates = tuple(date.fromisoformat(row.slot) for row in candidates)
         return RecoveryPlan(
             coalesced=tuple(row.occurrence_id for row in candidates),

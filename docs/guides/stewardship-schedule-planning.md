@@ -323,3 +323,20 @@ The corrected fixture, adjacent cleanup inventory and full schedule
 reconciliation suite pass all 56 cases in 51.92 seconds. Ruff, formatting,
 Markdown and whitespace checks pass. The fixture correction is folded into
 the logical Round 3 commit; the changed head requires fresh CI.
+
+## Protected delivery
+
+Exact head `27422ab90accfef03b90034a3c3bbe1e574e82f2` passed all 24 jobs in
+[PR CI run 35041901470](https://github.com/epiphany40223/parishkit/actions/runs/35041901470)
+and DCO. The quality aggregator accounted for all 2,893 database cases across
+eight shards; overall stewardship coverage is 94.11% of lines and 85.58% of
+branches. The normal protected queue accepted that exact head without bypasses.
+
+All 24 jobs in
+[merge-group run 35042954268](https://github.com/epiphany40223/parishkit/actions/runs/35042954268)
+passed, including the complete three-engine browser matrix. PR #34 merged as
+`db8aee09ec781658984f8a08ef727c52c96a7de2` on September 16, 2026 UTC, verified
+on refreshed `origin/main`. Earlier pending-CI checkpoints above are superseded.
+BG-04.01/.03 are accepted; bounded activation/digest recovery continues in the
+[next increment](stewardship-activation-catchup.md). This is not Gate 3 release,
+deployment, live provider authorization or release-tag approval.

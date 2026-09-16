@@ -108,7 +108,7 @@ def test_future_and_prestart_planning_does_not_allocate(family_service):  # noqa
 
 def test_unknown_family_is_denied_and_fake_guard_cannot_produce(family_service):  # noqa: F811
     family_id = FamilyCampaign.objects.get().pk
-    with pytest.raises(TypeError, match="scheduler ownership"):
+    with pytest.raises(TypeError, match="schedule ownership"):
         plan_family(object(), family_id=family_id, worker_id=uuid4())
     with scheduler_session() as guard, pytest.raises(PermissionError, match="outside"):
         plan_family(guard, family_id=uuid4(), worker_id=uuid4())

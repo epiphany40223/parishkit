@@ -1,0 +1,172 @@
+# Stewardship activation catch-up and recovery preparation
+
+Branch `pr/stewardship-activation-catchup` starts from verified PR #34 merge
+`db8aee09ec781658984f8a08ef727c52c96a7de2` on September 16, 2026 UTC. The
+[preceding delivery record](stewardship-schedule-planning.md#protected-delivery)
+contains its complete exact-head and merge-group evidence.
+
+## Scope and controlling contracts
+
+Continue [BG-04](../tasks/stewardship/background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing)
+under the [Phase 4 plan](../plans/stewardship/overall.md#phase-4-production-scheduling-delivery-and-notifications).
+Deliver one coherent bounded worker increment: activation demand/task allocation,
+resumable Family/digest preparation, exact semantic coverage, interrupted-task
+recovery, preparation-hold enforcement and actual runtime integration. Use the
+[activation contract](../specs/stewardship/background-processing/spec.md#activation-catch-up)
+and [schedule data model](../specs/stewardship/data/spec.md#schedule-revisions-and-fulfillment),
+not a second delivery or idempotency scheme.
+
+The ordinary evaluator and pure missed-work decisions already exist. Reuse them
+with the existing TaskRun lease/retry chain and durable activation checkpoints.
+Each effect is bounded and transactional; no provider call or corpus-wide lock
+belongs in a preparation batch. A partial group is never dispatch permission.
+Read the linked contracts for exact live-state, revision, restore and close
+rechecks and for the difference between coverage and provider delivery.
+
+BG-06 retains recipient rendering, deliverability-recovery initial invitations,
+bound-message recovery and provider submission. BG-07 retains pinned daily report
+facts, weekly item/correction coverage and digest dispatch. ADM-05 retains the
+Admin Production activation UI. This increment must not invent a way around
+these owners, release Gate 3 or imply a completed end-to-end mail campaign.
+
+## Implementation and acceptance checkpoints
+
+1. Bind activation's durable demand and canonical task atomically. Add compiled
+   worker/scheduler admission with real role restrictions and recovery behavior.
+2. Persist bounded recovery preparation and complete-group coverage using the
+   existing occurrence and semantic fulfillment contracts. Retain every original
+   outcome and prove that revision changes cannot orphan a selected aggregate.
+3. Integrate the shared planner for complete Family groups and multi-page digest
+   groups. Persist checkpoints with outcomes and recheck live eligibility,
+   submissions, current revisions, semantic coverage and holds.
+4. Verify completion from retained work/coverage, not TaskRun terminality or an
+   empty occurrence table. Release only the activation preparation hold; restart,
+   close, restore, pause and explicit retry keep their independent semantics.
+5. Add pure, actual PostgreSQL-role, concurrency, failure-injection and runtime
+   tests. Cover more than one batch, crash boundaries, hint loss, stale ownership,
+   schedule replacement/removal, source/response changes and post-close behavior.
+6. Audit fresh-install schema differences in new disposable databases, preserve
+   retained development data, run complete validation and coverage, and complete
+   three successful dual-source review/fix rounds before PR delivery.
+
+These are internal checkpoints, not separate PRs or requests for routine human
+approval. All implementation and acceptance work is open at branch creation.
+
+## Allocation checkpoint
+
+Direct activation now allocates its canonical TaskRun and binds the token
+generation's source in the same transaction as the lifecycle change. A deferred
+database constraint rejects activation without this final binding. Pre-start
+activation creates neither demand nor task. Allocation failure rolls back the
+mode, lifecycle, demand and task together; exact replay keeps the original cutoff.
+
+Actual web-role execution exposed missing column-level lifecycle grants for
+locking/activating the prepared token generation and releasing the go-live gate.
+The follow-up permission audit narrowed these to row-lock grants only; guarded
+lifecycle trigger effects own token activation and go-live release, and direct
+web credential-state/gate writes are denied. The real web-role positive activation
+and negative direct-write cases pass alongside worker ownership checks.
+
+September 16 UTC checkpoint validation: 86 PostgreSQL tests passed in 49.18s,
+covering allocation, restricted-role ownership/recovery, baseline integrity,
+boundary/catch-up history, lifecycle corrections and adjacent digest planning.
+The fresh-install audit compared separate disposable installs against PR #34's
+baseline: exactly one allocation-check function, one deferred constraint and its
+trigger were added. Other schema inventories were unchanged; the strict baseline
+fingerprints were updated only after inspecting that audit. No retained database
+was altered or deleted. This is not full worker or increment acceptance.
+
+## Bounded worker checkpoint
+
+The compiled general-worker handler now prepares the activation-time Family
+cohort using stable UUID keysets and each Family's current eligibility/response.
+It reuses ordinary Family selection with the original activation cutoff. Later
+Family additions remain the source/deliverability owner's work. Configuration
+changes restart traversal in a new immutable receipt namespace rather than
+rewinding checkpoints or reviving removed revisions.
+
+Digest preparation first materializes all due dates in pages of at most 100,
+then coalesces originals in separate bounded coverage transactions. The hold
+remains throughout both stages. Selected aggregates use ordinary occurrence
+identities; no outbox, provider call or scheduled-delivery hint is created.
+Cancelled aggregate predecessors retain their fulfillment rows and gain
+append-only recovery edges, so the exact original date inventory remains
+available across further configuration replacements. See the linked data
+contract and BG-07's explicit lineage consumer requirement.
+
+Each batch renews and checks the exact TaskRun claim, atomically commits its
+outcomes and checkpoint, and reports a preparation phase without inventing a
+known total. Known transient local failures record only a closed diagnostic
+code, retain the hold/cursor, and use bounded retry. Unexpected permission,
+constraint and ownership failures are not translated into success. Automatic
+abandonment recovery and explicit failed-task retry retain the original demand
+and task root. Runtime assembly includes metadata-only scheduler admission and
+the executable worker handler; the mail dispatcher gains no new authority.
+
+Focused validation now includes a 109-date, multiple-page digest, rollback both
+before and after Family outcomes, real worker/scheduler roles, rejected fabricated
+completion, stale fences, current source changes, terminal-task retry, restore,
+close and partial-coverage revision replacement. The completed close/restore and
+pure-planner checkpoint passed 64 tests in 18.26s. Subsequent focused additions,
+full database regression, runtime validation, coverage and review remain pending;
+do not treat this checkpoint as final acceptance.
+
+The worker schema audit adds one seven-column immutable recovery-edge table,
+its keys/indexes/guards, and three narrow preparation/lineage functions. It
+changes only the checkpoint, occurrence-creation and existing worker-write
+admission functions; policies and unrelated objects are unchanged. Separate
+fresh installs at the committed allocation checkpoint and current working tree
+were compared before updating fingerprints. The model-to-database contract test
+passes. No historical upgrade or retained-database mutation was introduced.
+
+## Pre-review validation checkpoint
+
+The complete local database run collected 2,916 tests: 2,915 passed and one
+immutable-record inventory test failed because it assumed a per-table trigger
+name rather than the deliberately shared immutable trigger. Its correction
+still checks the enabled trigger, exact function and unconditional rejection;
+the subsequent 74-test focused run passed in 58.19s, including that test, the
+strict schema baseline and actual web/worker role behavior. This records the
+original failure rather than describing the original full run as green.
+
+The latest baseline run passed 5,674 tests in 63.12s; environment-gated checks
+remain separate. Additional acceptance checks cover weekly latest-slot coverage,
+independent delivery pause and schedule removal during preparation. The image
+has been rebuilt after privilege narrowing; configured development/production
+Compose checks passed (2 tests in 123.26s). The three review/fix rounds are still
+pending.
+
+The [review ledger](stewardship-activation-catchup-reviews.md) records findings,
+corrections and rejected claims. Round-one corrections bind preparation effects
+to immutable claim-event fencing, require database proof for bounded digest
+receipts, and retain Family as well as digest selection lineage. They add an
+observed two-connection race and forged-write tests. The fresh-install correction
+audit adds three validation functions and one successor index; only the named
+catch-up guards change. Renaming the materialization helper's argument changes
+its inventory label, not its three-UUID callable signature. No retained schema
+or data was modified.
+
+## Local acceptance and delivery handoff
+
+BG-04.05's bounded activation-preparation scope passes its local acceptance
+checks and three completed dual-source review/fix rounds. The
+[complete review ledger](stewardship-activation-catchup-reviews.md) records all
+findings, rejections, corrections and exact reviewed commits. Full coverage at
+`41ded62` accounts for every one of 2,950 PostgreSQL tests (94.10% lines, 85.51%
+branches); final small corrections passed 147 PostgreSQL regressions and 5,674
+baseline tests, plus strict fresh-schema/model parity, lint, formatting, tracked
+Markdown and rebuilt-image configured development/production Compose checks.
+The latter passed in 116.46s. All credentials/provider fixtures are synthetic.
+
+The worker releases only its preparation hold. Current restore-held initial
+slots are not delivered evidence; later BG-06 delivery must recheck initial
+recovery rather than blindly dispatch a prepared reminder. BG-06/BG-07 retain
+provider dispatch, live-response confirmations and pinned report facts, and
+ADM-05 remains disabled until those prerequisites pass. BG-04's mixed receipt,
+routing and end-to-end test tasks remain open. No formal gate is released here.
+
+Next: push the final implementation head, create its PR, require every exact-head
+CI check and protected merge-group check (including all browser engines), verify
+the merge on refreshed `origin/main`, and start the Phase 4 BG-08 authorized
+export-job/deterministic-chart foundation on a new branch. The human's standing
+merge/continue authority applies; deployment, release and Gate 5 approval do not.

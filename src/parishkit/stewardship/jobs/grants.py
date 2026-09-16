@@ -168,4 +168,7 @@ def task_runtime_grants(role):
     from parishkit.stewardship.campaigns.cleanup_grants import add_cleanup_grants
 
     add_cleanup_grants(tables, columns, worker=role is ServiceRole.WORKER)
+    from parishkit.stewardship.campaigns.catchup_grants import add_catchup_grants
+
+    add_catchup_grants(tables, columns, worker=role is ServiceRole.WORKER)
     return tables, columns

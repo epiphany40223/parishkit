@@ -171,7 +171,11 @@ def retry_failed(*, run_id, command_id, actor_id, correlation_id, admit):
     for value in (run_id, command_id, actor_id, correlation_id):
         _uuid(value)
     original = TaskRun.objects.get(pk=run_id)
-    if original.task_type in ("outbox_delivery", "production_cleanup"):
+    if original.task_type in (
+        "outbox_delivery",
+        "production_cleanup",
+        "activation_catchup",
+    ):
         require_work_order()
     with _locked(correlation_id, root_id=original.root_id):
         original.refresh_from_db()

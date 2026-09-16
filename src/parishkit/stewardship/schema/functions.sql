@@ -1463,6 +1463,27 @@ BEGIN
     RETURN NEW;
 END $$;
 
+-- Recheck the final row at commit: the INSERT event's original task pointer is
+-- null while activation's owning transaction allocates and binds its root.
+CREATE FUNCTION public.stewardship_catchup_allocation_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM public.stewardship_activation_catchup d
+        JOIN public.stewardship_campaign_transition a ON a.id=d.activation_id
+        JOIN public.stewardship_family_token_generation g ON g.id=a.token_generation_id
+        JOIN public.stewardship_task_run t ON t.id=d.task_root_id
+        WHERE d.id=NEW.id AND t.root_id=t.id
+          AND t.task_type='activation_catchup' AND t.domain_request_id=d.id
+          AND t.idempotency_key=d.id::text
+          AND t.initiated_by_id IS NOT DISTINCT FROM a.actor_id
+          AND d.source_snapshot_id=g.source_snapshot_id
+          AND g.campaign_id=d.campaign_id
+    ) THEN RAISE EXCEPTION 'Activation requires its atomic catch-up task binding'
+        USING ERRCODE='23514'; END IF;
+    RETURN NULL;
+END $$;
+
 -- FUNCTION: stewardship_chair_decisions_v1(uuid)
 CREATE FUNCTION public.stewardship_chair_decisions_v1(configuration uuid) RETURNS jsonb
     LANGUAGE sql STABLE
@@ -1743,12 +1764,26 @@ BEGIN
     RETURN NEW;
 END $$;
 
+-- Semantic coverage and independent restore decisions exclude a slot from
+-- preparation, not from history. Keep every SQL proof on the same input set.
+CREATE FUNCTION public.stewardship_schedule_slot_excluded_v1(
+    definition uuid,mode text,target text,slot text
+) RETURNS boolean LANGUAGE sql STABLE
+SET search_path TO pg_catalog,public,pg_temp AS $$
+    SELECT EXISTS(SELECT 1 FROM public.stewardship_schedule_fulfillment f
+        WHERE f.definition_id=$1 AND f.mode=$2 AND f.target=$3 AND f.slot=$4)
+    OR EXISTS(SELECT 1 FROM public.stewardship_restore_delivery_hold h
+        WHERE h.definition_id=$1 AND h.mode=$2 AND h.target=$3 AND h.slot=$4
+            AND h.state IN ('unreviewed','assumed_delivered'))
+$$;
+
 -- FUNCTION: stewardship_checkpoint_guard_v1()
 CREATE FUNCTION public.stewardship_checkpoint_guard_v1() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
 DECLARE d stewardship_activation_catchup%ROWTYPE; t stewardship_task_run%ROWTYPE; r stewardship_system_configuration%ROWTYPE;
+        projection uuid; prefix text; family uuid; pending_count integer;
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
     SELECT * INTO r FROM stewardship_system_configuration FOR UPDATE;
@@ -1760,6 +1795,94 @@ BEGIN
        OR r.restore_review_required OR r.current_campaign_id IS DISTINCT FROM d.campaign_id
        OR EXISTS(SELECT 1 FROM stewardship_campaign_work_gate WHERE campaign_id=d.campaign_id AND state IN ('preparing','running','tombstone')) THEN
         RAISE EXCEPTION 'Catch-up checkpoint requires current fenced input' USING ERRCODE='23514'; END IF;
+    IF current_user='pk_stewardship_worker' THEN
+        SELECT active_configuration_id INTO projection FROM stewardship_campaign WHERE id=d.campaign_id;
+        prefix:=replace(projection::text,'-','')||':';
+        IF NEW.items>100 OR NEW.phase NOT IN ('families','digests','complete')
+            OR NOT starts_with(NEW.cursor,prefix) OR NOT starts_with(NEW.group_key,prefix)
+            OR NEW.correlation_id<>t.id OR r.mode<>'production'
+            OR NEW.complete<>(NEW.phase='complete') THEN
+            RAISE EXCEPTION 'Catch-up requires a bounded compiled checkpoint' USING ERRCODE='23514';
+        END IF;
+        IF NEW.phase='families' THEN
+            family:=split_part(NEW.group_key,':',3)::uuid;
+            SELECT count(*) INTO pending_count FROM public.stewardship_schedule_occurrence o
+                JOIN public.stewardship_schedule_definition s ON s.current_revision_id=o.revision_id
+                WHERE s.campaign_id=d.campaign_id AND s.kind IN ('initial','reminder')
+                    AND o.mode='production' AND o.target='family:'||family::text
+                    AND o.due_at<=d.cutoff AND o.state='pending'
+                    AND NOT public.stewardship_schedule_slot_excluded_v1(o.definition_id,o.mode,o.target,o.slot);
+            IF NEW.group_key<>prefix||'family:'||family::text
+                OR NEW.cursor<>prefix||'families:'||replace(family::text,'-','')
+                OR NOT EXISTS(SELECT 1 FROM stewardship_family_campaign f
+                    WHERE f.id=family AND f.campaign_id=d.campaign_id AND f.created_at<=d.created_at)
+                OR EXISTS (
+                    SELECT 1 FROM stewardship_schedule_definition s
+                    JOIN stewardship_schedule_revision v ON v.id=s.current_revision_id
+                    WHERE s.campaign_id=d.campaign_id AND s.kind IN ('initial','reminder')
+                        AND v.due_at<=d.cutoff
+                        AND NOT EXISTS(SELECT 1 FROM stewardship_schedule_occurrence o
+                            WHERE o.revision_id=v.id AND o.mode='production'
+                                AND o.target='family:'||family::text AND o.slot='once')
+                        AND NOT public.stewardship_schedule_slot_excluded_v1(s.id,'production','family:'||family::text,'once')
+                )
+                OR pending_count>1
+                OR (pending_count>0 AND EXISTS(SELECT 1 FROM public.stewardship_family_campaign f
+                    JOIN public.stewardship_campaign_configuration p ON p.id=projection
+                    WHERE f.id=family AND (NOT f.active OR NOT f.email_eligible OR NOT f.email_deliverable
+                        OR f.effective_submission_id IS NOT NULL OR public.stewardship_campaign_now_v1()>=p.ends_at)))
+                -- A current selection must carry all interrupted predecessor
+                -- coverage. With no selection (removal/ineligibility), retain
+                -- the old immutable history without inventing replacement mail.
+                OR (pending_count>0 AND EXISTS(SELECT 1 FROM public.stewardship_schedule_occurrence o
+                    JOIN public.stewardship_schedule_definition s ON s.id=o.definition_id
+                    WHERE s.campaign_id=d.campaign_id AND s.kind IN ('initial','reminder')
+                        AND o.mode='production' AND o.target='family:'||family::text
+                        AND o.state='skipped' AND o.reason IN ('schedule_replaced','schedule_removed')
+                        AND NOT EXISTS(SELECT 1 FROM public.stewardship_recovery_replacement e WHERE e.previous_id=o.id)
+                        AND (EXISTS(SELECT 1 FROM public.stewardship_schedule_fulfillment f
+                                WHERE f.mode=o.mode AND f.target=o.target AND f.disposition='coalesced' AND f.occurrence_id=o.id)
+                            OR EXISTS(SELECT 1 FROM public.stewardship_recovery_replacement e
+                                WHERE e.demand_id=d.id AND e.replacement_id=o.id))))
+                OR EXISTS(SELECT 1 FROM public.stewardship_schedule_occurrence o
+                    JOIN public.stewardship_schedule_definition s ON s.current_revision_id=o.revision_id
+                    WHERE s.campaign_id=d.campaign_id AND s.kind IN ('initial','reminder')
+                        AND o.mode='production' AND o.target='family:'||family::text AND o.due_at<=d.cutoff
+                        AND ((NOT public.stewardship_schedule_slot_excluded_v1(o.definition_id,o.mode,o.target,o.slot)
+                                AND (o.state IN ('running','delivery_unknown')
+                                    OR (o.state='pending' AND (o.task_id IS NOT NULL OR o.outbox_id IS NOT NULL))))
+                            -- Coverage is the evidence being checked here, not
+                            -- permission to skip its integrity check. Only an
+                            -- independent restore hold excludes this outcome.
+                            OR (o.state='coalesced'
+                                AND NOT EXISTS(SELECT 1 FROM public.stewardship_restore_delivery_hold h
+                                    WHERE h.definition_id=o.definition_id AND h.mode=o.mode AND h.target=o.target
+                                        AND h.slot=o.slot AND h.state IN ('unreviewed','assumed_delivered'))
+                                AND NOT EXISTS(SELECT 1 FROM public.stewardship_schedule_fulfillment f
+                                WHERE f.definition_id=o.definition_id AND f.mode=o.mode AND f.target=o.target
+                                    AND f.slot=o.slot AND f.disposition='coalesced' AND f.occurrence_id=o.replacement_id))))
+                THEN RAISE EXCEPTION 'Catch-up Family receipt lacks cutoff outcomes' USING ERRCODE='23514'; END IF;
+        END IF;
+        IF NEW.phase='digests' AND NOT public.stewardship_catchup_digest_receipt_v1(to_jsonb(NEW)) THEN
+            RAISE EXCEPTION 'Catch-up digest receipt lacks bounded inventory proof' USING ERRCODE='23514';
+        END IF;
+        IF NEW.complete THEN
+            IF NEW.group_key<>prefix||'complete' OR NEW.cursor<>prefix||'complete:'
+                OR NOT EXISTS(SELECT 1 FROM stewardship_catchup_checkpoint k
+                    WHERE k.demand_id=d.id AND k.group_key=prefix||'families:end')
+                OR EXISTS(SELECT 1 FROM stewardship_family_campaign f
+                    WHERE f.campaign_id=d.campaign_id AND f.created_at<=d.created_at
+                    AND NOT EXISTS(SELECT 1 FROM stewardship_catchup_checkpoint k
+                        WHERE k.demand_id=d.id AND k.group_key=prefix||'family:'||f.id::text))
+                OR EXISTS(SELECT 1 FROM stewardship_schedule_definition s
+                    WHERE s.campaign_id=d.campaign_id AND s.current_revision_id IS NOT NULL
+                      AND s.kind IN ('daily_digest','weekly_digest')
+                      AND NOT EXISTS(SELECT 1 FROM stewardship_catchup_checkpoint k
+                          WHERE k.demand_id=d.id AND k.group_key=prefix||'digest:'||s.id::text))
+            THEN RAISE EXCEPTION 'Catch-up completion requires current cohort and digest coverage'
+                USING ERRCODE='23514'; END IF;
+        END IF;
+    END IF;
     RETURN NEW;
 END $$;
 
@@ -3023,6 +3146,247 @@ SET search_path TO pg_catalog,public,pg_temp AS $$
         OR (message_state='cancelled' AND occurrence_state='succeeded')) IS TRUE
 $$;
 
+-- Verify a digest cursor against one exact, at-most-100-date page. Final
+-- receipts require the exhausted page chain and settled original outcomes.
+-- This checks retained data, not trust in a predictable checkpoint key.
+CREATE FUNCTION public.stewardship_catchup_digest_receipt_v1(proposed jsonb)
+RETURNS boolean LANGUAGE plpgsql
+SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE demand public.stewardship_activation_catchup%ROWTYPE;
+        p public.stewardship_campaign_configuration%ROWTYPE;
+        d public.stewardship_schedule_definition%ROWTYPE;
+        v public.stewardship_schedule_revision%ROWTYPE;
+        prefix text; position text; stage text; after_day text; candidate date;
+        last_day text; due timestamptz; exhausted boolean:=false; step integer;
+        pending_count integer; i integer;
+BEGIN
+    SELECT * INTO demand FROM public.stewardship_activation_catchup WHERE id=(proposed->>'demand_id')::uuid;
+    SELECT configuration.* INTO p FROM public.stewardship_campaign c
+        JOIN public.stewardship_campaign_configuration configuration ON configuration.id=c.active_configuration_id
+        WHERE c.id=demand.campaign_id;
+    IF p.id IS NULL THEN RETURN false; END IF;
+    prefix:=replace(p.id::text,'-','')||':';
+    IF proposed->>'group_key'=prefix||'families:end' THEN
+        RETURN proposed->>'cursor'=prefix||'digests:' AND (proposed->>'items')::bigint=0
+            AND NOT EXISTS(SELECT 1 FROM public.stewardship_family_campaign f
+                WHERE f.campaign_id=demand.campaign_id AND f.created_at<=demand.created_at
+                  AND NOT EXISTS(SELECT 1 FROM public.stewardship_catchup_checkpoint k
+                      WHERE k.demand_id=demand.id AND k.group_key=prefix||'family:'||f.id::text));
+    END IF;
+    IF NOT starts_with(demand.cursor,prefix||'digests:') THEN RETURN false; END IF;
+    SELECT * INTO d FROM public.stewardship_schedule_definition s
+        WHERE s.campaign_id=demand.campaign_id AND s.current_revision_id IS NOT NULL
+            AND s.kind IN ('daily_digest','weekly_digest')
+            AND NOT EXISTS(SELECT 1 FROM public.stewardship_catchup_checkpoint k
+                WHERE k.demand_id=demand.id AND k.group_key=prefix||'digest:'||s.id::text)
+        ORDER BY s.id LIMIT 1;
+    IF d.id IS NULL THEN RETURN false; END IF;
+    SELECT * INTO v FROM public.stewardship_schedule_revision WHERE id=d.current_revision_id;
+    position:=substring(demand.cursor FROM length(prefix||'digests:')+1);
+    IF position='' THEN stage:='dates'; after_day:='';
+    ELSE
+        IF split_part(position,':',1)<>replace(d.id::text,'-','') THEN RETURN false; END IF;
+        stage:=split_part(position,':',2); after_day:=split_part(position,':',3);
+    END IF;
+    IF stage='dates' THEN
+        candidate:=greatest(p.start_date,CASE WHEN after_day<>'' THEN after_day::date+1 ELSE p.start_date END);
+        step:=CASE d.kind WHEN 'weekly_digest' THEN 7 ELSE 1 END;
+        IF step=7 THEN candidate:=candidate+((v.values->>'weekday')::integer
+            -(extract(isodow FROM candidate)::integer-1)+7)%7; END IF;
+        last_day:=after_day;
+        FOR i IN 1..100 LOOP
+            IF candidate>p.end_date THEN exhausted:=true; EXIT; END IF;
+            due:=public.stewardship_resolve_local_v1(
+                (candidate+CASE d.kind WHEN 'daily_digest' THEN 1 ELSE 0 END)
+                    +(v.values->>'time')::time,p.timezone);
+            IF due>least(demand.cutoff,public.stewardship_campaign_now_v1()) THEN exhausted:=true; EXIT; END IF;
+            last_day:=candidate::text;
+            IF public.stewardship_catchup_due_v1(d.id,last_day) IS NOT NULL
+                AND NOT EXISTS(SELECT 1 FROM public.stewardship_schedule_occurrence o
+                    WHERE o.revision_id=v.id AND o.mode='production' AND o.target='admins'
+                        AND o.slot=last_day AND o.due_at=due)
+                AND NOT public.stewardship_schedule_slot_excluded_v1(d.id,'production','admins',last_day)
+                THEN RETURN false; END IF;
+            candidate:=candidate+step;
+        END LOOP;
+        stage:=CASE WHEN exhausted THEN 'cover' ELSE 'dates' END;
+        RETURN proposed->>'group_key'=prefix||'page:'||d.id::text||':'||coalesce(nullif(last_day,''),'empty')||':'||stage
+            AND proposed->>'cursor'=prefix||'digests:'||replace(d.id::text,'-','')||':'||stage||':'||last_day;
+    END IF;
+    IF stage<>'cover' THEN RETURN false; END IF;
+    IF proposed->>'group_key'=prefix||'cover:'||d.id::text||':'||(demand.groups_completed+1)::text THEN
+        RETURN proposed->>'cursor'=demand.cursor AND (proposed->>'items')::bigint>0;
+    END IF;
+    IF proposed->>'group_key'<>prefix||'digest:'||d.id::text
+        OR proposed->>'cursor'<>prefix||'digests:' THEN RETURN false; END IF;
+    -- No bound or uncertain original can be treated as prepared. Exactly one
+    -- unbound selection may remain; every other date needs a terminal outcome.
+    IF EXISTS(SELECT 1 FROM public.stewardship_schedule_occurrence o
+        WHERE o.revision_id=v.id AND o.mode='production' AND o.target='admins' AND o.due_at<=demand.cutoff
+            AND NOT public.stewardship_schedule_slot_excluded_v1(o.definition_id,o.mode,o.target,o.slot)
+            AND (o.state IN ('running','delivery_unknown')
+                OR (o.state='pending' AND (o.task_id IS NOT NULL OR o.outbox_id IS NOT NULL)))) THEN RETURN false; END IF;
+    SELECT count(*) INTO pending_count FROM public.stewardship_schedule_occurrence o
+        WHERE o.revision_id=v.id AND o.mode='production' AND o.target='admins' AND o.due_at<=demand.cutoff
+            AND o.state='pending'
+            AND NOT public.stewardship_schedule_slot_excluded_v1(o.definition_id,o.mode,o.target,o.slot);
+    RETURN pending_count<=1 AND NOT EXISTS(
+        SELECT 1 FROM public.stewardship_schedule_occurrence o
+        WHERE o.revision_id=v.id AND o.mode='production' AND o.target='admins'
+            AND o.due_at<=demand.cutoff AND o.state='coalesced'
+            AND NOT EXISTS(SELECT 1 FROM public.stewardship_schedule_fulfillment f
+                WHERE f.definition_id=d.id AND f.mode=o.mode AND f.target=o.target AND f.slot=o.slot
+                    AND f.disposition='coalesced' AND f.occurrence_id=o.replacement_id)
+    ) AND NOT EXISTS(
+        SELECT 1 FROM public.stewardship_schedule_occurrence o
+        WHERE o.definition_id=d.id AND o.mode='production' AND o.target='admins'
+            AND o.revision_id<>v.id AND o.state='skipped' AND o.reason='schedule_replaced'
+            AND NOT EXISTS(SELECT 1 FROM public.stewardship_recovery_replacement e WHERE e.previous_id=o.id)
+            AND (EXISTS(SELECT 1 FROM public.stewardship_schedule_fulfillment f
+                    WHERE f.definition_id=d.id AND f.mode='production' AND f.target='admins'
+                        AND f.occurrence_id=o.id AND f.disposition='coalesced')
+                OR EXISTS(SELECT 1 FROM public.stewardship_recovery_replacement e
+                    WHERE e.demand_id=demand.id AND e.replacement_id=o.id)));
+END $$;
+
+-- Canonical slot validation is shared by worker writes and bounded page proofs.
+CREATE FUNCTION public.stewardship_catchup_due_v1(definition uuid,slot text)
+RETURNS timestamptz LANGUAGE plpgsql STABLE
+SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE d public.stewardship_schedule_definition%ROWTYPE;
+        v public.stewardship_schedule_revision%ROWTYPE;
+        p public.stewardship_campaign_configuration%ROWTYPE; day date;
+BEGIN
+    SELECT * INTO d FROM public.stewardship_schedule_definition WHERE id=$1;
+    SELECT * INTO v FROM public.stewardship_schedule_revision WHERE id=d.current_revision_id;
+    SELECT configuration.* INTO p FROM public.stewardship_campaign c
+        JOIN public.stewardship_campaign_configuration configuration ON configuration.id=c.active_configuration_id
+        WHERE c.id=d.campaign_id;
+    IF v.id IS NULL OR p.id IS NULL THEN RETURN NULL; END IF;
+    IF d.kind IN ('initial','reminder') THEN
+        RETURN CASE WHEN slot='once' THEN v.due_at END;
+    END IF;
+    IF slot !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN RETURN NULL; END IF;
+    day:=slot::date;
+    IF day<p.start_date OR day>p.end_date OR day::text<>slot THEN RETURN NULL; END IF;
+    IF d.kind='weekly_digest' THEN
+        IF extract(isodow FROM day)::integer-1<>(v.values->>'weekday')::integer THEN RETURN NULL; END IF;
+    ELSIF d.kind='daily_digest' THEN
+        IF public.stewardship_resolve_local_v1(day::timestamp,p.timezone)
+            =public.stewardship_resolve_local_v1((day+1)::timestamp,p.timezone) THEN RETURN NULL; END IF;
+        day:=day+1;
+    ELSE RETURN NULL;
+    END IF;
+    RETURN public.stewardship_resolve_local_v1(day+(v.values->>'time')::time,p.timezone);
+END $$;
+
+CREATE FUNCTION public.stewardship_catchup_occurrence_shape_v1(proposed jsonb)
+RETURNS boolean LANGUAGE plpgsql STABLE
+SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE d public.stewardship_schedule_definition%ROWTYPE;
+        demand public.stewardship_activation_catchup%ROWTYPE;
+        c public.stewardship_campaign%ROWTYPE;
+        p public.stewardship_campaign_configuration%ROWTYPE;
+        family public.stewardship_family_campaign%ROWTYPE;
+        selected public.stewardship_schedule_occurrence%ROWTYPE;
+        selected_kind text; expected timestamptz; reason text;
+BEGIN
+    SELECT * INTO d FROM public.stewardship_schedule_definition WHERE id=(proposed->>'definition_id')::uuid;
+    SELECT * INTO demand FROM public.stewardship_activation_catchup WHERE campaign_id=d.campaign_id AND completed_at IS NULL;
+    SELECT * INTO c FROM public.stewardship_campaign WHERE id=d.campaign_id;
+    SELECT * INTO p FROM public.stewardship_campaign_configuration WHERE id=c.active_configuration_id;
+    IF d.id IS NULL OR demand.id IS NULL OR p.id IS NULL THEN RETURN false; END IF;
+    IF d.kind IN ('initial','reminder') THEN
+        IF proposed->>'target' !~ '^family:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN RETURN false; END IF;
+        SELECT * INTO family FROM public.stewardship_family_campaign
+            WHERE id=substring(proposed->>'target' FROM 8)::uuid AND campaign_id=d.campaign_id
+                AND created_at<=demand.created_at;
+        IF family.id IS NULL THEN RETURN false; END IF;
+    ELSIF d.kind IN ('daily_digest','weekly_digest') THEN
+        IF proposed->>'target'<>'admins' THEN RETURN false; END IF;
+    ELSE RETURN false;
+    END IF;
+    expected:=public.stewardship_catchup_due_v1(d.id,proposed->>'slot');
+    IF proposed->>'slot'='recovery:'||demand.id::text AND d.kind IN ('daily_digest','weekly_digest') THEN
+        -- An aggregate must be dated from a real staged or cancelled covered
+        -- predecessor; neither an arbitrary timestamp nor a caller flag is proof.
+        SELECT max(o.due_at) INTO expected FROM public.stewardship_schedule_occurrence o
+        WHERE o.definition_id=d.id AND o.mode='production' AND o.target='admins'
+            AND o.id<>(proposed->>'id')::uuid AND o.due_at<=demand.cutoff
+            AND ((o.revision_id=d.current_revision_id AND o.state='pending'
+                    AND o.task_id IS NULL AND o.outbox_id IS NULL
+                    AND NOT starts_with(o.slot,'recovery:')
+                    AND NOT public.stewardship_schedule_slot_excluded_v1(o.definition_id,o.mode,o.target,o.slot))
+                OR (o.state='skipped' AND o.reason='schedule_replaced'
+                    AND (EXISTS(SELECT 1 FROM public.stewardship_schedule_fulfillment f
+                            WHERE f.occurrence_id=o.id AND f.disposition='coalesced')
+                        OR EXISTS(SELECT 1 FROM public.stewardship_recovery_replacement e
+                            WHERE e.replacement_id=o.id AND e.demand_id=demand.id))));
+    END IF;
+    IF expected IS NULL OR expected IS DISTINCT FROM (proposed->>'due_at')::timestamptz
+        OR expected>demand.cutoff
+        OR proposed->>'occurrence_key'<>encode(sha256(convert_to(
+            '["'||(proposed->>'revision_id')||'","production","'||(proposed->>'target')
+            ||'","'||(proposed->>'slot')||'"]','UTF8')),'hex') THEN RETURN false; END IF;
+    IF proposed->>'state'='pending' THEN
+        RETURN proposed->>'reason'='' AND proposed->>'replacement_id' IS NULL;
+    END IF;
+    IF proposed->>'state'='skipped' THEN
+        IF family.id IS NULL THEN RETURN false; END IF;
+        reason:=CASE WHEN public.stewardship_campaign_now_v1()>=p.ends_at THEN 'campaign_closed'
+            WHEN NOT family.active OR NOT family.email_eligible THEN 'family_ineligible'
+            WHEN family.effective_submission_id IS NOT NULL THEN 'family_responded'
+            WHEN NOT family.email_deliverable THEN 'no_deliverable_recipient' ELSE '' END;
+        RETURN reason<>'' AND proposed->>'reason'=reason AND proposed->>'replacement_id' IS NULL;
+    END IF;
+    SELECT * INTO selected FROM public.stewardship_schedule_occurrence WHERE id=(proposed->>'replacement_id')::uuid;
+    SELECT kind INTO selected_kind FROM public.stewardship_schedule_definition s
+        WHERE s.id=selected.definition_id AND s.campaign_id=d.campaign_id
+            AND s.current_revision_id=selected.revision_id;
+    RETURN selected.id IS NOT NULL AND selected.id<>(proposed->>'id')::uuid
+        AND selected.state='pending' AND selected.mode='production'
+        AND selected.target=proposed->>'target' AND selected.task_id IS NULL AND selected.outbox_id IS NULL
+        AND selected.due_at<=demand.cutoff
+        AND CASE WHEN family.id IS NOT NULL THEN
+            d.kind='reminder' AND selected_kind IN ('initial','reminder')
+            AND proposed->>'reason'='missed_family_recovery'
+            AND family.active AND family.email_eligible AND family.email_deliverable
+            AND family.effective_submission_id IS NULL AND public.stewardship_campaign_now_v1()<p.ends_at
+            AND (selected_kind='initial' OR (
+                (selected.due_at,selected.definition_id,selected.id)>=
+                    (expected,d.id,(proposed->>'id')::uuid)
+                AND NOT EXISTS(SELECT 1 FROM public.stewardship_schedule_definition s
+                    JOIN public.stewardship_schedule_revision v ON v.id=s.current_revision_id
+                    WHERE s.campaign_id=d.campaign_id AND s.kind='initial' AND v.due_at<=demand.cutoff
+                        AND NOT public.stewardship_schedule_slot_excluded_v1(s.id,'production',proposed->>'target','once'))))
+        ELSE selected.definition_id=d.id AND selected.due_at>=expected
+            AND (d.kind<>'daily_digest' OR selected.slot='recovery:'||demand.id::text)
+            AND proposed->>'reason'=CASE d.kind
+                WHEN 'daily_digest' THEN 'missed_daily_recovery' ELSE 'missed_weekly_recovery' END END;
+END $$;
+
+-- Bounded preparation alone may materialize work under its own demand hold.
+-- The caller's correlation is the immutable claim event, not a campaign-wide
+-- bypass flag. It binds the exact fence even if a worker reclaims the same run.
+-- The Python owner also locks/rechecks the full TaskClaim fence around
+-- every effect; occurrence claims and provider submission retain the hold.
+CREATE FUNCTION public.stewardship_catchup_materializing_v1(
+    campaign uuid,actor uuid,claim_event uuid
+) RETURNS boolean LANGUAGE sql STABLE
+SET search_path TO pg_catalog,public,pg_temp AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.stewardship_activation_catchup d
+        JOIN public.stewardship_task_run t ON t.root_id=d.task_root_id
+        JOIN public.stewardship_task_event e ON e.run_id=t.id
+        WHERE d.campaign_id=$1 AND d.completed_at IS NULL
+          AND e.id=$3 AND e.action='claim' AND e.state='running'
+          AND e.fence=t.fence AND e.worker_id=t.worker_id
+          AND t.domain_request_id=d.id
+          AND t.task_type='activation_catchup' AND t.state='running'
+          AND t.worker_id=$2 AND t.lease_expires_at>clock_timestamp()
+    )
+$$;
+
 -- FUNCTION: stewardship_occurrence_guard_v1()
 CREATE FUNCTION public.stewardship_occurrence_guard_v1() RETURNS trigger
     LANGUAGE plpgsql
@@ -3059,7 +3423,8 @@ BEGIN
                    OR (NEW.mode='production' AND c.state='closed'
                        AND (d.kind IN ('daily_digest','weekly_digest')
                            OR (NEW.due_at>=p.starts_at AND NEW.due_at<p.ends_at)))))
-           OR (NEW.mode='production' AND EXISTS(SELECT 1 FROM stewardship_activation_catchup WHERE campaign_id=c.id AND completed_at IS NULL))
+           OR (NEW.mode='production' AND EXISTS(SELECT 1 FROM stewardship_activation_catchup WHERE campaign_id=c.id AND completed_at IS NULL)
+               AND NOT public.stewardship_catchup_materializing_v1(c.id,NEW.actor_id,NEW.correlation_id))
            OR EXISTS (SELECT 1 FROM stewardship_schedule_fulfillment WHERE definition_id=d.id AND mode=NEW.mode AND target=NEW.target AND slot=NEW.slot) THEN
             RAISE EXCEPTION 'Occurrence creation is not admitted' USING ERRCODE='23514'; END IF;
     ELSE
@@ -5691,6 +6056,56 @@ BEGIN
     RETURN NEW;
 END $$;
 
+CREATE FUNCTION public.stewardship_catchup_write_admitted_v1(
+    relation_name text,proposed jsonb,prior jsonb
+) RETURNS boolean LANGUAGE plpgsql
+SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE target public.stewardship_schedule_definition%ROWTYPE;
+        occurrence public.stewardship_schedule_occurrence%ROWTYPE;
+BEGIN
+    IF relation_name='stewardship_occurrence_transition' THEN
+        SELECT * INTO occurrence FROM public.stewardship_schedule_occurrence
+            WHERE id=(proposed->>'occurrence_id')::uuid;
+        RETURN prior IS NULL AND occurrence.id IS NOT NULL
+            AND (proposed->>'version')::bigint=occurrence.version
+            AND proposed->>'after_state'=occurrence.state
+            AND (proposed->>'actor_id')::uuid=occurrence.actor_id
+            AND (proposed->>'correlation_id')::uuid=occurrence.correlation_id
+            AND public.stewardship_catchup_write_admitted_v1(
+                'stewardship_schedule_occurrence',to_jsonb(occurrence),
+                CASE WHEN occurrence.state='pending' THEN NULL
+                    ELSE to_jsonb(occurrence)||jsonb_build_object('state','pending') END);
+    END IF;
+    IF relation_name<>'stewardship_schedule_occurrence' THEN RETURN false; END IF;
+    SELECT * INTO target FROM public.stewardship_schedule_definition
+        WHERE id=(proposed->>'definition_id')::uuid;
+    RETURN target.id IS NOT NULL
+        AND (proposed->>'revision_id')::uuid=target.current_revision_id
+        AND proposed->>'mode'='production' AND proposed->>'routing'='production'
+        AND proposed->>'task_id' IS NULL AND proposed->>'outbox_id' IS NULL
+        AND proposed->>'state' IN ('pending','skipped','coalesced')
+        AND ((prior IS NULL AND proposed->>'state'='pending')
+            OR (prior IS NOT NULL AND proposed->>'state' IN ('skipped','coalesced')))
+        AND (prior IS NULL OR (prior->>'state'='pending'
+            AND prior->>'task_id' IS NULL AND prior->>'outbox_id' IS NULL))
+        AND EXISTS (
+            SELECT 1 FROM public.stewardship_activation_catchup d
+            JOIN public.stewardship_system_configuration r ON r.current_campaign_id=d.campaign_id
+            JOIN public.stewardship_campaign c ON c.id=d.campaign_id
+            JOIN public.stewardship_campaign_credentials credentials
+                ON credentials.campaign_id=c.id AND NOT credentials.go_live_gate
+            WHERE d.campaign_id=target.campaign_id AND d.completed_at IS NULL
+              AND (proposed->>'due_at')::timestamptz<=d.cutoff
+              AND r.mode='production' AND NOT r.restore_review_required
+              AND c.state IN ('active','closed')
+              AND NOT EXISTS(SELECT 1 FROM public.stewardship_campaign_work_gate g
+                  WHERE g.campaign_id=c.id AND g.state<>'released')
+        )
+        AND public.stewardship_catchup_occurrence_shape_v1(proposed)
+        AND public.stewardship_catchup_materializing_v1(target.campaign_id,
+            (proposed->>'actor_id')::uuid,(proposed->>'correlation_id')::uuid);
+END $$;
+
 -- FUNCTION: stewardship_setup_completion_write_v1()
 CREATE FUNCTION public.stewardship_setup_completion_write_v1() RETURNS trigger
     LANGUAGE plpgsql
@@ -5700,6 +6115,8 @@ BEGIN
     IF current_user='pk_stewardship_worker' AND
         public.stewardship_setup_completion_context_v1() IS NULL AND
         public.stewardship_boundary_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
+            CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE AND
+        public.stewardship_catchup_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
             CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE THEN
         RAISE EXCEPTION 'Worker configuration effects require atomic setup ownership'
             USING ERRCODE='23514';
@@ -9122,7 +9539,7 @@ END $$;
 
 -- FUNCTION: stewardship_token_campaign_effects_v1()
 CREATE FUNCTION public.stewardship_token_campaign_effects_v1() RETURNS trigger
-    LANGUAGE plpgsql
+    LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$ BEGIN
     IF NEW.active_token_generation_id IS DISTINCT FROM OLD.active_token_generation_id AND NEW.active_token_generation_id IS NOT NULL THEN
@@ -9142,7 +9559,7 @@ END $$;
 
 -- FUNCTION: stewardship_token_gate_release_v1()
 CREATE FUNCTION public.stewardship_token_gate_release_v1() RETURNS trigger
-    LANGUAGE plpgsql
+    LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$ BEGIN
     IF NEW.active_token_generation_id IS NOT NULL AND NEW.active_token_generation_id IS DISTINCT FROM OLD.active_token_generation_id THEN
@@ -9275,3 +9692,44 @@ END $$;
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
+-- A cancelled aggregate remains immutable; only this forward lineage may carry
+-- its original coalesced obligations to another ordinary scheduled occurrence.
+CREATE FUNCTION public.stewardship_recovery_replacement_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE previous public.stewardship_schedule_occurrence%ROWTYPE;
+        replacement public.stewardship_schedule_occurrence%ROWTYPE;
+        demand public.stewardship_activation_catchup%ROWTYPE;
+BEGIN
+    PERFORM pg_advisory_xact_lock(736220,1);
+    SELECT * INTO demand FROM public.stewardship_activation_catchup WHERE id=NEW.demand_id;
+    SELECT * INTO previous FROM public.stewardship_schedule_occurrence WHERE id=NEW.previous_id FOR UPDATE;
+    SELECT * INTO replacement FROM public.stewardship_schedule_occurrence WHERE id=NEW.replacement_id FOR UPDATE;
+    IF demand.id IS NULL OR demand.completed_at IS NOT NULL
+        OR previous.id IS NULL OR replacement.id IS NULL
+        OR previous.revision_id=replacement.revision_id
+        OR previous.mode<>'production' OR replacement.mode<>'production'
+        OR previous.target<>replacement.target
+        OR previous.state<>'skipped' OR previous.reason NOT IN ('schedule_replaced','schedule_removed')
+        OR replacement.state<>'pending' OR replacement.task_id IS NOT NULL
+        OR replacement.outbox_id IS NOT NULL
+        OR public.stewardship_schedule_slot_excluded_v1(
+            replacement.definition_id,replacement.mode,replacement.target,replacement.slot)
+        OR NOT EXISTS(SELECT 1 FROM public.stewardship_schedule_definition s
+            JOIN public.stewardship_schedule_definition old_s ON old_s.id=previous.definition_id
+            WHERE s.id=replacement.definition_id AND s.campaign_id=demand.campaign_id
+                AND old_s.campaign_id=s.campaign_id AND s.current_revision_id=replacement.revision_id
+                AND ((previous.target='admins' AND s.kind IN ('daily_digest','weekly_digest')
+                        AND previous.definition_id=s.id AND previous.reason='schedule_replaced')
+                    OR (starts_with(previous.target,'family:') AND s.kind IN ('initial','reminder')
+                        AND old_s.kind IN ('initial','reminder'))))
+        OR NOT (EXISTS(SELECT 1 FROM public.stewardship_schedule_fulfillment f
+                       WHERE f.occurrence_id=previous.id AND f.disposition='coalesced')
+                OR EXISTS(SELECT 1 FROM public.stewardship_recovery_replacement link
+                          WHERE link.replacement_id=previous.id AND link.demand_id=demand.id))
+        OR NOT public.stewardship_catchup_write_admitted_v1(
+            'stewardship_schedule_occurrence',
+            to_jsonb(replacement)||jsonb_build_object('actor_id',NEW.actor_id,'correlation_id',NEW.correlation_id),NULL)
+    THEN RAISE EXCEPTION 'Recovery replacement requires current owned cancelled coverage'
+        USING ERRCODE='23514'; END IF;
+    RETURN NEW;
+END $$;

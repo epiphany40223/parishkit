@@ -396,6 +396,11 @@ backlog blindly. If the campaign closes first, remaining Family invitations/
 reminders receive durable skipped outcomes, while required completed-day and
 weekly reporting follows its existing post-close policy.
 
+When replacement cancels an aggregate that already has committed coverage,
+retain and follow the [immutable recovery lineage](../data/spec.md#schedule-revisions-and-fulfillment).
+Restarting enumeration under current configuration must not drop the dates
+already assigned to its predecessor or reinterpret that predecessor as delivered.
+
 Completion verifies all cutoff work has durable outcomes/coverage, records
 aggregate counts, and atomically marks the demand complete and releases only
 its preparation hold. Ordinary scheduling recovers dispatch hints afterward;

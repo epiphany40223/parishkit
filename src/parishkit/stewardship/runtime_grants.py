@@ -278,6 +278,7 @@ def runtime_grants(role, *, target=None):
             "stewardship_campaign_credentials",
             "stewardship_rehearsal_credential",
             "stewardship_family_token",
+            "stewardship_family_token_generation",
         ):
             columns[table] = {"UPDATE": {"id"}}
         columns["stewardship_family_campaign"] = {

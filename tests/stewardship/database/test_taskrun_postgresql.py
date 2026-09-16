@@ -97,7 +97,9 @@ def retry(status, **kwargs):
     )
 
 
-@pytest.mark.parametrize("kind", ["outbox_delivery", "production_cleanup"])
+@pytest.mark.parametrize(
+    "kind", ["outbox_delivery", "production_cleanup", "activation_catchup"]
+)
 def test_domain_retry_requires_work_order_before_any_root_lock(kind):
     """A later domain precondition cannot repair an already inverted retry lock."""
     from parishkit.stewardship.campaigns.work_locks import work_transaction
