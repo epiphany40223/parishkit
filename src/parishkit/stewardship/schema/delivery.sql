@@ -628,6 +628,23 @@ BEGIN
     RETURN NEW;
 END $$;
 
+CREATE FUNCTION public.stewardship_delivery_warning_v1() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp AS $$
+BEGIN
+    IF NEW.action='mark_unknown' THEN
+        -- The event already passed its immutable exact-message binding guard.
+        -- This grants no log INSERT or callable definer authority to the sender.
+        INSERT INTO public.stewardship_operational_log
+            (id,actor_id,correlation_id,level,event,schema,context)
+        VALUES(NEW.id,NEW.actor_id,NEW.correlation_id,'WARNING','delivery_unknown',
+            'email',jsonb_build_object('message_id',NEW.message_id));
+    END IF;
+    RETURN NULL;
+END $$;
+CREATE TRIGGER stewardship_delivery_warning AFTER INSERT ON public.stewardship_outbox_event
+    FOR EACH ROW EXECUTE FUNCTION public.stewardship_delivery_warning_v1();
+REVOKE ALL ON FUNCTION public.stewardship_delivery_warning_v1() FROM PUBLIC;
+
 CREATE FUNCTION public.stewardship_outbox_event_binding_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp AS $$
 DECLARE
@@ -752,7 +769,10 @@ CREATE TABLE public.stewardship_recipient_resolution (
     source_snapshot_id uuid NOT NULL,
     source_generation bigint NOT NULL CHECK(source_generation>=0),
     reason varchar(32) NOT NULL,
-    CONSTRAINT recipient_resolution_reason CHECK(reason='source_changed'),
+    evidence_note varchar(2000) NOT NULL,
+    CONSTRAINT recipient_resolution_reason CHECK(
+        (reason='source_changed' AND evidence_note='') OR
+        (reason='verified_admin' AND actor_id IS NOT NULL AND evidence_note<>'')),
     CONSTRAINT recipient_resolution_generation CHECK(source_generation>0)
 );
 CREATE INDEX recipient_resolution_correlation ON public.stewardship_recipient_resolution(correlation_id);
@@ -860,11 +880,36 @@ BEGIN
 END $$;
 
 CREATE FUNCTION public.stewardship_recipient_resolution_guard_v1() RETURNS trigger
-LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE refusal public.stewardship_recipient_refusal%ROWTYPE;
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
     SELECT * INTO refusal FROM public.stewardship_recipient_refusal WHERE id=NEW.refusal_id;
+    IF NEW.reason='verified_admin' THEN
+        -- An Admin attestation is not a fabricated source correction or SMTP
+        -- receipt. Only the web command owner can create this kind of evidence.
+        IF session_user<>'pk_stewardship_web' OR refusal.id IS NULL
+           OR NOT public.stewardship_export_authorized_v1(NEW.actor_id,true)
+           OR btrim(NEW.evidence_note)='' OR NOT EXISTS (
+               SELECT 1 FROM public.stewardship_source_current cur
+               JOIN public.stewardship_source_snapshot s ON s.id=cur.snapshot_id
+               CROSS JOIN public.stewardship_system_configuration r
+               JOIN public.stewardship_campaign c ON c.id=r.current_campaign_id
+               JOIN public.stewardship_campaign_credentials k ON k.campaign_id=c.id
+               WHERE cur.snapshot_id=NEW.source_snapshot_id
+                 AND cur.generation=NEW.source_generation
+                 AND s.organization_id=refusal.organization_id AND s.state='promoted'
+                 AND k.source_snapshot_id=cur.snapshot_id
+                 AND k.source_generation=cur.generation AND NOT k.population_dirty
+                 AND c.state<>'archived'
+                 AND public.stewardship_export_admitted_v1(c.id,true)
+           ) THEN RAISE EXCEPTION 'Refusal clearance requires current verified Admin evidence'
+               USING ERRCODE='23514'; END IF;
+        RETURN NEW;
+    END IF;
+    IF NEW.reason<>'source_changed' OR NEW.evidence_note<>'' THEN
+        RAISE EXCEPTION 'Invalid refusal resolution kind' USING ERRCODE='23514';
+    END IF;
     IF refusal.id IS NULL OR NOT EXISTS (
         SELECT 1 FROM public.stewardship_source_current c
         JOIN public.stewardship_source_snapshot s ON s.id=c.snapshot_id
@@ -903,14 +948,29 @@ REVOKE ALL ON FUNCTION public.stewardship_recipient_immutable_v1() FROM PUBLIC;
 CREATE FUNCTION public.stewardship_refusal_family_effect_v1() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE deliverable boolean; target_family uuid;
+    refusal_organization bigint; refusal_duid bigint;
 BEGIN
     -- This executes under the refusal guard's work-order lock. Update only
     -- deliverability, never source eligibility, credentials, or response state.
     -- Retain all old refusal rows: an unresolved row is the suppression fact.
+    IF TG_TABLE_NAME='stewardship_recipient_resolution' THEN
+        -- Source promotion already owns its complete population recalculation.
+        -- Admin clearance instead restores this one identity in the same commit.
+        IF NEW.reason<>'verified_admin' THEN RETURN NULL; END IF;
+        SELECT organization_id,family_duid INTO refusal_organization,refusal_duid
+            FROM public.stewardship_recipient_refusal WHERE id=NEW.refusal_id;
+        INSERT INTO public.stewardship_audit_event
+            (id,actor_id,correlation_id,event_type,subject_id)
+        VALUES(gen_random_uuid(),NEW.actor_id,NEW.correlation_id,
+            'recipient_refusal_cleared',NEW.id);
+    ELSE
+        refusal_organization:=NEW.organization_id;
+        refusal_duid:=NEW.family_duid;
+    END IF;
     SELECT f.id INTO target_family FROM public.stewardship_family_campaign f
     JOIN public.stewardship_system_configuration r ON r.current_campaign_id=f.campaign_id
-    JOIN public.stewardship_source_current cur ON cur.organization_id=NEW.organization_id
-    WHERE f.family_duid=NEW.family_duid;
+    JOIN public.stewardship_source_current cur ON cur.organization_id=refusal_organization
+    WHERE f.family_duid=refusal_duid;
     IF target_family IS NULL THEN RETURN NULL; END IF;
     SELECT EXISTS (
         SELECT 1 FROM public.stewardship_family_campaign f
@@ -927,7 +987,7 @@ BEGIN
           AND email->'valid'='true'::jsonb
           AND NOT EXISTS (
               SELECT 1 FROM public.stewardship_recipient_refusal refusal
-              WHERE refusal.organization_id=NEW.organization_id AND refusal.family_duid=f.family_duid
+              WHERE refusal.organization_id=refusal_organization AND refusal.family_duid=f.family_duid
                 AND refusal.address=email->>'value'
                 AND NOT EXISTS(SELECT 1 FROM public.stewardship_recipient_resolution resolution
                     WHERE resolution.refusal_id=refusal.id)
@@ -944,5 +1004,8 @@ BEGIN
 END $$;
 CREATE TRIGGER stewardship_refusal_family_effect
     AFTER INSERT ON public.stewardship_recipient_refusal
+    FOR EACH ROW EXECUTE FUNCTION public.stewardship_refusal_family_effect_v1();
+CREATE TRIGGER stewardship_resolution_family_effect
+    AFTER INSERT ON public.stewardship_recipient_resolution
     FOR EACH ROW EXECUTE FUNCTION public.stewardship_refusal_family_effect_v1();
 REVOKE ALL ON FUNCTION public.stewardship_refusal_family_effect_v1() FROM PUBLIC;

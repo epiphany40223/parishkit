@@ -24,6 +24,78 @@ class Migration(migrations.Migration):
         migrations.SeparateDatabaseAndState(
             state_operations=[
                 migrations.CreateModel(
+                    name="DeliveryResolution",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, null=True, editable=False),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                default=parishkit.stewardship.observability.current_correlation,
+                                db_index=True,
+                                editable=False,
+                            ),
+                        ),
+                        ("message_id", models.UUIDField()),
+                        ("expected_version", models.PositiveBigIntegerField()),
+                        ("action", models.CharField(max_length=16)),
+                        ("evidence_note", models.CharField(max_length=2000)),
+                        ("duplicate_acknowledged", models.BooleanField(default=False)),
+                        ("previous_task_id", models.UUIDField(null=True)),
+                        ("retry_task_id", models.UUIDField(null=True)),
+                        ("preparation", models.JSONField(null=True, default=None)),
+                    ],
+                    options={
+                        "db_table": "stewardship_delivery_resolution",
+                        "indexes": [
+                            models.Index(
+                                fields=["message_id", "created_at"],
+                                name="delivery_resolution_history",
+                            )
+                        ],
+                        "constraints": [
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    action__in=(
+                                        "note",
+                                        "accept",
+                                        "resend",
+                                        "retry_failed",
+                                        "retry_unsent",
+                                    )
+                                ),
+                                name="delivery_resolution_action",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(expected_version__gt=0),
+                                name="delivery_resolution_version",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(preparation__isnull=True),
+                                name="delivery_resolution_scrubbed",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
                     name="FamilyMailPreparation",
                     fields=[
                         (
@@ -178,6 +250,10 @@ class Migration(migrations.Migration):
                         ("source_snapshot_id", models.UUIDField()),
                         ("source_generation", models.PositiveBigIntegerField()),
                         (
+                            "evidence_note",
+                            models.CharField(max_length=2000, blank=True, default=""),
+                        ),
+                        (
                             "reason",
                             models.CharField(default="source_changed", max_length=32),
                         ),
@@ -186,7 +262,15 @@ class Migration(migrations.Migration):
                         "db_table": "stewardship_recipient_resolution",
                         "constraints": [
                             models.CheckConstraint(
-                                condition=models.Q(reason="source_changed"),
+                                condition=models.Q(
+                                    reason="source_changed", evidence_note=""
+                                )
+                                | (
+                                    models.Q(
+                                        reason="verified_admin", actor_id__isnull=False
+                                    )
+                                    & ~models.Q(evidence_note="")
+                                ),
                                 name="recipient_resolution_reason",
                             ),
                             models.CheckConstraint(

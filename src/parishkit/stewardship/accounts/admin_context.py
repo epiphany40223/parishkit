@@ -49,6 +49,7 @@ def portal_chrome(request):
                 (reverse("admin:integrations"), _("Integrations")),
                 (reverse("admin:ministries"), _("Ministry activity")),
                 (reverse("admin:background"), _("Background work")),
+                (reverse("admin:deliveries"), _("Family mail")),
             ]
         )
     if campaign and allows(actor, Capability.FAMILY_CODES):
@@ -97,6 +98,7 @@ def portal_chrome(request):
             "go_live": go_live,
             "critical_count": critical_count,
             "background": counts,
+            "delivery_unknown": _delivery_unknown() if admin else None,
             # Presence has its own passive endpoint. Do not repeat its current
             # epoch/population/session reads on every ordinary Admin page.
             "presence_count": None,
@@ -107,3 +109,10 @@ def portal_chrome(request):
             ),
         }
     }
+
+
+def _delivery_unknown():
+    """Unresolved durable delivery state is the warning's single source of truth."""
+    from parishkit.stewardship.jobs.delivery_metadata import unknown_count
+
+    return unknown_count()

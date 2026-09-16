@@ -182,6 +182,9 @@ def _read(request, identifier=None, *, counts_only=False, audit=True):
             instant = database_now()
             if counts_only:
                 data, count = {"as_of": instant, "counts": _counts(instant)}, 0
+                from .delivery_metadata import unknown_count
+
+                data["delivery_unknown"] = unknown_count()
             else:
                 data, count = (
                     _listing(window, state, task_type, instant)
@@ -300,6 +303,11 @@ def task_page(request, task_id):
             "task": work["task"],
             "export_cleanup_retry_key": str(uuid4())
             if work["task"]["type"] == "report_export_cleanup"
+            and work["task"]["state"] == "failed"
+            and work["latest_run_id"] == work["task"]["id"]
+            else None,
+            "family_preparation_retry_key": str(uuid4())
+            if work["task"]["type"] == "family_mail_prepare"
             and work["task"]["state"] == "failed"
             and work["latest_run_id"] == work["task"]["id"]
             else None,

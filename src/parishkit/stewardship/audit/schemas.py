@@ -61,6 +61,7 @@ class Action(StrEnum):
     SOURCE_SUPERSEDED = "source_superseded"
     SOURCE_FALLBACK = "source_fallback_requested"
     BACKGROUND_VIEWED = "background_viewed"
+    DELIVERY_VIEWED = "delivery_viewed"
     DASHBOARD_VIEWED = "dashboard_viewed"
     PRESENCE_VIEWED = "family_presence_viewed"
     SETUP_STARTED = "setup_started"

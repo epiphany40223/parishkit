@@ -212,6 +212,13 @@ pause/close/crash drainage are implemented; explicit Admin resolution/retry,
 verified refusal clearance and durable notification remain with the next
 increment. The package checkboxes and Gate 3 remain open.
 
+PR #39 subsequently passed all 24 exact-head jobs, DCO and all 24 protected
+merge-group jobs, then merged as `9e5b6e99`, verified on fresh `origin/main`.
+Its [protected delivery receipt](../../guides/stewardship-family-mail-dispatch.md#protected-delivery)
+supersedes the pending-CI note. The next
+[Admin-resolution increment](../../guides/stewardship-family-mail-resolution.md)
+is in progress on `pr/stewardship-family-mail-resolution`.
+
 ## BG-07: Submission confirmations and Admin digests
 
 Scope and dependencies: [BG-07 work package](../../plans/stewardship/background-processing.md#bg-07-submission-confirmations-and-admin-digests).

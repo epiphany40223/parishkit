@@ -35,6 +35,7 @@ from .accounts import (
     setup_views,
     share_views,
 )
+from .jobs import delivery_views
 from .jobs import views as job_views
 from .reports import export_views
 from .responses import views as response_views
@@ -183,12 +184,37 @@ admin_patterns = [
         name="configuration_request",
     ),
     path("background", job_views.background_page, name="background"),
+    path("deliveries", delivery_views.delivery_list, name="deliveries"),
+    path("deliveries/refusals", delivery_views.refusal_list, name="delivery_refusals"),
+    path(
+        "deliveries/refusals/<uuid:refusal_id>",
+        delivery_views.refusal_detail,
+        name="delivery_refusal",
+    ),
+    path(
+        "deliveries/refusals/<uuid:refusal_id>/clear",
+        delivery_views.clear_refusal,
+        name="delivery_refusal_clear",
+    ),
+    path(
+        "deliveries/<uuid:message_id>", delivery_views.delivery_detail, name="delivery"
+    ),
+    path(
+        "deliveries/<uuid:message_id>/resolve",
+        delivery_views.resolution_command,
+        name="delivery_resolve",
+    ),
     path(
         "background/task/<uuid:task_id>",
         job_views.task_page,
         name="background_task_page",
     ),
     path("background/tasks", job_views.task_list, name="background_tasks"),
+    path(
+        "background/tasks/<uuid:task_id>/retry-family-preparation",
+        delivery_views.preparation_retry,
+        name="retry_family_preparation",
+    ),
     path(
         "background/tasks/<uuid:task_id>/retry-export-cleanup",
         export_views.retry_cleanup_command,

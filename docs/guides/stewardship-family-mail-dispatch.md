@@ -210,3 +210,18 @@ and [urllib3's wrapped-error contract](https://urllib3.readthedocs.io/en/stable/
   Markdown and the model-drift check. All three review/fix rounds are complete,
   with no accepted Medium-or-higher issue unresolved and no High/Critical in
   the final round. Final exact-head CI must pass before protected merge.
+
+## Protected delivery
+
+[PR #39](https://github.com/epiphany40223/parishkit/pull/39) merged through the
+normal protected queue on September 16, 2026, as
+`9e5b6e99d1fbfd1c33e386a46525630e9dd73f0a`, verified on freshly fetched
+`origin/main`. All 24 exact-head jobs passed at `7707af0`, including 3,148
+PostgreSQL cases and combined coverage of 94.01% lines / 85.24% branches; DCO
+also passed. All 24 merge-group jobs passed in run
+[35116575720](https://github.com/epiphany40223/parishkit/actions/runs/35116575720).
+The exact-head receipt is retained on the PR. These results supersede the
+pending-delivery notes above, not the explicitly deferred scope.
+
+The next [Admin-resolution increment](stewardship-family-mail-resolution.md)
+starts from that verified merge. BG-06 and Gate 3 remain open.

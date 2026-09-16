@@ -318,6 +318,12 @@
       if (!Number.isSafeInteger(total)) throw new Error("Invalid total");
       backgroundIndicator.querySelector("[data-background-total]").textContent = total.toLocaleString("en-US");
       backgroundIndicator.querySelector("[data-background-running]").textContent = values[4].toLocaleString("en-US");
+      const deliveryWarning = document.querySelector("[data-delivery-warning]");
+      if (deliveryWarning) {
+        if (!Number.isSafeInteger(result.delivery_unknown) || result.delivery_unknown < 0) throw new Error("Invalid delivery count");
+        deliveryWarning.querySelector("[data-delivery-unknown]").textContent = result.delivery_unknown.toLocaleString("en-US");
+        deliveryWarning.hidden = result.delivery_unknown === 0;
+      }
       if (unavailable) unavailable.hidden = true;
     } catch {
       if (unavailable) unavailable.hidden = false;

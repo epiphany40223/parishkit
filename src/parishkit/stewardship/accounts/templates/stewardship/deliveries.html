@@ -1,0 +1,23 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Family mail" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Family mail" %}</h1>
+<p>{% translate "Opening or refreshing this status page does not extend your login session." %}</p>
+<p><a href="{% url 'admin:delivery_refusals' %}">{% translate "Review refused addresses" %}</a></p>
+<form method="get" class="panel">
+  <label for="delivery-state">{% translate "Delivery state" %}</label>
+  <select name="state" id="delivery-state">{% for state, label in states %}<option value="{{ state }}"{% if state == selected_state %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+  <label for="delivery-query">{% translate "Exact Family DUID or delivery ID" %}</label>
+  <input id="delivery-query" name="q" value="{{ query }}" maxlength="64">
+  <button type="submit">{% translate "Show deliveries" %}</button>
+</form>
+{% for delivery in deliveries %}
+<section class="panel">
+  <h2><a href="{% url 'admin:delivery' delivery.id %}">{% translate "Family DUID" %} {{ delivery.family__family_duid|number }}</a></h2>
+  <p>{{ delivery.purpose }} · {{ delivery.mode }} · {{ delivery.state }}</p>
+  <p>{% translate "Provider attempts:" %} {{ delivery.attempt|number }}</p>
+  <p>{% translate "Last changed:" %} <time datetime="{{ delivery.updated_at|instant }}" data-local-instant>{{ delivery.updated_at|instant }}</time></p>
+</section>
+{% empty %}<p class="panel">{% translate "No deliveries match this view." %}</p>{% endfor %}
+{% if next_query %}<a href="?{{ next_query }}">{% translate "Next page" %}</a>{% endif %}
+{% endblock %}

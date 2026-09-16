@@ -46,12 +46,17 @@ class RecipientRefusalResolution(ImmutableRecord):
     source_snapshot_id = models.UUIDField()
     source_generation = models.PositiveBigIntegerField()
     reason = models.CharField(max_length=32, default="source_changed")
+    evidence_note = models.CharField(max_length=2000, blank=True, default="")
 
     class Meta:
         db_table = "stewardship_recipient_resolution"
         constraints = [
             models.CheckConstraint(
-                condition=models.Q(reason="source_changed"),
+                condition=models.Q(reason="source_changed", evidence_note="")
+                | (
+                    models.Q(reason="verified_admin", actor_id__isnull=False)
+                    & ~models.Q(evidence_note="")
+                ),
                 name="recipient_resolution_reason",
             ),
             models.CheckConstraint(
