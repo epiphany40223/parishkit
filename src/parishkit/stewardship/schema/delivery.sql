@@ -802,6 +802,7 @@ BEGIN
        OR e.reason IS DISTINCT FROM 'smtp_'||(result->>'status')
        OR NOT EXISTS (SELECT 1 FROM (VALUES
            ('accepted','delivered'),('transient','retry_wait'),
+           ('unavailable','retry_wait'),('unavailable','permanent_failure'),
            ('transient','permanent_failure'),('permanent','permanent_failure'),
            ('delivery_unknown','delivery_unknown'),('systemic','permanent_failure')
        ) pair(status,state) WHERE pair.status=result->>'status' AND pair.state=e.state)

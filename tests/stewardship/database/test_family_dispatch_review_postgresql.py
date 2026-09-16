@@ -75,7 +75,9 @@ def test_resume_between_metadata_checks_cannot_commit_submission(
     assert worker.preparation_attempts(_status(task)) == 0
 
 
-@pytest.mark.parametrize("fault", ["fingerprint", "configuration", "hold", "deadline"])
+@pytest.mark.parametrize(
+    "fault", ["fingerprint", "configuration", "hold", "deadline", "clock"]
+)
 def test_pre_provider_failures_remain_definitively_unsent(
     dispatch_worker,  # noqa: F811
     monkeypatch,
@@ -104,6 +106,12 @@ def test_pre_provider_failures_remain_definitively_unsent(
 
     monkeypatch.setattr(worker, "begin_submission", altered)
     monkeypatch.setattr(worker, "submit_family", forbidden)
+    if fault == "clock":
+
+        def broken_clock():
+            raise OSError("Synthetic pre-launch clock failure")
+
+        monkeypatch.setattr(worker, "database_now", broken_clock)
     if fault == "hold":
         monkeypatch.setattr(worker, "MAX_ATTEMPTS", 1)
     if fault == "fingerprint":
@@ -113,8 +121,10 @@ def test_pre_provider_failures_remain_definitively_unsent(
         deliver(harness, path, message)
     message.refresh_from_db()
     assert not calls
-    assert message.state == ("retry_wait" if fault == "deadline" else "pending")
-    assert message.attempt == int(fault == "deadline")
+    assert message.state == (
+        "retry_wait" if fault in {"deadline", "clock"} else "pending"
+    )
+    assert message.attempt == int(fault in {"deadline", "clock"})
     task = TaskRun.objects.get(pk=message.task_id)
     assert task.state == "retry_wait"
     if fault in {"hold", "configuration"}:
@@ -267,3 +277,65 @@ def test_mail_sql_cannot_submit_without_live_dispatch_claim(dispatch_worker):  #
             )
     message.refresh_from_db()
     assert message.state == "pending" and message.attempt == 0
+
+
+@pytest.mark.parametrize("crashed", [False, True])
+def test_recovered_and_ordinary_holds_do_not_consume_failure_budget(
+    dispatch_worker,  # noqa: F811
+    crashed,
+):
+    """A hold's immutable phase survives recovery; a later real failure counts."""
+    from parishkit.stewardship.jobs.phases import TaskPhase
+
+    from .test_taskrun_postgresql import act, expire
+
+    harness, _ = dispatch_worker
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(harness)
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            claim(message)
+        running = _status(TaskRun.objects.get(pk=message.task_id))
+        held = act(running, "progress", progress=(0, 0), phase=TaskPhase.RECONCILING)
+        assert worker.preparation_attempts(held) == 0
+        if crashed:
+            held = expire(act(held, "heartbeat", lease_seconds=1))
+            assert worker.preparation_attempts(held) == 0
+            with task_login(ServiceRole.MAIL_DISPATCH, exact=True), work_transaction():
+                assert worker.recovery_plan(held).action == "recovery_retry"
+        waiting = act(held, "recovery_retry" if crashed else "retryable_failure")
+        assert worker.preparation_attempts(waiting) == 0
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_sleep(1.05)")
+        retried = act(waiting, "claim")
+        assert retried.phase is TaskPhase.STARTING
+        assert worker.preparation_attempts(retried) == 1
+        failed = act(retried, "retryable_failure")
+        assert worker.preparation_attempts(failed) == 1
+
+
+def test_shared_outage_cooldown_blocks_new_family_admission(
+    dispatch_worker,  # noqa: F811
+    monkeypatch,
+):
+    """A real unavailable receipt survives while other Families wait to probe."""
+    harness, path = dispatch_worker
+    clock = [100.0]
+    monkeypatch.setattr(worker, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        worker,
+        "submit_family",
+        lambda *a, **kw: FamilyDeliveryResult(Status.UNAVAILABLE, 1),
+    )
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(harness)
+        owner = deliver(harness, path, message)
+    message.refresh_from_db()
+    assert message.state == "retry_wait"
+    monkeypatch.setattr(
+        worker, "bound_dispatch", lambda status: SimpleNamespace(state="pending")
+    )
+    monkeypatch.setattr(worker, "disposition", lambda row: None)
+    monkeypatch.setattr(worker, "mail_authority", lambda store: None)
+    assert owner.admit("hint", None) is False
+    clock[0] += 60
+    assert owner.admit("hint", None) is True

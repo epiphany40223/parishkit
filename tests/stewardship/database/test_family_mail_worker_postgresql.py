@@ -108,6 +108,7 @@ def test_installed_worker_commits_before_exactly_one_provider_call(
         == {
             Status.ACCEPTED: "succeeded",
             Status.TRANSIENT: "retry_wait",
+            Status.UNAVAILABLE: "retry_wait",
             Status.PERMANENT: "failed",
             Status.UNKNOWN: "failed",
             Status.SYSTEMIC: "failed",

@@ -45,11 +45,11 @@ def submit_family(value, settings, mail, *, seconds, check):
             },
             ensure_ascii=False,
         ).encode("utf-8")
-        if len(payload) > MAX_INPUT:
-            raise ValueError("Family submission exceeds the private transport bound.")
     except (ValueError, TypeError):
         # This try block performs no IO. Do not relabel a deterministic local
         # rejection as possible SMTP acceptance, or suppress an untested address.
+        return FamilyDeliveryResult(FamilyDeliveryStatus.SYSTEMIC, count)
+    if len(payload) > MAX_INPUT:
         return FamilyDeliveryResult(FamilyDeliveryStatus.PERMANENT, count)
 
     def decode(output):

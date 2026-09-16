@@ -3,7 +3,8 @@
 import logging
 from functools import partial
 from pathlib import Path
-from threading import Event
+from threading import Event, Lock
+from time import monotonic
 from uuid import uuid4
 
 from django.db import connection, connections
@@ -39,10 +40,49 @@ from .storage import _status
 LOG = logging.getLogger(__name__)
 
 
+class DeliveryHealth:
+    """Bound shared-outage probes across Families within this worker lifetime.
+
+    A known temporary handshake outage waits a minute before another probe;
+    three consecutive outages stop the run. No cooldown changes durable mail
+    outcomes or prevents settling work already in flight. Restart resets this
+    process-local circuit; durable Admin escalation belongs to BG-10.
+    """
+
+    def __init__(self):
+        """Keep circuit state shared by all dispatches using this handler."""
+        self.halted = Event()
+        self.lock = Lock()
+        self.failures = 0
+        self.probe_after = 0.0
+
+    def is_set(self):
+        """Admission alone observes the circuit; draining never consults it."""
+        with self.lock:
+            return self.halted.is_set() or monotonic() < self.probe_after
+
+    def observe(self, status):
+        """Return true when a shared failure newly stops this sending run."""
+        with self.lock:
+            if status is FamilyDeliveryStatus.UNAVAILABLE:
+                self.failures += 1
+                self.probe_after = monotonic() + 60
+            else:
+                self.failures = 0
+                self.probe_after = 0.0
+            if status is FamilyDeliveryStatus.SYSTEMIC or self.failures >= 3:
+                newly_halted = not self.halted.is_set()
+                self.halted.set()
+                return newly_halted
+        return False
+
+
 def preparation_attempts(status):
     """Exclude journaled admission holds from the bounded pre-provider budget."""
     held = TaskRunEvent.objects.filter(
-        run_id=status.run_id, action="retryable_failure", phase=TaskPhase.RECONCILING
+        run_id=status.run_id,
+        action__in=("retryable_failure", "recovery_retry"),
+        phase=TaskPhase.RECONCILING,
     ).count()
     current_hold = (
         status.state in {"running", "abandoned"}
@@ -140,7 +180,7 @@ def delivery_handler(
     """Schedulers own metadata only; mounted private keys stay in the mail worker."""
     if not scheduler and not isinstance(credential_path, Path):
         raise TypeError("Family dispatch requires an installed Workspace path.")
-    halted = Event()
+    halted = DeliveryHealth()
     return Handler(
         queue=WorkQueue.MAIL,
         admit=partial(admit_task, store=store, halted=halted),
@@ -176,6 +216,7 @@ def _execute(execution, *, private, public_origin, credential_path, halted):
     if connection.in_atomic_block or not execution.control.active:
         raise StorageInvariantError("Family mail requires maintained worker lifetime.")
     submitted = False
+    launched = False
     message = None
     try:
         with execution.effect():
@@ -240,6 +281,7 @@ def _execute(execution, *, private, public_origin, credential_path, halted):
             FamilyDeliveryStatus.TRANSIENT, len(mail.recipients)
         )
         if remaining > 0:
+            launched = True
             result = submit_family(
                 candidate,
                 settings,
@@ -267,11 +309,13 @@ def _execute(execution, *, private, public_origin, credential_path, halted):
                 )
             return
         result = FamilyDeliveryResult(
-            FamilyDeliveryStatus.UNKNOWN, len(mail.recipients)
+            FamilyDeliveryStatus.UNKNOWN
+            if launched
+            else FamilyDeliveryStatus.TRANSIENT,
+            len(mail.recipients),
         )
     status = finish_submission(message.pk, execution.claim, result)
-    if result.status is FamilyDeliveryStatus.SYSTEMIC:
-        halted.set()
+    if halted.observe(result.status):
         LOG.critical("Family mail provider is unavailable; further sending is stopped.")
     if status.state.value == "retry_wait":
         execution.transition("retryable_failure", retry_seconds=retry_delay(attempt))

@@ -53,6 +53,7 @@ def event_result(event):
         states = {
             "accepted": {"delivered"},
             "transient": {"retry_wait", "permanent_failure"},
+            "unavailable": {"retry_wait", "permanent_failure"},
             "permanent": {"permanent_failure"},
             "delivery_unknown": {"delivery_unknown"},
             "systemic": {"permanent_failure"},

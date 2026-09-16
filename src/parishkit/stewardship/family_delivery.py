@@ -31,6 +31,7 @@ class FamilyDeliveryStatus(StrEnum):
 
     ACCEPTED = "accepted"
     TRANSIENT = "transient"
+    UNAVAILABLE = "unavailable"
     PERMANENT = "permanent"
     UNKNOWN = "delivery_unknown"
     SYSTEMIC = "systemic"
@@ -223,6 +224,7 @@ def _submit(smtp, mail):
         return FamilyDeliveryResult(status, count, tuple(permanent), tuple(transient))
 
     uncertain = False
+    stage = "content"
     try:
         addresses = (mail.sender, mail.reply_to, *mail.recipients)
         international = any(not address.isascii() for address in addresses)
@@ -240,9 +242,11 @@ def _submit(smtp, mail):
             )
         )
         options = ["SMTPUTF8", "BODY=8BITMIME"] if international else []
+        stage = "mail"
         code = _reply(smtp.mail(mail.sender, options=options))
         if code != 250:
             return result(_handshake_failure(code))
+        stage = "rcpt"
         for index, address in enumerate(mail.recipients):
             code = _reply(smtp.rcpt(address))
             if code in (250, 251):
@@ -252,7 +256,7 @@ def _submit(smtp, mail):
             elif 500 <= code <= 599:
                 permanent.append(index)
             else:
-                return result(FamilyDeliveryStatus.PERMANENT)
+                return result(FamilyDeliveryStatus.TRANSIENT)
         if len(permanent) + len(transient) == count:
             return result(
                 FamilyDeliveryStatus.TRANSIENT
@@ -276,10 +280,12 @@ def _submit(smtp, mail):
             if 500 <= code <= 599:
                 return result(FamilyDeliveryStatus.PERMANENT)
         return result(FamilyDeliveryStatus.UNKNOWN)
-    except Exception:
+    except Exception as error:
         return result(
             FamilyDeliveryStatus.UNKNOWN
             if uncertain
+            else _connection_failure(error)
+            if stage == "mail"
             else FamilyDeliveryStatus.TRANSIENT
         )
 
@@ -305,6 +311,8 @@ def deliver_family(
     try:
         with session_factory() as session:
             credentials = _credentials(value, settings, session)
+    except (ssl.SSLError, requests.exceptions.SSLError):
+        return FamilyDeliveryResult(FamilyDeliveryStatus.SYSTEMIC, len(mail.recipients))
     except (
         OSError,
         requests.RequestException,
@@ -312,27 +320,28 @@ def deliver_family(
         CredentialValidationUnavailable,
     ):
         return FamilyDeliveryResult(
-            FamilyDeliveryStatus.TRANSIENT, len(mail.recipients)
+            FamilyDeliveryStatus.UNAVAILABLE, len(mail.recipients)
         )
     except RefreshError as error:
         return FamilyDeliveryResult(
-            FamilyDeliveryStatus.TRANSIENT
+            FamilyDeliveryStatus.UNAVAILABLE
             if error.retryable
             else FamilyDeliveryStatus.SYSTEMIC,
             len(mail.recipients),
         )
     except Exception:
         return FamilyDeliveryResult(FamilyDeliveryStatus.SYSTEMIC, len(mail.recipients))
-    result = FamilyDeliveryResult(FamilyDeliveryStatus.TRANSIENT, len(mail.recipients))
+    result = None
     try:
         with smtp_factory(
             "smtp.gmail.com", 465, timeout=10, context=ssl.create_default_context()
         ) as smtp:
             code = _reply(smtp.ehlo())
             if code != 250:
-                return FamilyDeliveryResult(
+                result = FamilyDeliveryResult(
                     _handshake_failure(code), len(mail.recipients)
                 )
+                return result
             code = _reply(
                 smtp.docmd(
                     "AUTH",
@@ -341,19 +350,40 @@ def deliver_family(
                 )
             )
             if code != 235:
-                return FamilyDeliveryResult(
+                result = FamilyDeliveryResult(
                     _handshake_failure(code), len(mail.recipients)
                 )
+                return result
             result = _submit(smtp, mail)
-    except Exception:
-        pass
+    except Exception as error:
+        # Once _submit has returned, even a QUIT failure cannot erase its
+        # definitive DATA/refusal evidence. Earlier failures are shared faults.
+        if result is None:
+            result = FamilyDeliveryResult(
+                _connection_failure(error), len(mail.recipients)
+            )
     return result
 
 
 def _handshake_failure(code):
     """Temporary server replies before DATA are safe to retry, not global halts."""
     return (
-        FamilyDeliveryStatus.TRANSIENT
+        FamilyDeliveryStatus.UNAVAILABLE
         if 400 <= code <= 499
         else FamilyDeliveryStatus.SYSTEMIC
     )
+
+
+def _connection_failure(error):
+    """Separate temporary shared outages from deterministic TLS/protocol faults."""
+    if isinstance(error, ssl.SSLError):
+        return FamilyDeliveryStatus.SYSTEMIC
+    if isinstance(error, smtplib.SMTPResponseException):
+        return (
+            _handshake_failure(error.smtp_code)
+            if type(error.smtp_code) is int
+            else FamilyDeliveryStatus.SYSTEMIC
+        )
+    if isinstance(error, (smtplib.SMTPServerDisconnected, OSError)):
+        return FamilyDeliveryStatus.UNAVAILABLE
+    return FamilyDeliveryStatus.SYSTEMIC

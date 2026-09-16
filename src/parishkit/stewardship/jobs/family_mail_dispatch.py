@@ -365,6 +365,7 @@ def finish_submission(identifier, claim, result):
             FamilyDeliveryStatus.PERMANENT: DeliveryAction.FAIL_UNACCEPTED,
             FamilyDeliveryStatus.SYSTEMIC: DeliveryAction.FAIL_UNACCEPTED,
             FamilyDeliveryStatus.TRANSIENT: DeliveryAction.RETRY_UNACCEPTED,
+            FamilyDeliveryStatus.UNAVAILABLE: DeliveryAction.RETRY_UNACCEPTED,
         }[result.status]
         row = ScheduleOccurrence.objects.get(pk=message.semantic_key)
         # Record definitive non-acceptance even when the original scope no longer

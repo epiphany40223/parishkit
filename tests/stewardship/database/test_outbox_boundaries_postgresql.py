@@ -446,7 +446,7 @@ def test_actual_runtime_grants_do_not_expose_generic_delivery_mutation(
                             "worker_id",
                         }
             with (
-                pytest.raises((ProgrammingError, IntegrityError)),
+                pytest.raises((ProgrammingError, IntegrityError)) as denied,
                 transaction.atomic(),
                 connection.cursor() as cursor,
             ):
@@ -464,6 +464,12 @@ def test_actual_runtime_grants_do_not_expose_generic_delivery_mutation(
                         f'UPDATE "{table}" SET actor_id=%s WHERE id=%s',
                         [uuid4(), first.message_id],
                     )
+            assert denied.value.__cause__.sqlstate == (
+                "23514"
+                if role is ServiceRole.MAIL_DISPATCH
+                and table == "stewardship_outbox_message"
+                else "42501"
+            )
     finally:
         with connection.cursor() as cursor:
             cursor.execute(f'DROP OWNED BY "{name}"')

@@ -56,6 +56,7 @@ def observed(harness, result, *, mode="production", corrupt=False):
     action = {
         Status.ACCEPTED: DeliveryAction.ACCEPT,
         Status.TRANSIENT: DeliveryAction.RETRY_UNACCEPTED,
+        Status.UNAVAILABLE: DeliveryAction.RETRY_UNACCEPTED,
         Status.PERMANENT: DeliveryAction.FAIL_UNACCEPTED,
         Status.SYSTEMIC: DeliveryAction.FAIL_UNACCEPTED,
         Status.UNKNOWN: DeliveryAction.MARK_UNKNOWN,
@@ -127,6 +128,21 @@ def test_transient_address_refusal_never_suppresses(response_service):
         event = observed(
             harness, FamilyDeliveryResult(Status.TRANSIENT, 2, transient=(0, 1))
         )
+        with pytest.raises(PermissionError, match="definitive delivery"):
+            remember(event)
+        assert not RecipientRefusal.objects.exists()
+
+
+def test_shared_outage_evidence_roundtrips_without_recipient_refusal(response_service):
+    """Python and the SQL evidence decoder agree on known shared non-acceptance."""
+    harness = activate_response_service(response_service)
+    with campaign_clock(harness.campaign.active_configuration.starts_at):
+        result = FamilyDeliveryResult(Status.UNAVAILABLE, 2)
+        event = observed(harness, result)
+        assert event.state == "retry_wait" and event_result(event) == result
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT stewardship_family_smtp_result_v1(%s)", [event.pk])
+            assert cursor.fetchone()[0] is not None
         with pytest.raises(PermissionError, match="definitive delivery"):
             remember(event)
         assert not RecipientRefusal.objects.exists()

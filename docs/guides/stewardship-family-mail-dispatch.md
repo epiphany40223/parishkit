@@ -16,6 +16,9 @@ tests or Production activation before the controlling gate.
 The following coherent increment owns the Admin delivery-resolution and
 verified-refusal-clear workflows: external-evidence resolution, explicit
 duplicate-risk resend, failed-message retry and durable portal notification.
+Failed-task retry also owns an unsent pending message whose preparation Task
+exhausted its budget. That row retains its occurrence and failure journal for
+an explicit linked retry; it is not silently skipped or automatically resent.
 Those actions remain unavailable, never inferred from an uncertain SMTP
 acknowledgement. The full BG-06 checklist stays open until that integration and
 its acceptance tests are complete. BG-10 retains operational escalation;
@@ -44,10 +47,22 @@ ADM-06 retains the broader campaign-control UI. Gate 3 remains closed.
   changes. Terminal outbox transitions scrub message substitutions; uncertainty
   retains them and blocks automatic resend. Task abandonment plus elapsed
   provider deadline is uncertainty, not proof of non-acceptance.
+- Shared temporary token/connection/handshake failures retain a definite-unsent
+  retry outcome and impose a 60-second process-wide new-send cooldown. Three
+  consecutive shared outages stop that sending run and log CRITICAL. An
+  observed non-shared result resets the consecutive-failure count; it cannot
+  undo an existing halt. Deterministic shared TLS/configuration/protocol faults
+  stop immediately. Restart resets this process-owned circuit; BG-10 owns
+  durable operational escalation. Already-submitted outcomes can always drain.
+- Without SMTPUTF8, an unsupported Family address fails only that Family's
+  message, with no fabricated RCPT refusal. The adapter does not silently remove
+  a configured recipient to deliver an ASCII subset. The next Admin resolution
+  increment owns retry after correcting the address or provider capability.
+  Unsupported shared sender/Reply-To headers instead stop the sending run.
 
 Implementation and acceptance coverage are in progress. Final validation and
-the required review cycle are not complete. All checks use synthetic providers and owned
-disposable databases; existing development databases are untouched.
+the required review cycle are not complete. All checks use synthetic providers
+and owned disposable databases; existing development databases are untouched.
 
 ## Fresh-install schema evidence
 
@@ -75,12 +90,9 @@ Round 1, Pika `20260916-095640-8749e8`, reviewed the full branch from
 `8b2453ab7dcb286ba6ce01aea992d8dabe5d53b5`). Exact-path permission preflight
 passed; both Claude shards and Codex completed without degradation. There were
 20 raw findings: one High, seven Medium and 12 Low. All are dispositioned here,
-including the 12 below Pika's displayed cutoff. Post-fix validation passed:
-112 provider/private-transport tests, 73 affected database cases, a final
-59-case dispatch database batch, and 5,908 credential-free baseline tests.
-Ruff check/format and this guide's Markdown lint also passed. This completes
-round 1; the High finding was fixed and subsequent independent rounds remain
-required.
+including the 12 below Pika's displayed cutoff. This completes round 1; the
+High finding was fixed and subsequent independent rounds remain required.
+Exact-head validation receipts are listed separately below.
 
 | Source/order | Raw severity | Disposition |
 | --- | --- | --- |
@@ -103,17 +115,52 @@ required.
 | Codex 1 | Medium | Fixed with Claude 2/1: temporary MAIL refusal is definitely unsent and retryable. |
 | Codex 2 | Medium | Fixed: abandoned unsent work honors the preparation failure budget, excluding journaled admission holds. |
 | Codex 3 | Low | Fixed: Reply-To participates in SMTPUTF8 negotiation; seven-bit body encoding avoids unadvertised raw eight-bit content. |
-| Codex 4 | Low | Rejected: RFC 5321 section 4.3.2 lists RCPT success as 250/251; 252 belongs to VRFY/EXPN. No DATA is sent for an unexpected RCPT response, and it now fails only that message rather than halting the worker. |
+| Codex 4 | Low | Rejected: RFC 5321 section 4.3.2 lists RCPT success as 250/251; 252 belongs to VRFY/EXPN. No DATA is sent for an unexpected RCPT response. Round 2 further classifies it as a bounded per-message retry, not a shared halt. |
 
 The SMTP classifications and Unicode serialization were checked against
 [RFC 5321 command/reply sequences](https://www.rfc-editor.org/rfc/rfc5321.html#section-4.3.2)
 and [Python email policy](https://docs.python.org/3/library/email.policy.html#email.policy.Policy.cte_type).
 
-Round-1 correction checks so far: 112 provider/private-transport tests and 73
-real database worker/affected permission tests passed. The first full eight-shard
-run exercised all 3,125 database cases but failed five outdated assertions about
-the newly compiled MAIL grant surface; all five now pass in the affected batch.
-Its successful credential-free baseline had 5,888 passes. That failed full run
-is diagnostic evidence only, not a passing coverage receipt. Image build,
-12 container-isolation checks, 17 runtime/provisioning/ingress/broker checks and
-one fake-backed configured Compose startup scenario passed on the initial head.
+Round 2, Pika `20260916-102413-01fd55`, reviewed corrections from `92db222`
+through `be5bbc1c3faf5f44d8da13b329fe28518e5b5175` (tree
+`98843fa5e744aac3b9174d3488aefe747a3c9c53`). Exact-path permission preflight
+passed; Claude and Codex completed without degradation. All 13 raw findings
+(six Medium and seven Low, no High) are dispositioned below. The read-only
+Codex reviewer could not run pytest without writable temporary storage; the
+independent validation runs below supply executable evidence.
+
+| Source/order | Raw severity | Disposition |
+| --- | --- | --- |
+| Claude 1 | Medium | Fixed with Codex 2: distinct durable-submission and helper-launch flags retain definite non-acceptance for a pre-launch clock/settings failure; real-worker regression. |
+| Claude 2 | Medium | Fixed: shared settings/credential/invocation validation failures are systemic; only a message's transport-size overflow is per-message permanent failure. |
+| Claude 3 | Medium | Fixed: explicit shared-unavailable result, 60-second circuit cooldown and three-consecutive-outage run halt; deterministic TLS/protocol failures halt immediately. Durable evidence and actual-worker admission tests cover the new outcome. |
+| Claude 4 | Low | Clarified ownership: the following Admin-resolution increment owns explicit linked retry of failed preparation Tasks and their retained pending messages. An unsent crash is not fabricated provider failure or silent cancellation. |
+| Claude 5 | Low | Fixed: unexpected RCPT replies are definitely unsent bounded retries without invented address-refusal evidence. |
+| Claude 6 | Low | Retained and documented the one-Family-envelope choice: never silently omit a configured recipient. Added the missing unsupported shared-header regression. |
+| Claude 7 | Low | Fixed with Codex 1: real crash-after-hold and hold-followed-by-failure tests verify immutable phase accounting and claim reset. |
+| Claude 8 | Low | Fixed: negative mutation probes assert SQLSTATE 23514 only for the compiled MAIL outbox write, otherwise 42501. |
+| Claude 9 | Low | Fixed: validation receipts below name their exact heads and distinguish failed diagnostics from passing full coverage. |
+| Claude 10 | Low | Fixed: rewrapped the paragraph consistently. |
+| Codex 1 | Medium | Fixed: reconciliation-phase recovery_retry events count as held attempts, alongside ordinary retryable_failure holds. |
+| Codex 2 | Medium | Duplicate of Claude 1; same launch-certainty fix and real-worker clock-failure regression. |
+| Codex 3 | Medium | Fixed: explicit TLS, response-bearing exception and malformed-reply classification; observed protocol outcomes survive a failing QUIT. |
+
+## Validation receipts
+
+- Initial head `92db222`: image build, 12 container-isolation checks, 17
+  runtime/provisioning/ingress/broker checks and one fake-backed configured
+  Compose startup passed. The initial full database run failed five outdated
+  grant assertions among 3,125 cases; its 5,888-pass baseline is diagnostic
+  evidence only, not a passing full-run receipt.
+- Round-1 correction head `be5bbc1`: 112 provider/private-transport tests, 73
+  affected database cases and a separate 59-case dispatch batch passed. The
+  full credential-free baseline passed 5,908 tests. All 3,134 database cases
+  passed across eight shards, and verified combined stewardship coverage was
+  93.99% lines / 85.20% branches. Ruff check/format and tracked Markdown passed.
+- Round-2 corrections: 97 provider/private-transport/circuit tests, 90 affected
+  real-database cases and 5,924 credential-free baseline tests passed. Ruff
+  check/format and guide Markdown passed. Full final-head validation remains
+  pending. The independent empty-database schema comparison was repeated after
+  adding the shared-unavailable result;
+  the reference still matches PR #38 and the same 401-function/409-trigger
+  catalog surface remains, with only the result decoder's body changed.

@@ -146,4 +146,6 @@ def test_local_validation_failure_never_becomes_uncertain(monkeypatch, mutation)
         seconds=0 if mutation == "seconds" else 5,
         check=lambda: None,
     )
-    assert result == FamilyDeliveryResult(Status.PERMANENT, 2)
+    assert result == FamilyDeliveryResult(
+        Status.PERMANENT if mutation == "size" else Status.SYSTEMIC, 2
+    )

@@ -1,6 +1,7 @@
 """Credential-free multi-recipient SMTP boundaries and refusal classification."""
 
 import smtplib
+import ssl
 from contextlib import nullcontext
 from dataclasses import replace
 from types import SimpleNamespace
@@ -46,6 +47,7 @@ def delivery(
     mail=None,
     international=False,
     credential_error=None,
+    smtp_error=None,
 ):
     """Inject replies or failure at exact protocol boundaries, without network IO."""
     seen = []
@@ -78,6 +80,8 @@ def delivery(
             """TLS endpoint and timeout remain compiled, not provider input."""
             assert (host, port, kwargs["timeout"]) == ("smtp.gmail.com", 465, 10)
             assert kwargs["context"].check_hostname
+            if smtp_error is not None:
+                raise smtp_error
             self.addresses = []
 
         def __enter__(self):
@@ -155,9 +159,9 @@ def test_all_refused_never_submits_data(monkeypatch, first, second, status):
 @pytest.mark.parametrize(
     "step,status",
     [
-        ("ehlo", Status.TRANSIENT),
-        ("auth", Status.TRANSIENT),
-        ("mail", Status.TRANSIENT),
+        ("ehlo", Status.UNAVAILABLE),
+        ("auth", Status.UNAVAILABLE),
+        ("mail", Status.UNAVAILABLE),
         ("rcpt0", Status.TRANSIENT),
         ("rcpt1", Status.TRANSIENT),
         ("data", Status.UNKNOWN),
@@ -193,7 +197,7 @@ def test_data_reply_preserves_refusals_and_survives_quit(monkeypatch, code, stat
 def test_invalid_handshake_stops_before_data(monkeypatch, stage):
     """Unexpected statuses are not fabricated as address-specific refusals."""
     result, seen = delivery(monkeypatch, replies={stage: 299})
-    assert result.status is (Status.PERMANENT if stage == "rcpt0" else Status.SYSTEMIC)
+    assert result.status is (Status.TRANSIENT if stage == "rcpt0" else Status.SYSTEMIC)
     assert "data" not in seen
 
 
@@ -261,7 +265,7 @@ def test_data_exception_with_definitive_code_is_not_unknown(monkeypatch, code, s
 def test_temporary_handshake_reply_retries_without_halting(monkeypatch, stage, code):
     """No DATA was sent; short provider outages cannot permanently fail a Family."""
     result, seen = delivery(monkeypatch, replies={stage: code})
-    assert result.status is Status.TRANSIENT and "data" not in seen
+    assert result.status is Status.UNAVAILABLE and "data" not in seen
 
 
 @pytest.mark.parametrize("retryable", [False, True])
@@ -273,13 +277,13 @@ def test_token_refusal_distinguishes_retryable_provider_failure(monkeypatch, ret
         monkeypatch, credential_error=RefreshError("private", retryable=retryable)
     )
     assert not seen
-    assert result.status is (Status.TRANSIENT if retryable else Status.SYSTEMIC)
+    assert result.status is (Status.UNAVAILABLE if retryable else Status.SYSTEMIC)
 
 
 def test_token_timeout_is_definitively_unsent(monkeypatch):
     """Token exchange precedes SMTP, so its timeout needs no duplicate-risk review."""
     result, seen = delivery(monkeypatch, credential_error=TimeoutError("private"))
-    assert not seen and result.status is Status.TRANSIENT
+    assert not seen and result.status is Status.UNAVAILABLE
 
 
 @pytest.mark.parametrize("international", [False, True])
@@ -304,3 +308,54 @@ def test_unicode_reply_to_participates_in_utf8_negotiation(monkeypatch):
     mail = replace(sample(), reply_to="reply@éxample.org")
     result, seen = delivery(monkeypatch, mail=mail, international=True)
     assert result.status is Status.ACCEPTED and "data" in seen
+
+
+@pytest.mark.parametrize(
+    "error,status",
+    [
+        (TimeoutError("private"), Status.UNAVAILABLE),
+        (ssl.SSLCertVerificationError("private"), Status.SYSTEMIC),
+        (smtplib.SMTPConnectError(421, b"private"), Status.UNAVAILABLE),
+        (smtplib.SMTPConnectError(554, b"private"), Status.SYSTEMIC),
+        (smtplib.SMTPServerDisconnected("private"), Status.UNAVAILABLE),
+        (ValueError("private"), Status.SYSTEMIC),
+    ],
+)
+def test_shared_connection_failures_have_explicit_classification(
+    monkeypatch, error, status
+):
+    """A broken shared TLS/protocol configuration must stop the sending run."""
+    result, seen = delivery(monkeypatch, smtp_error=error)
+    assert result.status is status and not seen
+
+
+@pytest.mark.parametrize("stage", ["ehlo", "auth"])
+def test_malformed_handshake_reply_is_systemic(monkeypatch, stage):
+    """A malformed shared reply is not a recipient-specific retryable refusal."""
+    result, seen = delivery(monkeypatch, replies={stage: "invalid"})
+    assert result.status is Status.SYSTEMIC and "data" not in seen
+
+
+@pytest.mark.parametrize("stage", ["ehlo", "auth", "mail"])
+def test_quit_cannot_hide_definitive_shared_refusal(monkeypatch, stage):
+    """The observed shared refusal survives a subsequent broken connection."""
+    result, seen = delivery(monkeypatch, replies={stage: 554}, quit_error=True)
+    assert result.status is Status.SYSTEMIC and "data" not in seen
+
+
+def test_unicode_shared_header_without_extension_is_systemic(monkeypatch):
+    """Unlike a Family-specific address, the configured header affects all mail."""
+    result, seen = delivery(
+        monkeypatch, mail=replace(sample(), reply_to="reply@éxample.org")
+    )
+    assert result.status is Status.SYSTEMIC and not seen[2:]
+
+
+def test_token_certificate_failure_is_not_a_temporary_outage(monkeypatch):
+    """TLS validation is shared configuration evidence, never Family refusal."""
+    import requests
+
+    result, seen = delivery(
+        monkeypatch, credential_error=requests.exceptions.SSLError("private")
+    )
+    assert result.status is Status.SYSTEMIC and not seen
