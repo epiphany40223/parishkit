@@ -426,6 +426,15 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
     # ARC-05 intentionally deletes invalidated rehearsal detail, retaining the
     # separate anonymous code reservation forever. It is not append-only data.
     retention_exceptions = {"stewardship_rehearsal_code_mac": "retention"}
+    # Recovery edges reuse the same unconditional append-only guard as catch-up
+    # checkpoints. Verify its exact enabled trigger/function/body, not an
+    # exception from SQL immutability merely because the shared name differs.
+    shared_immutable_guards = {
+        "stewardship_recovery_replacement": (
+            "recovery_replacement_immutable",
+            "stewardship_catchup_checkpoint_immutable_v1",
+        )
+    }
     cleanup_retention_contracts = {
         "stewardship_outbox_render": "outbox_renders",
         "stewardship_outbox_event": "outbox_events",
@@ -516,17 +525,21 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                 assert "RAISE EXCEPTION" in row[2] and evidence in row[2], table
                 continue
             contract = retention_exceptions.get(table, "immutable")
+            trigger, function = shared_immutable_guards.get(
+                table,
+                (f"{table}_{contract}_guard_v1", f"{table}_{contract}_v1"),
+            )
             cursor.execute(
                 "SELECT p.proname, t.tgtype, pg_get_functiondef(p.oid) "
                 "FROM pg_trigger t "
                 "JOIN pg_proc p ON p.oid = t.tgfoid "
                 "WHERE t.tgrelid = %s::regclass AND t.tgname = %s "
                 "AND t.tgenabled = 'O' AND NOT t.tgisinternal",
-                [table, f"{table}_{contract}_guard_v1"],
+                [table, trigger],
             )
             row = cursor.fetchone()
             assert row is not None, table
-            assert row[:2] == (f"{table}_{contract}_v1", 27), table
+            assert row[:2] == (function, 27), table
             assert "USING ERRCODE = '23514'" in row[2]
             if table in cleanup_retention_contracts:
                 compact = "".join(row[2].split())

@@ -288,6 +288,17 @@ the same logical schedule again. Schedule replacement and removal follow the
 atomic cancellation policy in the
 [background-processing specification](../background-processing/spec.md#schedule-replacement-and-removal).
 
+For activation preparation interrupted by a schedule revision, an append-only
+`ScheduleRecoveryReplacement` links a safely cancelled aggregate to its current
+replacement occurrence under the same demand. It is coverage lineage, not a
+new delivery identity or a success record. Each predecessor has at most one
+successor; links must move to the current revision and cannot cycle. Original
+occurrences and fulfillment rows remain unchanged. Digest generation and
+post-close obligation resolution follow this lineage to include every original
+covered date, including dates covered before the configuration edit. Removal
+without a replacement preserves unresolved history for the ordinary explicit
+post-close resolution workflow; it does not claim delivery.
+
 `PostCloseMailResolution` stores Campaign, immutable mode, semantic obligation
 key (receipt submission identity or digest schedule UUID/slot), exact covered
 submission/item/correction versions or daily range, resolving Admin, UTC time,

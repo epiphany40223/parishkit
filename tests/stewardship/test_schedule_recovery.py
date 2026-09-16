@@ -10,10 +10,35 @@ import pytest
 from parishkit.stewardship.campaigns.schedule_recovery import (
     RecoveryPlan,
     RecoverySlot,
+    digest_recovery_kind,
     plan_recovery,
 )
 
 NOW = datetime(2026, 10, 10, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    "kind,count,result",
+    [
+        ("daily_digest", 0, "empty"),
+        ("daily_digest", 1, "latest"),
+        ("daily_digest", 10001, "aggregate"),
+        ("weekly_digest", 9000, "latest"),
+    ],
+)
+def test_streamed_complete_digest_summary_matches_selection_policy(kind, count, result):
+    """Large durable groups need no unbounded in-memory date tuple to choose work."""
+    assert digest_recovery_kind(kind, count) == result
+
+
+@pytest.mark.parametrize(
+    "kind,count",
+    [([], 1), ("initial", 1), ("daily_digest", True), ("weekly_digest", -1)],
+)
+def test_digest_summary_rejects_invalid_input(kind, count):
+    """Counts and kinds cannot be silently coerced into a recovery decision."""
+    with pytest.raises(ValueError):
+        digest_recovery_kind(kind, count)
 
 
 def slot(number, *, kind="reminder", **values):

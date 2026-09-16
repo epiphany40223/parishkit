@@ -6,6 +6,7 @@ identities. Every invocation owns one complete Family group (at most the 100
 configured definitions); it never selects a message from a partial group.
 """
 
+from contextlib import nullcontext
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -13,7 +14,9 @@ from django.db import connection
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.jobs.admission import _scope
+from parishkit.stewardship.jobs.ownership import TaskClaim, lock_task_claim
 from parishkit.stewardship.jobs.scheduler import SchedulerGuard
+from parishkit.stewardship.jobs.storage import _status
 from parishkit.stewardship.responses.models import Submission
 from parishkit.stewardship.storage import StorageInvariantError
 
@@ -23,7 +26,7 @@ from .schedule_evaluation import SchedulePlan
 from .schedule_models import ScheduleDefinition, ScheduleFulfillment, ScheduleOccurrence
 from .schedule_recovery import RecoverySlot, plan_recovery
 from .schedules import occurrence_key
-from .work_locks import work_transaction
+from .work_locks import require_work_order, work_transaction
 
 FAMILY_FIELDS = (
     "id",
@@ -46,6 +49,7 @@ class FamilyPlanningResult:
     selected: UUID | None = None
     held: bool = False
     reason: str = ""
+    examined: int = 0
 
 
 def plan_family(guard, *, family_id, worker_id):
@@ -57,22 +61,42 @@ def plan_family(guard, *, family_id, worker_id):
     The selected pending row is not provider permission or a task execution hint.
     """
     if (
-        not isinstance(guard, SchedulerGuard)
+        not isinstance(guard, (SchedulerGuard, TaskClaim))
         or not isinstance(family_id, UUID)
         or not isinstance(worker_id, UUID)
     ):
-        raise TypeError("Family planning requires actual scheduler ownership.")
-    if connection.in_atomic_block:
+        raise TypeError("Family planning requires actual schedule ownership.")
+    catchup = isinstance(guard, TaskClaim)
+    if not catchup and connection.in_atomic_block:
         raise StorageInvariantError("Family planning must own its transaction.")
-    guard.check()
-    with work_transaction():
+    if catchup:
+        require_work_order()
+    check = (lambda: lock_task_claim(guard)) if catchup else guard.check
+    check()
+    with nullcontext() if catchup else work_transaction():
         campaign_id = SystemConfiguration.objects.values_list(
             "current_campaign_id", flat=True
         ).first()
-        try:
-            scope, epoch = _planning_scope(campaign_id, postclose=True)
-        except PermissionError:
-            return FamilyPlanningResult(family_id, held=True, reason="scope_held")
+        if catchup:
+            from .catchup_tasks import eligible as catchup_eligible
+            from .catchup_tasks import owned_demand
+
+            demand = owned_demand(_status(check()))
+            if (
+                worker_id != guard.worker_id
+                or demand.completed_at is not None
+                or not catchup_eligible(demand)
+            ):
+                raise PermissionError("Catch-up Family preparation is held.")
+            scope, epoch = _scope(demand.campaign_id), None
+            through = min(demand.cutoff, scope.instant)
+            correlation_id = guard.run_id
+        else:
+            try:
+                scope, epoch = _planning_scope(campaign_id, postclose=True)
+            except PermissionError:
+                return FamilyPlanningResult(family_id, held=True, reason="scope_held")
+            through, correlation_id = scope.instant, family_id
         family = (
             FamilyCampaign.objects.filter(pk=family_id, campaign_id=campaign_id)
             .values(*FAMILY_FIELDS)
@@ -133,13 +157,13 @@ def plan_family(guard, *, family_id, worker_id):
         }
         excluded = covered | held
         for definition in definitions:
-            guard.check()
+            check()
             if (definition.pk, "once") in excluded:
                 continue
             revision = definition.current_revision
             page = SchedulePlan.from_values(
                 revision.values, scope.campaign.active_configuration.values
-            ).page(through=scope.instant)
+            ).page(through=through)
             if not page.slots:
                 continue
             due = page.slots[0]
@@ -149,7 +173,7 @@ def plan_family(guard, *, family_id, worker_id):
                 )
             key = occurrence_key(revision.pk, mode, target, due.key)
             row = existing.get(key)
-            if row is None and eligible and not responded:
+            if row is None and (catchup or (eligible and not responded)):
                 row = ScheduleOccurrence.objects.create(
                     definition=definition,
                     revision=revision,
@@ -165,7 +189,7 @@ def plan_family(guard, *, family_id, worker_id):
                     if scope.campaign.delivery_paused and mode == "production"
                     else None,
                     actor_id=worker_id,
-                    correlation_id=family_id,
+                    correlation_id=correlation_id,
                 )
                 created += 1
             if row is not None:
@@ -189,7 +213,7 @@ def plan_family(guard, *, family_id, worker_id):
                 )
                 for row, kind in rows
             ),
-            cutoff=scope.instant,
+            cutoff=through,
             closed=closed,
             eligible=eligible,
             responded=responded,
@@ -197,9 +221,9 @@ def plan_family(guard, *, family_id, worker_id):
         )
         if not decision.blocked:
             _persist_decision(
-                rows, decision, worker_id=worker_id, correlation_id=family_id
+                rows, decision, worker_id=worker_id, correlation_id=correlation_id
             )
-        guard.check()
+        check()
         return FamilyPlanningResult(
             family_id,
             created,
@@ -208,6 +232,7 @@ def plan_family(guard, *, family_id, worker_id):
             decision.selected,
             decision.blocked,
             decision.reason,
+            len(rows),
         )
 
 

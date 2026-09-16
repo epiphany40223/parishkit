@@ -25,6 +25,73 @@ class Migration(migrations.Migration):
         migrations.SeparateDatabaseAndState(
             state_operations=[
                 migrations.CreateModel(
+                    name="ScheduleRecoveryReplacement",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "previous",
+                            models.OneToOneField(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                related_name="recovery_replacement",
+                                to="stewardship_campaigns.scheduleoccurrence",
+                            ),
+                        ),
+                        (
+                            "replacement",
+                            models.ForeignKey(
+                                db_index=False,
+                                on_delete=django.db.models.deletion.PROTECT,
+                                related_name="recovered_aggregates",
+                                to="stewardship_campaigns.scheduleoccurrence",
+                            ),
+                        ),
+                        (
+                            "demand",
+                            models.ForeignKey(
+                                db_index=False,
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_campaigns.activationcatchupdemand",
+                            ),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_recovery_replacement",
+                        "indexes": [
+                            models.Index(
+                                fields=["demand", "replacement"],
+                                name="schedule_recovery_demand",
+                            )
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
                     name="CampaignConfiguration",
                     fields=[
                         (

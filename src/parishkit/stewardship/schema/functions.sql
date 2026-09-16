@@ -1770,6 +1770,7 @@ CREATE FUNCTION public.stewardship_checkpoint_guard_v1() RETURNS trigger
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
 DECLARE d stewardship_activation_catchup%ROWTYPE; t stewardship_task_run%ROWTYPE; r stewardship_system_configuration%ROWTYPE;
+        projection uuid; prefix text; family uuid;
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
     SELECT * INTO r FROM stewardship_system_configuration FOR UPDATE;
@@ -1781,6 +1782,55 @@ BEGIN
        OR r.restore_review_required OR r.current_campaign_id IS DISTINCT FROM d.campaign_id
        OR EXISTS(SELECT 1 FROM stewardship_campaign_work_gate WHERE campaign_id=d.campaign_id AND state IN ('preparing','running','tombstone')) THEN
         RAISE EXCEPTION 'Catch-up checkpoint requires current fenced input' USING ERRCODE='23514'; END IF;
+    IF current_user='pk_stewardship_worker' THEN
+        SELECT active_configuration_id INTO projection FROM stewardship_campaign WHERE id=d.campaign_id;
+        prefix:=replace(projection::text,'-','')||':';
+        IF NEW.items>100 OR NEW.phase NOT IN ('families','digests','complete')
+            OR NOT starts_with(NEW.cursor,prefix) OR NOT starts_with(NEW.group_key,prefix)
+            OR NEW.correlation_id<>t.id OR r.mode<>'production'
+            OR NEW.complete<>(NEW.phase='complete') THEN
+            RAISE EXCEPTION 'Catch-up requires a bounded compiled checkpoint' USING ERRCODE='23514';
+        END IF;
+        IF NEW.phase='families' THEN
+            family:=split_part(NEW.group_key,':',3)::uuid;
+            IF NEW.group_key<>prefix||'family:'||family::text
+                OR NEW.cursor<>prefix||'families:'||replace(family::text,'-','')
+                OR NOT EXISTS(SELECT 1 FROM stewardship_family_campaign f
+                    WHERE f.id=family AND f.campaign_id=d.campaign_id AND f.created_at<=d.created_at)
+                OR EXISTS (
+                    SELECT 1 FROM stewardship_schedule_definition s
+                    JOIN stewardship_schedule_revision v ON v.id=s.current_revision_id
+                    WHERE s.campaign_id=d.campaign_id AND s.kind IN ('initial','reminder')
+                        AND v.due_at<=d.cutoff
+                        AND NOT EXISTS(SELECT 1 FROM stewardship_schedule_occurrence o
+                            WHERE o.revision_id=v.id AND o.mode='production'
+                                AND o.target='family:'||family::text AND o.slot='once')
+                        AND NOT EXISTS(SELECT 1 FROM stewardship_schedule_fulfillment f
+                            WHERE f.definition_id=s.id AND f.mode='production'
+                                AND f.target='family:'||family::text AND f.slot='once')
+                        AND NOT EXISTS(SELECT 1 FROM stewardship_restore_delivery_hold h
+                            WHERE h.definition_id=s.id AND h.mode='production'
+                                AND h.target='family:'||family::text AND h.slot='once'
+                                AND h.state IN ('unreviewed','assumed_delivered'))
+                ) THEN RAISE EXCEPTION 'Catch-up Family receipt lacks cutoff outcomes' USING ERRCODE='23514'; END IF;
+        END IF;
+        IF NEW.complete THEN
+            IF NEW.group_key<>prefix||'complete' OR NEW.cursor<>prefix||'complete:'
+                OR NOT EXISTS(SELECT 1 FROM stewardship_catchup_checkpoint k
+                    WHERE k.demand_id=d.id AND k.group_key=prefix||'families:end')
+                OR EXISTS(SELECT 1 FROM stewardship_family_campaign f
+                    WHERE f.campaign_id=d.campaign_id AND f.created_at<=d.created_at
+                    AND NOT EXISTS(SELECT 1 FROM stewardship_catchup_checkpoint k
+                        WHERE k.demand_id=d.id AND k.group_key=prefix||'family:'||f.id::text))
+                OR EXISTS(SELECT 1 FROM stewardship_schedule_definition s
+                    WHERE s.campaign_id=d.campaign_id AND s.current_revision_id IS NOT NULL
+                      AND s.kind IN ('daily_digest','weekly_digest')
+                      AND NOT EXISTS(SELECT 1 FROM stewardship_catchup_checkpoint k
+                          WHERE k.demand_id=d.id AND k.group_key=prefix||'digest:'||s.id::text))
+            THEN RAISE EXCEPTION 'Catch-up completion requires current cohort and digest coverage'
+                USING ERRCODE='23514'; END IF;
+        END IF;
+    END IF;
     RETURN NEW;
 END $$;
 
@@ -3044,6 +3094,24 @@ SET search_path TO pg_catalog,public,pg_temp AS $$
         OR (message_state='cancelled' AND occurrence_state='succeeded')) IS TRUE
 $$;
 
+-- Bounded preparation alone may materialize work under its own demand hold.
+-- The caller's correlation is the exact execution UUID, not a campaign-wide
+-- bypass flag. The Python owner locks/rechecks the full TaskClaim fence around
+-- every effect; occurrence claims and provider submission retain the hold.
+CREATE FUNCTION public.stewardship_catchup_materializing_v1(
+    campaign uuid,actor uuid,execution uuid
+) RETURNS boolean LANGUAGE sql STABLE
+SET search_path TO pg_catalog,public,pg_temp AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.stewardship_activation_catchup d
+        JOIN public.stewardship_task_run t ON t.root_id=d.task_root_id
+        WHERE d.campaign_id=$1 AND d.completed_at IS NULL
+          AND t.id=$3 AND t.domain_request_id=d.id
+          AND t.task_type='activation_catchup' AND t.state='running'
+          AND t.worker_id=$2 AND t.lease_expires_at>clock_timestamp()
+    )
+$$;
+
 -- FUNCTION: stewardship_occurrence_guard_v1()
 CREATE FUNCTION public.stewardship_occurrence_guard_v1() RETURNS trigger
     LANGUAGE plpgsql
@@ -3080,7 +3148,8 @@ BEGIN
                    OR (NEW.mode='production' AND c.state='closed'
                        AND (d.kind IN ('daily_digest','weekly_digest')
                            OR (NEW.due_at>=p.starts_at AND NEW.due_at<p.ends_at)))))
-           OR (NEW.mode='production' AND EXISTS(SELECT 1 FROM stewardship_activation_catchup WHERE campaign_id=c.id AND completed_at IS NULL))
+           OR (NEW.mode='production' AND EXISTS(SELECT 1 FROM stewardship_activation_catchup WHERE campaign_id=c.id AND completed_at IS NULL)
+               AND NOT public.stewardship_catchup_materializing_v1(c.id,NEW.actor_id,NEW.correlation_id))
            OR EXISTS (SELECT 1 FROM stewardship_schedule_fulfillment WHERE definition_id=d.id AND mode=NEW.mode AND target=NEW.target AND slot=NEW.slot) THEN
             RAISE EXCEPTION 'Occurrence creation is not admitted' USING ERRCODE='23514'; END IF;
     ELSE
@@ -5712,6 +5781,51 @@ BEGIN
     RETURN NEW;
 END $$;
 
+CREATE FUNCTION public.stewardship_catchup_write_admitted_v1(
+    relation_name text,proposed jsonb,prior jsonb
+) RETURNS boolean LANGUAGE plpgsql
+SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE target public.stewardship_schedule_definition%ROWTYPE;
+        occurrence public.stewardship_schedule_occurrence%ROWTYPE;
+BEGIN
+    IF relation_name='stewardship_occurrence_transition' THEN
+        SELECT * INTO occurrence FROM public.stewardship_schedule_occurrence
+            WHERE id=(proposed->>'occurrence_id')::uuid;
+        RETURN prior IS NULL AND occurrence.id IS NOT NULL
+            AND (proposed->>'version')::bigint=occurrence.version
+            AND proposed->>'after_state'=occurrence.state
+            AND (proposed->>'actor_id')::uuid=occurrence.actor_id
+            AND (proposed->>'correlation_id')::uuid=occurrence.correlation_id
+            AND public.stewardship_catchup_write_admitted_v1(
+                'stewardship_schedule_occurrence',to_jsonb(occurrence),NULL);
+    END IF;
+    IF relation_name<>'stewardship_schedule_occurrence' THEN RETURN false; END IF;
+    SELECT * INTO target FROM public.stewardship_schedule_definition
+        WHERE id=(proposed->>'definition_id')::uuid;
+    RETURN target.id IS NOT NULL
+        AND (proposed->>'revision_id')::uuid=target.current_revision_id
+        AND proposed->>'mode'='production' AND proposed->>'routing'='production'
+        AND proposed->>'task_id' IS NULL AND proposed->>'outbox_id' IS NULL
+        AND proposed->>'state' IN ('pending','skipped','coalesced')
+        AND (prior IS NULL OR (prior->>'state'='pending'
+            AND prior->>'task_id' IS NULL AND prior->>'outbox_id' IS NULL))
+        AND EXISTS (
+            SELECT 1 FROM public.stewardship_activation_catchup d
+            JOIN public.stewardship_system_configuration r ON r.current_campaign_id=d.campaign_id
+            JOIN public.stewardship_campaign c ON c.id=d.campaign_id
+            JOIN public.stewardship_campaign_credentials credentials
+                ON credentials.campaign_id=c.id AND NOT credentials.go_live_gate
+            WHERE d.campaign_id=target.campaign_id AND d.completed_at IS NULL
+              AND (proposed->>'due_at')::timestamptz<=d.cutoff
+              AND r.mode='production' AND NOT r.restore_review_required
+              AND c.state IN ('active','closed')
+              AND NOT EXISTS(SELECT 1 FROM public.stewardship_campaign_work_gate g
+                  WHERE g.campaign_id=c.id AND g.state<>'released')
+        )
+        AND public.stewardship_catchup_materializing_v1(target.campaign_id,
+            (proposed->>'actor_id')::uuid,(proposed->>'correlation_id')::uuid);
+END $$;
+
 -- FUNCTION: stewardship_setup_completion_write_v1()
 CREATE FUNCTION public.stewardship_setup_completion_write_v1() RETURNS trigger
     LANGUAGE plpgsql
@@ -5721,6 +5835,8 @@ BEGIN
     IF current_user='pk_stewardship_worker' AND
         public.stewardship_setup_completion_context_v1() IS NULL AND
         public.stewardship_boundary_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
+            CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE AND
+        public.stewardship_catchup_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
             CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE THEN
         RAISE EXCEPTION 'Worker configuration effects require atomic setup ownership'
             USING ERRCODE='23514';
@@ -9296,3 +9412,39 @@ END $$;
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
+-- A cancelled aggregate remains immutable; only this forward lineage may carry
+-- its original coalesced obligations to another ordinary scheduled occurrence.
+CREATE FUNCTION public.stewardship_recovery_replacement_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE previous public.stewardship_schedule_occurrence%ROWTYPE;
+        replacement public.stewardship_schedule_occurrence%ROWTYPE;
+        demand public.stewardship_activation_catchup%ROWTYPE;
+BEGIN
+    PERFORM pg_advisory_xact_lock(736220,1);
+    SELECT * INTO demand FROM public.stewardship_activation_catchup WHERE id=NEW.demand_id;
+    SELECT * INTO previous FROM public.stewardship_schedule_occurrence WHERE id=NEW.previous_id FOR UPDATE;
+    SELECT * INTO replacement FROM public.stewardship_schedule_occurrence WHERE id=NEW.replacement_id FOR UPDATE;
+    IF demand.id IS NULL OR demand.completed_at IS NOT NULL
+        OR previous.id IS NULL OR replacement.id IS NULL
+        OR previous.definition_id<>replacement.definition_id
+        OR previous.revision_id=replacement.revision_id
+        OR previous.mode<>'production' OR replacement.mode<>'production'
+        OR previous.target<>'admins' OR replacement.target<>'admins'
+        OR previous.state<>'skipped' OR previous.reason<>'schedule_replaced'
+        OR replacement.state<>'pending' OR replacement.task_id IS NOT NULL
+        OR replacement.outbox_id IS NOT NULL
+        OR NOT EXISTS(SELECT 1 FROM public.stewardship_schedule_definition s
+            WHERE s.id=replacement.definition_id AND s.campaign_id=demand.campaign_id
+                AND s.current_revision_id=replacement.revision_id
+                AND s.kind IN ('daily_digest','weekly_digest'))
+        OR NOT (EXISTS(SELECT 1 FROM public.stewardship_schedule_fulfillment f
+                       WHERE f.occurrence_id=previous.id AND f.disposition='coalesced')
+                OR EXISTS(SELECT 1 FROM public.stewardship_recovery_replacement link
+                          WHERE link.replacement_id=previous.id AND link.demand_id=demand.id))
+        OR NOT public.stewardship_catchup_write_admitted_v1(
+            'stewardship_schedule_occurrence',
+            to_jsonb(replacement)||jsonb_build_object('actor_id',NEW.actor_id,'correlation_id',NEW.correlation_id),NULL)
+    THEN RAISE EXCEPTION 'Recovery replacement requires current owned cancelled coverage'
+        USING ERRCODE='23514'; END IF;
+    RETURN NEW;
+END $$;

@@ -74,3 +74,46 @@ baseline: exactly one allocation-check function, one deferred constraint and its
 trigger were added. Other schema inventories were unchanged; the strict baseline
 fingerprints were updated only after inspecting that audit. No retained database
 was altered or deleted. This is not full worker or increment acceptance.
+
+## Bounded worker checkpoint
+
+The compiled general-worker handler now prepares the activation-time Family
+cohort using stable UUID keysets and each Family's current eligibility/response.
+It reuses ordinary Family selection with the original activation cutoff. Later
+Family additions remain the source/deliverability owner's work. Configuration
+changes restart traversal in a new immutable receipt namespace rather than
+rewinding checkpoints or reviving removed revisions.
+
+Digest preparation first materializes all due dates in pages of at most 100,
+then coalesces originals in separate bounded coverage transactions. The hold
+remains throughout both stages. Selected aggregates use ordinary occurrence
+identities; no outbox, provider call or scheduled-delivery hint is created.
+Cancelled aggregate predecessors retain their fulfillment rows and gain
+append-only recovery edges, so the exact original date inventory remains
+available across further configuration replacements. See the linked data
+contract and BG-07's explicit lineage consumer requirement.
+
+Each batch renews and checks the exact TaskRun claim, atomically commits its
+outcomes and checkpoint, and reports a preparation phase without inventing a
+known total. Known transient local failures record only a closed diagnostic
+code, retain the hold/cursor, and use bounded retry. Unexpected permission,
+constraint and ownership failures are not translated into success. Automatic
+abandonment recovery and explicit failed-task retry retain the original demand
+and task root. Runtime assembly includes metadata-only scheduler admission and
+the executable worker handler; the mail dispatcher gains no new authority.
+
+Focused validation now includes a 109-date, multiple-page digest, rollback both
+before and after Family outcomes, real worker/scheduler roles, rejected fabricated
+completion, stale fences, current source changes, terminal-task retry, restore,
+close and partial-coverage revision replacement. The completed close/restore and
+pure-planner checkpoint passed 64 tests in 18.26s. Subsequent focused additions,
+full database regression, runtime validation, coverage and review remain pending;
+do not treat this checkpoint as final acceptance.
+
+The worker schema audit adds one seven-column immutable recovery-edge table,
+its keys/indexes/guards, and three narrow preparation/lineage functions. It
+changes only the checkpoint, occurrence-creation and existing worker-write
+admission functions; policies and unrelated objects are unchanged. Separate
+fresh installs at the committed allocation checkpoint and current working tree
+were compared before updating fingerprints. The model-to-database contract test
+passes. No historical upgrade or retained-database mutation was introduced.

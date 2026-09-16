@@ -228,6 +228,41 @@ class ScheduleFulfillment(ImmutableRecord):
         ]
 
 
+class ScheduleRecoveryReplacement(ImmutableRecord):
+    """Forward cancelled recovery coverage without rewriting original outcomes.
+
+    A configuration replacement cancels the old aggregate, but cannot erase
+    dates already covered by it. This append-only edge lets the report owner
+    follow those original dates to the current replacement. Neither endpoint's
+    existence means that report generation or provider delivery succeeded.
+    """
+
+    previous = models.OneToOneField(
+        ScheduleOccurrence,
+        on_delete=models.PROTECT,
+        related_name="recovery_replacement",
+    )
+    replacement = models.ForeignKey(
+        ScheduleOccurrence,
+        on_delete=models.PROTECT,
+        db_index=False,
+        related_name="recovered_aggregates",
+    )
+    demand = models.ForeignKey(
+        "stewardship_campaigns.ActivationCatchUpDemand",
+        on_delete=models.PROTECT,
+        db_index=False,
+    )
+
+    class Meta:
+        db_table = "stewardship_recovery_replacement"
+        indexes = [
+            models.Index(
+                fields=["demand", "replacement"], name="schedule_recovery_demand"
+            )
+        ]
+
+
 class RestoreDeliveryHold(MutableRecord):
     """Uncertainty inventory suppresses dispatch, without claiming fulfillment."""
 

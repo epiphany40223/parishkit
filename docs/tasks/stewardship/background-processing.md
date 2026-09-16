@@ -158,6 +158,13 @@ Scope and dependencies: [BG-07 work package](../../plans/stewardship/background-
 - [ ] BG-07.04 — Integrate post-close obligation inventory and explicit resolutions.
 - [ ] BG-07.05 — Test digest coverage, parity, recovery, and repeat safety.
 
+Activation preparation retains original date coverage across cancelled aggregate
+revisions through [immutable recovery lineage](../../specs/stewardship/data/spec.md#schedule-revisions-and-fulfillment).
+BG-07 fact pinning and post-close resolution must traverse that lineage, not
+only the current aggregate's directly attached fulfillment rows. The bounded
+`campaigns.recovery_coverage.covered_dates()` reader supplies exact date identities,
+not report facts or evidence of delivery.
+
 Evidence: Not started.
 
 ## BG-08: Export and graph workers
