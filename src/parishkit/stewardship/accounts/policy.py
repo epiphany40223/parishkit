@@ -193,7 +193,9 @@ def current_principal(store, user_id):
     if not isinstance(user_id, UUID):
         raise TypeError("An opaque user identity is required.")
     runtime = coherent_configuration(store)
-    user = PortalUser.objects.get(pk=user_id, disabled=False)
+    user = PortalUser.objects.only("id", "email", "hosted_domain", "disabled").get(
+        pk=user_id, disabled=False
+    )
     email = normalized_email(user.email)
     # Coherence already verified this exact canonical document against every
     # normalized projection. Filter once, without a second corpus materialization.

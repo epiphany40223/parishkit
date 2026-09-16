@@ -175,6 +175,8 @@ def retry_failed(*, run_id, command_id, actor_id, correlation_id, admit):
         "outbox_delivery",
         "production_cleanup",
         "activation_catchup",
+        "report_export",
+        "report_export_cleanup",
     ):
         require_work_order()
     with _locked(correlation_id, root_id=original.root_id):

@@ -196,7 +196,9 @@ Scope and dependencies: [BG-08 work package](../../plans/stewardship/background-
 - [ ] BG-08.04 — Implement shared deterministic chart rendering.
 - [ ] BG-08.05 — Test large exports, revocation, cancellation, and purge races.
 
-Evidence: Not started.
+Evidence: In progress on `pr/stewardship-export-foundation` after verified PR #35
+delivery. The [increment record](../../guides/stewardship-export-foundation.md)
+defines the Phase 4 substrate and preserves the Phase 5 completion boundary.
 
 ## BG-09: ParishSoft publication worker
 

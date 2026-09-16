@@ -98,7 +98,14 @@ def retry(status, **kwargs):
 
 
 @pytest.mark.parametrize(
-    "kind", ["outbox_delivery", "production_cleanup", "activation_catchup"]
+    "kind",
+    [
+        "outbox_delivery",
+        "production_cleanup",
+        "activation_catchup",
+        "report_export",
+        "report_export_cleanup",
+    ],
 )
 def test_domain_retry_requires_work_order_before_any_root_lock(kind):
     """A later domain precondition cannot repair an already inverted retry lock."""

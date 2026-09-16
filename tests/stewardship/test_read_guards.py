@@ -9,6 +9,7 @@ from parishkit.stewardship.campaigns.read_guards import (
     DownloadBusy,
     DownloadPool,
     ReadLimits,
+    acquire_campaign_drain,
     campaign_lock_key,
 )
 
@@ -62,3 +63,10 @@ def test_pool_rejects_without_waiting_and_recovers_capacity():
     pool.release()
     pool.acquire()
     pool.release()
+
+
+@pytest.mark.parametrize("seconds", [0, -1, True, 1.5, "5", 361])
+def test_short_drain_budget_cannot_expand_admitted_lifetime(seconds):
+    """Cleanup can shorten its wait, but never bypass the finite common bound."""
+    with pytest.raises(ValueError, match="lifetime budget"):
+        acquire_campaign_drain([uuid4()], wait_seconds=seconds)

@@ -430,10 +430,25 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
     # checkpoints. Verify its exact enabled trigger/function/body, not an
     # exception from SQL immutability merely because the shared name differs.
     shared_immutable_guards = {
+        **{
+            "stewardship_export_" + name: (
+                "export_immutable",
+                "stewardship_export_immutable_v1",
+            )
+            for name in (
+                "request",
+                "attempt",
+                "publication",
+                "cancellation",
+                "download_grant",
+                "download_use",
+                "cleanup",
+            )
+        },
         "stewardship_recovery_replacement": (
             "recovery_replacement_immutable",
             "stewardship_catchup_checkpoint_immutable_v1",
-        )
+        ),
     }
     cleanup_retention_contracts = {
         "stewardship_outbox_render": "outbox_renders",
