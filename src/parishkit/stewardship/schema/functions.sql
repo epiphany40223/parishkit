@@ -3010,6 +3010,19 @@ BEGIN
     RETURN NEW;
 END $$;
 
+-- One pure predicate shared by write admission and replacement inventory.
+-- A later truthful provider result is never suppressed by this occurrence rule.
+CREATE FUNCTION public.stewardship_occurrence_delivery_conflict_v1(
+    occurrence_state text,message_state text
+) RETURNS boolean LANGUAGE sql IMMUTABLE
+SET search_path TO pg_catalog,public,pg_temp AS $$
+    SELECT ((occurrence_state IN ('succeeded','skipped','coalesced')
+                AND message_state IN ('pending','retry_wait'))
+        OR (message_state='delivered' AND occurrence_state<>'succeeded')
+        OR (message_state='permanent_failure' AND occurrence_state<>'failed')
+        OR (message_state='cancelled' AND occurrence_state='succeeded')) IS TRUE
+$$;
+
 -- FUNCTION: stewardship_occurrence_guard_v1()
 CREATE FUNCTION public.stewardship_occurrence_guard_v1() RETURNS trigger
     LANGUAGE plpgsql
@@ -3030,6 +3043,11 @@ BEGIN
     IF NOT EXISTS(SELECT 1 FROM stewardship_schedule_revision WHERE id=NEW.revision_id AND record_id=d.id AND campaign_id=d.campaign_id)
        OR NEW.target='' OR NEW.slot='' OR NEW.occurrence_key !~ '^[0-9a-f]{64}$' THEN
         RAISE EXCEPTION 'Invalid occurrence identity' USING ERRCODE='23514'; END IF;
+    IF NEW.state IN ('succeeded','failed','skipped','coalesced') AND EXISTS (
+        SELECT 1 FROM stewardship_outbox_message m WHERE m.id=NEW.outbox_id
+          AND public.stewardship_occurrence_delivery_conflict_v1(NEW.state,m.state)
+    ) THEN RAISE EXCEPTION 'Occurrence outcome contradicts terminal delivery'
+        USING ERRCODE='23514'; END IF;
     IF TG_OP='INSERT' THEN
         IF NEW.state<>'pending' OR NEW.version<>1 OR NEW.fence<>0 OR NEW.attempts<>0
            OR NEW.revision_id IS DISTINCT FROM d.current_revision_id
@@ -3038,11 +3056,29 @@ BEGIN
            OR NOT EXISTS (SELECT 1 FROM stewardship_campaign_configuration p WHERE p.id=c.active_configuration_id
                AND ((instant>=p.starts_at AND instant<p.ends_at
                    AND ((NEW.mode='testing' AND c.state='draft') OR (NEW.mode='production' AND c.state IN ('scheduled','active'))))
-                   OR (NEW.mode='production' AND c.state='closed' AND d.kind IN ('daily_digest','weekly_digest'))))
+                   OR (NEW.mode='production' AND c.state='closed'
+                       AND (d.kind IN ('daily_digest','weekly_digest')
+                           OR (NEW.due_at>=p.starts_at AND NEW.due_at<p.ends_at)))))
            OR (NEW.mode='production' AND EXISTS(SELECT 1 FROM stewardship_activation_catchup WHERE campaign_id=c.id AND completed_at IS NULL))
            OR EXISTS (SELECT 1 FROM stewardship_schedule_fulfillment WHERE definition_id=d.id AND mode=NEW.mode AND target=NEW.target AND slot=NEW.slot) THEN
             RAISE EXCEPTION 'Occurrence creation is not admitted' USING ERRCODE='23514'; END IF;
     ELSE
+        IF session_user='pk_stewardship_scheduler' AND (
+            OLD.state<>'pending' OR NEW.state NOT IN ('skipped','coalesced')
+            OR OLD.task_id IS NOT NULL OR OLD.outbox_id IS NOT NULL
+            OR NEW.revision_id IS DISTINCT FROM d.current_revision_id
+            OR c.id IS DISTINCT FROM r.current_campaign_id OR NEW.mode<>r.mode
+            OR r.restore_review_required
+            OR EXISTS(SELECT 1 FROM stewardship_campaign_work_gate
+                WHERE campaign_id=c.id AND state IN ('preparing','running','tombstone'))
+            OR (NEW.state='coalesced' AND NOT EXISTS(
+                SELECT 1 FROM stewardship_schedule_occurrence selected
+                WHERE selected.id=NEW.replacement_id AND selected.target=NEW.target
+                  AND selected.mode=NEW.mode AND selected.state='pending'
+                  AND selected.task_id IS NULL AND selected.outbox_id IS NULL
+            ))
+        ) THEN RAISE EXCEPTION 'Scheduler may only reconcile unallocated pending work'
+            USING ERRCODE='23514'; END IF;
         IF (OLD.state='pending' AND NEW.state NOT IN ('pending','running','skipped','coalesced'))
            OR (OLD.state='running' AND NEW.state NOT IN ('running','pending','delivery_unknown','succeeded','failed','skipped','coalesced'))
            OR (OLD.state='delivery_unknown' AND NEW.state NOT IN ('succeeded','pending','failed'))
@@ -3072,7 +3108,10 @@ BEGIN
         END IF;
         IF OLD.state='running' AND (NEW.task_id IS DISTINCT FROM OLD.task_id OR NEW.worker_id IS DISTINCT FROM OLD.worker_id OR NEW.fence<>OLD.fence) THEN
             RAISE EXCEPTION 'Occurrence worker identity changed' USING ERRCODE='23514'; END IF;
-        IF OLD.state='running' AND NOT EXISTS(SELECT 1 FROM stewardship_task_run owner_task WHERE owner_task.id=OLD.task_id
+        IF OLD.state='running' AND NOT (
+            NEW.state='skipped' AND public.stewardship_schedule_effect_v1(
+                OLD.id,OLD.version,NEW.actor_id,NEW.correlation_id,NEW.reason)
+        ) AND NOT EXISTS(SELECT 1 FROM stewardship_task_run owner_task WHERE owner_task.id=OLD.task_id
             AND ((owner_task.state='running' AND owner_task.worker_id=NEW.actor_id AND owner_task.fence=NEW.fence AND owner_task.lease_expires_at>clock_timestamp())
                 OR (owner_task.state IN ('abandoned','cancelled','succeeded','failed') AND owner_task.fence>=OLD.fence AND NEW.actor_id IS NOT NULL
                     AND NEW.reason IN ('recovery_retry','recovery_unknown','recovery_complete','recovery_fail','recovery_skip','recovery_coalesce')))) THEN
@@ -4581,6 +4620,7 @@ BEGIN
         WHEN 'exception' THEN ARRAY['outcome','retryable']
         WHEN 'action' THEN ARRAY['version','before_version','after_version','outcome','source_fingerprint','candidate_fingerprint','count']
         WHEN 'boundary' THEN ARRAY['occurrence_id','kind','intended_unix_microseconds','actual_unix_microseconds','lag_microseconds','before_state','after_state']
+        WHEN 'schedule' THEN ARRAY['definition_id','previous_revision_id','selected_revision_id','cancelled_messages','skipped_occurrences','failed_occurrences','delivered_slots']
         ELSE NULL END;
     IF allowed IS NULL OR jsonb_typeof(payload) IS DISTINCT FROM 'object' THEN RETURN false; END IF;
     IF schema_name IN ('member_source','boundary') AND NOT payload ?& allowed THEN RETURN false; END IF;
@@ -4658,9 +4698,8 @@ BEGIN
     IF TG_OP='UPDATE' AND NEW.current_revision_id IS NOT DISTINCT FROM OLD.current_revision_id THEN
         RAISE EXCEPTION 'Schedule selection must change' USING ERRCODE='23514'; END IF;
     IF TG_OP='UPDATE' AND EXISTS (
-        SELECT 1 FROM stewardship_schedule_occurrence o LEFT JOIN stewardship_task_run t ON t.id=o.task_id
-        WHERE o.definition_id=NEW.id AND o.revision_id=OLD.current_revision_id
-          AND (o.state IN ('running','delivery_unknown') OR (o.state='pending' AND (o.outbox_id IS NOT NULL OR t.state IN ('queued','running','retry_wait','abandoned'))))
+        SELECT 1 FROM stewardship_schedule_work_row o
+        WHERE o.definition_id=NEW.id AND o.revision_id=OLD.current_revision_id AND o.blocking
     ) THEN RAISE EXCEPTION 'In-flight schedule work blocks replacement' USING ERRCODE='23514'; END IF;
     RETURN NEW;
 END $$;
@@ -4709,18 +4748,21 @@ CREATE FUNCTION public.stewardship_schedule_selection_effect_v1() RETURNS trigge
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
-DECLARE config uuid; prior uuid;
+DECLARE config uuid; prior uuid; evidence jsonb; event uuid:=gen_random_uuid();
 BEGIN
     SELECT active_configuration_id INTO config FROM stewardship_system_configuration;
     IF TG_OP='UPDATE' THEN prior:=OLD.current_revision_id; END IF;
     INSERT INTO stewardship_schedule_selection(id,definition_id,configuration_id,previous_revision_id,selected_revision_id,version,actor_id,correlation_id)
     VALUES(gen_random_uuid(),NEW.id,config,prior,NEW.current_revision_id,NEW.version,NEW.actor_id,NEW.correlation_id);
-    UPDATE stewardship_schedule_occurrence SET state='skipped',version=version+1,
-        reason=CASE WHEN NEW.current_revision_id IS NULL THEN 'schedule_removed' ELSE 'schedule_replaced' END,
-        actor_id=NEW.actor_id,correlation_id=NEW.correlation_id
-    WHERE definition_id=NEW.id AND revision_id=prior AND state IN ('pending','failed');
+    IF prior IS NOT NULL THEN
+        evidence:=public.stewardship_schedule_reconcile_v1(NEW.id,prior,NEW.actor_id,NEW.correlation_id);
+    END IF;
     INSERT INTO stewardship_audit_event(id,actor_id,correlation_id,event_type,subject_id,campaign_reference)
-    VALUES(gen_random_uuid(),NEW.actor_id,NEW.correlation_id,'schedule_selected',NEW.id,NEW.campaign_id);
+    VALUES(event,NEW.actor_id,NEW.correlation_id,'schedule_selected',NEW.id,NEW.campaign_id);
+    IF evidence IS NOT NULL THEN
+        INSERT INTO stewardship_audit_context(id,actor_id,correlation_id,event_id,actor_kind,schema,context)
+        VALUES(gen_random_uuid(),NEW.actor_id,NEW.correlation_id,event,'portal_user','schedule',evidence);
+    END IF;
     RETURN NEW;
 END $$;
 
@@ -4759,6 +4801,9 @@ BEGIN
             WHERE old_revision.id=previous.current_revision_id
               AND old_revision.values=revision.values
               AND old_campaign.timezone=new_campaign.timezone
+              AND (revision.kind NOT IN ('daily_digest','weekly_digest')
+                  OR (old_campaign.start_date=new_campaign.start_date
+                      AND old_campaign.end_date=new_campaign.end_date))
         ) THEN
             UPDATE stewardship_schedule_definition SET current_revision_id=revision.id,removed_at=NULL,
                 version=version+1,actor_id=NEW.actor_id,correlation_id=NEW.correlation_id WHERE id=previous.id;

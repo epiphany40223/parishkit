@@ -100,6 +100,8 @@ def test_clone_installs_new_ids_content_and_mail_without_touching_history(
     assert path.encode() in browser.get("/admin/campaign/new").content
     preview = post(browser, path, fields(browser, path, store))
     assert b"Welcome to" in preview.content
+    assert b"2027-10-02T13:00:00+00:00" in preview.content
+    assert b"data-local-instant" in preview.content
     proposal = token(preview)
     accepted = post(browser, path, {"action": "confirm", "preview": proposal})
     apply(store, accepted)

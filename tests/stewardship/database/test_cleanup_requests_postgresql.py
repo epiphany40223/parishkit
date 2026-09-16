@@ -148,6 +148,9 @@ def test_external_outbox_reference_rejects_capture(response_service, routing):
 
     messages = mixed_mail(response_service)
     change(messages["testing_override"], DeliveryAction.CANCEL_UNSENT)
+    # Keep the terminal occurrence consistent with its linked message so this
+    # regression reaches cleanup's independent external-owner check.
+    change(messages[routing], DeliveryAction.CANCEL_UNSENT)
     row = occurrence(ScheduleDefinition.objects.first(), uuid4())
     # The occurrence's UUID-only outbox pointer admits this state through all
     # normal SQL guards. Capture must reject it, not delete its external owner.

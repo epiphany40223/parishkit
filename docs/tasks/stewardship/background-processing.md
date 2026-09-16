@@ -72,22 +72,33 @@ based on PR #32 merge `5c85d26f`. The
 [increment guide](../../guides/stewardship-production-cleanup.md) records all three
 complete dual-source review/fix rounds, 100 passing cleanup tests, 93.57% line
 and 81.15% branch coverage, schema/ownership/race/runtime validation and submitted-
-Family scale measurements. Final-head PR and protected merge-group CI are still
-required before delivery. This does not release Gate 3 or enable Production
+Family scale measurements. PR #33 passed all 24 final-head and all 24 merge-group
+jobs and merged as `ce1e95d1`, verified on refreshed `origin/main`; see the guide's
+[delivery record](../../guides/stewardship-production-cleanup.md#protected-delivery).
+This does not release Gate 3 or enable Production
 activation; ADM-05 and its other dependencies retain those boundaries.
 
 ## BG-04: Schedule revision, fulfillment, and mode routing
 
 Scope and dependencies: [BG-04 work package](../../plans/stewardship/background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 
-- [ ] BG-04.01 — Evaluate schedules using campaign-local intervals.
+- [x] BG-04.01 — Evaluate schedules using campaign-local intervals.
 - [ ] BG-04.02 — Implement revision and semantic-fulfillment identity.
-- [ ] BG-04.03 — Implement locked replacement, removal, and cancellation.
+- [x] BG-04.03 — Implement locked replacement, removal, and cancellation.
 - [ ] BG-04.04 — Enforce immutable Testing/Production/operational routing.
 - [ ] BG-04.05 — Implement missed-work coalescing and bounded asynchronous activation catch-up.
 - [ ] BG-04.06 — Test schedule, mode, revision, and restart combinations.
 
-Evidence: Not started.
+Execution checkpoint: `pr/stewardship-schedule-planning` starts from verified
+PR #33 merge `ce1e95d1`. The
+[increment scope](../../guides/stewardship-schedule-planning.md) covers campaign-local
+evaluation and ordinary schedule planning/reconciliation. Bounded activation
+catch-up follows as its own coherent increment. BG-04.01/.03 pass local acceptance
+and three dual-source review/fix rounds; the linked guide records corrections,
+140 extended PostgreSQL/pure checks, 35 terminal-reconciliation checks, the full
+baseline and browser evidence. Final-head PR/merge-group CI remains pending.
+Receipt identity, bounded activation/digest recovery and dispatch routing keep
+the remaining mixed tasks open. Gate 3 is not released.
 
 ## BG-05: ParishSoft delta and full refresh
 

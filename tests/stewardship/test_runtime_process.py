@@ -304,6 +304,8 @@ def test_credential_service_publishes_only_after_admission(
         "slack",
         "campaign",
         "boundary",
+        "schedules",
+        "digests",
         "source",
         "cleanup",
         "setup_cleanup",
@@ -337,6 +339,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
             outputs = {
                 "finalization": "finalization-receipt",
                 "boundary": "boundary-receipt",
+                "schedules": "schedule-receipt",
+                "digests": "digest-receipt",
                 "source": "source-receipt",
                 "cleanup": "cleanup-receipt",
                 "setup_cleanup": "setup-cleanup-receipt",
@@ -361,6 +365,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         return 0
 
     producer, matching = Mock(return_value=("source-receipt",)), Mock()
+    schedules = Mock(return_value=("schedule-receipt",))
+    digests = Mock(return_value=("digest-receipt",))
     guard, cleanup = Mock(), Mock(return_value=("cleanup-receipt",))
     expiry = Mock(return_value=0)
     matching.side_effect = lambda _: expiry.assert_called_once_with(guard)
@@ -374,6 +380,14 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
     monkeypatch.setattr(runtime_background, "matching_authority", matching)
     monkeypatch.setattr(
         "parishkit.stewardship.source.production.SourceProducer", lambda _: producer
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.campaigns.schedule_production.FamilyScheduleProducer",
+        lambda _: schedules,
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.campaigns.digest_schedule_planning.DigestScheduleProducer",
+        lambda _: digests,
     )
     monkeypatch.setattr(
         "parishkit.stewardship.accounts.branding_cleanup.produce_cleanup", cleanup
@@ -417,6 +431,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
             "slack": slack_recovery,
             "campaign": campaign_recovery,
             "boundary": boundary,
+            "schedules": schedules,
+            "digests": digests,
             "source": producer,
             "cleanup": cleanup,
             "setup_cleanup": setup_cleanup,
@@ -451,6 +467,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
             hold.assert_called_once_with(assembled.store)
             for operation in (
                 boundary,
+                schedules,
+                digests,
                 producer,
                 cleanup,
                 mail_recovery,
@@ -461,13 +479,15 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
             return
         hold.assert_not_called()
         boundary.assert_called_once_with(guard)
+        schedules.assert_called_once_with(guard)
+        digests.assert_called_once_with(guard)
         producer.assert_called_once_with(guard)
         cleanup.assert_called_once_with(guard)
         expiry.assert_called_once_with(guard)
         mail_recovery.assert_called_once_with()
         campaign_recovery.assert_called_once_with()
         slack_recovery.assert_called_once_with()
-        assert guard.check.call_count == 18
+        assert guard.check.call_count == 22
     else:
         boundary.assert_not_called()
         mail_recovery.assert_not_called()

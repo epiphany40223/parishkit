@@ -21,6 +21,7 @@ class ContextKind(StrEnum):
     EXCEPTION = "exception"
     ACTION = "action"
     BOUNDARY = "boundary"
+    SCHEDULE = "schedule"
 
 
 class Outcome(StrEnum):
@@ -91,6 +92,15 @@ MEMBER_SOURCE_FIELDS = frozenset(
 )
 
 FIELDS = {
+    ContextKind.SCHEDULE: {
+        "definition_id",
+        "previous_revision_id",
+        "selected_revision_id",
+        "cancelled_messages",
+        "skipped_occurrences",
+        "failed_occurrences",
+        "delivered_slots",
+    },
     ContextKind.BOUNDARY: {
         "occurrence_id",
         "kind",

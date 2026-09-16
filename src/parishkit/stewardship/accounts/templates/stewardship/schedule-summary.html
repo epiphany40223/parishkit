@@ -1,1 +1,6 @@
-{% load i18n %}{% if value %}<p>{{ value.subject }}</p><p>{% if value.date %}{{ value.date }}{% else %}{% translate "Recurring" %}{% endif %} {{ value.time }}{% if value.weekday_label %} — {{ value.weekday_label }}{% endif %}</p>{% else %}<p>{% translate "None (not scheduled)" %}</p>{% endif %}
+{% load i18n %}{% if value %}<p>{{ value.subject }}</p><p>{% if value.date %}{{ value.date }}{% else %}{% translate "Recurring" %}{% endif %} {{ value.time }}{% if value.weekday_label %} — {{ value.weekday_label }}{% endif %} ({{ value.timezone }})</p>
+{% if value.resolved_slots %}<p>{% translate "Resolved due times (shown in your browser timezone):" %}</p><ul>{% for slot in value.resolved_slots %}<li>{% if slot.key != 'once' %}{{ slot.key }} — {% endif %}<time datetime="{{ slot.due_at }}" data-local-instant>{{ slot.due_at }}</time></li>{% endfor %}</ul>{% endif %}
+{% if value.kind == 'daily_digest' %}<p>{% translate "Each date identifies the campaign day being reported; delivery is due the following local day." %}</p>{% endif %}
+{% if value.more_slots %}<p>{% translate "Only the first five schedule dates are previewed. Later dates follow the same campaign-local rule." %}</p>{% endif %}
+<p>{% translate "These times preview the schedule, not recipient eligibility or permission to send. Daylight-saving folds run once; nonexistent times move to the first valid instant after the gap." %}</p>
+{% else %}<p>{% translate "None (not scheduled)" %}</p>{% endif %}

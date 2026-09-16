@@ -358,6 +358,8 @@ def serve_background(configuration, lease):
         from .accounts.setup_notifications import recover_pending as recover_setup_slack
         from .accounts.setup_staging import produce_setup_expiry
         from .campaigns.boundary_production import produce_boundaries
+        from .campaigns.digest_schedule_planning import DigestScheduleProducer
+        from .campaigns.schedule_production import FamilyScheduleProducer
         from .jobs.processes import serve_consumer, serve_scheduler
         from .source.production import SourceProducer
         from .source.setup_cleanup import produce_setup_cleanup
@@ -373,6 +375,8 @@ def serve_background(configuration, lease):
                 assembled.broker, lease=lease, stop=stop, heartbeat=heartbeat
             )
         producer = SourceProducer(uuid4())
+        schedules = FamilyScheduleProducer(uuid4())
+        digests = DigestScheduleProducer(uuid4())
 
         def produce(guard):
             """Expire abandoned setup even while exact candidate recovery is pending.
@@ -402,6 +406,8 @@ def serve_background(configuration, lease):
             return (
                 *finalization,
                 *independent_producer(guard, produce_boundaries, guard),
+                *independent_producer(guard, schedules, guard),
+                *independent_producer(guard, digests, guard),
                 *independent_producer(guard, producer, guard),
                 *independent_producer(guard, produce_cleanup, guard),
                 *independent_producer(guard, produce_setup_cleanup, guard),

@@ -10,6 +10,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.configuration import schedule_window_changed
+from parishkit.stewardship.campaigns.schedule_evaluation import preview_slots
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
@@ -33,14 +34,20 @@ def _scope(service, campaign_id):
     return state[0], fingerprint(state[-1], work_summary(campaign_id))
 
 
-def _describe(values):
-    """Name the weekday instead of exposing a storage index to the Administrator."""
+def _describe(values, campaign):
+    """Pair civil intent with bounded UTC previews resolved in its own campaign zone."""
     if values is None:
         return None
+    page = preview_slots(values, campaign)
     return values | {
         "weekday_label": _(WEEKDAYS[values["weekday"]])
         if values["weekday"] is not None
-        else None
+        else None,
+        "timezone": campaign["timezone"],
+        "resolved_slots": [
+            {"key": slot.key, "due_at": slot.due_at.isoformat()} for slot in page.slots
+        ],
+        "more_slots": not page.exhausted,
     }
 
 
@@ -85,15 +92,19 @@ def _preview(
         if value != campaign.active_configuration.values[key]
     }
     patch = schedules.patch()
-    if schedule_window_changed(campaign.active_configuration.values, window.values()):
-        explicit = {row["id"] for row in patch}
-        # Identical civil mail fields still acquire a new cadence/window when
-        # the campaign moves. Include them in the reviewed work inventory too.
-        patch.extend(
-            {"operation": "update", "section": "schedules", **row}
-            for row in schedules.previous
-            if row["id"] not in explicit
+    explicit = {row["id"] for row in patch}
+    # A new timezone or digest date window also replaces unchanged civil mail
+    # fields. Include their existing work in the reviewed cancellation inventory.
+    patch.extend(
+        {"operation": "update", "section": "schedules", **row}
+        for row in schedules.previous
+        if row["id"] not in explicit
+        and schedule_window_changed(
+            campaign.active_configuration.values,
+            window.values(),
+            kind=row["values"]["kind"],
         )
+    )
     schedule_changes = list(patch)
     if changed:
         patch.append(
@@ -126,8 +137,10 @@ def _preview(
     changes = [
         {
             "operation": row["operation"],
-            "before": _describe(prior.get(row["id"])),
-            "after": _describe(row.get("values")),
+            "before": _describe(
+                prior.get(row["id"]), campaign.active_configuration.values
+            ),
+            "after": _describe(row.get("values"), window.values()),
             "impact": summary.get(row["id"], {}),
             "label": EMAIL_LABELS[(row.get("values") or prior[row["id"]])["kind"]],
         }

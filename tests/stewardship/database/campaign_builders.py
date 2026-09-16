@@ -388,15 +388,15 @@ def closed_digest(tmp_path):
     return store, campaign, actor, row
 
 
-def occurrence(definition, actor, target="family:1"):
+def occurrence(definition, actor, target="family:1", *, slot="once", due_at=None):
     """Allocate ordinary rehearsal work under a real canonical schedule revision."""
     return create_occurrence(
         definition_id=definition.pk,
         revision_id=definition.current_revision_id,
         mode="testing",
         target=target,
-        slot="once",
-        due_at=definition.current_revision.due_at,
+        slot=slot,
+        due_at=due_at if due_at is not None else definition.current_revision.due_at,
         actor_id=actor,
         correlation_id=uuid4(),
         admit=admit_test_work,

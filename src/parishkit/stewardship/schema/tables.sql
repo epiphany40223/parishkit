@@ -102,7 +102,7 @@ CREATE TABLE public.stewardship_audit_context (
     context jsonb NOT NULL,
     event_id uuid NOT NULL,
     CONSTRAINT audit_context_actor_kind CHECK (((actor_kind)::text = ANY ((ARRAY['portal_user'::character varying, 'family'::character varying, 'system'::character varying, 'operator'::character varying])::text[]))),
-    CONSTRAINT audit_context_schema_safe CHECK ((schema IN ('action','boundary') AND public.stewardship_safe_context_v1((schema)::text, context)))
+    CONSTRAINT audit_context_schema_safe CHECK ((schema IN ('action','boundary','schedule') AND public.stewardship_safe_context_v1((schema)::text, context)))
 );
 
 -- TABLE: stewardship_audit_event

@@ -302,6 +302,22 @@ definition/current revision and related occurrence/outbox rows. Before the
 Admin confirms, the UI presents counts for successful fulfillment, safely
 cancellable work, terminal failures, and blocking in-flight/unknown work.
 
+Changing the campaign timezone replaces affected schedule revisions. Changing
+campaign start/end dates also replaces daily/weekly digest revisions, because
+their date range determines the semantic slots; unchanged in-range Family
+mailings retain their revision. Returning to an earlier date range creates a
+new revision, never rewinds cancelled history, and still excludes fulfilled
+semantic slots. The same preview, blocking and atomic cancellation rules apply.
+
+Malformed/shared delivery bindings and contradictory occurrence/outbox outcomes
+also block replacement. An occurrence writer cannot finalize an outcome that
+contradicts its linked terminal delivery result, or mark work succeeded/skipped/
+coalesced while the message remains pending/retry-wait. A later truthful provider
+result must still be journaled. Existing conflicting history requires operator
+investigation and separately authorized repair, not automatic rewriting, retry,
+recall or a schedule-edit bypass. Coordinated dispatch/recovery owners must
+reconcile their outcome handoff before allowing replacement.
+
 The change is rejected while an old-revision outbox row is `submitting` or
 `delivery_unknown`; the Admin must wait for provider submission to finish or
 resolve the unknown result. Otherwise the transaction creates the replacement

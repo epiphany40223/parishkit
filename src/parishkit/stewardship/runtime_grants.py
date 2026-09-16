@@ -90,6 +90,7 @@ WEB_READ_TABLES = frozenset(
         "stewardship_schedule_occurrence",
         "stewardship_occurrence_transition",
         "stewardship_schedule_fulfillment",
+        "stewardship_schedule_work_summary",
         "stewardship_restore_delivery_hold",
         "stewardship_restore_hold_resolution",
         "stewardship_postclose_resolution",
