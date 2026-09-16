@@ -24,6 +24,120 @@ class Migration(migrations.Migration):
         migrations.SeparateDatabaseAndState(
             state_operations=[
                 migrations.CreateModel(
+                    name="RecipientRefusal",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        ("family_id", models.UUIDField()),
+                        ("organization_id", models.PositiveBigIntegerField()),
+                        ("family_duid", models.PositiveBigIntegerField()),
+                        ("event_id", models.UUIDField()),
+                        ("address", models.CharField(max_length=254)),
+                    ],
+                    options={
+                        "db_table": "stewardship_recipient_refusal",
+                        "indexes": [
+                            models.Index(
+                                fields=["family_id"], name="recipient_refusal_family"
+                            ),
+                            models.Index(
+                                fields=["organization_id", "family_duid"],
+                                name="recipient_refusal_identity",
+                            ),
+                        ],
+                        "constraints": [
+                            models.UniqueConstraint(
+                                fields=["event_id", "address"],
+                                name="recipient_refusal_event_address",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(organization_id__gt=0)
+                                & models.Q(family_duid__gt=0),
+                                name="recipient_refusal_identity_positive",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
+                    name="RecipientRefusalResolution",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        ("refusal_id", models.UUIDField(unique=True)),
+                        ("source_snapshot_id", models.UUIDField()),
+                        ("source_generation", models.PositiveBigIntegerField()),
+                        (
+                            "reason",
+                            models.CharField(default="source_changed", max_length=32),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_recipient_resolution",
+                        "constraints": [
+                            models.CheckConstraint(
+                                condition=models.Q(reason="source_changed"),
+                                name="recipient_resolution_reason",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(source_generation__gt=0),
+                                name="recipient_resolution_generation",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
                     name="DeliveryPauseHold",
                     fields=[
                         (

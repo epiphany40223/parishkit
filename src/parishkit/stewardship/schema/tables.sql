@@ -1517,6 +1517,7 @@ CREATE TABLE public.stewardship_schedule_occurrence (
     replacement_id uuid,
     revision_id uuid NOT NULL,
     task_id uuid,
+    recovery_generation bigint DEFAULT 0 NOT NULL CHECK (recovery_generation >= 0),
     CONSTRAINT schedule_occurrence_lease CHECK ((((heartbeat_at IS NOT NULL) AND (lease_expires_at IS NOT NULL) AND ((state)::text = 'running'::text) AND (task_id IS NOT NULL) AND (worker_id IS NOT NULL)) OR ((NOT ((state)::text = 'running'::text)) AND (lease_expires_at IS NULL)))),
     CONSTRAINT schedule_occurrence_replacement CHECK ((((replacement_id IS NOT NULL) AND ((state)::text = 'coalesced'::text)) OR ((NOT ((state)::text = 'coalesced'::text)) AND (replacement_id IS NULL)))),
     CONSTRAINT schedule_occurrence_routing CHECK (((((mode)::text = 'production'::text) AND ((routing)::text = 'production'::text)) OR (((mode)::text = 'testing'::text) AND ((routing)::text = 'testing_override'::text)))),

@@ -1,8 +1,9 @@
 """Bounded, provider-free Family schedule allocation and semantic coalescing.
 
-This owner does not render or allocate outbox messages. BG-06 owns dispatch and
-deliverability-transition recovery, using these retained occurrence/coverage
-identities. Every invocation owns one complete Family group (at most the 100
+This owner does not render or allocate outbox messages. It prepares BG-06
+deliverability recovery using retained eligibility/occurrence identities; the
+later delivery owner must recheck them before dispatch. Every invocation owns
+one complete Family group (at most the 100
 configured definitions); it never selects a message from a partial group.
 """
 
@@ -21,6 +22,7 @@ from parishkit.stewardship.responses.models import Submission
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .credential_models import CampaignCredentialState, FamilyCampaign, RehearsalEpoch
+from .deliverability_recovery import prepare_initial_recovery
 from .models import ActivationCatchUpDemand, CampaignWorkGate, RestoreDeliveryHold
 from .schedule_evaluation import SchedulePlan
 from .schedule_models import ScheduleDefinition, ScheduleFulfillment, ScheduleOccurrence
@@ -148,14 +150,19 @@ def plan_family(guard, *, family_id, worker_id):
         )
         rows, created = [], 0
         existing = {
-            row.occurrence_key: row
-            for row in ScheduleOccurrence.objects.select_for_update().filter(
+            row.revision_id: row
+            for row in ScheduleOccurrence.objects.filter(
                 revision_id__in=[row.current_revision_id for row in definitions],
                 mode=mode,
                 target=target,
                 slot="once",
             )
+            .order_by("revision_id", "-recovery_generation")
+            .distinct("revision_id")
         }
+        # Work-order serialization fences all occurrence writes. DISTINCT ON
+        # keeps one current attempt per semantic slot without loading an
+        # unbounded recovery history; PostgreSQL cannot combine it with FOR UPDATE.
         excluded = covered | held
         for definition in definitions:
             check()
@@ -173,7 +180,7 @@ def plan_family(guard, *, family_id, worker_id):
                     "Schedule revision has inconsistent due time."
                 )
             key = occurrence_key(revision.pk, mode, target, due.key)
-            row = existing.get(key)
+            row = existing.get(revision.pk)
             if row is None and (catchup or (eligible and not responded)):
                 row = ScheduleOccurrence.objects.create(
                     definition=definition,
@@ -193,6 +200,25 @@ def plan_family(guard, *, family_id, worker_id):
                     correlation_id=correlation_id,
                 )
                 created += 1
+            elif (
+                row is not None
+                and definition.kind == "initial"
+                and eligible
+                and not responded
+                and family["email_deliverable"]
+                and not closed
+            ):
+                recovered = prepare_initial_recovery(
+                    row,
+                    family_id=family_id,
+                    worker_id=worker_id,
+                    correlation_id=correlation_id,
+                    pause_version=scope.campaign.pause_version
+                    if scope.campaign.delivery_paused and mode == "production"
+                    else None,
+                )
+                created += recovered.pk != row.pk
+                row = recovered
             if row is not None:
                 rows.append((row, definition.kind))
         decision = plan_recovery(
@@ -309,7 +335,9 @@ def _persist_decision(rows, decision, *, worker_id, correlation_id, check):
             continue
         coalesced = row.pk in decision.coalesced
         check()
-        ScheduleOccurrence.objects.filter(pk=row.pk, version=row.version).update(
+        updated = ScheduleOccurrence.objects.filter(
+            pk=row.pk, version=row.version
+        ).update(
             state="coalesced" if coalesced else "skipped",
             reason=decision.reason,
             replacement_id=decision.selected if coalesced else None,
@@ -317,6 +345,8 @@ def _persist_decision(rows, decision, *, worker_id, correlation_id, check):
             actor_id=worker_id,
             correlation_id=correlation_id,
         )
+        if updated != 1:
+            raise StorageInvariantError("Family planning lost its occurrence version.")
         if coalesced:
             check()
             ScheduleFulfillment.objects.create(

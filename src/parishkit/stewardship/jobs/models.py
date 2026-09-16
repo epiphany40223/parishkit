@@ -198,3 +198,7 @@ from .outbox_models import (  # noqa: E402,F401
     OutboxMessage,
     OutboxRender,
 )
+from .recipient_models import (  # noqa: E402,F401
+    RecipientRefusal,
+    RecipientRefusalResolution,
+)

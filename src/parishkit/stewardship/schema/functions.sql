@@ -3327,7 +3327,10 @@ BEGIN
         OR expected>demand.cutoff
         OR proposed->>'occurrence_key'<>encode(sha256(convert_to(
             '["'||(proposed->>'revision_id')||'","production","'||(proposed->>'target')
-            ||'","'||(proposed->>'slot')||'"]','UTF8')),'hex') THEN RETURN false; END IF;
+            ||'","'||(proposed->>'slot')||'"'
+            ||CASE WHEN coalesce((proposed->>'recovery_generation')::bigint,0)>0
+                THEN ','||(proposed->>'recovery_generation') ELSE '' END
+            ||']','UTF8')),'hex') THEN RETURN false; END IF;
     IF proposed->>'state'='pending' THEN
         RETURN proposed->>'reason'='' AND proposed->>'replacement_id' IS NULL;
     END IF;
@@ -3387,6 +3390,74 @@ SET search_path TO pg_catalog,public,pg_temp AS $$
     )
 $$;
 
+-- FUNCTION: stewardship_initial_recovery_valid_v1()
+-- A Family recovery uses the immutable eligibility version as its execution
+-- generation, not another semantic slot. The ordinary occurrence guard retains
+-- lifecycle/current-revision/fulfillment admission; this proof adds the exact
+-- false-to-true edge after a terminal attempt and excludes unresolved siblings.
+CREATE FUNCTION public.stewardship_initial_recovery_valid_v1(proposed jsonb)
+RETURNS boolean LANGUAGE plpgsql
+SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE family uuid; campaign uuid; event_time timestamptz; prior_deliverable boolean;
+    generation bigint := (proposed->>'recovery_generation')::bigint;
+    predecessor public.stewardship_schedule_occurrence%ROWTYPE;
+BEGIN
+    IF generation=0 THEN RETURN true; END IF;
+    SELECT f.id,f.campaign_id INTO family,campaign
+    FROM public.stewardship_family_campaign f
+    JOIN public.stewardship_schedule_definition d ON d.campaign_id=f.campaign_id
+    WHERE d.id=(proposed->>'definition_id')::uuid AND d.kind='initial'
+      AND proposed->>'target'='family:'||f.id::text AND proposed->>'slot'='once'
+      AND f.active AND f.email_eligible AND f.email_deliverable
+      AND (proposed->>'mode'<>'production' OR f.effective_submission_id IS NULL);
+    IF family IS NULL OR NOT EXISTS (
+        SELECT 1 FROM public.stewardship_schedule_revision v
+        JOIN public.stewardship_campaign c ON c.id=v.campaign_id
+        JOIN public.stewardship_campaign_configuration p ON p.id=c.active_configuration_id
+        WHERE v.id=(proposed->>'revision_id')::uuid
+          AND v.due_at=(proposed->>'due_at')::timestamptz
+          AND v.due_at<=public.stewardship_campaign_now_v1()
+          AND public.stewardship_campaign_now_v1()<p.ends_at
+    ) OR EXISTS (
+        SELECT 1 FROM public.stewardship_submission s
+        JOIN public.stewardship_campaign_credentials c ON c.campaign_id=campaign
+        WHERE proposed->>'mode'='testing' AND s.family_id=family
+          AND s.mode='test' AND s.rehearsal_epoch_id=c.rehearsal_epoch_id
+    ) OR EXISTS (
+        SELECT 1 FROM public.stewardship_restore_delivery_hold h
+        WHERE h.definition_id=(proposed->>'definition_id')::uuid
+          AND h.mode=proposed->>'mode' AND h.target=proposed->>'target'
+          AND h.slot=proposed->>'slot' AND h.state IN ('unreviewed','assumed_delivered')
+    ) THEN RETURN false; END IF;
+    SELECT h.created_at INTO event_time FROM public.stewardship_family_eligibility h
+    WHERE h.family_id=family AND h.family_version=generation AND h.email_deliverable;
+    SELECT h.email_deliverable INTO prior_deliverable
+    FROM public.stewardship_family_eligibility h
+    WHERE h.family_id=family AND h.family_version<generation
+    ORDER BY h.family_version DESC LIMIT 1;
+    IF event_time IS NULL OR prior_deliverable IS DISTINCT FROM false THEN RETURN false; END IF;
+    SELECT * INTO predecessor FROM public.stewardship_schedule_occurrence o
+    WHERE o.definition_id=(proposed->>'definition_id')::uuid
+      AND o.revision_id=(proposed->>'revision_id')::uuid
+      AND o.mode=proposed->>'mode' AND o.target=proposed->>'target'
+      AND o.slot=proposed->>'slot'
+    ORDER BY o.recovery_generation DESC LIMIT 1;
+    IF predecessor.id IS NULL OR predecessor.state NOT IN ('failed','skipped')
+       OR (predecessor.state='skipped' AND predecessor.reason NOT IN ('no_deliverable_recipient','family_ineligible'))
+       OR predecessor.recovery_generation>=generation OR predecessor.updated_at>=event_time
+       OR EXISTS (
+           SELECT 1 FROM public.stewardship_schedule_occurrence o
+           WHERE o.definition_id=(proposed->>'definition_id')::uuid
+             AND o.mode=proposed->>'mode' AND o.target=proposed->>'target'
+             AND o.slot=proposed->>'slot'
+             AND o.state IN ('pending','running','delivery_unknown','succeeded')
+       ) THEN RETURN false; END IF;
+    RETURN proposed->>'occurrence_key'=encode(sha256(convert_to(
+        '["'||(proposed->>'revision_id')||'","'||(proposed->>'mode')||'","'
+        ||(proposed->>'target')||'","'||(proposed->>'slot')||'",'||generation::text||']',
+        'UTF8')),'hex');
+END $$;
+
 -- FUNCTION: stewardship_occurrence_guard_v1()
 CREATE FUNCTION public.stewardship_occurrence_guard_v1() RETURNS trigger
     LANGUAGE plpgsql
@@ -3413,6 +3484,10 @@ BEGIN
     ) THEN RAISE EXCEPTION 'Occurrence outcome contradicts terminal delivery'
         USING ERRCODE='23514'; END IF;
     IF TG_OP='INSERT' THEN
+        IF NOT public.stewardship_initial_recovery_valid_v1(to_jsonb(NEW)) THEN
+            RAISE EXCEPTION 'Initial recovery requires a new deliverability transition'
+                USING ERRCODE='23514';
+        END IF;
         IF NEW.state<>'pending' OR NEW.version<>1 OR NEW.fence<>0 OR NEW.attempts<>0
            OR NEW.revision_id IS DISTINCT FROM d.current_revision_id
            OR c.id IS DISTINCT FROM r.current_campaign_id OR r.restore_review_required
@@ -5085,7 +5160,7 @@ CREATE FUNCTION public.stewardship_schedule_occurrence_mutable_v1() RETURNS trig
     LANGUAGE plpgsql
     AS $$
             BEGIN
-                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."definition_id" IS DISTINCT FROM OLD."definition_id" OR NEW."revision_id" IS DISTINCT FROM OLD."revision_id" OR NEW."mode" IS DISTINCT FROM OLD."mode" OR NEW."routing" IS DISTINCT FROM OLD."routing" OR NEW."target" IS DISTINCT FROM OLD."target" OR NEW."slot" IS DISTINCT FROM OLD."slot" OR NEW."due_at" IS DISTINCT FROM OLD."due_at" OR NEW."occurrence_key" IS DISTINCT FROM OLD."occurrence_key" THEN
+                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."definition_id" IS DISTINCT FROM OLD."definition_id" OR NEW."revision_id" IS DISTINCT FROM OLD."revision_id" OR NEW."mode" IS DISTINCT FROM OLD."mode" OR NEW."routing" IS DISTINCT FROM OLD."routing" OR NEW."target" IS DISTINCT FROM OLD."target" OR NEW."slot" IS DISTINCT FROM OLD."slot" OR NEW."due_at" IS DISTINCT FROM OLD."due_at" OR NEW."occurrence_key" IS DISTINCT FROM OLD."occurrence_key" OR NEW."recovery_generation" IS DISTINCT FROM OLD."recovery_generation" THEN
                     RAISE EXCEPTION 'Record identity and bindings are immutable'
                         USING ERRCODE = '23514';
                 END IF;

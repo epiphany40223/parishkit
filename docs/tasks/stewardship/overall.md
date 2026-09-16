@@ -395,6 +395,17 @@ Branch `pr/stewardship-export-foundation` now implements the dependency-ready
 Full report workflows, calculation materialization, remaining Phase 4 owners
 and Gate 3 remain open.
 
+PR #36 subsequently merged as `7d9a3b0` after all 24 final-head and all
+24 protected merge-group jobs passed, verified on refreshed `origin/main`.
+Branch `pr/stewardship-family-deliverability` continues BG-06's
+[recipient and recovery preparation](../../guides/stewardship-family-deliverability.md).
+The earlier export pending-delivery checkpoint is superseded; the remaining
+Phase 4 owners, later full report workflows and Gate 3 remain open.
+Recipient/recovery preparation has now completed its three dual-source review/
+fix rounds and local validation; protected PR CI/merge remains pending. Continue
+with the guide's deferred BG-06 rendering/dispatch owners only after its merge
+is verified on refreshed `origin/main`.
+
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).
 3. Complete required [RPT-02](reports.md#rpt-02-population-and-calculation-library) calculations and the [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics) fact-materialization service before [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests); report UI remains in Phase 5.

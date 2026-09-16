@@ -374,3 +374,157 @@ REVOKE ALL ON FUNCTION public.stewardship_outbox_history_v1() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.stewardship_outbox_event_binding_v1() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.stewardship_outbox_render_pin_v1() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.stewardship_outbox_render_shape_v1() FROM PUBLIC;
+
+-- Family-scoped refusal history is not removed when the provider can be tried
+-- again. Source correction appends a separate resolution under the source fence.
+CREATE TABLE public.stewardship_recipient_refusal (
+    id uuid PRIMARY KEY,
+    created_at timestamptz NOT NULL DEFAULT statement_timestamp(),
+    actor_id uuid,
+    correlation_id uuid NOT NULL,
+    family_id uuid NOT NULL,
+    event_id uuid NOT NULL,
+    address varchar(254) NOT NULL,
+    organization_id bigint NOT NULL CHECK(organization_id>=0),
+    family_duid bigint NOT NULL CHECK(family_duid>=0),
+    CONSTRAINT recipient_refusal_event_address UNIQUE(event_id,address),
+    CONSTRAINT recipient_refusal_identity_positive CHECK(organization_id>0 AND family_duid>0)
+);
+CREATE INDEX recipient_refusal_family ON public.stewardship_recipient_refusal(family_id);
+CREATE INDEX recipient_refusal_identity ON public.stewardship_recipient_refusal(organization_id,family_duid);
+CREATE INDEX recipient_refusal_correlation ON public.stewardship_recipient_refusal(correlation_id);
+CREATE TABLE public.stewardship_recipient_resolution (
+    id uuid PRIMARY KEY,
+    created_at timestamptz NOT NULL DEFAULT statement_timestamp(),
+    actor_id uuid,
+    correlation_id uuid NOT NULL,
+    refusal_id uuid NOT NULL UNIQUE,
+    source_snapshot_id uuid NOT NULL,
+    source_generation bigint NOT NULL CHECK(source_generation>=0),
+    reason varchar(32) NOT NULL,
+    CONSTRAINT recipient_resolution_reason CHECK(reason='source_changed'),
+    CONSTRAINT recipient_resolution_generation CHECK(source_generation>0)
+);
+CREATE INDEX recipient_resolution_correlation ON public.stewardship_recipient_resolution(correlation_id);
+
+CREATE FUNCTION public.stewardship_refusal_address_present_v1(snapshot uuid,family_duid bigint,address text)
+RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
+    SELECT EXISTS (
+        SELECT 1 FROM public.stewardship_source_member m
+        JOIN public.stewardship_snapshot_member sm ON sm.payload_id=m.id AND sm.snapshot_id=$1
+        JOIN public.stewardship_snapshot_contact sc ON sc.snapshot_id=$1 AND sc.source_key='member:'||sm.source_key
+        JOIN public.stewardship_source_contact c ON c.id=sc.payload_id
+        CROSS JOIN LATERAL jsonb_array_elements(c.canonical::jsonb->'emails') email
+        WHERE m.family_key=$2::text AND email->>'value'=$3 AND email->'valid'='true'::jsonb
+    )
+$$;
+
+CREATE FUNCTION public.stewardship_recipient_refusal_guard_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+BEGIN
+    PERFORM pg_advisory_xact_lock(736220,1);
+    IF NEW.address<>lower(NEW.address) OR NOT EXISTS (
+        SELECT 1 FROM public.stewardship_outbox_event e
+        JOIN public.stewardship_outbox_message m ON m.id=e.message_id
+        JOIN public.stewardship_outbox_render r ON r.id=e.render_id
+        JOIN public.stewardship_family_campaign f ON f.id=m.family_id
+        JOIN public.stewardship_campaign_credentials k ON k.campaign_id=f.campaign_id
+        JOIN public.stewardship_source_snapshot s ON s.id=k.source_snapshot_id
+        WHERE e.id=NEW.event_id AND m.family_id=NEW.family_id
+          AND f.family_duid=NEW.family_duid AND s.organization_id=NEW.organization_id
+          AND e.actor_id=NEW.actor_id
+          AND m.mode='production' AND m.routing='production'
+          AND e.state='permanent_failure' AND e.reason='recipient_refused'
+          AND r.routed_recipients ? NEW.address AND r.intended_recipients ? NEW.address
+    ) THEN RAISE EXCEPTION 'Refusal requires exact Production recipient evidence'
+        USING ERRCODE='23514'; END IF;
+    RETURN NEW;
+END $$;
+
+CREATE FUNCTION public.stewardship_recipient_resolution_guard_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE refusal public.stewardship_recipient_refusal%ROWTYPE;
+BEGIN
+    PERFORM pg_advisory_xact_lock(736220,1);
+    SELECT * INTO refusal FROM public.stewardship_recipient_refusal WHERE id=NEW.refusal_id;
+    IF refusal.id IS NULL OR NOT EXISTS (
+        SELECT 1 FROM public.stewardship_source_current c
+        JOIN public.stewardship_source_snapshot s ON s.id=c.snapshot_id
+        JOIN public.stewardship_source_lease l ON l.owner_id=s.task_id AND l.fence=s.source_fence
+        JOIN public.stewardship_task_run t ON t.id=l.owner_id AND t.fence=l.task_fence
+        WHERE s.id=NEW.source_snapshot_id AND c.generation=NEW.source_generation
+          AND s.organization_id=refusal.organization_id AND NEW.actor_id=l.worker_id
+          AND s.state='promoted' AND l.expires_at>clock_timestamp()
+          AND l.phase IN ('full','delta') AND t.state='running'
+          AND t.worker_id=l.worker_id AND t.lease_expires_at>clock_timestamp()
+    ) OR public.stewardship_refusal_address_present_v1(
+        NEW.source_snapshot_id,refusal.family_duid,refusal.address
+    ) THEN RAISE EXCEPTION 'Refusal resolution requires current corrected source'
+        USING ERRCODE='23514'; END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER stewardship_recipient_refusal_guard
+    BEFORE INSERT ON public.stewardship_recipient_refusal
+    FOR EACH ROW EXECUTE FUNCTION public.stewardship_recipient_refusal_guard_v1();
+CREATE TRIGGER stewardship_recipient_resolution_guard
+    BEFORE INSERT ON public.stewardship_recipient_resolution
+    FOR EACH ROW EXECUTE FUNCTION public.stewardship_recipient_resolution_guard_v1();
+REVOKE ALL ON FUNCTION public.stewardship_recipient_refusal_guard_v1() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.stewardship_recipient_resolution_guard_v1() FROM PUBLIC;
+
+CREATE FUNCTION public.stewardship_recipient_immutable_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$ BEGIN
+    RAISE EXCEPTION 'Recipient evidence is immutable' USING ERRCODE = '23514';
+END $$;
+CREATE TRIGGER recipient_immutable BEFORE UPDATE OR DELETE ON public.stewardship_recipient_refusal
+    FOR EACH ROW EXECUTE FUNCTION public.stewardship_recipient_immutable_v1();
+CREATE TRIGGER recipient_immutable BEFORE UPDATE OR DELETE ON public.stewardship_recipient_resolution
+    FOR EACH ROW EXECUTE FUNCTION public.stewardship_recipient_immutable_v1();
+REVOKE ALL ON FUNCTION public.stewardship_recipient_immutable_v1() FROM PUBLIC;
+
+CREATE FUNCTION public.stewardship_refusal_family_effect_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE deliverable boolean; target_family uuid;
+BEGIN
+    -- This executes under the refusal guard's work-order lock. Update only
+    -- deliverability, never source eligibility, credentials, or response state.
+    -- Retain all old refusal rows: an unresolved row is the suppression fact.
+    SELECT f.id INTO target_family FROM public.stewardship_family_campaign f
+    JOIN public.stewardship_system_configuration r ON r.current_campaign_id=f.campaign_id
+    JOIN public.stewardship_source_current cur ON cur.organization_id=NEW.organization_id
+    WHERE f.family_duid=NEW.family_duid;
+    IF target_family IS NULL THEN RETURN NULL; END IF;
+    SELECT EXISTS (
+        SELECT 1 FROM public.stewardship_family_campaign f
+        JOIN public.stewardship_source_current cur ON cur.singleton
+        JOIN public.stewardship_snapshot_family sf
+            ON sf.snapshot_id=cur.snapshot_id AND sf.source_key=f.family_duid::text
+        JOIN public.stewardship_source_family source ON source.id=sf.payload_id
+        CROSS JOIN LATERAL jsonb_array_elements_text(source.canonical::jsonb->'active_head_duids') head
+        JOIN public.stewardship_snapshot_contact sc
+            ON sc.snapshot_id=cur.snapshot_id AND sc.source_key='member:'||head
+        JOIN public.stewardship_source_contact contact ON contact.id=sc.payload_id
+        CROSS JOIN LATERAL jsonb_array_elements(contact.canonical::jsonb->'emails') email
+        WHERE f.id=target_family AND f.active AND f.email_eligible
+          AND email->'valid'='true'::jsonb
+          AND NOT EXISTS (
+              SELECT 1 FROM public.stewardship_recipient_refusal refusal
+              WHERE refusal.organization_id=NEW.organization_id AND refusal.family_duid=f.family_duid
+                AND refusal.address=email->>'value'
+                AND NOT EXISTS(SELECT 1 FROM public.stewardship_recipient_resolution resolution
+                    WHERE resolution.refusal_id=refusal.id)
+          )
+    ) INTO deliverable;
+    UPDATE public.stewardship_family_campaign SET email_deliverable=deliverable,
+        deliverability_reason=CASE WHEN NOT portal_eligible THEN 'ineligible'
+            WHEN NOT email_eligible THEN 'no_eligible_email'
+            WHEN deliverable THEN 'deliverable' ELSE 'provider_suppressed' END,
+        eligibility_changed_at=public.stewardship_campaign_now_v1(),
+        version=version+1,actor_id=NEW.actor_id,correlation_id=NEW.correlation_id
+    WHERE id=target_family AND email_deliverable IS DISTINCT FROM deliverable;
+    RETURN NULL;
+END $$;
+CREATE TRIGGER stewardship_refusal_family_effect
+    AFTER INSERT ON public.stewardship_recipient_refusal
+    FOR EACH ROW EXECUTE FUNCTION public.stewardship_refusal_family_effect_v1();
+REVOKE ALL ON FUNCTION public.stewardship_refusal_family_effect_v1() FROM PUBLIC;

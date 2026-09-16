@@ -28,6 +28,8 @@ SOURCE_READ = frozenset(
         "stewardship_family_campaign",
         "stewardship_family_code_mac",
         "stewardship_family_token_generation",
+        "stewardship_recipient_refusal",
+        "stewardship_recipient_resolution",
     }
 )
 
@@ -46,6 +48,7 @@ SOURCE_APPEND = frozenset(
         "stewardship_family_eligibility",
         "stewardship_family_token",
         "stewardship_campaign_credentials",
+        "stewardship_recipient_resolution",
     }
 )
 

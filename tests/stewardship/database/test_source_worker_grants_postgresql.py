@@ -15,7 +15,11 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.scheduler import scheduler_session
-from parishkit.stewardship.runtime_background import bind_authority, matching_authority
+from parishkit.stewardship.runtime_background import (
+    bind_authority,
+    matching_authority,
+    source_refusal_suppressions,
+)
 from parishkit.stewardship.source.effects import refresh_reconciler
 from parishkit.stewardship.source.production import SourceProducer
 from parishkit.stewardship.source.refresh_models import SourceRefreshFallback
@@ -50,7 +54,7 @@ def test_restricted_worker_observes_promotes_and_reconciles(
             general=ring.general,
             mac=ring.mac,
             public=ring.public,
-            suppressions=lambda scope: frozenset(),
+            suppressions=source_refusal_suppressions,
         ),
     )
     request = command()
@@ -125,7 +129,7 @@ def test_restricted_worker_failure_and_fallback_remain_durable(
             general=ring.general,
             mac=ring.mac,
             public=ring.public,
-            suppressions=lambda scope: frozenset(),
+            suppressions=source_refusal_suppressions,
         ),
     )
     request = (

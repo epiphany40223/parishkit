@@ -299,3 +299,24 @@ That complete post-correction baseline passed **5,742 tests** in 55.33 seconds,
 with the expected environment-gated skips. The baseline, container-baseline and
 first PostgreSQL shard failures in the original CI run all named this same
 missing heading; no application assertion was weakened or suppressed.
+
+## Protected delivery
+
+PR [#36](https://github.com/epiphany40223/parishkit/pull/36) passed all **24**
+CI jobs plus DCO at `af637e6e147e66cf01b403f8a40391e2b73e9de9` in run
+[35068932840](https://github.com/epiphany40223/parishkit/actions/runs/35068932840).
+The complete head accounted for **3,011 PostgreSQL tests**, with **94.16% line**
+and **85.57% branch coverage**. The superseded failing run was cancelled only
+after its documentation-ownership cause was fixed and the full baseline passed.
+
+The normal protected queue was entered with that exact expected head; no
+protection bypass was used. Merge-group run
+[35070486273](https://github.com/epiphany40223/parishkit/actions/runs/35070486273)
+passed all **24** jobs. GitHub merged PR #36 at **2026-09-16 08:06:47 UTC** as
+`7d9a3b0b819e384739e53ed11a53fa541af51282`. A fresh fetch verified that commit
+on `origin/main` before creating `pr/stewardship-family-deliverability`.
+
+This supersedes pending-delivery notes above. BG-08 retains its documented
+Phase 5 completion scope; Gate 3 and production readiness remain unreleased.
+The next ordered package is BG-06, beginning with Family deliverability and
+recovery-invitation preparation.

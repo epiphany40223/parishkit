@@ -434,16 +434,19 @@ def test_bound_registry_rechecks_authority_before_domain_admission(monkeypatch):
 
 
 @pytest.mark.parametrize("mode", ["testing", "production"])
-def test_phase_two_suppression_boundary_never_silently_enables_production(
-    monkeypatch, mode
-):
-    """BG-06 must wire real provider-refusal state before live delivery is enabled."""
+def test_source_refresh_uses_durable_suppression_owner_in_each_mode(monkeypatch, mode):
+    """Testing cannot silently forget live refusals; only creation is mode-limited."""
+    calls, expected = [], object()
+
+    def suppressions(value):
+        """Represent the separately tested durable promotion owner."""
+        calls.append(value)
+        return expected
+
     monkeypatch.setattr(
-        "parishkit.stewardship.campaigns.work_locks.require_work_order", lambda: None
+        "parishkit.stewardship.jobs.recipient_suppressions.source_suppressions",
+        suppressions,
     )
     scope = SimpleNamespace(runtime=SimpleNamespace(mode=mode))
-    if mode == "testing":
-        assert background.pre_delivery_suppressions(scope) == frozenset()
-    else:
-        with pytest.raises(ConfigError):
-            background.pre_delivery_suppressions(scope)
+    assert background.source_refusal_suppressions(scope) is expected
+    assert calls == [scope]
