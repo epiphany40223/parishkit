@@ -24,6 +24,8 @@ from parishkit.stewardship.storage import StorageInvariantError
 from .outbox_models import OutboxEvent
 from .recipient_models import RecipientRefusal, RecipientRefusalResolution
 
+_SOURCE_BATCH_SIZE = 500
+
 
 def record_refusal(*, event_id, address, actor_id, correlation_id):
     """Append an idempotent refusal against exact immutable provider evidence.
@@ -31,6 +33,8 @@ def record_refusal(*, event_id, address, actor_id, correlation_id):
     The caller owns delivery fencing and its transaction. SQL independently
     verifies that this address was routed for a definitive Production refusal;
     this internal function has no web or generic worker write grant.
+    Attribution must match the immutable event's actor, including on replay;
+    a later reconciler cannot relabel the original refusal as its own action.
     """
     require_work_order()
     if any(
@@ -46,6 +50,7 @@ def record_refusal(*, event_id, address, actor_id, correlation_id):
         or event.message.mode != "production"
         or event.message.routing != "production"
         or event.message.family_id is None
+        or event.actor_id != actor_id
         or address not in event.render.routed_recipients
         or address not in event.render.intended_recipients
     ):
@@ -101,7 +106,7 @@ def source_suppressions(scope):
         )
     )
     entries, resolutions = set(), []
-    for refusal in refusals.iterator(chunk_size=500):
+    for refusal in refusals.iterator(chunk_size=_SOURCE_BATCH_SIZE):
         if refusal.present:
             entries.add((refusal.family_duid, refusal.address))
         else:
@@ -114,9 +119,9 @@ def source_suppressions(scope):
                     correlation_id=current.snapshot.correlation_id,
                 )
             )
-        if len(resolutions) == 500:
-            RecipientRefusalResolution.objects.bulk_create(resolutions, batch_size=500)
+        if len(resolutions) == _SOURCE_BATCH_SIZE:
+            RecipientRefusalResolution.objects.bulk_create(resolutions)
             resolutions.clear()
     if resolutions:
-        RecipientRefusalResolution.objects.bulk_create(resolutions, batch_size=500)
+        RecipientRefusalResolution.objects.bulk_create(resolutions)
     return FamilySuppressions(frozenset(entries))

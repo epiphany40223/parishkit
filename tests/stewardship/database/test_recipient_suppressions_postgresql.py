@@ -200,14 +200,17 @@ def test_refusal_requires_intended_as_well_as_routed_address(response_service):
     assert not RecipientRefusal.objects.exists()
 
 
+@pytest.mark.parametrize("timing", ["original", "before_population", "successor"])
 def test_unresolved_refusal_survives_a_new_annual_campaign(
-    response_service, auth_service
+    response_service, auth_service, timing
 ):
     """New campaign-specific Family IDs cannot reset an unchanged refused address."""
     harness = activate_response_service(response_service)
     actor = uuid4()
     with campaign_clock(harness.campaign.active_configuration.starts_at):
-        refusal = remember(refused(harness))
+        event = refused(harness)
+        if timing == "original":
+            remember(event)
         close_campaign(harness.campaign, actor)
     # Settle synthetic fixture tasks through their real terminal owner, without
     # deleting delivery/source history or bypassing campaign archive guards.
@@ -232,11 +235,65 @@ def test_unresolved_refusal_survives_a_new_annual_campaign(
         )
         assert receipt.state == "applied"
         successor = replace(harness, campaign=Campaign.objects.get(pk=row["id"]))
+        if timing == "before_population":
+            # The current campaign has no Family rows yet. The trigger is a
+            # deliberate no-op; first population must still apply this refusal.
+            remember(event)
         refresh(successor, response_source())
+        if timing == "successor":
+            # Late evidence still belongs to its old event, but affects the
+            # currently populated Family without waiting for another refresh.
+            assert FamilyCampaign.objects.get(
+                campaign=successor.campaign, family_duid=1
+            ).email_deliverable
+            remember(event)
+    refusal = RecipientRefusal.objects.get(event_id=event.pk)
     current = FamilyCampaign.objects.get(campaign=successor.campaign, family_duid=1)
     assert current.pk != refusal.family_id and current.email_eligible
     assert not current.email_deliverable
     assert not RecipientRefusalResolution.objects.exists()
+
+
+def test_shared_address_never_suppresses_a_different_family(response_service):
+    """Presence, immediate effects and correction all remain Family-scoped."""
+    harness = activate_response_service(response_service)
+    data = response_source()
+    data.families[2] = dict(data.families[1], familyDUID=2, familyID=12)
+    data.members[4] = dict(data.members[3], memberDUID=4, familyDUID=2)
+    with campaign_clock(harness.campaign.active_configuration.starts_at):
+        refresh(harness, data)
+        remember(refused(harness))
+        assert not FamilyCampaign.objects.get(family_duid=1).email_deliverable
+        assert FamilyCampaign.objects.get(family_duid=2).email_deliverable
+        with work_transaction():
+            selection = source_suppressions(SimpleNamespace(campaign=harness.campaign))
+        assert selection.entries == frozenset({(1, "valid@example.org")})
+        data.members[3]["emailAddress"] = "corrected@example.org"
+        refresh(harness, data)
+        assert RecipientRefusalResolution.objects.count() == 1
+        assert all(FamilyCampaign.objects.values_list("email_deliverable", flat=True))
+        with work_transaction():
+            assert not source_suppressions(
+                SimpleNamespace(campaign=harness.campaign)
+            ).entries
+
+
+@pytest.mark.parametrize("replay", [False, True])
+def test_refusal_cannot_replace_original_event_actor(response_service, replay):
+    """A later observer must retain original event attribution, even on replay."""
+    harness = activate_response_service(response_service)
+    with campaign_clock(harness.campaign.active_configuration.starts_at):
+        event = refused(harness)
+        if replay:
+            remember(event)
+        with work_transaction(), pytest.raises(PermissionError, match="evidence"):
+            record_refusal(
+                event_id=event.pk,
+                address="valid@example.org",
+                actor_id=uuid4(),
+                correlation_id=uuid4(),
+            )
+        assert RecipientRefusal.objects.count() == int(replay)
 
 
 def test_partial_refusal_keeps_other_head_address_deliverable(response_service):
@@ -270,6 +327,24 @@ def test_refusal_writes_wait_for_compiled_dispatch_owner(response_service, role)
         transaction.atomic(),
         connection.cursor() as cursor,
     ):
+        for table in (
+            "stewardship_recipient_refusal",
+            "stewardship_recipient_resolution",
+        ):
+            for privilege in ("INSERT", "UPDATE", "DELETE"):
+                cursor.execute(
+                    "SELECT has_table_privilege(current_user,%s,%s)",
+                    (table, privilege),
+                )
+                assert cursor.fetchone()[0] is (
+                    role is ServiceRole.WORKER
+                    and table == "stewardship_recipient_resolution"
+                    and privilege == "INSERT"
+                )
+            cursor.execute(
+                "SELECT has_any_column_privilege(current_user,%s,'UPDATE')", (table,)
+            )
+            assert not cursor.fetchone()[0]
         with pytest.raises(ProgrammingError, match="permission denied") as error:
             cursor.execute(
                 "INSERT INTO stewardship_recipient_refusal(id) VALUES (%s)", (uuid4(),)

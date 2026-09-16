@@ -473,7 +473,7 @@ REVOKE ALL ON FUNCTION public.stewardship_recipient_refusal_guard_v1() FROM PUBL
 REVOKE ALL ON FUNCTION public.stewardship_recipient_resolution_guard_v1() FROM PUBLIC;
 
 CREATE FUNCTION public.stewardship_recipient_immutable_v1() RETURNS trigger
-LANGUAGE plpgsql AS $$ BEGIN
+LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$ BEGIN
     RAISE EXCEPTION 'Recipient evidence is immutable' USING ERRCODE = '23514';
 END $$;
 CREATE TRIGGER recipient_immutable BEFORE UPDATE OR DELETE ON public.stewardship_recipient_refusal
