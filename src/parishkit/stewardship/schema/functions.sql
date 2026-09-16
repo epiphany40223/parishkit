@@ -3535,7 +3535,12 @@ BEGIN
                    OR (t.task_type='family_mail_prepare' AND EXISTS (
                        SELECT 1 FROM public.stewardship_family_mail_preparation q
                        WHERE q.id=t.domain_request_id AND q.task_id=t.root_id
-                         AND q.occurrence_id=NEW.id AND q.mode=NEW.mode)))
+                         AND q.occurrence_id=NEW.id AND q.mode=NEW.mode))
+                   OR (t.task_type='outbox_delivery' AND EXISTS (
+                       SELECT 1 FROM public.stewardship_outbox_message mail
+                       WHERE mail.id=t.domain_request_id AND mail.task_id=t.root_id
+                         AND mail.id=NEW.outbox_id AND mail.semantic_key=NEW.id
+                         AND mail.mode=NEW.mode AND mail.family_id::text=substring(NEW.target FROM 8))))
                OR NOT EXISTS(SELECT 1 FROM stewardship_campaign_configuration p WHERE p.id=c.active_configuration_id
                    AND ((instant>=p.starts_at AND instant<p.ends_at
                        AND ((NEW.mode='testing' AND c.state='draft') OR (NEW.mode='production' AND c.state IN ('scheduled','active'))))

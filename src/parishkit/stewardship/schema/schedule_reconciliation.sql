@@ -11,7 +11,9 @@ SELECT o.id, o.definition_id, o.revision_id, o.state, o.version, o.outbox_id,
                    OR (t.task_type='family_mail_prepare' AND EXISTS (
                        SELECT 1 FROM public.stewardship_family_mail_preparation q
                        WHERE q.id=t.domain_request_id AND q.task_id=t.root_id
-                         AND q.occurrence_id=o.id AND q.mode=o.mode)),false)
+                         AND q.occurrence_id=o.id AND q.mode=o.mode))
+                   OR (t.task_type='outbox_delivery' AND t.domain_request_id=m.id
+                       AND t.root_id=m.task_id AND m.semantic_key=o.id),false)
            ))
            OR m.state IN ('submitting','delivery_unknown')
            OR (m.state IN ('pending','retry_wait') AND resolution.action='retry_idempotent')

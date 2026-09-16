@@ -76,7 +76,14 @@ def plan_family(guard, *, family_id, worker_id):
     check = (lambda: lock_task_claim(guard)) if claimed else guard.check
     task = check()
     catchup = claimed and task.task_type == "activation_catchup"
-    if claimed and not catchup:
+    dispatch = claimed and task.task_type == "outbox_delivery"
+    if dispatch:
+        from parishkit.stewardship.jobs.family_mail_dispatch import bound_dispatch
+
+        message = bound_dispatch(_status(task))
+        if message.family_id != family_id or worker_id != guard.worker_id:
+            raise PermissionError("Dispatch cannot plan another Family.")
+    if claimed and not catchup and not dispatch:
         from parishkit.stewardship.jobs.family_mail_tasks import _row, owned_preparation
 
         ticket = owned_preparation(_status(task))
@@ -161,6 +168,35 @@ def plan_family(guard, *, family_id, worker_id):
                 state__in=("unreviewed", "assumed_delivered"),
             ).values_list("definition_id", "slot")
         )
+        initial_delivered = (
+            ScheduleFulfillment.objects.filter(
+                definition__in=definitions,
+                definition__kind="initial",
+                mode=mode,
+                target=target,
+                slot="once",
+                disposition="delivered",
+            ).exists()
+            or RestoreDeliveryHold.objects.filter(
+                definition__in=definitions,
+                definition__kind="initial",
+                mode=mode,
+                target=target,
+                slot="once",
+                state="assumed_delivered",
+            ).exists()
+        )
+        if (
+            dispatch
+            and not initial_delivered
+            and any(
+                definition.kind == "initial" and (definition.pk, "once") in held
+                for definition in definitions
+            )
+        ):
+            return FamilyPlanningResult(
+                family_id, held=True, reason="initial_unfulfilled"
+            )
         rows, created = [], 0
         existing = {
             row.revision_id: row
@@ -247,8 +283,10 @@ def plan_family(guard, *, family_id, worker_id):
                     state=row.state,
                     safely_cancellable=(
                         row.state == "pending"
-                        and row.task_id is None
-                        and row.outbox_id is None
+                        and (
+                            (row.task_id is None and row.outbox_id is None)
+                            or (dispatch and _dispatch_cancellable(row))
+                        )
                     ),
                 )
                 for row, kind in rows
@@ -258,6 +296,7 @@ def plan_family(guard, *, family_id, worker_id):
             eligible=eligible,
             responded=responded,
             deliverable=family["email_deliverable"],
+            initial_delivered=initial_delivered,
         )
         if not decision.blocked:
             _persist_decision(
@@ -266,6 +305,7 @@ def plan_family(guard, *, family_id, worker_id):
                 worker_id=worker_id,
                 correlation_id=correlation_id,
                 check=check,
+                dispatch_claim=guard if dispatch else None,
             )
         if catchup and not decision.blocked:
             from .catchup_family_coverage import forward_family_coverage
@@ -343,13 +383,30 @@ def _planning_scope(campaign_id, *, postclose=False, allow_missing_epoch=False):
     return scope, epoch
 
 
-def _persist_decision(rows, decision, *, worker_id, correlation_id, check):
+def _dispatch_cancellable(row):
+    """Only definitive unsent outboxes can join a dispatch-time recovery group."""
+    from parishkit.stewardship.jobs.outbox_models import OutboxMessage
+
+    if row.outbox_id is None:
+        return True
+    return OutboxMessage.objects.filter(
+        pk=row.outbox_id, state__in=("pending", "retry_wait")
+    ).exists()
+
+
+def _persist_decision(
+    rows, decision, *, worker_id, correlation_id, check, dispatch_claim=None
+):
     """Commit every covered semantic slot in the same transaction as its outcome."""
     for row, _ in rows:
         if row.pk not in decision.coalesced and row.pk not in decision.skipped:
             continue
         coalesced = row.pk in decision.coalesced
         check()
+        if dispatch_claim is not None and row.outbox_id is not None:
+            from parishkit.stewardship.jobs.family_mail_dispatch import cancel_unsent
+
+            cancel_unsent(row.outbox_id, dispatch_claim, reason=decision.reason)
         updated = ScheduleOccurrence.objects.filter(
             pk=row.pk, version=row.version
         ).update(
