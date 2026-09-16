@@ -12,6 +12,7 @@ from parishkit.stewardship.jobs.dispatch import execute_hint
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.ownership import database_now
 from parishkit.stewardship.jobs.queues import WorkQueue
+from parishkit.stewardship.jobs.scanning import collect_hints
 from parishkit.stewardship.jobs.scheduler import scheduler_session
 from parishkit.stewardship.reports.fact_production import produce_facts
 from parishkit.stewardship.reports.fact_tasks import TASK_TYPE, fact_handler
@@ -511,6 +512,7 @@ def test_restore_hold_fences_expired_work_without_spending_retry_budget(
 ):
     from parishkit.stewardship.jobs.dispatch import recover_hint
     from parishkit.stewardship.jobs.storage import _status
+    from parishkit.stewardship.reports import fact_tasks
 
     from .campaign_builders import restored_runtime
     from .test_taskrun_postgresql import act, expire
@@ -529,6 +531,17 @@ def test_restore_hold_fences_expired_work_without_spending_retry_budget(
         )
     run = TaskRun.objects.get(pk=root)
     assert run.state == "abandoned" and run.attempt == 1
+    with (
+        restored_runtime(instant),
+        task_login(ServiceRole.SCHEDULER, exact=True),
+        patch.object(fact_tasks, "bound_demand", wraps=fact_tasks.bound_demand) as bind,
+    ):
+        hints, _ = collect_hints(handlers={TASK_TYPE: fact_handler(scheduler=True)})
+        assert root not in {hint.run_id for hint in hints}
+        assert sum(call.args[0].run_id == root for call in bind.call_args_list) == 1
+    with task_login(ServiceRole.SCHEDULER, exact=True):
+        hints, _ = collect_hints(handlers={TASK_TYPE: fact_handler(scheduler=True)})
+        assert root in {hint.run_id for hint in hints}
     with task_login(ServiceRole.WORKER, exact=True):
         assert recover_hint(
             root,

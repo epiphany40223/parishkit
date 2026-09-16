@@ -76,7 +76,11 @@ def _completed(status, demand):
 
 def recover_facts(status):
     """Retry immutable local calculations, or acknowledge their committed outcome."""
-    demand = bound_demand(status)
+    return _recovery_plan(status, bound_demand(status))
+
+
+def _recovery_plan(status, demand):
+    """Reuse a freshly bound demand within this same ordered admission transaction."""
     if status.state != "abandoned":
         return None
     if _completed(status, demand):
@@ -97,10 +101,12 @@ def recover_facts(status):
 def admit_facts(action, status):
     """Gate every task effect against current restore/purge/go-live authority."""
     demand = bound_demand(status)
-    if action in {"lease_expired", "recovery_hint"}:
+    if action == "lease_expired":
         return True
+    if action == "recovery_hint":
+        return status.state == "running" or _recovery_plan(status, demand) is not None
     if action.startswith("recovery_"):
-        plan = recover_facts(status)
+        plan = _recovery_plan(status, demand)
         return plan is not None and plan.action == action
     if action == "complete":
         return _completed(status, demand)
@@ -125,6 +131,14 @@ def admit_facts(action, status):
         return TaskRun.objects.filter(
             pk=demand.claimed_task_id, root_id=status.root_id
         ).exists()
+    if action in {"hint", "claim"}:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT stewardship_exact_priority_v1(%s,%s)",
+                (demand.campaign_id, demand.population_scope),
+            )
+            if cursor.fetchone()[0]:
+                return False
     if (
         action == "explicit_retry"
         and not TaskRun.objects.filter(
@@ -158,7 +172,9 @@ def _execute(execution):
             or inputs.population_scope != demand.population_scope
         ):
             return False
-        if action in {"claim", "create"}:
+        if action in {"claim", "create"} or (
+            action == "recover" and demand.claimed_generation_id is None
+        ):
             return (
                 requested_inputs(demand) == inputs
                 and demand.claimed_generation_id is None

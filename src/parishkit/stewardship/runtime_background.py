@@ -102,6 +102,8 @@ def scheduler_handlers():
     from .jobs.family_mail_tasks import TASK_TYPE as FAMILY_MAIL_PREPARE
     from .jobs.family_mail_tasks import preparation_handler
     from .jobs.queues import WorkQueue
+    from .reports.exact_services import TASK_TYPE as EXACT_EXPORT
+    from .reports.exact_tasks import exact_handler
     from .reports.export_cleanup import TASK_TYPE as EXPORT_CLEANUP
     from .reports.export_cleanup import cleanup_handler as export_cleanup_handler
     from .reports.export_services import TASK_TYPE as REPORT_EXPORT
@@ -124,6 +126,7 @@ def scheduler_handlers():
         FAMILY_MAIL_PREPARE: preparation_handler(scheduler=True),
         REPORT_EXPORT: export_handler(scheduler=True),
         REPORT_FACTS: fact_handler(scheduler=True),
+        EXACT_EXPORT: exact_handler(scheduler=True),
         EXPORT_CLEANUP: export_cleanup_handler(),
         CAMPAIGN_BOUNDARY: boundary_handler(scheduler=True),
         ACTIVATION_CATCHUP: catchup_handler(scheduler=True),
@@ -264,6 +267,8 @@ def configure_background(configuration, *, stop, heartbeat):
         )
         from .jobs.family_mail_tasks import TASK_TYPE as FAMILY_MAIL_PREPARE
         from .jobs.family_mail_tasks import preparation_handler
+        from .reports.exact_services import TASK_TYPE as EXACT_EXPORT
+        from .reports.exact_tasks import exact_handler
         from .reports.export_cleanup import TASK_TYPE as EXPORT_CLEANUP
         from .reports.export_cleanup import cleanup_handler as export_cleanup_handler
         from .reports.export_services import TASK_TYPE as REPORT_EXPORT
@@ -287,6 +292,7 @@ def configure_background(configuration, *, stop, heartbeat):
             ),
             EXPORT_CLEANUP: export_cleanup_handler(configuration.paths["reports"]),
             REPORT_FACTS: fact_handler(),
+            EXACT_EXPORT: exact_handler(store=store),
             REPORT_EXPORT: export_handler(
                 store=store, root=configuration.paths["reports"]
             ),

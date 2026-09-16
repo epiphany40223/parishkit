@@ -63,9 +63,13 @@ interactive reports remain Phase 5. No RPT-03 task is yet claimed complete.
 Consumer evidence: the [report selection increment](../../guides/stewardship-report-selection.md)
 has completed implementation, local validation and three dual-source review/fix
 rounds for authorized current/stale selection, shared export documents and
-read-only verification/compaction guards. Protected delivery is pending.
-Queued exact requests and scheduled
-verification still follow before BG-07; all package checkboxes remain open.
+read-only verification/compaction guards. PR #42 merged as
+`c72b8bdb1fa37c555ee68ca926ff187a7ab52d7b` after all 24 exact-head and
+merge-queue checks passed. The [queued exact-export increment](../../guides/stewardship-exact-exports.md)
+has completed implementation and three dual-source review/fix rounds on
+`pr/stewardship-exact-report-facts`, including final correction validation;
+protected delivery is pending. Scheduled verification still follows before BG-07.
+All package checkboxes remain open.
 
 ## RPT-04: Additional-information workflow report
 

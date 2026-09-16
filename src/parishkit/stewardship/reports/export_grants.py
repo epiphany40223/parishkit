@@ -7,6 +7,20 @@ def add_export_grants(tables, columns, *, role):
         raise ValueError("Unknown export owner role.")
     for name in ("request", "attempt", "publication", "cancellation", "cleanup"):
         tables.setdefault("stewardship_export_" + name, set()).add("SELECT")
+    if role != "download":
+        for name in ("request", "cancel", "resolution"):
+            tables.setdefault("stewardship_exact_export_" + name, set()).add("SELECT")
+    if role in {"worker", "scheduler", "web"}:
+        columns.setdefault("stewardship_portal_user", {}).setdefault(
+            "SELECT", set()
+        ).update({"id", "email", "hosted_domain", "disabled"})
+    if role == "web":
+        for name in ("request", "cancel"):
+            tables["stewardship_exact_export_" + name].add("INSERT")
+    if role == "worker":
+        tables["stewardship_exact_export_resolution"].add("INSERT")
+        tables["stewardship_export_request"].add("INSERT")
+        tables.setdefault("stewardship_fact_pin", set()).add("INSERT")
     if role in {"web", "download"}:
         for name in ("download_grant", "download_use"):
             tables.setdefault("stewardship_export_" + name, set()).add("SELECT")
@@ -28,9 +42,6 @@ def add_export_grants(tables, columns, *, role):
             tables["stewardship_export_" + name].add("INSERT")
         for name in ("daily_fact_set", "daily_fact", "fact_pin", "assignment_overlay"):
             tables.setdefault("stewardship_" + name, set()).add("SELECT")
-        columns.setdefault("stewardship_portal_user", {}).setdefault(
-            "SELECT", set()
-        ).update({"id", "email", "hosted_domain", "disabled"})
     if role == "download":
         columns.setdefault("stewardship_campaign_credentials", {}).setdefault(
             "SELECT", set()

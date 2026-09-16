@@ -22,6 +22,7 @@ from parishkit.stewardship.storage import StorageInvariantError
 from .artifacts import write_artifact
 from .charts import render_participation
 from .documents import participation_document
+from .exact_models import ExactExportResolution
 from .export_models import (
     ExportAttempt,
     ExportCancellation,
@@ -134,11 +135,16 @@ def load_document(request):
         fact_set=facts, parent_kind="export", parent_id=request.pk
     ).exists():
         raise StorageInvariantError("Export calculation pin is unavailable.")
+    original = (
+        ExactExportResolution.objects.filter(export=request)
+        .select_related("request")
+        .first()
+    )
     return participation_document(
         facts,
         parish_name=request.configuration.parish.name,
         browser_timezone=request.browser_timezone,
-        requested_at=request.created_at,
+        requested_at=original.request.created_at if original else request.created_at,
     )
 
 

@@ -67,8 +67,35 @@ CREATE FUNCTION public.stewardship_fact_runtime_binding_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE demand stewardship_fact_demand%ROWTYPE;
         owned_task stewardship_task_run%ROWTYPE;
+        exact_request record;
 BEGIN
     IF current_user<>'pk_stewardship_worker' THEN RETURN NEW; END IF;
+    SELECT * INTO owned_task FROM stewardship_task_run WHERE id=NEW.task_id;
+    IF owned_task.task_type='report_exact_export' THEN
+        SELECT * INTO exact_request FROM stewardship_exact_export_request
+            WHERE id=owned_task.domain_request_id AND task_id=owned_task.root_id;
+        IF NOT FOUND OR ROW(NEW.campaign_id,NEW.population_scope,NEW.source_id,
+            NEW.submission_watermark,NEW.timezone_configuration_id,NEW.through_date)
+            IS DISTINCT FROM ROW(exact_request.campaign_id,exact_request.population_scope,
+                exact_request.source_id,exact_request.submission_watermark,
+                exact_request.timezone_configuration_id,exact_request.through_date)
+            OR NOT stewardship_export_authorized_v1(exact_request.requester_id)
+            OR NOT stewardship_export_admitted_v1(exact_request.campaign_id,true)
+            OR EXISTS(SELECT 1 FROM stewardship_exact_export_cancel WHERE request_id=exact_request.id)
+            OR EXISTS(SELECT 1 FROM stewardship_exact_export_resolution WHERE request_id=exact_request.id) THEN
+            RAISE EXCEPTION 'Exact builder differs from its admitted frozen request' USING ERRCODE='23514';
+        END IF;
+        IF TG_OP='UPDATE' AND NOT EXISTS(SELECT 1 FROM stewardship_task_run
+            WHERE id=OLD.task_id AND root_id=owned_task.root_id)
+            AND NOT EXISTS(SELECT 1 FROM stewardship_task_run prior
+                WHERE prior.id=OLD.task_id AND prior.task_type='report_exact_export'
+                  AND NOT EXISTS(SELECT 1 FROM stewardship_task_run active
+                    WHERE active.root_id=prior.root_id AND active.state IN ('queued','running','retry_wait','abandoned'))
+                  AND NOT EXISTS(SELECT 1 FROM stewardship_fact_demand WHERE claimed_generation_id=OLD.id)) THEN
+            RAISE EXCEPTION 'Exact recovery cannot replace a recoverable root' USING ERRCODE='23514';
+        END IF;
+        RETURN NEW;
+    END IF;
     SELECT * INTO owned_task FROM stewardship_task_run
         WHERE id=NEW.task_id AND task_type='report_facts';
     SELECT * INTO demand FROM stewardship_fact_demand WHERE id=owned_task.domain_request_id;
@@ -85,6 +112,19 @@ BEGIN
                 JOIN stewardship_task_run t ON t.id=f.task_id WHERE t.root_id=owned_task.root_id) THEN
             RAISE EXCEPTION 'Fact allocation differs from its unclaimed window' USING ERRCODE='23514';
         END IF;
+    ELSIF demand.claimed_generation_id IS NULL
+        AND demand.pending_due_at<=clock_timestamp()
+        AND ROW(NEW.source_id,NEW.submission_watermark,NEW.timezone_configuration_id,NEW.through_date)
+            IS NOT DISTINCT FROM ROW(demand.requested_source_id,demand.requested_submission_watermark,
+                demand.requested_timezone_configuration_id,demand.requested_through_date)
+        AND EXISTS(SELECT 1 FROM stewardship_task_run prior
+            WHERE prior.id=OLD.task_id AND prior.task_type='report_exact_export'
+              AND NOT EXISTS(SELECT 1 FROM stewardship_task_run active
+                WHERE active.root_id=prior.root_id AND active.state IN ('queued','running','retry_wait','abandoned'))
+              AND NOT EXISTS(SELECT 1 FROM stewardship_fact_demand WHERE claimed_generation_id=OLD.id)) THEN
+        -- Only terminal exact work may be adopted into a new ordinary window.
+        -- The normal demand guard then freezes this exact key and live fence.
+        RETURN NEW;
     ELSIF demand.claimed_generation_id IS DISTINCT FROM NEW.id
         OR NOT EXISTS(SELECT 1 FROM stewardship_task_run WHERE id=OLD.task_id AND root_id=owned_task.root_id) THEN
         RAISE EXCEPTION 'Fact mutation differs from its frozen root' USING ERRCODE='23514';
@@ -103,7 +143,7 @@ BEGIN
             JOIN stewardship_task_run t ON t.id=f.task_id
             WHERE f.id=NEW.parent_id AND f.source_id=NEW.snapshot_id
                 AND f.population_scope='current' AND f.state='building'
-                AND t.task_type='report_facts'
+                AND t.task_type IN ('report_facts','report_exact_export')
                 AND stewardship_fact_live(f.task_id,f.task_fence,f.worker_id)) THEN
         RAISE EXCEPTION 'Worker fact input pin requires its exact retained builder'
             USING ERRCODE='23514';
