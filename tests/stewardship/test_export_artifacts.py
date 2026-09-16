@@ -13,7 +13,6 @@ from parishkit.stewardship.reports.artifacts import (
     ArtifactChunks,
     ArtifactReceipt,
     open_artifact,
-    remove_artifact,
     remove_attempt_artifacts,
     write_artifact,
 )
@@ -55,8 +54,8 @@ def test_complete_artifact_is_atomic_private_and_streamed(store):
         assert stream.read(9) == payload[:9]
         assert stream.read() == payload[9:]
     assert stream.closed
-    assert remove_artifact(*store)
-    assert not remove_artifact(*store)
+    assert remove_attempt_artifacts(*store) == 1
+    assert remove_attempt_artifacts(*store) == 0
 
 
 def test_render_failure_and_collision_do_not_publish_or_replace(store):
@@ -80,7 +79,7 @@ def test_render_failure_and_collision_do_not_publish_or_replace(store):
 def test_size_bound_is_enforced_during_writes(store, monkeypatch):
     """A large renderer cannot fill disk before receipt validation happens."""
     monkeypatch.setattr(artifacts, "MAX_ARTIFACT_BYTES", 10)
-    with pytest.raises(ValueError):
+    with pytest.raises(ConfigError):
         write_artifact(*store, lambda stream: stream.write(b"x" * 11))
     assert not location(store).exists()
     with pytest.raises(ValueError):
@@ -104,7 +103,7 @@ def test_corruption_wrong_receipt_and_public_mode_fail_before_read(store):
     with pytest.raises(ConfigError), open_artifact(root, campaign, receipt):
         pytest.fail("public file was admitted")
     with pytest.raises(ConfigError):
-        remove_artifact(*store)
+        remove_attempt_artifacts(*store)
 
 
 @pytest.mark.parametrize("kind", ["symlink", "hardlink", "directory", "fifo"])
@@ -128,7 +127,7 @@ def test_unsafe_inode_is_neither_read_nor_deleted(store, tmp_path, kind):
     with pytest.raises(ConfigError), open_artifact(root, campaign, receipt):
         pytest.fail("unsafe file was admitted")
     with pytest.raises(ConfigError):
-        remove_artifact(*store)
+        remove_attempt_artifacts(*store)
     assert other.read_bytes() == b"private"
 
 
@@ -146,7 +145,7 @@ def test_symlink_directory_is_not_followed(store, tmp_path):
 def test_missing_cleanup_and_invalid_public_inputs(store):
     """Missing exact artifacts are harmless; path strings never reach syscalls."""
     root, campaign, identifier = store
-    assert not remove_artifact(*store)
+    assert not remove_attempt_artifacts(*store)
     with pytest.raises(ValueError):
         write_artifact(root, campaign, "../secret", lambda stream: None)
     with pytest.raises(TypeError):

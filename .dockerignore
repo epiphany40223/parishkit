@@ -24,3 +24,4 @@
 !src/parishkit/stewardship/schema/production.sql
 !src/parishkit/stewardship/schema/cleanup.sql
 !src/parishkit/stewardship/schema/schedule_reconciliation.sql
+!src/parishkit/stewardship/schema/exports.sql

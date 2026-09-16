@@ -176,3 +176,80 @@ def test_crashed_render_leaves_exact_attempt_for_cleanup(scenario, monkeypatch):
         handlers={TASK_TYPE: cleanup_handler(root)},
     )
     assert not (root / "exports" / request.campaign_id.hex / attempt.pk.hex).exists()
+
+
+@pytest.mark.parametrize("crashed", [False, True])
+def test_exhausted_cleanup_alerts_once_and_admin_can_retry(
+    scenario,  # noqa: F811
+    monkeypatch,
+    crashed,
+):
+    """The fifth failure is visible and repairable without unbounded new roots."""
+    from parishkit.config import ConfigError
+    from parishkit.stewardship.audit.models import OperationalLog
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+    from parishkit.stewardship.jobs.dispatch import recover_hint
+    from parishkit.stewardship.jobs.models import TaskRun
+    from parishkit.stewardship.jobs.storage import _status
+    from parishkit.stewardship.reports import export_cleanup
+
+    from .test_taskrun_postgresql import act, expire
+
+    store, principal, _, root = scenario
+    request = request_export(scenario)
+    run_export(scenario, request)
+    publication = expire_publication(request)
+    with scheduler_session() as guard:
+        task = produce_cleanup(guard)[0]
+    # Reach the fifth claim through the actual journal, not an unguarded UPDATE.
+    for _ in range(4):
+        with work_transaction():
+            task = act(act(task, "claim"), "retryable_failure")
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_sleep(1.05)")
+    options = dict(
+        queue=WorkQueue.GENERAL,
+        worker_id=uuid4(),
+        handlers={TASK_TYPE: cleanup_handler(root)},
+    )
+    if crashed:
+        with work_transaction():
+            expire(act(task, "claim", lease_seconds=1))
+        with task_login(ServiceRole.WORKER):
+            assert recover_hint(task.run_id, **options)
+            assert not recover_hint(task.run_id, **options)
+    else:
+
+        def fail(*args):
+            """Represent a filesystem fault handled by the owning worker."""
+            raise ConfigError("synthetic removal failure")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(export_cleanup, "remove_attempt_artifacts", fail)
+            with task_login(ServiceRole.WORKER):
+                assert execute_hint(task.run_id, **options)
+                assert not execute_hint(task.run_id, **options)
+    assert _status(TaskRun.objects.get(pk=task.run_id)).state == "failed"
+    assert (
+        OperationalLog.objects.filter(event="task_failed", level="CRITICAL").count()
+        == 1
+    )
+    with scheduler_session() as guard:
+        assert produce_cleanup(guard) == ()
+    command = uuid4()
+    retried = export_cleanup.retry_cleanup(
+        store, principal.pk, publication.attempt_id, request_key=command
+    )
+    assert (
+        export_cleanup.retry_cleanup(
+            store, principal.pk, publication.attempt_id, request_key=command
+        ).run_id
+        == retried.run_id
+    )
+    with task_login(ServiceRole.WORKER):
+        assert execute_hint(retried.run_id, **options)
+    assert ExportArtifactCleanup.objects.get().attempt_id == publication.attempt_id
+    assert (
+        OperationalLog.objects.filter(event="task_failed", level="CRITICAL").count()
+        == 1
+    )

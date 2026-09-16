@@ -11,7 +11,7 @@ from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.ownership import database_now
-from parishkit.stewardship.jobs.storage import enqueue
+from parishkit.stewardship.jobs.storage import enqueue, retry_failed
 from parishkit.stewardship.schema_primitives import timezone_names
 
 from .export_models import (
@@ -26,6 +26,10 @@ from .models import CampaignDailyFactSet
 from .retention import pin_facts
 
 TASK_TYPE = "report_export"
+
+
+class ExportConflict(ValueError):
+    """A valid command conflicts with an already completed export."""
 
 
 def authorize(store, user_id, *, request=None):
@@ -164,7 +168,7 @@ def cancel_export(store, user_id, request_id):
         authorize(store, user_id, request=request)
         admit_campaign(request.campaign_id, mutating=True)
         if ExportPublication.objects.filter(request=request).exists():
-            raise ValueError("Completed exports cannot be cancelled.")
+            raise ExportConflict("Completed exports cannot be cancelled.")
         receipt, created = ExportCancellation.objects.get_or_create(
             request=request,
             defaults={"actor_id": user_id},
@@ -172,6 +176,29 @@ def cancel_export(store, user_id, request_id):
         if created:
             audit(Action.EXPORT_CANCELLED, request, user_id, outcome=Outcome.CANCELLED)
         return receipt
+
+
+def retry_export(store, user_id, request_id, *, request_key):
+    """Retry the latest failed run without changing the original report owner.
+
+    The command actor owns this retry journal entry; the immutable export and
+    root task retain the original requester whose policy the worker rechecks.
+    """
+    from .export_tasks import admit_export
+
+    with work_transaction():
+        request = ExportRequest.objects.get(pk=request_id)
+        authorize(store, user_id, request=request)
+        admit_campaign(request.campaign_id, mutating=True)
+        previous = request.task.chain_runs.filter(retry_command_id=request_key).first()
+        latest = request.task.chain_runs.order_by("-retry_sequence").first()
+        return retry_failed(
+            run_id=previous.parent_id if previous is not None else latest.pk,
+            command_id=request_key,
+            actor_id=user_id,
+            correlation_id=uuid4(),
+            admit=lambda action, status: admit_export(action, status, store=store),
+        )
 
 
 def export_status(store, user_id, request_id):

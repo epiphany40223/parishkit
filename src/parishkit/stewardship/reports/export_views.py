@@ -25,6 +25,7 @@ from parishkit.stewardship.web.responses import campaign_response
 from .artifacts import ArtifactChunks, ArtifactReceipt
 from .export_models import ExportPublication
 from .export_services import (
+    ExportConflict,
     admit_campaign,
     audit,
     authorize,
@@ -55,10 +56,11 @@ def _json(value, *, status=200):
 
 def _body(request, fields):
     """Reject unknown/duplicate fields; identifiers and filters stay out of URLs."""
+    supplied = set(request.POST) - {"csrfmiddlewaretoken"}
     if (
         request.GET
-        or set(request.POST) != set(fields)
-        or any(len(request.POST.getlist(field)) != 1 for field in fields)
+        or supplied != set(fields)
+        or any(len(request.POST.getlist(field)) != 1 for field in request.POST)
     ):
         raise ValueError("Invalid export request fields.")
     return {field: request.POST[field] for field in fields}
@@ -123,8 +125,10 @@ def cancel(request, request_id):
         principal = _principal(request, service.store)
         cancel_export(service.store, principal.identity, request_id)
         return _json({"id": str(request_id), "state": "cancelled"})
-    except ValueError:
+    except ExportConflict:
         return _json({"error": "Export cannot be cancelled."}, status=409)
+    except ValueError:
+        return _json({"error": "Invalid export request."}, status=400)
     except SAFE_FAILURES:
         return denial()
 
@@ -177,9 +181,7 @@ def download(request):
         def fresh(guard):
             """Recheck session and artifact on the dedicated read connection."""
             current = _principal(request, service.store, read_only=True)
-            if current.identity != principal.identity or not allows(
-                current, Capability.CAMPAIGN_REPORT
-            ):
+            if current.identity != principal.identity:
                 raise ReadUnavailable("This export is unavailable.")
             authorize(service.store, current.identity, request=job)
             admit_campaign(job.campaign_id, mutating=False)

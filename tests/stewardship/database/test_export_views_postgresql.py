@@ -1,10 +1,14 @@
 """Real signed-login, CSRF, requester API and guarded streaming integration."""
 
 import socket
+from contextlib import contextmanager
+from copy import deepcopy
 from uuid import uuid4
 
 import pytest
+from django.db import connection
 from django.test import Client
+from psycopg import sql
 
 from parishkit.stewardship.accounts.auth_incidents import record_incident
 from parishkit.stewardship.accounts.authentication import AuthRuntime
@@ -13,7 +17,9 @@ from parishkit.stewardship.campaigns.read_guards import DownloadPool, ReadLimits
 from parishkit.stewardship.reports.export_models import ExportRequest
 
 from .auth_builders import signed_in, valkey_client
+from .test_background_grants_postgresql import task_login
 from .test_export_jobs_postgresql import run_export, scenario  # noqa: F401
+from .test_runtime_auth_grants_postgresql import web_login
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -62,7 +68,7 @@ def post(browser, url, data=None, **extra):
     )
 
 
-def create(http_scenario):
+def create(http_scenario, *, format="csv"):
     """Select a complete pinned generation through the public requester endpoint."""
     setup, browser = http_scenario
     facts = setup[2]
@@ -71,7 +77,7 @@ def create(http_scenario):
         f"/admin/campaign/{facts.campaign_id}/exports/participation",
         {
             "fact_set_id": str(facts.pk),
-            "format": "csv",
+            "format": format,
             "browser_timezone": "UTC",
             "request_key": str(uuid4()),
         },
@@ -96,27 +102,60 @@ def test_real_api_requires_csrf_and_rejects_arbitrary_query_inputs(http_scenario
     assert post(browser, f"/admin/exports/{request.pk}/cancel").status_code == 200
 
 
-def test_complete_download_holds_guard_and_streams_with_private_headers(http_scenario):
+@contextmanager
+def restricted_download_pool(settings):
+    """Use distinct real SQL logins for the HTTP web and dedicated read paths."""
+    with task_login("download"):
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT current_user")
+            role = cursor.fetchone()[0]
+            cursor.execute("RESET SESSION AUTHORIZATION")
+            cursor.execute(
+                sql.SQL("ALTER ROLE {} PASSWORD {}").format(
+                    sql.Identifier(role), sql.Literal("disposable-download-test-only")
+                )
+            )
+        database = deepcopy(connection.settings_dict)
+        database.update(USER=role, PASSWORD="disposable-download-test-only")
+        settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(
+            ReadLimits(process_pool_size=1), database=database
+        )
+        with web_login():
+            yield
+
+
+@pytest.mark.parametrize("format", ["csv", "png", "pdf"])
+def test_complete_download_holds_guard_and_streams_with_private_headers(
+    http_scenario, settings, format
+):
     """A signed-in user consumes one grant; files never use proxy redirects."""
     setup, browser = http_scenario
-    request = create(http_scenario)
+    request = create(http_scenario, format=format)
     run_export(setup, request)
     grant = post(browser, f"/admin/exports/{request.pk}/download-grant").json()["grant"]
     server, peer = socket.socketpair()
     try:
-        response = post(
-            browser,
-            "/admin/exports/download",
-            {"grant": grant},
-            **{"gunicorn.socket": server},
-        )
-        assert response.status_code == 200
-        assert response.streaming
-        assert response["Cache-Control"] == "no-store"
-        assert response["Content-Type"] == "text/csv"
-        assert "X-Accel-Redirect" not in response
-        assert b"date,scope," in b"".join(response.streaming_content)
-        response.close()
+        with restricted_download_pool(settings):
+            response = post(
+                browser,
+                "/admin/exports/download",
+                {"grant": grant},
+                **{"gunicorn.socket": server},
+            )
+            assert response.status_code == 200
+            assert response.streaming
+            assert response["Cache-Control"] == "no-store"
+            assert (
+                response["Content-Type"]
+                == {"csv": "text/csv", "png": "image/png", "pdf": "application/pdf"}[
+                    format
+                ]
+            )
+            assert "X-Accel-Redirect" not in response
+            assert b"".join(response.streaming_content).startswith(
+                {"csv": b"date,scope,", "png": b"\x89PNG", "pdf": b"%PDF"}[format]
+            )
+            response.close()
         assert (
             post(
                 browser,
@@ -165,3 +204,21 @@ def test_anonymous_requests_never_get_export_metadata(http_scenario):
     """No authenticated requester means no campaign/file existence disclosure."""
     request = create(http_scenario)
     assert Client().get(f"/admin/exports/{request.pk}").status_code in {302, 403}
+
+
+def test_form_csrf_and_invalid_cancel_are_distinct_from_completed_conflict(
+    http_scenario,
+):
+    """Conventional form CSRF works; malformed commands do not return conflicts."""
+    setup, browser = http_scenario
+    request = create(http_scenario)
+    path = f"/admin/exports/{request.pk}/cancel"
+    assert post(browser, path, {"unknown": "value"}).status_code == 400
+    run_export(setup, request)
+    assert post(browser, path).status_code == 409
+    queued = create(http_scenario)
+    response = browser.post(
+        f"/admin/exports/{queued.pk}/cancel",
+        {"csrfmiddlewaretoken": browser.cookies["csrftoken"].value},
+    )
+    assert response.status_code == 200

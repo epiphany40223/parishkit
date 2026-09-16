@@ -1,4 +1,4 @@
-CREATE TABLE "stewardship_export_request" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "campaign_id" uuid NOT NULL, "requester_id" uuid NOT NULL, "request_key" uuid NOT NULL, "task_id" uuid NOT NULL UNIQUE, "fact_set_id" uuid NOT NULL, "configuration_id" uuid NOT NULL, "report" varchar(32) NOT NULL, "format" varchar(4) NOT NULL, "browser_timezone" varchar(254) NOT NULL, "parameters" jsonb NOT NULL, "authorization_scope" jsonb NOT NULL, CONSTRAINT "export_request_replay" UNIQUE ("requester_id", "request_key"), CONSTRAINT "export_report_known" CHECK ("report" = 'participation'), CONSTRAINT "export_format_known" CHECK ("format" IN ('csv', 'png', 'pdf')));
+CREATE TABLE "stewardship_export_request" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "campaign_id" uuid NOT NULL, "requester_id" uuid NOT NULL, "request_key" uuid NOT NULL, "task_id" uuid NOT NULL UNIQUE, "fact_set_id" uuid NOT NULL, "configuration_id" uuid NOT NULL, "report" varchar(32) NOT NULL, "format" varchar(4) NOT NULL, "browser_timezone" varchar(254) NOT NULL, "parameters" jsonb NOT NULL, "authorization_scope" jsonb NOT NULL, CONSTRAINT "export_request_replay" UNIQUE ("requester_id", "request_key"), CONSTRAINT "export_report_known" CHECK ("report" = 'participation'), CONSTRAINT "export_format_known" CHECK ((format)::text = ANY ((ARRAY['csv'::character varying, 'png'::character varying, 'pdf'::character varying])::text[])));
 CREATE TABLE "stewardship_export_attempt" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "request_id" uuid NOT NULL, "run_id" uuid NOT NULL, "fence" bigint NOT NULL CHECK ("fence" >= 0), "claim_event_id" uuid NOT NULL, CONSTRAINT "export_attempt_claim" UNIQUE ("request_id", "run_id", "fence"), CONSTRAINT "export_attempt_positive_fence" CHECK ("fence" > 0));
 CREATE TABLE "stewardship_export_publication" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "request_id" uuid NOT NULL UNIQUE, "attempt_id" uuid NOT NULL UNIQUE, "size" bigint NOT NULL CHECK ("size" >= 0), "sha256" varchar(64) NOT NULL, "row_count" integer NOT NULL CHECK ("row_count" >= 0), "expires_at" timestamp with time zone NOT NULL, CONSTRAINT "export_publication_size" CHECK (("size" > 0 AND "size" <= 536870912)), CONSTRAINT "export_publication_digest" CHECK ("sha256"::text ~ '^[0-9a-f]{64}$'), CONSTRAINT "export_publication_expiry" CHECK ("expires_at" > ("created_at")));
 CREATE TABLE "stewardship_export_cancellation" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "request_id" uuid NOT NULL UNIQUE);
@@ -61,7 +61,7 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
 $$;
 
 CREATE FUNCTION public.stewardship_export_immutable_v1() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
     RAISE EXCEPTION 'Export history is immutable' USING ERRCODE = '23514';
 END $$;
@@ -81,7 +81,8 @@ BEGIN
        OR NEW.authorization_scope<>'{"capability":"campaign_report"}'::jsonb
        OR NEW.parameters<>jsonb_build_object('population_scope',facts.population_scope,
            'sort','date_asc','selected_ids','[]'::jsonb,'filters','{}'::jsonb)
-       OR NOT EXISTS(SELECT 1 FROM pg_timezone_names WHERE name=NEW.browser_timezone)
+       OR NOT EXISTS(SELECT 1 FROM pg_timezone_names
+           WHERE name=public.stewardship_timezone_name_v1(NEW.browser_timezone))
        OR NOT EXISTS(SELECT 1 FROM stewardship_task_run t WHERE t.id=NEW.task_id
            AND t.root_id=t.id AND t.task_type='report_export' AND t.domain_request_id=NEW.id
            AND t.initiated_by_id=NEW.requester_id AND t.idempotency_key=NEW.id::text
@@ -112,7 +113,7 @@ BEGIN
        OR EXISTS(SELECT 1 FROM stewardship_export_cancellation WHERE request_id=request.id)
        OR NOT EXISTS(SELECT 1 FROM stewardship_task_run t JOIN stewardship_task_event e ON e.id=NEW.claim_event_id
            WHERE t.id=NEW.run_id AND t.root_id=request.task_id AND t.task_type='report_export'
-             AND t.domain_request_id=request.id AND t.initiated_by_id=request.requester_id
+             AND t.domain_request_id=request.id
              AND t.state='running' AND t.fence=NEW.fence AND t.worker_id=NEW.actor_id
              AND t.lease_expires_at>clock_timestamp() AND e.run_id=t.id
              AND e.action='claim' AND e.fence=t.fence AND e.worker_id=t.worker_id)
@@ -185,8 +186,8 @@ END $$;
 DO $$ DECLARE name text;
 BEGIN
     FOREACH name IN ARRAY ARRAY['request','attempt','publication','cancellation','download_grant','download_use'] LOOP
-        EXECUTE format('CREATE TRIGGER export_immutable BEFORE UPDATE OR DELETE ON stewardship_export_%I '
-            'FOR EACH ROW EXECUTE FUNCTION stewardship_export_immutable_v1()', name);
+        EXECUTE format('CREATE TRIGGER export_immutable BEFORE UPDATE OR DELETE ON %I '
+            'FOR EACH ROW EXECUTE FUNCTION stewardship_export_immutable_v1()', 'stewardship_export_' || name);
     END LOOP;
 END $$;
 CREATE TRIGGER export_request_insert BEFORE INSERT ON stewardship_export_request

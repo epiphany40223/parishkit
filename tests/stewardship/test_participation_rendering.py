@@ -38,7 +38,7 @@ def document():
         source_generation=3,
         source_as_of=source,
         submission_watermark=1001,
-        generated_at=source,
+        requested_at=source,
         first_date=date(2026, 10, 31),
         last_date=date(2026, 11, 2),
         financial_enabled=True,
@@ -85,6 +85,7 @@ def test_table_and_csv_keep_exact_money_counts_and_pinned_metadata():
         assert row["pledge_usd"] == raw["pledge_usd"]
         assert row["fact_set_id"] == str(value.fact_set_id)
         assert row["input_source_generation"] == "3"
+        assert row["input_source_as_of"] == value.source_as_of.isoformat()
         assert row["submission_watermark"] == "1001"
         assert row["campaign_timezone"] == "America/New_York"
     assert "2026-11-01T21:00:00-08:00" in value.as_of_label
@@ -132,6 +133,33 @@ def test_serialized_thread_rendering_is_deterministic():
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(lambda _: encoded(value, "png"), range(4)))
     assert all(result == results[0] for result in results)
+
+
+@pytest.mark.parametrize("count", [366, 3653])
+def test_annual_and_multi_year_documents_render_all_observations(count):
+    """Exercise full-size inputs; do not hide scale problems with three-row fixtures."""
+    value = document()
+    first = date(2026, 1, 1)
+    source = datetime(2037, 1, 1, tzinfo=UTC)
+    value = replace(
+        value,
+        source_as_of=source,
+        requested_at=source,
+        first_date=first,
+        last_date=first + timedelta(days=count - 1),
+        days=tuple(
+            replace(
+                value.days[0],
+                local_date=first + timedelta(days=index),
+                cumulative_responses=index + 1,
+                cohort_denominator=5000,
+            )
+            for index in range(count)
+        ),
+    )
+    assert len(participation_table(value)) == count
+    assert encoded(value, "png").startswith(b"\x89PNG")
+    assert encoded(value, "pdf").startswith(b"%PDF")
 
 
 def test_no_financial_column_axis_or_hidden_value_when_disabled():
@@ -220,7 +248,7 @@ def test_invalid_day_is_rejected_before_rendering(change):
         {"submission_watermark": -1},
         {"financial_enabled": 1},
         {"source_as_of": datetime(2026, 1, 1)},
-        {"generated_at": None},
+        {"requested_at": None},
         {"first_date": None},
         {"last_date": date(2025, 1, 1)},
         {"days": []},

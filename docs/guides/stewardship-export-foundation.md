@@ -62,6 +62,12 @@ attempt's expired/crashed files. A five-second drain timeout schedules bounded
 retry, not deletion. Requests, publications, cleanup receipts and fact pins remain
 retained. A renderer exceeding its read-guard deadline hard-stops the isolated
 solo worker; Compose restart and lease recovery preserve the unfinished outcome.
+Exhausted cleanup records one durable critical operational signal per failed run;
+an Admin service can explicitly retry the same root after repairing the cause.
+BG-10 owns notification transport; Phase 5 owns the additional report-job controls.
+Download grants and uses are retained audit-adjacent parish security metadata,
+not temporary report bytes. The exceptional purge owner controls their eventual
+disposition; seven-day artifact cleanup does not erase access history.
 
 PNG/PDF share immutable exact inputs with CSV/table values. Matplotlib 3.11.2
 uses fixed fonts/style, separate count/dollar axes and deterministic metadata;
@@ -86,3 +92,66 @@ Full local validation, three dual-source review/fix rounds and protected deliver
 are still pending. BG-08 remains in progress; the complete report catalog,
 priority materialization, interactive screens and ministry-scoped export owners
 remain assigned to their later tasks.
+
+## Review round 1
+
+Pika session `20260916-013854-043719` reviewed full branch base `e1e575dd`
+through `d16f18df2852c1c09b616bedef29a75c4489bef4`, tree
+`8393d5d3b724a95e1428d9defa78d81adb298dea`. The exact-path Claude permission
+preflight passed. Both manifest-generated Claude shards and Pika's single Codex
+reviewer completed; finalize reported no failed/degraded sources, mismatch or
+salvage. Raw severities were **1 High, 8 Medium and 27 Low**; eight findings
+survived the configured confidence/severity filter. The tables retain raw
+severities rather than treating filtering as disposition.
+
+`C` denotes Codex; `A` and `B` denote Claude shards 1 and 2, respectively.
+Numbers are one-based positions in each source's raw finding list.
+
+| Finding | Severity | Disposition and evidence |
+| --- | --- | --- |
+| C1 | High | Fixed: include `exports.sql` in both Docker allowlists and build-context inventories; rebuild and configured Compose validation required. |
+| C2 | Medium | Fixed: immutable root binds the requester, while retry actor can be Admin; explicit retry/replay service and Staff-request/Admin-retry worker regression. |
+| C3 | Medium | Fixed: CSV carries overall pinned `input_source_as_of`, separately from per-day cutoffs; parity assertion. |
+| A1 | Medium | Fixed: bounded cleanup exhaustion records CRITICAL atomically; Admin explicit same-root retry, replay and actual restricted-role crash/failure regressions. |
+| A2 | Medium | Rejected: retained export requests must preserve their input generations under the controlling fact-retention contract. File expiry cannot release their pins. |
+| A3 | Medium | Rejected for this bounded compiled renderer: the finite 60-second guard deliberately limits a slow filesystem/renderer before purge can drain. Scale tests render PNG and PDF for 366 days in 0.39 seconds and 3,653 days in 2.53 seconds locally; cold read-only image rendering also completed in under a second. Preserve fail-closed hard-stop and recovery tests rather than introduce a second, divergent lifetime policy. New report types must establish their own bounded query/render acceptance evidence. |
+| B1 | Medium | Rejected even though filtered at confidence 38: `execution.effect()` enters `handler.scope=work_transaction` before eligibility/unlink/receipt. It already holds advisory key `(736220,1)` for the complete destructive effect; publication cannot interleave. |
+| B2 | Medium | Fixed: actual HTTP CSV/PNG/PDF streaming uses distinct restricted web and download logins and executes the real session/revocation callback. No privileges broadened. |
+| B3 | Medium | Fixed after reproducing missing aliases: SQL validates through the existing pinned alias resolver; exhaustive catalog/Python/PostgreSQL compatibility test and actual `US/Eastern` worker regression. |
+
+| Finding | Severity | Disposition and evidence |
+| --- | --- | --- |
+| A4 | Low | Fixed N+1 with `select_related`; broader historical scan optimization deferred with B6 to report-volume tuning, not claimed solved by a query-order change. |
+| A5 | Low | Rejected: verifying the entire bounded artifact before sending bytes intentionally prevents disclosure of corrupt/substituted content. |
+| A6 | Low | Fixed: remove unused single-file remover; tests exercise actual attempt cleanup. |
+| A7 | Low | Fixed with C2/A1: separate Admin retry actor, explicit same-root cleanup retry. |
+| A8 | Low | Deferred performance tuning: global work order is required; exclusive drain waits at most five seconds, then retries without unlinking. Active-reader regression verifies it. |
+| A9 | Low | Fixed: oversized artifact writes raise the owning `ConfigError`; regression follows the real failure contract. |
+| A10 | Low | Retained deliberately: one empty private directory per campaign is harmless; exceptional campaign purge owns directory removal, not artifact expiry. |
+| A11 | Low | Fixed: column grants compose additively. |
+| A12 | Low | Fixed: scheduler no longer receives worker-only extra PortalUser columns. |
+| A13 | Low | Added exhausted cleanup recovery/failure and retry coverage; existing crashed-render cancellation test already exercises real recovery dispatch. |
+| B4 | Low | Fixed: allow Django's conventional CSRF body field while rejecting duplicate/unknown business fields; form regression. |
+| B5 | Low | Fixed: malformed cancellation is 400; completed-export conflict uses a specific exception and 409. |
+| B6 | Low | Deferred with A4: immutable historical scan performance deserves measured tuning; existing indexed TaskRun anti-join already excludes every scheduled cleanup root. |
+| B7 | Low | Rejected: the common work-order lock coordinates lifecycle/purge admission across owners. A per-export replacement would violate established lock ordering. |
+| B8 | Low | Fixed: immutable SQL guard pins search path consistently. |
+| B9 | Low | Fixed: quote complete generated table identifiers, not suffixes. |
+| B10 | Low | Fixed: remove redundant capability test after `_principal`. |
+| B11 | Low | Retained clear closure/sentinel pattern; no functional issue and changing it would add another state variable. |
+| B12 | Low | Rejected formatter-only suggestion; Ruff owns wrapping, and invalid-scope tests cover membership semantics. |
+| B13 | Low | Deferred negligible shallow-copy optimization; full annual/multi-year rendering measurements now exist. |
+| B14 | Low | Fixed: hoist constant CSV metadata conversion out of the row loop. |
+| B15 | Low | Fixed: immutable timestamp and visible label say `requested_at`/Requested; PDF dates describe logical document origin, not retry time. |
+| B16 | Low | Documented retained audit-adjacent grant/use history above; no unapproved retention sweep. |
+| B17 | Low | Fixed: actual HTTP format/header/byte validation covers CSV, PNG and PDF. |
+| B18 | Low | Deferred richer denied-redemption audit to Phase 5 report-access UX/security integration; current uniform denial remains, and started/finished/failed streams are audited. |
+| B19 | Low | Documented: this compiled participation report requires parish-wide `CAMPAIGN_REPORT`; generic/ministry export permission composition belongs to Phase 5 and must not broaden this endpoint. |
+| C4 | Low | Artifact limitation: default Pika finalization removed Codex raw output after retaining its three validated findings. The fourth raw Low count survives, but its body does not; no invented disposition. Subsequent rounds retain artifacts explicitly. |
+
+The first full validation attempt exposed one real fresh-schema deparse mismatch,
+now corrected without weakening the model/schema comparison. The disposable
+PostgreSQL service for one shard also suffered an OOM crash; its replacement
+completed all 743 tests. These partial results are not final combined coverage.
+Final integrated validation must use one frozen source tree and successful
+receipts from every shard. Retained development databases were not modified.

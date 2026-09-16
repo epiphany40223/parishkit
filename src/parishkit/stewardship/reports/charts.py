@@ -171,8 +171,10 @@ def render_participation(document, output, *, format):
         if format == "pdf":
             metadata.update(
                 {
-                    "CreationDate": document.generated_at,
-                    "ModDate": document.generated_at,
+                    # The logical document originates at its immutable request,
+                    # not at a retry's wall-clock render time.
+                    "CreationDate": document.requested_at,
+                    "ModDate": document.requested_at,
                     "Producer": "ParishKit",
                 }
             )

@@ -98,7 +98,7 @@ class ParticipationDocument:
     source_generation: int
     source_as_of: datetime
     submission_watermark: int
-    generated_at: datetime
+    requested_at: datetime
     first_date: date | None
     last_date: date | None
     financial_enabled: bool
@@ -133,7 +133,7 @@ class ParticipationDocument:
         ):
             raise ValueError("Report input cutoffs and flags must have exact types.")
         _instant(self.source_as_of)
-        _instant(self.generated_at)
+        _instant(self.requested_at)
         if type(self.days) is not tuple or any(
             not isinstance(day, ParticipationDay) for day in self.days
         ):
@@ -170,11 +170,11 @@ class ParticipationDocument:
         """Localize instants only; graph calendar dates stay in campaign time."""
         zone = ZoneInfo(self.browser_timezone)
         source = self.source_as_of.astimezone(zone).isoformat(timespec="seconds")
-        generated = self.generated_at.astimezone(zone).isoformat(timespec="seconds")
+        requested = self.requested_at.astimezone(zone).isoformat(timespec="seconds")
         return (
             f"Source #{self.source_generation:,} as of {source}; "
             f"submission cutoff {self.submission_watermark:,}\n"
-            f"Generated {generated} ({self.browser_timezone})"
+            f"Requested {requested} ({self.browser_timezone})"
         )
 
 
@@ -233,8 +233,9 @@ def participation_csv(document, output):
         "campaign_timezone": document.campaign_timezone,
         "browser_timezone": document.browser_timezone,
         "input_source_generation": document.source_generation,
+        "input_source_as_of": document.source_as_of.astimezone(UTC).isoformat(),
         "submission_watermark": document.submission_watermark,
-        "generated_at": document.generated_at.astimezone(UTC).isoformat(),
+        "requested_at": document.requested_at.astimezone(UTC).isoformat(),
     }
     # A newline-neutral wrapper gives canonical CRLF on every developer host.
     # Detach it so this function never closes the caller-owned artifact stream.
@@ -242,11 +243,9 @@ def participation_csv(document, output):
     try:
         writer = csv.writer(wrapper, lineterminator="\r\n")
         writer.writerow(headings + list(metadata))
+        trailer = [csv_cell(value) for value in metadata.values()]
         for row in rows:
-            writer.writerow(
-                [csv_cell(row[key]) for key in headings]
-                + [csv_cell(value) for value in metadata.values()]
-            )
+            writer.writerow([csv_cell(row[key]) for key in headings] + trailer)
         wrapper.flush()
     finally:
         wrapper.detach()

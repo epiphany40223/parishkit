@@ -6,6 +6,8 @@ from django.db import OperationalError, connection
 from django.db.models import BooleanField, Exists, Func, OuterRef, Value
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.audit.schemas import ContextKind, Outcome
+from parishkit.stewardship.audit.services import operational
 from parishkit.stewardship.campaigns.read_guards import acquire_campaign_drain
 from parishkit.stewardship.campaigns.work_locks import (
     require_work_order,
@@ -16,12 +18,13 @@ from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.scheduler import SchedulerGuard
-from parishkit.stewardship.jobs.storage import enqueue
+from parishkit.stewardship.jobs.storage import enqueue, retry_failed
+from parishkit.stewardship.observability import Event
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .artifacts import remove_attempt_artifacts
 from .export_models import ExportArtifactCleanup, ExportAttempt
-from .export_services import admit_campaign
+from .export_services import admit_campaign, authorize
 
 TASK_TYPE = "report_export_cleanup"
 
@@ -87,17 +90,21 @@ def recover_cleanup(status):
 def admit_cleanup(action, status):
     """Only the file-owning worker can create a receipt; scheduler owns hints only."""
     attempt = _attempt(status, creating=action == "enqueue")
+    if action == "permanent_failure":
+        _exhausted(status)
+        return True
     if action in {
         "lease_expired",
         "recovery_hint",
         "retryable_failure",
-        "permanent_failure",
     }:
         return True
     if action in {"complete", "recovery_complete"}:
         return _complete(attempt)
     if action in {"recovery_retry", "recovery_fail"}:
         plan = recover_cleanup(status)
+        if plan is not None and action == plan.action == "recovery_fail":
+            _exhausted(status)
         return plan is not None and action == plan.action
     return action in {
         "enqueue",
@@ -106,7 +113,49 @@ def admit_cleanup(action, status):
         "effect",
         "heartbeat",
         "progress",
+        "explicit_retry",
+        "explicit_retry_replay",
     } and (_complete(attempt) or _eligible(attempt))
+
+
+def _exhausted(status):
+    """Persist a privacy-safe critical signal with the owning terminal transition.
+
+    Do not manufacture new automatic roots indefinitely after bounded retries.
+    The Admin operational log/task history identifies the failed cleanup; BG-10
+    owns notification transport and Phase 5 owns additional report-job controls.
+    A failed state transition rolls this signal back with its transaction.
+    """
+    operational(
+        Event.TASK_FAILED,
+        level="CRITICAL",
+        schema=ContextKind.TASK,
+        context={"task_id": status.run_id, "outcome": Outcome.FAILED},
+    )
+
+
+def retry_cleanup(store, user_id, attempt_id, *, request_key):
+    """An Admin may explicitly retry the same bounded cleanup root after repair."""
+    from uuid import uuid4
+
+    with work_transaction():
+        principal = authorize(store, user_id)
+        if "administrator" not in principal.roles:
+            raise PermissionError("Export cleanup requires an Administrator.")
+        attempt = ExportAttempt.objects.select_related("request").get(pk=attempt_id)
+        admit_campaign(attempt.request.campaign_id, mutating=True)
+        runs = TaskRun.objects.filter(task_type=TASK_TYPE, domain_request_id=attempt.pk)
+        previous = runs.filter(retry_command_id=request_key).first()
+        latest = runs.order_by("-retry_sequence").first()
+        if latest is None:
+            raise ValueError("Export cleanup has not been scheduled.")
+        return retry_failed(
+            run_id=previous.parent_id if previous is not None else latest.pk,
+            command_id=request_key,
+            actor_id=user_id,
+            correlation_id=uuid4(),
+            admit=admit_cleanup,
+        )
 
 
 def cleanup_handler(root=None):
@@ -191,6 +240,7 @@ def produce_cleanup(guard, *, limit=20):
             )
             .filter(disposable=True, admitted=True)
             .filter(~Exists(existing))
+            .select_related("request")
             .order_by("created_at", "pk")[:limit]
         )
         result = []

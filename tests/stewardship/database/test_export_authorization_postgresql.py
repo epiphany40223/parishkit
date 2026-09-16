@@ -16,6 +16,7 @@ from parishkit.stewardship.reports.export_services import (
     consume_download,
     export_status,
     issue_download,
+    retry_export,
 )
 
 from ..policy_factory import address, assignment
@@ -84,6 +85,45 @@ def test_ministry_leader_cannot_use_participation_export(scenario):  # noqa: F81
     request = request_export(scenario)
     with pytest.raises(PermissionError):
         export_status(store, leader.pk, request.pk)
+
+
+def test_admin_retries_staff_export_without_changing_owner(scenario):  # noqa: F811
+    """Retry command ownership differs from the immutable report requester."""
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+    from parishkit.stewardship.jobs.dispatch import execute_hint
+    from parishkit.stewardship.jobs.models import TaskRun
+    from parishkit.stewardship.jobs.queues import WorkQueue
+    from parishkit.stewardship.jobs.storage import _status
+    from parishkit.stewardship.reports.export_tasks import TASK_TYPE, export_handler
+
+    from .test_taskrun_postgresql import act
+
+    add_policy(scenario, address("staff@example.org", ("staff",)))
+    store, admin, facts, root = scenario
+    staff = user("staff@example.org")
+    request = request_export((store, staff, facts, root))
+    with work_transaction():
+        claimed = act(_status(request.task), "claim")
+        act(claimed, "permanent_failure")
+    key = uuid4()
+    retried = retry_export(store, admin.pk, request.pk, request_key=key)
+    assert retry_export(store, admin.pk, request.pk, request_key=key) == retried
+    assert TaskRun.objects.get(pk=retried.run_id).initiated_by_id == admin.pk
+    assert execute_hint(
+        retried.run_id,
+        queue=WorkQueue.GENERAL,
+        worker_id=uuid4(),
+        handlers={TASK_TYPE: export_handler(store=store, root=root)},
+    )
+    assert (
+        ExportPublication.objects.get(request=request).attempt.run_id == retried.run_id
+    )
+    request.refresh_from_db()
+    assert request.requester_id == staff.pk
+    assert (
+        retry_export(store, admin.pk, request.pk, request_key=key).run_id
+        == retried.run_id
+    )
 
 
 def test_sql_and_python_policy_agree_on_verified_email_case(scenario):  # noqa: F811
@@ -169,3 +209,33 @@ def test_non_render_roles_cannot_forge_publications(role):
     ):
         cursor.execute("INSERT INTO stewardship_export_publication DEFAULT VALUES")
     assert error.value.__cause__.sqlstate == "42501"
+
+
+def test_pinned_timezone_catalog_is_supported_by_python_and_postgres():
+    """Every admitted browser zone must render and pass the database constraint."""
+    from zoneinfo import ZoneInfo
+
+    from parishkit.stewardship.schema_primitives import timezone_names
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT name FROM pg_timezone_names")
+        postgres = {row[0] for row in cursor.fetchall()}
+    names = set(timezone_names())
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT zone, stewardship_timezone_name_v1(zone) "
+            "FROM unnest(%s::text[]) AS zone",
+            (sorted(names),),
+        )
+        normalized = dict(cursor.fetchall())
+    assert set(normalized.values()) <= postgres
+    for name in sorted(names):
+        assert ZoneInfo(name).key == name
+
+
+def test_historical_browser_timezone_alias_is_preserved(scenario):  # noqa: F811
+    """Supported aliases remain display metadata even when SQL uses canonical names."""
+    request = request_export(scenario, browser_timezone="US/Eastern")
+    assert run_export(scenario, request)
+    request.refresh_from_db()
+    assert request.browser_timezone == "US/Eastern"

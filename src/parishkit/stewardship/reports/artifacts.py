@@ -96,7 +96,7 @@ class _BoundedWriter(io.BufferedWriter):
     def write(self, data):
         """Never let a renderer consume unbounded disk before a final size check."""
         if self.tell() + len(data) > MAX_ARTIFACT_BYTES:
-            raise ValueError("Export exceeds the artifact size limit.")
+            raise ConfigError("Export exceeds the artifact size limit.")
         return super().write(data)
 
 
@@ -187,25 +187,6 @@ def open_artifact(root, campaign_id, receipt):
                 yield stream
     except OSError:
         raise ConfigError("Export file is unavailable.") from None
-
-
-def remove_artifact(root, campaign_id, identifier):
-    """Remove only one admitted exact artifact after the owner drains its readers."""
-    name = _name(identifier)
-    try:
-        with _directory(root, campaign_id) as directory:
-            try:
-                inode = os.stat(name, dir_fd=directory, follow_symlinks=False)
-            except FileNotFoundError:
-                return False
-            _private(inode)
-            os.unlink(name, dir_fd=directory)
-            os.fsync(directory)
-            return True
-    except FileNotFoundError:
-        return False
-    except OSError:
-        raise ConfigError("Export cleanup is unavailable.") from None
 
 
 class ArtifactChunks:

@@ -373,6 +373,7 @@ def test_build_context_excludes_synthetic_private_files(tmp_path, ignore_kind):
         "src/parishkit/stewardship/schema/production.sql",
         "src/parishkit/stewardship/schema/cleanup.sql",
         "src/parishkit/stewardship/schema/schedule_reconciliation.sql",
+        "src/parishkit/stewardship/schema/exports.sql",
     }
     denied = {
         ".git/config",
