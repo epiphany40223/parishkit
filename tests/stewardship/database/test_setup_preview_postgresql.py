@@ -153,9 +153,9 @@ def test_preview_http_is_private_inert_and_contains_all_named_slots(
         ):
             assert expected in response.content
         assert b"synthetic-private" not in response.content
-        assert (
-            b"example.invalid" not in response.content
-        )  # No sample link requested by this template.
+        # Invitation access placeholders render fictional values only.
+        assert b"https://example.invalid/sample-family" in response.content
+        assert b"SAMPLE" in response.content
         assert browser.post("/admin/setup/preview", {}).status_code in {403, 405}
         assert browser.get("/admin/setup/preview?mode=production").status_code == 400
     assert not setup_http.configured()

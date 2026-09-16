@@ -430,6 +430,10 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
     # checkpoints. Verify its exact enabled trigger/function/body, not an
     # exception from SQL immutability merely because the shared name differs.
     shared_immutable_guards = {
+        "stewardship_family_mail_preparation": (
+            "family_mail_ticket_guard",
+            "stewardship_family_mail_ticket_v1",
+        ),
         **{
             "stewardship_recipient_" + name: (
                 "recipient_immutable",
@@ -561,8 +565,11 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             )
             row = cursor.fetchone()
             assert row is not None, table
-            assert row[:2] == (function, 27), table
-            assert "USING ERRCODE = '23514'" in row[2]
+            expected_type = 31 if table == "stewardship_family_mail_preparation" else 27
+            assert row[:2] == (function, expected_type), table
+            assert "USINGERRCODE='23514'" in "".join(row[2].split())
+            if table == "stewardship_family_mail_preparation":
+                assert "IFTG_OP<>'INSERT'THENRAISEEXCEPTION" in "".join(row[2].split())
             if table in cleanup_retention_contracts:
                 compact = "".join(row[2].split())
                 category = cleanup_retention_contracts[table]

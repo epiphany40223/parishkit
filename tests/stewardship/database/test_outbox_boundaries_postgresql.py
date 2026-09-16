@@ -375,11 +375,23 @@ def test_actual_runtime_grants_do_not_expose_generic_delivery_mutation(
                         and table == "stewardship_production_request"
                         and privilege == "UPDATE"
                     )
+                    preparation_insert = (
+                        role is ServiceRole.WORKER
+                        and table
+                        in {
+                            "stewardship_outbox_message",
+                            "stewardship_outbox_render",
+                            "stewardship_outbox_event",
+                        }
+                        and privilege == "INSERT"
+                    )
                     cursor.execute(
                         "SELECT has_table_privilege(%s,%s,%s)",
                         [name, table, privilege],
                     )
-                    assert cursor.fetchone() == (checkpoint_insert,), (
+                    assert cursor.fetchone() == (
+                        checkpoint_insert or preparation_insert,
+                    ), (
                         role,
                         table,
                         privilege,
@@ -390,7 +402,7 @@ def test_actual_runtime_grants_do_not_expose_generic_delivery_mutation(
                             [name, table, privilege],
                         )
                         assert cursor.fetchone() == (
-                            checkpoint_insert or request_update,
+                            checkpoint_insert or request_update or preparation_insert,
                         ), (role, table, privilege)
                     if request_update:
                         # Independently constrain the new command fields, not

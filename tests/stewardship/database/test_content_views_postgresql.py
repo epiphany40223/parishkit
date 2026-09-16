@@ -125,7 +125,15 @@ def test_email_edit_reconciles_subject_and_preserves_unrelated_templates(
     browser, _ = signed_in()
     path = catalog + "/email/initial/" + row["id"]
     assert browser.get(path).status_code == 200
-    preview = post(browser, path, values(store, subject="Revised invitation"))
+    preview = post(
+        browser,
+        path,
+        values(
+            store,
+            subject="Revised invitation",
+            html="<p>{{ family_code }} {{ family_url }}</p>",
+        ),
+    )
     assert b"Schedules using this template" in preview.content
     apply(store, post(browser, path, {"action": "confirm", "preview": token(preview)}))
     snapshot = SystemConfiguration.objects.get().active_configuration
@@ -144,7 +152,17 @@ def test_email_create_and_explicit_page_remove_with_web_grants(auth_service, goo
     with task_login(ServiceRole.WEB):
         assert browser.get(catalog).status_code == 200
         assert browser.get(path).status_code == 200
-        proposal = token(post(browser, path, values(store, subject="Reminder")))
+        proposal = token(
+            post(
+                browser,
+                path,
+                values(
+                    store,
+                    subject="Reminder",
+                    html="<p>{{ family_code }} {{ family_url }}</p>",
+                ),
+            )
+        )
         accepted = post(browser, path, {"action": "confirm", "preview": proposal})
     apply(store, accepted)
     page = content(str(campaign.pk), slot="login_help")

@@ -163,6 +163,12 @@ def substitution_context(identity, render):
         + identity.scope_id.bytes
         + identity.semantic_key.bytes
         + identity.mode.encode("ascii")
+        + render.configuration_id.bytes
+        + (
+            b"\x01" + render.template_id.bytes
+            if render.template_id is not None
+            else b"\x00"
+        )
         + bytes.fromhex(render.fields()["payload_digest"])
     )
 
@@ -179,12 +185,17 @@ class RenderInput:
     subject: str
     html: str
     text: str
+    reply_to: str | None = None
 
     def __post_init__(self):
         """Validate once and detach caller-owned recipient lists from this value."""
         identifier(self.configuration_id)
         identifier(self.template_id, optional=True)
         mailbox(self.sender)
+        object.__setattr__(
+            self, "reply_to", self.sender if self.reply_to is None else self.reply_to
+        )
+        mailbox(self.reply_to)
         for field in ("intended_recipients", "routed_recipients"):
             object.__setattr__(self, field, recipients(getattr(self, field)))
         if (
@@ -207,6 +218,7 @@ class RenderInput:
         """Produce a detached record payload and reproducible content fingerprint."""
         content = {
             "sender": self.sender,
+            "reply_to": self.reply_to,
             "intended_recipients": list(self.intended_recipients),
             "routed_recipients": list(self.routed_recipients),
             "subject": self.subject,

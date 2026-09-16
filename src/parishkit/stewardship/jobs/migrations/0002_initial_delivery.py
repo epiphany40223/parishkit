@@ -24,6 +24,65 @@ class Migration(migrations.Migration):
         migrations.SeparateDatabaseAndState(
             state_operations=[
                 migrations.CreateModel(
+                    name="FamilyMailPreparation",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, null=True, editable=False),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                default=parishkit.stewardship.observability.current_correlation,
+                                db_index=True,
+                                editable=False,
+                            ),
+                        ),
+                        ("occurrence_id", models.UUIDField()),
+                        ("task_id", models.UUIDField(unique=True)),
+                        ("mode", models.CharField(max_length=16)),
+                        ("rehearsal_epoch_id", models.UUIDField(null=True)),
+                    ],
+                    options={
+                        "db_table": "stewardship_family_mail_preparation",
+                        "constraints": [
+                            models.UniqueConstraint(
+                                fields=("occurrence_id", "rehearsal_epoch_id"),
+                                nulls_distinct=False,
+                                name="family_mail_preparation_scope",
+                            ),
+                            models.CheckConstraint(
+                                condition=(
+                                    models.Q(
+                                        mode="production",
+                                        rehearsal_epoch_id__isnull=True,
+                                    )
+                                    | models.Q(
+                                        mode="testing", rehearsal_epoch_id__isnull=False
+                                    )
+                                ),
+                                name="family_mail_preparation_namespace",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
                     name="RecipientRefusal",
                     fields=[
                         (
@@ -366,6 +425,7 @@ class Migration(migrations.Migration):
                             ),
                         ),
                         ("sender", models.EmailField(max_length=254)),
+                        ("reply_to", models.EmailField(max_length=254)),
                         ("intended_recipients", models.JSONField()),
                         ("routed_recipients", models.JSONField()),
                         ("subject", models.CharField(max_length=254)),

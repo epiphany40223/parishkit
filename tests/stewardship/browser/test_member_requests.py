@@ -26,9 +26,14 @@ def capture(submissions):
 
 def fill_new(page):
     """Find the new local UUID from its labeled control, then fill required data."""
+    add = page.get_by_role("button", name="Add a household member", exact=True)
+    # Begin returns before the asynchronous form fetch/render necessarily does.
+    # Capture the baseline only after its controls exist, not before click's wait.
+    expect(add).to_be_visible()
     controls = page.locator('input[id$="-first_name"]')
     before = set(controls.evaluate_all("rows => rows.map(row => row.id)"))
-    page.get_by_role("button", name="Add a household member", exact=True).click()
+    add.click()
+    expect(controls).to_have_count(len(before) + 1)
     # Proposed Members sort by stable UUID, not insertion order. Adding a
     # second person must not accidentally refill the existing last person.
     added = set(controls.evaluate_all("rows => rows.map(row => row.id)")) - before

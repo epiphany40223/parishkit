@@ -171,7 +171,10 @@ def main():
         {
             "version": version(path),
             "subject": "Campaign invitation",
-            "html": "<p>Please review your Family information.</p>",
+            "html": (
+                "<p>Please review your Family information.</p>"
+                "<p>{{ family_code }} {{ family_url }}</p>"
+            ),
             "text": "",
             "generate_text": "on",
         },

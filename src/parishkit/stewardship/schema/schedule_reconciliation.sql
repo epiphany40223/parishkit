@@ -7,7 +7,11 @@ SELECT o.id, o.definition_id, o.revision_id, o.state, o.version, o.outbox_id,
        (
            o.state='delivery_unknown'
            OR (o.task_id IS NOT NULL AND (
-               t.task_type<>'schedule_occurrence' OR t.domain_request_id IS DISTINCT FROM o.id
+               NOT coalesce((t.task_type='schedule_occurrence' AND t.domain_request_id IS NOT DISTINCT FROM o.id)
+                   OR (t.task_type='family_mail_prepare' AND EXISTS (
+                       SELECT 1 FROM public.stewardship_family_mail_preparation q
+                       WHERE q.id=t.domain_request_id AND q.task_id=t.root_id
+                         AND q.occurrence_id=o.id AND q.mode=o.mode)),false)
            ))
            OR m.state IN ('submitting','delivery_unknown')
            OR (m.state IN ('pending','retry_wait') AND resolution.action='retry_idempotent')

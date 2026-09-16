@@ -303,6 +303,7 @@ class OutboxRender(ImmutableRecord):
         "stewardship_accounts.ContentVersion", null=True, on_delete=models.PROTECT
     )
     sender = models.EmailField()
+    reply_to = models.EmailField()
     intended_recipients = models.JSONField()
     routed_recipients = models.JSONField()
     subject = models.CharField(max_length=254)

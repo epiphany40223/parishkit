@@ -186,3 +186,23 @@ and 27 runtime-grant unit tests, plus formatting, Ruff, Markdown and whitespace
 checks. All three rounds therefore have passing post-correction evidence, with
 no unresolved accepted Medium-or-higher finding. The following protected PR
 run must validate the final complete head, including the added grant test.
+
+## Protected delivery
+
+PR [#37](https://github.com/epiphany40223/parishkit/pull/37) passed all 24
+exact-head CI jobs plus DCO at
+`9a8d1a0b7cfd7f1f8eb1f19bc11162cd85f4b7b8` in run
+[35079301388](https://github.com/epiphany40223/parishkit/actions/runs/35079301388).
+That final run accounts for all 3,037 PostgreSQL tests and passes scoped
+coverage at 94.16% lines and 85.57% branches.
+
+The exact expected head entered the normal protected queue at
+2026-09-16 09:41:02 UTC. Merge-group run
+[35080823737](https://github.com/epiphany40223/parishkit/actions/runs/35080823737)
+passed all 24 jobs. GitHub merged the PR at 2026-09-16 09:59:26 UTC as
+`0a4313e59b7e04eb7a758ef417adfbea50d3870c`, verified on freshly fetched
+`origin/main` before the next branch was created. No protection bypass was used.
+
+This supersedes the pending-delivery checkpoints above. The next coherent
+BG-06 increment is [Family mail preparation](stewardship-family-mail-preparation.md);
+full dispatch, Production activation and Gate 3 remain open.

@@ -95,6 +95,7 @@ WEB_READ_TABLES = frozenset(
         "stewardship_restore_hold_resolution",
         "stewardship_postclose_resolution",
         "stewardship_task_run",
+        "stewardship_family_mail_preparation",
         "stewardship_task_event",
         "stewardship_audit_event",
         "stewardship_audit_context",

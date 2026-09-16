@@ -70,6 +70,53 @@ def test_invalid_template_form(kind, changes):
     """A safe typed field is not enough: placeholder/header rules still apply."""
     form = ContentForm(fields(**changes), kind=kind)
     assert not form.is_valid()
+    assert "both body versions" not in str(form.errors)
+
+
+@pytest.mark.parametrize("slot", ["initial", "reminder"])
+@pytest.mark.parametrize(
+    "defect", ["html", "text", "generated", "code_subject", "link_subject"]
+)
+def test_family_access_contract_is_enforced_by_the_editor(slot, defect):
+    """Invalid access alternatives never become signed previews or saved drafts."""
+    payload = fields(
+        subject="Invitation",
+        html="<p>{{ family_code }} {{ family_url }}</p>",
+        text="{{ family_code }} {{ family_url }}",
+        generate_text="",
+    )
+    valid = ContentForm(payload, kind="email", slot=slot)
+    assert valid.is_valid(), valid.errors
+    if defect in {"html", "text"}:
+        payload[defect] = "{{ family_code }}"
+    elif defect == "generated":
+        payload.update(
+            html='<p>{{ family_code }}</p><a href="{{ family_url }}">Respond</a>',
+            generate_text="on",
+        )
+    else:
+        payload["subject"] = (
+            "{{ family_code }}" if defect == "code_subject" else "{{ family_url }}"
+        )
+    form = ContentForm(payload, kind="email", slot=slot)
+    assert not form.is_valid()
+    assert "both body versions" in str(form.errors)
+    assert form.errors.as_data()["__all__"][0].code == "family_access"
+
+
+def test_family_editor_accepts_explicit_text_with_anchor_link():
+    """An author can repair extracted plaintext without changing safe linked HTML."""
+    form = ContentForm(
+        fields(
+            subject="Invitation",
+            generate_text="",
+            html='<p>{{ family_code }}</p><a href="{{ family_url }}">Respond</a>',
+            text="{{ family_code }} {{ family_url }}",
+        ),
+        kind="email",
+        slot="initial",
+    )
+    assert form.is_valid(), form.errors
 
 
 def test_explicit_clear_and_safe_samples():

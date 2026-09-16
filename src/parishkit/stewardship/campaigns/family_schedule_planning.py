@@ -1,8 +1,8 @@
 """Bounded, provider-free Family schedule allocation and semantic coalescing.
 
-This owner does not render or allocate outbox messages. It prepares BG-06
-deliverability recovery using retained eligibility/occurrence identities; the
-later delivery owner must recheck them before dispatch. Every invocation owns
+This owner does not render or allocate outbox messages. The scheduler and
+preparation worker both recheck complete groups here; the later delivery owner
+must independently recheck them before dispatch. Every invocation owns
 one complete Family group (at most the 100
 configured definitions); it never selects a message from a partial group.
 """
@@ -57,9 +57,9 @@ class FamilyPlanningResult:
 def plan_family(guard, *, family_id, worker_id):
     """Recheck current scope and atomically prepare one complete Family group.
 
-    Until BG-06 installs the delivery owner, work already bound to a task or
-    outbox is conservatively held here; only unallocated pending rows are safe
-    planning inputs. Revision replacement has its separate journal-aware owner.
+    Work already bound to a task or outbox is conservatively held here;
+    only unallocated pending rows are safe planning inputs. Revision replacement
+    has its separate journal-aware owner.
     The selected pending row is not provider permission or a task execution hint.
     """
     if (
@@ -68,14 +68,26 @@ def plan_family(guard, *, family_id, worker_id):
         or not isinstance(worker_id, UUID)
     ):
         raise TypeError("Family planning requires actual schedule ownership.")
-    catchup = isinstance(guard, TaskClaim)
-    if not catchup and connection.in_atomic_block:
+    claimed = isinstance(guard, TaskClaim)
+    if not claimed and connection.in_atomic_block:
         raise StorageInvariantError("Family planning must own its transaction.")
-    if catchup:
+    if claimed:
         require_work_order()
-    check = (lambda: lock_task_claim(guard)) if catchup else guard.check
-    check()
-    with nullcontext() if catchup else work_transaction():
+    check = (lambda: lock_task_claim(guard)) if claimed else guard.check
+    task = check()
+    catchup = claimed and task.task_type == "activation_catchup"
+    if claimed and not catchup:
+        from parishkit.stewardship.jobs.family_mail_tasks import _row, owned_preparation
+
+        ticket = owned_preparation(_status(task))
+        occurrence = _row(ticket.occurrence_id)
+        if (
+            occurrence is None
+            or occurrence.target != f"family:{family_id}"
+            or worker_id != guard.worker_id
+        ):
+            raise PermissionError("Preparation cannot plan another Family.")
+    with nullcontext() if claimed else work_transaction():
         campaign_id = SystemConfiguration.objects.values_list(
             "current_campaign_id", flat=True
         ).first()
@@ -99,7 +111,8 @@ def plan_family(guard, *, family_id, worker_id):
                 scope, epoch = _planning_scope(campaign_id, postclose=True)
             except PermissionError:
                 return FamilyPlanningResult(family_id, held=True, reason="scope_held")
-            through, correlation_id = scope.instant, family_id
+            through = scope.instant
+            correlation_id = guard.run_id if claimed else family_id
         family = (
             FamilyCampaign.objects.filter(pk=family_id, campaign_id=campaign_id)
             .values(*FAMILY_FIELDS)
@@ -271,7 +284,7 @@ def plan_family(guard, *, family_id, worker_id):
         )
 
 
-def _planning_scope(campaign_id, *, postclose=False):
+def _planning_scope(campaign_id, *, postclose=False, allow_missing_epoch=False):
     """Planning waits for current mode/epoch and ordinary lifecycle admission."""
     scope = _scope(campaign_id)
     campaign, runtime = scope.campaign, scope.runtime
@@ -320,6 +333,8 @@ def _planning_scope(campaign_id, *, postclose=False):
         raise PermissionError("Schedule planning requires current credential scope.")
     epoch = None
     if runtime.mode == "testing":
+        if credentials.rehearsal_epoch_id is None and allow_missing_epoch:
+            return scope, None
         epoch = RehearsalEpoch.objects.filter(
             pk=credentials.rehearsal_epoch_id, campaign_id=campaign_id, state="active"
         ).first()

@@ -80,8 +80,8 @@ def campaign_test(request, monkeypatch, tmp_path, google):
         str(campaign.pk),
         kind="email",
         slot="initial",
-        html="<p>Hello {{ family_name }}</p>",
-        text="Hello {{ family_name }}",
+        html="<p>Hello {{ family_name }} {{ family_code }} {{ family_url }}</p>",
+        text="Hello {{ family_name }} {{ family_code }} {{ family_url }}",
     )
     assert (
         campaign_builders.change(

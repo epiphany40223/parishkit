@@ -756,6 +756,12 @@ templates have separate subject, sanitized HTML, and generated/edited plain-text
 versions. Family templates support only documented placeholders, including
 eligible names, code, secure link, generic URL, parish fields, dates, and
 campaign fields. Unknown placeholders are validation failures, not empty text.
+Initial invitations and reminders require the code and secure-link placeholders
+in each body alternative, including generated plaintext. Those credential
+placeholders are not allowed in subjects. Authoring, configuration validation
+and background preparation enforce the same rule; an author can edit plaintext
+when HTML extraction omits an anchor's link. Testing subject presentation
+reserves its mandatory mode prefix and shortens only non-credential content.
 
 ### Job, outbox, audit, and purge records
 

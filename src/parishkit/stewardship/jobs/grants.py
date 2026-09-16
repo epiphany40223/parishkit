@@ -174,4 +174,7 @@ def task_runtime_grants(role):
     from parishkit.stewardship.reports.export_grants import add_export_grants
 
     add_export_grants(tables, columns, role=role.value)
+    from .family_mail_grants import add_family_mail_grants
+
+    add_family_mail_grants(tables, columns, worker=role is ServiceRole.WORKER)
     return tables, columns

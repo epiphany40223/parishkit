@@ -237,6 +237,7 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                 form = ContentForm(
                     request.POST if request.method == "POST" else None,
                     kind=kind,
+                    slot=slot,
                     initial=initial,
                 )
                 response = (

@@ -9,6 +9,11 @@ from .policy_factory import address
 
 def content(owner, *, kind="page", slot="welcome", **overrides):
     """Each invocation allocates a fresh revision rather than mutating a slot ID."""
+    access = (
+        " {{ family_code }} {{ family_url }}"
+        if kind == "email" and slot in {"initial", "reminder"}
+        else ""
+    )
     return {
         "id": str(uuid4()),
         "values": {
@@ -16,8 +21,8 @@ def content(owner, *, kind="page", slot="welcome", **overrides):
             "kind": kind,
             "slot": slot,
             "subject": None if kind == "page" else "{{ parish_name }} campaign",
-            "html": "<p>Welcome to {{ parish_name }}.</p>",
-            "text": "Welcome to {{ parish_name }}.",
+            "html": "<p>Welcome to {{ parish_name }}." + access + "</p>",
+            "text": "Welcome to {{ parish_name }}." + access,
             **overrides,
         },
     }

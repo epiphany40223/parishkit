@@ -44,7 +44,16 @@ def token_context(identifier):
 
 
 def prepare_rehearsals(
-    *, campaign_id, family_ids, general, mac, public, purpose, admit
+    *,
+    campaign_id,
+    family_ids,
+    general,
+    mac,
+    public,
+    purpose,
+    admit,
+    actor_id=None,
+    correlation_id=None,
 ):
     """One bounded batch reserves every code before any caller can reference it.
 
@@ -60,10 +69,17 @@ def prepare_rehearsals(
         or any(not isinstance(value, UUID) for value in family_ids)
         or len(set(family_ids)) != len(family_ids)
         or purpose not in {CampaignWorkKind.REHEARSAL, CampaignWorkKind.READINESS_TEST}
+        or any(
+            value is not None and not isinstance(value, UUID)
+            for value in (actor_id, correlation_id)
+        )
     ):
         raise ValueError(
             "Rehearsal preparation requires bounded identities and owning admission."
         )
+    attribution = {"actor_id": actor_id}
+    if correlation_id is not None:
+        attribution["correlation_id"] = correlation_id
     with work_transaction(), key_set_lock(general, mac, public):
         runtime = SystemConfiguration.objects.select_for_update().get()
         campaign = Campaign.objects.get(pk=campaign_id)
@@ -100,7 +116,7 @@ def prepare_rehearsals(
             row.family_id: row
             for row in RehearsalCredential.objects.filter(
                 epoch=epoch, family_id__in=family_ids
-            )
+            ).only("id", "family_id")
         }
         pending = [row for row in families if row.pk not in existing]
         required = set(
@@ -143,6 +159,7 @@ def prepare_rehearsals(
             for family, code, digests in accepted:
                 identifier, token = uuid4(), new_token(testing=True)
                 credential = RehearsalCredential(
+                    **attribution,
                     id=identifier,
                     epoch=epoch,
                     family=family,
@@ -157,7 +174,11 @@ def prepare_rehearsals(
                 credentials.append(credential)
                 fingerprints.extend(
                     RehearsalCodeFingerprint(
-                        credential=credential, epoch=epoch, key_id=key, digest=digest
+                        credential=credential,
+                        epoch=epoch,
+                        key_id=key,
+                        digest=digest,
+                        **attribution,
                     )
                     for key, digest in mac.lookups(campaign.pk, code).items()
                 )
@@ -173,7 +194,11 @@ def prepare_rehearsals(
                     RehearsalCredential.objects.bulk_create(credentials)
                     RehearsalCodeFingerprint.objects.bulk_create(fingerprints)
                     RehearsalCodeReservation.objects.bulk_create(reservations)
-            except IntegrityError:
+            except IntegrityError as error:
+                # A new random proposal can repair only a collision, not an
+                # expired ownership claim or a failed database permission guard.
+                if getattr(error.__cause__, "sqlstate", None) != "23505":
+                    raise
                 continue
             existing.update({row.family_id: row for row in credentials})
             pending = [row for row in pending if row.pk not in existing]
