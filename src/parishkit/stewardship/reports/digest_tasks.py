@@ -16,6 +16,7 @@ from parishkit.stewardship.campaigns.work_locks import (
 )
 from parishkit.stewardship.jobs.dispatch import Handler, RecoveryPlan
 from parishkit.stewardship.jobs.ownership import lock_task_claim
+from parishkit.stewardship.jobs.phases import TaskPhase
 from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.storage import _status
 from parishkit.stewardship.storage import StorageInvariantError
@@ -151,13 +152,24 @@ def _execute(execution, *, public_origin):
         )
     while True:
         with execution.effect():
-            row = bound_preparation(_status(lock_task_claim(execution.claim)))
+            status = _status(lock_task_claim(execution.claim))
+            row = bound_preparation(status)
             outcome = disposition(row)
             if outcome is not None:
                 if outcome == "safe_cancel" and row.phase != "cancelled":
                     checkpoint_preparation(execution.claim, phase="cancelled")
                 execution.transition(outcome)
                 return
+            phase = {
+                "dates": TaskPhase.PREPARING,
+                "cover": TaskPhase.RECONCILING,
+                "facts": TaskPhase.RENDERING,
+                "fanout": TaskPhase.STAGING,
+            }[row.phase]
+            if status.phase != phase:
+                # Unknown totals stay unknown; phase/heartbeat evidence is more
+                # useful than an invented percentage during finite discovery.
+                execution.progress(0, 0, phase=phase)
             if row.phase == "dates":
                 discover_dates(execution.claim)
             elif row.phase == "cover":

@@ -254,3 +254,30 @@ fingerprint. No existing catalog shape, triggers or policies changed.
 
 The protected exact-report link, complete integration/coverage validation and
 three review rounds remain open. BG-07.02 is not yet complete.
+
+### Pinned report and interactive chart checkpoint
+
+Digest links now open a current-authorized Staff/Admin snapshot page. Its
+statistics and table use the same immutable inputs, fact generation and exact
+formatting as the email. The image and bounded PNG download serve the original
+retained bytes, never today's chart. Hover, touch and keyboard date inspection
+share the renderer's axis geometry; the full table and image remain available
+without JavaScript. Timestamp display follows the browser timezone while
+campaign dates remain in the retained campaign timezone.
+
+HTML, image and download reads retain campaign/purge guards through response
+closure, recheck current session/roles and audit opaque report identity without
+logging values. Downloads use the separately authenticated bounded read pool.
+Historical report identity is distinct from current audit attribution after a
+configuration edit. Outgoing-mail pages distinguish Administrator reports from
+Family messages instead of formatting an absent Family DUID. Preparation tasks
+expose coarse phases and heartbeat evidence without inventing progress totals.
+
+Validation: five real-session PostgreSQL report/download checks, 20 daily-work
+and runtime SQL regressions, 145 rendering/build/grant checks and nine browser
+checks passed. Browser checks cover Chromium, Firefox and WebKit at mobile and
+desktop widths, keyboard/hover inspection, no-script fallback and automated
+accessibility. Source promotion leaves the displayed inputs and PNG unchanged;
+Ministry-only and anonymous users cannot read them. Ruff passed and Django
+reports no model changes. Complete coverage, container validation and three
+dual-source reviews remain required before BG-07.02 completion.

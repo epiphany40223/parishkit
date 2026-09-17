@@ -122,7 +122,7 @@ def _report_url(document, public_origin):
     return public_origin.rstrip("/") + document.report_path
 
 
-def _cards(statistics):
+def statistics_cards(statistics):
     """Reuse statistics proportions and exact money formatting without new math."""
     active = statistics.active
     rows = [
@@ -142,23 +142,28 @@ def _cards(statistics):
     return tuple(rows)
 
 
-def _daily_rows(document):
+def participation_row(day, *, financial_enabled):
+    """Format one exact daily fact identically in email, web tables and tooltips."""
+    cells = [
+        day.local_date.isoformat(),
+        f"{day.first_responses:,}" if day.population_available else "Unavailable",
+        day.participation,
+    ]
+    if financial_enabled:
+        cells.append(
+            f"${day.pledge_total:,.2f}" if day.pledge_available else "Unavailable"
+        )
+    return tuple(cells)
+
+
+def digest_rows(document):
     """Show every day in the missed range, never just a bounded discovery page."""
     chart = document.participation
     rows = []
     for day in chart.days:
         if day.local_date < document.covered_dates[0]:
             continue
-        cells = [
-            day.local_date.isoformat(),
-            f"{day.first_responses:,}" if day.population_available else "Unavailable",
-            day.participation,
-        ]
-        if chart.financial_enabled:
-            cells.append(
-                f"${day.pledge_total:,.2f}" if day.pledge_available else "Unavailable"
-            )
-        rows.append(tuple(cells))
+        rows.append(participation_row(day, financial_enabled=chart.financial_enabled))
     return tuple(rows)
 
 
@@ -177,8 +182,8 @@ def render_daily_digest(document, *, public_origin):
     headings = ["Campaign date", "First submissions", "Cumulative participation"]
     if chart.financial_enabled:
         headings.append("Cumulative annual pledges (USD)")
-    cards = _cards(document.statistics)
-    rows = _daily_rows(document)
+    cards = statistics_cards(document.statistics)
+    rows = digest_rows(document)
     labels = (
         chart.parish_name,
         chart.campaign_name,

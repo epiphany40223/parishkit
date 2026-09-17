@@ -154,7 +154,7 @@ def test_web_cannot_supply_report_payload_or_invoke_private_seed(
         with task_login(ServiceRole.WEB, exact=True):
             for sql in (
                 "SELECT stewardship_daily_digest_seed_v1(%s,NULL)",
-                "SELECT chart FROM stewardship_daily_digest_ready WHERE id=%s",
+                "SELECT html FROM stewardship_daily_digest_ready WHERE id=%s",
                 "UPDATE stewardship_outbox_message SET state='delivered' WHERE id=%s",
             ):
                 with (

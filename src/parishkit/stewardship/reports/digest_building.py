@@ -70,6 +70,13 @@ def load_daily_document(claim, fact_set_id):
     facts = CampaignDailyFactSet.objects.get(pk=fact_set_id, state="ready")
     if preparation.phase != "facts" or fact_inputs(snapshot) != fact_inputs(facts):
         raise FactUnavailable("Daily report facts do not match their retained input.")
+    return retained_daily_document(snapshot, facts)
+
+
+def retained_daily_document(snapshot, facts):
+    """Load the same pinned observation for compilation and authorized web reads."""
+    if facts.state != "ready" or fact_inputs(snapshot) != fact_inputs(facts):
+        raise FactUnavailable("Daily report facts do not match their retained input.")
     document = participation_document(
         facts,
         parish_name=snapshot.configuration.parish.name,

@@ -78,6 +78,7 @@ def test_waiting_exact_facts_preserves_snapshot_and_retries(family_mail, monkeyp
             execute(status, daily_handler(public_origin="https://parish.example"))
         task = TaskRun.objects.get(pk=status.run_id)
         assert task.state == "retry_wait"
+        assert task.phase == "rendering"
         assert DailyDigestSnapshot.objects.count() == 1
         assert not OutboxMessage.objects.exists()
 

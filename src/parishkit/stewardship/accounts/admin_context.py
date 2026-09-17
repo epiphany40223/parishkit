@@ -49,7 +49,7 @@ def portal_chrome(request):
                 (reverse("admin:integrations"), _("Integrations")),
                 (reverse("admin:ministries"), _("Ministry activity")),
                 (reverse("admin:background"), _("Background work")),
-                (reverse("admin:deliveries"), _("Family mail")),
+                (reverse("admin:deliveries"), _("Outgoing mail")),
             ]
         )
     if campaign and allows(actor, Capability.FAMILY_CODES):

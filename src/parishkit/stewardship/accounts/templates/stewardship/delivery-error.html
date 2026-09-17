@@ -4,7 +4,7 @@
   <h1>{% translate "Delivery action unavailable" %}</h1>
   <p role="alert">{{ message }}</p>
   <p>{% translate "Review the latest status before trying again. Submitted evidence is never included in this error page." %}</p>
-  <p><a href="{% url 'admin:deliveries' %}">{% translate "Review Family mail" %}</a></p>
+  <p><a href="{% url 'admin:deliveries' %}">{% translate "Review outgoing mail" %}</a></p>
   <p><a href="{% url 'admin:background' %}">{% translate "Review background tasks" %}</a></p>
   <p><a href="{% url 'admin:login' %}">{% translate "Sign in again" %}</a></p>
 </section>{% endblock %}

@@ -57,3 +57,16 @@ def add_digest_web_grants(tables, columns):
     """Read retry ownership and configured Admin routing, never compiled content."""
     add_digest_dispatch_grants(tables, columns, private=False)
     columns["stewardship_daily_digest_recipient"]["SELECT"].add("address")
+    # The exact report reader shares retained calculation inputs, not mail prose
+    # or the private recipient cohort. Its view rechecks Staff/Admin authority.
+    tables.setdefault("stewardship_daily_digest_snapshot", set()).add("SELECT")
+    columns["stewardship_daily_digest_ready"]["SELECT"].update({"fact_set_id", "chart"})
+
+
+def add_digest_download_grants(columns):
+    """The bounded download login can stream only the already-compiled chart."""
+    for table, fields in {
+        "stewardship_daily_digest_snapshot": {"id", "campaign_id", "configuration_id"},
+        "stewardship_daily_digest_ready": {"id", "snapshot_id", "chart"},
+    }.items():
+        columns.setdefault(table, {}).setdefault("SELECT", set()).update(fields)

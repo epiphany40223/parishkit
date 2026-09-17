@@ -378,6 +378,10 @@ def runtime_grants(role, *, target=None):
     add_export_grants(
         tables, columns, role=role.value if role is ServiceRole.WEB else role
     )
+    if role == "download":
+        from .reports.digest_grants import add_digest_download_grants
+
+        add_digest_download_grants(columns)
     return tables, columns
 
 

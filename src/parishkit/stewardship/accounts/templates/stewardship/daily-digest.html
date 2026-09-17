@@ -1,0 +1,41 @@
+{% extends 'stewardship/base.html' %}{% load i18n static stewardship %}
+{% block title %}{{ document.title }}{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{% static 'stewardship/digest-v1.css' %}">
+<script src="{% static 'stewardship/digest-v1.js' %}" defer></script>
+{% endblock %}
+{% block content %}
+<h1>{{ document.title }}</h1>
+<p>{{ chart.parish_name }} — {{ chart.campaign_name }}</p>
+<p class="notice">{% translate "Pinned report: these are the exact retained values used for this digest, not today's live totals." %}</p>
+{% if mode == 'testing' %}<p class="notice">{% translate "This report was generated for a Testing-mode digest." %}</p>{% endif %}
+<dl>
+<dt>{% translate "Observed at" %}</dt><dd><time datetime="{{ document.statistics.observed_at|date:'c' }}" data-local-instant>{{ document.statistics.observed_at|date:'c' }}</time></dd>
+<dt>{% translate "Source generation" %}</dt><dd>{{ chart.source_generation|number }}</dd>
+<dt>{% translate "Source as of" %}</dt><dd><time datetime="{{ chart.source_as_of|date:'c' }}" data-local-instant>{{ chart.source_as_of|date:'c' }}</time></dd>
+<dt>{% translate "Submission cutoff" %}</dt><dd>{{ chart.submission_watermark|number }}</dd>
+<dt>{% translate "Campaign timezone" %}</dt><dd>{{ chart.campaign_timezone }}</dd>
+</dl>
+<section class="panel"><h2>{% translate "Current population statistics at generation" %}</h2>
+<dl>{% for label,value in cards %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
+</section>
+<section class="panel" data-digest-chart>
+<h2>{% translate "Daily participation — Historical as of day" %}</h2>
+<p>{% translate "Campaign dates use the campaign timezone. Observation timestamps above use your browser's timezone." %}</p>
+<img class="digest-chart" src="{{ chart_url }}" alt="{% translate 'Daily first submissions, cumulative participating Families, and annual pledges when enabled. Exact values are in the following table.' %}" width="1440" height="840">
+{{ chart_interaction|json_script:'digest-chart-data' }}
+<div data-digest-controls hidden>
+<p>{% translate "Point to a date in the chart, tap it, or use the date slider to inspect exact values." %}</p>
+<label for="digest-day">{% translate "Inspect campaign date" %}</label>
+<input id="digest-day" type="range" min="0" max="{{ chart_last_index }}" value="{{ chart_last_index }}" step="1">
+<p data-digest-values role="status" aria-live="polite"></p>
+</div>
+<p><a href="{{ download_url }}">{% translate "Download the original chart (PNG)" %}</a></p>
+<div class="table-scroll"><table>
+<caption>{% translate "Exact retained daily values — Historical as of day" %}</caption>
+<thead><tr>{% for heading in headings %}<th scope="col">{{ heading }}</th>{% endfor %}</tr></thead>
+<tbody>{% for row in rows %}<tr>{% for value in row %}<td>{{ value }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+</table></div>
+</section>
+<p><a href="{% url 'admin:index' %}">{% translate "Return to the administration portal" %}</a></p>
+{% endblock %}
