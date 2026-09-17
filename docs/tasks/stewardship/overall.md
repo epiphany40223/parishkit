@@ -470,6 +470,8 @@ and all 24 protected merge-group jobs passed. Its guide's
 supersedes that pending note. From verified fresh `origin/main`,
 `pr/stewardship-submission-receipts` now implements BG-07.01's coherent
 [submission-confirmation increment](../../guides/stewardship-submission-receipts.md).
+Implementation, local validation and three successful dual-source review/fix
+rounds are complete; exact-head CI/DCO and protected delivery remain pending.
 Daily/weekly digest ownership and the remaining Phase 4/Gate 3 work stay open.
 
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).

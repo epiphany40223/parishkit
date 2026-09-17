@@ -215,13 +215,14 @@ def test_submit_does_not_render_templates_or_require_worker_origin(
     response_service, monkeypatch, settings
 ):
     """Authored mail failure belongs to the worker, not the accepted response."""
-    from parishkit.stewardship.jobs import receipt_rendering
+    from parishkit.stewardship.jobs import receipt_content, receipt_rendering
 
     def unavailable(*args, **kwargs):
         """Model any template/rendering failure without suppressing Submit checks."""
         raise ValueError("Synthetic receipt rendering failure")
 
     monkeypatch.setattr(receipt_rendering, "render_receipt", unavailable)
+    monkeypatch.setattr(receipt_content, "validate_receipt_content", unavailable)
     del settings.STEWARDSHIP_PUBLIC_ORIGIN
     with web_login():
         form, answers = form_and_answers(response_service)

@@ -233,7 +233,7 @@ calculation/materialization prerequisite before BG-07.
 
 Scope and dependencies: [BG-07 work package](../../plans/stewardship/background-processing.md#bg-07-submission-confirmations-and-admin-digests).
 
-- [ ] BG-07.01 — Create idempotent submission confirmations.
+- [x] BG-07.01 — Create idempotent submission confirmations.
 - [ ] BG-07.02 — Build daily digests against exact immutable facts.
 - [ ] BG-07.03 — Build weekly information and correction digests.
 - [ ] BG-07.04 — Integrate post-close obligation inventory and explicit resolutions.
@@ -246,12 +246,13 @@ only the current aggregate's directly attached fulfillment rows. The bounded
 `campaigns.recovery_coverage.covered_dates()` reader supplies exact date identities,
 not report facts or evidence of delivery.
 
-Evidence: BG-07.01 is in progress on `pr/stewardship-submission-receipts`, from
+Evidence: BG-07.01 is implemented on `pr/stewardship-submission-receipts`, from
 PR #45's verified merge `3bfec17a`. The
 [increment guide](../../guides/stewardship-submission-receipts.md) defines the
-coherent receipt delivery scope and internal acceptance checkpoints. Daily and
-weekly digests, complete post-close inventory and Gate 3 remain open; none of
-this package's tasks is yet claimed complete.
+coherent receipt delivery scope and records three successful dual-source
+review/fix rounds, full parallel coverage and passing correction regressions.
+Exact-head CI/DCO and protected delivery remain pending. Daily and weekly
+digests, complete post-close inventory and Gate 3 remain open.
 
 BG-07.04 and the Phase 6 archive owner must replace the interim receipt archive
 guard with the complete shared obligation inventory and explicit semantic skip

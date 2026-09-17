@@ -44,6 +44,52 @@ def begin(message, execution):
     )
 
 
+@pytest.mark.parametrize(
+    "subject,html",
+    [
+        ("PARISHKIT_PENDING_", "RECEIPT"),
+        ("PARISHKIT_REDACTED_", "FAMILY_CODE"),
+        ("PARISHKIT PENDING RECEIPT", "Confirmation"),
+        ("PARISHKIT-PENDING-RECEIPT", "Confirmation"),
+        ("PARISHKIT REDACTED FAMILY CODE", "Confirmation"),
+    ],
+)
+def test_valid_authored_content_passes_exact_per_field_sql_guard(
+    live_response_service, subject, html
+):
+    """Real configuration and MAIL agree; neither joins MIME fields nor uses LIKE."""
+    from ..content_factory import content
+    from .campaign_builders import change
+
+    harness = live_response_service
+    template = content(
+        str(harness.campaign.pk),
+        kind="email",
+        slot="confirmation",
+        subject=subject,
+        html=html,
+        text="Your response was received.",
+    )
+    store = harness.service.store
+    result = change(
+        store,
+        store.active(),
+        uuid4(),
+        [{"operation": "add", "section": "content", **template}],
+    )
+    assert result.state == "applied"
+    message = receipt(harness, production=True)
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        execution = claim(message)
+        mail, *_ = begin(message, execution)
+        assert mail.subject == subject and mail.html.startswith(html)
+        finish_submission(
+            message.pk, execution.claim, FamilyDeliveryResult(Status.ACCEPTED, 1)
+        )
+    message.refresh_from_db()
+    assert message.state == "delivered"
+
+
 @pytest.mark.parametrize("fixture", ["response_service", "live_response_service"])
 @pytest.mark.parametrize(
     "status", [Status.ACCEPTED, Status.TRANSIENT, Status.PERMANENT, Status.UNKNOWN]

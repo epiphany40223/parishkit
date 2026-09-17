@@ -36,9 +36,9 @@ the full BG-07 package complete.
 
 ## Execution evidence
 
-Implementation is in progress. The checkpoints above are acceptance targets,
-not claims of completion. Task status remains unchecked until implementation
-and its applicable verification pass.
+Implementation and three successful dual-source review/fix rounds are complete,
+with applicable local validation below. BG-07.01 is implemented; exact-head CI,
+DCO and protected delivery remain required before the next increment begins.
 
 The initial content checkpoint implements credential-free rendering with fixed
 required facts and campaign-zone timestamps, a separately authored confirmation
@@ -176,4 +176,32 @@ intermediate-head measurements; post-correction validation and exact-head CI
 remain required. Round 2 corrections pass 39 PostgreSQL receipt tests in 63.87
 seconds, all 17 refreshed schema checks in 17.94 seconds and 36 pure content
 tests. Ruff, formatting, changed Markdown and diff whitespace checks pass.
-The repeated baseline and third review are next.
+The repeated baseline passes 6,157 tests, with 4,283 explicit profile skips and
+two existing warnings in 59.28 seconds. At `1fc2217`, the rebuilt image passes
+12 isolation tests in 7.61 seconds and content/mail browser checks pass all
+33 cases in 36.48 seconds. Full Markdown and model-drift checks also pass.
+
+Round 3 reviewed `833f581..1fc2217` in Pika session
+`20260917-024944-9cfa9e`. Both sources completed successfully with no failed
+agents, degradation or verdict mismatch. Pika finalized APPROVE at the Medium
+cutoff: zero Medium, High or Critical, and four raw Low findings.
+
+- Both sources identified exact/per-field matching differences between Python
+  and SQL. Accepted: SQL now uses literal `strpos` checks independently on
+  subject, HTML and text, without wildcard underscores or artificial MIME-field
+  concatenation. Actual configuration/MAIL regressions exercise near-matching
+  prose and marker fragments in separate fields; actual seed submission remains
+  forbidden.
+- Claude's named-marker suggestion is accepted, with a Python constant tied by
+  comment to the SQL seed contract.
+- Claude's broader Submit-isolation test suggestion is accepted: patch the
+  shared content validation looked up by every receipt-rendering entry point,
+  as well as the worker renderer's imported binding.
+
+These corrections are part of Round 3, not a waiver of its post-fix checks.
+Final corrections pass all 44 PostgreSQL receipt regressions in 75.85 seconds,
+all 17 refreshed schema checks in 17.83 seconds and 122 pure content tests in
+1.00 second. Ruff, formatting, changed Markdown and whitespace checks pass.
+All accepted Medium-or-higher findings are resolved; the final round has none.
+The three-round exit criteria are met. Exact-head CI/DCO and protected delivery
+remain pending; neither real provider operation nor deployment is authorized.

@@ -38,7 +38,7 @@ REVOKE ALL ON FUNCTION public.stewardship_receipt_seed_v1(uuid,uuid,text) FROM P
 CREATE FUNCTION public.stewardship_receipt_render_admitted_v1(
     proposed jsonb, family uuid, campaign uuid, configuration uuid, mode text
 ) RETURNS boolean LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
-DECLARE expected jsonb; email jsonb; template uuid; test_recipient text; body text;
+DECLARE expected jsonb; email jsonb; template uuid; test_recipient text; part text;
 BEGIN
     SELECT settings INTO email FROM public.stewardship_applied_integration
         WHERE configuration_id=configuration AND kind='email';
@@ -47,7 +47,16 @@ BEGIN
           AND kind='email' AND slot='confirmation';
     SELECT testing_recipient INTO test_recipient FROM public.stewardship_system_configuration;
     expected:=public.stewardship_family_mail_recipients_v1(family);
-    body:=coalesce(proposed->>'subject','')||coalesce(proposed->>'html','')||coalesce(proposed->>'text','');
+    -- Match Python's exact per-field vocabulary. LIKE treats underscores as
+    -- wildcards, and concatenating MIME fields invents nonexistent markers.
+    FOREACH part IN ARRAY ARRAY[coalesce(proposed->>'subject',''),
+        coalesce(proposed->>'html',''),coalesce(proposed->>'text','')] LOOP
+        IF strpos(part,'PARISHKIT_REDACTED_FAMILY_CODE')>0
+           OR strpos(part,'https://parishkit.invalid/redacted-family-link')>0
+           OR strpos(part,'PARISHKIT_PENDING_RECEIPT')>0
+           OR part ~ '\{\{[[:space:]]*family_(code|url)[[:space:]]*\}\}'
+        THEN RETURN false; END IF;
+    END LOOP;
     RETURN jsonb_typeof(proposed)='object' AND email IS NOT NULL
        AND (proposed->>'configuration_id')::uuid=configuration
        AND (proposed->>'template_id')::uuid IS NOT DISTINCT FROM template
@@ -55,10 +64,6 @@ BEGIN
        AND jsonb_array_length(expected)>0 AND proposed->'intended_recipients'=expected
        AND proposed->'routed_recipients'=CASE mode WHEN 'testing'
            THEN jsonb_build_array(test_recipient) ELSE expected END
-       AND body NOT LIKE '%PARISHKIT_REDACTED_FAMILY_CODE%'
-       AND body NOT LIKE '%https://parishkit.invalid/redacted-family-link%'
-       AND body NOT LIKE '%PARISHKIT_PENDING_RECEIPT%'
-       AND body !~ '\{\{[[:space:]]*family_(code|url)[[:space:]]*\}\}'
        AND (mode<>'testing' OR (proposed->>'subject' LIKE '[TEST] %'
            AND proposed->>'html' LIKE '<h2>TEST</h2>%'
            AND proposed->>'text' LIKE 'TEST — sent to %'));

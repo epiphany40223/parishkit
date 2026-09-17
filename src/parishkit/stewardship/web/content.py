@@ -40,6 +40,8 @@ PLACEHOLDER = re.compile(r"{{\s*([a-z_]+)\s*}}")
 FAMILY_CREDENTIAL_PLACEHOLDERS = frozenset({"family_code", "family_url"})
 FAMILY_CODE_MARKER = "PARISHKIT_REDACTED_FAMILY_CODE"
 FAMILY_LINK_MARKER = "https://parishkit.invalid/redacted-family-link"
+# Keep identical to the non-sendable seed in stewardship_receipt_seed_v1.
+RECEIPT_ALLOCATION_MARKER = "PARISHKIT_PENDING_RECEIPT"
 SHARE_PLACEHOLDERS = frozenset(
     {
         "parish_name",
@@ -197,7 +199,7 @@ def validate_receipt_content(subject, html, text):
             for marker in (
                 FAMILY_CODE_MARKER,
                 FAMILY_LINK_MARKER,
-                "PARISHKIT_PENDING_RECEIPT",
+                RECEIPT_ALLOCATION_MARKER,
             )
         ):
             raise ValueError("Submission receipts cannot contain reserved markers.")
