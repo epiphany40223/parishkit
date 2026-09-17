@@ -446,6 +446,15 @@ Scheduled verification and remaining RPT-02 statistics still precede BG-07.
 BG-07 and Gate 3 remain open; no complete RPT-03 task is claimed by these
 partial increments.
 
+PR #43 merged as `053eed78` after all 24 exact-head jobs plus DCO
+(run `35159793642`) and all 24 protected merge-group jobs (run `35161289648`)
+passed. The merge was verified on freshly fetched `origin/main`.
+Branch `pr/stewardship-fact-verification` starts at that merge and implements
+the [scheduled verification increment](../../guides/stewardship-fact-verification.md).
+Implementation, three successful dual-source review/fix rounds and local
+validation are complete; exact-head CI/DCO and protected queue delivery follow.
+The remaining Phase 4 prerequisites and Gate 3 remain open.
+
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).
 3. Complete required [RPT-02](reports.md#rpt-02-population-and-calculation-library) calculations and the [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics) fact-materialization service before [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests); report UI remains in Phase 5.

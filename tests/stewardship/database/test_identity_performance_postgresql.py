@@ -27,16 +27,34 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 def _measure(operation, *, samples=20, query_limit=64):
     """Record safe aggregate evidence and enforce the ordinary-page p95 budget."""
-    timings, counts = [], []
+    timings, counts, database_timings = [], [], []
     for _ in range(samples):
         with CaptureQueriesContext(connection) as queries:
             started = perf_counter()
             operation()
             timings.append(perf_counter() - started)
         counts.append(len(queries))
-    p95 = sorted(timings)[int(len(timings) * 0.95) - 1]
-    assert max(counts) <= query_limit
-    assert p95 < 2.0
+        # Never print SQL or parameters: even synthetic authentication probes
+        # exercise private credential bindings. Ordinals let a failed CI sample
+        # identify which query needs profiling without exposing those values.
+        database_timings.append(
+            [
+                {"ordinal": index, "seconds": float(query["time"])}
+                for index, query in enumerate(queries.captured_queries, start=1)
+            ]
+        )
+    ranked = sorted(range(samples), key=timings.__getitem__)
+    percentile = ranked[int(len(timings) * 0.95) - 1]
+    p95 = timings[percentile]
+    evidence = {
+        "operation": operation.__name__,
+        "sample_seconds": [round(value, 4) for value in timings],
+        "sample_queries": counts,
+        "p95_sample_queries": database_timings[percentile],
+        "slowest_sample_queries": database_timings[ranked[-1]],
+    }
+    assert max(counts) <= query_limit, json.dumps(evidence, sort_keys=True)
+    assert p95 < 2.0, json.dumps(evidence, sort_keys=True)
     return {"queries_max": max(counts), "p95_seconds": round(p95, 4)}
 
 

@@ -79,6 +79,48 @@ def test_current_scope_excludes_inactive_family_from_every_series():
     assert {day.source_generation for day in days} == {2}
 
 
+@pytest.mark.parametrize("scope", ["historical", "current"])
+def test_reference_volume_preserves_latest_pledges_and_first_responses(scope):
+    """Exercise the full-year calculation used by verification at reference scale."""
+    start = datetime(2026, 1, 1, 5, tzinfo=UTC)
+    identities = tuple(UUID(int=index + 1) for index in range(5000))
+    promotions = tuple(
+        Promotion(index + 1, start + timedelta(days=index, hours=-1))
+        for index in range(365)
+    )
+    context = Calculation(
+        scope,
+        date(2026, 1, 1),
+        date(2026, 12, 31),
+        date(2026, 12, 31),
+        "America/New_York",
+        True,
+        promotions[-1],
+        50000,
+        promotions,
+        tuple(
+            CohortFamily(identity, promotions[0].promoted_at, 1)
+            for identity in identities
+        ),
+        frozenset(identities),
+        tuple(
+            LiveResponse(
+                identity,
+                version * 5000 + index + 1,
+                start + timedelta(days=version * 30, hours=1),
+                MoneyAmount(10000 + version),
+            )
+            for version in range(10)
+            for index, identity in enumerate(identities)
+        ),
+    )
+    days = calculate_participation(context)
+    assert len(days) == 365
+    assert sum(day.first_responses for day in days) == 5000
+    assert days[-1].cumulative_responses == 5000
+    assert days[-1].pledge_total == Decimal("500450.00")
+
+
 def test_no_early_source_is_unavailable_not_a_later_population():
     context = calculation()
     context = replace(context, promotions=(context.source,))

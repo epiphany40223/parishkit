@@ -2604,6 +2604,10 @@ CREATE FUNCTION public.stewardship_fact_disposable(identifier uuid) RETURNS bool
                             AND c.active_configuration_id=newer.timezone_configuration_id)))
         WHERE old.id=identifier AND old.state='ready')
     AND NOT EXISTS(SELECT 1 FROM stewardship_fact_pointer WHERE fact_set_id=identifier)
+    AND NOT EXISTS(SELECT 1 FROM stewardship_fact_verification_request r
+        JOIN stewardship_task_run t ON t.root_id=r.task_id
+        WHERE r.fact_set_id=identifier
+            AND t.state IN ('queued','running','retry_wait','abandoned'))
     AND NOT EXISTS(SELECT 1 FROM stewardship_fact_pin WHERE fact_set_id=identifier)
     AND NOT EXISTS(SELECT 1 FROM stewardship_exact_export_request r
         JOIN stewardship_daily_fact_set f ON f.id=identifier

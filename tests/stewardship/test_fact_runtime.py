@@ -9,6 +9,8 @@ from parishkit.stewardship.reports.fact_grants import add_fact_grants
 from parishkit.stewardship.reports.fact_production import produce_facts
 from parishkit.stewardship.reports.fact_tasks import fact_handler
 from parishkit.stewardship.reports.materialization import materialize_fact_set
+from parishkit.stewardship.reports.verification_production import produce_verifications
+from parishkit.stewardship.reports.verification_tasks import verification_handler
 
 
 def test_execution_key_retains_the_original_durable_identity():
@@ -29,6 +31,12 @@ def test_scheduler_has_no_executable_calculation_port():
         produce_facts(None)
     with pytest.raises(ValueError):
         materialize_fact_set(None, None, admit=None, interactive=1)
+    with pytest.raises(TypeError):
+        verification_handler(scheduler=1)
+    with pytest.raises(PermissionError, match="scheduler"):
+        verification_handler(scheduler=True).execute(None)
+    with pytest.raises(TypeError):
+        produce_verifications(None)
 
 
 @pytest.mark.parametrize("worker", [False, True])
@@ -41,3 +49,5 @@ def test_fact_grants_separate_scheduler_metadata_from_calculation_writes(worker)
     assert "answers" not in columns["stewardship_submission"]["SELECT"]
     assert "claimed_task_id" not in columns["stewardship_fact_demand"]["UPDATE"]
     assert not any("DELETE" in permissions for permissions in tables.values())
+    assert ("INSERT" in tables["stewardship_fact_verification_request"]) != worker
+    assert ("INSERT" in tables["stewardship_fact_verification_result"]) == worker

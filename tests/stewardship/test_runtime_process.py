@@ -311,6 +311,7 @@ def test_credential_service_publishes_only_after_admission(
         "setup_cleanup",
         "export_cleanup",
         "facts",
+        "verification",
     ],
 )
 def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
@@ -347,6 +348,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                 "cleanup": "cleanup-receipt",
                 "export_cleanup": "export-cleanup-receipt",
                 "facts": "facts-receipt",
+                "verification": "verification-receipt",
                 "setup_cleanup": "setup-cleanup-receipt",
             }
             assert kwargs["produce"](guard) == (
@@ -374,6 +376,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
     guard, cleanup = Mock(), Mock(return_value=("cleanup-receipt",))
     export_cleanup = Mock(return_value=("export-cleanup-receipt",))
     facts = Mock(return_value=("facts-receipt",))
+    verification = Mock(return_value=("verification-receipt",))
     expiry = Mock(return_value=0)
     matching.side_effect = lambda _: expiry.assert_called_once_with(guard)
     if held:
@@ -403,6 +406,10 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
     )
     monkeypatch.setattr(
         "parishkit.stewardship.reports.fact_production.produce_facts", facts
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.reports.verification_production.produce_verifications",
+        verification,
     )
     monkeypatch.setattr(
         "parishkit.stewardship.accounts.setup_staging.produce_setup_expiry", expiry
@@ -450,6 +457,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
             "setup_cleanup": setup_cleanup,
             "export_cleanup": export_cleanup,
             "facts": facts,
+            "verification": verification,
         }[failing_producer].side_effect = RuntimeError("synthetic-owner-failure")
     monkeypatch.setattr("parishkit.stewardship.jobs.processes.serve_consumer", serve)
     monkeypatch.setattr("parishkit.stewardship.jobs.processes.serve_scheduler", serve)
@@ -487,6 +495,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                 cleanup,
                 export_cleanup,
                 facts,
+                verification,
                 mail_recovery,
                 campaign_recovery,
                 slack_recovery,
@@ -501,17 +510,19 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         cleanup.assert_called_once_with(guard)
         export_cleanup.assert_called_once_with(guard)
         facts.assert_called_once_with(guard)
+        verification.assert_called_once_with(guard)
         expiry.assert_called_once_with(guard)
         mail_recovery.assert_called_once_with()
         campaign_recovery.assert_called_once_with()
         slack_recovery.assert_called_once_with()
-        assert guard.check.call_count == 26
+        assert guard.check.call_count == 28
     else:
         boundary.assert_not_called()
         mail_recovery.assert_not_called()
         cleanup.assert_not_called()
         export_cleanup.assert_not_called()
         facts.assert_not_called()
+        verification.assert_not_called()
         expiry.assert_not_called()
 
 
