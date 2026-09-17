@@ -509,3 +509,56 @@ accounted for below, including the below-threshold notes.
 Complete eight-part coverage is running against a clean, separate checkout at
 `c4bbc9b`, using four exclusive PostgreSQL/Valkey slots in two waves to limit
 memory pressure. Prior failed or incomplete aggregate runs remain excluded.
+
+### Final validation environment and history consolidation
+
+The first `c4bbc9b` coverage attempt was interrupted by confirmed macOS
+clamshell sleep beginning at 09:16 Eastern on September 17, followed by
+maintenance wakes until full wake at 10:05. Failed checks reported expired
+leases, authentication and interval constraints; those failures remain recorded,
+not waived. Complete affected partitions are repeated unchanged on fresh
+disposable PostgreSQL services, with a process-scoped idle-sleep assertion.
+This assertion does not prevent lid-close sleep. Successful same-source shard
+receipts remain eligible only through the normal complete-partition verifier.
+Stopped services contained only synthetic temporary test databases; retained
+development and fresh-schema audit databases were not reset or deleted.
+
+The nine review-correction commits were consolidated into `8f7cba7`, whose tree
+is exactly `6db18ed57f1ccac034df8cfa56c0120339c67a63`, matching the reviewed
+`c4bbc9b` tree. The subsequent review-documentation commit is now `326c695`;
+its tree `4235f9cf6163b6e04b22a77fd7d5731940a7e94d` matches pre-squash
+`7909c28` exactly. This reduces 20 commits to 12 logical signed-off commits
+without changing implementation or tests. Original history is retained in
+`backup/stewardship-daily-pre-squash-20260917`. The remote update used an exact
+expected-head `--force-with-lease`, not an unconditional force push.
+
+### Generic-plan integration correction
+
+The unchanged awake rerun passed complete partitions 3 and 4, but partition 1
+exposed an independent defect: an unrelated MAIL task retry could cause the
+production-cleanup trigger to plan a read of `stewardship_production_request`.
+MAIL correctly lacks that privilege. The isolated default-plan case passed;
+forcing generic plans reproduced the same class of problem earlier in optional
+outbox pause-binding validation. This is a code defect, not another sleep
+failure, and the incomplete aggregate is not accepted as validation.
+
+The two trigger functions now branch in PL/pgSQL before planning those optional
+domain reads. Actual cleanup completion and non-null pause bindings retain
+their existing checks. No new grant, security-definer conversion, clock
+override or weakened ownership fence was introduced. All 17 digest-resolution
+cases pass with explicitly forced custom/generic plans, including a direct
+assertion that MAIL still cannot read the production-request table.
+
+Independent fresh catalogs based on `326c695` differ only in the installed
+definitions of `stewardship_production_task_actor_v1()` and
+`stewardship_outbox_state_v1()`. Their actual before/after definitions were
+inspected before updating the function fingerprint. Superseded coverage
+processes were stopped with their logs retained; complete coverage must be
+rerun against the corrected source after focused validation and review.
+
+The existing production journal, cleanup recovery and outbox-boundary suite
+also passed all 77 cases under `force_generic_plan` in 96.33 seconds. The
+complete browser profiles passed 269 cases each: Chromium in 150.79 seconds,
+Firefox in 572.64 seconds and WebKit in 250.64 seconds. These browser runs
+exercise the unchanged final UI; full corrected-source aggregate coverage and
+exact-head CI remain outstanding.

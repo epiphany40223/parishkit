@@ -29,6 +29,18 @@ from .test_taskrun_postgresql import act
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
+@pytest.fixture(params=["force_custom_plan", "force_generic_plan"])
+def plan_mode(request):
+    """Exercise role-sensitive triggers without relying on custom-plan pruning."""
+    with connection.cursor() as cursor:
+        cursor.execute(f"SET plan_cache_mode = '{request.param}'")
+    try:
+        yield request.param
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("RESET plan_cache_mode")
+
+
 def failed(harness, status):
     """Record a real restricted delivery outcome, then drain the failed task."""
     ready = allocated(harness)
@@ -57,6 +69,7 @@ def failed(harness, status):
 )
 def test_admin_resolution_is_keyless_and_retry_uses_original_report(
     family_mail,  # noqa: F811
+    plan_mode,
     production,
     action,
     status,
@@ -107,6 +120,12 @@ def test_admin_resolution_is_keyless_and_retry_uses_original_report(
             in OutboxRender.objects.get(pk=message.render_id).text
         )
         with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            with (
+                pytest.raises(DatabaseError, match="permission denied"),
+                transaction.atomic(),
+                connection.cursor() as cursor,
+            ):
+                cursor.execute("SELECT id FROM stewardship_production_request")
             execution = claim(SimpleNamespace(task_id=command.retry_task_id))
             mail, _, _, number = begin(message, execution)
             assert number == attempt + 1

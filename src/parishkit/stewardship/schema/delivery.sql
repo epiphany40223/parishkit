@@ -439,12 +439,16 @@ BEGIN
        )) THEN
         RAISE EXCEPTION 'Invalid delivery scope' USING ERRCODE='23514';
     END IF;
-    IF NEW.pause_hold_id IS NOT NULL AND NOT EXISTS (
-        SELECT 1 FROM public.stewardship_delivery_pause_hold
-        WHERE id=NEW.pause_hold_id AND campaign_id=NEW.campaign_id
-          AND pause_version=NEW.pause_version
-    ) THEN
-        RAISE EXCEPTION 'Invalid delivery pause binding' USING ERRCODE='23514';
+    -- Producers without pause authority must not plan a hold-table read for
+    -- an absent binding. SQL AND short-circuiting is not a privilege boundary.
+    IF NEW.pause_hold_id IS NOT NULL THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM public.stewardship_delivery_pause_hold
+            WHERE id=NEW.pause_hold_id AND campaign_id=NEW.campaign_id
+              AND pause_version=NEW.pause_version
+        ) THEN
+            RAISE EXCEPTION 'Invalid delivery pause binding' USING ERRCODE='23514';
+        END IF;
     END IF;
     IF TG_OP = 'INSERT' THEN
         IF NEW.version <> 1 OR NEW.state <> 'pending' OR NEW.action <> 'created'

@@ -4,24 +4,29 @@
 CREATE FUNCTION public.stewardship_production_task_actor_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp AS $$
 BEGIN
+    -- Branch before planning any domain query. A generic SQL plan may inspect
+    -- relations inside a false AND expression under an unrelated task's role.
+    IF NEW.task_type IS DISTINCT FROM 'production_cleanup' THEN
+        RETURN NEW;
+    END IF;
     -- The domain journal must be able to mirror a terminal recovery outcome.
     -- Reject missing attribution at its source, before the task can be stranded.
-    IF NEW.task_type='production_cleanup' AND NEW.action='recovery_fail'
-       AND NEW.actor_id IS NULL THEN
+    IF NEW.action='recovery_fail' AND NEW.actor_id IS NULL THEN
         RAISE EXCEPTION 'Production task recovery requires an attributed actor'
             USING ERRCODE='23514';
     END IF;
     -- A crash after the domain committed completion may finish its task. An
     -- unfinished request instead needs recovery_retry or attributed failure;
     -- succeeding its task first would remove every resumable domain edge.
-    IF NEW.task_type='production_cleanup' AND NEW.action='recovery_complete'
-       AND NOT EXISTS (
+    IF NEW.action='recovery_complete' THEN
+        IF NOT EXISTS (
            SELECT 1 FROM public.stewardship_production_request
            WHERE id=NEW.domain_request_id AND task_id=NEW.root_id
              AND run_id=NEW.id AND state='cleanup_complete'
-       ) THEN
-        RAISE EXCEPTION 'Production task recovery requires committed cleanup completion'
-            USING ERRCODE='23514';
+        ) THEN
+            RAISE EXCEPTION 'Production task recovery requires committed cleanup completion'
+                USING ERRCODE='23514';
+        END IF;
     END IF;
     RETURN NEW;
 END $$;
