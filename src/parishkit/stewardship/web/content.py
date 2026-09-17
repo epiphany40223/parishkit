@@ -192,7 +192,14 @@ def validate_receipt_content(subject, html, text):
     for value, header in ((subject, True), (html, False), (text, False)):
         if validate_template(value, subject=header) & FAMILY_CREDENTIAL_PLACEHOLDERS:
             raise ValueError("Submission receipts cannot contain access credentials.")
-        if FAMILY_CODE_MARKER in value or FAMILY_LINK_MARKER in value:
+        if any(
+            marker in value
+            for marker in (
+                FAMILY_CODE_MARKER,
+                FAMILY_LINK_MARKER,
+                "PARISHKIT_PENDING_RECEIPT",
+            )
+        ):
             raise ValueError("Submission receipts cannot contain reserved markers.")
 
 

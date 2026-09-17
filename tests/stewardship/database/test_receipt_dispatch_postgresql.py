@@ -181,7 +181,7 @@ def test_pending_receipt_blocks_archive_until_accepted(live_response_service):
     harness = live_response_service
     message = receipt(harness, production=True)
     close_campaign(harness.campaign, uuid4())
-    with pytest.raises(IntegrityError, match="Archive requires"):
+    with pytest.raises(IntegrityError, match="resolved submission confirmations"):
         command(harness.campaign, uuid4(), Action.ARCHIVE)
     with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
         execution = claim(message)
@@ -189,6 +189,48 @@ def test_pending_receipt_blocks_archive_until_accepted(live_response_service):
         finish_submission(
             message.pk, execution.claim, FamilyDeliveryResult(Status.ACCEPTED, 1)
         )
+    command(harness.campaign, uuid4(), Action.ARCHIVE)
+    harness.campaign.refresh_from_db()
+    assert harness.campaign.state == "archived"
+
+
+@pytest.mark.parametrize("status", [Status.TRANSIENT, Status.PERMANENT, Status.UNKNOWN])
+def test_unresolved_provider_result_still_blocks_archive(live_response_service, status):
+    """A provider attempt is not evidence that the receipt obligation was resolved."""
+    from parishkit.stewardship.campaigns.lifecycle import Action
+
+    from .campaign_builders import command
+
+    harness = live_response_service
+    message = receipt(harness, production=True)
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        execution = claim(message)
+        assert begin(message, execution) is not None
+        finish_submission(message.pk, execution.claim, FamilyDeliveryResult(status, 1))
+    close_campaign(harness.campaign, uuid4())
+    with pytest.raises(IntegrityError, match="resolved submission confirmations"):
+        command(harness.campaign, uuid4(), Action.ARCHIVE)
+
+
+def test_no_recipient_submission_does_not_prevent_archive(live_response_service):
+    """The audited Submit-time skip already resolves its confirmation obligation."""
+    from parishkit.stewardship.campaigns.lifecycle import Action
+
+    from .campaign_builders import command
+    from .response_builders import response_source
+    from .test_recipient_suppressions_postgresql import refresh
+
+    harness = live_response_service
+    data = response_source()
+    data.members[3]["emailAddress"] = ""
+    refresh(harness, data)
+    form, answers = form_and_answers(harness)
+    answers["testing_acknowledged"] = False
+    row = submit(harness, form, answers).submission
+    occurrence = SubmissionReceiptOccurrence.objects.get(submission=row)
+    assert occurrence.disposition == "no_deliverable_recipient"
+    assert occurrence.outbox_id is None
+    close_campaign(harness.campaign, uuid4())
     command(harness.campaign, uuid4(), Action.ARCHIVE)
     harness.campaign.refresh_from_db()
     assert harness.campaign.state == "archived"

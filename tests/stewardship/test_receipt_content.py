@@ -88,6 +88,7 @@ def test_repeated_dst_hour_has_explicit_distinct_abbreviation():
         "{{ family_url }}",
         "PARISHKIT_REDACTED_FAMILY_CODE",
         "https://parishkit.invalid/redacted-family-link",
+        "PARISHKIT_PENDING_RECEIPT",
     ],
 )
 def test_private_placeholders_and_markers_are_rejected(part, private):
@@ -104,12 +105,31 @@ def test_confirmation_block_cannot_bypass_template_privacy(part):
         render(block=block)
 
 
-def test_combined_text_cannot_assemble_a_reserved_marker():
+@pytest.mark.parametrize(
+    "prefix,suffix",
+    [("PARISHKIT_REDACTED_", "FAMILY_CODE"), ("PARISHKIT_PENDING_", "RECEIPT")],
+)
+def test_combined_text_cannot_assemble_a_reserved_marker(prefix, suffix):
     """Validate the final body, not just individually safe template fragments."""
     with pytest.raises(ValueError, match="reserved markers"):
         render(
-            template=ReceiptTemplate("Received", "PARISHKIT_REDACTED_", "Received"),
-            block=SafeContent("FAMILY_CODE", ""),
+            template=ReceiptTemplate("Received", prefix, "Received"),
+            block=SafeContent(suffix, ""),
+        )
+
+
+def test_public_substitution_cannot_assemble_the_allocation_seed_marker():
+    """Preview and worker rendering share the dispatch guard's reserved vocabulary."""
+    with pytest.raises(ValueError, match="reserved markers"):
+        render(
+            template=ReceiptTemplate("PARISHKIT_PENDING_{{ campaign_name }}"),
+            values={
+                "parish_name": "Example Parish",
+                "parish_phone": "+12025550100",
+                "parish_website": "https://example.org/",
+                "campaign_name": "RECEIPT",
+                "family_name": "Family",
+            },
         )
 
 

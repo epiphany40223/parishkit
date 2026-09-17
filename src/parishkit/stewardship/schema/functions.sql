@@ -1328,11 +1328,12 @@ BEGIN
                ) THEN RAISE EXCEPTION 'Reopen requires exact extended configuration intent' USING ERRCODE='23514'; END IF;
             expected_state:='active'; expected_mode:='production';
         WHEN 'archive' THEN
-            IF c.state<>'closed' OR NOT stewardship_campaign_quiet_v1(c.id)
-               OR EXISTS (SELECT 1 FROM stewardship_outbox_message receipt
+            IF c.state<>'closed' OR NOT stewardship_campaign_quiet_v1(c.id) THEN
+                RAISE EXCEPTION 'Archive requires closed and quiet campaign' USING ERRCODE='23514'; END IF;
+            IF EXISTS (SELECT 1 FROM stewardship_outbox_message receipt
                    WHERE receipt.campaign_id=c.id AND receipt.purpose='receipt'
                      AND receipt.mode='production' AND receipt.state<>'delivered') THEN
-                RAISE EXCEPTION 'Archive requires closed and quiet campaign' USING ERRCODE='23514'; END IF;
+                RAISE EXCEPTION 'Archive requires resolved submission confirmations' USING ERRCODE='23514'; END IF;
             expected_state := 'archived';
         WHEN 'unarchive' THEN
             IF c.state<>'archived' OR NOT stewardship_campaign_quiet_v1(c.id) THEN

@@ -221,7 +221,7 @@ def test_submit_does_not_render_templates_or_require_worker_origin(
         """Model any template/rendering failure without suppressing Submit checks."""
         raise ValueError("Synthetic receipt rendering failure")
 
-    monkeypatch.setattr(receipt_rendering, "current_receipt_render", unavailable)
+    monkeypatch.setattr(receipt_rendering, "render_receipt", unavailable)
     del settings.STEWARDSHIP_PUBLIC_ORIGIN
     with web_login():
         form, answers = form_and_answers(response_service)

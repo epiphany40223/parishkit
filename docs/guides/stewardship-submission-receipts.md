@@ -139,3 +139,41 @@ tests in 81.20 seconds, the 27 setup/runtime tests, Ruff, formatting, changed
 Markdown, diff whitespace checks and model-drift checks. The 49-test run includes
 all 17 refreshed schema-baseline checks. The remaining two review rounds and
 frozen-tree full coverage are still open.
+
+Round 2 reviewed `e4ababef..833f581` in Pika session
+`20260917-023151-6fa771`, with sufficient surrounding allocation, rendering,
+grants and lifecycle context. Both sources completed successfully without
+degradation or verdict mismatch. Raw findings were one Medium and six Low,
+with no High or Critical; all raw artifacts were retained.
+
+- Claude Medium, no escape for a permanently undeliverable receipt: clarify the
+  explicit BG-07.04/Phase 6 dependency in the owning task list. Until that owner
+  implements semantic skip resolution, archive and the next campaign remain
+  blocked for such a receipt. This pre-production limitation cannot be treated
+  as a completed archive workflow or production-readiness evidence.
+- Claude Low: distinguish unresolved-confirmation archive diagnostics; patch
+  the renderer's call-time binding in the Submit isolation test; add archive
+  cases for transient, permanent and unknown provider results and Submit-time
+  absence of recipients.
+- Claude Low, missing null Testing-recipient check: reject as already enforced.
+  `SystemConfiguration.testing_recipient` is a non-null database column with
+  the `system_testing_recipient` format constraint; this is not merely an
+  application-level setup assumption.
+- Claude Low, repeated receipt-purpose predicate: retain intentional defense
+  in depth in the privileged trigger function as well as its trigger condition.
+- Codex Low, allocation marker accepted by authoring/preview: reserve the same
+  marker in shared receipt validation, including combined final output. Tests
+  cover each authored alternative and a marker assembled by public substitution.
+
+At `833f581`, all 3,435 database cases passed in the eight isolated partitions,
+with zero missing/duplicate coverage receipts. The same frozen-tree measurement
+includes the baseline's 6,152 passes, 4,279 explicit profile skips and two
+existing warnings. Scoped coverage is 94.01% lines and 85.21% branches. All
+84 focused browser cases, 12 real-image isolation cases and 17 runtime/Valkey
+container cases also passed. Repository-wide Markdown, Ruff and formatting
+passed; the exact image is `parishkit-stewardship:receipts-833f581`. These are
+intermediate-head measurements; post-correction validation and exact-head CI
+remain required. Round 2 corrections pass 39 PostgreSQL receipt tests in 63.87
+seconds, all 17 refreshed schema checks in 17.94 seconds and 36 pure content
+tests. Ruff, formatting, changed Markdown and diff whitespace checks pass.
+The repeated baseline and third review are next.

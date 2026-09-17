@@ -253,6 +253,13 @@ coherent receipt delivery scope and internal acceptance checkpoints. Daily and
 weekly digests, complete post-close inventory and Gate 3 remain open; none of
 this package's tasks is yet claimed complete.
 
+BG-07.04 and the Phase 6 archive owner must replace the interim receipt archive
+guard with the complete shared obligation inventory and explicit semantic skip
+resolution. Until then, an undeliverable accepted Production receipt blocks
+archive and therefore the next campaign, even after retries are exhausted.
+This is a visible pre-production limitation, not a supported operational escape
+path; do not enable production use or waive unresolved obligations at a gate.
+
 ## BG-08: Export and graph workers
 
 Scope and dependencies: [BG-08 work package](../../plans/stewardship/background-processing.md#bg-08-export-and-graph-workers).
