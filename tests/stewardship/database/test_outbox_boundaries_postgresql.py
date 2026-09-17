@@ -217,7 +217,10 @@ def test_terminal_outcomes_scrub_sealed_values_but_not_history(family_service, o
     assert "synthetic-token" not in repr(terminal)
 
 
-def test_pause_is_orthogonal_and_stale_dispatch_cannot_cross_it(family_service):  # noqa: F811
+def test_pause_is_orthogonal_and_stale_dispatch_cannot_cross_it(
+    family_service,  # noqa: F811
+    sql_plan_mode,
+):
     """Actual lifecycle controls fence dispatch even before its hold is attached."""
     family = FamilyCampaign.objects.get()
     campaign = family_service.campaign

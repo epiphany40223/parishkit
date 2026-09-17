@@ -1,7 +1,7 @@
 {% extends 'stewardship/base.html' %}{% load i18n stewardship delivery %}
-{% block title %}{% translate "Family mail" %}{% endblock %}
+{% block title %}{% translate "Outgoing mail" %}{% endblock %}
 {% block content %}
-<h1>{% translate "Family mail" %}</h1>
+<h1>{% translate "Outgoing mail" %}</h1>
 <p>{% translate "Opening or refreshing this status page does not extend your login session." %}</p>
 <p><a href="{% url 'admin:delivery_refusals' %}">{% translate "Review refused addresses" %}</a></p>
 <form method="get" class="panel">
@@ -13,7 +13,7 @@
 </form>
 {% for delivery in deliveries %}
 <section class="panel">
-  <h2><a href="{% url 'admin:delivery' delivery.id %}">{% translate "Family DUID" %} {{ delivery.family__family_duid|number }}</a></h2>
+  <h2><a href="{% url 'admin:delivery' delivery.id %}">{% if delivery.family__family_duid %}{% translate "Family DUID" %} {{ delivery.family__family_duid|number }}{% else %}{% translate "Administrator report" %}{% endif %}</a></h2>
   <p>{{ delivery.purpose|delivery_label }} · {{ delivery.mode|delivery_label }} · {{ delivery.state|delivery_label }}</p>
   <p>{% translate "Provider attempts:" %} {{ delivery.attempt|number }}</p>
   <p>{% translate "Last changed:" %} <time datetime="{{ delivery.updated_at|instant }}" data-local-instant>{{ delivery.updated_at|instant }}</time></p>

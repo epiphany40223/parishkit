@@ -1195,7 +1195,7 @@ CREATE TABLE public.stewardship_operational_log (
     CONSTRAINT operational_context_safe CHECK (public.stewardship_safe_context_v1((schema)::text, context)),
     CONSTRAINT operational_event_safe CHECK (event IN (
         'configuration_rejected','configuration_digest_mismatch','startup_rejected',
-        'startup_validated','request_completed','task_started','task_completed',
+        'startup_validated','request_completed','report_audit_failed','task_started','task_completed',
         'task_failed','fact_drift','unstructured_log_suppressed','authentication_limits_weakened',
         'installer_request_failed','source_refresh_invalid','source_member_unusable',
         'source_refresh_held','source_credential_failed','source_provider_failed',
@@ -1486,7 +1486,7 @@ CREATE TABLE public.stewardship_schedule_fulfillment (
     disposition character varying(16) NOT NULL,
     definition_id uuid NOT NULL,
     occurrence_id uuid NOT NULL,
-    CONSTRAINT schedule_fulfillment_disposition CHECK (((disposition)::text = ANY ((ARRAY['delivered'::character varying, 'coalesced'::character varying])::text[])))
+    CONSTRAINT schedule_fulfillment_disposition CHECK (((disposition)::text = ANY ((ARRAY['delivered'::character varying, 'coalesced'::character varying, 'empty'::character varying])::text[])))
 );
 
 -- TABLE: stewardship_schedule_occurrence
@@ -2520,7 +2520,10 @@ CREATE TABLE public.stewardship_production_target (
         ('proposals'::varchar)::text,('rehearsal_credentials'::varchar)::text,('rehearsal_macs'::varchar)::text,
         ('schedule_fulfillments'::varchar)::text,('source_pins'::varchar)::text,
         ('submission_receipts'::varchar)::text,('submissions'::varchar)::text,
-        ('prior_inventory_targets'::varchar)::text
+        ('prior_inventory_targets'::varchar)::text,
+        ('daily_digest_recipients'::varchar)::text,('daily_digest_ready'::varchar)::text,
+        ('daily_digest_snapshots'::varchar)::text,('daily_digest_fact_pins'::varchar)::text,
+        ('recovery_replacements'::varchar)::text
     ]))
 );
 CREATE INDEX production_target_correlation ON public.stewardship_production_target (correlation_id);
@@ -2562,7 +2565,8 @@ CREATE TABLE public.stewardship_recovery_replacement (
     correlation_id uuid NOT NULL,
     previous_id uuid NOT NULL UNIQUE,
     replacement_id uuid NOT NULL,
-    demand_id uuid NOT NULL
+    demand_id uuid,
+    preparation_id uuid
 );
 CREATE INDEX schedule_recovery_demand ON public.stewardship_recovery_replacement(demand_id,replacement_id);
 CREATE INDEX schedule_recovery_successor ON public.stewardship_recovery_replacement(replacement_id);

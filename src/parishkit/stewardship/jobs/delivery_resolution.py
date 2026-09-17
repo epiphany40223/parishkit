@@ -2,6 +2,8 @@
 
 from uuid import UUID
 
+from django.db import connection
+
 from parishkit.stewardship.accounts.cryptography import (
     GeneralKeyring,
     TokenPublicKeyring,
@@ -41,6 +43,8 @@ def _prepare(message, *, general, public, public_origin):
     """Re-read source, template and retained credential references inside the lock."""
     if message is not None and message.purpose == "receipt":
         return _prepare_receipt(message)
+    if message is not None and message.purpose == "daily_digest":
+        return _prepare_digest(message)
     if (
         not isinstance(general, GeneralKeyring)
         or not isinstance(public, TokenPublicKeyring)
@@ -103,6 +107,15 @@ def _prepare_receipt(message):
     if receipt_disposition(message) is not None:
         raise PermissionError("Receipt retry is not currently admitted.")
     return {"receipt": True}
+
+
+def _prepare_digest(message):
+    """Request only a fixed database seed, never read or author the report body."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT stewardship_daily_dispatch_live_v1(%s)", [message.pk])
+        if cursor.fetchone()[0] is not True:
+            raise PermissionError("Daily digest retry is not currently admitted.")
+    return {"daily_digest": True}
 
 
 def resolve_delivery(

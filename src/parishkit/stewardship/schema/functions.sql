@@ -2619,6 +2619,12 @@ CREATE FUNCTION public.stewardship_fact_disposable(identifier uuid) RETURNS bool
                 r.timezone_configuration_id,r.through_date)=
             ROW(f.campaign_id,f.population_scope,f.source_id,f.submission_watermark,
                 f.timezone_configuration_id,f.through_date))
+    AND NOT EXISTS(SELECT 1 FROM stewardship_daily_digest_snapshot r
+        JOIN stewardship_daily_fact_set f ON f.id=identifier
+        WHERE ROW(r.campaign_id,r.population_scope,r.source_id,r.submission_watermark,
+                r.timezone_configuration_id,r.through_date)=
+            ROW(f.campaign_id,f.population_scope,f.source_id,f.submission_watermark,
+                f.timezone_configuration_id,f.through_date))
     AND NOT EXISTS(SELECT 1 FROM stewardship_fact_demand
         WHERE claimed_generation_id=identifier);
 $$;
@@ -2986,7 +2992,15 @@ BEGIN
         SELECT 1 FROM stewardship_schedule_occurrence o JOIN stewardship_schedule_definition d ON d.id=o.definition_id
         JOIN stewardship_schedule_definition wanted ON wanted.id=NEW.definition_id
         WHERE o.id=NEW.occurrence_id AND o.mode=NEW.mode AND d.campaign_id=wanted.campaign_id
-          AND ((NEW.disposition='delivered' AND o.state='succeeded' AND o.definition_id=NEW.definition_id AND o.target=NEW.target AND o.slot=NEW.slot)
+          AND ((NEW.disposition='delivered' AND o.state='succeeded'
+                AND o.reason IS DISTINCT FROM 'daily_digest_no_current_recipients'
+                AND o.definition_id=NEW.definition_id AND o.target=NEW.target AND o.slot=NEW.slot)
+            OR (NEW.disposition='empty' AND d.kind='daily_digest' AND o.state='succeeded'
+                AND o.reason='daily_digest_no_current_recipients'
+                AND o.definition_id=NEW.definition_id AND o.target=NEW.target AND o.slot=NEW.slot
+                AND EXISTS(SELECT 1 FROM stewardship_daily_digest_preparation p
+                    JOIN stewardship_daily_digest_completion_ready proof ON proof.preparation_id=p.id
+                    WHERE p.occurrence_id=o.id AND proof.disposition='empty'))
             OR (NEW.disposition='coalesced' AND EXISTS (SELECT 1 FROM stewardship_schedule_occurrence original
                 WHERE original.definition_id=NEW.definition_id AND original.mode=NEW.mode AND original.target=NEW.target AND original.slot=NEW.slot
                   AND original.state='coalesced' AND original.replacement_id=o.id)))
@@ -3541,7 +3555,7 @@ BEGIN
            OR (OLD.state='failed' AND NEW.state NOT IN ('pending','skipped'))
            OR OLD.state IN ('succeeded','skipped','coalesced') THEN
             RAISE EXCEPTION 'Invalid occurrence transition' USING ERRCODE='23514'; END IF;
-        IF NEW.state='running' THEN
+        IF NEW.state='running' AND NOT public.stewardship_daily_digest_completion_v1(to_jsonb(NEW)) THEN
             SELECT * INTO t FROM stewardship_task_run WHERE id=NEW.task_id FOR UPDATE;
             IF NOT FOUND OR t.state<>'running' OR t.worker_id<>NEW.worker_id OR t.fence<>NEW.fence OR t.lease_expires_at<=clock_timestamp()
                OR NEW.lease_expires_at>t.lease_expires_at OR NEW.heartbeat_at>clock_timestamp()
@@ -6221,6 +6235,8 @@ BEGIN
         public.stewardship_catchup_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
             CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE AND
         public.stewardship_family_mail_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
+            CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE AND
+        public.stewardship_daily_digest_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
             CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE THEN
         RAISE EXCEPTION 'Worker configuration effects require atomic setup ownership'
             USING ERRCODE='23514';
@@ -8727,6 +8743,17 @@ BEGIN
             RAISE EXCEPTION 'Worker may release only unused response comparison inputs'
                 USING ERRCODE='23514';
         END IF;
+      ELSIF TG_OP='INSERT' AND NEW.parent_kind='digest' THEN
+        IF NEW.expires_at IS NOT NULL OR NOT EXISTS (
+            SELECT 1 FROM stewardship_daily_digest_snapshot s
+            WHERE s.id=NEW.parent_id AND s.source_id=NEW.snapshot_id
+              AND stewardship_daily_digest_live_v1(s.preparation_id,s.run_id,s.fence,s.worker_id)
+        ) OR NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+            AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
+            AND mode='ExclusiveLock' AND granted) THEN
+            RAISE EXCEPTION 'Daily source protection requires its live exact snapshot'
+                USING ERRCODE='23514';
+        END IF;
       ELSIF TG_OP='INSERT' AND NEW.parent_kind='facts' THEN
         IF NEW.expires_at IS NOT NULL OR NOT (EXISTS (
             SELECT 1 FROM stewardship_task_run t JOIN stewardship_fact_demand d
@@ -9658,7 +9685,10 @@ BEGIN
        OR EXISTS(SELECT 1 FROM stewardship_submission WHERE campaign_id=NEW.id AND mode='test')
        OR EXISTS(SELECT 1 FROM stewardship_family_form_baseline baseline
                  JOIN stewardship_family_campaign family ON family.id=baseline.family_id
-                 WHERE family.campaign_id=NEW.id AND baseline.mode='test') THEN
+                 WHERE family.campaign_id=NEW.id AND baseline.mode='test')
+       OR EXISTS(SELECT 1 FROM stewardship_daily_digest_snapshot snapshot
+                 JOIN stewardship_daily_digest_preparation p ON p.id=snapshot.preparation_id
+                 WHERE snapshot.campaign_id=NEW.id AND p.mode='testing') THEN
         RAISE EXCEPTION 'Campaign requires a complete current token generation and rehearsal cleanup' USING ERRCODE='23514'; END IF;
     IF generation.configuration_request_id IS NULL THEN
         IF generation.configuration_id IS DISTINCT FROM NEW.active_configuration_id THEN
@@ -9843,6 +9873,12 @@ BEGIN
     SELECT * INTO demand FROM public.stewardship_activation_catchup WHERE id=NEW.demand_id;
     SELECT * INTO previous FROM public.stewardship_schedule_occurrence WHERE id=NEW.previous_id FOR UPDATE;
     SELECT * INTO replacement FROM public.stewardship_schedule_occurrence WHERE id=NEW.replacement_id FOR UPDATE;
+    IF NEW.preparation_id IS NOT NULL THEN
+        IF NEW.demand_id IS NOT NULL OR NOT public.stewardship_daily_digest_replacement_v1(to_jsonb(NEW)) THEN
+            RAISE EXCEPTION 'Recovery replacement requires current daily ownership' USING ERRCODE='23514';
+        END IF;
+        RETURN NEW;
+    END IF;
     IF demand.id IS NULL OR demand.completed_at IS NOT NULL
         OR previous.id IS NULL OR replacement.id IS NULL
         OR previous.revision_id=replacement.revision_id

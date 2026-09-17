@@ -224,7 +224,7 @@ class ScheduleFulfillment(ImmutableRecord):
                 name="schedule_fulfillment_semantic",
             ),
             models.CheckConstraint(
-                condition=models.Q(disposition__in=["delivered", "coalesced"]),
+                condition=models.Q(disposition__in=["delivered", "coalesced", "empty"]),
                 name="schedule_fulfillment_disposition",
             ),
         ]
@@ -254,7 +254,11 @@ class ScheduleRecoveryReplacement(ImmutableRecord):
         "stewardship_campaigns.ActivationCatchUpDemand",
         on_delete=models.PROTECT,
         db_index=False,
+        null=True,
     )
+    # Ordinary digest recovery may run after activation catch-up has completed.
+    # Exactly one owner is validated by the insertion guard, including its fence.
+    preparation_id = models.UUIDField(null=True)
 
     class Meta:
         db_table = "stewardship_recovery_replacement"

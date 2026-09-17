@@ -24,7 +24,7 @@ FIELDS = (
     "updated_at",
     "finished_at",
 )
-PURPOSES = ("initial", "reminder", "receipt")
+PURPOSES = ("initial", "reminder", "receipt", "daily_digest")
 STATES = (
     "all",
     "delivery_unknown",
@@ -38,7 +38,7 @@ STATES = (
 
 
 def messages():
-    """Expose implemented Family delivery owners, never private rendered payloads."""
+    """Expose implemented delivery owners, never private rendered payloads."""
     return OutboxMessage.objects.filter(purpose__in=PURPOSES)
 
 

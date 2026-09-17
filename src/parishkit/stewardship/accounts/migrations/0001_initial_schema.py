@@ -26,6 +26,8 @@ def schema_sql():
                 "family_dispatch",
                 "production",
                 "cleanup",
+                "daily_digests",
+                "daily_dispatch",
                 "schedule_reconciliation",
                 "exports",
                 "delivery_resolution",

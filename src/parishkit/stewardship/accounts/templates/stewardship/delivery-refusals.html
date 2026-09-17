@@ -1,7 +1,7 @@
 {% extends 'stewardship/base.html' %}{% load i18n stewardship %}
 {% block title %}{% translate "Refused addresses" %}{% endblock %}
 {% block content %}
-<p><a href="{% url 'admin:deliveries' %}">{% translate "Family mail" %}</a></p>
+<p><a href="{% url 'admin:deliveries' %}">{% translate "Outgoing mail" %}</a></p>
 <h1>{% translate "Refused addresses" %}</h1>
 <p>{% translate "Each refusal suppresses an address for one Family only. Verify the mailbox before clearing it. Clearance does not itself send a message." %}</p>
 <form method="get" class="panel">

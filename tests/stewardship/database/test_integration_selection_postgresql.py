@@ -96,33 +96,25 @@ def complete(value):
     value.row.refresh_from_db()
 
 
-@pytest.mark.parametrize("plan_mode", ["force_custom_plan", "force_generic_plan"])
-def test_replacement_audit_is_independent_of_query_plan(request, plan_mode):
+def test_replacement_audit_is_independent_of_query_plan(request, sql_plan_mode):
     """Runtime attribution metadata is readable under either PostgreSQL plan mode."""
-    with connection.cursor() as cursor:
-        cursor.execute(f"SET plan_cache_mode = '{plan_mode}'")
-    try:
-        value = request.getfixturevalue("replacement")
-        complete(value)
-        with identity("pk_stewardship_credential_parishsoft"):
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT id, validation_schema "
-                    "FROM stewardship_configuration_version"
-                )
-                assert cursor.fetchall()
-            with (
-                pytest.raises(DatabaseError) as error,
-                transaction.atomic(),
-                connection.cursor() as cursor,
-            ):
-                cursor.execute(
-                    "SELECT canonical_document FROM stewardship_configuration_version"
-                )
-            assert error.value.__cause__.sqlstate == "42501"
-    finally:
+    value = request.getfixturevalue("replacement")
+    complete(value)
+    with identity("pk_stewardship_credential_parishsoft"):
         with connection.cursor() as cursor:
-            cursor.execute("RESET plan_cache_mode")
+            cursor.execute(
+                "SELECT id, validation_schema FROM stewardship_configuration_version"
+            )
+            assert cursor.fetchall()
+        with (
+            pytest.raises(DatabaseError) as error,
+            transaction.atomic(),
+            connection.cursor() as cursor,
+        ):
+            cursor.execute(
+                "SELECT canonical_document FROM stewardship_configuration_version"
+            )
+        assert error.value.__cause__.sqlstate == "42501"
 
 
 def test_select_acknowledged_fingerprint_via_real_web_and_config_roles(

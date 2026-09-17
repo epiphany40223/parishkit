@@ -205,3 +205,14 @@ all 17 refreshed schema checks in 17.83 seconds and 122 pure content tests in
 All accepted Medium-or-higher findings are resolved; the final round has none.
 The three-round exit criteria are met. Exact-head CI/DCO and protected delivery
 remain pending; neither real provider operation nor deployment is authorized.
+
+## Protected delivery
+
+PR [#46](https://github.com/epiphany40223/parishkit/pull/46) merged as
+`849cc71f6c8a6478677749f8b2e5dce8a06334ff` on September 17, 2026. Exact head
+`c3a26cf` passed all 24 CI jobs in run `35192186917` plus DCO; exact-head
+coverage was 94.01% lines and 85.22% branches. All 24 protected merge-group
+jobs passed in run `35193954218`. The merge was verified on freshly fetched
+`origin/main`; no protection was bypassed or repository setting changed.
+The pending-delivery notes above are superseded. BG-07.01 is delivered;
+daily/weekly digests, explicit post-close resolution and Gate 3 remain open.

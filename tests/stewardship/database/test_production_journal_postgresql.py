@@ -382,7 +382,7 @@ def test_production_summary_must_match_actual_testing_delivery_totals(intent):
 
 @pytest.mark.parametrize("before_start", [False, True])
 def test_exhausted_crash_recovery_records_failure_and_allows_explicit_retry(
-    intent, before_start
+    intent, before_start, sql_plan_mode
 ):
     """Task recovery can finish before the domain starts or after a checkpoint."""
     from parishkit.stewardship.jobs.storage import _status as task_status
@@ -441,7 +441,9 @@ def test_exhausted_crash_recovery_records_failure_and_allows_explicit_retry(
 
 
 @pytest.mark.parametrize("phase", ["queued", "running", "checkpoint", "complete"])
-def test_task_recovery_success_requires_committed_domain_completion(intent, phase):
+def test_task_recovery_success_requires_committed_domain_completion(
+    intent, phase, sql_plan_mode
+):
     """Only a crash after domain completion may recover the task as succeeded."""
     from parishkit.stewardship.jobs.storage import _status as task_status
 

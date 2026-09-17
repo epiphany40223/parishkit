@@ -277,7 +277,10 @@ timing alone, makes insertion/recovery idempotent and prevents two revisions or
 workers from creating the same revision-specific work.
 
 `ScheduleFulfillment` records that a semantic slot is covered independently of
-revision. Its disposition is `delivered` or `coalesced`. Its unique key combines
+revision. Its disposition is `delivered`, `coalesced`, or `empty`. An `empty`
+daily-digest row requires an audited successful occurrence whose entire original
+recipient cohort was safely cancelled after losing Administrator authority; it
+does not represent provider acceptance. Its unique key combines
 schedule UUID, mode, semantic recipient or audience, and occurrence slot (for
 example Family DUID for a one-time Family mail or campaign-local date for a
 daily digest). A delivered row references the successful occurrence; a
@@ -293,7 +296,12 @@ For activation preparation interrupted by a schedule revision, an append-only
 replacement occurrence under the same demand. It is coverage lineage, not a
 new delivery identity or a success record. Each predecessor has at most one
 successor; links must move to the current revision and cannot cycle. Original
-occurrences and fulfillment rows remain unchanged. Family preparation must also
+occurrences and fulfillment rows remain unchanged. After activation preparation
+has completed, an ordinary daily-digest preparation may own these same forward
+edges under its exact task claim instead of reopening the completed demand.
+Each edge has exactly one preparation owner; Testing edges are removed only by
+the journaled Testing cleanup with their occurrence inventory.
+Family preparation must also
 forward coalesced reminder coverage when a replacement initial invitation is
 selected. Removing all Family schedules preserves history without reviving mail;
 configuration continues to forbid reminders without an initial invitation.
@@ -309,7 +317,7 @@ submission/item/correction versions or daily range, resolving Admin, UTC time,
 required reason, and linked skipped occurrence/cancelled work. Its unique key
 combines campaign, mode, obligation key, and coverage digest, making repeated
 confirmation idempotent without covering later inputs. It is a durable explicit
-skip, separate from delivered/coalesced `ScheduleFulfillment`; it survives
+skip, separate from delivered/coalesced/empty `ScheduleFulfillment`; it survives
 schedule revision and archive/unarchive until campaign purge. See
 [post-close reporting obligations](../background-processing/spec.md#post-close-reporting-obligations)
 for transactional application and admission checks.

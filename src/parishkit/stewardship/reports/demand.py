@@ -116,7 +116,7 @@ def claim_rebuild(campaign_id, population_scope, claim, *, admit):
         if record.state != "ready":
             owner = TaskRun.objects.get(pk=record.task_id)
             if (
-                owner.task_type == "report_exact_export"
+                owner.task_type in {"report_exact_export", "daily_digest_prepare"}
                 and not TaskRun.objects.filter(
                     root_id=owner.root_id, state__in=NONTERMINAL_STATES
                 ).exists()

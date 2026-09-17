@@ -46,6 +46,7 @@ from parishkit.stewardship.web.security import CSP
 
 from ..campaign_factory import campaign, schedule
 from .delivery_components import components as delivery_components
+from .digest_components import components as digest_components
 
 NOW = datetime(2026, 9, 10, 12, tzinfo=UTC)
 
@@ -1012,10 +1013,13 @@ def component_origin():
                 context | {"admin_chrome": admin | {"delivery_unknown": 1}} | extra,
             ),
         )
+    responses.update(digest_components(context, admin))
     for filename, kind in (
         ("ui-v1.css", "text/css"),
         ("ui-v1.js", "application/javascript"),
         ("family-v1.js", "application/javascript"),
+        ("digest-v1.js", "application/javascript"),
+        ("digest-v1.css", "text/css"),
     ):
         asset = f"stewardship/{filename}"
         located = finders.find(asset)

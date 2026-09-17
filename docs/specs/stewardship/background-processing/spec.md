@@ -624,6 +624,17 @@ Recipients are the current normalized exact-address rules granting
 Administrator at execution time. Each Admin receives an individual message so
 addresses are not exposed to other recipients.
 
+The generation-time recipient cohort is immutable. Before each submission,
+recheck the recipient's current Administrator authority. Safely cancel a revoked
+recipient's unsent message with `recipient_revoked`, retaining the cancellation
+as an audited withdrawal of that recipient obligation, never as delivery. The
+occurrence completes when every original recipient is either accepted (including
+proven earlier accepted coverage) or has this guarded withdrawal. If every
+recipient was withdrawn, record `daily_digest_no_current_recipients` and an
+`empty` fulfillment, not a delivered fulfillment. Newly added or later re-added
+Administrators do not reopen completed historical cohorts. Provider-submitting
+or uncertain messages still require ordinary reconciliation before cancellation.
+
 ### Daily campaign digest
 
 After every active local campaign day, default 12:15 a.m. next day and

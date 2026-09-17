@@ -110,6 +110,8 @@ def retry(status, **kwargs):
         "activation_catchup",
         "report_export",
         "report_export_cleanup",
+        "daily_digest_prepare",
+        "daily_digest_finalize",
     ],
 )
 def test_domain_retry_requires_work_order_before_any_root_lock(kind):

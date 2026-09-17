@@ -188,7 +188,11 @@ def _handoff(request, facts, execution):
 
 
 def _execute(execution, *, store):
-    """Build the frozen key; only terminal exact owners permit generation takeover."""
+    """Build the frozen key; terminal exact/digest owners permit takeover.
+
+    Neither owner retains an ordinary materialization's frozen debounce demand,
+    which must instead be released by that materialization's own recovery.
+    """
     if connection.in_atomic_block or not execution.control.active:
         raise StorageInvariantError("Exact reports require maintained worker lifetime.")
 
@@ -220,7 +224,7 @@ def _execute(execution, *, store):
                 # Recheck under the work lock; wait without replacing its fence.
                 execution.transition("retryable_failure", retry_seconds=5)
                 return
-            if owner.task_type != TASK_TYPE:
+            if owner.task_type not in {TASK_TYPE, "daily_digest_prepare"}:
                 # Ordinary recovery must also release its frozen demand. Exact
                 # work cannot steal that checkpoint or silently clear the window.
                 execution.transition("permanent_failure")

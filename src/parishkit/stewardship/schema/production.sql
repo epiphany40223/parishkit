@@ -4,24 +4,29 @@
 CREATE FUNCTION public.stewardship_production_task_actor_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp AS $$
 BEGIN
+    -- Branch before planning any domain query. A generic SQL plan may inspect
+    -- relations inside a false AND expression under an unrelated task's role.
+    IF NEW.task_type IS DISTINCT FROM 'production_cleanup' THEN
+        RETURN NEW;
+    END IF;
     -- The domain journal must be able to mirror a terminal recovery outcome.
     -- Reject missing attribution at its source, before the task can be stranded.
-    IF NEW.task_type='production_cleanup' AND NEW.action='recovery_fail'
-       AND NEW.actor_id IS NULL THEN
+    IF NEW.action='recovery_fail' AND NEW.actor_id IS NULL THEN
         RAISE EXCEPTION 'Production task recovery requires an attributed actor'
             USING ERRCODE='23514';
     END IF;
     -- A crash after the domain committed completion may finish its task. An
     -- unfinished request instead needs recovery_retry or attributed failure;
     -- succeeding its task first would remove every resumable domain edge.
-    IF NEW.task_type='production_cleanup' AND NEW.action='recovery_complete'
-       AND NOT EXISTS (
+    IF NEW.action='recovery_complete' THEN
+        IF NOT EXISTS (
            SELECT 1 FROM public.stewardship_production_request
            WHERE id=NEW.domain_request_id AND task_id=NEW.root_id
              AND run_id=NEW.id AND state='cleanup_complete'
-       ) THEN
-        RAISE EXCEPTION 'Production task recovery requires committed cleanup completion'
-            USING ERRCODE='23514';
+        ) THEN
+            RAISE EXCEPTION 'Production task recovery requires committed cleanup completion'
+                USING ERRCODE='23514';
+        END IF;
     END IF;
     RETURN NEW;
 END $$;
@@ -371,6 +376,14 @@ LANGUAGE sql STABLE AS $$
         SELECT c.id FROM public.stewardship_rehearsal_credential c
         JOIN public.stewardship_family_campaign f ON f.id=c.family_id
         WHERE f.campaign_id=campaign_uuid AND c.epoch_id IN (SELECT id FROM epochs)
+    ), digest_snapshots AS NOT MATERIALIZED (
+        SELECT s.id FROM public.stewardship_daily_digest_snapshot s
+        JOIN public.stewardship_daily_digest_preparation p ON p.id=s.preparation_id
+        WHERE s.campaign_id=campaign_uuid AND p.mode='testing'
+          AND p.rehearsal_epoch_id IN (SELECT id FROM epochs)
+    ), digest_ready AS NOT MATERIALIZED (
+        SELECT id FROM public.stewardship_daily_digest_ready
+        WHERE snapshot_id IN (SELECT id FROM digest_snapshots)
     )
     SELECT 'baselines',id FROM baselines
     UNION ALL SELECT 'family_sessions',id FROM sessions
@@ -385,7 +398,17 @@ LANGUAGE sql STABLE AS $$
     UNION ALL SELECT 'source_pins',id FROM public.stewardship_source_pin
         WHERE (parent_kind='submission' AND parent_id IN (SELECT id FROM responses))
            OR (parent_kind='form_baseline' AND parent_id IN (SELECT id FROM baselines))
+           OR (parent_kind='digest' AND parent_id IN (SELECT id FROM digest_snapshots))
+    UNION ALL SELECT 'daily_digest_snapshots',id FROM digest_snapshots
+    UNION ALL SELECT 'daily_digest_ready',id FROM digest_ready
+    UNION ALL SELECT 'daily_digest_recipients',id FROM public.stewardship_daily_digest_recipient
+        WHERE ready_id IN (SELECT id FROM digest_ready)
+    UNION ALL SELECT 'daily_digest_fact_pins',id FROM public.stewardship_fact_pin
+        WHERE parent_kind='digest' AND parent_id IN (SELECT id FROM digest_snapshots)
     UNION ALL SELECT 'occurrences',id FROM occurrences
+    UNION ALL SELECT 'recovery_replacements',id FROM public.stewardship_recovery_replacement
+        WHERE previous_id IN (SELECT id FROM occurrences)
+          AND replacement_id IN (SELECT id FROM occurrences)
     UNION ALL SELECT 'occurrence_events',id FROM public.stewardship_occurrence_transition
         WHERE occurrence_id IN (SELECT id FROM occurrences)
     UNION ALL SELECT 'schedule_fulfillments',f.id FROM public.stewardship_schedule_fulfillment f

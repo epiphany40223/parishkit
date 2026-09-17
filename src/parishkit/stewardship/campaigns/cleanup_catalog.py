@@ -17,6 +17,12 @@ from parishkit.stewardship.jobs.outbox_models import (
     OutboxMessage,
     OutboxRender,
 )
+from parishkit.stewardship.reports.digest_models import (
+    DailyDigestReady,
+    DailyDigestRecipient,
+    DailyDigestSnapshot,
+)
+from parishkit.stewardship.reports.models import CampaignFactPin
 from parishkit.stewardship.responses.models import (
     FamilyFormBaseline,
     ProposedChange,
@@ -40,6 +46,7 @@ from .schedule_models import (
     OccurrenceTransition,
     ScheduleFulfillment,
     ScheduleOccurrence,
+    ScheduleRecoveryReplacement,
 )
 from .work_locks import require_work_order
 
@@ -104,6 +111,12 @@ def inventory_queries(campaign_id):
     credentials = RehearsalCredential.objects.filter(
         epoch_id__in=epochs, family__campaign_id=campaign_id
     )
+    snapshots = DailyDigestSnapshot.objects.filter(
+        campaign_id=campaign_id,
+        preparation__mode="testing",
+        preparation__rehearsal_epoch_id__in=epochs,
+    )
+    ready = DailyDigestReady.objects.filter(snapshot_id__in=snapshots.values("pk"))
     queries = {
         CleanupCategory.BASELINE: baselines,
         CleanupCategory.SESSION_DATA: sessions.filter(session__isnull=False),
@@ -112,6 +125,12 @@ def inventory_queries(campaign_id):
             submission_id__in=responses.values("pk")
         ),
         CleanupCategory.OCCURRENCE: occurrences,
+        CleanupCategory.RECOVERY_REPLACEMENT: (
+            ScheduleRecoveryReplacement.objects.filter(
+                previous_id__in=occurrences.values("pk"),
+                replacement_id__in=occurrences.values("pk"),
+            )
+        ),
         CleanupCategory.OCCURRENCE_EVENT: OccurrenceTransition.objects.filter(
             occurrence_id__in=occurrences.values("pk")
         ),
@@ -137,6 +156,7 @@ def inventory_queries(campaign_id):
         CleanupCategory.PIN: SourceSnapshotPin.objects.filter(
             Q(parent_kind="submission", parent_id__in=responses.values("pk"))
             | Q(parent_kind="form_baseline", parent_id__in=baselines.values("pk"))
+            | Q(parent_kind="digest", parent_id__in=snapshots.values("pk"))
         ),
         CleanupCategory.RECEIPT: SubmissionReceiptOccurrence.objects.filter(
             submission_id__in=responses.values("pk")
@@ -144,6 +164,14 @@ def inventory_queries(campaign_id):
         CleanupCategory.SUBMISSION: responses,
         CleanupCategory.PRIOR_INVENTORY: ProductionCleanupTarget.objects.filter(
             request__campaign_id=campaign_id, request__state="cancelled"
+        ),
+        CleanupCategory.DIGEST_RECIPIENT: DailyDigestRecipient.objects.filter(
+            ready_id__in=ready.values("pk")
+        ),
+        CleanupCategory.DIGEST_READY: ready,
+        CleanupCategory.DIGEST_SNAPSHOT: snapshots,
+        CleanupCategory.DIGEST_FACT_PIN: CampaignFactPin.objects.filter(
+            parent_kind="digest", parent_id__in=snapshots.values("pk")
         ),
     }
     return MappingProxyType(queries)

@@ -474,6 +474,19 @@ Implementation, local validation and three successful dual-source review/fix
 rounds are complete; exact-head CI/DCO and protected delivery remain pending.
 Daily/weekly digest ownership and the remaining Phase 4/Gate 3 work stay open.
 
+PR #46 subsequently merged as `849cc71f` after all exact-head and protected
+merge-group checks passed. The
+[delivery receipt](../../guides/stewardship-submission-receipts.md#protected-delivery)
+supersedes its pending note. `pr/stewardship-daily-digests` starts from that
+verified fresh tip and now implements the
+[daily digest increment](../../guides/stewardship-daily-digests.md).
+Its implementation, five successful dual-source review/fix rounds and
+[final local acceptance](../../guides/stewardship-daily-digests.md#final-local-acceptance)
+are complete; exact-head CI/DCO and protected delivery remain pending. BG-07.02
+is checked for its admitted scope, not the whole BG-07 package. After delivery,
+BG-07.03's weekly information/correction digest is the next coherent increment;
+the remaining Phase 4 owners and Gate 3 stay open.
+
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).
 3. Complete required [RPT-02](reports.md#rpt-02-population-and-calculation-library) calculations and the [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics) fact-materialization service before [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests); report UI remains in Phase 5.

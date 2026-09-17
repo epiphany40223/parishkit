@@ -283,8 +283,9 @@ CREATE FUNCTION public.stewardship_family_mail_outbox_write_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
     IF current_user='pk_stewardship_worker' AND
-       public.stewardship_family_mail_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),NULL) IS NOT TRUE THEN
-        RAISE EXCEPTION 'Family outbox insertion requires current preparation ownership'
+       public.stewardship_family_mail_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),NULL) IS NOT TRUE
+       AND public.stewardship_daily_digest_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),NULL) IS NOT TRUE THEN
+        RAISE EXCEPTION 'Outbox insertion requires current preparation ownership'
             USING ERRCODE='23514';
     END IF;
     RETURN NEW;
@@ -438,12 +439,16 @@ BEGIN
        )) THEN
         RAISE EXCEPTION 'Invalid delivery scope' USING ERRCODE='23514';
     END IF;
-    IF NEW.pause_hold_id IS NOT NULL AND NOT EXISTS (
-        SELECT 1 FROM public.stewardship_delivery_pause_hold
-        WHERE id=NEW.pause_hold_id AND campaign_id=NEW.campaign_id
-          AND pause_version=NEW.pause_version
-    ) THEN
-        RAISE EXCEPTION 'Invalid delivery pause binding' USING ERRCODE='23514';
+    -- Producers without pause authority must not plan a hold-table read for
+    -- an absent binding. SQL AND short-circuiting is not a privilege boundary.
+    IF NEW.pause_hold_id IS NOT NULL THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM public.stewardship_delivery_pause_hold
+            WHERE id=NEW.pause_hold_id AND campaign_id=NEW.campaign_id
+              AND pause_version=NEW.pause_version
+        ) THEN
+            RAISE EXCEPTION 'Invalid delivery pause binding' USING ERRCODE='23514';
+        END IF;
     END IF;
     IF TG_OP = 'INSERT' THEN
         IF NEW.version <> 1 OR NEW.state <> 'pending' OR NEW.action <> 'created'
@@ -812,7 +817,7 @@ BEGIN
     SELECT * INTO r FROM public.stewardship_outbox_render WHERE id=e.render_id;
     SELECT * INTO m FROM public.stewardship_outbox_message WHERE id=e.message_id;
     IF e.id IS NULL OR r.id IS NULL OR m.id IS NULL OR e.previous_state<>'submitting'
-       OR m.purpose NOT IN ('initial','reminder','receipt') OR e.attempt<1
+       OR m.purpose NOT IN ('initial','reminder','receipt','daily_digest') OR e.attempt<1
        OR e.evidence_digest<>encode(sha256(convert_to(e.evidence_note,'UTF8')),'hex')
        OR e.provider_key_digest<>encode(sha256(convert_to(m.semantic_key::text,'UTF8')),'hex')
        THEN RETURN NULL; END IF;

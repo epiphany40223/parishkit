@@ -76,10 +76,12 @@ class Migration(migrations.Migration):
                             "demand",
                             models.ForeignKey(
                                 db_index=False,
+                                null=True,
                                 on_delete=django.db.models.deletion.PROTECT,
                                 to="stewardship_campaigns.activationcatchupdemand",
                             ),
                         ),
+                        ("preparation_id", models.UUIDField(null=True)),
                     ],
                     options={
                         "db_table": "stewardship_recovery_replacement",
@@ -2945,7 +2947,7 @@ class Migration(migrations.Migration):
                     model_name="schedulefulfillment",
                     constraint=models.CheckConstraint(
                         condition=models.Q(
-                            ("disposition__in", ["delivered", "coalesced"])
+                            ("disposition__in", ["delivered", "coalesced", "empty"])
                         ),
                         name="schedule_fulfillment_disposition",
                     ),
@@ -3612,6 +3614,11 @@ class Migration(migrations.Migration):
                                         "submission_receipts",
                                         "submissions",
                                         "prior_inventory_targets",
+                                        "daily_digest_recipients",
+                                        "daily_digest_ready",
+                                        "daily_digest_snapshots",
+                                        "daily_digest_fact_pins",
+                                        "recovery_replacements",
                                     ]
                                 ),
                                 name="production_target_category",

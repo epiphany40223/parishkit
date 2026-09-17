@@ -5565,9 +5565,6 @@ ALTER TABLE public.stewardship_recovery_replacement
     ADD CONSTRAINT recovery_previous_fk FOREIGN KEY(previous_id) REFERENCES public.stewardship_schedule_occurrence(id) DEFERRABLE INITIALLY DEFERRED,
     ADD CONSTRAINT recovery_replacement_fk FOREIGN KEY(replacement_id) REFERENCES public.stewardship_schedule_occurrence(id) DEFERRABLE INITIALLY DEFERRED,
     ADD CONSTRAINT recovery_demand_fk FOREIGN KEY(demand_id) REFERENCES public.stewardship_activation_catchup(id) DEFERRABLE INITIALLY DEFERRED;
-CREATE TRIGGER recovery_replacement_immutable BEFORE UPDATE OR DELETE
-    ON public.stewardship_recovery_replacement FOR EACH ROW
-    EXECUTE FUNCTION public.stewardship_catchup_checkpoint_immutable_v1();
 CREATE TRIGGER recovery_replacement_guard BEFORE INSERT
     ON public.stewardship_recovery_replacement FOR EACH ROW
     EXECUTE FUNCTION public.stewardship_recovery_replacement_v1();

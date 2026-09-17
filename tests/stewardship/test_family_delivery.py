@@ -50,6 +50,7 @@ def delivery(
     credential_error=None,
     smtp_error=None,
     stage_error=None,
+    adapter=deliver_family,
 ):
     """Inject replies or failure at exact protocol boundaries, without network IO."""
     seen = []
@@ -118,7 +119,7 @@ def delivery(
                 assert content.isascii()
             return response("data")
 
-    return deliver_family(
+    return adapter(
         b"synthetic-key",
         SETTINGS | ({"reply_to": mail.reply_to} if mail else {}),
         mail or sample(),

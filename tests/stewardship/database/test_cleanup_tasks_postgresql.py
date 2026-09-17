@@ -234,7 +234,7 @@ def test_initial_binding_database_failure_records_sanitized_outcome(
 
 @pytest.mark.parametrize("after_commit", [False, True])
 def test_crash_recovery_uses_committed_cleanup_outcome(
-    response_service, monkeypatch, after_commit
+    response_service, monkeypatch, after_commit, sql_plan_mode
 ):
     """A crash after domain completion recovers success without deleting twice."""
     status = queued(response_service)
@@ -265,6 +265,9 @@ def test_crash_recovery_uses_committed_cleanup_outcome(
             task_status(TaskRun.objects.get(pk=status.task_id))
         ).action == ("recovery_complete" if after_commit else "recovery_retry")
     with task_login(ServiceRole.WORKER, exact=True):
+        with connection.cursor() as cursor:
+            cursor.execute("SHOW plan_cache_mode")
+            assert cursor.fetchone()[0] == sql_plan_mode
         assert recover_hint(
             status.task_id,
             queue=WorkQueue.GENERAL,

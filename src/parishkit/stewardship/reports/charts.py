@@ -12,6 +12,12 @@ from .participation import ParticipationDocument
 
 _RENDER_LOCK = RLock()
 RENDERER_VERSION = "participation-v1"
+PLOT_LAYOUT = {"left": 0.09, "right": 0.89, "top": 0.74, "bottom": 0.29}
+
+
+def participation_limits(day_count):
+    """Share image hit-test coordinates with the exact static chart renderer."""
+    return -0.6, max(0.6, day_count - 0.4)
 
 
 @contextmanager
@@ -48,7 +54,7 @@ def _draw(figure, document):
     from matplotlib.ticker import FuncFormatter, MaxNLocator
 
     axes = figure.add_subplot(111)
-    figure.subplots_adjust(left=0.09, right=0.89, top=0.74, bottom=0.29)
+    figure.subplots_adjust(**PLOT_LAYOUT)
     figure.text(0.5, 0.96, document.parish_name, ha="center", fontsize=14)
     figure.text(0.5, 0.915, document.campaign_name, ha="center", fontsize=12)
     axes.set_title(f"Family participation — {document.scope_label}", pad=38)
@@ -98,7 +104,7 @@ def _draw(figure, document):
             rotation=30,
             ha="right",
         )
-        axes.set_xlim(-0.6, max(0.6, len(dates) - 0.4))
+        axes.set_xlim(*participation_limits(len(dates)))
     else:
         axes.set_xticks([])
         axes.text(

@@ -29,6 +29,14 @@
 <button type="submit">{% translate "Retry preparation" %}</button>
 </form></section>
 {% endif %}
+{% if daily_digest_retry_key %}
+<section class="panel"><h2>{% translate "Retry daily report work" %}</h2>
+<p>{% translate "After correcting the problem, queue a new attempt using the original retained report inputs. Failed history remains available. This action cannot resend a message with an unknown delivery outcome." %}</p>
+<form method="post" action="{% url 'admin:retry_daily_digest' task.id %}">
+{% csrf_token %}<input type="hidden" name="command_id" value="{{ daily_digest_retry_key }}">
+<button type="submit">{% translate "Retry daily report work" %}</button>
+</form></section>
+{% endif %}
 <div class="table-scroll"><table><caption>{% translate "Task history (newest first)" %}</caption>
 <thead><tr><th scope="col">{% translate "Version" %}</th><th scope="col">{% translate "Time" %}</th><th scope="col">{% translate "Action" %}</th><th scope="col">{% translate "State" %}</th><th scope="col">{% translate "Phase and progress" %}</th></tr></thead>
 <tbody>{% for event in work.events %}<tr><td>{{ event.version|number }}</td><td><time datetime="{{ event.at }}" data-local-instant>{{ event.at }}</time></td><td>{{ event.action }}</td><td>{{ event.state }}</td><td>{{ event.progress.phase }}{% if event.progress.total %} — {{ event.progress.display|out_of }}{% endif %}</td></tr>{% endfor %}</tbody></table></div>

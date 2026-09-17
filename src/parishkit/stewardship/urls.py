@@ -37,7 +37,7 @@ from .accounts import (
 )
 from .jobs import delivery_views
 from .jobs import views as job_views
-from .reports import exact_views, export_views
+from .reports import digest_views, exact_views, export_views
 from .responses import views as response_views
 
 public_patterns = [
@@ -231,9 +231,32 @@ admin_patterns = [
     ),
     path("background/tasks", job_views.task_list, name="background_tasks"),
     path(
+        "reports/daily-digests/<uuid:snapshot_id>/",
+        digest_views.snapshot,
+        name="daily_digest_snapshot",
+    ),
+    path(
+        "reports/daily-digests/<uuid:snapshot_id>/chart.png",
+        digest_views.snapshot,
+        {"representation": "png"},
+        name="daily_digest_chart",
+    ),
+    path(
+        "reports/daily-digests/<uuid:snapshot_id>/download.png",
+        digest_views.snapshot,
+        {"representation": "download"},
+        name="daily_digest_download",
+    ),
+    path(
         "background/tasks/<uuid:task_id>/retry-family-preparation",
         delivery_views.preparation_retry,
         name="retry_family_preparation",
+    ),
+    path(
+        "background/tasks/<uuid:task_id>/retry-daily-digest",
+        delivery_views.preparation_retry,
+        {"daily": True},
+        name="retry_daily_digest",
     ),
     path(
         "background/tasks/<uuid:task_id>/retry-export-cleanup",

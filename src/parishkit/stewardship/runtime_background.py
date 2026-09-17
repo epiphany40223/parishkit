@@ -102,6 +102,10 @@ def scheduler_handlers():
     from .jobs.family_mail_tasks import TASK_TYPE as FAMILY_MAIL_PREPARE
     from .jobs.family_mail_tasks import preparation_handler
     from .jobs.queues import WorkQueue
+    from .reports.digest_finalization import TASK_TYPE as DAILY_FINALIZE
+    from .reports.digest_finalization import finalization_handler
+    from .reports.digest_ownership import TASK_TYPE as DAILY_PREPARE
+    from .reports.digest_tasks import daily_handler
     from .reports.exact_services import TASK_TYPE as EXACT_EXPORT
     from .reports.exact_tasks import exact_handler
     from .reports.export_cleanup import TASK_TYPE as EXPORT_CLEANUP
@@ -125,6 +129,8 @@ def scheduler_handlers():
         raise PermissionError("The scheduler cannot execute provider work.")
 
     return {
+        DAILY_PREPARE: daily_handler(scheduler=True),
+        DAILY_FINALIZE: finalization_handler(scheduler=True),
         FAMILY_MAIL_PREPARE: preparation_handler(scheduler=True),
         REPORT_EXPORT: export_handler(scheduler=True),
         REPORT_FACTS: fact_handler(scheduler=True),
@@ -270,6 +276,10 @@ def configure_background(configuration, *, stop, heartbeat):
         )
         from .jobs.family_mail_tasks import TASK_TYPE as FAMILY_MAIL_PREPARE
         from .jobs.family_mail_tasks import preparation_handler
+        from .reports.digest_finalization import TASK_TYPE as DAILY_FINALIZE
+        from .reports.digest_finalization import finalization_handler
+        from .reports.digest_ownership import TASK_TYPE as DAILY_PREPARE
+        from .reports.digest_tasks import daily_handler
         from .reports.exact_services import TASK_TYPE as EXACT_EXPORT
         from .reports.exact_tasks import exact_handler
         from .reports.export_cleanup import TASK_TYPE as EXPORT_CLEANUP
@@ -289,6 +299,8 @@ def configure_background(configuration, *, stop, heartbeat):
         from .source.setup_execution import setup_source_handler
 
         handlers = {
+            DAILY_PREPARE: daily_handler(public_origin=configuration.public_origin),
+            DAILY_FINALIZE: finalization_handler(),
             FAMILY_MAIL_PREPARE: preparation_handler(
                 general=rings["general_encryption"],
                 mac=rings["family_code_mac"],

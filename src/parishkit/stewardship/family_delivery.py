@@ -348,6 +348,21 @@ def deliver_family(
         getattr(mail, name) != settings[name] for name in ("sender", "reply_to")
     ):
         raise ValueError("Family mail differs from its admitted context.")
+    return _deliver_validated(
+        value,
+        settings,
+        mail,
+        smtp_factory=smtp_factory,
+        session_factory=session_factory,
+    )
+
+
+def _deliver_validated(value, settings, mail, *, smtp_factory, session_factory):
+    """Share SMTP effects only after a compiled mail adapter validates its contract.
+
+    Public entry points retain their distinct typed mail restrictions. This
+    internal transport cannot decide Family/digest admission or authorize retry.
+    """
     try:
         with session_factory() as session:
             credentials = _credentials(value, settings, session)
