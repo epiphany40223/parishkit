@@ -1301,7 +1301,8 @@ class Migration(migrations.Migration):
                 migrations.AddConstraint(
                     model_name="contentversion",
                     constraint=models.UniqueConstraint(
-                        condition=models.Q(("kind", "page")),
+                        condition=models.Q(kind="page")
+                        | models.Q(kind="email", slot="confirmation"),
                         fields=("configuration", "campaign_id", "kind", "slot"),
                         name="content_selected_slot",
                     ),

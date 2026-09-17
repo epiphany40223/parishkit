@@ -44,9 +44,39 @@ from parishkit.stewardship.responses.models import Submission
 from parishkit.stewardship.storage import StorageInvariantError
 
 from ..test_outbox_validation import rendering
+from .test_outbox_postgresql import change
 from .test_response_submission_postgresql import form_and_answers, submit
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+
+def settle_test_receipts(harness):
+    """Fixture readiness drains synthetic unsent receipts through their journal.
+
+    This is owner-level test setup, not a runtime cancellation port. Actual MAIL
+    admission and provider drainage are independently covered by receipt tests.
+    """
+    from parishkit.stewardship.jobs.delivery_states import DeliveryAction
+    from parishkit.stewardship.jobs.outbox_storage import _status
+    from parishkit.stewardship.jobs.storage import _status as task_status
+    from parishkit.stewardship.jobs.storage import change_run
+
+    for message in OutboxMessage.objects.filter(
+        campaign_id=harness.campaign.pk,
+        purpose="receipt",
+        mode="testing",
+        state="pending",
+    ):
+        change(_status(message), DeliveryAction.CANCEL_UNSENT)
+        task = task_status(message.task)
+        change_run(
+            run_id=task.run_id,
+            action="safe_cancel",
+            expected_version=task.version,
+            actor_id=uuid4(),
+            correlation_id=uuid4(),
+            admit=lambda *args: True,
+        )
 
 
 def captured(campaign_id):

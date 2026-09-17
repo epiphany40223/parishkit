@@ -229,7 +229,7 @@ def test_pause_is_orthogonal_and_stale_dispatch_cannot_cross_it(family_service):
             semantic_key=uuid4(),
             mode="production",
             routing="production",
-            purpose="receipt",
+            purpose="initial",
         ),
         render=rendering(
             configuration_id=campaign.active_configuration.configuration_id

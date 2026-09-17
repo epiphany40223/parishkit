@@ -95,21 +95,11 @@ FOR EACH ROW EXECUTE FUNCTION public.stewardship_family_mail_ticket_v1();
 
 -- Invoker rights, not a privileged mutation entry point. No caller-controlled
 -- session value can stand in for the original task's live database claim.
-CREATE FUNCTION public.stewardship_family_mail_render_admitted_v1(
-    proposed jsonb, family uuid, configuration uuid, revision uuid, mode text
-) RETURNS boolean LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
-DECLARE expected jsonb; email jsonb; template uuid; test_recipient text;
-BEGIN
-    SELECT settings INTO email FROM public.stewardship_applied_integration
-        WHERE configuration_id=configuration AND kind='email';
-    SELECT content.id INTO template FROM public.stewardship_content_version content
-        JOIN public.stewardship_schedule_revision schedule
-          ON content.record_id=(schedule.values->>'template_version')::uuid
-            AND content.campaign_id=schedule.campaign_id
-        WHERE schedule.id=revision AND content.configuration_id=configuration
-          AND content.kind='email';
-    SELECT testing_recipient INTO test_recipient FROM public.stewardship_system_configuration;
-    SELECT coalesce(jsonb_agg(address ORDER BY address),'[]'::jsonb) INTO expected FROM (
+-- Shared exact current-source projection for invitations and direct receipts.
+-- This is invoker-rights reading, not an independent send/admission capability.
+CREATE FUNCTION public.stewardship_family_mail_recipients_v1(family uuid)
+RETURNS jsonb LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
+    SELECT coalesce(jsonb_agg(address ORDER BY address),'[]'::jsonb) FROM (
         SELECT DISTINCT item->>'value' AS address
         FROM public.stewardship_family_campaign f
         JOIN public.stewardship_source_current s ON true
@@ -127,7 +117,24 @@ BEGIN
               AND refusal.address=item->>'value' AND NOT EXISTS (
                 SELECT 1 FROM public.stewardship_recipient_resolution resolution
                 WHERE resolution.refusal_id=refusal.id))
-    ) recipients;
+    ) recipients
+$$;
+
+CREATE FUNCTION public.stewardship_family_mail_render_admitted_v1(
+    proposed jsonb, family uuid, configuration uuid, revision uuid, mode text
+) RETURNS boolean LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE expected jsonb; email jsonb; template uuid; test_recipient text;
+BEGIN
+    SELECT settings INTO email FROM public.stewardship_applied_integration
+        WHERE configuration_id=configuration AND kind='email';
+    SELECT content.id INTO template FROM public.stewardship_content_version content
+        JOIN public.stewardship_schedule_revision schedule
+          ON content.record_id=(schedule.values->>'template_version')::uuid
+            AND content.campaign_id=schedule.campaign_id
+        WHERE schedule.id=revision AND content.configuration_id=configuration
+          AND content.kind='email';
+    SELECT testing_recipient INTO test_recipient FROM public.stewardship_system_configuration;
+    expected:=public.stewardship_family_mail_recipients_v1(family);
     RETURN template IS NOT NULL AND email IS NOT NULL
        AND (proposed->>'configuration_id')::uuid=configuration
        AND (proposed->>'template_id')::uuid=template
@@ -805,7 +812,7 @@ BEGIN
     SELECT * INTO r FROM public.stewardship_outbox_render WHERE id=e.render_id;
     SELECT * INTO m FROM public.stewardship_outbox_message WHERE id=e.message_id;
     IF e.id IS NULL OR r.id IS NULL OR m.id IS NULL OR e.previous_state<>'submitting'
-       OR m.purpose NOT IN ('initial','reminder') OR e.attempt<1
+       OR m.purpose NOT IN ('initial','reminder','receipt') OR e.attempt<1
        OR e.evidence_digest<>encode(sha256(convert_to(e.evidence_note,'UTF8')),'hex')
        OR e.provider_key_digest<>encode(sha256(convert_to(m.semantic_key::text,'UTF8')),'hex')
        THEN RETURN NULL; END IF;

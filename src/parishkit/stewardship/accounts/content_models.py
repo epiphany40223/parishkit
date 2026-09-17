@@ -30,7 +30,8 @@ class ContentVersion(ImmutableRecord):
             ),
             models.UniqueConstraint(
                 fields=["configuration", "campaign_id", "kind", "slot"],
-                condition=models.Q(kind="page"),
+                condition=models.Q(kind="page")
+                | models.Q(kind="email", slot="confirmation"),
                 name="content_selected_slot",
             ),
             models.CheckConstraint(

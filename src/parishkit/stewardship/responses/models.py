@@ -309,23 +309,29 @@ class AdditionalInformationItem(MutableRecord):
 
 
 class SubmissionReceiptOccurrence(ImmutableRecord):
-    """Idempotent confirmation intent; Phase 4 owns preparation and real dispatch.
+    """One atomic receipt or proven no-recipient outcome per accepted submission.
 
-    This milestone's stub records no provider attempt and claims no delivery.
-    It stores the submission identity only; private answers, credentials and
-    template substitutions are not copied into an outgoing payload here.
+    Preparation is a write-only command input consumed by the database trigger;
+    the retained row points to the outbox, never to answers or credentials.
     """
 
     submission = models.OneToOneField(Submission, on_delete=models.PROTECT)
     disposition = models.CharField(max_length=28)
+    outbox = models.OneToOneField(
+        "stewardship_jobs.OutboxMessage", null=True, on_delete=models.PROTECT
+    )
+    preparation = models.JSONField(null=True)
 
     class Meta:
         db_table = "stewardship_submission_receipt"
         constraints = [
             models.CheckConstraint(
-                condition=models.Q(
-                    disposition__in=["pending_preparation", "no_deliverable_recipient"]
-                ),
+                condition=models.Q(disposition="queued", outbox__isnull=False)
+                | models.Q(disposition="no_deliverable_recipient", outbox__isnull=True),
                 name="submission_receipt_disposition",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(preparation__isnull=True),
+                name="submission_receipt_scrubbed",
             ),
         ]

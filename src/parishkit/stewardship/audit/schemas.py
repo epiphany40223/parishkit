@@ -117,7 +117,7 @@ FIELDS = {
     },
     ContextKind.REQUEST: {"method", "status", "outcome", "source_fingerprint"},
     ContextKind.TASK: {"task_id", "count", "version", "outcome"},
-    ContextKind.EMAIL: {"message_id", "recipient_count", "outcome"},
+    ContextKind.EMAIL: {"message_id", "recipient_count", "outcome", "reason"},
     ContextKind.SOURCE: {"snapshot_id", "generation", "count", "outcome"},
     ContextKind.MEMBER_SOURCE: {"family_duid", "member_duid", "field"},
     ContextKind.PROVIDER: {"status", "provider_fingerprint", "outcome"},
@@ -150,6 +150,9 @@ def sanitize(kind, values):
         if key == "outcome":
             valid = isinstance(value, Outcome)
             safe[key] = value.value if valid else None
+        elif key == "reason":
+            valid = type(value) is str and value == "no_deliverable_recipient"
+            safe[key] = value
         elif key == "kind":
             valid = type(value) is str and value in {"start", "close"}
             safe[key] = value

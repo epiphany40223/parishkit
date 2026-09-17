@@ -252,6 +252,7 @@ def test_receipt_template_edits_one_selection_and_retains_old_revision(
         assert b"Edit receipt template" in browser.get(catalog).content
         assert b"Before" in browser.get(path).content
         preview = post(browser, path, values(store, subject="After"))
+        assert b"Submitted:" in preview.content and b"Questions:" in preview.content
         accepted = post(browser, path, {"action": "confirm", "preview": token(preview)})
     apply(store, accepted)
     current = SystemConfiguration.objects.get().active_configuration

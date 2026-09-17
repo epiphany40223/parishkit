@@ -140,13 +140,23 @@ def _preview(
             return _page(request, form, campaign, label, status=400)
         build_candidate(base, patch, candidate_id=uuid4())
         parish = base.document()["sections"]["parish"][0]["values"]
+        from parishkit.stewardship.jobs.receipt_preview import confirmation_block
+
+        receipt = dict(
+            confirmation=form.kind == "email" and slot == "confirmation",
+            receipt_block=confirmation_block(base.document(), campaign.pk),
+        )
         before = sample_render(
             previous["values"] if previous else None,
             parish=parish,
             campaign=campaign.active_configuration.values,
+            **receipt,
         )
         after = sample_render(
-            values, parish=parish, campaign=campaign.active_configuration.values
+            values,
+            parish=parish,
+            campaign=campaign.active_configuration.values,
+            **receipt,
         )
         token = sign_preview(
             actor=actor,

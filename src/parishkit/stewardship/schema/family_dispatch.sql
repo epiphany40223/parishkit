@@ -2,7 +2,7 @@
 -- authorize edits; each send/write also requires an exact live Task and scope.
 CREATE FUNCTION public.stewardship_family_dispatch_live_v1(message uuid)
 RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
-    SELECT EXISTS (
+    SELECT public.stewardship_receipt_dispatch_live_v1(message) OR EXISTS (
         SELECT 1 FROM public.stewardship_outbox_message m
         JOIN public.stewardship_schedule_occurrence o ON o.id=m.semantic_key AND o.outbox_id=m.id
         JOIN public.stewardship_schedule_definition d ON d.id=o.definition_id
@@ -57,6 +57,16 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
     )
 $$;
 
+CREATE FUNCTION public.stewardship_family_dispatch_render_v1(proposed jsonb,message uuid)
+RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
+    SELECT CASE m.purpose WHEN 'receipt' THEN
+        public.stewardship_receipt_render_admitted_v1(proposed,m.family_id,m.campaign_id,r.active_configuration_id,m.mode)
+    ELSE public.stewardship_family_mail_render_admitted_v1(proposed,m.family_id,r.active_configuration_id,
+        (SELECT revision_id FROM public.stewardship_schedule_occurrence WHERE id=m.semantic_key),m.mode) END
+    FROM public.stewardship_outbox_message m CROSS JOIN public.stewardship_system_configuration r
+    WHERE m.id=message
+$$;
+
 CREATE FUNCTION public.stewardship_family_dispatch_write_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE t public.stewardship_task_run%ROWTYPE;
@@ -72,7 +82,7 @@ BEGIN
     proposed:=to_jsonb(NEW);
     SELECT * INTO t FROM public.stewardship_task_run WHERE id=NEW.correlation_id;
     SELECT * INTO own FROM public.stewardship_outbox_message
-        WHERE id=t.domain_request_id AND task_id=t.root_id AND purpose IN ('initial','reminder');
+        WHERE id=t.domain_request_id AND task_id=t.root_id AND purpose IN ('initial','reminder','receipt');
     recovering:=t.state='abandoned' AND own.provider_deadline<=clock_timestamp()
         AND own.run_id=t.id AND own.task_fence<=t.fence AND NEW.actor_id IS NOT NULL
         AND proposed->>'reason'='recovery_unknown'
@@ -91,6 +101,7 @@ BEGIN
         IF TG_OP<>'UPDATE' THEN RAISE EXCEPTION 'Mail cannot allocate Family messages' USING ERRCODE='23514'; END IF;
         m:=NEW;
         IF m.id<>own.id AND (m.action<>'cancel_unsent' OR m.family_id<>own.family_id
+            OR m.purpose='receipt' OR own.purpose='receipt'
             OR m.campaign_id<>own.campaign_id OR m.mode<>own.mode) THEN
             RAISE EXCEPTION 'Family dispatch cannot mutate another delivery' USING ERRCODE='23514'; END IF;
         IF m.action NOT IN ('prepared','submit','accept','retry_unaccepted','fail_unaccepted','mark_unknown',
@@ -100,9 +111,7 @@ BEGIN
             IF public.stewardship_family_dispatch_live_v1(m.id) IS NOT TRUE THEN
                 RAISE EXCEPTION 'Family dispatch live scope is unavailable' USING ERRCODE='23514'; END IF;
             SELECT to_jsonb(r) INTO rendering FROM public.stewardship_outbox_render r WHERE id=m.render_id;
-            IF public.stewardship_family_mail_render_admitted_v1(rendering,m.family_id,
-                (SELECT active_configuration_id FROM public.stewardship_system_configuration),
-                (SELECT revision_id FROM public.stewardship_schedule_occurrence WHERE id=m.semantic_key),m.mode) IS NOT TRUE THEN
+            IF public.stewardship_family_dispatch_render_v1(rendering,m.id) IS NOT TRUE THEN
                 RAISE EXCEPTION 'Family dispatch render differs from current scope' USING ERRCODE='23514'; END IF;
         ELSIF m.action IN ('accept','retry_unaccepted','fail_unaccepted','mark_unknown') THEN
             IF OLD.state<>'submitting' OR OLD.run_id<>t.id OR OLD.task_fence<>t.fence
@@ -112,24 +121,23 @@ BEGIN
     ELSIF TG_TABLE_NAME='stewardship_outbox_render' THEN
         IF NEW.message_id<>own.id OR own.state NOT IN ('pending','retry_wait')
            OR public.stewardship_family_dispatch_live_v1(own.id) IS NOT TRUE
-           OR public.stewardship_family_mail_render_admitted_v1(proposed,own.family_id,
-                (SELECT active_configuration_id FROM public.stewardship_system_configuration),
-                (SELECT revision_id FROM public.stewardship_schedule_occurrence WHERE id=own.semantic_key),own.mode) IS NOT TRUE THEN
+           OR public.stewardship_family_dispatch_render_v1(proposed,own.id) IS NOT TRUE THEN
             RAISE EXCEPTION 'Family dispatch rendering is not admitted' USING ERRCODE='23514'; END IF;
     ELSIF TG_TABLE_NAME='stewardship_outbox_event' THEN
         IF NEW.message_id<>own.id AND NOT EXISTS (
             SELECT 1 FROM public.stewardship_outbox_message sibling
             WHERE sibling.id=NEW.message_id AND sibling.family_id=own.family_id
               AND sibling.campaign_id=own.campaign_id AND sibling.mode=own.mode
+              AND sibling.purpose IN ('initial','reminder') AND own.purpose IN ('initial','reminder')
               AND sibling.state='cancelled' AND NEW.action='cancel_unsent'
         ) THEN RAISE EXCEPTION 'Family event scope differs' USING ERRCODE='23514'; END IF;
     ELSIF TG_TABLE_NAME='stewardship_schedule_occurrence' THEN
-        IF NEW.target<>'family:'||own.family_id::text OR NEW.mode<>own.mode OR NOT EXISTS (
+        IF own.purpose='receipt' OR NEW.target<>'family:'||own.family_id::text OR NEW.mode<>own.mode OR NOT EXISTS (
             SELECT 1 FROM public.stewardship_schedule_definition d
             WHERE d.id=NEW.definition_id AND d.campaign_id=own.campaign_id AND d.kind IN ('initial','reminder')
         ) THEN RAISE EXCEPTION 'Family occurrence scope differs' USING ERRCODE='23514'; END IF;
     ELSIF TG_TABLE_NAME='stewardship_schedule_fulfillment' THEN
-        IF NEW.target<>'family:'||own.family_id::text OR NEW.mode<>own.mode OR NOT EXISTS (
+        IF own.purpose='receipt' OR NEW.target<>'family:'||own.family_id::text OR NEW.mode<>own.mode OR NOT EXISTS (
             SELECT 1 FROM public.stewardship_schedule_definition d
             WHERE d.id=NEW.definition_id AND d.campaign_id=own.campaign_id AND d.kind IN ('initial','reminder')
         ) THEN RAISE EXCEPTION 'Family fulfillment scope differs' USING ERRCODE='23514'; END IF;

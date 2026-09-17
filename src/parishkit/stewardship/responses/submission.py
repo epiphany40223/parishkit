@@ -8,7 +8,8 @@ from zoneinfo import ZoneInfo
 from django.db.models import F, Max
 
 from parishkit.stewardship.accounts.sessions import database_now, revoke_family_sessions
-from parishkit.stewardship.audit.models import AuditEvent
+from parishkit.stewardship.audit.models import AuditContext, AuditEvent
+from parishkit.stewardship.audit.schemas import ContextKind, sanitize
 from parishkit.stewardship.campaigns.models import CampaignControlChange
 from parishkit.stewardship.campaigns.runtime import _now
 from parishkit.stewardship.campaigns.work_locks import work_transaction
@@ -29,8 +30,9 @@ from .effective import effective_household
 from .followup import derive_additional_information
 from .inputs import FORM_SCHEMA
 from .ministry_requests import derive_ministry_requests
-from .models import Submission, SubmissionReceiptOccurrence
+from .models import Submission
 from .proposals import derive_proposals
+from .receipts import create_submission_receipt
 from .validation import validate_baseline
 
 
@@ -163,11 +165,8 @@ def submit_family(request, service, *, baseline_id, payload):
         derive_proposals(submission, validated)
         derive_ministry_requests(submission, validated)
         derive_additional_information(submission, prior)
-        receipt = SubmissionReceiptOccurrence.objects.create(
-            submission=submission,
-            disposition="pending_preparation"
-            if family.email_deliverable
-            else "no_deliverable_recipient",
+        receipt = create_submission_receipt(
+            submission, runtime=configuration, campaign=campaign, family=family
         )
         AuditEvent.objects.create(
             event_type="family_submission"
@@ -177,9 +176,18 @@ def submit_family(request, service, *, baseline_id, payload):
             actor_id=family.pk if mode == "live" else None,
         )
         if receipt.disposition == "no_deliverable_recipient":
-            AuditEvent.objects.create(
+            event = AuditEvent.objects.create(
                 event_type="submission_receipt_skipped",
                 subject_id=receipt.pk if mode == "live" else None,
+            )
+            AuditContext.objects.create(
+                event=event,
+                actor_kind="system",
+                schema=ContextKind.EMAIL.value,
+                context=sanitize(
+                    ContextKind.EMAIL,
+                    {"reason": "no_deliverable_recipient", "recipient_count": 0},
+                ),
             )
         if mode == "live":
             _live_effects(

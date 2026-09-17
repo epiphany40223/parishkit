@@ -39,6 +39,8 @@ def _identity(message):
 
 def _prepare(message, *, general, public, public_origin):
     """Re-read source, template and retained credential references inside the lock."""
+    if message is not None and message.purpose == "receipt":
+        return _prepare_receipt(message, public_origin=public_origin)
     if (
         not isinstance(general, GeneralKeyring)
         or not isinstance(public, TokenPublicKeyring)
@@ -91,6 +93,35 @@ def _prepare(message, *, general, public, public_origin):
             key: str(value) if isinstance(value, UUID) else value
             for key, value in sealed.fields().items()
         },
+    }
+
+
+def _prepare_receipt(message, *, public_origin):
+    """Explicit receipt retries need current source/configuration, never access keys."""
+    from .admission import _scope
+    from .receipt_dispatch import bound_receipt, receipt_disposition
+    from .receipt_rendering import current_receipt_render
+
+    if type(public_origin) is not str or not public_origin:
+        raise ValueError("Receipt preparation requires the configured public origin.")
+    if receipt_disposition(message) is not None:
+        raise PermissionError("Receipt retry is not currently admitted.")
+    scope = _scope(message.campaign_id)
+    family = FamilyCampaign.objects.get(pk=message.family_id)
+    render = current_receipt_render(
+        _identity(message),
+        bound_receipt(message),
+        runtime=scope.runtime,
+        campaign=scope.campaign,
+        source=load_family_mail_source(family),
+        public_origin=public_origin,
+    )
+    return {
+        "render": {
+            key: str(value) if isinstance(value, UUID) else value
+            for key, value in render.fields().items()
+        },
+        "sealed": None,
     }
 
 
@@ -192,7 +223,7 @@ def resolve_delivery(
         correlation_id = command_id
         if retry:
             inputs = (
-                preparation_inputs()
+                preparation_inputs(message.purpose)
                 if preparation_inputs is not None
                 else dict(
                     general=general,

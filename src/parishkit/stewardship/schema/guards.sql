@@ -1122,7 +1122,7 @@ CREATE INDEX config_request_patch_lookup ON public.stewardship_config_request US
 CREATE UNIQUE INDEX configuration_single_root ON public.stewardship_configuration_version USING btree ((1)) WHERE (predecessor_id IS NULL);
 
 -- INDEX: content_selected_slot
-CREATE UNIQUE INDEX content_selected_slot ON public.stewardship_content_version USING btree (configuration_id, campaign_id, kind, slot) WHERE ((kind)::text = 'page'::text);
+CREATE UNIQUE INDEX content_selected_slot ON public.stewardship_content_version USING btree (configuration_id, campaign_id, kind, slot) WHERE (kind='page' OR (kind='email' AND slot='confirmation'));
 
 -- INDEX: credential_deployment_singleton
 CREATE UNIQUE INDEX credential_deployment_singleton ON public.stewardship_credential_deployment USING btree ((1));
@@ -4702,6 +4702,10 @@ DECLARE
 BEGIN
     IF TG_OP='DELETE' THEN
         SELECT * INTO response FROM public.stewardship_submission WHERE id=OLD.submission_id;
+        IF TG_TABLE_NAME='stewardship_submission_receipt'
+           AND to_jsonb(OLD)->>'outbox_id' IS NOT NULL
+           AND NOT public.stewardship_cleanup_effect_v1('submission_receipts',OLD.id)
+        THEN RAISE EXCEPTION 'Receipt deliveries require journaled cleanup' USING ERRCODE='23514'; END IF;
         IF FOUND AND public.stewardship_test_response_cleanup_v1(response.mode,response.rehearsal_epoch_id) THEN
             RETURN OLD;
         END IF;

@@ -139,6 +139,39 @@ def deliver(campaign_test):
     return row
 
 
+def test_confirmation_sample_includes_fixed_facts_and_selected_optional_block(
+    campaign_test,
+):
+    """The restricted Admin test-mail path previews the actual receipt composition."""
+    service, browser, _, credential = campaign_test
+    campaign = Campaign.objects.get()
+    template = content(str(campaign.pk), kind="email", slot="confirmation")
+    block = content(
+        str(campaign.pk),
+        slot="submission_confirmation",
+        html="<p>Optional follow-up.</p>",
+        text="Optional follow-up.",
+    )
+    assert (
+        campaign_builders.change(
+            service.store,
+            service.store.active(),
+            uuid4(),
+            [
+                {"operation": "add", "section": "content", **template},
+                {"operation": "add", "section": "content", **block},
+            ],
+        ).state
+        == "applied"
+    )
+    path = f"/admin/campaign/{campaign.pk}/content/test/{template['id']}"
+    row, _ = queue((service, browser, path, credential))
+    for body in (row.mail["html"], row.mail["text"]):
+        assert "Submitted:" in body and "Questions:" in body
+        assert "Optional follow-up." in body and "Sample Family" in body
+        assert "sample-family" not in body
+
+
 def test_cancellation_winning_submission_recheck_settles_immediately(
     campaign_test, monkeypatch
 ):

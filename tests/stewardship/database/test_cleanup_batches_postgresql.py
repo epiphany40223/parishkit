@@ -18,7 +18,7 @@ from parishkit.stewardship.jobs.outbox_storage import create_message
 from parishkit.stewardship.jobs.outbox_validation import DeliveryIdentity
 
 from ..test_outbox_validation import rendering
-from .test_cleanup_inventory_postgresql import start_request
+from .test_cleanup_inventory_postgresql import settle_test_receipts, start_request
 from .test_outbox_postgresql import change
 from .test_production_journal_postgresql import start
 from .test_response_submission_postgresql import form_and_answers, submit
@@ -29,6 +29,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 def running_request(harness):
     """Admit a real manifest then bind a synthetic maintained cleanup claim."""
     with work_transaction():
+        settle_test_receipts(harness)
         status = start_request(harness)
         seal_manifest(status.request_id)
     return start(status)

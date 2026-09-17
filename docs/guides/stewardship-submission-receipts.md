@@ -46,5 +46,48 @@ block, singleton direct-mail template selection, and shared Testing routing.
 It passes 231 focused pure tests, 50 PostgreSQL content/actual-role editing tests
 in 55.56 seconds, and the full baseline: 6,141 passed, 4,233 explicit profile
 skips and two existing warnings in 58.20 seconds. Ruff and changed Markdown pass.
-Final Submit/outbox and dispatch integration remain in progress; this checkpoint
-alone cannot send receipts and does not complete BG-07.01.
+That first checkpoint alone did not send receipts.
+
+The integrated implementation now creates each concrete receipt, task root,
+immutable render and delivery history inside final Submit's transaction. The
+database independently checks the exact response, Family, current source,
+configuration and Testing routing. A current-source no-recipient outcome keeps
+the accepted submission and records the closed non-error audit reason. Proposed
+contact changes and opt-outs do not change transactional receipt routing.
+
+Receipts use the existing fenced MAIL worker and commit-before-provider journal,
+without loading Family access keys or reading response answers. They retain
+distinct identities through pauses, remain admitted after actual campaign close,
+and cannot send from an invalidated Testing epoch. Existing Admin delivery
+metadata, uncertainty warnings, evidence and explicit retry actions include
+receipts; they do not invent schedule occurrences or fulfillment. Cleanup of a
+receipt-bearing response uses the journaled transition workflow, not the older
+response-only helper that cannot drain outbox history.
+
+Pre-review checks pass 56 PostgreSQL submission/cleanup/Ministry tests in 121.56
+seconds, 39 receipt/Admin recovery tests in 95.37 seconds, and 45 worker,
+submission and audit tests in 49.17 seconds. Actual MAIL credentials cannot read
+answers; fake providers observe the committed attempt before I/O. Tests cover
+partial refusal retries, unknown outcomes, abandonment, current-source routing,
+atomic rollback, pause/resume and keyless Admin recovery. These focused runs
+overlap and must not be summed as a distinct-test count. The pure baseline
+passes 6,150 tests, 4,268 explicit profile skips and two existing warnings in
+75.02 seconds. Final frozen-tree coverage and the review cycle remain open.
+
+## Fresh-install schema audit
+
+The predecessor's `3bfec17a` installer and this increment's installer were run
+in separate newly created disposable databases. The predecessor exactly matches
+its committed schema fingerprint. The audited delta adds two receipt columns,
+four constraints, one index, six functions and two triggers; it removes no
+objects. Existing changes are limited to receipt disposition/closed audit
+context checks, the singleton confirmation index, recipient projection and the
+delivery, resolution, cleanup and safe-context functions. Relations and policies
+are unchanged. New command/binding functions retain restricted execution and
+fixed search paths. The refreshed fingerprint passes all 17 schema/model tests
+in 17.56 seconds. No retained database was deleted or upgraded.
+
+The current baseline contains 162 relations, 1,871 columns, 2,683 constraints,
+819 indexes, 432 functions, 435 triggers and 28 policies. This is a fresh-install
+baseline, not an upgrade compatibility promise. Schema artifacts are included in
+both Docker build allowlists.

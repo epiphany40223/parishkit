@@ -126,16 +126,18 @@ def _command_scope(request, service, actor):
         raise
 
 
-def _retry_inputs():
-    """Load only public/general keys, and only for a new admitted preparation."""
+def _retry_inputs(purpose):
+    """Receipt retries load no Family keys; invitations retain scoped preparation."""
     from parishkit.stewardship.accounts.family_authentication import (
         runtime as family_runtime,
     )
 
-    keys = family_runtime()
     origin = getattr(settings, "STEWARDSHIP_PUBLIC_ORIGIN", None)
     if origin is None:
         raise ConfigError("Mail preparation origin is unavailable.")
+    if purpose == "receipt":
+        return dict(general=None, public=None, public_origin=origin)
+    keys = family_runtime()
     return dict(general=keys.general, public=keys.public, public_origin=origin)
 
 

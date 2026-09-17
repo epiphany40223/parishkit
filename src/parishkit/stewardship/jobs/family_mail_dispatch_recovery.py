@@ -43,6 +43,8 @@ def record_abandoned_submission(status, *, actor_id):
         evidence=DeliveryEvidence(reason="recovery_unknown"),
         admit=admit,
     )
+    if row.purpose == "receipt":
+        return result
     occurrence = ScheduleOccurrence.objects.get(pk=row.semantic_key)
     updated = ScheduleOccurrence.objects.filter(
         pk=occurrence.pk, version=occurrence.version

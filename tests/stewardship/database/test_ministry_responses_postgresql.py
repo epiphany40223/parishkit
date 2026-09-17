@@ -429,27 +429,16 @@ def test_scope_loss_cannot_prove_leave_completion(response_service, scope):
 
 def test_rehearsal_cleanup_removes_request_chains_and_source_proof(response_service):
     """Only explicit invalidated-epoch cleanup deletes test Ministry history."""
-    from parishkit.stewardship.campaigns.rehearsals import (
-        cleanup_rehearsal,
-        invalidate_rehearsal,
-    )
+    from .test_cleanup_tasks_postgresql import queued, run
 
     harness = response_service
     form = start(harness)
     answers = answers_for(form)
     answers["ministries"]["members"]["3"]["join"] = [9]
-    first = respond(harness, form, answers)
+    respond(harness, form, answers)
     form = revisit(harness)
     respond(harness, form, answers_for(form))
-    epoch = invalidate_rehearsal(
-        campaign_id=harness.campaign.pk, admit=lambda *args: True
-    )
-    assert epoch == first.rehearsal_epoch_id
-    for _ in range(100):
-        if not cleanup_rehearsal(epoch, batch_size=1):
-            break
-    else:
-        pytest.fail("Bounded Ministry rehearsal cleanup did not complete")
+    assert run(queued(harness))
     assert not MinistryRequest.objects.exists() and not Submission.objects.exists()
 
 
