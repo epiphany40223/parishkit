@@ -2522,7 +2522,8 @@ CREATE TABLE public.stewardship_production_target (
         ('submission_receipts'::varchar)::text,('submissions'::varchar)::text,
         ('prior_inventory_targets'::varchar)::text,
         ('daily_digest_recipients'::varchar)::text,('daily_digest_ready'::varchar)::text,
-        ('daily_digest_snapshots'::varchar)::text,('daily_digest_fact_pins'::varchar)::text
+        ('daily_digest_snapshots'::varchar)::text,('daily_digest_fact_pins'::varchar)::text,
+        ('recovery_replacements'::varchar)::text
     ]))
 );
 CREATE INDEX production_target_correlation ON public.stewardship_production_target (correlation_id);
@@ -2564,7 +2565,8 @@ CREATE TABLE public.stewardship_recovery_replacement (
     correlation_id uuid NOT NULL,
     previous_id uuid NOT NULL UNIQUE,
     replacement_id uuid NOT NULL,
-    demand_id uuid NOT NULL
+    demand_id uuid,
+    preparation_id uuid
 );
 CREATE INDEX schedule_recovery_demand ON public.stewardship_recovery_replacement(demand_id,replacement_id);
 CREATE INDEX schedule_recovery_successor ON public.stewardship_recovery_replacement(replacement_id);

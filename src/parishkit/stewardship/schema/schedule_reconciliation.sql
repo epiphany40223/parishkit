@@ -1,11 +1,49 @@
 -- The public read boundary exposes counts only. Underlying rows, recipients,
 -- renders and sealed substitutions remain outside web/installer privileges.
+CREATE VIEW public.stewardship_daily_digest_work_row AS
+SELECT p.occurrence_id,p.task_id,
+    coalesce(messages.outbox_versions,0) AS outbox_versions,
+    coalesce(messages.outboxes,0) AS outboxes,
+    coalesce(tasks.versions,0)+p.version AS task_versions,
+    coalesce(messages.blocking,false) AS blocking
+FROM public.stewardship_daily_digest_preparation p
+LEFT JOIN LATERAL (
+    SELECT sum(m.version) AS outbox_versions,count(m.id) AS outboxes,
+        bool_or(m.state IN ('submitting','delivery_unknown')
+            OR (m.state IN ('pending','retry_wait') AND resolution.action='retry_idempotent')
+            OR m.purpose<>'daily_digest' OR m.mode<>p.mode
+            OR m.campaign_id IS DISTINCT FROM p.campaign_id
+            OR m.semantic_key IS DISTINCT FROM recipient.id
+            OR m.family_id IS NOT NULL OR m.credential_namespace<>'none') AS blocking
+    FROM public.stewardship_daily_digest_snapshot s
+    JOIN public.stewardship_daily_digest_ready r ON r.snapshot_id=s.id
+    JOIN public.stewardship_daily_digest_recipient recipient ON recipient.ready_id=r.id
+    JOIN public.stewardship_outbox_message m ON m.id=recipient.outbox_id
+    LEFT JOIN LATERAL (
+        SELECT e.action FROM public.stewardship_outbox_event e
+        WHERE e.message_id=m.id AND e.action IN
+            ('retry_idempotent','retry_unaccepted','fail_unaccepted','accept','authorize_resend')
+        ORDER BY e.version DESC LIMIT 1
+    ) resolution ON true
+    WHERE s.preparation_id=p.id
+) messages ON true
+LEFT JOIN LATERAL (
+    SELECT sum(t.version) AS versions FROM public.stewardship_task_run t
+    WHERE t.root_id=p.task_id OR t.root_id IN (
+        SELECT m.task_id FROM public.stewardship_daily_digest_snapshot s
+        JOIN public.stewardship_daily_digest_ready r ON r.snapshot_id=s.id
+        JOIN public.stewardship_daily_digest_recipient recipient ON recipient.ready_id=r.id
+        JOIN public.stewardship_outbox_message m ON m.id=recipient.outbox_id
+        WHERE s.preparation_id=p.id)
+) tasks ON true
+WHERE p.occurrence_id IS NOT NULL;
+
 CREATE VIEW public.stewardship_schedule_work_row AS
 SELECT o.id, o.definition_id, o.revision_id, o.state, o.version, o.outbox_id,
-       m.version AS outbox_version,
-       coalesce(tv.versions,0) AS task_versions,
+       coalesce(m.version,0)+coalesce(digest.outbox_versions,0) AS outbox_version,
+       coalesce(tv.versions,0)+coalesce(digest.task_versions,0) AS task_versions,
        (
-           o.state='delivery_unknown'
+           o.state='delivery_unknown' OR coalesce(digest.blocking,false)
            OR (o.task_id IS NOT NULL AND (
                NOT coalesce((t.task_type='schedule_occurrence' AND t.domain_request_id IS NOT DISTINCT FROM o.id)
                    OR (t.task_type='family_mail_prepare' AND EXISTS (
@@ -31,12 +69,14 @@ SELECT o.id, o.definition_id, o.revision_id, o.state, o.version, o.outbox_id,
                WHERE owner.root_id=t.root_id AND owner.state IN ('running','abandoned')
            ))
            OR public.stewardship_occurrence_delivery_conflict_v1(o.state,m.state)
-       ) IS TRUE AS blocking
+       ) IS TRUE AS blocking,
+       (CASE WHEN m.id IS NULL THEN 0 ELSE 1 END)+coalesce(digest.outboxes,0) AS outbox_count
 FROM public.stewardship_schedule_occurrence o
 JOIN public.stewardship_schedule_definition d ON d.id=o.definition_id
 LEFT JOIN public.stewardship_task_run t ON t.id=o.task_id
 LEFT JOIN public.stewardship_outbox_message m ON m.id=o.outbox_id
 LEFT JOIN public.stewardship_family_campaign f ON f.id=m.family_id
+LEFT JOIN public.stewardship_daily_digest_work_row digest ON digest.occurrence_id=o.id
 LEFT JOIN LATERAL (
     SELECT e.action FROM public.stewardship_outbox_event e
     WHERE e.message_id=m.id AND e.action IN
@@ -54,7 +94,7 @@ SELECT d.id AS definition_id,d.campaign_id,d.version AS definition_version,
        count(o.id) AS occurrences,coalesce(sum(o.version),0) AS versions,
        coalesce(sum(o.task_versions),0) AS task_versions,
        coalesce(sum(o.outbox_version),0) AS outbox_versions,
-       count(DISTINCT o.outbox_id) AS outboxes,
+       coalesce(sum(o.outbox_count),0)::bigint AS outboxes,
        count(o.id) FILTER(WHERE o.blocking) AS blocking,
        count(o.id) FILTER(WHERE NOT o.blocking AND o.state IN ('pending','running')) AS cancellable,
        count(o.id) FILTER(WHERE o.state='failed') AS failed,
@@ -69,6 +109,32 @@ LEFT JOIN LATERAL (
 ) coverage ON true
 WHERE d.current_revision_id IS NOT NULL
 GROUP BY d.id,d.campaign_id,d.version,d.current_revision_id,coverage.delivered,coverage.covered;
+
+-- One common ownership projection covers singular Family mail and each
+-- individually addressed digest child. It contains identities only, not bodies.
+CREATE FUNCTION public.stewardship_schedule_message_ids_v1(definition uuid,revision uuid)
+RETURNS SETOF uuid LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
+    SELECT outbox_id FROM public.stewardship_schedule_occurrence
+    WHERE definition_id=$1 AND revision_id=$2 AND outbox_id IS NOT NULL
+    UNION
+    SELECT recipient.outbox_id FROM public.stewardship_daily_digest_preparation p
+    JOIN public.stewardship_daily_digest_snapshot s ON s.preparation_id=p.id
+    JOIN public.stewardship_daily_digest_ready r ON r.snapshot_id=s.id
+    JOIN public.stewardship_daily_digest_recipient recipient ON recipient.ready_id=r.id
+    WHERE p.definition_id=$1 AND p.revision_id=$2
+$$;
+CREATE FUNCTION public.stewardship_schedule_task_roots_v1(definition uuid,revision uuid)
+RETURNS SETOF uuid LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
+    SELECT t.root_id FROM public.stewardship_schedule_occurrence o
+    JOIN public.stewardship_task_run t ON t.id=o.task_id
+    WHERE o.definition_id=$1 AND o.revision_id=$2
+    UNION SELECT m.task_id FROM public.stewardship_outbox_message m
+    WHERE m.id IN (SELECT public.stewardship_schedule_message_ids_v1($1,$2))
+    UNION SELECT p.task_id FROM public.stewardship_daily_digest_preparation p
+    WHERE p.definition_id=$1 AND p.revision_id=$2
+$$;
+REVOKE ALL ON FUNCTION public.stewardship_schedule_message_ids_v1(uuid,uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.stewardship_schedule_task_roots_v1(uuid,uuid) FROM PUBLIC;
 
 -- Short-lived exact-effect proofs, invisible to every runtime role. Rows are
 -- inserted and removed inside the same selection transaction, never retained
@@ -127,16 +193,10 @@ BEGIN
     PERFORM 1 FROM public.stewardship_schedule_occurrence
         WHERE definition_id=definition AND revision_id=prior ORDER BY id FOR UPDATE;
     PERFORM 1 FROM public.stewardship_task_run t WHERE t.root_id IN (
-        SELECT owner.root_id FROM public.stewardship_schedule_occurrence o
-        JOIN public.stewardship_task_run owner ON owner.id=o.task_id
-        WHERE o.definition_id=definition AND o.revision_id=prior
-        UNION SELECT m.task_id FROM public.stewardship_schedule_occurrence o
-        JOIN public.stewardship_outbox_message m ON m.id=o.outbox_id
-        WHERE o.definition_id=definition AND o.revision_id=prior
+        SELECT public.stewardship_schedule_task_roots_v1(definition,prior)
     ) ORDER BY t.id FOR UPDATE;
     PERFORM 1 FROM public.stewardship_outbox_message m WHERE m.id IN (
-        SELECT outbox_id FROM public.stewardship_schedule_occurrence
-        WHERE definition_id=definition AND revision_id=prior
+        SELECT public.stewardship_schedule_message_ids_v1(definition,prior)
     ) ORDER BY m.id FOR UPDATE;
     IF EXISTS(SELECT 1 FROM public.stewardship_schedule_work_row
         WHERE definition_id=definition AND revision_id=prior AND blocking) THEN
@@ -154,8 +214,7 @@ BEGIN
         reason=v_reason,finished_at=statement_timestamp(),sealed_substitutions=NULL,
         sealed_key_id=NULL,pause_hold_id=NULL
     WHERE m.state IN ('pending','retry_wait') AND m.id IN (
-        SELECT outbox_id FROM public.stewardship_schedule_occurrence
-        WHERE definition_id=definition AND revision_id=prior
+        SELECT public.stewardship_schedule_message_ids_v1(definition,prior)
     );
     GET DIAGNOSTICS cancelled_messages=ROW_COUNT;
     INSERT INTO public.stewardship_schedule_effect
@@ -175,12 +234,7 @@ BEGIN
     UPDATE public.stewardship_task_run t SET state='cancelled',action='safe_cancel',
         version=t.version+1,actor_id=actor,correlation_id=correlation,lease_expires_at=NULL
     WHERE t.state IN ('queued','retry_wait') AND t.root_id IN (
-        SELECT owner.root_id FROM public.stewardship_schedule_occurrence o
-        JOIN public.stewardship_task_run owner ON owner.id=o.task_id
-        WHERE o.definition_id=definition AND o.revision_id=prior
-        UNION SELECT m.task_id FROM public.stewardship_schedule_occurrence o
-        JOIN public.stewardship_outbox_message m ON m.id=o.outbox_id
-        WHERE o.definition_id=definition AND o.revision_id=prior
+        SELECT public.stewardship_schedule_task_roots_v1(definition,prior)
     );
     evidence:=jsonb_build_object('definition_id',d.id,'previous_revision_id',prior,
         'cancelled_messages',cancelled_messages,'skipped_occurrences',skipped_occurrences,
@@ -192,6 +246,7 @@ BEGIN
 END $$;
 
 REVOKE ALL ON public.stewardship_schedule_work_row FROM PUBLIC;
+REVOKE ALL ON public.stewardship_daily_digest_work_row FROM PUBLIC;
 REVOKE ALL ON public.stewardship_schedule_work_summary FROM PUBLIC;
 REVOKE ALL ON public.stewardship_schedule_effect FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.stewardship_schedule_effect_v1(uuid,bigint,uuid,uuid,text) FROM PUBLIC;

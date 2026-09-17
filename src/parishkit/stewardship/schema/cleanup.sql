@@ -24,6 +24,7 @@ RETURNS text LANGUAGE sql IMMUTABLE SET search_path TO pg_catalog, public, pg_te
         WHEN 'daily_digest_ready' THEN 'stewardship_daily_digest_ready'
         WHEN 'daily_digest_snapshots' THEN 'stewardship_daily_digest_snapshot'
         WHEN 'daily_digest_fact_pins' THEN 'stewardship_fact_pin'
+        WHEN 'recovery_replacements' THEN 'stewardship_recovery_replacement'
         ELSE NULL END
 $$;
 REVOKE ALL ON FUNCTION public.stewardship_cleanup_relation_v1(text) FROM PUBLIC;
@@ -170,6 +171,8 @@ BEGIN
                 AND NOT EXISTS (SELECT 1 FROM public.stewardship_family_form_baseline WHERE prior_submission_id=i.target_id)
             WHEN 'occurrences' THEN NOT EXISTS (
                 SELECT 1 FROM public.stewardship_occurrence_transition WHERE occurrence_id=i.target_id)
+                AND NOT EXISTS (SELECT 1 FROM public.stewardship_recovery_replacement
+                    WHERE previous_id=i.target_id OR replacement_id=i.target_id)
                 AND NOT EXISTS (SELECT 1 FROM public.stewardship_schedule_fulfillment WHERE occurrence_id=i.target_id)
                 AND NOT EXISTS (SELECT 1 FROM public.stewardship_schedule_occurrence WHERE replacement_id=i.target_id)
                 AND NOT EXISTS (SELECT 1 FROM public.stewardship_restore_delivery_hold WHERE recovery_occurrence_id=i.target_id)

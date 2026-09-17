@@ -9,13 +9,17 @@ from django.db import DatabaseError, connection, transaction
 from parishkit.stewardship.campaigns.digest_schedule_planning import (
     DigestScheduleProducer,
 )
+from parishkit.stewardship.campaigns.lifecycle import Action
+from parishkit.stewardship.campaigns.models import ActivationCatchUpDemand
 from parishkit.stewardship.campaigns.recovery_coverage import covered_dates
 from parishkit.stewardship.campaigns.schedule_models import (
+    ScheduleDefinition,
     ScheduleFulfillment,
     ScheduleOccurrence,
 )
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.jobs.dispatch import execute_hint
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.scheduler import scheduler_session
 from parishkit.stewardship.jobs.storage import change_run
@@ -27,11 +31,13 @@ from parishkit.stewardship.reports.digest_ownership import (
 )
 from parishkit.stewardship.reports.digest_planning import cover_dates, discover_dates
 
-from .campaign_builders import campaign_clock
+from .campaign_builders import campaign_clock, command, draft_campaign
 from .test_background_grants_postgresql import task_login
+from .test_catchup_preparation_postgresql import execution_arguments
 from .test_daily_digest_capture_postgresql import prepare
 from .test_daily_digest_planning_postgresql import INSTANT, allocate
 from .test_digest_schedule_planning_postgresql import add_digest
+from .test_schedule_reconciliation_postgresql import replace_schedule
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -177,3 +183,30 @@ def test_failed_old_generation_does_not_block_new_daily_obligations(response_ser
             (new,) = DailyDigestProducer(uuid4())(guard)
             assert new.run_id != claim.run_id
         assert DailyDigestPreparation.objects.count() == 2
+
+
+def test_completed_activation_coverage_survives_later_schedule_replacement(tmp_path):
+    """No new original slot is needed to recover an already coalesced full range."""
+    store, campaign, actor = draft_campaign(tmp_path)
+    identifier = add_digest(store, campaign)
+    with campaign_clock(INSTANT):
+        command(campaign, actor, Action.ACTIVATE)
+        demand = ActivationCatchUpDemand.objects.get()
+        with task_login(ServiceRole.WORKER, exact=True):
+            assert execute_hint(**execution_arguments(demand))
+        demand.refresh_from_db()
+        assert demand.completed_at is not None
+        previous = ScheduleOccurrence.objects.get(
+            definition_id=identifier, state="pending"
+        )
+        dates = covered_dates(previous.pk)
+        assert len(dates) == 8
+        definition = ScheduleDefinition.objects.get(pk=identifier)
+        assert replace_schedule(store, definition, actor).state == "applied"
+        claim = allocate()
+        with task_login(ServiceRole.WORKER, exact=True):
+            row = finish_coverage(claim)
+            assert covered_dates(row.occurrence_id) == dates
+        selected = ScheduleOccurrence.objects.get(pk=row.occurrence_id)
+        assert selected.slot == f"recovery:{row.pk}"
+        assert selected.recovered_aggregates.get().previous_id == previous.pk

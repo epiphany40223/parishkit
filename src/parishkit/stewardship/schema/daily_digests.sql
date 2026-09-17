@@ -2,7 +2,7 @@
 CREATE TABLE "stewardship_daily_digest_preparation" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "updated_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "version" bigint NOT NULL CHECK ("version" >= 0), "campaign_id" uuid NOT NULL, "definition_id" uuid NOT NULL, "revision_id" uuid NOT NULL, "campaign_configuration_id" uuid NOT NULL, "task_id" uuid NOT NULL UNIQUE, "mode" varchar(16) NOT NULL, "rehearsal_epoch_id" uuid NULL, "cutoff" timestamp with time zone NOT NULL, "cursor" date NULL, "phase" varchar(12) NOT NULL, "occurrence_id" uuid NULL UNIQUE, "run_id" uuid NULL, "task_fence" bigint NULL CHECK ("task_fence" >= 0), "worker_id" uuid NULL, CONSTRAINT "stewardship_reports_dailydigestpreparation_positive_version" CHECK ("version" >= 1), CONSTRAINT "daily_digest_phase" CHECK ("phase"::text = ANY(ARRAY['dates'::varchar::text,'cover'::varchar::text,'facts'::varchar::text,'fanout'::varchar::text,'complete'::varchar::text,'cancelled'::varchar::text])), CONSTRAINT "daily_digest_namespace" CHECK ((("mode" = 'production' AND "rehearsal_epoch_id" IS NULL) OR ("mode" = 'testing' AND "rehearsal_epoch_id" IS NOT NULL))));
 CREATE TABLE "stewardship_daily_digest_snapshot" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "preparation_id" uuid NOT NULL UNIQUE, "campaign_id" uuid NOT NULL, "configuration_id" uuid NOT NULL, "source_id" uuid NOT NULL, "population_scope" varchar(12) NOT NULL, "submission_watermark" bigint NOT NULL CHECK ("submission_watermark" >= 0), "timezone_configuration_id" uuid NOT NULL, "through_date" date NOT NULL, "observed_at" timestamp with time zone NOT NULL, "statistics_inputs" text NOT NULL, "covered_dates" jsonb NOT NULL, "run_id" uuid NOT NULL, "fence" bigint NOT NULL CHECK ("fence" >= 0), "worker_id" uuid NOT NULL, CONSTRAINT "daily_digest_historical_scope" CHECK ("population_scope" = 'historical'));
 CREATE TABLE "stewardship_daily_digest_ready" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "snapshot_id" uuid NOT NULL UNIQUE, "fact_set_id" uuid NOT NULL, "recipient_configuration_id" uuid NOT NULL, "recipients" jsonb NOT NULL, "subject" varchar(254) NOT NULL, "html" text NOT NULL, "text" text NOT NULL, "chart" bytea NOT NULL, "run_id" uuid NOT NULL, "fence" bigint NOT NULL CHECK ("fence" >= 0), "worker_id" uuid NOT NULL);
-CREATE TABLE "stewardship_daily_digest_recipient" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "ready_id" uuid NOT NULL, "address" varchar(254) NOT NULL, "outbox_id" uuid NOT NULL UNIQUE, CONSTRAINT "daily_digest_recipient_once" UNIQUE ("ready_id", "address"));
+CREATE TABLE "stewardship_daily_digest_recipient" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "ready_id" uuid NOT NULL, "address" varchar(254) NOT NULL, "outbox_id" uuid NULL UNIQUE, "covered_messages" jsonb NOT NULL, CONSTRAINT "daily_digest_recipient_once" UNIQUE ("ready_id", "address"));
 CREATE INDEX "daily_digest_definition" ON "stewardship_daily_digest_preparation" ("definition_id", "mode");
 CREATE INDEX "stewardship_daily_digest_preparation_correlation_id_ab1c44a3" ON "stewardship_daily_digest_preparation" ("correlation_id");
 ALTER TABLE "stewardship_daily_digest_snapshot" ADD CONSTRAINT "stewardship_daily_di_preparation_id_8a653fdb_fk_stewardsh" FOREIGN KEY ("preparation_id") REFERENCES "stewardship_daily_digest_preparation" ("id") DEFERRABLE INITIALLY DEFERRED;
@@ -104,6 +104,45 @@ BEGIN
     RETURN true;
 END $$;
 
+-- Both the scheduler and page guard consult the same unresolved lineage. These
+-- are metadata-only IDs; no report values or recipient addresses are exposed.
+CREATE FUNCTION stewardship_daily_digest_predecessors_v1(definition uuid,mode text,epoch uuid)
+RETURNS SETOF uuid LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
+    SELECT o.id FROM stewardship_schedule_occurrence o
+    JOIN stewardship_schedule_definition d ON d.id=o.definition_id
+    WHERE d.id=$1 AND d.kind='daily_digest' AND o.mode=$2 AND o.target='admins'
+      AND o.state='skipped' AND o.reason='schedule_replaced'
+      AND o.revision_id<>d.current_revision_id
+      AND NOT EXISTS(SELECT 1 FROM stewardship_recovery_replacement e WHERE e.previous_id=o.id)
+      AND (EXISTS(SELECT 1 FROM stewardship_schedule_fulfillment f
+                  WHERE f.occurrence_id=o.id AND f.disposition='coalesced')
+           OR EXISTS(SELECT 1 FROM stewardship_recovery_replacement e WHERE e.replacement_id=o.id))
+      AND ($2='production' AND $3 IS NULL OR $2='testing' AND EXISTS(
+          SELECT 1 FROM stewardship_daily_digest_preparation p
+          WHERE p.occurrence_id=o.id AND p.rehearsal_epoch_id=$3))
+$$;
+
+CREATE FUNCTION stewardship_daily_digest_replacement_v1(proposed jsonb)
+RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
+    SELECT EXISTS(SELECT 1 FROM stewardship_daily_digest_preparation p
+        JOIN stewardship_task_run t ON t.root_id=p.task_id
+        JOIN stewardship_task_event e ON e.run_id=t.id AND e.action='claim'
+            AND e.fence=t.fence AND e.worker_id=t.worker_id AND e.state='running'
+        JOIN stewardship_schedule_occurrence o ON o.id=(proposed->>'replacement_id')::uuid
+        WHERE p.id=(proposed->>'preparation_id')::uuid AND p.phase='cover'
+          AND (proposed->>'previous_id')::uuid IN (
+              SELECT stewardship_daily_digest_predecessors_v1(p.definition_id,p.mode,p.rehearsal_epoch_id))
+          AND (proposed->>'actor_id')::uuid=t.worker_id AND (proposed->>'correlation_id')::uuid=e.id
+          AND stewardship_daily_digest_live_v1(p.id,t.id,t.fence,t.worker_id)
+          AND o.definition_id=p.definition_id AND o.revision_id=p.revision_id AND o.mode=p.mode
+          AND o.target='admins' AND o.state='pending' AND o.due_at<=p.cutoff
+          AND o.task_id IS NULL AND o.outbox_id IS NULL
+          AND (p.occurrence_id IS NULL OR p.occurrence_id=o.id)
+          AND NOT stewardship_schedule_slot_excluded_v1(o.definition_id,o.mode,o.target,o.slot)
+          AND NOT EXISTS(SELECT 1 FROM stewardship_daily_digest_preparation other
+              WHERE other.id<>p.id AND other.occurrence_id=o.id))
+$$;
+
 CREATE FUNCTION stewardship_daily_digest_preparation_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
@@ -164,6 +203,11 @@ BEGIN
                 AND o.revision_id=NEW.revision_id AND o.mode=NEW.mode
                 AND o.target='admins' AND o.due_at<=NEW.cutoff))
         THEN RAISE EXCEPTION 'Daily preparation requires a fenced monotonic transition' USING ERRCODE='23514'; END IF;
+        IF OLD.phase='cover' AND NEW.phase IN ('facts','complete') AND EXISTS(
+            SELECT 1 FROM stewardship_daily_digest_predecessors_v1(
+                NEW.definition_id,NEW.mode,NEW.rehearsal_epoch_id)) THEN
+            RAISE EXCEPTION 'Daily replacement coverage must finish before capture' USING ERRCODE='23514';
+        END IF;
         IF OLD.phase='cover' AND NEW.phase IN ('facts','complete') AND EXISTS(
             SELECT 1 FROM stewardship_schedule_occurrence o
             WHERE o.revision_id=NEW.revision_id AND o.mode=NEW.mode AND o.target='admins'
@@ -235,6 +279,16 @@ BEGIN
       OR proposed->>'task_id' IS NOT NULL OR proposed->>'outbox_id' IS NOT NULL
     THEN RETURN false; END IF;
     IF prior IS NULL THEN
+        IF p.phase='cover' AND proposed->>'slot'='recovery:'||p.id::text THEN
+            RETURN proposed->>'state'='pending' AND p.occurrence_id IS NULL
+                AND (proposed->>'due_at')::timestamptz=(SELECT max(candidate.due_at)
+                    FROM stewardship_schedule_occurrence candidate WHERE candidate.id IN (
+                        SELECT stewardship_daily_digest_predecessors_v1(p.definition_id,p.mode,p.rehearsal_epoch_id)))
+                AND NOT EXISTS(SELECT 1 FROM stewardship_schedule_occurrence candidate
+                    WHERE candidate.revision_id=p.revision_id AND candidate.mode=p.mode AND candidate.target='admins'
+                      AND candidate.slot='recovery:'||p.id::text
+                      AND candidate.id<>(proposed->>'id')::uuid);
+        END IF;
         RETURN p.phase='dates' AND proposed->>'state'='pending'
           AND stewardship_catchup_due_v1(p.definition_id,proposed->>'slot') IS NOT NULL
           AND (proposed->>'due_at')::timestamptz=stewardship_catchup_due_v1(p.definition_id,proposed->>'slot');
@@ -374,10 +428,56 @@ END $$;
 CREATE CONSTRAINT TRIGGER daily_digest_ready_complete AFTER INSERT ON stewardship_daily_digest_ready
 DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION stewardship_daily_digest_fact_commit_v1();
 
+-- Canonical proof of already accepted per-Admin coverage. Configuration edits
+-- cannot turn a partial cohort into permission to resend a successful message.
+CREATE FUNCTION stewardship_daily_digest_prior_messages_v1(ready uuid,address text)
+RETURNS jsonb LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
+    WITH desired AS (
+        SELECT s.covered_dates,p.campaign_id,p.definition_id,p.mode,p.rehearsal_epoch_id
+        FROM stewardship_daily_digest_ready r
+        JOIN stewardship_daily_digest_snapshot s ON s.id=r.snapshot_id
+        JOIN stewardship_daily_digest_preparation p ON p.id=s.preparation_id
+        WHERE r.id=$1 AND r.recipients ? $2
+    ), accepted AS (
+        SELECT m.id,s.covered_dates FROM stewardship_daily_digest_recipient recipient
+        JOIN stewardship_outbox_message m ON m.id=recipient.outbox_id AND m.state='delivered'
+        JOIN stewardship_daily_digest_ready r ON r.id=recipient.ready_id
+        JOIN stewardship_daily_digest_snapshot s ON s.id=r.snapshot_id
+        JOIN stewardship_daily_digest_preparation p ON p.id=s.preparation_id
+        JOIN desired d ON d.campaign_id=p.campaign_id AND d.definition_id=p.definition_id
+            AND d.mode=p.mode AND d.rehearsal_epoch_id IS NOT DISTINCT FROM p.rehearsal_epoch_id
+        WHERE recipient.address=$2
+          AND s.covered_dates ?| ARRAY(SELECT jsonb_array_elements_text(d.covered_dates))
+    ) SELECT CASE WHEN EXISTS(SELECT 1 FROM desired)
+        AND NOT EXISTS(SELECT 1 FROM desired d,jsonb_array_elements_text(d.covered_dates) wanted(day)
+            WHERE NOT EXISTS(SELECT 1 FROM accepted a WHERE a.covered_dates ? wanted.day))
+        THEN coalesce((SELECT jsonb_agg(id::text ORDER BY id::text) FROM accepted),'[]'::jsonb)
+        ELSE '[]'::jsonb END
+$$;
+
 CREATE FUNCTION stewardship_daily_digest_recipient_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
+    IF NEW.outbox_id IS NULL THEN
+        IF NEW.covered_messages='[]'::jsonb
+          OR NEW.covered_messages IS DISTINCT FROM stewardship_daily_digest_prior_messages_v1(NEW.ready_id,NEW.address)
+          OR NOT EXISTS(SELECT 1 FROM stewardship_daily_digest_ready r
+            JOIN stewardship_daily_digest_snapshot s ON s.id=r.snapshot_id
+            JOIN stewardship_daily_digest_preparation p ON p.id=s.preparation_id
+            JOIN stewardship_task_run t ON t.root_id=p.task_id
+            JOIN stewardship_task_event e ON e.run_id=t.id AND e.action='claim'
+                AND e.fence=t.fence AND e.worker_id=t.worker_id AND e.state='running'
+            WHERE r.id=NEW.ready_id AND p.phase='fanout' AND r.recipients ? NEW.address
+              AND NEW.actor_id=t.worker_id AND NEW.correlation_id=e.id
+              AND stewardship_daily_digest_live_v1(p.id,t.id,t.fence,t.worker_id)) THEN
+            RAISE EXCEPTION 'Daily recipient lacks exact accepted coverage' USING ERRCODE='23514';
+        END IF;
+        RETURN NEW;
+    END IF;
+    IF NEW.covered_messages<>'[]'::jsonb THEN
+        RAISE EXCEPTION 'Daily recipient cannot both queue and reuse delivery' USING ERRCODE='23514';
+    END IF;
     IF NOT EXISTS(SELECT 1 FROM stewardship_daily_digest_ready r
         JOIN stewardship_daily_digest_snapshot s ON s.id=r.snapshot_id
         JOIN stewardship_daily_digest_preparation p ON p.id=s.preparation_id
@@ -527,3 +627,7 @@ DO $$ DECLARE item text[]; BEGIN
 END $$;
 CREATE TRIGGER production_cleanup_protect BEFORE DELETE ON stewardship_fact_pin
 FOR EACH ROW EXECUTE FUNCTION stewardship_cleanup_protect_v1('daily_digest_fact_pins');
+CREATE TRIGGER recovery_replacement_immutable BEFORE UPDATE OR DELETE ON stewardship_recovery_replacement
+FOR EACH ROW EXECUTE FUNCTION stewardship_daily_digest_immutable_v1('recovery_replacements');
+CREATE TRIGGER production_cleanup_protect BEFORE DELETE ON stewardship_recovery_replacement
+FOR EACH ROW EXECUTE FUNCTION stewardship_cleanup_protect_v1('recovery_replacements');

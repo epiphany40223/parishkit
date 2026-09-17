@@ -1,6 +1,9 @@
 """Bounded, individually addressed mail intents over retained daily content."""
 
+import json
 from uuid import UUID, uuid4
+
+from django.db import connection
 
 from parishkit.email.base import InlineImage
 from parishkit.stewardship.accounts.configuration_models import AppliedIntegration
@@ -89,6 +92,25 @@ def fanout_daily(claim):
     correlation_id = claim_event(claim)
     for address in pending[:LIMIT]:
         identifier = uuid4()
+        # Reuse accepted coverage only when every required date was actually
+        # delivered to this same Admin in the same campaign/mode/Testing epoch.
+        # Unknown, failed, cancelled or partially covered reports never qualify.
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT stewardship_daily_digest_prior_messages_v1(%s,%s)",
+                [ready.pk, address],
+            )
+            covered = json.loads(cursor.fetchone()[0])
+        if covered:
+            DailyDigestRecipient.objects.create(
+                id=identifier,
+                ready=ready,
+                address=address,
+                covered_messages=covered,
+                actor_id=claim.worker_id,
+                correlation_id=correlation_id,
+            )
+            continue
         identity = DeliveryIdentity(
             scope_id=row.campaign_id,
             campaign_id=row.campaign_id,

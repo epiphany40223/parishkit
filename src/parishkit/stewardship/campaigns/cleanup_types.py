@@ -29,6 +29,7 @@ class CleanupCategory(StrEnum):
     DIGEST_READY = "daily_digest_ready"
     DIGEST_SNAPSHOT = "daily_digest_snapshots"
     DIGEST_FACT_PIN = "daily_digest_fact_pins"
+    RECOVERY_REPLACEMENT = "recovery_replacements"
 
 
 @dataclass(frozen=True, repr=False)

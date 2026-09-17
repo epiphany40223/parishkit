@@ -167,8 +167,17 @@ class DailyDigestProducer:
                       AND NOT EXISTS(SELECT 1 FROM stewardship_restore_delivery_hold h
                           WHERE h.definition_id=o.definition_id AND h.mode=o.mode
                             AND h.target=o.target AND h.slot=o.slot
-                            AND h.state IN ('unreviewed','assumed_delivered')))""",
-                    (definition.current_revision_id, scope.runtime.mode, scope.instant),
+                            AND h.state IN ('unreviewed','assumed_delivered')))
+                    OR EXISTS(SELECT 1 FROM
+                        stewardship_daily_digest_predecessors_v1(%s,%s,%s))""",
+                    (
+                        definition.current_revision_id,
+                        scope.runtime.mode,
+                        scope.instant,
+                        definition.pk,
+                        scope.runtime.mode,
+                        epoch.pk if epoch else None,
+                    ),
                 )
                 if not cursor.fetchone()[0]:
                     return ()

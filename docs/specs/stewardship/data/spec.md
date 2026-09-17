@@ -293,7 +293,12 @@ For activation preparation interrupted by a schedule revision, an append-only
 replacement occurrence under the same demand. It is coverage lineage, not a
 new delivery identity or a success record. Each predecessor has at most one
 successor; links must move to the current revision and cannot cycle. Original
-occurrences and fulfillment rows remain unchanged. Family preparation must also
+occurrences and fulfillment rows remain unchanged. After activation preparation
+has completed, an ordinary daily-digest preparation may own these same forward
+edges under its exact task claim instead of reopening the completed demand.
+Each edge has exactly one preparation owner; Testing edges are removed only by
+the journaled Testing cleanup with their occurrence inventory.
+Family preparation must also
 forward coalesced reminder coverage when a replacement initial invitation is
 selected. Removing all Family schedules preserves history without reviving mail;
 configuration continues to forbid reminders without an initial invitation.

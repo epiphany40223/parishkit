@@ -401,6 +401,9 @@ LANGUAGE sql STABLE AS $$
     UNION ALL SELECT 'daily_digest_fact_pins',id FROM public.stewardship_fact_pin
         WHERE parent_kind='digest' AND parent_id IN (SELECT id FROM digest_snapshots)
     UNION ALL SELECT 'occurrences',id FROM occurrences
+    UNION ALL SELECT 'recovery_replacements',id FROM public.stewardship_recovery_replacement
+        WHERE previous_id IN (SELECT id FROM occurrences)
+          AND replacement_id IN (SELECT id FROM occurrences)
     UNION ALL SELECT 'occurrence_events',id FROM public.stewardship_occurrence_transition
         WHERE occurrence_id IN (SELECT id FROM occurrences)
     UNION ALL SELECT 'schedule_fulfillments',f.id FROM public.stewardship_schedule_fulfillment f

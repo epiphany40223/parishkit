@@ -46,6 +46,7 @@ from .schedule_models import (
     OccurrenceTransition,
     ScheduleFulfillment,
     ScheduleOccurrence,
+    ScheduleRecoveryReplacement,
 )
 from .work_locks import require_work_order
 
@@ -124,6 +125,12 @@ def inventory_queries(campaign_id):
             submission_id__in=responses.values("pk")
         ),
         CleanupCategory.OCCURRENCE: occurrences,
+        CleanupCategory.RECOVERY_REPLACEMENT: (
+            ScheduleRecoveryReplacement.objects.filter(
+                previous_id__in=occurrences.values("pk"),
+                replacement_id__in=occurrences.values("pk"),
+            )
+        ),
         CleanupCategory.OCCURRENCE_EVENT: OccurrenceTransition.objects.filter(
             occurrence_id__in=occurrences.values("pk")
         ),

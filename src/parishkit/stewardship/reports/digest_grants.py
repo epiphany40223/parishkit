@@ -4,6 +4,7 @@
 def add_digest_grants(tables, columns, *, worker):
     """Share opaque ownership; only the general worker can capture report inputs."""
     tables.setdefault("stewardship_daily_digest_preparation", set()).add("SELECT")
+    tables.setdefault("stewardship_recovery_replacement", set()).add("SELECT")
     if worker:
         tables["stewardship_daily_digest_preparation"].add("UPDATE")
         for name in ("snapshot", "ready", "recipient"):

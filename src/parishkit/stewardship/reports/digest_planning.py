@@ -1,5 +1,6 @@
 """Bounded complete daily outage coverage before any report input is captured."""
 
+from django.db import connection
 from django.db.models import Q
 
 from parishkit.stewardship.campaigns.catchup_ownership import claim_event
@@ -9,6 +10,7 @@ from parishkit.stewardship.campaigns.schedule_models import (
     ScheduleDefinition,
     ScheduleFulfillment,
     ScheduleOccurrence,
+    ScheduleRecoveryReplacement,
 )
 from parishkit.stewardship.campaigns.schedules import occurrence_key
 from parishkit.stewardship.campaigns.work_locks import require_work_order
@@ -123,7 +125,7 @@ def cover_dates(claim):
     An occurrence already owned by another preparation is never reclaimed here,
     including messages awaiting provider acknowledgement or explicit recovery.
     """
-    row, _ = _bound(claim, "cover")
+    row, scope = _bound(claim, "cover")
     correlation = claim_event(claim)
     owned = DailyDigestPreparation.objects.exclude(pk=row.pk).filter(
         occurrence_id__isnull=False
@@ -146,12 +148,49 @@ def cover_dates(claim):
         if row.occurrence_id
         else pending.order_by("-due_at", "-id").first()
     )
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT id,due_at FROM stewardship_schedule_occurrence "
+            "WHERE id IN (SELECT stewardship_daily_digest_predecessors_v1(%s,%s,%s)) "
+            "ORDER BY due_at DESC,id LIMIT %s",
+            [row.definition_id, row.mode, row.rehearsal_epoch_id, LIMIT],
+        )
+        previous_aggregates = cursor.fetchall()
+    if selected is None and previous_aggregates and not row.occurrence_id:
+        slot = f"recovery:{row.pk}"
+        selected = ScheduleOccurrence.objects.create(
+            definition_id=row.definition_id,
+            revision_id=row.revision_id,
+            mode=row.mode,
+            routing="production" if row.mode == "production" else "testing_override",
+            target="admins",
+            slot=slot,
+            due_at=previous_aggregates[0][1],
+            occurrence_key=occurrence_key(row.revision_id, row.mode, "admins", slot),
+            pause_version=scope.campaign.pause_version
+            if row.mode == "production" and scope.campaign.delivery_paused
+            else None,
+            actor_id=claim.worker_id,
+            correlation_id=correlation,
+        )
+        # Keep occurrence allocation plus forwarded outcomes inside the same
+        # finite page budget. A remaining predecessor forces another page.
+        previous_aggregates = previous_aggregates[: LIMIT - 1]
     if selected is None:
         if row.occurrence_id:
             raise PermissionError("Selected daily coverage is no longer available.")
         return checkpoint_preparation(claim, phase="complete")
     pending = pending.exclude(pk=selected.pk)
-    for previous in list(pending.order_by("id")[:LIMIT]):
+    for identifier, _ in previous_aggregates:
+        lock_task_claim(claim)
+        ScheduleRecoveryReplacement.objects.create(
+            preparation_id=row.pk,
+            previous_id=identifier,
+            replacement=selected,
+            actor_id=claim.worker_id,
+            correlation_id=correlation,
+        )
+    for previous in list(pending.order_by("id")[: LIMIT - len(previous_aggregates)]):
         lock_task_claim(claim)
         updated = ScheduleOccurrence.objects.filter(
             pk=previous.pk, version=previous.version
@@ -175,8 +214,15 @@ def cover_dates(claim):
             actor_id=claim.worker_id,
             correlation_id=correlation,
         )
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT EXISTS(SELECT 1 FROM "
+            "stewardship_daily_digest_predecessors_v1(%s,%s,%s))",
+            [row.definition_id, row.mode, row.rehearsal_epoch_id],
+        )
+        unfinished = cursor.fetchone()[0]
     return checkpoint_preparation(
         claim,
-        phase="cover" if pending.exists() else "facts",
+        phase="cover" if unfinished or pending.exists() else "facts",
         occurrence_id=selected.pk,
     )

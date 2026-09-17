@@ -134,13 +134,14 @@ class DailyDigestReady(ImmutableRecord):
 
 
 class DailyDigestRecipient(ImmutableRecord):
-    """One separately addressed semantic message; no implicit cross-Admin resend."""
+    """One Admin intent, or exact accepted-message coverage requiring no resend."""
 
     ready = models.ForeignKey(DailyDigestReady, on_delete=models.PROTECT)
     address = models.CharField(max_length=254)
     outbox = models.OneToOneField(
-        "stewardship_jobs.OutboxMessage", on_delete=models.PROTECT
+        "stewardship_jobs.OutboxMessage", on_delete=models.PROTECT, null=True
     )
+    covered_messages = models.JSONField(default=list)
 
     class Meta:
         db_table = "stewardship_daily_digest_recipient"

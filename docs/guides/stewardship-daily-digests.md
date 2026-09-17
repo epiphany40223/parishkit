@@ -169,3 +169,33 @@ These handlers are not registered for runtime execution yet. Multi-Admin
 schedule reconciliation, accepted-delivery coverage, provider dispatch,
 authorized report links, Admin retry UI and final validation/reviews remain
 required before BG-07.02 can be marked complete or this PR can be delivered.
+
+### Schedule replacement and partial-delivery checkpoint
+
+Schedule previews and reconciliation now account for every individually
+addressed digest message and its task. An unresolved or in-flight Admin message
+blocks schedule replacement; proven-unsent siblings are cancelled atomically,
+and accepted siblings retain their original history. Ordinary daily preparation
+forwards cancelled aggregate coverage through the same immutable lineage used
+by activation catch-up, including after that activation demand has completed.
+The scheduler can recover covered dates even when no new original slot exists.
+The report cannot advance to capture while predecessor coverage remains.
+
+An Admin whose previously accepted messages cover every required date gets a
+durable reference to those messages, not a duplicate send. An incomplete date
+range, another Admin's acceptance, or an uncertain outcome cannot satisfy this
+proof. Testing replacement edges belong to the closed cleanup inventory and
+are deleted before their occurrence endpoints; direct deletion remains denied.
+
+Validation: 10 schedule/partial-acceptance/cleanup tests, 31 planning/recovery/
+activation tests and 55 existing schedule/cleanup/task/fanout regressions passed.
+The credential-free suite passed 6,345 tests with 4,337 profile skips and the two
+existing deprecation warnings in 65.36 seconds. Independent fresh schemas
+against `a822387` showed the intended recipient coverage and preparation-owner
+columns, nullable alternatives guarded by exact ownership, expanded cleanup
+category, one private multi-recipient view, two updated summary views, five new
+functions, eight changed function bodies and the replacement cleanup triggers.
+No indexes or row policies changed. Installed function differences were reviewed
+before updating the strict fingerprint. Existing development databases were
+neither upgraded nor deleted. Runtime delivery, report links, retry UI and the
+final review gates are still required; BG-07.02 remains unchecked.

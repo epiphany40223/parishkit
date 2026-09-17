@@ -9865,6 +9865,12 @@ BEGIN
     SELECT * INTO demand FROM public.stewardship_activation_catchup WHERE id=NEW.demand_id;
     SELECT * INTO previous FROM public.stewardship_schedule_occurrence WHERE id=NEW.previous_id FOR UPDATE;
     SELECT * INTO replacement FROM public.stewardship_schedule_occurrence WHERE id=NEW.replacement_id FOR UPDATE;
+    IF NEW.preparation_id IS NOT NULL THEN
+        IF NEW.demand_id IS NOT NULL OR NOT public.stewardship_daily_digest_replacement_v1(to_jsonb(NEW)) THEN
+            RAISE EXCEPTION 'Recovery replacement requires current daily ownership' USING ERRCODE='23514';
+        END IF;
+        RETURN NEW;
+    END IF;
     IF demand.id IS NULL OR demand.completed_at IS NOT NULL
         OR previous.id IS NULL OR replacement.id IS NULL
         OR previous.revision_id=replacement.revision_id

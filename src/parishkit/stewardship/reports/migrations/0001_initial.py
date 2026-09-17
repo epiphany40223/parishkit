@@ -1934,11 +1934,13 @@ class Migration(migrations.Migration):
                             ),
                         ),
                         ("address", models.CharField(max_length=254)),
+                        ("covered_messages", models.JSONField(default=list)),
                         (
                             "outbox",
                             models.OneToOneField(
                                 on_delete=django.db.models.deletion.PROTECT,
                                 to="stewardship_jobs.outboxmessage",
+                                null=True,
                             ),
                         ),
                         (
