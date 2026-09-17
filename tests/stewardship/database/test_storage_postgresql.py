@@ -371,20 +371,24 @@ def test_all_concrete_mutable_records_have_enabled_guard(db):
     with connection.cursor() as cursor:
         for model in models:
             table = model._meta.db_table
-            if table == "stewardship_daily_digest_preparation":
+            if table in {
+                "stewardship_daily_digest_preparation",
+                "stewardship_weekly_digest_preparation",
+            }:
                 # This domain's single INSERT/UPDATE/DELETE guard compares an
                 # immutable identity tuple instead of generated per-field SQL.
+                kind = "weekly" if "weekly" in table else "daily"
                 cursor.execute(
                     "SELECT p.proname,t.tgtype,pg_get_functiondef(p.oid) "
                     "FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid "
                     "WHERE t.tgrelid=%s::regclass "
-                    "AND t.tgname='daily_digest_preparation_write' "
+                    "AND t.tgname=%s "
                     "AND t.tgenabled='O' AND NOT t.tgisinternal",
-                    [table],
+                    [table, f"{kind}_digest_preparation_write"],
                 )
                 row = cursor.fetchone()
                 assert row and row[:2] == (
-                    "stewardship_daily_digest_preparation_guard_v1",
+                    f"stewardship_{kind}_digest_preparation_guard_v1",
                     31,
                 )
                 compact = "".join(row[2].split())
@@ -470,6 +474,13 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
     # Shared guards must still prove their actual enabled row-level contracts;
     # nonstandard names are not exceptions to SQL immutability.
     shared_immutable_guards = {
+        **{
+            "stewardship_weekly_digest_" + name: (
+                "weekly_" + name + "_immutable",
+                "stewardship_weekly_immutable_v1",
+            )
+            for name in ("snapshot", "recipient")
+        },
         **{
             "stewardship_daily_digest_" + name: (
                 "daily_digest_immutable",

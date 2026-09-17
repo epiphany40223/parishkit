@@ -107,3 +107,48 @@ PostgreSQL capture/worker/dispatch grant run passed in 45.59 seconds. The comple
 credential-free baseline passed 6,535 tests with 4,456 expected profile skips and
 the same two client-library warnings in 64.42 seconds. No schema, scheduled
 execution, persistent weekly history or send authority is added by this checkpoint.
+
+### Durable capture and schedule-coverage checkpoint
+
+The fenced preparation owner now discovers weekly slots in bounded pages and
+coalesces overdue dates into the latest occurrence without losing original slot
+coverage. Current failed/unfinished preparations hold newer intervals; completing
+preparation is not evidence that its Admin cohort has resolved. Configuration
+replacement lineage remains append-only. The producer and handler are not yet
+registered in the assembled scheduler/worker runtime.
+
+Capture atomically retains its self-contained source/item observation, selected
+information/correction identities, successful-interval boundary, generation-time
+Admin cohort and exact task fence. SQL independently recalculates the selection
+and rejects invented names/text, omitted requests, stale fences, premature phase
+jumps and a snapshot committed without its fanout transition. Replayed capture
+uses the retained copy. An empty snapshot still leaves its occurrence pending:
+the later completion owner must establish successful empty fulfillment.
+
+The recipient table reserves immutable per-Admin content and accepted-coverage
+bindings, but recipient insertion, outbox allocation, delivery, Testing cleanup,
+completion, manual reports, protected routes and runtime registration remain
+unfinished. No weekly message can be sent by this checkpoint. The existing
+general worker gains report-input ownership, not provider authority.
+
+#### Fresh-install schema audit
+
+Independent empty PostgreSQL installations compared pinned commit `5cf0a26`
+with this checkpoint. Three tables add 52 columns, 68 constraints, 18 indexes,
+14 functions and five triggers. No existing relation, column, constraint, index,
+trigger, policy, owner or ACL changed or disappeared. The two existing function
+body changes admit only the fenced weekly schedule/replacement owner. Their
+installed definitions were compared directly before updating the strict catalog
+fingerprint. A second fresh installation verified the new phase constraint's
+literal-cast representation against Django's model compiler; this changed no
+preexisting object or constraint semantics. Both Docker build allowlists include
+the two new SQL assets explicitly. No retained database was upgraded or reset.
+
+Validation: 71 PostgreSQL capture/storage checks passed in 53.75 seconds; 16
+expanded weekly capture/unfinished-interval checks passed in 32.56 seconds;
+61 fresh-schema and daily/weekly regression checks passed in 78.01 seconds.
+The focused compiler/transport/grant run passed 190 tests; the build/selection/
+grant correction run passed 139. The corrected complete baseline passed 6,536
+tests with 4,472 expected profile skips and the same two warnings in 62.06
+seconds. Ruff check/format and Django model-state drift checks pass. These are
+checkpoint results, not the increment's final coverage or review acceptance.

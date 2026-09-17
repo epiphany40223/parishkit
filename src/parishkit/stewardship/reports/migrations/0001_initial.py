@@ -24,6 +24,274 @@ class Migration(migrations.Migration):
         migrations.SeparateDatabaseAndState(
             state_operations=[
                 migrations.CreateModel(
+                    name="WeeklyDigestPreparation",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "updated_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "version",
+                            models.PositiveBigIntegerField(default=1, editable=False),
+                        ),
+                        ("campaign_id", models.UUIDField()),
+                        ("definition_id", models.UUIDField()),
+                        ("revision_id", models.UUIDField()),
+                        ("campaign_configuration_id", models.UUIDField()),
+                        ("task_id", models.UUIDField(unique=True)),
+                        ("mode", models.CharField(max_length=16)),
+                        ("rehearsal_epoch_id", models.UUIDField(null=True)),
+                        ("cutoff", parishkit.stewardship.storage.UTCDateTimeField()),
+                        ("cursor", models.DateField(null=True)),
+                        ("phase", models.CharField(default="dates", max_length=12)),
+                        ("occurrence_id", models.UUIDField(null=True, unique=True)),
+                        ("run_id", models.UUIDField(null=True)),
+                        ("task_fence", models.PositiveBigIntegerField(null=True)),
+                        ("worker_id", models.UUIDField(null=True)),
+                    ],
+                    options={
+                        "db_table": "stewardship_weekly_digest_preparation",
+                        "abstract": False,
+                        "indexes": [
+                            models.Index(
+                                fields=["definition_id", "mode"],
+                                name="weekly_digest_definition",
+                            )
+                        ],
+                        "constraints": [
+                            models.CheckConstraint(
+                                condition=models.Q(("version__gte", 1)),
+                                name="stewardship_reports_weeklydigestpreparation_positive_version",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    (
+                                        "phase__in",
+                                        (
+                                            "dates",
+                                            "cover",
+                                            "capture",
+                                            "fanout",
+                                            "complete",
+                                            "cancelled",
+                                        ),
+                                    )
+                                ),
+                                name="weekly_digest_phase",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    models.Q(
+                                        ("mode", "production"),
+                                        ("rehearsal_epoch_id__isnull", True),
+                                    ),
+                                    models.Q(
+                                        ("mode", "testing"),
+                                        ("rehearsal_epoch_id__isnull", False),
+                                    ),
+                                    _connector="OR",
+                                ),
+                                name="weekly_digest_namespace",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
+                    name="WeeklyDigestSnapshot",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "observed_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(),
+                        ),
+                        ("submission_watermark", models.PositiveBigIntegerField()),
+                        ("after_watermark", models.PositiveBigIntegerField()),
+                        ("observation", models.JSONField()),
+                        ("information", models.JSONField()),
+                        ("corrections", models.JSONField()),
+                        ("recipients", models.JSONField()),
+                        ("fence", models.PositiveBigIntegerField()),
+                        ("worker_id", models.UUIDField()),
+                        (
+                            "campaign",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_campaigns.campaign",
+                            ),
+                        ),
+                        (
+                            "configuration",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_accounts.appliedconfigurationversion",
+                            ),
+                        ),
+                        (
+                            "preparation",
+                            models.OneToOneField(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_reports.weeklydigestpreparation",
+                            ),
+                        ),
+                        (
+                            "run",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_jobs.taskrun",
+                            ),
+                        ),
+                        (
+                            "source",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_source.sourcesnapshot",
+                            ),
+                        ),
+                        (
+                            "timezone_configuration",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_campaigns.campaignconfiguration",
+                            ),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_weekly_digest_snapshot",
+                    },
+                ),
+                migrations.CreateModel(
+                    name="WeeklyDigestRecipient",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        ("address", models.CharField(max_length=254)),
+                        ("information", models.JSONField()),
+                        ("corrections", models.JSONField()),
+                        ("covered_messages", models.JSONField(default=list)),
+                        ("subject", models.CharField(max_length=254)),
+                        ("html", models.TextField()),
+                        ("text", models.TextField()),
+                        (
+                            "outbox",
+                            models.OneToOneField(
+                                null=True,
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_jobs.outboxmessage",
+                            ),
+                        ),
+                        (
+                            "snapshot",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_reports.weeklydigestsnapshot",
+                            ),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_weekly_digest_recipient",
+                    },
+                ),
+                migrations.AddConstraint(
+                    model_name="weeklydigestsnapshot",
+                    constraint=models.CheckConstraint(
+                        condition=models.Q(
+                            ("after_watermark__lte", models.F("submission_watermark"))
+                        ),
+                        name="weekly_digest_watermark_order",
+                    ),
+                ),
+                migrations.AddConstraint(
+                    model_name="weeklydigestrecipient",
+                    constraint=models.UniqueConstraint(
+                        fields=("snapshot", "address"),
+                        name="weekly_digest_recipient_once",
+                    ),
+                ),
+                migrations.CreateModel(
                     name="FactBuildReceipt",
                     fields=[
                         (

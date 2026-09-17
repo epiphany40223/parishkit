@@ -6237,6 +6237,8 @@ BEGIN
         public.stewardship_family_mail_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
             CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE AND
         public.stewardship_daily_digest_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
+            CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE AND
+        public.stewardship_weekly_digest_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
             CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE THEN
         RAISE EXCEPTION 'Worker configuration effects require atomic setup ownership'
             USING ERRCODE='23514';
@@ -9874,8 +9876,10 @@ BEGIN
     SELECT * INTO previous FROM public.stewardship_schedule_occurrence WHERE id=NEW.previous_id FOR UPDATE;
     SELECT * INTO replacement FROM public.stewardship_schedule_occurrence WHERE id=NEW.replacement_id FOR UPDATE;
     IF NEW.preparation_id IS NOT NULL THEN
-        IF NEW.demand_id IS NOT NULL OR NOT public.stewardship_daily_digest_replacement_v1(to_jsonb(NEW)) THEN
-            RAISE EXCEPTION 'Recovery replacement requires current daily ownership' USING ERRCODE='23514';
+        IF NEW.demand_id IS NOT NULL OR NOT (
+            public.stewardship_daily_digest_replacement_v1(to_jsonb(NEW))
+            OR public.stewardship_weekly_digest_replacement_v1(to_jsonb(NEW))) THEN
+            RAISE EXCEPTION 'Recovery replacement requires current digest ownership' USING ERRCODE='23514';
         END IF;
         RETURN NEW;
     END IF;

@@ -28,6 +28,8 @@ def schema_sql():
                 "cleanup",
                 "daily_digests",
                 "daily_dispatch",
+                "weekly_digests",
+                "weekly_capture",
                 "schedule_reconciliation",
                 "exports",
                 "delivery_resolution",

@@ -15,6 +15,7 @@ from parishkit.stewardship.reports.weekly_observation import (
     WeeklyUnavailable,
     capture_weekly_observation,
     decode_observation,
+    observation_document,
 )
 from parishkit.stewardship.reports.weekly_selection import (
     WeeklyHistory,
@@ -246,6 +247,12 @@ def test_decode_copies_private_mutable_projection():
     assert result.items[1].value.text == "Private request"
     assert result.items[0].value.disposition == "withdrawn"
     assert not hasattr(result.items[0].value, "text")
+    assert decode_observation(observation_document(result)) == result
+
+
+def test_observation_serialization_rejects_untyped_inputs():
+    with pytest.raises(TypeError):
+        observation_document(document())
 
 
 @pytest.mark.parametrize(

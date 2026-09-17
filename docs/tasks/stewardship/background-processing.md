@@ -284,6 +284,13 @@ supersedes the pending note. BG-07.03 now starts on
 the [weekly increment guide](../../guides/stewardship-weekly-digests.md) records
 its scope and internal acceptance checkpoints.
 
+The weekly renderer/isolated transport, coherent input selection and
+[durable capture/schedule-coverage checkpoints](../../guides/stewardship-weekly-digests.md#durable-capture-and-schedule-coverage-checkpoint)
+now have passing focused PostgreSQL, baseline and independently audited fresh
+schema evidence. Recipient allocation/delivery, cleanup, fulfillment, manual
+reports, protected routes, runtime assembly and the required review/final
+validation remain open; BG-07.03 and BG-07.05 are not complete.
+
 ## BG-08: Export and graph workers
 
 Scope and dependencies: [BG-08 work package](../../plans/stewardship/background-processing.md#bg-08-export-and-graph-workers).

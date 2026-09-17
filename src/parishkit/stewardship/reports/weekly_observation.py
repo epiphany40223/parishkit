@@ -21,44 +21,7 @@ class WeeklyUnavailable(ValueError):
     """Invalid private observations fail without disclosing their input values."""
 
 
-CAPTURE = """
-WITH selected AS MATERIALIZED (
-    SELECT c.id, c.active_configuration_id AS configuration_id,
-        sc.snapshot_id AS source_id,
-        stewardship_campaign_now_v1() AS observed_at,
-        COALESCE((SELECT max(s.campaign_sequence)
-            FROM stewardship_submission s
-            WHERE s.campaign_id=c.id AND s.mode='live'),0) AS watermark
-    FROM stewardship_campaign c
-    JOIN stewardship_source_current sc ON sc.singleton
-    JOIN stewardship_source_snapshot ss ON ss.id=sc.snapshot_id
-        AND ss.state='promoted' AND ss.compacted_at IS NULL
-    WHERE c.id=%s
-), items AS MATERIALIZED (
-    SELECT i.id,s.campaign_sequence,s.submitted_at,f.family_duid,i.disposition,
-        CASE WHEN i.disposition='current_actionable' THEN i.text ELSE NULL END AS text,
-        COALESCE(NULLIF(btrim(p.canonical::jsonb->>'mailingName'),''),
-            NULLIF(btrim(concat_ws(' ',
-                NULLIF(btrim(p.canonical::jsonb->>'firstName'),''),
-                NULLIF(btrim(p.canonical::jsonb->>'lastName'),''))),''),'Family')
-            AS family_name
-    FROM selected x
-    JOIN stewardship_submission s ON s.campaign_id=x.id
-        AND s.mode='live' AND s.campaign_sequence<=x.watermark
-    JOIN stewardship_additional_information i ON i.submission_id=s.id
-    JOIN stewardship_family_campaign f ON f.id=s.family_id
-    LEFT JOIN stewardship_snapshot_family m ON m.snapshot_id=x.source_id
-        AND m.source_key=f.family_duid::text
-    LEFT JOIN stewardship_source_family p ON p.id=m.payload_id
-)
-SELECT jsonb_build_object(
-    'campaign_id',x.id,'configuration_id',x.configuration_id,
-    'source_id',x.source_id,'observed_at',x.observed_at,'watermark',x.watermark,
-    'items',COALESCE((SELECT jsonb_agg(jsonb_build_array(
-        i.id,i.campaign_sequence,i.family_duid,i.family_name,i.submitted_at,
-        i.disposition,i.text) ORDER BY i.campaign_sequence) FROM items i),'[]'::jsonb)
-)::text FROM selected x
-"""
+CAPTURE = "SELECT stewardship_weekly_observation_v1(%s)::text"
 
 
 def _instant(value):
@@ -126,6 +89,33 @@ def capture_weekly_observation(campaign_id):
     with connection.cursor() as cursor:
         cursor.execute(CAPTURE, [campaign_id])
         row = cursor.fetchone()
-    if row is None:
+    if row is None or row[0] is None:
         raise WeeklyUnavailable("Weekly report inputs are unavailable.")
     return decode_observation(json.loads(row[0]))
+
+
+def observation_document(observation):
+    """Serialize a validated frozen observation using the exact SQL projection."""
+    if type(observation) is not WeeklyObservation:
+        raise TypeError("Weekly retention requires a typed observation.")
+    return {
+        "campaign_id": str(observation.campaign_id),
+        "source_id": str(observation.source_id),
+        "configuration_id": str(observation.configuration_id),
+        "observed_at": observation.observed_at.isoformat(),
+        "watermark": observation.watermark,
+        "items": [
+            [
+                str(item.value.item_id),
+                item.sequence,
+                item.value.family_duid,
+                item.value.family_name,
+                item.value.submitted_at.isoformat(),
+                "current_actionable"
+                if type(item.value) is WeeklyInformation
+                else item.value.disposition,
+                item.value.text if type(item.value) is WeeklyInformation else None,
+            ]
+            for item in observation.items
+        ],
+    }
