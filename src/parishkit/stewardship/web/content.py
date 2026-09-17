@@ -38,6 +38,14 @@ PLACEHOLDERS = frozenset(
 )
 PLACEHOLDER = re.compile(r"{{\s*([a-z_]+)\s*}}")
 FAMILY_CREDENTIAL_PLACEHOLDERS = frozenset({"family_code", "family_url"})
+ADMIN_DIGEST_PLACEHOLDERS = PLACEHOLDERS - {
+    "family_name",
+    "family_member_names",
+    "family_code",
+    "family_url",
+    "generic_family_url",
+    "pronoun",
+}
 FAMILY_CODE_MARKER = "PARISHKIT_REDACTED_FAMILY_CODE"
 FAMILY_LINK_MARKER = "https://parishkit.invalid/redacted-family-link"
 # Keep identical to the non-sendable seed in stewardship_receipt_seed_v1.
@@ -203,6 +211,22 @@ def validate_receipt_content(subject, html, text):
             )
         ):
             raise ValueError("Submission receipts cannot contain reserved markers.")
+
+
+def validate_admin_digest_content(subject, html, text):
+    """Digest templates use public parish/campaign facts, never a chosen Family."""
+    for value, header in ((subject, True), (html, False), (text, False)):
+        if not validate_template(value, subject=header) <= ADMIN_DIGEST_PLACEHOLDERS:
+            raise ValueError("Admin digests require public campaign placeholders.")
+        if any(
+            marker in value
+            for marker in (
+                FAMILY_CODE_MARKER,
+                FAMILY_LINK_MARKER,
+                RECEIPT_ALLOCATION_MARKER,
+            )
+        ):
+            raise ValueError("Admin digests cannot contain reserved markers.")
 
 
 def validate_share_label(value):

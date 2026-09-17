@@ -11,6 +11,7 @@ from parishkit.stewardship.web.content import (
     PLACEHOLDERS,
     prepare_content,
     render_template,
+    validate_admin_digest_content,
     validate_family_email,
     validate_receipt_content,
     validate_template,
@@ -119,6 +120,10 @@ class ContentForm(forms.Form):
             }:
                 validate_receipt_content(
                     values.get("subject", ""), prepared.html, prepared.text
+                )
+            if self.kind == "email" and self.slot in {"daily_digest", "weekly_digest"}:
+                validate_admin_digest_content(
+                    values["subject"], prepared.html, prepared.text
                 )
         except ValueError:
             self.add_error(

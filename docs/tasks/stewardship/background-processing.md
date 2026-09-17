@@ -261,6 +261,14 @@ archive and therefore the next campaign, even after retries are exhausted.
 This is a visible pre-production limitation, not a supported operational escape
 path; do not enable production use or waive unresolved obligations at a gate.
 
+PR #46 has now landed as `849cc71f` after exact-head CI/DCO and all protected
+merge-group checks passed; its
+[delivery receipt](../../guides/stewardship-submission-receipts.md#protected-delivery)
+supersedes the pending note. BG-07.02 is in progress on
+`pr/stewardship-daily-digests` from that verified fresh `origin/main` tip; its
+[increment guide](../../guides/stewardship-daily-digests.md) records the coherent
+daily report-to-delivery scope and internal checkpoints.
+
 ## BG-08: Export and graph workers
 
 Scope and dependencies: [BG-08 work package](../../plans/stewardship/background-processing.md#bg-08-export-and-graph-workers).

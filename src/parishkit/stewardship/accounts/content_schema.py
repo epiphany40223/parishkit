@@ -13,6 +13,7 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.schema_primitives import invalid, typed
 from parishkit.stewardship.web.content import (
     prepare_content,
+    validate_admin_digest_content,
     validate_family_email,
     validate_receipt_content,
     validate_template,
@@ -96,6 +97,10 @@ def validate_content_records(document):
             }:
                 validate_receipt_content(
                     value["subject"] or "", value["html"], value["text"]
+                )
+            if kind == "email" and slot in {"daily_digest", "weekly_digest"}:
+                validate_admin_digest_content(
+                    value["subject"], value["html"], value["text"]
                 )
         except (ValueError, TypeError):
             invalid()
