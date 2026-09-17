@@ -429,3 +429,26 @@ Focused fixture/CI tests passed 150 cases in 14.10 seconds; all 15 weekly browse
 cases passed in 19.33 seconds. Full speedup and acceptance evidence come from
 GitHub CI, not a second full local run. This change is included in the next
 focused review, not claimed as reviewed by the earlier round-one snapshot.
+
+### Review round two
+
+Session `20260917-190311-d05504` reviewed `cff8aff` against `85ba754`, focusing
+on the first corrections and efficiency changes. Both vendors completed with
+no degraded/failed review. Codex reported no findings; Claude reported eleven
+raw findings, of which five met the cutoff (two High, three Medium). Six Low
+findings do not constitute outstanding Medium-or-higher acceptance issues.
+
+| Finding | Disposition |
+| --- | --- |
+| High: CI/release test service mismatch | Already fixed in `c7b79c7` following CI's exact-service assertion. Both use the same bounded disposable tmpfs; real deployment persistence is unchanged. |
+| High: daily compiler also rejects NBSP labels | Pre-existing, but reproduced and corrected in a separate logical commit. The daily chart already rejects CR/control characters, so that part of the claim does not apply. The pure NBSP regression fails with the old renderer and passes with display-only normalization. Cards/table values are generated numeric/date strings, not imported names. |
+| Medium: older browser guides contradict reuse | Fixed with explicit superseding links to the new per-engine policy, retaining historical evidence and the WebKit workaround. |
+| Medium: timestamp format lacks cheap exact coverage | Added seven pure cases covering zero through six fractional digits, asserting both capture/item strings and round-trip identity. The whole-second path already had integration coverage; the real fractional capture test remains. |
+| Medium: browser close failure skips other cleanup | Fixed. Attempt every owned browser and driver cleanup, clear ownership even when stopping fails, then report all failures. Two focused injected-failure regressions protect this resource-lifetime behavior. |
+
+Focused correction validation passed 237 digest, selection, resource-pool,
+coverage-runner and CI-gate checks in 6.96 seconds. The daily NBSP regression
+was independently reproduced against the old renderer. No SQL schema changed.
+The next round also includes `c7b79c7`'s repeated-bootstrap/baseline reductions;
+those were outside round two's fixed review snapshot. Final acceptance and Gate 3
+remain open.

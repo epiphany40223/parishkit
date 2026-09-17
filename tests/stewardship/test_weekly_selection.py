@@ -76,6 +76,33 @@ def document():
     }
 
 
+@pytest.mark.parametrize(
+    "microseconds,fraction",
+    [
+        (0, ""),
+        (100000, ".1"),
+        (120000, ".12"),
+        (123000, ".123"),
+        (123400, ".1234"),
+        (123450, ".12345"),
+        (123456, ".123456"),
+    ],
+)
+def test_observation_timestamp_encoding_matches_exact_sql_spelling(
+    microseconds, fraction
+):
+    """Cheap format coverage complements the real SQL capture invariant test."""
+    instant = datetime(2026, 9, 17, microsecond=microseconds, tzinfo=UTC)
+    row = item(1)
+    row = replace(row, value=replace(row.value, submitted_at=instant))
+    captured = replace(observation(row), observed_at=instant)
+    encoded = observation_document(captured)
+    expected = f"2026-09-17T00:00:00{fraction}+00:00"
+    assert encoded["observed_at"] == expected
+    assert encoded["items"][0][4] == expected
+    assert decode_observation(encoded) == captured
+
+
 def test_first_interval_selects_only_actionable_requests():
     rows = (
         item(1, disposition="withdrawn"),

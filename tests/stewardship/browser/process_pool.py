@@ -14,14 +14,22 @@ class BrowserProcesses:
 
     def close(self):
         """Release cached processes before a fresh WebKit driver or session exit."""
-        try:
-            for browser in self.browsers.values():
+        errors = []
+        for browser in self.browsers.values():
+            try:
                 browser.close()
-        finally:
-            self.browsers.clear()
-            if self.runner is not None:
+            except Exception as error:
+                errors.append(error)
+        self.browsers.clear()
+        if self.runner is not None:
+            try:
                 self.runner.stop()
+            except Exception as error:
+                errors.append(error)
+            finally:
                 self.runner = None
+        if errors:
+            raise ExceptionGroup("Browser test resource cleanup failed", errors)
 
     @contextmanager
     def acquire(self, engine):

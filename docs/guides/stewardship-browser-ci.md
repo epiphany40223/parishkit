@@ -24,6 +24,11 @@ release changes belong here. OPS-09's later release/load-test work remains open.
 
 ## Checkpoints
 
+Later maintenance supersedes only this increment's per-test process policy:
+the [test-efficiency policy](stewardship-test-efficiency.md) now reuses Chromium
+and Firefox processes with isolated contexts. WebKit retains fresh processes.
+The historical measurements below describe the original increment.
+
 1. Add pure engine partitioning and an explicit opt-in pytest CI selector with
    strict complete-collection validation; preserve ordinary local behavior.
 2. Run engine matrix jobs in parallel, install only their required browser,

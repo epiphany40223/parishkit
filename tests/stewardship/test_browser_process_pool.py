@@ -70,3 +70,25 @@ def test_unknown_engine_does_not_start_tooling():
     with pytest.raises(ValueError), BrowserProcesses(create).acquire("unknown"):
         pytest.fail("Unknown browser was admitted")
     create.assert_not_called()
+
+
+@pytest.mark.parametrize("driver_fails", [False, True])
+def test_close_failure_still_releases_other_processes_and_resets_pool(driver_fails):
+    """A broken process cannot prevent attempting all other owned cleanup."""
+    create, runner = factory()
+    pool = BrowserProcesses(create)
+    with pool.acquire("firefox"), pool.acquire("chromium"):
+        pass
+    runner.firefox.launch.return_value.close.side_effect = RuntimeError("browser")
+    if driver_fails:
+        runner.stop.side_effect = RuntimeError("driver")
+    with pytest.raises(ExceptionGroup) as errors:
+        pool.close()
+    assert [str(error) for error in errors.value.exceptions] == (
+        ["browser", "driver"] if driver_fails else ["browser"]
+    )
+    runner.chromium.launch.return_value.close.assert_called_once_with()
+    runner.stop.assert_called_once_with()
+    assert pool.runner is None and not pool.browsers
+    pool.close()
+    runner.stop.assert_called_once_with()
