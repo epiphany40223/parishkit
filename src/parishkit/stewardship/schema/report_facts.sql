@@ -71,6 +71,31 @@ DECLARE demand stewardship_fact_demand%ROWTYPE;
 BEGIN
     IF current_user<>'pk_stewardship_worker' THEN RETURN NEW; END IF;
     SELECT * INTO owned_task FROM stewardship_task_run WHERE id=NEW.task_id;
+    IF owned_task.task_type='daily_digest_prepare' THEN
+        SELECT s.* INTO exact_request FROM stewardship_daily_digest_snapshot s
+            JOIN stewardship_daily_digest_preparation p ON p.id=s.preparation_id
+            WHERE p.id=owned_task.domain_request_id AND p.task_id=owned_task.root_id
+              AND p.phase='facts';
+        IF NOT FOUND OR ROW(NEW.campaign_id,NEW.population_scope,NEW.source_id,
+            NEW.submission_watermark,NEW.timezone_configuration_id,NEW.through_date)
+            IS DISTINCT FROM ROW(exact_request.campaign_id,exact_request.population_scope,
+                exact_request.source_id,exact_request.submission_watermark,
+                exact_request.timezone_configuration_id,exact_request.through_date)
+            OR NOT stewardship_daily_digest_live_v1(exact_request.preparation_id,
+                NEW.task_id,NEW.task_fence,NEW.worker_id) THEN
+            RAISE EXCEPTION 'Daily builder differs from its owned exact snapshot' USING ERRCODE='23514';
+        END IF;
+        IF TG_OP='UPDATE' AND NOT EXISTS(SELECT 1 FROM stewardship_task_run
+            WHERE id=OLD.task_id AND root_id=owned_task.root_id)
+            AND NOT EXISTS(SELECT 1 FROM stewardship_task_run prior
+                WHERE prior.id=OLD.task_id AND prior.task_type IN ('report_exact_export','daily_digest_prepare')
+                  AND NOT EXISTS(SELECT 1 FROM stewardship_task_run active
+                    WHERE active.root_id=prior.root_id AND active.state IN ('queued','running','retry_wait','abandoned'))
+                  AND NOT EXISTS(SELECT 1 FROM stewardship_fact_demand WHERE claimed_generation_id=OLD.id)) THEN
+            RAISE EXCEPTION 'Daily recovery cannot replace a recoverable root' USING ERRCODE='23514';
+        END IF;
+        RETURN NEW;
+    END IF;
     IF owned_task.task_type='report_exact_export' THEN
         SELECT * INTO exact_request FROM stewardship_exact_export_request
             WHERE id=owned_task.domain_request_id AND task_id=owned_task.root_id;
@@ -88,7 +113,7 @@ BEGIN
         IF TG_OP='UPDATE' AND NOT EXISTS(SELECT 1 FROM stewardship_task_run
             WHERE id=OLD.task_id AND root_id=owned_task.root_id)
             AND NOT EXISTS(SELECT 1 FROM stewardship_task_run prior
-                WHERE prior.id=OLD.task_id AND prior.task_type='report_exact_export'
+                WHERE prior.id=OLD.task_id AND prior.task_type IN ('report_exact_export','daily_digest_prepare')
                   AND NOT EXISTS(SELECT 1 FROM stewardship_task_run active
                     WHERE active.root_id=prior.root_id AND active.state IN ('queued','running','retry_wait','abandoned'))
                   AND NOT EXISTS(SELECT 1 FROM stewardship_fact_demand WHERE claimed_generation_id=OLD.id)) THEN
@@ -118,7 +143,7 @@ BEGIN
             IS NOT DISTINCT FROM ROW(demand.requested_source_id,demand.requested_submission_watermark,
                 demand.requested_timezone_configuration_id,demand.requested_through_date)
         AND EXISTS(SELECT 1 FROM stewardship_task_run prior
-            WHERE prior.id=OLD.task_id AND prior.task_type='report_exact_export'
+            WHERE prior.id=OLD.task_id AND prior.task_type IN ('report_exact_export','daily_digest_prepare')
               AND NOT EXISTS(SELECT 1 FROM stewardship_task_run active
                 WHERE active.root_id=prior.root_id AND active.state IN ('queued','running','retry_wait','abandoned'))
               AND NOT EXISTS(SELECT 1 FROM stewardship_fact_demand WHERE claimed_generation_id=OLD.id)) THEN

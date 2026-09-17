@@ -39,7 +39,7 @@ Gate 3 are not completed by this increment.
 
 ## Execution evidence
 
-Implementation is beginning. The checkpoints above are targets, not completion
+Implementation is in progress. The checkpoints above are targets, not completion
 claims; BG-07.02 remains unchecked. No provider credentials, real delivery,
 deployment, release or retained database deletion is authorized.
 
@@ -74,3 +74,43 @@ no Django configuration. The full credential-free baseline passed 6,345 tests
 with 4,288 profile skips and the same two deprecation warnings in 58.58 seconds.
 This adapter has no scheduled execution authority yet; database ownership and
 runtime integration remain the next checkpoint.
+
+### Durable input and complete-coverage checkpoint
+
+Daily preparation now has an opaque task root and bounded, fenced discovery and
+coverage pages. Its first executed page freezes the recovery cutoff, so a delayed
+queued hint includes intervening missed days without allowing subsequent pages
+to chase an endlessly growing range. SQL independently rejects premature date
+exhaustion, incomplete coverage, stale claims and phase jumps. Ordinary recovery
+retains earlier aggregates through immutable occurrence and replacement edges;
+Testing dates cannot enter the default Production coverage reader.
+
+The worker captures one coherent statistics observation and its source pin in
+the same transaction, then uses the shared exact fact builder without consuming
+an interactive debounce window. Compaction respects the retained input even
+before a fact pin exists. Compilation retains the exact chart bytes, content,
+Admin selection and fact pin atomically before exposing the fanout phase. A
+failed older task does not permanently prevent new daily obligations.
+
+Validation: 29 PostgreSQL schema/ownership/capture/build checks and 47 existing
+catch-up, exact-export, fact-recovery and recurring-schedule regressions passed.
+Five additional recovery tests passed for delayed first execution, raw shortcut
+denial, exact SQL fencing, nested aggregate lineage and new work after failure.
+The credential-free baseline passed 6,345 tests with 4,305 profile skips and the
+same two deprecation warnings in 59.47 seconds. Django's model-state check
+reported no changes. This remains an internal checkpoint: production scheduler
+registration, recipient fanout/dispatch, aggregate delivery resolution, the
+authorized report route, Testing cleanup and the final review gates are not yet
+complete. BG-07.02 remains unchecked; no scheduled digest delivery is claimed.
+
+#### Fresh-install schema audit
+
+Independent empty PostgreSQL installations compared the committed `849cc71f`
+baseline with this checkpoint. No preexisting relation, column, constraint,
+index, trigger or row policy changed or disappeared. Four new ownership tables
+add 60 columns, 83 constraints, 24 indexes, 12 functions and 11 triggers.
+Five existing function bodies change only to admit the fenced daily owner,
+protect its exact inputs, and permit terminal non-interactive generation
+recovery. Their actual installed definitions were compared before updating the
+strict catalog fingerprint. Model declarations match the installed schema.
+No retained development database was upgraded, reset or deleted.

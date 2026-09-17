@@ -334,6 +334,12 @@ class CampaignFactRebuildDemand(MutableRecord):
         indexes = [models.Index(fields=("pending_due_at",), name="fact_demand_due")]
 
 
+from .digest_models import (  # noqa: E402,F401
+    DailyDigestPreparation,
+    DailyDigestReady,
+    DailyDigestRecipient,
+    DailyDigestSnapshot,
+)
 from .exact_models import (  # noqa: E402,F401
     ExactExportCancellation,
     ExactExportRequest,

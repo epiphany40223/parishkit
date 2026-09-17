@@ -2619,6 +2619,12 @@ CREATE FUNCTION public.stewardship_fact_disposable(identifier uuid) RETURNS bool
                 r.timezone_configuration_id,r.through_date)=
             ROW(f.campaign_id,f.population_scope,f.source_id,f.submission_watermark,
                 f.timezone_configuration_id,f.through_date))
+    AND NOT EXISTS(SELECT 1 FROM stewardship_daily_digest_snapshot r
+        JOIN stewardship_daily_fact_set f ON f.id=identifier
+        WHERE ROW(r.campaign_id,r.population_scope,r.source_id,r.submission_watermark,
+                r.timezone_configuration_id,r.through_date)=
+            ROW(f.campaign_id,f.population_scope,f.source_id,f.submission_watermark,
+                f.timezone_configuration_id,f.through_date))
     AND NOT EXISTS(SELECT 1 FROM stewardship_fact_demand
         WHERE claimed_generation_id=identifier);
 $$;
@@ -6221,6 +6227,8 @@ BEGIN
         public.stewardship_catchup_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
             CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE AND
         public.stewardship_family_mail_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
+            CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE AND
+        public.stewardship_daily_digest_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
             CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE THEN
         RAISE EXCEPTION 'Worker configuration effects require atomic setup ownership'
             USING ERRCODE='23514';
@@ -8725,6 +8733,17 @@ BEGIN
            OR public.stewardship_response_pin_required_v1(OLD.parent_id,OLD.snapshot_id)
         THEN
             RAISE EXCEPTION 'Worker may release only unused response comparison inputs'
+                USING ERRCODE='23514';
+        END IF;
+      ELSIF TG_OP='INSERT' AND NEW.parent_kind='digest' THEN
+        IF NEW.expires_at IS NOT NULL OR NOT EXISTS (
+            SELECT 1 FROM stewardship_daily_digest_snapshot s
+            WHERE s.id=NEW.parent_id AND s.source_id=NEW.snapshot_id
+              AND stewardship_daily_digest_live_v1(s.preparation_id,s.run_id,s.fence,s.worker_id)
+        ) OR NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+            AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
+            AND mode='ExclusiveLock' AND granted) THEN
+            RAISE EXCEPTION 'Daily source protection requires its live exact snapshot'
                 USING ERRCODE='23514';
         END IF;
       ELSIF TG_OP='INSERT' AND NEW.parent_kind='facts' THEN

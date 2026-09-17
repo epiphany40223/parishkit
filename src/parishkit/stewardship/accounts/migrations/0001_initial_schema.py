@@ -33,6 +33,7 @@ def schema_sql():
                 "report_facts",
                 "exact_exports",
                 "fact_verification",
+                "daily_digests",
             )
         ]
     )
