@@ -259,6 +259,12 @@ admin_patterns = [
         name="retry_daily_digest",
     ),
     path(
+        "background/tasks/<uuid:task_id>/retry-weekly-digest",
+        delivery_views.preparation_retry,
+        {"weekly": True},
+        name="retry_weekly_digest",
+    ),
+    path(
         "background/tasks/<uuid:task_id>/retry-export-cleanup",
         export_views.retry_cleanup_command,
         name="retry_export_cleanup",

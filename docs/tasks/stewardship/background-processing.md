@@ -290,8 +290,9 @@ now have passing focused PostgreSQL, baseline and independently audited fresh
 schema evidence. The [per-Admin allocation/replacement checkpoint](../../guides/stewardship-weekly-digests.md#per-admin-allocation-and-replacement-coverage-checkpoint)
 now has focused regression evidence, as does the
 [interval-completion/maintained-worker checkpoint](../../guides/stewardship-weekly-digests.md#interval-completion-and-maintained-preparation-checkpoint).
-Provider delivery, cleanup, manual
-reports, protected routes, runtime assembly and the required review/final
+The [provider-dispatch/Admin-recovery checkpoint](../../guides/stewardship-weekly-digests.md#provider-dispatch-and-admin-recovery-checkpoint)
+now has maintained-worker, recovery, browser-command and baseline evidence.
+Cleanup, manual reports, protected routes, runtime assembly and the required review/final
 validation remain open; BG-07.03 and BG-07.05 are not complete.
 
 ## BG-08: Export and graph workers

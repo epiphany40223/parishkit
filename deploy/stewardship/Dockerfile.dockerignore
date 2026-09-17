@@ -36,4 +36,5 @@
 !src/parishkit/stewardship/schema/weekly_capture.sql
 !src/parishkit/stewardship/schema/weekly_fanout.sql
 !src/parishkit/stewardship/schema/weekly_completion.sql
+!src/parishkit/stewardship/schema/weekly_dispatch.sql
 !src/parishkit/stewardship/schema/daily_dispatch.sql

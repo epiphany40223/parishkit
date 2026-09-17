@@ -17,7 +17,11 @@ from parishkit.stewardship.family_delivery import (
     FamilyDeliveryStatus,
     ProviderHealth,
 )
-from parishkit.stewardship.family_delivery_process import submit_digest, submit_family
+from parishkit.stewardship.family_delivery_process import (
+    submit_digest,
+    submit_family,
+    submit_weekly,
+)
 from parishkit.stewardship.provider_checks import ProviderCheckDrainFailure
 from parishkit.stewardship.runtime_background import mail_authority
 from parishkit.stewardship.storage import StorageInvariantError
@@ -291,7 +295,11 @@ def _execute(execution, *, private, public_origin, credential_path, circuit):
         if remaining > 0:
             launched = True
             submit = (
-                submit_digest if message.purpose == "daily_digest" else submit_family
+                submit_weekly
+                if message.purpose == "weekly_digest"
+                else submit_digest
+                if message.purpose == "daily_digest"
+                else submit_family
             )
             result = submit(
                 candidate,

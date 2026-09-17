@@ -32,6 +32,7 @@ def schema_sql():
                 "weekly_capture",
                 "weekly_fanout",
                 "weekly_completion",
+                "weekly_dispatch",
                 "schedule_reconciliation",
                 "exports",
                 "delivery_resolution",

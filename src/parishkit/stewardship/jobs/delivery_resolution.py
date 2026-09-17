@@ -43,7 +43,7 @@ def _prepare(message, *, general, public, public_origin):
     """Re-read source, template and retained credential references inside the lock."""
     if message is not None and message.purpose == "receipt":
         return _prepare_receipt(message)
-    if message is not None and message.purpose == "daily_digest":
+    if message is not None and message.purpose in {"daily_digest", "weekly_digest"}:
         return _prepare_digest(message)
     if (
         not isinstance(general, GeneralKeyring)
@@ -111,11 +111,15 @@ def _prepare_receipt(message):
 
 def _prepare_digest(message):
     """Request only a fixed database seed, never read or author the report body."""
+    queries = {
+        "daily_digest": "SELECT stewardship_daily_dispatch_live_v1(%s)",
+        "weekly_digest": "SELECT stewardship_weekly_dispatch_live_v1(%s)",
+    }
     with connection.cursor() as cursor:
-        cursor.execute("SELECT stewardship_daily_dispatch_live_v1(%s)", [message.pk])
+        cursor.execute(queries[message.purpose], [message.pk])
         if cursor.fetchone()[0] is not True:
-            raise PermissionError("Daily digest retry is not currently admitted.")
-    return {"daily_digest": True}
+            raise PermissionError("Digest retry is not currently admitted.")
+    return {message.purpose: True}
 
 
 def resolve_delivery(

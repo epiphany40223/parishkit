@@ -24,7 +24,7 @@ FIELDS = (
     "updated_at",
     "finished_at",
 )
-PURPOSES = ("initial", "reminder", "receipt", "daily_digest")
+PURPOSES = ("initial", "reminder", "receipt", "daily_digest", "weekly_digest")
 STATES = (
     "all",
     "delivery_unknown",

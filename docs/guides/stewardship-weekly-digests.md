@@ -248,3 +248,41 @@ closed permission-catalog test, 66 focused task/grant checks passed and the
 complete baseline passed 6,578 tests with 4,507 expected profile skips and the
 same two warnings in 61.13 seconds. Ruff check/format, Markdown checks and Django
 model-state drift checks pass.
+
+### Provider dispatch and Admin recovery checkpoint
+
+Weekly per-Admin messages now use the maintained MAIL worker and isolated weekly
+transport. Dispatch rechecks the current Admin, scope, pause and restore holds;
+SQL independently binds the current envelope and retained recipient subset.
+Neither the scheduler nor MAIL may read raw additional-information observations
+or complete submitted answers. Weekly mail never decrypts Family credentials or
+propagates cancellation to another Admin's message. Abandoned submissions become
+uncertain and cannot be automatically resent.
+
+The existing Admin delivery journal now accepts weekly decisions. Explicit
+external acceptance preserves failed provider history for metadata finalization;
+resend requires duplicate-risk acknowledgement. Retry preparation stores only a
+fixed, non-sendable seed. The restricted MAIL worker replaces that seed with the
+original retained subset before opening another attempt. Web cannot supply a
+report body or invoke the private seed directly. Preparation/finalization retry
+controls use CSRF-protected opaque commands, current Admin authority and exact
+latest-run identity without changing the report interval.
+
+Validation: 31 maintained-worker and existing dispatch regressions passed in
+89.38 seconds; 46 weekly/daily/Family recovery checks passed in 143.53 seconds;
+14 weekly/daily retry-control checks passed in 36.86 seconds. The 62-test
+dispatch/schema/grant/view run passed in 78.74 seconds. The credential-free
+baseline passed 6,578 tests with 4,544 expected profile skips and the same two
+client-library warnings in 67.67 seconds. Independent fresh installations against
+`ad24a4e` add four weekly dispatch functions and change only five intended shared
+dispatch/recovery functions; installed definitions, owners and ACLs were checked.
+Tables, constraints, triggers, indexes, policies and existing relation metadata
+are unchanged. No retained database was upgraded or reset.
+
+Runtime registration remains disabled until Testing cleanup and protected/manual
+report workflows are ready. Required review rounds and final acceptance remain
+open; this checkpoint does not complete BG-07.03 or BG-07.05.
+
+The final 16-case dispatch run passed in 48.11 seconds, including a paused
+Production report resuming after campaign close with its original private
+subset. Ruff check/format, Markdown checks and model-state drift checks pass.
