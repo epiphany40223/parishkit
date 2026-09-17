@@ -276,6 +276,14 @@ three browser engines, fresh schema and container isolation. Exact-head CI/DCO
 and protected delivery remain pending. Weekly digests, complete post-close
 resolution, the full BG-07.05 matrix and Gate 3 remain open.
 
+PR #47 landed as `e548809c` after all 24 exact-head CI jobs plus DCO and all
+24 merge-group jobs passed. Its
+[delivery receipt](../../guides/stewardship-daily-digests.md#protected-delivery)
+supersedes the pending note. BG-07.03 now starts on
+`pr/stewardship-weekly-digests` from that verified fresh `origin/main` tip;
+the [weekly increment guide](../../guides/stewardship-weekly-digests.md) records
+its scope and internal acceptance checkpoints.
+
 ## BG-08: Export and graph workers
 
 Scope and dependencies: [BG-08 work package](../../plans/stewardship/background-processing.md#bg-08-export-and-graph-workers).
