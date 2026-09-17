@@ -16,7 +16,7 @@ from parishkit.stewardship.web.content import (
 )
 from parishkit.stewardship.web.weekly_digest_content import validate_weekly_body
 
-from .outbox_validation import DeliveryIdentity, RenderInput
+from .outbox_validation import DeliveryIdentity, RenderInput, WeeklyRenderInput
 
 
 @dataclass(frozen=True, repr=False)
@@ -99,7 +99,10 @@ def render_digest_envelope(
         raise ValueError("Production mail cannot have a Testing override.")
     if identity.purpose == "weekly_digest":
         validate_weekly_body(html, text)
-    return RenderInput(
+    render_type = (
+        WeeklyRenderInput if identity.purpose == "weekly_digest" else RenderInput
+    )
+    return render_type(
         configuration_id=configuration_id,
         template_id=template_id,
         sender=sender,

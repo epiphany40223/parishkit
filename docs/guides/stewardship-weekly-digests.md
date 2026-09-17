@@ -152,3 +152,20 @@ grant correction run passed 139. The corrected complete baseline passed 6,536
 tests with 4,472 expected profile skips and the same two warnings in 62.06
 seconds. Ruff check/format and Django model-state drift checks pass. These are
 checkpoint results, not the increment's final coverage or review acceptance.
+
+### Weekly journal capacity checkpoint
+
+Weekly envelopes now retain their compiler's separately bounded 8 MiB HTML/text
+bodies through the actual delivery journal. Python rejects that larger render
+type for any other purpose, and PostgreSQL independently selects the limit from
+the owning message. Daily, Family and operational journal limits remain 1 MiB.
+Private render values are excluded from diagnostic representations.
+
+Validation: 183 focused renderer, envelope and transport tests passed in 1.17
+seconds, including a 5,000-Family report in Testing and Production. All 75
+PostgreSQL journal/boundary tests passed in 61.68 seconds, including direct SQL
+attempts to exceed or misapply the limit. Independent fresh installations of
+`efa058b` and this checkpoint differed only in the expected render-shape function
+body; its owner/ACL and every other catalog object were unchanged. No existing
+database was upgraded or reset. Weekly fanout and provider authority remain
+unfinished and disabled.

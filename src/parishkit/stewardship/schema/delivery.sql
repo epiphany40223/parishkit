@@ -702,10 +702,15 @@ CREATE FUNCTION public.stewardship_outbox_render_shape_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp AS $$
 DECLARE
     recipients jsonb;
+    body_limit integer;
 BEGIN
+    -- Only a weekly message may retain the separately bounded multi-Family
+    -- compiled report. Unknown owners and other purposes keep the original cap.
+    body_limit:=CASE WHEN EXISTS(SELECT 1 FROM stewardship_outbox_message
+        WHERE id=NEW.message_id AND purpose='weekly_digest') THEN 8388608 ELSE 1048576 END;
     IF NEW.subject ~ E'[\r\n]' OR btrim(NEW.subject)=''
        OR btrim(NEW.html)='' OR btrim(NEW.text)=''
-       OR octet_length(NEW.html)>1048576 OR octet_length(NEW.text)>1048576
+       OR octet_length(NEW.html)>body_limit OR octet_length(NEW.text)>body_limit
        OR NEW.sender ~ E'[\r\n]' OR NEW.sender NOT LIKE '%@%'
        OR NEW.reply_to ~ E'[\r\n]' OR NEW.reply_to NOT LIKE '%@%' THEN
         RAISE EXCEPTION 'Invalid delivery render' USING ERRCODE='23514';
