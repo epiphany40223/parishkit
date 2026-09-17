@@ -27,6 +27,11 @@ def add_export_grants(tables, columns, *, role):
     if role == "web":
         for name in ("request", "cancellation", "download_grant", "download_use"):
             tables["stewardship_export_" + name].add("INSERT")
+        # Statistics verify complete snapshot counts and scope permanent address
+        # refusals by organization. No source mutation or raw validation detail.
+        columns.setdefault("stewardship_source_snapshot", {}).setdefault(
+            "SELECT", set()
+        ).update({"counts", "organization_id"})
         tables.setdefault("stewardship_daily_fact_set", set()).add("SELECT")
         for name in ("daily_fact", "fact_pointer"):
             tables.setdefault("stewardship_" + name, set()).add("SELECT")

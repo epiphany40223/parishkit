@@ -43,6 +43,12 @@ validation, three review/fix rounds and protected delivery are complete in PR #4
 Full package
 acceptance remains open; the guide records the remaining consumer calculations.
 
+The [campaign statistics increment](../../guides/stewardship-campaign-statistics.md)
+continues the Phase 4 calculation prerequisites on top of verified PR #44.
+Current population, eligibility/deliverability, exact current/comparison money,
+source-coherent selection and focused tests are in progress. Age/Ministry report
+calculations and complete package acceptance remain Phase 5 work.
+
 ## RPT-03: Participation graph and campaign statistics
 
 Scope and dependencies: [RPT-03 work package](../../plans/stewardship/reports.md#rpt-03-participation-graph-and-campaign-statistics).

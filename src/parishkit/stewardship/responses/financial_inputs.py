@@ -143,7 +143,7 @@ def giving_observation(cursor, definition):
         return None
 
 
-def _family_total(records, period, *, family_duid, through_date=None):
+def family_total(records, period, *, family_duid, through_date=None):
     """Filter the mapped period, but reject foreign owners rather than hiding them."""
     if not isinstance(period, GivingPeriod) or type(family_duid) is not int:
         raise TypeError("A trusted Family and giving period are required.")
@@ -192,8 +192,8 @@ def financial_inputs(definition, observation, *, family_duid, pledges, contribut
     return FinancialInputs(
         family_duid,
         definition,
-        _family_total(pledges, definition.comparison, family_duid=family_duid),
-        _family_total(
+        family_total(pledges, definition.comparison, family_duid=family_duid),
+        family_total(
             contributions,
             definition.comparison,
             family_duid=family_duid,

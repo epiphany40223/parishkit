@@ -30,7 +30,15 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 def financial_source(
-    harness, *, covered=True, empty=False, modules=None, options=(), selected=()
+    harness,
+    *,
+    covered=True,
+    empty=False,
+    modules=None,
+    options=(),
+    selected=(),
+    extra_pledges=None,
+    extra_funds=None,
 ):
     """Use actual configuration/staging/promotion, with only synthetic money rows."""
     financial = configuration()["financial"] | {
@@ -60,6 +68,7 @@ def financial_source(
     values = harness.campaign.active_configuration.values
     definition = financial_definition(values, campaign_id=harness.campaign.pk)
     data = replace(response_source(), organization_id=12345)
+    data.funds.update(extra_funds or {})
     for family in data.families.values():
         if family.get("registeredOrganizationID") == 5:
             family["registeredOrganizationID"] = 12345
@@ -74,6 +83,7 @@ def financial_source(
             "302": record("-0.01", effective_date="2026-01-01"),
             "303": record("8888.00", effective_date="2026-01-01", family_key="2"),
         }
+    corpus["pledge"].update(extra_pledges or {})
     claim = acquire_source(**running_source_task(), phase="full")
     snapshot = begin_snapshot(claim, organization_id=12345, admit=permit)
     for kind, entities in corpus.items():
