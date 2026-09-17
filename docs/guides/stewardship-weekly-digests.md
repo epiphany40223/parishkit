@@ -386,3 +386,46 @@ The complete credential-free baseline passed 6,613 tests with 4,581 expected
 profile skips and the same two client-library warnings in 66.67 seconds. The
 weekly PostgreSQL suite plus schema and runtime grants passed all 176 checks in
 310.53 seconds. Required dual-model review rounds remain pending.
+
+### Review round one
+
+Session `20260917-184316-8f5b5c` reviewed the complete weekly increment through
+`85ba754` against merged `e548809c`. Five Claude shards and Codex completed
+without degradation. Codex reported no findings; Claude reported 42 raw
+findings, of which seven met the Medium-or-higher cutoff (two High, five Medium).
+The remaining 35 were Low and are not outstanding Medium-or-higher acceptance
+findings. Finalized disposition of the seven:
+
+| Finding | Disposition |
+| --- | --- |
+| High: fractional timestamp encoding breaks exact SQL capture | Fixed. Retained UTC timestamps now use the SQL JSON fractional precision. A real six-submission test covering one through six fractional digits failed before the change and passes afterward. |
+| High: imported NBSP/CR labels fail strict HTML validation | Fixed. Normalize display whitespace without changing retained source/configuration values. All three regression cases failed before the change and pass afterward. |
+| Medium: duplicated daily/weekly planner | Documented intentional isolation while weekly ownership stabilizes, including the obligation to check both planners when modifying shared budgeting/lineage behavior. Avoid expanding this correction into a reviewed daily-owner refactor. |
+| Medium: missing pagination coverage | Already covered by `test_weekly_presentation.py`: three pages, first item identities, row counts, page-scoped status reads and out-of-range denial. Existing HTTP tests cover authorization/barriers and browser tests cover navigation. Do not recreate 50+ persisted submissions merely to repeat the pure slicing test. |
+| Medium: missing SQL large-render coverage | False positive. `test_weekly_render_bounds_postgresql.py` already inserts a body above 1 MiB, checks the 8 MiB boundary and rejects oversized daily/operational renders through the real guard. |
+| Medium: full observation retained per weekly snapshot | Intentional self-contained selection evidence, including why other observed items were omitted. Terminal item text is excluded in SQL. The annual campaign snapshot cost is accepted for this increment; no demonstrated capacity failure justifies changing that audit contract during stabilization. |
+| Medium: all-revoked cohort advances empty boundary | Intentional immutable-cohort contract: recipient withdrawal is audited, not delivery, and newly added Admins do not reopen historical cohorts. The existing all-revoked test proves empty fulfillment; an explicit manual report can repeat current actionable items. |
+
+The focused correction run passed 138 pure compiler/selection/presentation
+tests in 0.71 seconds and the real fractional-instant capture regression in
+13.45 seconds. No SQL schema or privileges changed. Further review rounds remain
+required; no final acceptance or Gate 3 release is claimed.
+
+### Early CI and test-efficiency adjustment
+
+Draft PR #48 opened at `85ba754` so full CI runs alongside reviews instead of
+after duplicate local full-suite validation. Following the user's explicit
+direction, the broader local shared regression run was deliberately interrupted
+after 97 passing cases; Firefox was stopped and WebKit was not started. These
+are not complete acceptance receipts. Chromium had already completed all 274
+cases in 150.83 seconds.
+
+The separately committed test-efficiency change at `21ab665` follows the
+[measurement and relevance audit](stewardship-test-efficiency.md). It retains
+all cases and assertions while sharing Chromium/Firefox process startup,
+preserving isolated contexts and the WebKit-specific restart workaround, using
+bounded disposable CI database tmpfs, and cancelling superseded PR jobs.
+Focused fixture/CI tests passed 150 cases in 14.10 seconds; all 15 weekly browser
+cases passed in 19.33 seconds. Full speedup and acceptance evidence come from
+GitHub CI, not a second full local run. This change is included in the next
+focused review, not claimed as reviewed by the earlier round-one snapshot.

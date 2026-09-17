@@ -180,6 +180,10 @@ def render_weekly_digest(document, *, public_origin):
         "Text below is an excerpt. Open the protected report for full details "
         + "and current request status; emailed content reflects capture time.",
     )
+    # Imported/authored names can contain NBSP or CR. Collapse display-only
+    # whitespace before escaping so the strict HTML serializer agrees; retain
+    # the original identities unchanged in the immutable document/snapshot.
+    labels = tuple(" ".join(label.split()) for label in labels)
     # Quotes in text nodes are inert and the canonical serializer leaves them
     # literal. Attribute values below still escape quotes separately.
     html = "".join("<p>" + escape(label, quote=False) + "</p>" for label in labels)
@@ -193,8 +197,9 @@ def render_weekly_digest(document, *, public_origin):
         html += "<h2>" + heading + "</h2><ul>"
         text += "\n\n" + heading
         for row in rows:
+            family_name = " ".join(row.family_name.split())
             identity = (
-                f"{row.family_name} — Family DUID {row.family_duid:,}; submitted "
+                f"{family_name} — Family DUID {row.family_duid:,}; submitted "
                 + row.submitted_at.astimezone(zone).isoformat()
             )
             detail = (

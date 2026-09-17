@@ -1,4 +1,11 @@
-"""Bounded complete weekly outage coverage before any report input is captured."""
+"""Bounded complete weekly outage coverage before any report input is captured.
+
+The daily planner is intentionally kept independent during weekly stabilization:
+the two owners have different SQL proof functions and post-coverage phases.
+Changes to page budgeting or lineage traversal must be checked against both
+planners and their integration suites. A shared planner can follow once these
+contracts stabilize; do not merge their authority namespaces merely to dedupe.
+"""
 
 from django.db import connection
 from django.db.models import Q

@@ -40,6 +40,8 @@ from parishkit.stewardship.reports.weekly_selection import WeeklyHistory, select
 from .campaign_builders import campaign_clock, complete_empty_catchup
 from .test_background_grants_postgresql import task_login
 from .test_digest_schedule_planning_postgresql import add_digest
+from .test_response_revisit_postgresql import revisit
+from .test_response_submission_postgresql import submit
 from .test_taskrun_postgresql import act
 from .test_weekly_observation_postgresql import respond
 
@@ -162,6 +164,28 @@ def test_empty_capture_is_retained_but_does_not_claim_delivery(response_service)
         row = WeeklyDigestPreparation.objects.get(task_id=claim.run_id)
         assert ScheduleOccurrence.objects.get(pk=row.occurrence_id).state == "pending"
         assert not OutboxMessage.objects.exists()
+
+
+def test_capture_preserves_fractional_submission_instants(live_response_service):
+    """Canonical JSON retention must match SQL for every fractional precision."""
+    harness = live_response_service
+    for index, micros in enumerate((100000, 120000, 123000, 123400, 123450, 123456)):
+        with campaign_clock(datetime(2026, 10, 8, microsecond=micros, tzinfo=UTC)):
+            if index == 0:
+                respond(harness, f"Request {index}")
+            else:
+                harness, form, answers, _ = revisit(harness)
+                answers["additional_information"] = f"Request {index}"
+                submit(harness, form, answers)
+    with campaign_clock(INSTANT):
+        claim = prepare(harness)
+        with task_login(ServiceRole.WORKER, exact=True), work_transaction():
+            snapshot = capture_weekly_snapshot(claim)
+        assert len(snapshot.observation["items"]) == 6
+        assert (
+            retained_selection(snapshot).information[0].submitted_at.microsecond
+            == 123456
+        )
 
 
 @pytest.mark.parametrize("failed", [False, True])

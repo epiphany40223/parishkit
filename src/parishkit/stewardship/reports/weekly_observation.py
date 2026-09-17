@@ -102,7 +102,7 @@ def observation_document(observation):
         "campaign_id": str(observation.campaign_id),
         "source_id": str(observation.source_id),
         "configuration_id": str(observation.configuration_id),
-        "observed_at": observation.observed_at.isoformat(),
+        "observed_at": _sql_instant(observation.observed_at),
         "watermark": observation.watermark,
         "items": [
             [
@@ -110,7 +110,7 @@ def observation_document(observation):
                 item.sequence,
                 item.value.family_duid,
                 item.value.family_name,
-                item.value.submitted_at.isoformat(),
+                _sql_instant(item.value.submitted_at),
                 "current_actionable"
                 if type(item.value) is WeeklyInformation
                 else item.value.disposition,
@@ -119,3 +119,17 @@ def observation_document(observation):
             for item in observation.items
         ],
     }
+
+
+def _sql_instant(value):
+    """Match PostgreSQL JSON's UTC timestamp spelling, including fractional zeros.
+
+    Python's automatic ISO format retains six microsecond digits while SQL
+    trims trailing fractional zeros. The independent capture guard compares
+    item JSON exactly, so equivalent instants also need identical encodings.
+    Always start with a fractional component to avoid trimming whole seconds.
+    """
+    clock, offset = (
+        value.astimezone(UTC).isoformat(timespec="microseconds").rsplit("+", 1)
+    )
+    return clock.rstrip("0").rstrip(".") + "+" + offset

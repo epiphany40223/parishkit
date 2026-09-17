@@ -100,6 +100,29 @@ def test_only_excerpt_is_trimmed_and_manual_label_is_explicit():
     assert excerpt("short\n\ttext") == "short text"
 
 
+@pytest.mark.parametrize("whitespace", ["\u00a0", "\r", "\r\n"])
+def test_imported_label_whitespace_compiles_without_changing_retained_identity(
+    whitespace,
+):
+    """Source/configuration names must survive our strict compiled-mail boundary."""
+    value = document()
+    name = f"Example{whitespace}Family"
+    item = replace(value.information[0], family_name=name)
+    result = render(
+        replace(
+            value,
+            information=(item,),
+            parish_name=f"Example{whitespace}Parish",
+            campaign_name=f"Annual{whitespace}Campaign",
+        )
+    )
+    assert item.family_name == name
+    assert "Example Family" in result.html
+    assert "Example Parish" in result.html
+    assert "Annual Campaign" in result.html
+    validate_weekly_body(result.html, result.text)
+
+
 def test_empty_interval_requires_durable_empty_outcome_not_email():
     """An empty interval must be recorded without manufacturing a mail message."""
     value = replace(document(), information=(), corrections=())
