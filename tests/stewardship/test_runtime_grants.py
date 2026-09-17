@@ -56,6 +56,21 @@ def test_web_only_reads_source_owned_assignment_overlays():
     assert "stewardship_assignment_overlay" not in columns
 
 
+def test_statistics_metadata_is_read_only_and_not_given_to_downloads():
+    """Counts/organization checks add no source writes or raw validation reads."""
+    tables, columns = runtime_grants(ServiceRole.WEB)
+    metadata = columns["stewardship_source_snapshot"]
+    assert {"counts", "organization_id"} <= metadata["SELECT"]
+    assert "validation" not in metadata["SELECT"]
+    assert metadata["UPDATE"] == {"id"}
+    assert "stewardship_source_snapshot" not in tables
+    download_tables, download_columns = runtime_grants("download")
+    assert "stewardship_source_snapshot" not in download_tables
+    assert not {"counts", "organization_id"} & download_columns.get(
+        "stewardship_source_snapshot", {}
+    ).get("SELECT", set())
+
+
 def test_recipient_evidence_writes_are_closed_across_all_installed_identities():
     """Future unrelated services cannot accidentally inherit suppression writes."""
     writes = {"INSERT", "UPDATE", "DELETE", "TRUNCATE"}
