@@ -140,3 +140,32 @@ function bodies and four added/three changed cleanup triggers. All relations,
 columns, indexes, row policies, owners and grants remain unchanged. The actual
 installed function deltas were inspected before updating the catalog fixture;
 existing development databases were preserved.
+
+### Preparation and recipient-intent checkpoint
+
+The provider-free handler now advances the entire finite preparation under a
+maintained task lease. Shared-generation waits retain the original observation;
+fact unavailability retries within the task budget. Individual Admin outbox,
+render, task and recipient records commit as one unit in bounded pages. A
+deferred SQL check rejects messages without their recipient owner. SQL also
+rejects detached sender, recipient, Testing route and required report content.
+Retries preserve previous recipient bindings and rendered messages.
+
+Unrelated configuration edits no longer strand existing work: preparation
+follows its unchanged campaign dates/timezone and schedule revision, while
+capture uses the current configuration once and subsequently keeps its original
+facts. Public campaign substitutions are shared with Family mail without
+changing the latter's private placeholders or credential behavior.
+
+Validation: 13 focused worker/fanout checks, 10 worker/configuration/retry-order
+checks, 31 existing Family preparation/guard regressions and 17 schema checks
+passed. The credential-free baseline passed 6,345 tests with 4,326 profile skips
+and two existing warnings in 60.83 seconds. Ruff and Django model-state checks
+passed. Independent fresh schemas against `46063a3` show only two added
+functions, five changed function bodies and one new deferred constraint/trigger;
+all other catalog objects and grants remain unchanged.
+
+These handlers are not registered for runtime execution yet. Multi-Admin
+schedule reconciliation, accepted-delivery coverage, provider dispatch,
+authorized report links, Admin retry UI and final validation/reviews remain
+required before BG-07.02 can be marked complete or this PR can be delivered.

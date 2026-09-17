@@ -5,7 +5,6 @@ authority and never overlays a proposed census value onto recipient selection.
 """
 
 from dataclasses import dataclass, field
-from datetime import date
 from uuid import UUID
 
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
@@ -19,8 +18,8 @@ from parishkit.stewardship.source.version_models import (
     SnapshotMember,
 )
 from parishkit.stewardship.storage import StorageInvariantError
-from parishkit.stewardship.web.presentation import campaign_year, parish_date
 
+from .campaign_mail_values import campaign_values
 from .recipient_models import RecipientRefusal, RecipientRefusalResolution
 
 
@@ -122,21 +121,8 @@ def public_values(source, *, parish, campaign, public_origin):
     The assembled runtime owns validation of public_origin. No code, token or
     family-specific URL is accepted as a public substitution.
     """
-    financial = campaign["financial"]
-    start = parish_date(date.fromisoformat(financial["start"])) if financial else ""
-    end = parish_date(date.fromisoformat(financial["end"])) if financial else ""
     return {
-        "parish_name": parish["name"],
-        "parish_website": parish["website"],
-        "parish_phone": parish["phone"],
-        "campaign_name": campaign["name"],
-        "campaign_start": parish_date(date.fromisoformat(campaign["start_date"])),
-        "campaign_end": parish_date(date.fromisoformat(campaign["end_date"])),
-        "campaign_timezone": campaign["timezone"],
-        "campaign_year": campaign_year(campaign),
-        "financial_start": start,
-        "financial_end": end,
-        "financial_period": f"{start} – {end}" if financial else "",
+        **campaign_values(parish=parish, campaign=campaign),
         "family_name": source.family_name,
         "family_member_names": source.member_names,
         "generic_family_url": public_origin + "/",

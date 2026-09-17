@@ -39,13 +39,15 @@ pytestmark = pytest.mark.django_db(transaction=True)
 INSTANT = datetime(2026, 10, 10, tzinfo=UTC)
 
 
-def allocate():
+def allocate(*, claim_task=True):
     """Use actual scheduler authority, with only the first original slot present."""
     producer = DailyDigestProducer(uuid4())
     with task_login(ServiceRole.SCHEDULER, exact=True), scheduler_session() as guard:
         DigestScheduleProducer(uuid4(), limit=1)(guard)
         (status,) = producer(guard)
         assert producer(guard) == ()
+    if not claim_task:
+        return status
     with work_transaction():
         status = change_run(
             run_id=status.run_id,

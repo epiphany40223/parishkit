@@ -29,9 +29,11 @@ from .test_recipient_suppressions_postgresql import refresh
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def prepare(harness):
+def prepare(harness, *, configure=None):
     """Finish every discovery/coverage page through the real metadata services."""
     add_digest(harness.service.store, harness.campaign)
+    if configure is not None:
+        configure()
     claim = allocate()
     with task_login(ServiceRole.WORKER, exact=True):
         row = DailyDigestPreparation.objects.get(task_id=claim.run_id)

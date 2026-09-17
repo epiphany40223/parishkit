@@ -37,10 +37,13 @@ CREATE FUNCTION stewardship_daily_digest_scope_v1(
 ) RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
     SELECT EXISTS(SELECT 1 FROM stewardship_campaign c
       JOIN stewardship_campaign_configuration p ON p.id=c.active_configuration_id
+      JOIN stewardship_campaign_configuration prepared ON prepared.id=$3
+        AND prepared.record_id=c.id AND prepared.timezone=p.timezone
+        AND prepared.start_date=p.start_date AND prepared.end_date=p.end_date
       JOIN stewardship_system_configuration r ON r.current_campaign_id=c.id
       JOIN stewardship_campaign_credentials k ON k.campaign_id=c.id
       JOIN stewardship_schedule_definition d ON d.campaign_id=c.id
-      WHERE c.id=$1 AND p.id=$3 AND d.current_revision_id=$2
+      WHERE c.id=$1 AND d.current_revision_id=$2
         AND d.kind='daily_digest' AND r.mode=$4
         AND NOT r.restore_review_required AND NOT k.go_live_gate
         AND NOT EXISTS(SELECT 1 FROM stewardship_campaign_work_gate g
@@ -200,7 +203,8 @@ DECLARE p stewardship_daily_digest_preparation%ROWTYPE;
         o stewardship_schedule_occurrence%ROWTYPE;
         selected stewardship_schedule_occurrence%ROWTYPE;
 BEGIN
-    IF relation_name NOT IN ('stewardship_schedule_occurrence','stewardship_occurrence_transition')
+    IF relation_name NOT IN ('stewardship_schedule_occurrence','stewardship_occurrence_transition',
+        'stewardship_outbox_message','stewardship_outbox_render','stewardship_outbox_event')
     THEN RETURN false; END IF;
     IF NOT EXISTS(SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
         AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
@@ -220,7 +224,11 @@ BEGIN
       WHERE e.id=(proposed->>'correlation_id')::uuid AND e.action='claim' AND e.state='running'
         AND e.worker_id=(proposed->>'actor_id')::uuid AND e.fence=t.fence
         AND stewardship_daily_digest_live_v1(preparation.id,t.id,e.fence,e.worker_id);
-    IF p.id IS NULL OR proposed->>'target'<>'admins'
+    IF p.id IS NULL THEN RETURN false; END IF;
+    IF relation_name IN ('stewardship_outbox_message','stewardship_outbox_render','stewardship_outbox_event') THEN
+        RETURN stewardship_daily_digest_mail_write_v1(p.id,relation_name,proposed,prior);
+    END IF;
+    IF proposed->>'target'<>'admins'
       OR (proposed->>'definition_id')::uuid<>p.definition_id
       OR (proposed->>'revision_id')::uuid<>p.revision_id OR proposed->>'mode'<>p.mode
       OR (proposed->>'due_at')::timestamptz>p.cutoff
@@ -277,7 +285,8 @@ BEGIN
     SELECT * INTO p FROM stewardship_daily_digest_preparation WHERE id=NEW.preparation_id;
     observation:=NEW.statistics_inputs::jsonb;
     IF p.phase IS DISTINCT FROM 'facts' OR NEW.campaign_id<>p.campaign_id
-      OR NEW.timezone_configuration_id<>p.campaign_configuration_id
+      OR NOT EXISTS(SELECT 1 FROM stewardship_campaign c
+          WHERE c.id=p.campaign_id AND c.active_configuration_id=NEW.timezone_configuration_id)
       OR NEW.actor_id IS DISTINCT FROM NEW.worker_id
       OR NOT stewardship_daily_digest_live_v1(p.id,NEW.run_id,NEW.fence,NEW.worker_id)
       OR NOT EXISTS(SELECT 1 FROM stewardship_system_configuration
@@ -373,20 +382,98 @@ BEGIN
         JOIN stewardship_daily_digest_snapshot s ON s.id=r.snapshot_id
         JOIN stewardship_daily_digest_preparation p ON p.id=s.preparation_id
         JOIN stewardship_task_run t ON t.root_id=p.task_id
+        JOIN stewardship_task_event e ON e.run_id=t.id AND e.action='claim'
+            AND e.fence=t.fence AND e.worker_id=t.worker_id AND e.state='running'
         JOIN stewardship_outbox_message m ON m.id=NEW.outbox_id
         JOIN stewardship_outbox_render content ON content.id=m.render_id
         WHERE r.id=NEW.ready_id AND p.phase='fanout' AND r.recipients ? NEW.address
           AND t.worker_id=NEW.actor_id
+          AND e.id=NEW.correlation_id AND e.id=m.correlation_id AND m.actor_id=NEW.actor_id
           AND stewardship_daily_digest_live_v1(p.id,t.id,t.fence,t.worker_id)
           AND m.semantic_key=NEW.id AND m.scope_id=s.campaign_id
           AND m.campaign_id=s.campaign_id AND m.family_id IS NULL
           AND m.purpose='daily_digest' AND m.mode=p.mode AND m.credential_namespace='none'
-          AND m.state='pending' AND content.intended_recipients=jsonb_build_array(NEW.address))
+          AND m.state='pending' AND content.intended_recipients=jsonb_build_array(NEW.address)
+          AND right(content.html,length(r.html))=r.html
+          AND right(content.text,length(r.text))=r.text)
     THEN RAISE EXCEPTION 'Daily recipient requires its own exact compiled message' USING ERRCODE='23514'; END IF;
     RETURN NEW;
 END $$;
 CREATE TRIGGER daily_digest_recipient_insert BEFORE INSERT ON stewardship_daily_digest_recipient
 FOR EACH ROW EXECUTE FUNCTION stewardship_daily_digest_recipient_guard_v1();
+
+CREATE FUNCTION stewardship_daily_digest_mail_write_v1(
+    preparation uuid,relation_name text,proposed jsonb,prior jsonb
+) RETURNS boolean LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE p stewardship_daily_digest_preparation%ROWTYPE;
+        r stewardship_daily_digest_ready%ROWTYPE;
+        m stewardship_outbox_message%ROWTYPE;
+        runtime stewardship_system_configuration%ROWTYPE;
+        template uuid; email jsonb;
+BEGIN
+    -- The caller has already verified the exact live claim event and work lock.
+    -- This helper admits allocation only, never later provider state changes.
+    SELECT * INTO p FROM stewardship_daily_digest_preparation WHERE id=preparation;
+    SELECT ready.* INTO r FROM stewardship_daily_digest_ready ready
+        JOIN stewardship_daily_digest_snapshot s ON s.id=ready.snapshot_id
+        WHERE s.preparation_id=p.id;
+    IF prior IS NOT NULL OR p.phase<>'fanout' OR r.id IS NULL THEN RETURN false; END IF;
+    IF relation_name='stewardship_outbox_message' THEN
+        RETURN proposed->>'purpose'='daily_digest' AND proposed->>'mode'=p.mode
+            AND (proposed->>'scope_id')::uuid=p.campaign_id
+            AND (proposed->>'campaign_id')::uuid=p.campaign_id
+            AND proposed->>'family_id' IS NULL AND proposed->>'credential_namespace'='none'
+            AND proposed->>'state'='pending' AND proposed->>'action'='created'
+            AND (proposed->>'version')::bigint=1;
+    END IF;
+    SELECT * INTO m FROM stewardship_outbox_message WHERE id=(proposed->>'message_id')::uuid;
+    IF m.id IS NULL OR m.purpose<>'daily_digest' OR m.campaign_id<>p.campaign_id
+        OR m.mode<>p.mode OR m.state<>'pending' OR m.version<>1
+        OR m.correlation_id IS DISTINCT FROM (proposed->>'correlation_id')::uuid
+        OR m.actor_id IS DISTINCT FROM (proposed->>'actor_id')::uuid THEN RETURN false; END IF;
+    IF relation_name='stewardship_outbox_event' THEN
+        RETURN proposed->>'action'='created' AND proposed->>'state'='pending'
+            AND (proposed->>'version')::bigint=1;
+    END IF;
+    IF relation_name<>'stewardship_outbox_render' THEN RETURN false; END IF;
+    SELECT * INTO runtime FROM stewardship_system_configuration;
+    SELECT content.id INTO template FROM stewardship_content_version content
+        JOIN stewardship_schedule_revision revision ON revision.id=p.revision_id
+        WHERE content.configuration_id=runtime.active_configuration_id
+          AND content.campaign_id=p.campaign_id AND content.kind='email'
+          AND content.record_id=(revision.values->>'template_version')::uuid;
+    SELECT settings INTO email FROM stewardship_applied_integration
+        WHERE configuration_id=runtime.active_configuration_id AND kind='email';
+    RETURN (proposed->>'id')::uuid=m.render_id
+        AND (proposed->>'configuration_id')::uuid=runtime.active_configuration_id
+        AND (proposed->>'template_id')::uuid=template
+        AND proposed->>'sender'=email->>'sender' AND proposed->>'reply_to'=email->>'reply_to'
+        AND jsonb_array_length(proposed->'intended_recipients')=1
+        AND r.recipients ? (proposed->'intended_recipients'->>0)
+        AND proposed->'routed_recipients'=CASE p.mode WHEN 'testing'
+            THEN jsonb_build_array(runtime.testing_recipient) ELSE proposed->'intended_recipients' END
+        AND right(proposed->>'html',length(r.html))=r.html
+        AND right(proposed->>'text',length(r.text))=r.text;
+END $$;
+-- Invoker-only predicate: execution cannot confer the private SELECT privileges
+-- required by its lookups, and it grants no mutation or provider authority.
+
+CREATE FUNCTION stewardship_daily_digest_mail_commit_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+BEGIN
+    IF NEW.purpose='daily_digest' AND EXISTS(
+        SELECT 1 FROM stewardship_task_event e JOIN stewardship_task_run t ON t.id=e.run_id
+        WHERE e.id=NEW.correlation_id AND t.task_type='daily_digest_prepare')
+      AND NOT EXISTS(SELECT 1 FROM stewardship_daily_digest_recipient
+          WHERE id=NEW.semantic_key AND outbox_id=NEW.id
+            AND actor_id=NEW.actor_id AND correlation_id=NEW.correlation_id) THEN
+        RAISE EXCEPTION 'Daily message requires atomic recipient ownership' USING ERRCODE='23514';
+    END IF;
+    RETURN NULL;
+END $$;
+REVOKE ALL ON FUNCTION stewardship_daily_digest_mail_commit_v1() FROM PUBLIC;
+CREATE CONSTRAINT TRIGGER daily_digest_mail_complete AFTER INSERT ON stewardship_outbox_message
+DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION stewardship_daily_digest_mail_commit_v1();
 
 CREATE FUNCTION stewardship_daily_digest_pin_retained_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$

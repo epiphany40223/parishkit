@@ -31,9 +31,9 @@ from .test_daily_digest_planning_postgresql import INSTANT
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def build(harness):
+def build(harness, *, configure=None):
     """Run the actual pinned input and fact owners, leaving mail unallocated."""
-    claim = prepare(harness)
+    claim = prepare(harness, configure=configure)
     with task_login(ServiceRole.WORKER, exact=True):
         with work_transaction():
             capture_daily_snapshot(claim)

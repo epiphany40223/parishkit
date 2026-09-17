@@ -12,6 +12,7 @@ from django.db import connection
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.family_schedule_planning import _planning_scope
+from parishkit.stewardship.campaigns.models import CampaignConfiguration
 from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
 from parishkit.stewardship.campaigns.work_locks import (
     require_work_order,
@@ -61,7 +62,13 @@ def current_preparation(row):
         row.phase in TERMINAL_PHASES
         or row.mode != scope.runtime.mode
         or row.rehearsal_epoch_id != (epoch.pk if epoch else None)
-        or row.campaign_configuration_id != scope.campaign.active_configuration_id
+        or not CampaignConfiguration.objects.filter(
+            pk=row.campaign_configuration_id,
+            record_id=row.campaign_id,
+            timezone=scope.campaign.active_configuration.timezone,
+            start_date=scope.campaign.active_configuration.start_date,
+            end_date=scope.campaign.active_configuration.end_date,
+        ).exists()
         or not ScheduleDefinition.objects.filter(
             pk=row.definition_id,
             campaign_id=row.campaign_id,

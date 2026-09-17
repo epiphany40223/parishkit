@@ -53,7 +53,7 @@ def capture_daily_snapshot(claim):
         statistics.source_id is None
         or statistics.active is None
         or statistics.campaign_id != preparation.campaign_id
-        or statistics.configuration_id != preparation.campaign_configuration_id
+        or statistics.configuration_id != scope.campaign.active_configuration_id
     ):
         raise StatisticsUnavailable("Daily statistics require complete exact inputs.")
     snapshot = DailyDigestSnapshot.objects.create(
