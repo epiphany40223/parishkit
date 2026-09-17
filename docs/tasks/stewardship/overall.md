@@ -460,8 +460,9 @@ PR #44 subsequently merged as `80754a49` after all 24 exact-head jobs plus DCO
 passed. The merge is verified on freshly fetched `origin/main`. Branch
 `pr/stewardship-campaign-statistics` now implements the
 [statistics calculation increment](../../guides/stewardship-campaign-statistics.md)
-before BG-07. Its own validation/reviews and protected delivery remain pending;
-the later report UI and Gate 3 are not released.
+before BG-07. Implementation, local validation and three successful dual-source
+review/fix rounds are complete; final-head CI/DCO and protected delivery remain
+pending. The later report UI and Gate 3 are not released.
 
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).

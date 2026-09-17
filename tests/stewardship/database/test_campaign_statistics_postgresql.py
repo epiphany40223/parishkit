@@ -439,8 +439,9 @@ def test_inactive_family_refusal_and_head_address_are_not_detached(
     assert calculate_statistics(inputs, include_inactive=True).inactive.families == 1
 
 
+@pytest.mark.parametrize("corrected_email", ["corrected@example.org", "invalid-text"])
 def test_stale_unresolved_address_is_not_detached_for_an_active_family(
-    live_response_service,
+    live_response_service, corrected_email
 ):
     """Even late refusal evidence must match the selected current head address."""
     from .response_builders import response_source
@@ -449,7 +450,7 @@ def test_stale_unresolved_address_is_not_detached_for_an_active_family(
     harness = live_response_service
     event = refused(harness)
     corrected = response_source()
-    corrected.members[3]["emailAddress"] = "corrected@example.org"
+    corrected.members[3]["emailAddress"] = corrected_email
     refresh(harness, corrected)
     # Evidence can arrive after the source changed; its original immutable
     # address remains valid history but is not a current statistics input.
@@ -457,7 +458,9 @@ def test_stale_unresolved_address_is_not_detached_for_an_active_family(
     inputs = capture_statistics(harness.campaign.pk)
     assert inputs.document()["refusals"] == []
     assert "valid@example.org" not in inputs.canonical
-    assert calculate_statistics(inputs).active.deliverable_email == 1
+    assert calculate_statistics(inputs).active.deliverable_email == int(
+        corrected_email == "corrected@example.org"
+    )
 
 
 def test_higher_testing_sequence_cannot_override_first_live_observation(

@@ -40,6 +40,11 @@ staging, emitting canonical integer strings and ISO dates in
 contract; it does not admit arbitrary external financial payloads. Valid head
 addresses are projected once for refusal matching. Invalid source email text
 and heads of email-ineligible Families are never detached.
+Eligibility flags and contact shapes likewise rely on normalized promoted
+source. Privacy filtering is not a second full-source schema validator: omitted
+contacts cannot independently prove a false eligibility flag or diagnose an
+invalid excluded email entry. The retained projection is still checked before
+calculation; the source refresh owns validating the complete source document.
 
 The pure calculation service distinguishes eligible email from deliverable
 email and supplies their exact complement. Current active Families are the
@@ -165,3 +170,43 @@ statistics/source PostgreSQL tests in 58.67 seconds and the complete baseline
 (6,091 passed, 4,227 profile skips, two existing warnings) in 60.90 seconds.
 Repository Ruff/formatting, guide Markdown and whitespace checks pass. A third
 independent round and final-head protected delivery remain required.
+
+## Third independent review and local completion
+
+Round 3, `20260916-233637-40a95e`, reviewed `bdf505a..daf8de3` with the shared
+financial/source context. Finalization was repeated after both artifacts were
+delivered; the complete result includes both successful reviewers, no failures,
+degradations or mismatches, one Codex Medium and three Claude Low findings.
+
+1. The Medium normalized-giving contract mismatch is accepted and fixed. The
+   real loader includes integer `schema_version=1`, but the shared totals helper
+   and synthetic financial fixtures previously omitted it. The helper now
+   requires that exact normalized schema, and the fixture reproduces it. A
+   regression runs the real giving decoder/normalizer through both form totals
+   and statistics, while malformed/missing schema versions remain rejected.
+   This also fixes the same shared-consumer defect in financial form totals.
+2. The two Low full-source cross-check concerns are addressed by documenting
+   the actual boundary: the promoted normalizer owns complete source validation;
+   a privacy-minimal detached projection cannot revalidate omitted fields.
+   Do not copy invalid email text solely to repeat source validation downstream.
+3. The Low refusal coverage concern is partly accepted: a real late refusal for
+   an address whose Family has become email-ineligible is now excluded by an
+   actual-source regression. An invalid-text refusal fixture is rejected because
+   `record_refusal` requires canonical email and exact intended/routed provider
+   evidence; bypassing that owner would fabricate an inadmissible state.
+
+Final correction validation passes 134 focused financial/statistics/source
+unit tests in 0.43 seconds and all 64 statistics, financial-source and financial-
+response PostgreSQL tests in 106.90 seconds. The full baseline passes 6,095 tests
+in 64.49 seconds (4,228 explicit profile skips, two existing warnings).
+Repository Ruff/formatting, tracked Markdown and whitespace checks pass.
+All three review/fix rounds are complete with no accepted Medium-or-higher
+finding left open and no High/Critical in the final round. Final-head CI/DCO
+and the protected merge queue still control delivery.
+
+The first three implementation/correction commits are consolidated into
+`9d6ea7d`, whose tree is verified identical to reviewed `daf8de3`; the latter is
+retained on local branch `review/stewardship-statistics-round3-daf8de3`.
+The normalized financial-record correction is a separate logical signed-off
+commit. No review-only history is intended for merge, and no schema migration
+or historical compatibility work is included.

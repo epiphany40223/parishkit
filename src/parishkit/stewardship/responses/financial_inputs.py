@@ -152,7 +152,16 @@ def family_total(records, period, *, family_duid, through_date=None):
         for row in records:
             if (
                 type(row) is not dict
-                or set(row) != {"family_key", "fund_key", "amount", "effective_date"}
+                or set(row)
+                != {
+                    "schema_version",
+                    "family_key",
+                    "fund_key",
+                    "amount",
+                    "effective_date",
+                }
+                or type(row["schema_version"]) is not int
+                or row["schema_version"] != 1
                 or row["family_key"] != str(family_duid)
             ):
                 raise ValueError

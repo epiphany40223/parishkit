@@ -46,8 +46,10 @@ acceptance remains open; the guide records the remaining consumer calculations.
 The [campaign statistics increment](../../guides/stewardship-campaign-statistics.md)
 continues the Phase 4 calculation prerequisites on top of verified PR #44.
 Current population, eligibility/deliverability, exact current/comparison money,
-source-coherent selection and focused tests are in progress. Age/Ministry report
-calculations and complete package acceptance remain Phase 5 work.
+source-coherent selection and focused tests have passed local validation and
+three dual-source review/fix rounds. Protected delivery remains pending.
+Age/Ministry report calculations and complete package acceptance remain Phase 5
+work.
 
 ## RPT-03: Participation graph and campaign statistics
 
@@ -79,7 +81,8 @@ protected merge-group jobs passed. The
 [scheduled verification increment](../../guides/stewardship-fact-verification.md)
 has completed implementation and three successful dual-source review/fix rounds
 on `pr/stewardship-fact-verification`, with complete sharded coverage evidence
-and passing final focused validation. Protected PR delivery remains pending.
+and passing final focused validation. PR #44 merged as `80754a49` after all
+24 exact-head jobs plus DCO and all 24 protected merge-group jobs passed.
 It does not complete the later statistics, digest or interactive UI owners.
 All package checkboxes remain open.
 

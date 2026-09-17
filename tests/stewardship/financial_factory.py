@@ -51,6 +51,7 @@ def cursor(definition):
 def record(amount="1.00", **changes):
     """Only Family-level canonical giving fields, not raw provider transactions."""
     return {
+        "schema_version": 1,
         "family_key": "1",
         "fund_key": "9",
         "amount": amount,
