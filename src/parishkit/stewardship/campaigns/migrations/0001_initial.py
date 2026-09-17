@@ -3612,6 +3612,10 @@ class Migration(migrations.Migration):
                                         "submission_receipts",
                                         "submissions",
                                         "prior_inventory_targets",
+                                        "daily_digest_recipients",
+                                        "daily_digest_ready",
+                                        "daily_digest_snapshots",
+                                        "daily_digest_fact_pins",
                                     ]
                                 ),
                                 name="production_target_category",

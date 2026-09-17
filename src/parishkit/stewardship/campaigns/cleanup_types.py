@@ -25,6 +25,10 @@ class CleanupCategory(StrEnum):
     RECEIPT = "submission_receipts"
     SUBMISSION = "submissions"
     PRIOR_INVENTORY = "prior_inventory_targets"
+    DIGEST_RECIPIENT = "daily_digest_recipients"
+    DIGEST_READY = "daily_digest_ready"
+    DIGEST_SNAPSHOT = "daily_digest_snapshots"
+    DIGEST_FACT_PIN = "daily_digest_fact_pins"
 
 
 @dataclass(frozen=True, repr=False)

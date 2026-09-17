@@ -155,7 +155,7 @@ BEGIN
           OR NOT stewardship_daily_digest_page_v1(to_jsonb(OLD),to_jsonb(NEW))
           OR (OLD.occurrence_id IS NOT NULL AND NEW.occurrence_id IS DISTINCT FROM OLD.occurrence_id)
           OR (NEW.phase IN ('facts','fanout') AND NEW.occurrence_id IS NULL)
-          OR (NEW.occurrence_id IS NOT NULL AND NOT EXISTS(
+          OR (NEW.phase<>'cancelled' AND NEW.occurrence_id IS NOT NULL AND NOT EXISTS(
               SELECT 1 FROM stewardship_schedule_occurrence o
               WHERE o.id=NEW.occurrence_id AND o.definition_id=NEW.definition_id
                 AND o.revision_id=NEW.revision_id AND o.mode=NEW.mode
@@ -393,6 +393,16 @@ LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
     IF OLD.parent_kind='digest' THEN
         IF EXISTS(SELECT 1 FROM stewardship_daily_digest_snapshot WHERE id=OLD.parent_id) THEN
+            IF TG_OP='DELETE' THEN
+                IF TG_TABLE_NAME='stewardship_source_pin'
+                    AND stewardship_cleanup_effect_v1('source_pins',OLD.id)
+                    AND stewardship_cleanup_effect_v1('daily_digest_snapshots',OLD.parent_id) THEN
+                    RETURN OLD;
+                ELSIF TG_TABLE_NAME='stewardship_fact_pin'
+                    AND stewardship_cleanup_effect_v1('daily_digest_fact_pins',OLD.id) THEN
+                    RETURN OLD;
+                END IF;
+            END IF;
             RAISE EXCEPTION 'Retained daily report still requires its exact inputs' USING ERRCODE='23514';
         END IF;
     END IF;
@@ -404,11 +414,29 @@ FOR EACH ROW EXECUTE FUNCTION stewardship_daily_digest_pin_retained_v1();
 CREATE TRIGGER daily_digest_facts_retained BEFORE UPDATE OR DELETE ON stewardship_fact_pin
 FOR EACH ROW EXECUTE FUNCTION stewardship_daily_digest_pin_retained_v1();
 
--- Retention release is deliberately not a generic DELETE privilege. The
--- campaign cleanup owner must remove dependent private children explicitly.
-DO $$ DECLARE name text; BEGIN
-    FOREACH name IN ARRAY ARRAY['snapshot','ready','recipient'] LOOP
+-- Retention release is deliberately not a generic DELETE privilege. Only the
+-- private checkpoint effect may delete one exact inventoried Testing record.
+CREATE FUNCTION stewardship_daily_digest_immutable_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+BEGIN
+    IF TG_OP='DELETE' AND stewardship_cleanup_effect_v1(TG_ARGV[0],OLD.id) THEN
+        RETURN OLD;
+    END IF;
+    RAISE EXCEPTION 'Daily report records are immutable outside owned cleanup' USING ERRCODE='23514';
+END $$;
+REVOKE ALL ON FUNCTION stewardship_daily_digest_immutable_v1() FROM PUBLIC;
+
+DO $$ DECLARE item text[]; BEGIN
+    FOREACH item SLICE 1 IN ARRAY ARRAY[
+        ['snapshot','daily_digest_snapshots'],['ready','daily_digest_ready'],
+        ['recipient','daily_digest_recipients']] LOOP
         EXECUTE format('CREATE TRIGGER daily_digest_immutable BEFORE UPDATE OR DELETE ON %I '
-            'FOR EACH ROW EXECUTE FUNCTION stewardship_export_immutable_v1()', 'stewardship_daily_digest_' || name);
+            'FOR EACH ROW EXECUTE FUNCTION stewardship_daily_digest_immutable_v1(%L)',
+            'stewardship_daily_digest_' || item[1],item[2]);
+        EXECUTE format('CREATE TRIGGER production_cleanup_protect BEFORE DELETE ON %I '
+            'FOR EACH ROW EXECUTE FUNCTION stewardship_cleanup_protect_v1(%L)',
+            'stewardship_daily_digest_' || item[1],item[2]);
     END LOOP;
 END $$;
+CREATE TRIGGER production_cleanup_protect BEFORE DELETE ON stewardship_fact_pin
+FOR EACH ROW EXECUTE FUNCTION stewardship_cleanup_protect_v1('daily_digest_fact_pins');

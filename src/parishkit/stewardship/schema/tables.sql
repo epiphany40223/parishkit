@@ -2520,7 +2520,9 @@ CREATE TABLE public.stewardship_production_target (
         ('proposals'::varchar)::text,('rehearsal_credentials'::varchar)::text,('rehearsal_macs'::varchar)::text,
         ('schedule_fulfillments'::varchar)::text,('source_pins'::varchar)::text,
         ('submission_receipts'::varchar)::text,('submissions'::varchar)::text,
-        ('prior_inventory_targets'::varchar)::text
+        ('prior_inventory_targets'::varchar)::text,
+        ('daily_digest_recipients'::varchar)::text,('daily_digest_ready'::varchar)::text,
+        ('daily_digest_snapshots'::varchar)::text,('daily_digest_fact_pins'::varchar)::text
     ]))
 );
 CREATE INDEX production_target_correlation ON public.stewardship_production_target (correlation_id);

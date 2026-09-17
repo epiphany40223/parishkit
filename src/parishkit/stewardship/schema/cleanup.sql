@@ -20,6 +20,10 @@ RETURNS text LANGUAGE sql IMMUTABLE SET search_path TO pg_catalog, public, pg_te
         WHEN 'submission_receipts' THEN 'stewardship_submission_receipt'
         WHEN 'submissions' THEN 'stewardship_submission'
         WHEN 'prior_inventory_targets' THEN 'stewardship_production_target'
+        WHEN 'daily_digest_recipients' THEN 'stewardship_daily_digest_recipient'
+        WHEN 'daily_digest_ready' THEN 'stewardship_daily_digest_ready'
+        WHEN 'daily_digest_snapshots' THEN 'stewardship_daily_digest_snapshot'
+        WHEN 'daily_digest_fact_pins' THEN 'stewardship_fact_pin'
         ELSE NULL END
 $$;
 REVOKE ALL ON FUNCTION public.stewardship_cleanup_relation_v1(text) FROM PUBLIC;
@@ -127,7 +131,19 @@ BEGIN
             WHEN 'family_sessions' THEN NOT EXISTS (
                 SELECT 1 FROM public.stewardship_family_form_baseline WHERE family_session_id=i.target_id)
             WHEN 'source_pins' THEN NOT EXISTS (
-                SELECT 1 FROM public.stewardship_source_pin WHERE id=i.target_id AND parent_kind='form_baseline')
+                SELECT 1 FROM public.stewardship_source_pin WHERE id=i.target_id
+                  AND (parent_kind='form_baseline' OR (parent_kind='digest'
+                    AND EXISTS(SELECT 1 FROM public.stewardship_daily_digest_snapshot WHERE id=parent_id))))
+            WHEN 'daily_digest_ready' THEN NOT EXISTS (
+                SELECT 1 FROM public.stewardship_daily_digest_recipient WHERE ready_id=i.target_id)
+            WHEN 'daily_digest_fact_pins' THEN NOT EXISTS (
+                SELECT 1 FROM public.stewardship_fact_pin p
+                JOIN public.stewardship_daily_digest_ready r ON r.snapshot_id=p.parent_id
+                WHERE p.id=i.target_id)
+            WHEN 'daily_digest_snapshots' THEN NOT EXISTS (
+                SELECT 1 FROM public.stewardship_daily_digest_ready WHERE snapshot_id=i.target_id)
+                AND NOT EXISTS (SELECT 1 FROM public.stewardship_fact_pin
+                    WHERE parent_kind='digest' AND parent_id=i.target_id)
             WHEN 'proposals' THEN NOT EXISTS (
                 SELECT 1 FROM public.stewardship_proposed_change WHERE superseded_by_id=i.target_id)
             WHEN 'ministry_requests' THEN NOT EXISTS (
@@ -140,6 +156,7 @@ BEGIN
             WHEN 'outbox_messages' THEN NOT EXISTS (
                 SELECT 1 FROM public.stewardship_outbox_event WHERE message_id=i.target_id)
                 AND NOT EXISTS (SELECT 1 FROM public.stewardship_submission_receipt WHERE outbox_id=i.target_id)
+                AND NOT EXISTS (SELECT 1 FROM public.stewardship_daily_digest_recipient WHERE outbox_id=i.target_id)
                 AND NOT EXISTS (SELECT 1 FROM public.stewardship_outbox_render r
                     JOIN public.stewardship_outbox_message m ON m.id=r.message_id
                     WHERE m.id=i.target_id AND r.id<>m.render_id)
@@ -184,6 +201,17 @@ BEGIN
                 companion := candidate.target_id;
                 companion_category := 'session_data';
                 unit_size := 2;
+            END IF;
+        WHEN 'daily_digest_snapshots' THEN
+            -- A snapshot and its source pin form one indivisible private unit.
+            -- Removing the snapshot alone would orphan the inventory selector.
+            SELECT id INTO companion FROM public.stewardship_source_pin
+                WHERE parent_kind='digest' AND parent_id=candidate.target_id;
+            IF companion IS NOT NULL THEN
+                companion_category := 'source_pins';
+                unit_size := 2;
+                eligible := EXISTS (SELECT 1 FROM public.stewardship_production_target i
+                    WHERE i.request_id=request_uuid AND i.category=companion_category AND i.target_id=companion);
             END IF;
         WHEN 'outbox_messages' THEN
             SELECT render_id INTO companion FROM public.stewardship_outbox_message WHERE id=candidate.target_id;

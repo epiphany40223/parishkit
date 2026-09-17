@@ -114,3 +114,29 @@ protect its exact inputs, and permit terminal non-interactive generation
 recovery. Their actual installed definitions were compared before updating the
 strict catalog fingerprint. Model declarations match the installed schema.
 No retained development database was upgraded, reset or deleted.
+
+### Testing cleanup checkpoint
+
+The closed cleanup inventory now includes Testing digest recipients, compiled
+content, private observations and their fact/source pins. Dependency-aware
+batches remove child records first and delete an observation with its source
+pin as an indivisible two-record unit. Shared live report facts are not Testing
+data and remain available to their other owners. Direct deletion still fails;
+only the journaled cleanup checkpoint can remove its exact inventoried records.
+Opaque preparation history remains so stale workers can cancel safely after
+the private data and selected occurrence have gone. Activation independently
+rejects retained Testing observations.
+
+Validation: 13 real PostgreSQL digest/batch checks, 37 existing inventory,
+request, worker and bounded-scan regressions, and 30 schema/planning/recovery
+checks passed. The credential-free baseline passed 6,345 tests with 4,311 profile
+skips and the same two deprecation warnings in 60.05 seconds. Django reports no
+model state changes; Ruff check and format validation passed. This remains an
+internal checkpoint, not scheduled delivery completion.
+
+An independent fresh-install comparison against `a7002ed` found only the expanded
+cleanup-category check, one new private immutability function, six changed
+function bodies and four added/three changed cleanup triggers. All relations,
+columns, indexes, row policies, owners and grants remain unchanged. The actual
+installed function deltas were inspected before updating the catalog fixture;
+existing development databases were preserved.

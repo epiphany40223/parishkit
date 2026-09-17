@@ -371,6 +371,14 @@ LANGUAGE sql STABLE AS $$
         SELECT c.id FROM public.stewardship_rehearsal_credential c
         JOIN public.stewardship_family_campaign f ON f.id=c.family_id
         WHERE f.campaign_id=campaign_uuid AND c.epoch_id IN (SELECT id FROM epochs)
+    ), digest_snapshots AS NOT MATERIALIZED (
+        SELECT s.id FROM public.stewardship_daily_digest_snapshot s
+        JOIN public.stewardship_daily_digest_preparation p ON p.id=s.preparation_id
+        WHERE s.campaign_id=campaign_uuid AND p.mode='testing'
+          AND p.rehearsal_epoch_id IN (SELECT id FROM epochs)
+    ), digest_ready AS NOT MATERIALIZED (
+        SELECT id FROM public.stewardship_daily_digest_ready
+        WHERE snapshot_id IN (SELECT id FROM digest_snapshots)
     )
     SELECT 'baselines',id FROM baselines
     UNION ALL SELECT 'family_sessions',id FROM sessions
@@ -385,6 +393,13 @@ LANGUAGE sql STABLE AS $$
     UNION ALL SELECT 'source_pins',id FROM public.stewardship_source_pin
         WHERE (parent_kind='submission' AND parent_id IN (SELECT id FROM responses))
            OR (parent_kind='form_baseline' AND parent_id IN (SELECT id FROM baselines))
+           OR (parent_kind='digest' AND parent_id IN (SELECT id FROM digest_snapshots))
+    UNION ALL SELECT 'daily_digest_snapshots',id FROM digest_snapshots
+    UNION ALL SELECT 'daily_digest_ready',id FROM digest_ready
+    UNION ALL SELECT 'daily_digest_recipients',id FROM public.stewardship_daily_digest_recipient
+        WHERE ready_id IN (SELECT id FROM digest_ready)
+    UNION ALL SELECT 'daily_digest_fact_pins',id FROM public.stewardship_fact_pin
+        WHERE parent_kind='digest' AND parent_id IN (SELECT id FROM digest_snapshots)
     UNION ALL SELECT 'occurrences',id FROM occurrences
     UNION ALL SELECT 'occurrence_events',id FROM public.stewardship_occurrence_transition
         WHERE occurrence_id IN (SELECT id FROM occurrences)
