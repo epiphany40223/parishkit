@@ -4,6 +4,37 @@ ALTER TABLE public.stewardship_submission_receipt ADD CONSTRAINT submission_rece
     FOREIGN KEY(outbox_id) REFERENCES public.stewardship_outbox_message(id)
     DEFERRABLE INITIALLY DEFERRED;
 
+-- Web may allocate a receipt obligation, but cannot supply prose readable by
+-- MAIL. This fixed seed is explicitly rejected by the SMTP preparation guard.
+-- Its digest fingerprints PostgreSQL's canonical JSONB; the actual send render
+-- is separately fingerprinted by the shared renderer before provider admission.
+CREATE FUNCTION public.stewardship_receipt_seed_v1(
+    family uuid, configuration uuid, mode text
+) RETURNS jsonb LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE email jsonb; intended jsonb; routed jsonb; test_recipient text;
+    content jsonb; heading text:='Submission received';
+    body text:='PARISHKIT_PENDING_RECEIPT: Confirmation awaiting preparation.';
+BEGIN
+    SELECT settings INTO email FROM public.stewardship_applied_integration
+        WHERE configuration_id=configuration AND kind='email';
+    SELECT testing_recipient INTO test_recipient FROM public.stewardship_system_configuration;
+    intended:=public.stewardship_family_mail_recipients_v1(family);
+    routed:=CASE mode WHEN 'testing' THEN jsonb_build_array(test_recipient) ELSE intended END;
+    IF email IS NULL OR jsonb_array_length(intended)=0 OR mode NOT IN ('testing','production')
+    THEN RAISE EXCEPTION 'Receipt requires configured routing and source recipients' USING ERRCODE='23514'; END IF;
+    IF mode='testing' THEN
+        heading:='[TEST] '||heading;
+        body:='TEST — pending confirmation is routed only to the Testing recipient. '||body;
+    END IF;
+    content:=jsonb_build_object('sender',email->>'sender','reply_to',email->>'reply_to',
+        'intended_recipients',intended,'routed_recipients',routed,'subject',heading,
+        'html',CASE mode WHEN 'testing' THEN '<h2>TEST</h2>' ELSE '' END||'<p>'||body||'</p>',
+        'text',body);
+    RETURN content||jsonb_build_object('configuration_id',configuration,'template_id',NULL,
+        'payload_digest',encode(sha256(convert_to(content::text,'UTF8')),'hex'));
+END $$;
+REVOKE ALL ON FUNCTION public.stewardship_receipt_seed_v1(uuid,uuid,text) FROM PUBLIC;
+
 CREATE FUNCTION public.stewardship_receipt_render_admitted_v1(
     proposed jsonb, family uuid, campaign uuid, configuration uuid, mode text
 ) RETURNS boolean LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
@@ -26,6 +57,7 @@ BEGIN
            THEN jsonb_build_array(test_recipient) ELSE expected END
        AND body NOT LIKE '%PARISHKIT_REDACTED_FAMILY_CODE%'
        AND body NOT LIKE '%https://parishkit.invalid/redacted-family-link%'
+       AND body NOT LIKE '%PARISHKIT_PENDING_RECEIPT%'
        AND body !~ '\{\{[[:space:]]*family_(code|url)[[:space:]]*\}\}'
        AND (mode<>'testing' OR (proposed->>'subject' LIKE '[TEST] %'
            AND proposed->>'html' LIKE '<h2>TEST</h2>%'
@@ -38,7 +70,7 @@ DECLARE s public.stewardship_submission%ROWTYPE;
     r public.stewardship_system_configuration%ROWTYPE;
     c public.stewardship_campaign%ROWTYPE;
     task public.stewardship_task_run%ROWTYPE;
-    expected jsonb; content jsonb:=NEW.preparation->'render';
+    expected jsonb; content jsonb;
     rendering uuid:=gen_random_uuid(); hold uuid; hold_version bigint;
     mode text; routing text; proof text;
 BEGIN
@@ -83,13 +115,13 @@ BEGIN
     SELECT * INTO task FROM public.stewardship_task_run WHERE id=(NEW.preparation->>'task_id')::uuid;
     IF NEW.disposition<>'queued' OR NEW.outbox_id IS NULL
        OR jsonb_typeof(NEW.preparation) IS DISTINCT FROM 'object'
-       OR NEW.preparation-ARRAY['render','task_id']<>'{}'::jsonb
+       OR NEW.preparation-ARRAY['task_id']<>'{}'::jsonb
        OR task.id IS NULL OR task.root_id<>task.id OR task.state<>'queued' OR task.version<>1
        OR task.task_type<>'outbox_delivery' OR task.domain_request_id IS DISTINCT FROM NEW.outbox_id
        OR task.initiated_by_id IS DISTINCT FROM s.family_id OR task.correlation_id<>s.correlation_id
        OR task.idempotency_key IS DISTINCT FROM NEW.outbox_id::text
-       OR public.stewardship_receipt_render_admitted_v1(content,s.family_id,c.id,s.configuration_id,mode) IS NOT TRUE
     THEN RAISE EXCEPTION 'Receipt requires exact local preparation' USING ERRCODE='23514'; END IF;
+    content:=public.stewardship_receipt_seed_v1(s.family_id,s.configuration_id,mode);
     IF mode='production' AND c.delivery_paused THEN
         INSERT INTO public.stewardship_delivery_pause_hold(id,actor_id,correlation_id,campaign_id,pause_version)
             VALUES(gen_random_uuid(),s.family_id,s.correlation_id,c.id,c.pause_version)
@@ -137,7 +169,8 @@ BEGIN
 END $$;
 CREATE CONSTRAINT TRIGGER submission_receipt_binding
     AFTER INSERT OR UPDATE ON public.stewardship_outbox_message DEFERRABLE INITIALLY DEFERRED
-    FOR EACH ROW EXECUTE FUNCTION public.stewardship_submission_receipt_binding_v1();
+    FOR EACH ROW WHEN (NEW.purpose='receipt')
+    EXECUTE FUNCTION public.stewardship_submission_receipt_binding_v1();
 REVOKE ALL ON FUNCTION public.stewardship_submission_receipt_binding_v1() FROM PUBLIC;
 
 -- A receipt survives campaign close and does not rely on reusable access tokens,

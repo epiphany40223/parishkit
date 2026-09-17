@@ -38,7 +38,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 def test_receipt_worker_commits_before_provider_without_opening_family_keys(
     dispatch_worker,  # noqa: F811
     monkeypatch,
-    status,  # noqa: F811
+    status,
 ):
     """Same SMTP runner and fenced task lifetime, but no credential substitutions."""
     harness, path = dispatch_worker
@@ -104,6 +104,35 @@ def test_abandoned_receipt_becomes_unknown_not_automatically_resent(
     message.refresh_from_db()
     assert message.state == "delivery_unknown" and message.attempt == 1
     assert TaskRun.objects.get(pk=message.task_id).state == "failed"
+
+
+def test_render_failure_preserves_accepted_response_and_never_sends_seed(
+    dispatch_worker,  # noqa: F811
+    monkeypatch,
+):
+    """Worker rendering errors stay retryable without undoing the Family's Submit."""
+    from parishkit.stewardship.responses.models import Submission
+
+    harness, path = dispatch_worker
+    message = receipt(harness)
+    calls = []
+
+    def fail(*args, **kwargs):
+        """Simulate invalid combined authored content before the provider boundary."""
+        raise ValueError("Synthetic template output limit")
+
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.receipt_rendering.render_receipt", fail
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.family_mail_delivery_tasks.submit_family",
+        lambda *args, **kwargs: calls.append(True),
+    )
+    deliver(harness, path, message)
+    message.refresh_from_db()
+    assert calls == [] and message.state == "pending" and message.attempt == 0
+    assert Submission.objects.filter(pk=message.semantic_key).exists()
+    assert TaskRun.objects.get(pk=message.task_id).state == "retry_wait"
 
 
 def test_receipt_partial_refusal_retries_only_remaining_source_head(

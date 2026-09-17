@@ -165,9 +165,7 @@ def submit_family(request, service, *, baseline_id, payload):
         derive_proposals(submission, validated)
         derive_ministry_requests(submission, validated)
         derive_additional_information(submission, prior)
-        receipt = create_submission_receipt(
-            submission, runtime=configuration, campaign=campaign, family=family
-        )
+        receipt = create_submission_receipt(submission, family=family)
         AuditEvent.objects.create(
             event_type="family_submission"
             if mode == "live"

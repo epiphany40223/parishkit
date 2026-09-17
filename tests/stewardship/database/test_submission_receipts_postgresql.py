@@ -111,7 +111,7 @@ def test_receipt_is_concrete_private_answer_free_and_exactly_bound(request, fixt
         ["test@example.org"] if row.mode == "test" else ["valid@example.org"]
     )
     for body in (message.render.html, message.render.text):
-        assert "Submitted:" in body and "Questions:" in body
+        assert "PARISHKIT_PENDING_RECEIPT" in body
         assert "Private answer only" not in body and "Private response text" not in body
         assert harness.code not in body and "PARISHKIT_REDACTED" not in body
     event = OutboxEvent.objects.get(message=message)
@@ -188,31 +188,43 @@ def test_failure_after_receipt_allocation_rolls_back_entire_submit(
 
 
 @pytest.mark.parametrize(
-    "mutation", ["intended", "routed", "sender", "configuration", "credential"]
+    "mutation",
+    ["intended", "routed", "sender", "configuration", "credential", "private_answer"],
 )
 def test_receipt_command_rejects_forged_preparation(
     response_service, monkeypatch, mutation
 ):
-    """SQL independently checks scope even if a local renderer passes bad input."""
-    from uuid import uuid4
-
-    original = receipts.current_receipt_render
+    """Even an answer-reading Web caller cannot pass arbitrary prose to MAIL."""
+    manager = receipts.SubmissionReceiptOccurrence.objects
+    original = manager.create
 
     def forged(*args, **kwargs):
-        """Use a typed but unauthorized render without altering source authority."""
-        rendering = original(*args, **kwargs)
-        values = {
-            "intended": {"intended_recipients": ("unrelated@example.org",)},
-            "routed": {"routed_recipients": ("unrelated@example.org",)},
-            "sender": {"sender": "unrelated@example.org"},
-            "configuration": {"configuration_id": uuid4()},
-            "credential": {"text": "PARISHKIT_REDACTED_FAMILY_CODE"},
-        }
-        return replace(rendering, **values[mutation])
+        """Attempt to append untrusted mail input to the closed allocation command."""
+        kwargs["preparation"][mutation] = "Private answer and pledge text"
+        return original(*args, **kwargs)
 
-    monkeypatch.setattr(receipts, "current_receipt_render", forged)
+    monkeypatch.setattr(manager, "create", forged)
     with web_login():
         form, answers = form_and_answers(response_service)
         with pytest.raises(IntegrityError, match="exact local preparation"):
             submit(response_service, form, answers)
     assert not Submission.objects.exists() and not OutboxMessage.objects.exists()
+
+
+def test_submit_does_not_render_templates_or_require_worker_origin(
+    response_service, monkeypatch, settings
+):
+    """Authored mail failure belongs to the worker, not the accepted response."""
+    from parishkit.stewardship.jobs import receipt_rendering
+
+    def unavailable(*args, **kwargs):
+        """Model any template/rendering failure without suppressing Submit checks."""
+        raise ValueError("Synthetic receipt rendering failure")
+
+    monkeypatch.setattr(receipt_rendering, "current_receipt_render", unavailable)
+    del settings.STEWARDSHIP_PUBLIC_ORIGIN
+    with web_login():
+        form, answers = form_and_answers(response_service)
+        result = submit(response_service, form, answers)
+    assert result.submission is not None
+    assert OutboxMessage.objects.get().state == "pending"

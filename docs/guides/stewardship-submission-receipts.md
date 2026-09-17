@@ -49,11 +49,15 @@ skips and two existing warnings in 58.20 seconds. Ruff and changed Markdown pass
 That first checkpoint alone did not send receipts.
 
 The integrated implementation now creates each concrete receipt, task root,
-immutable render and delivery history inside final Submit's transaction. The
+immutable allocation seed and delivery history inside final Submit's transaction. The
 database independently checks the exact response, Family, current source,
 configuration and Testing routing. A current-source no-recipient outcome keeps
 the accepted submission and records the closed non-error audit reason. Proposed
 contact changes and opt-outs do not change transactional receipt routing.
+Web cannot supply receipt prose, either at Submit or through Admin retry. The
+database-owned seed is explicitly ineligible for provider submission; MAIL
+renders the actual template and public facts without access to response answers.
+Template failures remain retryable delivery failures after the response commits.
 
 Receipts use the existing fenced MAIL worker and commit-before-provider journal,
 without loading Family access keys or reading response answers. They retain
@@ -79,15 +83,59 @@ passes 6,150 tests, 4,268 explicit profile skips and two existing warnings in
 The predecessor's `3bfec17a` installer and this increment's installer were run
 in separate newly created disposable databases. The predecessor exactly matches
 its committed schema fingerprint. The audited delta adds two receipt columns,
-four constraints, one index, six functions and two triggers; it removes no
+four constraints, one index, seven functions and two triggers; it removes no
 objects. Existing changes are limited to receipt disposition/closed audit
 context checks, the singleton confirmation index, recipient projection and the
-delivery, resolution, cleanup and safe-context functions. Relations and policies
+delivery, resolution, cleanup, archive and safe-context functions. Relations and policies
 are unchanged. New command/binding functions retain restricted execution and
 fixed search paths. The refreshed fingerprint passes all 17 schema/model tests
 in 17.56 seconds. No retained database was deleted or upgraded.
 
 The current baseline contains 162 relations, 1,871 columns, 2,683 constraints,
-819 indexes, 432 functions, 435 triggers and 28 policies. This is a fresh-install
+819 indexes, 433 functions, 435 triggers and 28 policies. This is a fresh-install
 baseline, not an upgrade compatibility promise. Schema artifacts are included in
 both Docker build allowlists.
+
+## Review and correction evidence
+
+Round 1 reviewed the complete `3bfec17a..e4ababef` diff in Pika session
+`20260917-020013-74ba0f`. Both sources completed successfully, with no failed or
+degraded agent or verdict mismatch. Raw severities were two High, two Medium
+and nine Low; four findings met the configured validation cutoff.
+
+- Codex High, Web-authored receipt bodies crossing into MAIL: accepted. Final
+  Submit and Admin retry now accept only closed allocation commands; SQL owns
+  the non-sendable seed. Actual-role adversarial tests reject private answer
+  injection at both entry points and refuse direct submission of the seed.
+- Claude High, rendering/configuration failures rolling back final Submit:
+  accepted for rendering and runtime-origin coupling, removed by the allocation
+  seed. Existing initial-setup validation requires an email integration and the
+  canonical Testing recipient before portal readiness; incomplete low-level
+  fixtures do not establish an optional-email product contract. Setup and web
+  runtime prerequisite tests pass (27 tests). A worker-rendering failure test
+  verifies the accepted response survives and no seed reaches the provider.
+- Claude Medium, archived or superseded receipt holds: automatic cancellation
+  is rejected because accepted receipts are post-close obligations, not expired
+  invitations. Archive now rejects undelivered Production receipts. An actual
+  lifecycle test permits archive only after acceptance. Full explicit skip
+  inventory remains owned by BG-07.04; this increment cannot silently waive it.
+- Claude Medium, source recipient disappearance: automatic cancellation is
+  rejected for the same obligation contract. Tests promote both missing-email
+  and inactive-head snapshots, then a correction; the same receipt resumes.
+  Submit-time absence creates no obligation, unlike a later delivery hold.
+- Claude Low: remove duplicated preparation, restrict the deferred binding
+  trigger to receipts, centralize the Family display-name fallback, remove
+  preview variable shadowing and an unnecessary lint suppression, and add
+  boundary tests. Retain the system actor on the automatic no-recipient audit;
+  the separate submission audit owns the Family actor, while Testing remains
+  anonymized.
+
+Pika's default finalization cleanup removed the raw Codex artifact containing
+two additional below-cutoff Low findings. Their content is not recoverable from
+the finalized result and is not represented as resolved. Subsequent rounds
+retain raw artifacts. Round 1 post-fix validation passes 46 receipt/submission/
+statistics PostgreSQL tests in 81.95 seconds, 49 schema/invitation/Admin recovery
+tests in 81.20 seconds, the 27 setup/runtime tests, Ruff, formatting, changed
+Markdown, diff whitespace checks and model-drift checks. The 49-test run includes
+all 17 refreshed schema-baseline checks. The remaining two review rounds and
+frozen-tree full coverage are still open.

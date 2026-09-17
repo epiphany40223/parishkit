@@ -132,7 +132,7 @@ def render_family_mail(
         testing_recipient=testing_recipient,
         family_name=values.get("family_member_names")
         or values.get("family_name")
-        or "Family",
+        or "",
         subject=subject,
         html=html,
         text=text,

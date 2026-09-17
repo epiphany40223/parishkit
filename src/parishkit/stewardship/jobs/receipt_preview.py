@@ -46,8 +46,8 @@ def sample_receipt(value, *, substitutions, campaign, block):
         else ReceiptTemplate(),
         block=block or SafeContent("", ""),
         values={
-            key: value
-            for key, value in substitutions.items()
+            key: replacement
+            for key, replacement in substitutions.items()
             if key not in FAMILY_CREDENTIAL_PLACEHOLDERS
         },
         submitted_at=datetime.fromisoformat(

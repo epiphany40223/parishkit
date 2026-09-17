@@ -59,14 +59,44 @@ def activate_response_service(harness):
         cleanup_rehearsal,
         invalidate_rehearsal,
     )
+    from parishkit.stewardship.responses.models import SubmissionReceiptOccurrence
 
     from .campaign_builders import command
+    from .test_cleanup_tasks_postgresql import queued, run
 
-    epoch = invalidate_rehearsal(
-        campaign_id=harness.campaign.pk, admit=lambda *args: True
-    )
-    while cleanup_rehearsal(epoch):
-        pass
+    if SubmissionReceiptOccurrence.objects.filter(
+        submission__campaign=harness.campaign, outbox__isnull=False
+    ).exists():
+        from parishkit.stewardship.campaigns.cleanup_requests import (
+            request_cancellation,
+        )
+        from parishkit.stewardship.campaigns.production_models import (
+            ProductionTransitionRequest,
+        )
+
+        cleanup = queued(harness)
+        assert run(cleanup)
+        completed = ProductionTransitionRequest.objects.get(pk=cleanup.request_id)
+        # This fixture owns only cleanup plus the separate lifecycle seam, not
+        # the later Admin go-live workflow. Close the completed request through
+        # its real cancellation owner before requesting independent activation.
+        assert (
+            request_cancellation(
+                request_id=completed.pk,
+                command_id=uuid4(),
+                expected_version=completed.version,
+                actor_id=uuid4(),
+                correlation_id=uuid4(),
+                admit=lambda *args: True,
+            ).state
+            == "cancelled"
+        )
+    else:
+        epoch = invalidate_rehearsal(
+            campaign_id=harness.campaign.pk, admit=lambda *args: True
+        )
+        while cleanup_rehearsal(epoch):
+            pass
     command(harness.campaign, uuid4(), Action.ACTIVATE)
     family = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=1)
     code = harness.rings.general.decrypt(

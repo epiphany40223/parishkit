@@ -3,7 +3,7 @@
 from uuid import uuid4
 
 import pytest
-from django.db import ProgrammingError, connection, transaction
+from django.db import IntegrityError, ProgrammingError, connection, transaction
 
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.family_delivery import FamilyDeliveryResult
@@ -143,6 +143,89 @@ def test_held_receipt_resumes_without_coalescing(live_response_service):
     assert message.pause_hold_id is None and message.state == "delivered"
 
 
+def test_seed_render_cannot_be_submitted_by_the_actual_mail_role(response_service):
+    """A compromised caller cannot send the database-owned allocation placeholder."""
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+    from parishkit.stewardship.jobs.delivery_states import DeliveryAction
+    from parishkit.stewardship.jobs.outbox_storage import change_message
+
+    message = receipt(response_service)
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        execution = claim(message)
+        with (
+            pytest.raises(IntegrityError, match="render differs"),
+            work_transaction(),
+        ):
+            change_message(
+                message_id=message.pk,
+                action=DeliveryAction.SUBMIT,
+                command_id=uuid4(),
+                expected_version=message.version,
+                actor_id=execution.claim.worker_id,
+                correlation_id=execution.claim.run_id,
+                run_id=execution.claim.run_id,
+                task_fence=execution.claim.fence,
+                provider_seconds=30,
+                admit=lambda *args: True,
+            )
+    message.refresh_from_db()
+    assert message.state == "pending" and message.attempt == 0
+
+
+def test_pending_receipt_blocks_archive_until_accepted(live_response_service):
+    """Archive cannot abandon an accepted response's undelivered obligation."""
+    from parishkit.stewardship.campaigns.lifecycle import Action
+
+    from .campaign_builders import command
+
+    harness = live_response_service
+    message = receipt(harness, production=True)
+    close_campaign(harness.campaign, uuid4())
+    with pytest.raises(IntegrityError, match="Archive requires"):
+        command(harness.campaign, uuid4(), Action.ARCHIVE)
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        execution = claim(message)
+        assert begin(message, execution) is not None
+        finish_submission(
+            message.pk, execution.claim, FamilyDeliveryResult(Status.ACCEPTED, 1)
+        )
+    command(harness.campaign, uuid4(), Action.ARCHIVE)
+    harness.campaign.refresh_from_db()
+    assert harness.campaign.state == "archived"
+
+
+@pytest.mark.parametrize("inactive", [False, True])
+def test_source_correction_resumes_the_same_receipt(live_response_service, inactive):
+    """Unavailable recipients are recoverable, not permission to discard a receipt."""
+    from parishkit.stewardship.jobs.family_mail_dispatch import FamilyDeliveryHeld
+
+    from .response_builders import response_source
+    from .test_recipient_suppressions_postgresql import refresh
+
+    harness = live_response_service
+    message = receipt(harness, production=True)
+    data = response_source()
+    if inactive:
+        data.members[3]["memberStatus"] = "Inactive"
+    else:
+        data.members[3]["emailAddress"] = ""
+    refresh(harness, data)
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        execution = claim(message)
+        with pytest.raises(FamilyDeliveryHeld, match="source recipients"):
+            begin(message, execution)
+    message.refresh_from_db()
+    assert message.state == "pending" and message.attempt == 0
+    refresh(harness, response_source())
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        assert begin(message, execution) is not None
+        finish_submission(
+            message.pk, execution.claim, FamilyDeliveryResult(Status.ACCEPTED, 1)
+        )
+    message.refresh_from_db()
+    assert message.state == "delivered" and message.attempt == 1
+
+
 @pytest.mark.parametrize(
     "action,status",
     [
@@ -191,3 +274,37 @@ def test_admin_receipt_resolution_is_keyless_and_preserves_attempt_history(
         assert result.retry_task_id is None
     else:
         assert TaskRun.objects.get(pk=result.retry_task_id).state == "queued"
+
+
+def test_admin_retry_cannot_inject_private_answer_text(response_service, monkeypatch):
+    """The second Web allocation port rejects bodies too, not only final Submit."""
+    from parishkit.stewardship.jobs import delivery_resolution
+    from parishkit.stewardship.jobs.models import TaskRun
+    from parishkit.stewardship.jobs.storage import _status
+
+    from .test_delivery_resolution_postgresql import resolve
+    from .test_policy_postgresql import user
+    from .test_taskrun_postgresql import act
+
+    message = receipt(response_service)
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        claim(message)
+    act(_status(TaskRun.objects.get(pk=message.task_id)), "permanent_failure")
+    before = list(TaskRun.objects.values_list("pk", flat=True))
+    monkeypatch.setattr(
+        delivery_resolution,
+        "_prepare_receipt",
+        lambda *args: {"receipt": True, "render": {"text": "Private answer text"}},
+    )
+    with pytest.raises(IntegrityError, match="fresh scoped preparation"):
+        resolve(
+            response_service,
+            user("admin@example.org"),
+            message,
+            "retry_unsent",
+            general=None,
+            public=None,
+        )
+    assert list(TaskRun.objects.values_list("pk", flat=True)) == before
+    message.refresh_from_db()
+    assert message.state == "pending" and message.version == 1

@@ -82,11 +82,10 @@ BEGIN
     SELECT revision_id INTO revision FROM public.stewardship_schedule_occurrence WHERE id=m.semantic_key;
     IF public.stewardship_delivery_retry_admitted_v1(message) IS NOT TRUE
        OR jsonb_typeof(preparation) IS DISTINCT FROM 'object'
-       OR preparation-ARRAY['render','sealed']<>'{}'::jsonb
-       OR jsonb_typeof(content) IS DISTINCT FROM 'object'
-       OR (m.purpose='receipt' AND (sealed IS DISTINCT FROM 'null'::jsonb
-           OR public.stewardship_receipt_render_admitted_v1(content,m.family_id,m.campaign_id,configuration,m.mode) IS NOT TRUE))
-       OR (m.purpose<>'receipt' AND (jsonb_typeof(sealed) IS DISTINCT FROM 'object'
+       OR (m.purpose='receipt' AND preparation IS DISTINCT FROM '{"receipt":true}'::jsonb)
+       OR (m.purpose<>'receipt' AND (preparation-ARRAY['render','sealed']<>'{}'::jsonb
+         OR jsonb_typeof(content) IS DISTINCT FROM 'object'
+         OR jsonb_typeof(sealed) IS DISTINCT FROM 'object'
          OR public.stewardship_family_mail_render_admitted_v1(content,m.family_id,configuration,revision,m.mode) IS NOT TRUE
          OR sealed->>'sealed_substitutions' IS NULL OR sealed->>'sealed_key_id' IS NULL
          OR (m.mode='production' AND NOT EXISTS (
@@ -96,6 +95,9 @@ BEGIN
            WHERE c.id=m.campaign_id AND g.id=(sealed->>'token_generation_id')::uuid
              AND g.state='active' AND g.credential_epoch=(sealed->>'credential_epoch_id')::uuid))))
     THEN RAISE EXCEPTION 'Retry requires fresh scoped preparation' USING ERRCODE='23514'; END IF;
+    IF m.purpose='receipt' THEN
+        content:=public.stewardship_receipt_seed_v1(m.family_id,configuration,m.mode);
+    END IF;
     INSERT INTO public.stewardship_outbox_render
         (id,actor_id,correlation_id,message_id,configuration_id,template_id,sender,reply_to,
          intended_recipients,routed_recipients,subject,html,text,payload_digest)
