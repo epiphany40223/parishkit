@@ -51,3 +51,9 @@ def add_digest_dispatch_grants(tables, columns, *, private):
             "stewardship_daily_digest_recipient": {"id", "ready_id", "outbox_id"},
         }.items():
             columns.setdefault(table, {}).setdefault("SELECT", set()).update(fields)
+
+
+def add_digest_web_grants(tables, columns):
+    """Read retry ownership and configured Admin routing, never compiled content."""
+    add_digest_dispatch_grants(tables, columns, private=False)
+    columns["stewardship_daily_digest_recipient"]["SELECT"].add("address")

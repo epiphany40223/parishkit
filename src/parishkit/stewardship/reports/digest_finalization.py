@@ -119,12 +119,19 @@ def _execute(execution):
     execution.transition(outcome)
 
 
-def finalization_handler():
+def finalization_handler(*, scheduler=False):
     """A provider-free handler safely runs with general-worker metadata authority."""
+    if type(scheduler) is not bool:
+        raise TypeError("Daily finalization requires an admitted runtime role.")
+
+    def unavailable(execution):
+        """Scheduler admission cannot execute even provider-free worker effects."""
+        raise PermissionError("The scheduler cannot execute daily finalization.")
+
     return Handler(
         WorkQueue.GENERAL,
         admit_finalization,
-        _execute,
+        unavailable if scheduler else _execute,
         recover=recover_finalization,
         scope=work_transaction,
     )

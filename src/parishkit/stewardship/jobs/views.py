@@ -311,6 +311,11 @@ def task_page(request, task_id):
             and work["task"]["state"] == "failed"
             and work["latest_run_id"] == work["task"]["id"]
             else None,
+            "daily_digest_retry_key": str(uuid4())
+            if work["task"]["type"] in {"daily_digest_prepare", "daily_digest_finalize"}
+            and work["task"]["state"] == "failed"
+            and work["latest_run_id"] == work["task"]["id"]
+            else None,
             "next_query": following.urlencode(),
         },
     )

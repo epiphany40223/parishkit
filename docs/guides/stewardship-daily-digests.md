@@ -228,3 +228,29 @@ build contexts include the new SQL asset. No retained database was modified.
 This remains an internal checkpoint. Admin reconciliation/retry controls, the
 authorized report route, runtime registration, integration validation and three
 review rounds still precede completion of BG-07.02 and PR delivery.
+
+### Runtime and Admin recovery checkpoint
+
+The runtime now registers daily preparation and metadata finalization after
+recurring-slot discovery. Each producer is isolated so one owner's failure
+cannot block unrelated work; scheduler registrations explicitly refuse worker
+execution. Existing maintained MAIL execution handles the resulting messages.
+
+Admin delivery pages include daily messages. External acceptance preserves the
+failed provider task; an explicitly acknowledged resend or definitive-failure
+retry creates a numbered child task. Web can request only a fixed, non-sendable
+seed, never author report content or load Family keys. MAIL must rerender the
+original facts under current routing before another submission. Failed daily
+preparation/finalization has a CSRF-protected retry form that rejects stale
+selected runs and reloads current Admin authority, including on replay.
+
+Validation: nine daily-resolution tests, 73 existing Family/receipt-resolution
+and UI checks, 22 retry/schema tests and 214 runtime/grant checks passed. The
+credential-free suite passed 6,361 tests with 4,384 profile skips and two existing
+warnings in 94.31 seconds. Ruff passed. Independent fresh schemas against
+`f0d4901` found only one new private seed function and three changed resolution
+functions; their installed definitions were inspected before updating the
+fingerprint. No existing catalog shape, triggers or policies changed.
+
+The protected exact-report link, complete integration/coverage validation and
+three review rounds remain open. BG-07.02 is not yet complete.

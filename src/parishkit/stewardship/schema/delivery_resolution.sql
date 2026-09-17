@@ -47,7 +47,8 @@ $$;
 
 CREATE FUNCTION public.stewardship_delivery_retry_admitted_v1(message uuid)
 RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
-    SELECT public.stewardship_receipt_dispatch_live_v1(message) OR EXISTS (
+    SELECT public.stewardship_receipt_dispatch_live_v1(message)
+      OR public.stewardship_daily_dispatch_live_v1(message) OR EXISTS (
         SELECT 1 FROM public.stewardship_outbox_message m
         JOIN public.stewardship_schedule_occurrence o ON o.id=m.semantic_key AND o.outbox_id=m.id
         JOIN public.stewardship_schedule_definition d ON d.id=o.definition_id AND d.current_revision_id=o.revision_id
@@ -83,7 +84,8 @@ BEGIN
     IF public.stewardship_delivery_retry_admitted_v1(message) IS NOT TRUE
        OR jsonb_typeof(preparation) IS DISTINCT FROM 'object'
        OR (m.purpose='receipt' AND preparation IS DISTINCT FROM '{"receipt":true}'::jsonb)
-       OR (m.purpose<>'receipt' AND (preparation-ARRAY['render','sealed']<>'{}'::jsonb
+       OR (m.purpose='daily_digest' AND preparation IS DISTINCT FROM '{"daily_digest":true}'::jsonb)
+       OR (m.purpose NOT IN ('receipt','daily_digest') AND (preparation-ARRAY['render','sealed']<>'{}'::jsonb
          OR jsonb_typeof(content) IS DISTINCT FROM 'object'
          OR jsonb_typeof(sealed) IS DISTINCT FROM 'object'
          OR public.stewardship_family_mail_render_admitted_v1(content,m.family_id,configuration,revision,m.mode) IS NOT TRUE
@@ -97,6 +99,8 @@ BEGIN
     THEN RAISE EXCEPTION 'Retry requires fresh scoped preparation' USING ERRCODE='23514'; END IF;
     IF m.purpose='receipt' THEN
         content:=public.stewardship_receipt_seed_v1(m.family_id,configuration,m.mode);
+    ELSIF m.purpose='daily_digest' THEN
+        content:=public.stewardship_daily_digest_seed_v1(m.id,configuration);
     END IF;
     INSERT INTO public.stewardship_outbox_render
         (id,actor_id,correlation_id,message_id,configuration_id,template_id,sender,reply_to,
@@ -122,10 +126,18 @@ BEGIN
     SELECT * INTO o FROM public.stewardship_schedule_occurrence WHERE id=m.semantic_key FOR UPDATE;
     IF session_user<>'pk_stewardship_web'
        OR NOT public.stewardship_export_authorized_v1(NEW.actor_id,true)
-       OR m.id IS NULL OR m.purpose NOT IN ('initial','reminder','receipt')
+       OR m.id IS NULL OR m.purpose NOT IN ('initial','reminder','receipt','daily_digest')
        OR NEW.expected_version<>m.version OR NEW.correlation_id<>NEW.id
        OR btrim(NEW.evidence_note)=''
-       OR (m.purpose<>'receipt' AND o.outbox_id IS DISTINCT FROM m.id)
+       OR (m.purpose NOT IN ('receipt','daily_digest') AND o.outbox_id IS DISTINCT FROM m.id)
+       OR (m.purpose='daily_digest' AND NOT EXISTS (
+           SELECT 1 FROM public.stewardship_daily_digest_recipient recipient
+           JOIN public.stewardship_daily_digest_ready ready ON ready.id=recipient.ready_id
+           JOIN public.stewardship_daily_digest_snapshot snapshot ON snapshot.id=ready.snapshot_id
+           JOIN public.stewardship_daily_digest_preparation preparation ON preparation.id=snapshot.preparation_id
+           WHERE recipient.outbox_id=m.id AND recipient.id=m.semantic_key
+             AND preparation.campaign_id=m.campaign_id AND preparation.mode=m.mode
+             AND m.family_id IS NULL AND m.credential_namespace='none'))
        OR (m.purpose='receipt' AND NOT EXISTS (
            SELECT 1 FROM public.stewardship_submission_receipt receipt
            JOIN public.stewardship_submission s ON s.id=receipt.submission_id
@@ -156,7 +168,7 @@ BEGIN
                 reason='admin_external_acceptance',finished_at=statement_timestamp(),
                 sealed_substitutions=NULL,sealed_key_id=NULL,pause_hold_id=NULL,
                 actor_id=NEW.actor_id,correlation_id=NEW.id,version=version+1 WHERE id=m.id;
-            IF m.purpose<>'receipt' THEN
+            IF m.purpose NOT IN ('receipt','daily_digest') THEN
                 UPDATE public.stewardship_schedule_occurrence SET state='succeeded',reason='recovery_complete',
                     actor_id=NEW.actor_id,correlation_id=NEW.id,version=version+1 WHERE id=o.id;
                 INSERT INTO public.stewardship_schedule_fulfillment

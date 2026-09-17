@@ -20,6 +20,37 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
           AND NOT stewardship_schedule_slot_excluded_v1(o.definition_id,o.mode,o.target,o.slot))
 $$;
 
+-- Web requests a retry but cannot copy private report content into an arbitrary
+-- render. MAIL must replace this fixed, non-sendable seed under its live claim.
+CREATE FUNCTION stewardship_daily_digest_seed_v1(message uuid,configuration uuid)
+RETURNS jsonb LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE email jsonb; intended jsonb; routed jsonb; mode text; testing text;
+    content jsonb; heading text:='Daily report awaiting preparation';
+    body text:='PARISHKIT_PENDING_DAILY_DIGEST: Daily report awaiting preparation.';
+BEGIN
+    SELECT settings INTO email FROM stewardship_applied_integration
+        WHERE configuration_id=configuration AND kind='email';
+    SELECT testing_recipient INTO testing FROM stewardship_system_configuration;
+    SELECT m.mode,jsonb_build_array(recipient.address) INTO mode,intended
+        FROM stewardship_outbox_message m
+        JOIN stewardship_daily_digest_recipient recipient ON recipient.outbox_id=m.id
+        WHERE m.id=message AND m.purpose='daily_digest';
+    IF email IS NULL OR mode IS NULL OR jsonb_array_length(intended)<>1 THEN
+        RAISE EXCEPTION 'Daily retry requires exact configured routing' USING ERRCODE='23514'; END IF;
+    routed:=CASE mode WHEN 'testing' THEN jsonb_build_array(testing) ELSE intended END;
+    IF mode='testing' THEN
+        heading:='[TEST] '||heading;
+        body:='TEST — pending report is routed only to the Testing recipient. '||body;
+    END IF;
+    content:=jsonb_build_object('sender',email->>'sender','reply_to',email->>'reply_to',
+        'intended_recipients',intended,'routed_recipients',routed,'subject',heading,
+        'html',CASE mode WHEN 'testing' THEN '<h2>TEST</h2>' ELSE '' END||'<p>'||body||'</p>',
+        'text',body);
+    RETURN content||jsonb_build_object('configuration_id',configuration,'template_id',NULL,
+        'payload_digest',encode(sha256(convert_to(content::text,'UTF8')),'hex'));
+END $$;
+REVOKE ALL ON FUNCTION stewardship_daily_digest_seed_v1(uuid,uuid) FROM PUBLIC;
+
 CREATE FUNCTION stewardship_daily_dispatch_render_v1(proposed jsonb,message uuid)
 RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
     SELECT EXISTS(SELECT 1 FROM stewardship_outbox_message m
