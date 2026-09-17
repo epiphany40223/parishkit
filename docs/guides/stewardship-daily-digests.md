@@ -59,3 +59,18 @@ and two existing Redis-client deprecation warnings, in 58.67 seconds. Ruff
 check and format validation passed. Durable ownership, the linked report route,
 worker scheduling/delivery, integration validation and review gates are still
 in progress; these results do not claim a functioning scheduled digest yet.
+
+### Private transport checkpoint
+
+The one-Admin chart adapter now shares the established SMTP and private-pipe
+transport while retaining a distinct closed payload. It permits only the
+compiled inline PNG, validates HTML and image bounds, and preserves unknown
+acceptance without automatic resend. Family input restrictions and the smaller
+Family/readiness transport limits remain unchanged.
+
+Validation: 252 focused digest/Family/transport/report checks passed, including
+the actual isolated helper with deliberately invalid synthetic credentials and
+no Django configuration. The full credential-free baseline passed 6,345 tests
+with 4,288 profile skips and the same two deprecation warnings in 58.58 seconds.
+This adapter has no scheduled execution authority yet; database ownership and
+runtime integration remain the next checkpoint.

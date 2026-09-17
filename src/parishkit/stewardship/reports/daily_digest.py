@@ -14,12 +14,11 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 from parishkit.email.base import InlineImage
+from parishkit.stewardship.web.digest_content import CHART_ALT, CHART_ID
 
 from .charts import render_participation
 from .participation import ParticipationDocument
 from .statistics import CampaignStatistics
-
-CHART_ID = "participation@parishkit"
 
 
 @dataclass(frozen=True)
@@ -201,10 +200,7 @@ def render_daily_digest(document, *, public_origin):
         for label, value in cards
     )
     html += "</dl><h2>Daily participation</h2>"
-    html += (
-        f'<img src="cid:{CHART_ID}" alt="Family participation chart; '
-        'exact daily values follow in the table." width="720">'
-    )
+    html += f'<img src="cid:{CHART_ID}" alt="{CHART_ALT}" width="720">'
     html += "<table><caption>Historical as of day</caption><thead><tr>"
     html += "".join('<th scope="col">' + escape(label) + "</th>" for label in headings)
     html += "</tr></thead><tbody>"
@@ -214,7 +210,9 @@ def render_daily_digest(document, *, public_origin):
     )
     html += "</tbody></table>"
     html += (
-        '<p><a href="' + escape(url, quote=True) + '">Open this exact report '
+        '<p><a href="'
+        + escape(url, quote=True)
+        + '" rel="noopener noreferrer">Open this exact report '
         "(staff login required)</a></p>"
     )
     stream = BytesIO()
