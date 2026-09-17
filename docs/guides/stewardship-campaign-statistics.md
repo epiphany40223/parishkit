@@ -210,3 +210,57 @@ retained on local branch `review/stewardship-statistics-round3-daf8de3`.
 The normalized financial-record correction is a separate logical signed-off
 commit. No review-only history is intended for merge, and no schema migration
 or historical compatibility work is included.
+
+## CI lookup performance correction
+
+PR #45's first exact-head CI run, `35179368587` at `d57b08a`, failed the
+existing production Family-code lookup benchmark: p95 was 3.332 seconds against
+the unchanged two-second limit. Its query diagnostics identify the production
+MAC-to-Family eligibility join as the slow query: the first 11 of 20 complete
+lookups took about 3.3 seconds, and the remaining nine about 0.04 seconds.
+All other PostgreSQL partitions,
+browser engines and operational checks passed; this is not a passing delivery
+receipt. The delay did not reproduce in the local reference-population probe,
+and the failing runner's query plan was not captured, so stale planner statistics
+remain a hypothesis rather than a proven cause.
+
+The correction materializes the unique campaign/key/digest candidates before
+checking current Family eligibility by primary key. Candidate cardinality is
+bounded by the accepted MAC keys, not parish population. Eligibility filtering
+still precedes ambiguity rejection; duplicate matches for one Family remain
+one match. The existing transaction, key-set lock and session-admission recheck
+remain intact. Testing codes and public tokens are unchanged: the observed
+failure is specific to the production MAC join, not proof that other joins
+cannot regress. Their existing acceptance checks remain required; a failure
+there would need its own evidence and correction. No latency/query budget,
+warm-up allowance or CI selection is relaxed.
+
+Four PostgreSQL cases cover two-key rotation, cross-key ambiguity and retained
+inactive credentials. The query-shape case runs under the restricted web role
+and checks both the join-free candidate query and primary-key eligibility read.
+All 42 focused identity/authentication/token tests pass in 76.15 seconds,
+including the original reference-population performance acceptance test.
+This material CI correction receives a focused independent dual-source review;
+the three completed feature review/fix rounds are retained.
+
+Focused review `20260917-001356-b278b1` covers `d57b08a..ecca14e`. Both sources
+completed without failure, degradation or verdict mismatch. Codex reported no
+findings; Claude reported seven raw Low findings. All received dispositions:
+
+1. Broader Testing/token optimization is deferred pending evidence; the scope
+   explanation above no longer implies those paths are immune to plan regressions.
+2. The code comment now avoids stating a hypothetical planner cause as fact.
+3. The diagnostic record now states the actual slow/fast sample counts.
+4. Test-count and restricted-role coverage wording is made explicit.
+5. The restricted-role test now asserts the primary-key eligibility query shape
+   as well as the MAC query shape. Existing ambiguity cases deliberately preserve
+   unchanged behavior while its implementation is restructured.
+6. Ambiguity assertions use explicit expected-result branches.
+7. The existing restricted-role helper is imported at module scope.
+
+At `ecca14e`, the full baseline passes 6,095 tests in 58.12 seconds (4,232 profile
+skips and two existing warnings). A further 50 identity, rotation and credential-
+isolation cases pass in 71.89 seconds. Post-review validation passes all six
+lookup-shape and original reference-population performance cases in 52.32
+seconds, plus Ruff, formatting, changed Markdown and whitespace checks.
+Exact-head CI remains required; this review does not waive the failing benchmark.

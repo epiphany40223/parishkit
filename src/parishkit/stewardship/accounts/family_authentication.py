@@ -150,13 +150,18 @@ def lookup(service, *, code=None, token=None, lock=False, current=None):
                         .distinct()
                     )
                 else:
-                    matches = (
-                        FamilyCodeFingerprint.objects.filter(
-                            query, campaign=campaign, family__portal_eligible=True
-                        )
+                    # Each (campaign, key, digest) identifies at most one row.
+                    # Materialize that key-bounded set before checking current
+                    # eligibility to prevent a population-wide join plan. CI
+                    # isolated slow execution here; its exact cause is unknown.
+                    candidates = list(
+                        FamilyCodeFingerprint.objects.filter(query, campaign=campaign)
                         .values_list("family_id", flat=True)
                         .distinct()
                     )
+                    matches = FamilyCampaign.objects.filter(
+                        pk__in=candidates, campaign=campaign, portal_eligible=True
+                    ).values_list("pk", flat=True)
                 found = list(matches[:2])
                 found = found[0] if len(found) == 1 else None
         else:
