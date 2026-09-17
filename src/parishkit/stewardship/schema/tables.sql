@@ -2523,7 +2523,8 @@ CREATE TABLE public.stewardship_production_target (
         ('prior_inventory_targets'::varchar)::text,
         ('daily_digest_recipients'::varchar)::text,('daily_digest_ready'::varchar)::text,
         ('daily_digest_snapshots'::varchar)::text,('daily_digest_fact_pins'::varchar)::text,
-        ('recovery_replacements'::varchar)::text
+        ('recovery_replacements'::varchar)::text,
+        ('weekly_digest_recipients'::varchar)::text,('weekly_digest_snapshots'::varchar)::text
     ]))
 );
 CREATE INDEX production_target_correlation ON public.stewardship_production_target (correlation_id);

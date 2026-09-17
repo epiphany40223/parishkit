@@ -292,7 +292,9 @@ now has focused regression evidence, as does the
 [interval-completion/maintained-worker checkpoint](../../guides/stewardship-weekly-digests.md#interval-completion-and-maintained-preparation-checkpoint).
 The [provider-dispatch/Admin-recovery checkpoint](../../guides/stewardship-weekly-digests.md#provider-dispatch-and-admin-recovery-checkpoint)
 now has maintained-worker, recovery, browser-command and baseline evidence.
-Cleanup, manual reports, protected routes, runtime assembly and the required review/final
+The [Testing-retention checkpoint](../../guides/stewardship-weekly-digests.md#testing-retention-cleanup-checkpoint)
+also has bounded cleanup and independent schema evidence.
+Manual reports, protected routes, runtime assembly and the required review/final
 validation remain open; BG-07.03 and BG-07.05 are not complete.
 
 ## BG-08: Export and graph workers

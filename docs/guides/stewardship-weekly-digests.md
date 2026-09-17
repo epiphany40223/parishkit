@@ -249,6 +249,30 @@ complete baseline passed 6,578 tests with 4,507 expected profile skips and the
 same two warnings in 61.13 seconds. Ruff check/format, Markdown checks and Django
 model-state drift checks pass.
 
+### Testing retention cleanup checkpoint
+
+The independent Python/SQL Testing inventories include weekly snapshots and
+per-Admin recipient records. Bounded deletion waits for recipient dependents,
+uses the existing private checkpoint effect, and preserves opaque preparation
+history. Raw deletion remains forbidden even to the schema owner outside this
+workflow. Production reports never enter the Testing inventory; activation
+independently rejects remaining Testing snapshots. Web receives only the extra
+campaign metadata needed to select its weekly inventory, not private mail bytes.
+
+The 58-test weekly/daily cleanup, bounded batch and storage suite passed in 62.42
+seconds. A denied all-inventory Web read in the first new test was corrected to
+exercise only authorized weekly metadata; no unrelated permissions were added.
+Independent fresh installs against `6de2bc0` change only the cleanup category
+constraint, five intended function bodies and weekly immutable-trigger arguments,
+plus two cleanup-protection triggers. The weekly immutable function also loses
+unnecessary PUBLIC execution permission. Existing owners, all other ACLs, columns,
+indexes, policies and relation metadata remain unchanged. No retained database
+was upgraded, reset or deleted. Final increment acceptance remains outstanding.
+
+The final 46-test fresh-schema/inventory/capture run passed in 54.04 seconds;
+135 focused cleanup, Production-state and permission tests passed in 0.35 seconds.
+Ruff check/format, Markdown checks and model-state drift checks pass.
+
 ### Provider dispatch and Admin recovery checkpoint
 
 Weekly per-Admin messages now use the maintained MAIL worker and isolated weekly

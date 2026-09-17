@@ -128,9 +128,17 @@ DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION stewardship_weekly_s
 CREATE FUNCTION stewardship_weekly_immutable_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
+    IF TG_OP='DELETE' AND stewardship_cleanup_effect_v1(TG_ARGV[0],OLD.id) THEN
+        RETURN OLD;
+    END IF;
     RAISE EXCEPTION 'Weekly report records are immutable outside owned cleanup' USING ERRCODE='23514';
 END $$;
+REVOKE ALL ON FUNCTION stewardship_weekly_immutable_v1() FROM PUBLIC;
 CREATE TRIGGER weekly_snapshot_immutable BEFORE UPDATE OR DELETE ON stewardship_weekly_digest_snapshot
-FOR EACH ROW EXECUTE FUNCTION stewardship_weekly_immutable_v1();
+FOR EACH ROW EXECUTE FUNCTION stewardship_weekly_immutable_v1('weekly_digest_snapshots');
 CREATE TRIGGER weekly_recipient_immutable BEFORE UPDATE OR DELETE ON stewardship_weekly_digest_recipient
-FOR EACH ROW EXECUTE FUNCTION stewardship_weekly_immutable_v1();
+FOR EACH ROW EXECUTE FUNCTION stewardship_weekly_immutable_v1('weekly_digest_recipients');
+CREATE TRIGGER production_cleanup_protect BEFORE DELETE ON stewardship_weekly_digest_snapshot
+FOR EACH ROW EXECUTE FUNCTION stewardship_cleanup_protect_v1('weekly_digest_snapshots');
+CREATE TRIGGER production_cleanup_protect BEFORE DELETE ON stewardship_weekly_digest_recipient
+FOR EACH ROW EXECUTE FUNCTION stewardship_cleanup_protect_v1('weekly_digest_recipients');

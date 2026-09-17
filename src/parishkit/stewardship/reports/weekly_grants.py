@@ -67,3 +67,4 @@ def add_weekly_web_grants(tables, columns):
     """Allow exact Admin retry admission without exposing compiled private text."""
     add_weekly_dispatch_grants(tables, columns, private=False)
     columns["stewardship_weekly_digest_recipient"]["SELECT"].add("address")
+    columns["stewardship_weekly_digest_snapshot"]["SELECT"].add("campaign_id")

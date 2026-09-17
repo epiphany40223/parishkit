@@ -9716,6 +9716,9 @@ BEGIN
                  WHERE family.campaign_id=NEW.id AND baseline.mode='test')
        OR EXISTS(SELECT 1 FROM stewardship_daily_digest_snapshot snapshot
                  JOIN stewardship_daily_digest_preparation p ON p.id=snapshot.preparation_id
+                 WHERE snapshot.campaign_id=NEW.id AND p.mode='testing')
+       OR EXISTS(SELECT 1 FROM stewardship_weekly_digest_snapshot snapshot
+                 JOIN stewardship_weekly_digest_preparation p ON p.id=snapshot.preparation_id
                  WHERE snapshot.campaign_id=NEW.id AND p.mode='testing') THEN
         RAISE EXCEPTION 'Campaign requires a complete current token generation and rehearsal cleanup' USING ERRCODE='23514'; END IF;
     IF generation.configuration_request_id IS NULL THEN

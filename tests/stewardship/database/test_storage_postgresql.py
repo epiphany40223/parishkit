@@ -654,7 +654,10 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             assert "USINGERRCODE='23514'" in "".join(row[2].split())
             if table in conditional_insert_guards:
                 assert "IFTG_OP<>'INSERT'THENRAISEEXCEPTION" in "".join(row[2].split())
-            if function == "stewardship_daily_digest_immutable_v1":
+            if function in {
+                "stewardship_daily_digest_immutable_v1",
+                "stewardship_weekly_immutable_v1",
+            }:
                 # Verify the concrete cleanup category supplied to the common
                 # immutable guard, not just the presence of a generic function.
                 category = {
@@ -662,6 +665,8 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                     "stewardship_daily_digest_ready": "daily_digest_ready",
                     "stewardship_daily_digest_recipient": "daily_digest_recipients",
                     "stewardship_recovery_replacement": "recovery_replacements",
+                    "stewardship_weekly_digest_snapshot": "weekly_digest_snapshots",
+                    "stewardship_weekly_digest_recipient": "weekly_digest_recipients",
                 }[table]
                 cursor.execute(
                     "SELECT tgargs FROM pg_trigger WHERE tgrelid=%s::regclass "
