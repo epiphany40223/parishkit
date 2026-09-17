@@ -340,6 +340,18 @@ def test_browser_workflow_contract():
         assert (completed.returncode == 0) is (result == "success")
 
 
+def test_ci_cancels_only_superseded_pr_heads():
+    """Our workflow keeps queue/main evidence independent of in-flight PR runs."""
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    assert workflow["concurrency"] == {
+        "group": (
+            "${{ github.workflow }}-"
+            "${{ github.event.pull_request.number || github.run_id }}"
+        ),
+        "cancel-in-progress": "${{ github.event_name == 'pull_request' }}",
+    }
+
+
 @pytest.mark.parametrize(
     "value",
     [

@@ -13,6 +13,12 @@ on:
 permissions:
   contents: read
 
+# Superseded PR heads cannot satisfy the final-head gate. Stop spending runner
+# time on them; main and merge-queue events keep unique, uncancelled groups.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -192,6 +198,7 @@ jobs:
           POSTGRES_PASSWORD: disposable-test-only
         ports: ["55432:5432"]
         options: >-
+          --tmpfs /var/lib/postgresql:rw,size=2g
           --health-cmd "pg_isready -U stewardship_tests"
           --health-interval 2s --health-timeout 5s --health-retries 30
     env:

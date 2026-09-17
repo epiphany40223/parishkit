@@ -59,21 +59,26 @@ def browser_opt_in():
         pytest.skip("Browser component tests require PARISHKIT_RUN_BROWSER_TESTS=1.")
 
 
-@pytest.fixture
-def browser_engine(request):
-    """Isolate processes as well as contexts for clock and interception scenarios.
-
-    Reusing one WebKit process across this growing suite reproducibly stalled
-    navigation before any request in the 64th scenario; either 63-test subset
-    passed. Fresh processes avoid cross-scenario engine state without retries,
-    skipped assertions, or longer navigation timeouts.
-    """
+@pytest.fixture(scope="session")
+def browser_processes():
+    """Cache expensive startup, preserving fresh WebKit drivers and browsers."""
     from playwright.sync_api import sync_playwright
 
-    with sync_playwright() as runner:
-        browser = getattr(runner, request.param).launch()
+    from .process_pool import BrowserProcesses
+
+    processes = BrowserProcesses(sync_playwright)
+    try:
+        yield processes
+    finally:
+        processes.close()
+
+
+@pytest.fixture
+def browser_engine(request):
+    """Only opt-in tests request the session pool; baseline needs no Playwright."""
+    processes = request.getfixturevalue("browser_processes")
+    with processes.acquire(request.param) as browser:
         yield browser
-        browser.close()
 
 
 @pytest.fixture
