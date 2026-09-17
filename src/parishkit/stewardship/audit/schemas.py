@@ -52,6 +52,7 @@ class Action(StrEnum):
     FAMILY_MAC_BACKFILLED = "family_mac_backfilled"
     SOURCE_COMPACTED = "source_compacted"
     FACTS_COMPACTED = "facts_compacted"
+    FACTS_VERIFIED = "facts_verified"
     EXPORT_REQUESTED = "export_requested"
     EXPORT_CANCELLED = "export_cancelled"
     EXPORT_DOWNLOADED = "export_downloaded"

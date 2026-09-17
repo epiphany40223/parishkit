@@ -256,3 +256,13 @@ feature commit for delivery. The pre-squash history is retained locally under
 verified byte-identical across that history-only operation. Reviewer session
 identities and original endpoints above remain the review record. Final-head
 CI and protected merge-group checks must pass before merging.
+
+## Protected delivery
+
+PR #43 merged as `053eed78a935443ff29ae6ed7f84778d582fb48d` on September 16,
+2026. All 24 exact-head jobs passed at `3c3c0b8` (run `35159793642`), with
+DCO passing and combined coverage of 93.99% statements and 85.22% branches.
+All 24 protected merge-group jobs passed (run `35161289648`); the merge is
+verified on freshly fetched `origin/main`. The earlier pending-delivery notes
+are superseded. Scheduled verification is the next dependency-ready increment;
+remaining statistics, BG-07, the complete report UI and Gate 3 stay open.

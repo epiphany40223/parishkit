@@ -431,6 +431,13 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
     # exception from SQL immutability merely because the shared name differs.
     shared_immutable_guards = {
         **{
+            "stewardship_fact_verification_" + name: (
+                "verification_" + name + "_immutable",
+                "stewardship_export_immutable_v1",
+            )
+            for name in ("request", "result")
+        },
+        **{
             "stewardship_exact_export_" + name: (
                 "exact_immutable",
                 "stewardship_export_immutable_v1",

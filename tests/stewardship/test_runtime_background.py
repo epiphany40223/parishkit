@@ -133,6 +133,7 @@ def test_background_assembly_binds_exact_keys_role_and_closed_registry(
         expected = {
             "report_facts",
             "report_exact_export",
+            "report_fact_verification",
             "family_mail_prepare",
             "report_export",
             "report_export_cleanup",
@@ -210,6 +211,7 @@ def test_scheduler_registry_is_metadata_only():
     assert set(handlers) == {
         "report_facts",
         "report_exact_export",
+        "report_fact_verification",
         "family_mail_prepare",
         "report_export",
         "report_export_cleanup",
@@ -411,6 +413,7 @@ def test_only_bootstrap_worker_can_omit_installed_source_key(
         assert set(runtime.handlers) == {
             "report_facts",
             "report_exact_export",
+            "report_fact_verification",
             "family_mail_prepare",
             "report_export",
             "report_export_cleanup",

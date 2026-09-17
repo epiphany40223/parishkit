@@ -29,3 +29,4 @@
 !src/parishkit/stewardship/schema/delivery_resolution.sql
 !src/parishkit/stewardship/schema/report_facts.sql
 !src/parishkit/stewardship/schema/exact_exports.sql
+!src/parishkit/stewardship/schema/fact_verification.sql

@@ -183,6 +183,7 @@ def retry_failed(*, run_id, command_id, actor_id, correlation_id, admit):
         "report_export_cleanup",
         "report_facts",
         "report_exact_export",
+        "report_fact_verification",
         "family_mail_prepare",
     ):
         require_work_order()

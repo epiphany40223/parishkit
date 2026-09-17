@@ -68,7 +68,13 @@ read-only verification/compaction guards. PR #42 merged as
 merge-queue checks passed. The [queued exact-export increment](../../guides/stewardship-exact-exports.md)
 has completed implementation and three dual-source review/fix rounds on
 `pr/stewardship-exact-report-facts`, including final correction validation;
-protected delivery is pending. Scheduled verification still follows before BG-07.
+PR #43 subsequently merged as `053eed78` after all 24 exact-head and all 24
+protected merge-group jobs passed. The
+[scheduled verification increment](../../guides/stewardship-fact-verification.md)
+has completed implementation and three successful dual-source review/fix rounds
+on `pr/stewardship-fact-verification`, with complete sharded coverage evidence
+and passing final focused validation. Protected PR delivery remains pending.
+It does not complete the later statistics, digest or interactive UI owners.
 All package checkboxes remain open.
 
 ## RPT-04: Additional-information workflow report

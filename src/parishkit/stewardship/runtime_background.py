@@ -110,6 +110,8 @@ def scheduler_handlers():
     from .reports.export_tasks import export_handler
     from .reports.fact_tasks import TASK_TYPE as REPORT_FACTS
     from .reports.fact_tasks import fact_handler
+    from .reports.verification_production import TASK_TYPE as VERIFY_FACTS
+    from .reports.verification_tasks import verification_handler
     from .source.outcomes import admit_refresh_metadata, recovery_plan
     from .source.requests import TASK_TYPE
     from .source.setup_admission import TASK_TYPE as SETUP_LOAD
@@ -126,6 +128,7 @@ def scheduler_handlers():
         FAMILY_MAIL_PREPARE: preparation_handler(scheduler=True),
         REPORT_EXPORT: export_handler(scheduler=True),
         REPORT_FACTS: fact_handler(scheduler=True),
+        VERIFY_FACTS: verification_handler(scheduler=True),
         EXACT_EXPORT: exact_handler(scheduler=True),
         EXPORT_CLEANUP: export_cleanup_handler(),
         CAMPAIGN_BOUNDARY: boundary_handler(scheduler=True),
@@ -275,6 +278,8 @@ def configure_background(configuration, *, stop, heartbeat):
         from .reports.export_tasks import export_handler
         from .reports.fact_tasks import TASK_TYPE as REPORT_FACTS
         from .reports.fact_tasks import fact_handler
+        from .reports.verification_production import TASK_TYPE as VERIFY_FACTS
+        from .reports.verification_tasks import verification_handler
         from .source.effects import refresh_reconciler
         from .source.execution import refresh_handler
         from .source.requests import TASK_TYPE
@@ -292,6 +297,7 @@ def configure_background(configuration, *, stop, heartbeat):
             ),
             EXPORT_CLEANUP: export_cleanup_handler(configuration.paths["reports"]),
             REPORT_FACTS: fact_handler(),
+            VERIFY_FACTS: verification_handler(),
             EXACT_EXPORT: exact_handler(store=store),
             REPORT_EXPORT: export_handler(
                 store=store, root=configuration.paths["reports"]

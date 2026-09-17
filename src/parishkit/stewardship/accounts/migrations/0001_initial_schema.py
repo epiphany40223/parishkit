@@ -31,6 +31,7 @@ def schema_sql():
                 "delivery_resolution",
                 "report_facts",
                 "exact_exports",
+                "fact_verification",
             )
         ]
     )
