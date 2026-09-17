@@ -179,19 +179,28 @@ def render_daily_digest(document, *, public_origin):
     text += "\n\n" + " | ".join(headings)
     text += "\n" + "\n".join(" | ".join(row) for row in rows)
     text += "\n\nOpen this exact report (staff login required): " + url
-    html = "".join("<p>" + escape(label) + "</p>" for label in labels)
+    # Canonical HTML leaves quotes literal in text nodes, not in attributes.
+    html = "".join("<p>" + escape(label, quote=False) + "</p>" for label in labels)
     html += "<h2>Current population statistics</h2><dl>"
     html += "".join(
-        "<dt>" + escape(label) + "</dt><dd>" + escape(value) + "</dd>"
+        "<dt>"
+        + escape(label, quote=False)
+        + "</dt><dd>"
+        + escape(value, quote=False)
+        + "</dd>"
         for label, value in cards
     )
     html += "</dl><h2>Daily participation</h2>"
     html += f'<img src="cid:{CHART_ID}" alt="{CHART_ALT}" width="720">'
     html += "<table><caption>Historical as of day</caption><thead><tr>"
-    html += "".join('<th scope="col">' + escape(label) + "</th>" for label in headings)
+    html += "".join(
+        '<th scope="col">' + escape(label, quote=False) + "</th>" for label in headings
+    )
     html += "</tr></thead><tbody>"
     html += "".join(
-        "<tr>" + "".join("<td>" + escape(value) + "</td>" for value in row) + "</tr>"
+        "<tr>"
+        + "".join("<td>" + escape(value, quote=False) + "</td>" for value in row)
+        + "</tr>"
         for row in rows
     )
     html += "</tbody></table>"

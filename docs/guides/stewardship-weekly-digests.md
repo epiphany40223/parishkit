@@ -452,3 +452,23 @@ was independently reproduced against the old renderer. No SQL schema changed.
 The next round also includes `c7b79c7`'s repeated-bootstrap/baseline reductions;
 those were outside round two's fixed review snapshot. Final acceptance and Gate 3
 remain open.
+
+### Review round three
+
+Session `20260917-191748-6f7edf` reviewed `cf8c614` against `cff8aff`, including
+all second-round corrections and the follow-up efficiency work. Both vendors
+completed without degradation. Codex reported no findings; Claude reported eight
+raw findings, one High and seven below the Medium cutoff.
+
+The High finding identifies a pre-existing companion daily-renderer defect:
+quotes in text nodes were escaped differently from the strict HTML serializer's
+canonical output. Apostrophe and double-quote regressions both reproduced the
+failure. Daily text-node escaping now matches the weekly compiler, while URL
+attributes retain quote escaping and markup remains escaped. The existing
+malicious-branding test now checks the real compiled-body boundary, not merely
+the intermediate renderer output. All 89 daily/weekly compiler checks pass in
+1.34 seconds. A further review is required because this round found a High issue.
+
+Final review/CI and merge receipts will also be retained on
+[PR #48](https://github.com/epiphany40223/parishkit/pull/48). Record the verified
+delivery in the coordinating task ledger before beginning the next increment.
