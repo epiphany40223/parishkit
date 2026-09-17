@@ -234,7 +234,7 @@ calculation/materialization prerequisite before BG-07.
 Scope and dependencies: [BG-07 work package](../../plans/stewardship/background-processing.md#bg-07-submission-confirmations-and-admin-digests).
 
 - [x] BG-07.01 — Create idempotent submission confirmations.
-- [ ] BG-07.02 — Build daily digests against exact immutable facts.
+- [x] BG-07.02 — Build daily digests against exact immutable facts.
 - [ ] BG-07.03 — Build weekly information and correction digests.
 - [ ] BG-07.04 — Integrate post-close obligation inventory and explicit resolutions.
 - [ ] BG-07.05 — Test digest coverage, parity, recovery, and repeat safety.
@@ -268,6 +268,13 @@ supersedes the pending note. BG-07.02 is in progress on
 `pr/stewardship-daily-digests` from that verified fresh `origin/main` tip; its
 [increment guide](../../guides/stewardship-daily-digests.md) records the coherent
 daily report-to-delivery scope and internal checkpoints.
+
+BG-07.02 and its daily-specific tests now pass five successful dual-source
+review/fix rounds and [final local acceptance](../../guides/stewardship-daily-digests.md#final-local-acceptance):
+3,582 PostgreSQL cases, 93.97% line/85.07% branch coverage, the full baseline,
+three browser engines, fresh schema and container isolation. Exact-head CI/DCO
+and protected delivery remain pending. Weekly digests, complete post-close
+resolution, the full BG-07.05 matrix and Gate 3 remain open.
 
 ## BG-08: Export and graph workers
 

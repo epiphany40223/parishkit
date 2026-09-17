@@ -39,8 +39,11 @@ Gate 3 are not completed by this increment.
 
 ## Execution evidence
 
-Implementation is in progress. The checkpoints above are targets, not completion
-claims; BG-07.02 remains unchecked. No provider credentials, real delivery,
+Implementation, five successful dual-source review/fix rounds and final local
+validation are complete for BG-07.02 and its daily-specific tests. Exact-head
+CI/DCO and protected delivery remain pending. The historical checkpoints below
+retain their original scope; the final acceptance section supersedes their
+pending local-validation notes. No provider credentials, real delivery,
 deployment, release or retained database deletion is authorized.
 
 ### Rendering checkpoint
@@ -588,3 +591,55 @@ in 27.69 seconds. Ruff, all tracked Markdown and Django model-state checks
 pass. A final same-source aggregate remains required. The earlier `ef8fd27`
 aggregate is superseded by the expanded regression inventory and is not passing
 evidence. No production code changed in this round's remediation.
+
+### Final-source resource isolation
+
+The complete measurement is pinned to `aeff00f`, whose production source is
+identical to the round-5 endpoint. Seven complete partitions passed, accounting
+for 3,144 of 3,582 database tests. Partition 7 was interrupted at 15:11:40 UTC
+on September 17 when Docker reported its disposable PostgreSQL container as
+OOM-killed. PostgreSQL's checkpointer received signal 9 and crash recovery
+refused connections until 15:11:54; the first failing test reported that its
+server connection had closed unexpectedly. This partition produced no successful
+receipt and is excluded, with its log and incomplete coverage retained outside
+the aggregate directory.
+
+The idle and completed synthetic test databases were stopped, without stopping,
+resetting or deleting retained development/schema-audit databases. The complete
+438-test partition is repeated alone on a fresh disposable database against the
+same source and test inventory. This is not a code correction or a waiver of
+failed tests; a successful complete rerun and the same-source aggregate verifier
+remain required before claiming final validation.
+
+### Final local acceptance
+
+The isolated repeat passed all 438 tests in 755.82 seconds. All eight successful
+receipts were then verified against the same `aeff00f` source/test inventory:
+all 3,582 PostgreSQL tests are accounted for, with no missing partitions or
+failed-run coverage included. The stewardship scope passes with **93.97% line
+coverage and 85.07% branch coverage**. The baseline profile passed 6,375 tests,
+with 4,438 expected profile skips and two existing client-library deprecation
+warnings, in 127.02 seconds.
+
+The complete local aggregate started at 10:51:25 Eastern on September 17 and
+completed by 11:30:29, including the memory-interrupted partition and its full
+repeat. Subsequent local runs must budget for retained Docker services: use
+at most two concurrent disposable PostgreSQL slots, fresh per-partition storage,
+and stop finished owned synthetic services. CI's eight partitions use separate
+runners and do not share this local VM memory limit. No production source or
+test changed during the final measurement; the handoff changes only documents.
+
+Other final checks pass: Ruff check/format, all tracked Markdown, unchanged
+Django model state, 29 grant regressions, 103 focused PostgreSQL ownership/
+recovery cases, 17 credential-selection cases, 17 fresh-schema checks, 269
+browser cases per engine (Chromium/Firefox/WebKit), and 12 real container
+mount-isolation checks. Fresh independent catalogs verify the two reviewed
+trigger-function changes; existing databases were neither upgraded nor deleted.
+
+All five successful review rounds have complete raw-finding dispositions.
+No accepted Medium-or-higher issue remains unresolved, and the last round found
+no High/Critical issue. This satisfies the local review exit, not protected
+delivery: exact-head CI/DCO and the merge queue still must pass. BG-07.03,
+BG-07.04, complete BG-07.05, later Phase 5 report workflows and Gate 3 remain
+open. After this increment lands, begin the weekly digest increment from the
+verified fresh `origin/main` tip under the standing delivery authority.
