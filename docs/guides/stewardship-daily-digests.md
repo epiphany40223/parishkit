@@ -467,7 +467,7 @@ Medium/High/Critical.
 
 | Finding | Raw severity | Disposition and evidence |
 | --- | --- | --- |
-| Claude 1 | Low | Fixed: the first-load missing-controls case now requires the actual script response to succeed, rejects console errors including CSP violations, and requires exactly one deliberately unmarked controls container. Existing positive control-page tests require functional pointer/keyboard enhancement. |
+| Claude 1 | Low | Fixed: the first-load missing-controls case now requires the actual script response to succeed, rejects errors exposed through Playwright's page/console channels, and requires exactly one deliberately unmarked controls container. This negative case does not independently prove script execution on every engine; the separate positive control-page tests require functional pointer/keyboard enhancement under the same CSP. |
 | Claude 2 | Low | Fixed: the pinned-run caveat now covers every subsequent correction, including the browser test, rather than mentioning only retry status. |
 | Claude 3 | Low | Fixed: a second current specific-address Admin cannot adopt another Admin's retry command. PostgreSQL regressions cover both original-parent invalid-command and wrong-parent stale-conflict outcomes without allocating a new run. |
 
@@ -477,8 +477,11 @@ tests caught this. The fresh-install constraint now includes that exact closed
 event, without permitting arbitrary text. Independent fresh catalogs against
 `a000b21` differ only in `operational_event_safe`; its actual installed definition
 was inspected before updating the fingerprint. All 75 retry/source-failure/
-registry regression checks pass, as do all 12 browser cases. The full Python
-suite at the reviewed head passed 6,374 tests with 4,419 profile skips.
+registry regression checks pass, as do all 12 browser cases. The baseline Python
+profile at `a000b21`, before the SQL allowlist and two additional PostgreSQL
+retry cases in `c4bbc9b`, passed 6,374 tests with 4,419 profile skips in 81.31
+seconds. Those profile skips exclude the PostgreSQL checks that found the
+allowlist failure; this is not a claim that complete validation passed.
 
 The incomplete `5eb388f` aggregate run is not passing evidence: its known
 registry failures invalidated the run, so remaining owned test processes were
@@ -486,3 +489,23 @@ stopped rather than spending further time on superseded source. Logs remain
 available. This narrow schema correction receives an additional focused
 dual-source review without resetting the three completed rounds; complete
 coverage is rerun against a fresh pinned corrected checkout.
+
+### Additional focused dual-source round 4
+
+Pika session `20260917-090156-db91da` reviewed `a000b21` through
+`c4bbc9bf2ea58a9ca64a542d917b90a013ac1219` (tree
+`6db18ed57f1ccac034df8cfa56c0120339c67a63`). Both reviewers completed all five
+changed files and surrounding context without degradation or verdict mismatch.
+Codex approved with no findings. Claude reported three Low findings, none
+Medium/High/Critical; Pika's finalized action was approve. All raw findings are
+accounted for below, including the below-threshold notes.
+
+| Finding | Raw severity | Disposition and evidence |
+| --- | --- | --- |
+| Claude 1 | Low | Clarified the baseline-profile evidence to name `a000b21` and its actual log duration/counts, distinguish its PostgreSQL skips, and explicitly exclude the later added cases. The counts came from a rerun, not a copied result; final aggregate validation remains separate. |
+| Claude 2 | Low | Narrowed the round-3 wording to page/console errors actually exposed by each engine. The missing-controls case tests safe static fallback, while the separate positive control-page cases prove functional execution under the actual CSP. No production-only instrumentation was added solely to test a defensive early return. |
+| Claude 3 | Low | Deferred cosmetic SQL wrapping: this exact closed literal and installed constraint are already verified by both registry-parity tests and an independent fresh-schema audit. The nearby long registry lists have no enforced line-width rule; no functional or readability-sensitive ambiguity is introduced. |
+
+Complete eight-part coverage is running against a clean, separate checkout at
+`c4bbc9b`, using four exclusive PostgreSQL/Valkey slots in two waves to limit
+memory pressure. Prior failed or incomplete aggregate runs remain excluded.
