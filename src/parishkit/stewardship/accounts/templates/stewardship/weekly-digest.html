@@ -1,0 +1,36 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Weekly information report" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Weekly information report" %}</h1>
+<p>{{ snapshot.configuration.parish.name }} — {{ snapshot.timezone_configuration.name }}</p>
+<p class="notice">{% translate "Pinned report: Family names and request text reflect this report's capture. Current request status is checked when you open the page. This page does not send email or update follow-up records." %}</p>
+{% if snapshot.preparation.mode == 'testing' %}<p class="notice">{% translate "This report was generated in Testing mode." %}</p>{% endif %}
+<dl>
+<dt>{% translate "Captured at" %}</dt><dd><time datetime="{{ snapshot.observed_at|date:'c' }}" data-local-instant>{{ snapshot.observed_at|date:'c' }}</time></dd>
+<dt>{% translate "Campaign timezone" %}</dt><dd>{{ snapshot.timezone_configuration.timezone }}</dd>
+<dt>{% translate "Submission sequence cutoff" %}</dt><dd>{{ snapshot.submission_watermark|number }}</dd>
+<dt>{% translate "New actionable requests at capture" %}</dt><dd>{{ information_count|number }}</dd>
+<dt>{% translate "Corrections" %}</dt><dd>{{ correction_count|number }}</dd>
+</dl>
+{% if not total %}<p>{% translate "This captured interval contained no new actionable requests or corrections. Delivery completion is tracked separately." %}</p>{% endif %}
+{% for row in rows %}
+<section class="panel">
+<h2>{{ row.value.family_name }} — {% translate "Family DUID" %} {{ row.value.family_duid|number }}</h2>
+<p>{% translate "Submitted" %}: <time datetime="{{ row.value.submitted_at|date:'c' }}" data-local-instant>{{ row.value.submitted_at|date:'c' }}</time></p>
+<dl><dt>{% translate "Status at capture" %}</dt><dd>{{ row.captured }}</dd>
+<dt>{% translate "Current status" %}</dt><dd>{{ row.current }}</dd></dl>
+{% if not row.actionable %}<p class="notice">{% translate "This request is no longer actionable. Any text retained below is historical, not the Family's current request." %}</p>{% endif %}
+{% if row.text %}
+{% if detail %}<h3>{% translate "Full text at capture" %}</h3><div class="content-sample">{{ row.text }}</div>
+{% else %}<p>{{ row.text }}</p><p><a href="{{ row.url }}">{% translate "Open full captured request and current status" %}</a></p>{% endif %}
+{% else %}<p>{% translate "This correction intentionally omits the former request text." %}</p>{% endif %}
+</section>
+{% endfor %}
+{% if detail %}<p><a href="{{ report_url }}">{% translate "Return to this weekly report" %}</a></p>
+{% elif total %}<nav aria-label="{% translate 'Report pages' %}">
+<p>{% translate "Page" %} {{ page|number }} {% translate "of" %} {{ pages|number }}</p>
+{% if previous_page %}<a href="?page={{ previous_page }}">{% translate "Previous page" %}</a>{% endif %}
+{% if next_page %}<a href="?page={{ next_page }}">{% translate "Next page" %}</a>{% endif %}
+</nav>{% endif %}
+<p><a href="{% url 'admin:index' %}">{% translate "Return to the administration portal" %}</a></p>
+{% endblock %}

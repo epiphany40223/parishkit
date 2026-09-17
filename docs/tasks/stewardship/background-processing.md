@@ -294,7 +294,9 @@ The [provider-dispatch/Admin-recovery checkpoint](../../guides/stewardship-weekl
 now has maintained-worker, recovery, browser-command and baseline evidence.
 The [Testing-retention checkpoint](../../guides/stewardship-weekly-digests.md#testing-retention-cleanup-checkpoint)
 also has bounded cleanup and independent schema evidence.
-Manual reports, protected routes, runtime assembly and the required review/final
+The [protected-report checkpoint](../../guides/stewardship-weekly-digests.md#protected-report-and-detail-checkpoint)
+has exact-role, response-barrier, baseline and three-engine accessibility evidence.
+Manual reports, runtime assembly and the required review/final
 validation remain open; BG-07.03 and BG-07.05 are not complete.
 
 ## BG-08: Export and graph workers

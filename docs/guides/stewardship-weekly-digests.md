@@ -273,6 +273,39 @@ The final 46-test fresh-schema/inventory/capture run passed in 54.04 seconds;
 135 focused cleanup, Production-state and permission tests passed in 0.35 seconds.
 Ruff check/format, Markdown checks and model-state drift checks pass.
 
+### Protected report and detail checkpoint
+
+Email links now resolve to current-Admin-only report and item pages. The pages
+use the existing campaign response-lifetime barrier, recheck authority before
+opening private content, and retain started/completed-or-failed access evidence
+without logging text or recipients. Anonymous, Staff-only and Ministry-only
+accounts cannot read these Admin mail reports. The later Staff follow-up queue
+and its editing/export workflow remain Phase 5 work.
+
+Overview pages contain at most 50 selected items; detail links must select an
+item actually included in that snapshot, not merely one present in its broader
+source observation. Captured names/text remain stable while current request
+disposition is read explicitly. Superseded historical text is visibly labeled;
+correction records never retrieve or repeat the former text. Full captured text
+is escaped, overview excerpts are bounded, and browser-local timestamp rendering
+uses the shared responsive interface. Reads never send email or alter follow-up.
+
+Web now has column-scoped retained report input reads for this protected surface;
+it still cannot read the generation-time recipient cohort or compiled per-Admin
+mail bytes. Scheduler and MAIL retain their previous narrower permissions.
+
+Validation: 19 bounded-selection/parameter checks passed in 0.38 seconds. The
+initial 16 report/recovery database checks passed in 62.42 seconds after fixing
+the new anonymous-principal denial. The expanded 38-case weekly/daily protected
+view, response-guard and dispatch run passed in 102.60 seconds. All nine real
+Chromium/Firefox/WebKit phone/desktop accessibility and no-JavaScript scenarios
+passed in 12.55 seconds. The complete credential-free baseline passed 6,597 tests
+with 4,566 expected profile skips and the same two client-library warnings in
+66.56 seconds. No database schema changed in this checkpoint.
+
+Manual report requests, runtime assembly, final validation and required review
+rounds remain open. BG-07.03 and BG-07.05 are still incomplete.
+
 ### Provider dispatch and Admin recovery checkpoint
 
 Weekly per-Admin messages now use the maintained MAIL worker and isolated weekly

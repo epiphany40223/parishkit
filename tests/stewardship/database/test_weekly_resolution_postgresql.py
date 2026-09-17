@@ -150,8 +150,7 @@ def test_web_cannot_author_weekly_content_or_call_private_seed(
             for sql in (
                 "SELECT stewardship_weekly_digest_seed_v1(%s,NULL)",
                 "SELECT html FROM stewardship_weekly_digest_recipient WHERE id=%s",
-                "SELECT observation FROM stewardship_weekly_digest_snapshot "
-                "WHERE id=%s",
+                "SELECT recipients FROM stewardship_weekly_digest_snapshot WHERE id=%s",
                 "UPDATE stewardship_outbox_message SET state='delivered' WHERE id=%s",
             ):
                 with (

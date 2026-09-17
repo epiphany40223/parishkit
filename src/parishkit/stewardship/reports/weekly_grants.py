@@ -1,5 +1,20 @@
 """The report worker may read weekly inputs; scheduler/MAIL cannot read raw text."""
 
+REPORT_FIELDS = (
+    "id",
+    "preparation_id",
+    "campaign_id",
+    "configuration_id",
+    "timezone_configuration_id",
+    "source_id",
+    "observed_at",
+    "submission_watermark",
+    "after_watermark",
+    "observation",
+    "information",
+    "corrections",
+)
+
 
 def add_weekly_grants(tables, columns, *, worker):
     """Add only capture projections, never follow-up mutations or all answers."""
@@ -67,4 +82,6 @@ def add_weekly_web_grants(tables, columns):
     """Allow exact Admin retry admission without exposing compiled private text."""
     add_weekly_dispatch_grants(tables, columns, private=False)
     columns["stewardship_weekly_digest_recipient"]["SELECT"].add("address")
-    columns["stewardship_weekly_digest_snapshot"]["SELECT"].add("campaign_id")
+    # Protected report views read selected retained inputs, not the immutable
+    # recipient cohort or private compiled per-Admin delivery payloads.
+    columns["stewardship_weekly_digest_snapshot"]["SELECT"].update(REPORT_FIELDS)
