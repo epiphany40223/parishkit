@@ -545,9 +545,10 @@ failure, and the incomplete aggregate is not accepted as validation.
 The two trigger functions now branch in PL/pgSQL before planning those optional
 domain reads. Actual cleanup completion and non-null pause bindings retain
 their existing checks. No new grant, security-definer conversion, clock
-override or weakened ownership fence was introduced. All 17 digest-resolution
-cases pass with explicitly forced custom/generic plans, including a direct
-assertion that MAIL still cannot read the production-request table.
+override or weakened ownership fence was introduced. Eight digest-resolution
+scenarios pass under both forced custom/generic plans (16 collected cases),
+including a direct assertion that MAIL still cannot read the production-request
+table. The separate web-capability case also passes under its default plan.
 
 Independent fresh catalogs based on `326c695` differ only in the installed
 definitions of `stewardship_production_task_actor_v1()` and
@@ -562,3 +563,28 @@ complete browser profiles passed 269 cases each: Chromium in 150.79 seconds,
 Firefox in 572.64 seconds and WebKit in 250.64 seconds. These browser runs
 exercise the unchanged final UI; full corrected-source aggregate coverage and
 exact-head CI remain outstanding.
+
+### Complete dual-source round 5
+
+Pika session `20260917-103905-5283f7` reviewed `326c695` through
+`ef8fd27332098d7f3941812be7eccec448b9f31d` (tree
+`481c9f8b02d619661ae126220715fe7c4d366d54`). Both reviewers completed without
+degradation, failed agents or verdict mismatch. The raw findings were two
+Medium and four Low; none were High/Critical. Finalization returned comment,
+not an unconditional approval. The dispositions below address every raw item.
+
+| Finding | Raw severity | Disposition and evidence |
+| --- | --- | --- |
+| Claude 1 | Medium | Added a column-precise grant regression covering every installed direct outbox writer. WORKER and MAIL both have all remaining shared metadata reads in the cited Testing, credential, scope, schedule and event predicates. WEB resolves deliveries through a guarded owner-executed command, not direct outbox writes. No grant was added. The optional private-domain reads remain separately branched. |
+| Claude 2 | Medium | Promoted plan selection to a shared fixture and applied both modes to committed-completion and attributed-failure production guards, real restricted cleanup recovery, and pause/hold transitions. These targeted regressions run in normal CI, avoiding a second complete database matrix while preserving the existing 77-case generic-plan evidence. |
+| Claude 3 | Low | Added an explicit `SHOW plan_cache_mode` assertion inside MAIL before retry and inside the restricted cleanup worker before recovery. A future reconnect cannot silently turn these regressions into default-plan coverage. |
+| Claude 4 | Low | Deferred optional trigger `WHEN` optimization: the reviewed early return is explicit, correct, and avoids changing the installed trigger contract. There is no measured performance issue requiring a second mechanism. |
+| Claude 5 | Low | The shared fixture now replaces both the new digest-local fixture and the existing credential-selection SET/RESET copy, restoring the prior setting rather than assuming a default. |
+| Codex 1 | Low | Corrected the evidence wording: eight scenarios run under two forced modes (16 cases), while the separate capability test accounts for the seventeenth case under the default plan. |
+
+Post-fix validation passed all 29 pure grant tests, 103 digest/cleanup/journal/
+outbox PostgreSQL cases in 189.17 seconds, and 17 credential-selection cases
+in 27.69 seconds. Ruff, all tracked Markdown and Django model-state checks
+pass. A final same-source aggregate remains required. The earlier `ef8fd27`
+aggregate is superseded by the expanded regression inventory and is not passing
+evidence. No production code changed in this round's remediation.

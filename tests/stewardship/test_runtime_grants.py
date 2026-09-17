@@ -57,6 +57,57 @@ def test_web_only_reads_source_owned_assignment_overlays():
     assert "stewardship_assignment_overlay" not in columns
 
 
+def test_outbox_writers_can_plan_shared_conditional_metadata_reads():
+    """Every direct writer covers the remaining trigger queries at column precision.
+
+    These shared metadata reads are safe under generic plans. Optional pause
+    and cleanup-domain reads instead require explicit PL/pgSQL branching;
+    neither this inventory nor a false SQL predicate grants their authority.
+    """
+    reads = {
+        "stewardship_campaign_credentials": {
+            "campaign_id",
+            "go_live_gate",
+            "rehearsal_epoch_id",
+        },
+        "stewardship_system_configuration": {"current_campaign_id", "mode"},
+        "stewardship_rehearsal_epoch": {"id", "campaign_id", "state"},
+        "stewardship_family_token_generation": {
+            "id",
+            "campaign_id",
+            "credential_epoch",
+        },
+        "stewardship_family_token": {"generation_id", "family_id"},
+        "stewardship_parish": {"id"},
+        "stewardship_family_campaign": {"id", "campaign_id"},
+        "stewardship_schedule_occurrence": {
+            "outbox_id",
+            "revision_id",
+            "definition_id",
+            "state",
+        },
+        "stewardship_schedule_definition": {"id", "current_revision_id"},
+        "stewardship_outbox_event": {"message_id", "action", "version"},
+    }
+    writers = set()
+    for _, _, role, target in database_identities():
+        if role is ServiceRole.MIGRATION:
+            continue
+        tables, columns = runtime_grants(role, target=target)
+        table = "stewardship_outbox_message"
+        if not (
+            {"INSERT", "UPDATE"}
+            & (tables.get(table, set()) | set(columns.get(table, {})))
+        ):
+            continue
+        writers.add(role)
+        for table, fields in reads.items():
+            assert "SELECT" in tables.get(table, set()) or fields <= columns.get(
+                table, {}
+            ).get("SELECT", set()), (role, table, fields)
+    assert writers == {ServiceRole.WORKER, ServiceRole.MAIL_DISPATCH}
+
+
 def test_statistics_metadata_is_read_only_and_not_given_to_downloads():
     """Counts/organization checks add no source writes or raw validation reads."""
     tables, columns = runtime_grants(ServiceRole.WEB)

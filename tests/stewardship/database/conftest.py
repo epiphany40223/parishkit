@@ -7,6 +7,26 @@ from .auth_builders import auth_service, google  # noqa: F401
 from .response_builders import live_response_service, response_service  # noqa: F401
 
 
+@pytest.fixture(params=["force_custom_plan", "force_generic_plan"])
+def sql_plan_mode(request):
+    """Exercise trigger guards under both plans and restore the caller's setting."""
+    from django.db import connection
+
+    with connection.cursor() as cursor:
+        cursor.execute("SHOW plan_cache_mode")
+        previous = cursor.fetchone()[0]
+        cursor.execute(
+            "SELECT set_config('plan_cache_mode', %s, false)", [request.param]
+        )
+    try:
+        yield request.param
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT set_config('plan_cache_mode', %s, false)", [previous]
+            )
+
+
 @pytest.fixture(scope="session")
 def django_db_setup(django_db_setup, django_db_blocker):
     """Verify fresh-install sentinels before any test flush or repair fixture.
