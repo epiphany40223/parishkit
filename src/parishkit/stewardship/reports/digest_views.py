@@ -14,6 +14,7 @@ from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
@@ -32,10 +33,10 @@ def snapshot(request, snapshot_id, *, representation="html"):
     """A UUID selects retained data, not permission; chart bytes are equally private."""
     finish, handed_off = None, False
     try:
-        if request.GET or representation not in {"html", "png", "download"}:
-            return private_response("Invalid report request.\n", status=400)
         service = runtime()
         principal = _principal(request, service.store)
+        if request.GET or representation not in {"html", "png", "download"}:
+            return private_response("Invalid report request.\n", status=400)
         # Only scope metadata is read before the response-lifetime barrier.
         retained = DailyDigestSnapshot.objects.only(
             "id", "campaign_id", "configuration_id"
@@ -65,8 +66,15 @@ def snapshot(request, snapshot_id, *, representation="html"):
             """Record server completion after closure, never imply browser receipt."""
             nonlocal finalized
             if not finalized:
-                finalized = True
-                audit(Outcome.SUCCEEDED if completed else Outcome.FAILED)
+                try:
+                    audit(Outcome.SUCCEEDED if completed else Outcome.FAILED)
+                except (DatabaseError, StorageInvariantError) as error:
+                    # Headers may already be sent. Preserve the original result
+                    # and signal the missing terminal audit without exception
+                    # text, report contents, or claiming the write succeeded.
+                    emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
+                else:
+                    finalized = True
 
         try:
             audit(Outcome.STARTED)
@@ -84,6 +92,8 @@ def snapshot(request, snapshot_id, *, representation="html"):
                 pk=snapshot_id, campaign_id=retained.campaign_id
             ).exists():
                 raise ReadUnavailable("Retained report is unavailable.")
+            if not DailyDigestReady.objects.filter(snapshot_id=snapshot_id).exists():
+                raise ReadUnavailable("Retained report is not ready.")
 
         def content():
             """Prepare bounded bytes before headers; never consult current facts."""

@@ -478,13 +478,18 @@ def preparation_retry(request, task_id, *, daily=False):
             task = TaskRun.objects.get(
                 pk=task_id, task_type__in=TASK_TYPES if daily else (TASK_TYPE,)
             )
-            runs = TaskRun.objects.filter(root_id=task.root_id)
-            previous = runs.filter(retry_command_id=command_id).first()
-            if (previous and previous.parent_id != task_id) or (
-                previous is None
-                and runs.order_by("-retry_sequence").first().pk != task_id
-            ):
-                raise StaleRecordError("The selected preparation is no longer current.")
+            if not daily:
+                # Daily's service binds the selected run, replay and Admin.
+                # Family's older service instead takes a preparation identity.
+                runs = TaskRun.objects.filter(root_id=task.root_id)
+                previous = runs.filter(retry_command_id=command_id).first()
+                if (previous and previous.parent_id != task_id) or (
+                    previous is None
+                    and runs.order_by("-retry_sequence").first().pk != task_id
+                ):
+                    raise StaleRecordError(
+                        "The selected preparation is no longer current."
+                    )
             result = (retry_digest if daily else retry_preparation)(
                 service.store,
                 actor.identity,

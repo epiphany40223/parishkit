@@ -277,7 +277,10 @@ timing alone, makes insertion/recovery idempotent and prevents two revisions or
 workers from creating the same revision-specific work.
 
 `ScheduleFulfillment` records that a semantic slot is covered independently of
-revision. Its disposition is `delivered` or `coalesced`. Its unique key combines
+revision. Its disposition is `delivered`, `coalesced`, or `empty`. An `empty`
+daily-digest row requires an audited successful occurrence whose entire original
+recipient cohort was safely cancelled after losing Administrator authority; it
+does not represent provider acceptance. Its unique key combines
 schedule UUID, mode, semantic recipient or audience, and occurrence slot (for
 example Family DUID for a one-time Family mail or campaign-local date for a
 daily digest). A delivered row references the successful occurrence; a
@@ -314,7 +317,7 @@ submission/item/correction versions or daily range, resolving Admin, UTC time,
 required reason, and linked skipped occurrence/cancelled work. Its unique key
 combines campaign, mode, obligation key, and coverage digest, making repeated
 confirmation idempotent without covering later inputs. It is a durable explicit
-skip, separate from delivered/coalesced `ScheduleFulfillment`; it survives
+skip, separate from delivered/coalesced/empty `ScheduleFulfillment`; it survives
 schedule revision and archive/unarchive until campaign purge. See
 [post-close reporting obligations](../background-processing/spec.md#post-close-reporting-obligations)
 for transactional application and admission checks.

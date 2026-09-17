@@ -50,6 +50,7 @@ FAMILY_CODE_MARKER = "PARISHKIT_REDACTED_FAMILY_CODE"
 FAMILY_LINK_MARKER = "https://parishkit.invalid/redacted-family-link"
 # Keep identical to the non-sendable seed in stewardship_receipt_seed_v1.
 RECEIPT_ALLOCATION_MARKER = "PARISHKIT_PENDING_RECEIPT"
+DIGEST_ALLOCATION_MARKER = "PARISHKIT_PENDING_DAILY_DIGEST"
 SHARE_PLACEHOLDERS = frozenset(
     {
         "parish_name",
@@ -224,6 +225,7 @@ def validate_admin_digest_content(subject, html, text):
                 FAMILY_CODE_MARKER,
                 FAMILY_LINK_MARKER,
                 RECEIPT_ALLOCATION_MARKER,
+                DIGEST_ALLOCATION_MARKER,
             )
         ):
             raise ValueError("Admin digests cannot contain reserved markers.")

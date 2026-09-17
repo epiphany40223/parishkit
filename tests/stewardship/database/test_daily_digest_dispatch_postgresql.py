@@ -33,6 +33,7 @@ from parishkit.stewardship.jobs.storage import _status
 from parishkit.stewardship.reports.digest_fanout import fanout_daily
 from parishkit.stewardship.reports.digest_models import DailyDigestRecipient
 
+from ..policy_factory import address
 from .campaign_builders import (
     admit_test_work,
     campaign_clock,
@@ -111,16 +112,82 @@ def test_daily_exact_mail_role_records_provider_outcomes(
         ).exists() is (status is Status.ACCEPTED)
 
 
-def test_revoked_admin_is_cancelled_without_opening_provider_attempt(family_mail):  # noqa: F811
+def revoke_admin(harness, recipient):
+    """Apply a real login-policy replacement rather than mutating projection rows."""
+    store = harness.service.store
+    rule = AddressRule.objects.get(
+        email=recipient.address,
+        configuration_id=SystemConfiguration.objects.get().active_configuration_id,
+    )
+    assert (
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [
+                {
+                    "operation": "remove",
+                    "section": "login_rules",
+                    "id": str(rule.record_id),
+                }
+            ],
+        ).state
+        == "applied"
+    )
+
+
+@pytest.mark.parametrize("accepted_first", [False, True])
+def test_revoked_admin_is_cancelled_without_opening_provider_attempt(
+    family_mail,  # noqa: F811
+    accepted_first,
+):
     with campaign_clock(INSTANT):
-        allocated(family_mail, additional_admins=("second@example.org",))
+        ready = allocated(family_mail, additional_admins=("second@example.org",))
         recipient = DailyDigestRecipient.objects.get(address="second@example.org")
         message = recipient.outbox
-        store = family_mail.service.store
-        rule = AddressRule.objects.get(
-            email=recipient.address,
-            configuration_id=SystemConfiguration.objects.get().active_configuration_id,
+        remaining = DailyDigestRecipient.objects.get(address="admin@example.org").outbox
+
+        def deliver_remaining():
+            """Keep accepted evidence distinct from the revoked recipient's intent."""
+            with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+                execution = claim(remaining)
+                begin(remaining, execution)
+                finish_submission(
+                    remaining.pk,
+                    execution.claim,
+                    FamilyDeliveryResult(Status.ACCEPTED, 1),
+                )
+
+        if accepted_first:
+            deliver_remaining()
+        revoke_admin(family_mail, recipient)
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            execution = claim(message)
+            assert begin(message, execution) is None
+        message.refresh_from_db()
+        assert message.state == "cancelled" and message.reason == "recipient_revoked"
+        assert message.attempt == 0
+        if not accepted_first:
+            deliver_remaining()
+        occurrence = ScheduleOccurrence.objects.get(
+            pk=ready.snapshot.preparation.occurrence_id
         )
+        assert occurrence.state == "succeeded"
+        assert (
+            ScheduleFulfillment.objects.get(
+                occurrence=occurrence, slot=occurrence.slot
+            ).disposition
+            == "delivered"
+        )
+        assert OutboxMessage.objects.filter(state="delivered").count() == 1
+
+
+def test_entirely_revoked_cohort_has_empty_not_delivered_fulfillment(family_mail):  # noqa: F811
+    """A changed Admin roster never leaves a frozen, undeliverable cohort pending."""
+    with campaign_clock(INSTANT):
+        ready = allocated(family_mail)
+        recipient = DailyDigestRecipient.objects.get()
+        store = family_mail.service.store
         assert (
             change(
                 store,
@@ -128,20 +195,53 @@ def test_revoked_admin_is_cancelled_without_opening_provider_attempt(family_mail
                 uuid4(),
                 [
                     {
-                        "operation": "remove",
+                        "operation": "add",
                         "section": "login_rules",
-                        "id": str(rule.record_id),
+                        **address("replacement@example.org", roles=("administrator",)),
                     }
                 ],
             ).state
             == "applied"
         )
+        revoke_admin(family_mail, recipient)
+        message = recipient.outbox
         with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
             execution = claim(message)
             assert begin(message, execution) is None
+        occurrence = ScheduleOccurrence.objects.get(
+            pk=ready.snapshot.preparation.occurrence_id
+        )
+        assert occurrence.state == "succeeded"
+        assert occurrence.reason == "daily_digest_no_current_recipients"
+        assert (
+            ScheduleFulfillment.objects.get(
+                occurrence=occurrence, slot=occurrence.slot
+            ).disposition
+            == "empty"
+        )
+        assert not OutboxMessage.objects.filter(state="delivered").exists()
+        assert OutboxMessage.objects.get().attempt == 0
+
+
+def test_raw_mail_cannot_waive_a_current_admin_obligation(family_mail):  # noqa: F811
+    """Even the restricted MAIL role must prove revocation to record withdrawal."""
+    from parishkit.stewardship.jobs.family_mail_dispatch import cancel_unsent
+
+    with campaign_clock(INSTANT):
+        ready = allocated(family_mail)
+        message = OutboxMessage.objects.get()
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            execution = claim(message)
+            with work_transaction(), pytest.raises(DatabaseError), transaction.atomic():
+                cancel_unsent(message.pk, execution.claim, reason="recipient_revoked")
         message.refresh_from_db()
-        assert message.state == "cancelled" and message.reason == "recipient_revoked"
-        assert message.attempt == 0
+        assert message.state == "pending"
+        assert (
+            ScheduleOccurrence.objects.get(
+                pk=ready.snapshot.preparation.occurrence_id
+            ).state
+            == "pending"
+        )
 
 
 def test_production_daily_report_survives_pause_and_campaign_close(family_mail):  # noqa: F811

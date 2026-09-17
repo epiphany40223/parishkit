@@ -6,12 +6,12 @@ import sys
 
 from .digest_delivery import DigestDeliveryMail, deliver_digest
 from .family_delivery_process import MAX_DIGEST_INPUT
-from .family_delivery_worker import _decode_request
+from .family_delivery_worker import decode_envelope
 
 
 def decode_request(raw):
     """Validate only compiled one-Admin chart mail before any credential exchange."""
-    return _decode_request(raw, mail_class=DigestDeliveryMail, limit=MAX_DIGEST_INPUT)
+    return decode_envelope(raw, mail_class=DigestDeliveryMail, limit=MAX_DIGEST_INPUT)
 
 
 def main():

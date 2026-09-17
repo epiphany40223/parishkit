@@ -158,7 +158,7 @@ def test_web_cannot_supply_report_payload_or_invoke_private_seed(
                 "UPDATE stewardship_outbox_message SET state='delivered' WHERE id=%s",
             ):
                 with (
-                    pytest.raises(DatabaseError),
+                    pytest.raises(DatabaseError, match="permission denied"),
                     transaction.atomic(),
                     connection.cursor() as cursor,
                 ):

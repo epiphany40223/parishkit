@@ -5,16 +5,22 @@ from uuid import uuid4
 import pytest
 
 from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
+from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.models import TaskRun
+from parishkit.stewardship.jobs.outbox_models import OutboxMessage
+from parishkit.stewardship.jobs.ownership import TaskClaim
+from parishkit.stewardship.reports.digest_models import DailyDigestPreparation
+from parishkit.stewardship.reports.digest_planning import discover_dates
 from parishkit.stewardship.reports.digest_retry import retry_digest
+from parishkit.stewardship.reports.digest_tasks import daily_handler
 from parishkit.stewardship.storage import StaleRecordError
 
 from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import campaign_clock, change
 from .test_background_grants_postgresql import task_login
-from .test_daily_digest_planning_postgresql import INSTANT
+from .test_daily_digest_planning_postgresql import INSTANT, allocate
 from .test_daily_digest_tasks_postgresql import execute, queued
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
 from .test_policy_postgresql import user
@@ -47,6 +53,15 @@ def test_retry_form_enforces_csrf_and_exact_latest_run(family_mail, google):  # 
                 )
                 assert result.status_code == 302
             assert b"retry-daily-digest" not in browser.get(page_path).content
+            retry = TaskRun.objects.get(parent_id=status.run_id)
+            assert (
+                browser.post(
+                    f"/admin/background/tasks/{retry.pk}/retry-daily-digest",
+                    values,
+                    HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value,
+                ).status_code
+                == 409
+            )
             assert (
                 browser.post(
                     path,
@@ -127,3 +142,72 @@ def test_superseded_revision_is_not_resurrected_by_retry(family_mail):  # noqa: 
         with task_login(ServiceRole.WEB, exact=True), pytest.raises(PermissionError):
             retry_digest(store, principal.pk, status.run_id, command_id=uuid4())
         assert TaskRun.objects.filter(root_id=status.root_id).count() == 1
+
+
+@pytest.mark.parametrize("phase", ["dates", "cover"])
+def test_unselected_failed_root_retry_after_newer_root_cannot_duplicate_mail(
+    family_mail,  # noqa: F811
+    phase,
+):
+    """New work owns the dates; retrying a prior unselected root finishes empty."""
+    principal = user("admin@example.org")
+    with campaign_clock(INSTANT):
+        status = act(queued(family_mail), "claim")
+        if phase == "cover":
+            with task_login(ServiceRole.WORKER, exact=True), work_transaction():
+                discover_dates(TaskClaim(status.run_id, status.fence, status.worker_id))
+        failed = act(status, "permanent_failure")
+        later = allocate(claim_task=False)
+        handler = daily_handler(public_origin="https://parish.example")
+        with task_login(ServiceRole.WORKER, exact=True):
+            execute(later, handler)
+        messages = list(OutboxMessage.objects.values_list("pk", flat=True))
+        assert len(messages) == 1
+        with task_login(ServiceRole.WEB, exact=True):
+            retry = retry_digest(
+                family_mail.service.store,
+                principal.pk,
+                failed.run_id,
+                command_id=uuid4(),
+            )
+        with task_login(ServiceRole.WORKER, exact=True):
+            execute(retry, handler)
+        assert TaskRun.objects.get(pk=retry.run_id).state == "succeeded"
+        original = DailyDigestPreparation.objects.get(task_id=failed.root_id)
+        assert original.phase == "complete" and original.occurrence_id is None
+        assert list(OutboxMessage.objects.values_list("pk", flat=True)) == messages
+
+
+@pytest.mark.parametrize("wrong_parent", [False, True])
+def test_other_current_admin_cannot_adopt_a_retry_command(family_mail, wrong_parent):  # noqa: F811
+    """Actor binding survives replay; parent conflicts keep precedence as stale."""
+    first, second = user("admin@example.org"), user("second@example.org")
+    store = family_mail.service.store
+    with campaign_clock(INSTANT):
+        status = fail_preparation(family_mail)
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [
+                {
+                    "operation": "add",
+                    "section": "login_rules",
+                    **address("second@example.org", roles=("administrator",)),
+                }
+            ],
+        )
+        command = uuid4()
+        with task_login(ServiceRole.WEB, exact=True):
+            retry = retry_digest(store, first.pk, status.run_id, command_id=command)
+            with pytest.raises(
+                StaleRecordError if wrong_parent else ValueError,
+                match="different run" if wrong_parent else "already bound",
+            ):
+                retry_digest(
+                    store,
+                    second.pk,
+                    retry.run_id if wrong_parent else status.run_id,
+                    command_id=command,
+                )
+        assert TaskRun.objects.filter(root_id=status.root_id).count() == 2

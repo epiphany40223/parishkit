@@ -7,36 +7,62 @@ from parishkit.stewardship.campaigns.cleanup_catalog import iter_inventory
 from parishkit.stewardship.campaigns.production_models import ProductionCleanupTarget
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.family_delivery import FamilyDeliveryResult
+from parishkit.stewardship.family_delivery import FamilyDeliveryStatus as Status
+from parishkit.stewardship.jobs.family_mail_dispatch import finish_submission
+from parishkit.stewardship.jobs.outbox_models import OutboxMessage, OutboxRender
 from parishkit.stewardship.reports.digest_building import retain_daily_content
 from parishkit.stewardship.reports.digest_capture import capture_daily_snapshot
+from parishkit.stewardship.reports.digest_fanout import fanout_daily
 from parishkit.stewardship.reports.digest_models import (
     DailyDigestPreparation,
     DailyDigestReady,
+    DailyDigestRecipient,
     DailyDigestSnapshot,
 )
 from parishkit.stewardship.reports.digest_ownership import checkpoint_preparation
 from parishkit.stewardship.reports.models import CampaignDailyFactSet, CampaignFactPin
-from parishkit.stewardship.source.models import SourceSnapshotPin
+from parishkit.stewardship.source.snapshot_models import SourceSnapshotPin
 
 from .campaign_builders import campaign_clock
 from .test_background_grants_postgresql import task_login
 from .test_cleanup_batches_postgresql import delete_batch, running_request
 from .test_daily_digest_building_postgresql import build
 from .test_daily_digest_capture_postgresql import prepare
+from .test_daily_digest_dispatch_postgresql import begin
+from .test_daily_digest_fanout_postgresql import ready_report
 from .test_daily_digest_planning_postgresql import INSTANT
+from .test_family_mail_dispatch_postgresql import claim as claim_mail
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-@pytest.mark.parametrize("rendered", [False, True])
-def test_cleanup_removes_digest_inputs_in_two_row_units(response_service, rendered):
+@pytest.mark.parametrize("stage", ["snapshot", "ready", "failed", "delivered"])
+def test_cleanup_removes_digest_inputs_in_two_row_units(response_service, stage):
     """Independent inventories agree; deletion preserves facts and stale metadata."""
     with campaign_clock(INSTANT):
+        rendered = stage != "snapshot"
         if rendered:
-            claim, document, content = build(response_service)
-            with task_login(ServiceRole.WORKER, exact=True), work_transaction():
-                ready = retain_daily_content(claim, document, content)
+            claim, ready = ready_report(response_service)
             snapshot_id = ready.snapshot_id
+            if stage in {"failed", "delivered"}:
+                with task_login(ServiceRole.WORKER, exact=True), work_transaction():
+                    assert fanout_daily(claim).phase == "complete"
+                assert DailyDigestRecipient.objects.exists()
+                message = OutboxMessage.objects.get(purpose="daily_digest")
+                with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+                    execution = claim_mail(message)
+                    begin(message, execution)
+                    finish_submission(
+                        message.pk,
+                        execution.claim,
+                        FamilyDeliveryResult(
+                            Status.ACCEPTED
+                            if stage == "delivered"
+                            else Status.PERMANENT,
+                            1,
+                        ),
+                    )
         else:
             claim = prepare(response_service)
             with task_login(ServiceRole.WORKER, exact=True), work_transaction():
@@ -71,6 +97,9 @@ def test_cleanup_removes_digest_inputs_in_two_row_units(response_service, render
         ).exists()
         assert not DailyDigestSnapshot.objects.exists()
         assert not DailyDigestReady.objects.exists()
+        assert not DailyDigestRecipient.objects.exists()
+        assert not OutboxMessage.objects.filter(purpose="daily_digest").exists()
+        assert not OutboxRender.objects.exists()
         assert not SourceSnapshotPin.objects.filter(
             parent_kind="digest", parent_id=snapshot_id
         ).exists()
@@ -79,8 +108,17 @@ def test_cleanup_removes_digest_inputs_in_two_row_units(response_service, render
         ).exists()
         assert set(CampaignDailyFactSet.objects.values_list("pk", flat=True)) == facts
         assert DailyDigestPreparation.objects.filter(task_id=claim.run_id).exists()
-        with task_login(ServiceRole.WORKER, exact=True), work_transaction():
-            assert checkpoint_preparation(claim, phase="cancelled").phase == "cancelled"
+        if stage in {"snapshot", "ready"}:
+            with task_login(ServiceRole.WORKER, exact=True), work_transaction():
+                assert (
+                    checkpoint_preparation(claim, phase="cancelled").phase
+                    == "cancelled"
+                )
+        else:
+            assert (
+                DailyDigestPreparation.objects.get(task_id=claim.run_id).phase
+                == "complete"
+            )
 
 
 @pytest.mark.parametrize("target", ["snapshot", "ready", "source_pin", "fact_pin"])

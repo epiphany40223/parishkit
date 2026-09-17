@@ -13,7 +13,7 @@
 <dt>{% translate "Observed at" %}</dt><dd><time datetime="{{ document.statistics.observed_at|date:'c' }}" data-local-instant>{{ document.statistics.observed_at|date:'c' }}</time></dd>
 <dt>{% translate "Source generation" %}</dt><dd>{{ chart.source_generation|number }}</dd>
 <dt>{% translate "Source as of" %}</dt><dd><time datetime="{{ chart.source_as_of|date:'c' }}" data-local-instant>{{ chart.source_as_of|date:'c' }}</time></dd>
-<dt>{% translate "Submission cutoff" %}</dt><dd>{{ chart.submission_watermark|number }}</dd>
+<dt>{% translate "Submission sequence cutoff" %}</dt><dd>{{ chart.submission_watermark|number }}</dd>
 <dt>{% translate "Campaign timezone" %}</dt><dd>{{ chart.campaign_timezone }}</dd>
 </dl>
 <section class="panel"><h2>{% translate "Current population statistics at generation" %}</h2>
@@ -22,6 +22,7 @@
 <section class="panel" data-digest-chart>
 <h2>{% translate "Daily participation — Historical as of day" %}</h2>
 <p>{% translate "Campaign dates use the campaign timezone. Observation timestamps above use your browser's timezone." %}</p>
+<p>{% translate "This chart and table include every campaign day through the digest's cutoff. The email table highlights only the dates covered by that mailing; all values come from this same retained report." %}</p>
 <img class="digest-chart" src="{{ chart_url }}" alt="{% translate 'Daily first submissions, cumulative participating Families, and annual pledges when enabled. Exact values are in the following table.' %}" width="1440" height="840">
 {{ chart_interaction|json_script:'digest-chart-data' }}
 <div data-digest-controls hidden>

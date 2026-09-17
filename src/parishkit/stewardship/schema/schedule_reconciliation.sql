@@ -4,7 +4,7 @@ CREATE VIEW public.stewardship_daily_digest_work_row AS
 SELECT p.occurrence_id,p.task_id,
     coalesce(messages.outbox_versions,0) AS outbox_versions,
     coalesce(messages.outboxes,0) AS outboxes,
-    coalesce(tasks.versions,0)+p.version AS task_versions,
+    coalesce(tasks.versions,0)+coalesce(finalizers.versions,0)+p.version AS task_versions,
     coalesce(messages.blocking,false) AS blocking
 FROM public.stewardship_daily_digest_preparation p
 LEFT JOIN LATERAL (
@@ -28,16 +28,25 @@ LEFT JOIN LATERAL (
     WHERE s.preparation_id=p.id
 ) messages ON true
 LEFT JOIN LATERAL (
-    SELECT sum(t.version) AS versions FROM public.stewardship_task_run t
-    WHERE t.root_id=p.task_id
-      OR (t.task_type='daily_digest_finalize' AND t.domain_request_id=p.id)
-      OR t.root_id IN (
+    -- Resolve a small, deduplicated root set first, then use TaskRun's root
+    -- index. A correlated OR over all TaskRuns scales with unrelated jobs.
+    SELECT sum(t.version) AS versions FROM (
+        SELECT p.task_id AS task_id
+        UNION
         SELECT m.task_id FROM public.stewardship_daily_digest_snapshot s
         JOIN public.stewardship_daily_digest_ready r ON r.snapshot_id=s.id
         JOIN public.stewardship_daily_digest_recipient recipient ON recipient.ready_id=r.id
         JOIN public.stewardship_outbox_message m ON m.id=recipient.outbox_id
-        WHERE s.preparation_id=p.id)
+        WHERE s.preparation_id=p.id
+    ) roots JOIN public.stewardship_task_run t ON t.root_id=roots.task_id
 ) tasks ON true
+LEFT JOIN (
+    -- Finalizer roots cannot be preparation or outbox-delivery roots. This is
+    -- one TaskRun scan per view read, not one full scan per preparation.
+    SELECT domain_request_id,sum(version) AS versions
+    FROM public.stewardship_task_run WHERE task_type='daily_digest_finalize'
+    GROUP BY domain_request_id
+) finalizers ON finalizers.domain_request_id=p.id
 WHERE p.occurrence_id IS NOT NULL;
 
 CREATE VIEW public.stewardship_schedule_work_row AS

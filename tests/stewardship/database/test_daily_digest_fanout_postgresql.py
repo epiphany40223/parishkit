@@ -97,7 +97,10 @@ def test_omitted_recipient_rolls_back_entire_message(family_mail):  # noqa: F811
                 "parishkit.stewardship.reports.digest_fanout.DailyDigestRecipient.objects.create"
             ),
             task_login(ServiceRole.WORKER, exact=True),
-            pytest.raises(DatabaseError),
+            pytest.raises(
+                DatabaseError,
+                match="Daily completion requires every selected recipient intent",
+            ),
             work_transaction(),
         ):
             fanout_daily(claim)
@@ -210,7 +213,9 @@ def test_sql_rejects_detached_envelope_values(family_mail, monkeypatch, field, v
         claim, _ = ready_report(family_mail)
         with (
             task_login(ServiceRole.WORKER, exact=True),
-            pytest.raises(DatabaseError),
+            pytest.raises(
+                DatabaseError, match="requires current preparation ownership"
+            ),
             work_transaction(),
         ):
             fanout_daily(claim)

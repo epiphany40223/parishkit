@@ -371,6 +371,47 @@ def test_all_concrete_mutable_records_have_enabled_guard(db):
     with connection.cursor() as cursor:
         for model in models:
             table = model._meta.db_table
+            if table == "stewardship_daily_digest_preparation":
+                # This domain's single INSERT/UPDATE/DELETE guard compares an
+                # immutable identity tuple instead of generated per-field SQL.
+                cursor.execute(
+                    "SELECT p.proname,t.tgtype,pg_get_functiondef(p.oid) "
+                    "FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid "
+                    "WHERE t.tgrelid=%s::regclass "
+                    "AND t.tgname='daily_digest_preparation_write' "
+                    "AND t.tgenabled='O' AND NOT t.tgisinternal",
+                    [table],
+                )
+                row = cursor.fetchone()
+                assert row and row[:2] == (
+                    "stewardship_daily_digest_preparation_guard_v1",
+                    31,
+                )
+                compact = "".join(row[2].split())
+                pair = re.search(
+                    r"ROW\((NEW\.[^)]+)\)ISDISTINCTFROMROW\((OLD\.[^)]+)\)", compact
+                )
+                assert pair is not None
+                new = [value.removeprefix("NEW.") for value in pair[1].split(",")]
+                old = [value.removeprefix("OLD.") for value in pair[2].split(",")]
+                assert new == old
+                assert set(new) == {
+                    "id",
+                    "created_at",
+                    "campaign_id",
+                    "definition_id",
+                    "revision_id",
+                    "campaign_configuration_id",
+                    "task_id",
+                    "mode",
+                    "rehearsal_epoch_id",
+                }
+                assert set(model.immutable_fields) <= set(new)
+                assert not model.write_once_fields
+                assert "NEW.version<>OLD.version+1" in compact
+                assert "NEW.updated_at:=statement_timestamp()" in compact
+                assert "IFTG_OP='DELETE'THENRAISEEXCEPTION" in compact
+                continue
             if table in response_contracts:
                 trigger, function = response_contracts[table]
                 cursor.execute(
@@ -426,10 +467,16 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
     # ARC-05 intentionally deletes invalidated rehearsal detail, retaining the
     # separate anonymous code reservation forever. It is not append-only data.
     retention_exceptions = {"stewardship_rehearsal_code_mac": "retention"}
-    # Recovery edges reuse the same unconditional append-only guard as catch-up
-    # checkpoints. Verify its exact enabled trigger/function/body, not an
-    # exception from SQL immutability merely because the shared name differs.
+    # Shared guards must still prove their actual enabled row-level contracts;
+    # nonstandard names are not exceptions to SQL immutability.
     shared_immutable_guards = {
+        **{
+            "stewardship_daily_digest_" + name: (
+                "daily_digest_immutable",
+                "stewardship_daily_digest_immutable_v1",
+            )
+            for name in ("snapshot", "ready", "recipient")
+        },
         **{
             "stewardship_fact_verification_" + name: (
                 "verification_" + name + "_immutable",
@@ -480,7 +527,7 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
         },
         "stewardship_recovery_replacement": (
             "recovery_replacement_immutable",
-            "stewardship_catchup_checkpoint_immutable_v1",
+            "stewardship_daily_digest_immutable_v1",
         ),
     }
     cleanup_retention_contracts = {
@@ -596,7 +643,27 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             assert "USINGERRCODE='23514'" in "".join(row[2].split())
             if table in conditional_insert_guards:
                 assert "IFTG_OP<>'INSERT'THENRAISEEXCEPTION" in "".join(row[2].split())
-            if table in cleanup_retention_contracts:
+            if function == "stewardship_daily_digest_immutable_v1":
+                # Verify the concrete cleanup category supplied to the common
+                # immutable guard, not just the presence of a generic function.
+                category = {
+                    "stewardship_daily_digest_snapshot": "daily_digest_snapshots",
+                    "stewardship_daily_digest_ready": "daily_digest_ready",
+                    "stewardship_daily_digest_recipient": "daily_digest_recipients",
+                    "stewardship_recovery_replacement": "recovery_replacements",
+                }[table]
+                cursor.execute(
+                    "SELECT tgargs FROM pg_trigger WHERE tgrelid=%s::regclass "
+                    "AND tgname=%s",
+                    [table, trigger],
+                )
+                assert bytes(cursor.fetchone()[0]) == category.encode() + b"\x00"
+                compact = "".join(row[2].split())
+                assert (
+                    "IFTG_OP='DELETE'ANDstewardship_cleanup_effect_v1(TG_ARGV[0],OLD.id)THENRETURNOLD;ENDIF;RAISEEXCEPTION"
+                    in compact
+                )
+            elif table in cleanup_retention_contracts:
                 compact = "".join(row[2].split())
                 category = cleanup_retention_contracts[table]
                 assert "TG_OP='DELETE'" in compact

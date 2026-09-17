@@ -4,7 +4,7 @@ Normal delivery settles the aggregate in its final accepted child's transaction.
 An Admin may instead resolve an abandoned attempt after its worker is gone. That
 observation must commit without fabricating a live provider owner. This separate
 compiled task obtains a fresh metadata claim; SQL independently proves the full
-accepted cohort and records the ordinary running/succeeded occurrence history.
+resolved cohort and records the ordinary running/succeeded occurrence history.
 """
 
 from uuid import UUID, uuid4
@@ -18,9 +18,10 @@ from parishkit.stewardship.campaigns.work_locks import (
 )
 from parishkit.stewardship.jobs.dispatch import Handler, RecoveryPlan
 from parishkit.stewardship.jobs.models import TaskRun
+from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.scheduler import SchedulerGuard
-from parishkit.stewardship.jobs.storage import enqueue
+from parishkit.stewardship.jobs.storage import _status, enqueue
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .digest_models import DailyDigestPreparation
@@ -28,8 +29,8 @@ from .digest_models import DailyDigestPreparation
 TASK_TYPE = "daily_digest_finalize"
 
 
-def _outcome(status):
-    """Validate exact persisted metadata; no recipients or report values are read."""
+def _preparation(status):
+    """Bind persisted task metadata independently of mutable completion state."""
     require_work_order()
     if (
         status.task_type != TASK_TYPE
@@ -51,7 +52,12 @@ def _outcome(status):
         ).exists()
     ):
         raise PermissionError("Daily finalization Task binding differs.")
-    preparation = DailyDigestPreparation.objects.get(pk=status.domain_request_id)
+    return DailyDigestPreparation.objects.get(pk=status.domain_request_id)
+
+
+def _outcome(status):
+    """Validate exact persisted metadata; no recipients or report values are read."""
+    preparation = _preparation(status)
     occurrence = ScheduleOccurrence.objects.filter(pk=preparation.occurrence_id).first()
     if occurrence is None or occurrence.state in {"skipped", "coalesced"}:
         return "safe_cancel"
@@ -59,20 +65,26 @@ def _outcome(status):
         return "complete"
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT stewardship_daily_digest_delivered_v1(%s)", [preparation.pk]
+            "SELECT stewardship_daily_digest_resolved_v1(%s)", [preparation.pk]
         )
         if occurrence.state != "pending" or not cursor.fetchone()[0]:
             raise PermissionError(
-                "Daily finalization requires the entire accepted cohort."
+                "Daily finalization requires the entire resolved cohort."
             )
     return None
 
 
 def recover_finalization(status):
     """A crash after the claim cannot duplicate already committed completion."""
-    outcome = _outcome(status)
     if status.state != "abandoned":
         return None
+    _preparation(status)
+    try:
+        outcome = _outcome(status)
+    except PermissionError:
+        # A broken completion proof must not strand an expired owner forever.
+        # Fail visibly; only an explicit, freshly admitted retry may resume it.
+        return RecoveryPlan("recovery_fail")
     if outcome is not None:
         return RecoveryPlan(
             "recovery_complete" if outcome == "complete" else "recovery_cancel"
@@ -84,7 +96,7 @@ def recover_finalization(status):
 
 def admit_finalization(action, status):
     """Hints and recovery never grant report/body or provider access."""
-    outcome = _outcome(status)
+    _preparation(status)
     if action == "lease_expired":
         return True
     if action == "recovery_hint":
@@ -92,6 +104,9 @@ def admit_finalization(action, status):
     if action.startswith("recovery_"):
         plan = recover_finalization(status)
         return plan is not None and action == plan.action
+    if action in {"permanent_failure", "retryable_failure"}:
+        return True
+    outcome = _outcome(status)
     if action in {"complete", "safe_cancel"}:
         return action == outcome
     return action in {
@@ -107,14 +122,11 @@ def admit_finalization(action, status):
 
 def _execute(execution):
     """The claim's private SQL trigger has already committed cohort completion."""
-    from parishkit.stewardship.jobs.ownership import lock_task_claim
-    from parishkit.stewardship.jobs.storage import _status
-
     with execution.effect():
         outcome = _outcome(_status(lock_task_claim(execution.claim)))
     if outcome is None:
         raise StorageInvariantError(
-            "Daily finalization did not settle its accepted cohort."
+            "Daily finalization did not settle its resolved cohort."
         )
     execution.transition(outcome)
 
@@ -138,7 +150,7 @@ def finalization_handler(*, scheduler=False):
 
 
 class DailyDigestFinalizeProducer:
-    """Allocate bounded missing finalizers from a value-free accepted-cohort view."""
+    """Allocate missing finalizers from the bounded, value-free resolved-cohort view."""
 
     def __init__(self, worker_id):
         """Bind a service identity, never a browser-supplied claimed permission."""

@@ -15,6 +15,8 @@ LABELS = {
     "cancelled": _("Cancelled"),
     "initial": _("Initial invitation"),
     "reminder": _("Reminder"),
+    "daily_digest": _("Daily Administrator report"),
+    "receipt": _("Submission receipt"),
     "production": _("Production"),
     "testing": _("Testing"),
     "queued": _("Queued"),

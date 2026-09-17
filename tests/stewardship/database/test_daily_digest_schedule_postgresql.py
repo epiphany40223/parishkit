@@ -184,6 +184,24 @@ def test_replacement_retains_all_dates_and_exact_per_admin_acceptance(
         claim, ready = replacement_report()
         assert set(old_dates) <= set(ready.snapshot.covered_dates)
         assert len(ready.snapshot.covered_dates) == len(old_dates) + int(new_day)
+        if not new_day:
+
+            def hide_coverage(execute, sql, params, many, context):
+                """Suppress only Python's decision, not SQL's independent proof."""
+                if sql.startswith("SELECT stewardship_daily_digest_prior_messages_v1("):
+                    sql, params = "SELECT '[]'::jsonb", None
+                return execute(sql, params, many, context)
+
+            with (
+                task_login(ServiceRole.WORKER, exact=True),
+                connection.execute_wrapper(hide_coverage),
+                pytest.raises(
+                    DatabaseError, match="must reuse complete accepted coverage"
+                ),
+                work_transaction(),
+            ):
+                fanout_daily(claim)
+            assert not DailyDigestRecipient.objects.filter(ready=ready).exists()
         with task_login(ServiceRole.WORKER, exact=True), work_transaction():
             assert fanout_daily(claim).phase == "complete"
         retained = DailyDigestRecipient.objects.get(
@@ -303,7 +321,7 @@ def test_repeated_replacements_keep_lineage_and_testing_cleanup_complete(family_
         assert ScheduleRecoveryReplacement.objects.count() == 2
         edge = ScheduleRecoveryReplacement.objects.first()
         with (
-            pytest.raises(DatabaseError),
+            pytest.raises(DatabaseError, match="immutable outside owned cleanup"),
             transaction.atomic(),
             connection.cursor() as cursor,
         ):

@@ -27,6 +27,7 @@ from parishkit.stewardship.readiness_delivery import DeliveryOutcome
 from parishkit.stewardship.web.digest_content import (
     CHART_ALT,
     CHART_ID,
+    MAX_BODY_BYTES,
     MAX_CHART_BYTES,
 )
 
@@ -66,6 +67,13 @@ def request(mail=None):
             "mail": (mail or sample()).payload(),
         }
     ).encode()
+
+
+def test_private_decoder_accepts_maximum_valid_escaped_text():
+    """JSON's six-byte control escapes must fit the validated plain-body budget."""
+    mail = replace(sample(), text="\x01" * MAX_BODY_BYTES)
+    _, _, decoded = decode_request(request(mail))
+    assert decoded == mail
 
 
 def test_compiled_report_roundtrips_through_actual_private_decoder_and_mime():
@@ -293,14 +301,19 @@ def test_launch_failure_and_lost_acknowledgement_are_distinct(
     assert result.status is status
 
 
-def test_private_helper_imports_without_django_or_credentials():
-    """The isolated helper cannot depend on configured ORM/report-renderer imports."""
+def test_private_helper_imports_without_orm_or_report_renderer():
+    """Stateless Django validators are allowed, ORM and report compilation are not."""
     result = subprocess.run(
         [
             sys.executable,
             "-I",
             "-c",
-            "from parishkit.stewardship.digest_delivery_worker import decode_request",
+            "from parishkit.stewardship.digest_delivery_worker import decode_request; "
+            "import sys; "
+            "assert not any(name == prefix or name.startswith(prefix + '.') "
+            "for name in sys.modules "
+            "for prefix in ('django.db', 'matplotlib', "
+            "'parishkit.stewardship.reports'))",
         ],
         env={},
         capture_output=True,

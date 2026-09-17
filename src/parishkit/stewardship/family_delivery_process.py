@@ -18,7 +18,9 @@ from .readiness_delivery_process import _submit_private
 from .readiness_delivery_worker import MAX_INPUT
 from .web.digest_content import MAX_BODY_BYTES, MAX_CHART_BYTES
 
-MAX_DIGEST_INPUT = MAX_INPUT + 2 * MAX_BODY_BYTES + 2 * MAX_CHART_BYTES
+# JSON may expand each body byte into a six-byte control-character escape;
+# base64 chart overhead is below 2x. Admission and the private pipe must agree.
+MAX_DIGEST_INPUT = MAX_INPUT + 12 * MAX_BODY_BYTES + 2 * MAX_CHART_BYTES
 
 
 def submit_family(value, settings, mail, *, seconds, check):

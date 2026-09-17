@@ -13,27 +13,27 @@ from .readiness_delivery_worker import MAX_INPUT
 
 def decode_request(raw):
     """Validate the entire closed request before any token exchange or submission."""
-    return _decode_request(raw, mail_class=FamilyDeliveryMail, limit=MAX_INPUT)
+    return decode_envelope(raw, mail_class=FamilyDeliveryMail, limit=MAX_INPUT)
 
 
-def _decode_request(raw, *, mail_class, limit):
+def decode_envelope(raw, *, mail_class, limit):
     """Share envelope parsing; compiled helpers choose their own closed mail type."""
     if type(raw) is not bytes or not 0 < len(raw) <= limit:
-        raise ValueError("Invalid private Family delivery request.")
+        raise ValueError("Invalid private delivery request.")
     request = json.loads(raw.decode("utf-8"), object_pairs_hook=_object)
     if (
         type(request) is not dict
         or set(request) != {"settings", "candidate", "mail"}
         or type(request["candidate"]) is not str
     ):
-        raise ValueError("Invalid private Family delivery request.")
+        raise ValueError("Invalid private delivery request.")
     candidate = base64.b64decode(request["candidate"], validate=True)
     if not 0 < len(candidate) <= MAX_FILE_BYTES:
-        raise ValueError("Invalid private Family credential size.")
+        raise ValueError("Invalid private credential size.")
     settings = delivery_settings(request["settings"])
     mail = mail_class.from_payload(request["mail"])
     if any(getattr(mail, key) != settings[key] for key in ("sender", "reply_to")):
-        raise ValueError("Private Family delivery context differs.")
+        raise ValueError("Private delivery context differs.")
     return candidate, settings, mail
 
 

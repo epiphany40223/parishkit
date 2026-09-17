@@ -88,6 +88,7 @@ def test_testing_subject_prefix_cannot_be_cropped_off():
         "PARISHKIT_REDACTED_FAMILY_CODE",
         "https://parishkit.invalid/redacted-family-link",
         "PARISHKIT_PENDING_RECEIPT",
+        "PARISHKIT_PENDING_DAILY_DIGEST",
     ],
 )
 def test_private_placeholders_rejected_by_template_form_and_configuration(

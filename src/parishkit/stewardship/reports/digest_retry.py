@@ -26,7 +26,9 @@ def retry_digest(store, user_id, task_id, *, command_id):
         runs = TaskRun.objects.filter(root_id=task.root_id)
         previous = runs.filter(retry_command_id=command_id).first()
         if previous is not None:
-            if previous.parent_id != task_id or previous.initiated_by_id != user_id:
+            if previous.parent_id != task_id:
+                raise StaleRecordError("Daily retry command selects a different run.")
+            if previous.initiated_by_id != user_id:
                 raise ValueError("Daily retry command is already bound.")
             return _status(previous)
         if runs.order_by("-retry_sequence").first().pk != task_id:

@@ -57,8 +57,9 @@ def add_digest_web_grants(tables, columns):
     """Read retry ownership and configured Admin routing, never compiled content."""
     add_digest_dispatch_grants(tables, columns, private=False)
     columns["stewardship_daily_digest_recipient"]["SELECT"].add("address")
-    # The exact report reader shares retained calculation inputs, not mail prose
-    # or the private recipient cohort. Its view rechecks Staff/Admin authority.
+    # Delivery observability above may read per-message Admin addresses. The
+    # report reader gets retained inputs, not compiled mail prose or the ready
+    # row's recipient snapshot. Its view rechecks Staff/Admin authority.
     tables.setdefault("stewardship_daily_digest_snapshot", set()).add("SELECT")
     columns["stewardship_daily_digest_ready"]["SELECT"].update({"fact_set_id", "chart"})
 

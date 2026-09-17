@@ -7,7 +7,8 @@
   const slider = root.querySelector("input[type=range]");
   const output = root.querySelector("[data-digest-values]");
   const source = document.getElementById("digest-chart-data");
-  if (!image || !slider || !output || !source) return;
+  const controls = root.querySelector("[data-digest-controls]");
+  if (!image || !slider || !output || !source || !controls) return;
   let data;
   try { data = JSON.parse(source.textContent); } catch (_) { return; }
   if (!Array.isArray(data.labels) || !data.labels.length ||
@@ -35,5 +36,5 @@
   image.addEventListener("pointermove", point);
   image.addEventListener("pointerdown", point);
   show(data.labels.length - 1);
-  root.querySelector("[data-digest-controls]").hidden = false;
+  controls.hidden = false;
 })();

@@ -478,6 +478,9 @@ BEGIN
     IF NEW.covered_messages<>'[]'::jsonb THEN
         RAISE EXCEPTION 'Daily recipient cannot both queue and reuse delivery' USING ERRCODE='23514';
     END IF;
+    IF stewardship_daily_digest_prior_messages_v1(NEW.ready_id,NEW.address)<>'[]'::jsonb THEN
+        RAISE EXCEPTION 'Daily recipient must reuse complete accepted coverage' USING ERRCODE='23514';
+    END IF;
     IF NOT EXISTS(SELECT 1 FROM stewardship_daily_digest_ready r
         JOIN stewardship_daily_digest_snapshot s ON s.id=r.snapshot_id
         JOIN stewardship_daily_digest_preparation p ON p.id=s.preparation_id

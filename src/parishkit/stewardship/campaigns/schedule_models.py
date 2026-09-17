@@ -224,7 +224,7 @@ class ScheduleFulfillment(ImmutableRecord):
                 name="schedule_fulfillment_semantic",
             ),
             models.CheckConstraint(
-                condition=models.Q(disposition__in=["delivered", "coalesced"]),
+                condition=models.Q(disposition__in=["delivered", "coalesced", "empty"]),
                 name="schedule_fulfillment_disposition",
             ),
         ]

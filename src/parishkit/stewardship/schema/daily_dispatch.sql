@@ -121,6 +121,13 @@ BEGIN
               AND (prior->>'task_fence')::bigint=task.fence AND (prior->>'worker_id')::uuid=task.worker_id
               AND proposed->>'reason' LIKE 'smtp_%';
         END IF;
+        IF proposed->>'action'='cancel_unsent' AND proposed->>'reason'='recipient_revoked' THEN
+            RETURN NOT EXISTS(SELECT 1 FROM stewardship_daily_digest_recipient recipient
+                CROSS JOIN stewardship_system_configuration runtime
+                JOIN stewardship_address_rule a ON a.configuration_id=runtime.active_configuration_id
+                    AND a.roles @> '["administrator"]'::jsonb
+                WHERE recipient.outbox_id=message.id AND a.email=recipient.address);
+        END IF;
         RETURN proposed->>'action' IN ('cancel_unsent','hold','release_hold');
     ELSIF relation_name='stewardship_outbox_render' THEN
         RETURN prior IS NULL AND message.state IN ('pending','retry_wait')
@@ -132,10 +139,19 @@ BEGIN
 END $$;
 
 -- Completion is derived from the entire immutable cohort, never one child's
--- outcome. It has no provider authority and may truthfully settle observations
+-- outcome. An independently guarded revocation cancels a recipient obligation,
+-- never records provider acceptance. Entirely revoked cohorts are explicit empty
+-- fulfillment, not delivered fulfillment. It has no provider authority and may
+-- truthfully settle observations
 -- after a pause/restore gate, just as an in-flight Family attempt may settle.
 CREATE VIEW stewardship_daily_digest_completion_ready AS
-    SELECT p.id AS preparation_id FROM stewardship_daily_digest_preparation p
+    SELECT p.id AS preparation_id,
+        CASE WHEN EXISTS(SELECT 1 FROM stewardship_daily_digest_recipient recipient
+            LEFT JOIN stewardship_outbox_message m ON m.id=recipient.outbox_id
+            WHERE recipient.ready_id=ready.id AND (m.state='delivered'
+                OR (recipient.outbox_id IS NULL AND jsonb_array_length(recipient.covered_messages)>0)))
+            THEN 'delivered' ELSE 'empty' END AS disposition
+        FROM stewardship_daily_digest_preparation p
         JOIN stewardship_daily_digest_snapshot s ON s.preparation_id=p.id
         JOIN stewardship_daily_digest_ready ready ON ready.snapshot_id=s.id
         WHERE p.phase='complete' AND jsonb_array_length(ready.recipients)>0
@@ -143,14 +159,16 @@ CREATE VIEW stewardship_daily_digest_completion_ready AS
             WHERE NOT EXISTS(SELECT 1 FROM stewardship_daily_digest_recipient recipient
                 LEFT JOIN stewardship_outbox_message m ON m.id=recipient.outbox_id
                 WHERE recipient.ready_id=ready.id AND recipient.address=desired.address
-                  AND (m.state='delivered' OR (recipient.outbox_id IS NULL
+                  AND (m.state='delivered'
+                      OR (m.state='cancelled' AND m.reason='recipient_revoked')
+                      OR (recipient.outbox_id IS NULL
                       AND jsonb_array_length(recipient.covered_messages)>0
                       AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(recipient.covered_messages) AS referenced(message_id)
                           WHERE NOT EXISTS(SELECT 1 FROM stewardship_outbox_message accepted
                               WHERE accepted.id=referenced.message_id::uuid AND accepted.state='delivered'))))));
 REVOKE ALL ON stewardship_daily_digest_completion_ready FROM PUBLIC;
 
-CREATE FUNCTION stewardship_daily_digest_delivered_v1(preparation uuid)
+CREATE FUNCTION stewardship_daily_digest_resolved_v1(preparation uuid)
 RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
     SELECT EXISTS(SELECT 1 FROM stewardship_daily_digest_completion_ready WHERE preparation_id=$1)
 $$;
@@ -162,7 +180,9 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
         JOIN stewardship_task_run t ON t.id=(proposed->>'task_id')::uuid
         WHERE o.id=(proposed->>'id')::uuid AND o.state IN ('pending','running')
           AND proposed->>'state' IN ('running','succeeded')
-          AND proposed->>'reason'='daily_digest_complete'
+          AND EXISTS(SELECT 1 FROM stewardship_daily_digest_completion_ready proof
+              WHERE proof.preparation_id=p.id AND proposed->>'reason'=CASE proof.disposition
+                  WHEN 'empty' THEN 'daily_digest_no_current_recipients' ELSE 'daily_digest_complete' END)
           AND (proposed->>'definition_id')::uuid=p.definition_id
           AND (proposed->>'revision_id')::uuid=p.revision_id AND proposed->>'mode'=p.mode
           AND proposed->>'target'='admins' AND proposed->>'outbox_id' IS NULL
@@ -179,10 +199,12 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
                 JOIN stewardship_daily_digest_recipient recipient ON recipient.outbox_id=m.id
                 JOIN stewardship_daily_digest_ready ready ON ready.id=recipient.ready_id
                 JOIN stewardship_daily_digest_snapshot s ON s.id=ready.snapshot_id
-                WHERE m.id=t.domain_request_id AND m.task_id=t.root_id AND m.state='delivered'
-                  AND m.run_id=t.id AND m.task_fence=t.fence AND m.worker_id=t.worker_id
+                WHERE m.id=t.domain_request_id AND m.task_id=t.root_id
+                  AND ((m.state='delivered' AND m.run_id=t.id AND m.task_fence=t.fence AND m.worker_id=t.worker_id)
+                    OR (m.state='cancelled' AND m.reason='recipient_revoked'
+                      AND m.correlation_id=t.id AND m.actor_id=t.worker_id))
                   AND s.preparation_id=p.id)))
-          AND stewardship_daily_digest_delivered_v1(p.id))
+          AND stewardship_daily_digest_resolved_v1(p.id))
 $$;
 
 CREATE FUNCTION stewardship_daily_digest_settle_v1() RETURNS trigger
@@ -190,7 +212,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp A
 DECLARE p stewardship_daily_digest_preparation%ROWTYPE;
     occurrence stewardship_schedule_occurrence%ROWTYPE;
     task stewardship_task_run%ROWTYPE;
-    proposed jsonb;
+    proposed jsonb; outcome text; v_reason text;
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
     IF TG_TABLE_NAME='stewardship_daily_digest_preparation' THEN
@@ -205,12 +227,15 @@ BEGIN
             JOIN stewardship_daily_digest_snapshot s ON s.id=ready.snapshot_id
             JOIN stewardship_daily_digest_preparation preparation ON preparation.id=s.preparation_id
             WHERE recipient.outbox_id=NEW.id;
-        SELECT * INTO task FROM stewardship_task_run WHERE id=NEW.run_id;
+        SELECT * INTO task FROM stewardship_task_run WHERE id=CASE
+            WHEN NEW.state='cancelled' THEN NEW.correlation_id ELSE NEW.run_id END;
     END IF;
-    IF p.id IS NULL OR NOT stewardship_daily_digest_delivered_v1(p.id) THEN RETURN NULL; END IF;
+    SELECT disposition INTO outcome FROM stewardship_daily_digest_completion_ready WHERE preparation_id=p.id;
+    IF p.id IS NULL OR outcome IS NULL THEN RETURN NULL; END IF;
+    v_reason:=CASE outcome WHEN 'empty' THEN 'daily_digest_no_current_recipients' ELSE 'daily_digest_complete' END;
     SELECT * INTO occurrence FROM stewardship_schedule_occurrence WHERE id=p.occurrence_id FOR UPDATE;
     IF occurrence.state<>'pending' THEN RETURN NULL; END IF;
-    proposed:=to_jsonb(occurrence)||jsonb_build_object('state','running','reason','daily_digest_complete',
+    proposed:=to_jsonb(occurrence)||jsonb_build_object('state','running','reason',v_reason,
         'task_id',task.id,'worker_id',task.worker_id,'actor_id',task.worker_id,
         'correlation_id',task.id,'fence',task.fence);
     IF NOT stewardship_daily_digest_completion_v1(proposed) THEN
@@ -221,7 +246,7 @@ BEGIN
     END IF;
     -- Preserve the public occurrence transition graph. Neither running nor
     -- succeeded is exposed before this atomic, all-recipient completion proof.
-    UPDATE stewardship_schedule_occurrence SET state='running',reason='daily_digest_complete',
+    UPDATE stewardship_schedule_occurrence SET state='running',reason=v_reason,
         task_id=task.id,worker_id=task.worker_id,actor_id=task.worker_id,
         correlation_id=task.id,fence=task.fence,heartbeat_at=clock_timestamp(),
         lease_expires_at=task.lease_expires_at,attempts=attempts+1,version=version+1
@@ -230,7 +255,7 @@ BEGIN
         WHERE id=occurrence.id;
     INSERT INTO stewardship_schedule_fulfillment(id,definition_id,mode,target,slot,disposition,occurrence_id,actor_id,correlation_id)
         VALUES(gen_random_uuid(),occurrence.definition_id,occurrence.mode,occurrence.target,occurrence.slot,
-            'delivered',occurrence.id,task.worker_id,task.id);
+            outcome,occurrence.id,task.worker_id,task.id);
     RETURN NULL;
 END $$;
 REVOKE ALL ON FUNCTION stewardship_daily_digest_settle_v1() FROM PUBLIC;
@@ -241,5 +266,6 @@ CREATE CONSTRAINT TRIGGER daily_digest_late_completion AFTER UPDATE ON stewardsh
 DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (NEW.task_type='daily_digest_finalize' AND NEW.state='running' AND NEW.action='claim')
 EXECUTE FUNCTION stewardship_daily_digest_settle_v1();
 CREATE CONSTRAINT TRIGGER daily_digest_delivery_complete AFTER UPDATE ON stewardship_outbox_message
-DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (NEW.purpose='daily_digest' AND NEW.state='delivered')
+DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (NEW.purpose='daily_digest'
+    AND (NEW.state='delivered' OR (NEW.state='cancelled' AND NEW.reason='recipient_revoked')))
 EXECUTE FUNCTION stewardship_daily_digest_settle_v1();

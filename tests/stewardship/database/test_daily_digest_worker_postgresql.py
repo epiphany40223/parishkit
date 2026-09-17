@@ -1,7 +1,6 @@
 """Maintained daily SMTP dispatch uses only a bounded fake provider in CI."""
 
 from pathlib import Path
-from threading import Event
 from uuid import uuid4
 
 import pytest
@@ -104,7 +103,6 @@ def test_abandoned_daily_attempt_is_unknown_not_automatically_resent(
             lease_seconds=1,
         )
         expire(running)
-        Event().wait(0.05)
         with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
             owner = delivery_handler(None, credential_path=Path("/unused"))
             assert recover_hint(

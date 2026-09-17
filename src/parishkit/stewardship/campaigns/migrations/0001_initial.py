@@ -2947,7 +2947,7 @@ class Migration(migrations.Migration):
                     model_name="schedulefulfillment",
                     constraint=models.CheckConstraint(
                         condition=models.Q(
-                            ("disposition__in", ["delivered", "coalesced"])
+                            ("disposition__in", ["delivered", "coalesced", "empty"])
                         ),
                         name="schedule_fulfillment_disposition",
                     ),

@@ -2992,7 +2992,15 @@ BEGIN
         SELECT 1 FROM stewardship_schedule_occurrence o JOIN stewardship_schedule_definition d ON d.id=o.definition_id
         JOIN stewardship_schedule_definition wanted ON wanted.id=NEW.definition_id
         WHERE o.id=NEW.occurrence_id AND o.mode=NEW.mode AND d.campaign_id=wanted.campaign_id
-          AND ((NEW.disposition='delivered' AND o.state='succeeded' AND o.definition_id=NEW.definition_id AND o.target=NEW.target AND o.slot=NEW.slot)
+          AND ((NEW.disposition='delivered' AND o.state='succeeded'
+                AND o.reason IS DISTINCT FROM 'daily_digest_no_current_recipients'
+                AND o.definition_id=NEW.definition_id AND o.target=NEW.target AND o.slot=NEW.slot)
+            OR (NEW.disposition='empty' AND d.kind='daily_digest' AND o.state='succeeded'
+                AND o.reason='daily_digest_no_current_recipients'
+                AND o.definition_id=NEW.definition_id AND o.target=NEW.target AND o.slot=NEW.slot
+                AND EXISTS(SELECT 1 FROM stewardship_daily_digest_preparation p
+                    JOIN stewardship_daily_digest_completion_ready proof ON proof.preparation_id=p.id
+                    WHERE p.occurrence_id=o.id AND proof.disposition='empty'))
             OR (NEW.disposition='coalesced' AND EXISTS (SELECT 1 FROM stewardship_schedule_occurrence original
                 WHERE original.definition_id=NEW.definition_id AND original.mode=NEW.mode AND original.target=NEW.target AND original.slot=NEW.slot
                   AND original.state='coalesced' AND original.replacement_id=o.id)))

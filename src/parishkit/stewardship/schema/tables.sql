@@ -1195,7 +1195,7 @@ CREATE TABLE public.stewardship_operational_log (
     CONSTRAINT operational_context_safe CHECK (public.stewardship_safe_context_v1((schema)::text, context)),
     CONSTRAINT operational_event_safe CHECK (event IN (
         'configuration_rejected','configuration_digest_mismatch','startup_rejected',
-        'startup_validated','request_completed','task_started','task_completed',
+        'startup_validated','request_completed','report_audit_failed','task_started','task_completed',
         'task_failed','fact_drift','unstructured_log_suppressed','authentication_limits_weakened',
         'installer_request_failed','source_refresh_invalid','source_member_unusable',
         'source_refresh_held','source_credential_failed','source_provider_failed',
@@ -1486,7 +1486,7 @@ CREATE TABLE public.stewardship_schedule_fulfillment (
     disposition character varying(16) NOT NULL,
     definition_id uuid NOT NULL,
     occurrence_id uuid NOT NULL,
-    CONSTRAINT schedule_fulfillment_disposition CHECK (((disposition)::text = ANY ((ARRAY['delivered'::character varying, 'coalesced'::character varying])::text[])))
+    CONSTRAINT schedule_fulfillment_disposition CHECK (((disposition)::text = ANY ((ARRAY['delivered'::character varying, 'coalesced'::character varying, 'empty'::character varying])::text[])))
 );
 
 -- TABLE: stewardship_schedule_occurrence

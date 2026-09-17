@@ -54,3 +54,35 @@ def test_snapshot_retains_all_values_without_scripts(browser_engine, component_o
         assert page.locator("[data-digest-controls]").is_hidden()
     finally:
         context.close()
+
+
+def test_missing_controls_keeps_static_report_usable(page, component_origin):
+    """A partial template must not turn optional chart enhancement into an error."""
+
+    def omit_controls(route):
+        """Keep the real response and CSP, omitting only the enhancement marker."""
+        response = route.fetch()
+        route.fulfill(
+            response=response,
+            body=response.text().replace(
+                "data-digest-controls", "data-omitted-controls"
+            ),
+        )
+
+    page.route("**/daily-digest", omit_controls)
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.on(
+        "console",
+        lambda message: (
+            errors.append(message.text) if message.type == "error" else None
+        ),
+    )
+    with page.expect_response("**/digest-v1.js") as script:
+        page.goto(component_origin + "/daily-digest")
+    assert script.value.status == 200
+    assert not errors
+    assert page.locator("[data-omitted-controls]").count() == 1
+    assert page.locator("[data-omitted-controls]").is_hidden()
+    assert page.locator("input[type=range]").get_attribute("aria-valuetext") is None
+    assert page.locator("tbody tr").count() == 3

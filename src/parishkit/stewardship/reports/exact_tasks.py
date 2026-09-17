@@ -188,7 +188,11 @@ def _handoff(request, facts, execution):
 
 
 def _execute(execution, *, store):
-    """Build the frozen key; only terminal exact owners permit generation takeover."""
+    """Build the frozen key; terminal exact/digest owners permit takeover.
+
+    Neither owner retains an ordinary materialization's frozen debounce demand,
+    which must instead be released by that materialization's own recovery.
+    """
     if connection.in_atomic_block or not execution.control.active:
         raise StorageInvariantError("Exact reports require maintained worker lifetime.")
 
