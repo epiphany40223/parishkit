@@ -77,3 +77,33 @@ baseline passed 6,467 tests with 4,438 expected profile skips and two existing
 client-library deprecation warnings in 59.48 seconds. Ruff check/format pass.
 Durable inputs, fulfillment, schedule integration, protected routes, review
 rounds and final full validation remain outstanding.
+
+### Coherent input selection checkpoint
+
+The internal capture service reads live item dispositions, current source names
+and the live submission watermark in one PostgreSQL statement. Rehearsal answers
+are excluded; source inactivation or removal does not remove a submitted request.
+A missing current source Family is identified by its retained DUID with the
+generic label `Family`. Correction inputs omit historical text in SQL, before
+decoding. The detached selection uses submission sequences to distinguish new
+items even when two submissions have the same timestamp.
+
+Successful interval advancement is separate from accepted-message history.
+Partial acceptance does not advance the interval, and only previously reported
+items can produce corrections. Resolved corrections do not repeat after empty
+intervals. These are internal calculation inputs, not browser-provided authority;
+the durable owner must still bind history to its campaign/mode/epoch, retain the
+observation, and prove per-recipient coverage before delivery is enabled.
+
+The general worker gains only the required item/submission read columns, not
+follow-up mutations or full submitted answers. Actual-role tests deny raw text
+to the scheduler and mail-dispatch worker. A concurrent real submission between
+query execution and result consumption proves that capture does not mix the old
+watermark with a new disposition.
+
+Validation: 160 focused selection/compiler/transport checks passed in 0.94
+seconds; 18 new PostgreSQL checks passed in 33.26 seconds; the expanded 66-test
+PostgreSQL capture/worker/dispatch grant run passed in 45.59 seconds. The complete
+credential-free baseline passed 6,535 tests with 4,456 expected profile skips and
+the same two client-library warnings in 64.42 seconds. No schema, scheduled
+execution, persistent weekly history or send authority is added by this checkpoint.
