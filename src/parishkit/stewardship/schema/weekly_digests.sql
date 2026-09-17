@@ -231,7 +231,8 @@ BEGIN
         IF OLD.phase='fanout' AND NEW.phase='complete' AND EXISTS(
             SELECT 1 FROM stewardship_weekly_digest_snapshot s
             CROSS JOIN LATERAL jsonb_array_elements_text(s.recipients) recipient
-            WHERE s.preparation_id=NEW.id AND NOT EXISTS(
+            WHERE s.preparation_id=NEW.id
+              AND (s.information<>'[]'::jsonb OR s.corrections<>'[]'::jsonb) AND NOT EXISTS(
                 SELECT 1 FROM stewardship_weekly_digest_recipient addressed
                 WHERE addressed.snapshot_id=s.id AND addressed.address=recipient)) THEN
             RAISE EXCEPTION 'Weekly completion requires every selected recipient intent' USING ERRCODE='23514';
@@ -251,7 +252,8 @@ DECLARE p stewardship_weekly_digest_preparation%ROWTYPE;
         o stewardship_schedule_occurrence%ROWTYPE;
         selected stewardship_schedule_occurrence%ROWTYPE;
 BEGIN
-    IF relation_name NOT IN ('stewardship_schedule_occurrence','stewardship_occurrence_transition')
+    IF relation_name NOT IN ('stewardship_schedule_occurrence','stewardship_occurrence_transition',
+        'stewardship_outbox_message','stewardship_outbox_render','stewardship_outbox_event')
     THEN RETURN false; END IF;
     IF NOT EXISTS(SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
         AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
@@ -272,6 +274,9 @@ BEGIN
         AND e.worker_id=(proposed->>'actor_id')::uuid AND e.fence=t.fence
         AND stewardship_weekly_digest_live_v1(preparation.id,t.id,e.fence,e.worker_id);
     IF p.id IS NULL THEN RETURN false; END IF;
+    IF relation_name IN ('stewardship_outbox_message','stewardship_outbox_render','stewardship_outbox_event') THEN
+        RETURN stewardship_weekly_digest_mail_write_v1(p.id,relation_name,proposed,prior);
+    END IF;
     IF proposed->>'target'<>'admins'
       OR (proposed->>'definition_id')::uuid<>p.definition_id
       OR (proposed->>'revision_id')::uuid<>p.revision_id OR proposed->>'mode'<>p.mode

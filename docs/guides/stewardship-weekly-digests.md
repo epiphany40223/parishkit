@@ -169,3 +169,41 @@ attempts to exceed or misapply the limit. Independent fresh installations of
 body; its owner/ACL and every other catalog object were unchanged. No existing
 database was upgraded or reset. Weekly fanout and provider authority remain
 unfinished and disabled.
+
+### Per-Admin allocation and replacement coverage checkpoint
+
+The worker now loads bounded recipient pages, compiles private content outside
+database transactions, and rechecks the complete page under its live claim
+before committing. Each recipient's selected item/disposition IDs, accepted
+coverage references, compiled bytes and outbox intent commit together. An
+interrupted or omitted binding rolls back the whole page. Completed pages are
+immutable and skipped on resume.
+
+Only actual accepted messages for the same Admin and campaign/mode/epoch cover
+prior items. Complete coverage allocates no new message. Partial coverage removes
+only the already accepted item/disposition pairs, preserving new requests and
+new corrections. SQL independently recalculates the proof instead of trusting
+the Python reader. Empty snapshots allocate neither recipients nor messages;
+successful interval fulfillment still requires the separate completion owner.
+
+Schedule replacement now counts and fences weekly child messages and Task roots.
+It cancels only proven-unsent children, preserves accepted history, and blocks on
+submitting or uncertain outcomes. Private projections expose counts/versions to
+the existing configuration workflow, not request text or Admin mail bodies.
+Provider dispatch, completion, cleanup, protected/manual UI and runtime assembly
+remain unfinished; no weekly provider authority is enabled by this checkpoint.
+
+Validation: the initial 29 capture/allocation PostgreSQL checks passed in 75.35
+seconds. The expanded 63 weekly coverage/allocation and existing daily/schedule
+regressions passed in 129.69 seconds. The complete credential-free baseline passed
+6,547 tests with 4,498 expected profile skips and the same two client-library
+warnings in 62.21 seconds. Independent fresh installations of `2095bab` and this
+checkpoint identify two new private views, four functions and two triggers;
+only the five intended allocation/reconciliation function bodies and the common
+schedule-work view changed. Existing owners/ACLs and table/model structure remain
+unchanged. No retained database was upgraded or reset. Final coverage and review
+acceptance remain outstanding.
+
+The final 60-test PostgreSQL coverage/schema/runtime-grant run passed in 46.77
+seconds, including a forged Python coverage result rejected independently by
+SQL. Ruff check/format, Markdown checks and Django model-state drift checks pass.

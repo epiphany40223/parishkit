@@ -22,7 +22,9 @@ def add_weekly_grants(tables, columns, *, worker):
     tables.setdefault("stewardship_weekly_digest_snapshot", set()).update(
         {"SELECT", "INSERT"}
     )
-    tables.setdefault("stewardship_weekly_digest_recipient", set()).add("SELECT")
+    tables.setdefault("stewardship_weekly_digest_recipient", set()).update(
+        {"SELECT", "INSERT"}
+    )
     for table, fields in {
         "stewardship_additional_information": {
             "id",

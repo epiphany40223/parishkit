@@ -30,6 +30,7 @@ def schema_sql():
                 "daily_dispatch",
                 "weekly_digests",
                 "weekly_capture",
+                "weekly_fanout",
                 "schedule_reconciliation",
                 "exports",
                 "delivery_resolution",
