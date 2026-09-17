@@ -3,7 +3,8 @@
 CREATE FUNCTION stewardship_weekly_prior_items_v1(snapshot uuid,address text)
 RETURNS jsonb LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
     WITH desired AS MATERIALIZED (
-        SELECT s.id,s.information,s.corrections,p.campaign_id,p.mode,p.rehearsal_epoch_id
+        SELECT s.id,s.information,s.corrections,p.campaign_id,p.mode,p.rehearsal_epoch_id,
+            EXISTS(SELECT 1 FROM stewardship_weekly_manual_request WHERE id=p.id) AS manual
         FROM stewardship_weekly_digest_snapshot s
         JOIN stewardship_weekly_digest_preparation p ON p.id=s.preparation_id
         WHERE s.id=$1 AND s.recipients ? $2
@@ -16,8 +17,9 @@ RETURNS jsonb LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp A
         JOIN stewardship_outbox_message m ON m.id=r.outbox_id AND m.semantic_key=r.id
           AND m.state='delivered' AND m.purpose='weekly_digest'
           AND m.campaign_id=d.campaign_id AND m.mode=d.mode
-        WHERE EXISTS(SELECT 1 FROM jsonb_array_elements(d.information) i WHERE r.information @> jsonb_build_array(i))
-           OR EXISTS(SELECT 1 FROM jsonb_array_elements(d.corrections) i WHERE r.corrections @> jsonb_build_array(i))
+        WHERE NOT d.manual AND NOT EXISTS(SELECT 1 FROM stewardship_weekly_manual_request WHERE id=p.id)
+          AND (EXISTS(SELECT 1 FROM jsonb_array_elements(d.information) i WHERE r.information @> jsonb_build_array(i))
+           OR EXISTS(SELECT 1 FROM jsonb_array_elements(d.corrections) i WHERE r.corrections @> jsonb_build_array(i)))
     ) SELECT jsonb_build_object(
         'information',coalesce((SELECT jsonb_agg(i ORDER BY n)
             FROM jsonb_array_elements(d.information) WITH ORDINALITY AS wanted(i,n)

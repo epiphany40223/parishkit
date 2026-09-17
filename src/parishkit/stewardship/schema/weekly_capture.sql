@@ -48,7 +48,9 @@ RETURNS jsonb LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp A
         JOIN stewardship_weekly_digest_preparation p ON p.id=s.preparation_id
         WHERE p.campaign_id=$1 AND p.mode=$2 AND p.rehearsal_epoch_id IS NOT DISTINCT FROM $3
     ), completed AS MATERIALIZED (
-        SELECT s.* FROM snapshots s WHERE EXISTS(
+        SELECT s.* FROM snapshots s
+        WHERE NOT EXISTS(SELECT 1 FROM stewardship_weekly_manual_request WHERE id=s.preparation_id)
+          AND EXISTS(
             SELECT 1 FROM stewardship_schedule_fulfillment f
             WHERE f.occurrence_id=s.occurrence_id AND f.mode=$2 AND f.target='admins'
               AND f.disposition IN ('delivered','empty'))
@@ -87,7 +89,7 @@ BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
     SELECT * INTO p FROM stewardship_weekly_digest_preparation WHERE id=NEW.preparation_id;
     expected:=stewardship_weekly_observation_v1(NEW.campaign_id);
-    history:=stewardship_weekly_history_v1(NEW.campaign_id,p.mode,p.rehearsal_epoch_id);
+    history:=stewardship_weekly_preparation_history_v1(p.id);
     selected:=stewardship_weekly_selection_v1(expected,history);
     SELECT coalesce(jsonb_agg(email ORDER BY email),'[]'::jsonb) INTO cohort
         FROM stewardship_address_rule WHERE configuration_id=NEW.configuration_id AND roles ? 'administrator';

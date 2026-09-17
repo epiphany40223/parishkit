@@ -125,7 +125,15 @@ class WeeklySelection:
         """An empty result resolves an interval only after its owner commits it."""
         return not self.information and not self.corrections
 
-    def document(self, *, snapshot_id, parish_name, campaign_name, campaign_timezone):
+    def document(
+        self,
+        *,
+        snapshot_id,
+        parish_name,
+        campaign_name,
+        campaign_timezone,
+        manual=False,
+    ):
         """Build the compiler input without querying mutable source or item rows."""
         return WeeklyDigestDocument(
             snapshot_id=snapshot_id,
@@ -136,6 +144,7 @@ class WeeklySelection:
             observed_at=self.observation.observed_at,
             information=self.information,
             corrections=self.corrections,
+            manual=manual,
         )
 
 

@@ -166,13 +166,16 @@ def render_weekly_digest(document, *, public_origin):
         "Manual weekly" if document.manual else "Weekly"
     ) + f" information digest — {observed.date().isoformat()}"
     url = report_url(public_origin, document.report_path)
+    information_label = (
+        "Current actionable requests" if document.manual else "New actionable requests"
+    )
     labels = (
         document.parish_name,
         document.campaign_name,
         title,
         f"Captured {observed.isoformat()} ({observed.tzname()}); "
         + f"campaign timezone {document.campaign_timezone}.",
-        f"New actionable requests: {len(document.information):,}. "
+        f"{information_label}: {len(document.information):,}. "
         + f"Corrections: {len(document.corrections):,}.",
         "Text below is an excerpt. Open the protected report for full details "
         + "and current request status; emailed content reflects capture time.",
@@ -182,7 +185,7 @@ def render_weekly_digest(document, *, public_origin):
     html = "".join("<p>" + escape(label, quote=False) + "</p>" for label in labels)
     text = "\n".join(labels)
     for heading, rows in (
-        ("New actionable requests", document.information),
+        (information_label, document.information),
         ("Corrections to previously reported requests", document.corrections),
     ):
         if not rows:

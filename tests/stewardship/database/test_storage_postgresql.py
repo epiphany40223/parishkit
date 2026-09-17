@@ -514,6 +514,10 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             "family_mail_ticket_guard",
             "stewardship_family_mail_ticket_v1",
         ),
+        "stewardship_weekly_manual_request": (
+            "weekly_manual_guard",
+            "stewardship_weekly_manual_guard_v1",
+        ),
         **{
             "stewardship_recipient_" + name: (
                 "recipient_immutable",
@@ -648,6 +652,7 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             conditional_insert_guards = {
                 "stewardship_family_mail_preparation",
                 "stewardship_fact_build_receipt",
+                "stewardship_weekly_manual_request",
             }
             expected_type = 31 if table in conditional_insert_guards else 27
             assert row[:2] == (function, expected_type), table

@@ -24,6 +24,61 @@ class Migration(migrations.Migration):
         migrations.SeparateDatabaseAndState(
             state_operations=[
                 migrations.CreateModel(
+                    name="WeeklyManualRequest",
+                    fields=[
+                        (
+                            "configuration",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_accounts.appliedconfigurationversion",
+                            ),
+                        ),
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "campaign",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_campaigns.campaign",
+                            ),
+                        ),
+                        (
+                            "task",
+                            models.OneToOneField(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_jobs.taskrun",
+                            ),
+                        ),
+                    ],
+                    options={"db_table": "stewardship_weekly_manual_request"},
+                ),
+                migrations.CreateModel(
                     name="WeeklyDigestPreparation",
                     fields=[
                         (

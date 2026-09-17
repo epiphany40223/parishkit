@@ -8,6 +8,7 @@ from parishkit.stewardship.responses.models import AdditionalInformationItem
 
 from .weekly_capture import retained_selection
 from .weekly_digest import WeeklyInformation, excerpt
+from .weekly_models import WeeklyManualRequest
 
 PAGE_SIZE = 50
 DISPOSITIONS = {
@@ -84,6 +85,9 @@ def snapshot_context(snapshot, *, page=1, item_id=None):
         )
     return {
         "snapshot": snapshot,
+        "manual": WeeklyManualRequest.objects.filter(
+            pk=snapshot.preparation_id
+        ).exists(),
         "rows": rows,
         "detail": item_id is not None,
         "information_count": len(selection.information),

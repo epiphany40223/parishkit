@@ -343,3 +343,46 @@ open; this checkpoint does not complete BG-07.03 or BG-07.05.
 The final 16-case dispatch run passed in 48.11 seconds, including a paused
 Production report resuming after campaign close with its original private
 subset. Ruff check/format, Markdown checks and model-state drift checks pass.
+
+### Manual reporting and runtime integration checkpoint
+
+The Admin navigation now offers a CSRF-protected, configuration-bound manual
+information report confirmation. It queues an actor-bound immutable command;
+SQL independently checks current authority and gates and derives the occurrence
+and worker task. Duplicate confirmation returns the original task. Web cannot
+choose recipients, supply report bodies, or insert preparations directly.
+
+Manual selection follows the
+[manual-report contract](../specs/stewardship/background-processing/spec.md#weekly-additional-information-digest):
+all current actionable live requests plus corrections, visibly labeled manual,
+with independent audit history. Manual delivery neither advances the scheduled
+watermark nor suppresses the next scheduled report. Both use the same isolated
+transport, current-recipient recheck, reconciliation and cleanup protections.
+Private Testing snapshots remain cleanup-owned; opaque manual command history
+is retained and a replay cannot reopen it.
+
+The runtime scheduler and worker register weekly preparation and metadata
+finalization alongside the existing daily owners. Scheduler execution remains
+metadata-only; provider work remains in MAIL. Initial validation: all 202 runtime
+integration tests passed in 1.14 seconds; six manual PostgreSQL scenarios passed
+in 25.30 seconds; 15 Chromium/Firefox/WebKit report/form accessibility scenarios
+passed in 20.82 seconds. Further security, cleanup and regression checks are in
+progress; required review rounds and final acceptance remain open.
+
+The subsequent manual/security/storage run passed all 48 tests in 32.30 seconds,
+including SQL rejection of non-Admin commands, stale form refusal, retained
+opaque history after Testing cleanup, and regular delivery after a manual report.
+Ruff check/format and model-state drift checks pass.
+
+Independent fresh installs against `888f878` add only the manual-request table,
+its seven columns, eleven constraints, five indexes, two triggers and three
+functions; four existing weekly functions change for manual ownership/history
+and coverage. Installed definitions and execution privileges were checked;
+existing owners/ACLs, policies and all unrelated objects are unchanged. The
+strict fresh-install fingerprint records this bounded change, with no upgrade
+path or retained-database mutation.
+
+The complete credential-free baseline passed 6,613 tests with 4,581 expected
+profile skips and the same two client-library warnings in 66.67 seconds. The
+weekly PostgreSQL suite plus schema and runtime grants passed all 176 checks in
+310.53 seconds. Required dual-model review rounds remain pending.

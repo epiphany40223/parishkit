@@ -6,6 +6,8 @@ from uuid import UUID
 
 from django.template.loader import render_to_string
 
+from parishkit.stewardship.reports.weekly_manual_views import ManualReportForm
+
 
 def components(context, admin):
     """No database, live provider or private source content enters browser fixtures."""
@@ -42,7 +44,7 @@ def components(context, admin):
         "next_page": 2,
         "report_url": "/weekly-digest",
     }
-    return {
+    pages = {
         path: (
             "text/html",
             render_to_string(
@@ -52,3 +54,21 @@ def components(context, admin):
         )
         for path, detail in (("/weekly-digest", False), ("/weekly-detail", True))
     }
+    pages["/weekly-manual"] = (
+        "text/html",
+        render_to_string(
+            "stewardship/weekly-manual.html",
+            context
+            | {
+                "admin_chrome": admin,
+                "campaign": SimpleNamespace(
+                    active_configuration=SimpleNamespace(name="2026 Census")
+                ),
+                "mode": "testing",
+                "form": ManualReportForm(
+                    initial={"command_id": UUID(int=2), "configuration_id": UUID(int=3)}
+                ),
+            },
+        ),
+    )
+    return pages

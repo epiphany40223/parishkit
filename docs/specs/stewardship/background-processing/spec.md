@@ -678,6 +678,17 @@ Changing Admin recipients does not resend past successful digests. An Admin may
 manually generate/send a new report occurrence, visibly labeled manual and
 independently audited.
 
+The manual-report confirmation explicitly explains that it selects all current
+actionable live items and corrections to previously delivered items, and may
+repeat earlier reports. Bind the confirmation to the reviewed configuration;
+reject a changed configuration rather than silently changing mode or mail policy.
+Replaying the same command returns its original task, not a second report.
+Manual occurrences do not advance the regular weekly success watermark or
+satisfy regular per-recipient item/correction coverage. Actual manual deliveries
+still establish that an item was reported, so later withdrawal or supersession
+can be corrected. Apply the same current-Admin, campaign, pause, restore,
+unresolved-delivery and Testing restrictions as scheduled reports.
+
 ### Post-close reporting obligations
 
 The scheduler and archive-preparation workflow share a deterministic inventory

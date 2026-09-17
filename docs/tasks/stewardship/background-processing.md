@@ -296,8 +296,10 @@ The [Testing-retention checkpoint](../../guides/stewardship-weekly-digests.md#te
 also has bounded cleanup and independent schema evidence.
 The [protected-report checkpoint](../../guides/stewardship-weekly-digests.md#protected-report-and-detail-checkpoint)
 has exact-role, response-barrier, baseline and three-engine accessibility evidence.
-Manual reports, runtime assembly and the required review/final
-validation remain open; BG-07.03 and BG-07.05 are not complete.
+The [manual-report/runtime checkpoint](../../guides/stewardship-weekly-digests.md#manual-reporting-and-runtime-integration-checkpoint)
+has focused integration, security, fresh-schema and browser evidence. Required
+review rounds and final validation remain open; BG-07.03 and BG-07.05 are not
+complete.
 
 ## BG-08: Export and graph workers
 

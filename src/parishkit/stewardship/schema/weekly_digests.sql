@@ -161,9 +161,18 @@ BEGIN
         RAISE EXCEPTION 'Weekly preparation history is retained' USING ERRCODE='23514';
     END IF;
     IF TG_OP='INSERT' THEN
-        IF NEW.phase<>'dates' OR NEW.version<>1 OR NEW.cursor IS NOT NULL
-          OR NEW.occurrence_id IS NOT NULL OR NEW.run_id IS NOT NULL
+        IF NEW.version<>1 OR NEW.cursor IS NOT NULL OR NEW.run_id IS NOT NULL
           OR NEW.task_fence IS NOT NULL OR NEW.worker_id IS NOT NULL
+          OR NOT ((NEW.phase='dates' AND NEW.occurrence_id IS NULL
+                AND NOT EXISTS(SELECT 1 FROM stewardship_weekly_manual_request WHERE id=NEW.id))
+            OR (NEW.phase='capture' AND NEW.occurrence_id=NEW.id
+                AND EXISTS(SELECT 1 FROM stewardship_weekly_manual_request request
+                    JOIN stewardship_schedule_occurrence o ON o.id=request.id
+                    WHERE request.id=NEW.id AND request.campaign_id=NEW.campaign_id
+                      AND request.task_id=NEW.task_id AND request.actor_id=NEW.actor_id
+                      AND o.slot='manual:'||request.id::text AND o.state='pending'
+                      AND o.definition_id=NEW.definition_id AND o.revision_id=NEW.revision_id
+                      AND o.mode=NEW.mode AND o.due_at=NEW.cutoff)))
           OR NEW.cutoff>stewardship_campaign_now_v1()
           OR stewardship_weekly_digest_unresolved_v1(NEW.definition_id,NEW.mode,NEW.rehearsal_epoch_id)
           OR NOT stewardship_weekly_digest_scope_v1(NEW.campaign_id,NEW.revision_id,

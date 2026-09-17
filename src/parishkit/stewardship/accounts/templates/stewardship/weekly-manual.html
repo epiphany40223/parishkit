@@ -1,0 +1,17 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Request a manual information report" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Request a manual information report" %}</h1>
+<p>{{ campaign.active_configuration.name }}</p>
+<p class="notice">{% translate "This is a new, separately audited report—not a retry of a previous email. It may repeat previously reported information and does not replace the regularly scheduled weekly digest." %}</p>
+<p>{% translate "The background worker will capture all current actionable live requests and corrections to previously delivered requests. Each current Administrator receives an individual email. Empty reports are recorded without sending mail." %}</p>
+<p>{% translate "Resolve any unfinished weekly delivery first. Normal campaign, pause and restore protections still apply. A configuration change after opening this form requires you to review a fresh form." %}</p>
+{% if mode == 'testing' %}<p class="notice">{% translate "Testing mode: live-only request selection excludes rehearsal answers. Any resulting email is routed only to the configured Testing recipient." %}</p>{% endif %}
+<form method="post" class="panel">{% csrf_token %}
+{{ form.command_id }}{{ form.configuration_id }}{{ form.command_id.errors }}{{ form.configuration_id.errors }}{{ form.non_field_errors }}
+<p>{{ form.acknowledge }} <label for="{{ form.acknowledge.id_for_label }}">{{ form.acknowledge.label }}</label>{{ form.acknowledge.errors }}</p>
+<button type="submit">{% translate "Queue new manual report" %}</button>
+</form>
+<p><a href="{% url 'admin:background' %}">{% translate "View background work" %}</a></p>
+<p><a href="{% url 'admin:deliveries' %}">{% translate "Review outgoing mail" %}</a></p>
+{% endblock %}

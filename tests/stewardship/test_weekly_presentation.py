@@ -50,9 +50,14 @@ def report(monkeypatch):
     """Create a detached selection and prove status reads are limited to its page."""
     values = tuple(item(number) for number in range(1, 121))
     selection = select_weekly(observation(*values), WeeklyHistory(CAMPAIGN))
-    snapshot = SimpleNamespace(pk=uuid4(), campaign_id=CAMPAIGN)
+    snapshot = SimpleNamespace(pk=uuid4(), campaign_id=CAMPAIGN, preparation_id=uuid4())
     requested = []
     monkeypatch.setattr(presentation, "retained_selection", lambda row: selection)
+    monkeypatch.setattr(
+        presentation.WeeklyManualRequest.objects,
+        "filter",
+        lambda **kwargs: SimpleNamespace(exists=lambda: False),
+    )
 
     def query(**filters):
         """Current-status projection receives only the visible report identities."""

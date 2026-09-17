@@ -37,7 +37,13 @@ from .accounts import (
 )
 from .jobs import delivery_views
 from .jobs import views as job_views
-from .reports import digest_views, exact_views, export_views, weekly_views
+from .reports import (
+    digest_views,
+    exact_views,
+    export_views,
+    weekly_manual_views,
+    weekly_views,
+)
 from .responses import views as response_views
 
 public_patterns = [
@@ -230,6 +236,11 @@ admin_patterns = [
         name="background_task_page",
     ),
     path("background/tasks", job_views.task_list, name="background_tasks"),
+    path(
+        "reports/weekly-digests/request/<uuid:campaign_id>/",
+        weekly_manual_views.request_report,
+        name="weekly_digest_manual",
+    ),
     path(
         "reports/weekly-digests/<uuid:snapshot_id>/",
         weekly_views.snapshot,

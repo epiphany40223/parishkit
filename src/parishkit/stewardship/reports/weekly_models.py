@@ -14,6 +14,26 @@ from parishkit.stewardship.storage import (
 )
 
 
+class WeeklyManualRequest(ImmutableRecord):
+    """One explicit Admin command, sharing its UUID with the new preparation.
+
+    This retains only opaque authority/task history, not report content. Its
+    private SQL insertion owner allocates the independent manual occurrence and
+    preparation together. Replaying the command cannot allocate another report.
+    """
+
+    campaign = models.ForeignKey(
+        "stewardship_campaigns.Campaign", on_delete=models.PROTECT
+    )
+    configuration = models.ForeignKey(
+        "stewardship_accounts.AppliedConfigurationVersion", on_delete=models.PROTECT
+    )
+    task = models.OneToOneField("stewardship_jobs.TaskRun", on_delete=models.PROTECT)
+
+    class Meta:
+        db_table = "stewardship_weekly_manual_request"
+
+
 class WeeklyDigestPreparation(MutableRecord):
     """One finite schedule discovery, capture and fanout under a stable task root."""
 

@@ -29,6 +29,7 @@ def schema_sql():
                 "daily_digests",
                 "daily_dispatch",
                 "weekly_digests",
+                "weekly_manual",
                 "weekly_capture",
                 "weekly_fanout",
                 "weekly_completion",

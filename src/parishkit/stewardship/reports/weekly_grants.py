@@ -18,6 +18,7 @@ REPORT_FIELDS = (
 
 def add_weekly_grants(tables, columns, *, worker):
     """Add only capture projections, never follow-up mutations or all answers."""
+    tables.setdefault("stewardship_weekly_manual_request", set()).add("SELECT")
     tables.setdefault("stewardship_weekly_digest_completion_ready", set()).add("SELECT")
     tables.setdefault("stewardship_weekly_digest_preparation", set()).update(
         {"SELECT", "UPDATE" if worker else "INSERT"}
@@ -80,6 +81,9 @@ def add_weekly_dispatch_grants(tables, columns, *, private):
 
 def add_weekly_web_grants(tables, columns):
     """Allow exact Admin retry admission without exposing compiled private text."""
+    tables.setdefault("stewardship_weekly_manual_request", set()).update(
+        {"SELECT", "INSERT"}
+    )
     add_weekly_dispatch_grants(tables, columns, private=False)
     columns["stewardship_weekly_digest_recipient"]["SELECT"].add("address")
     # Protected report views read selected retained inputs, not the immutable

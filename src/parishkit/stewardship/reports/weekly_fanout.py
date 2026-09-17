@@ -24,7 +24,11 @@ from parishkit.stewardship.storage import StorageInvariantError
 
 from .weekly_capture import retained_selection
 from .weekly_digest import WeeklyDigestDocument, render_weekly_digest
-from .weekly_models import WeeklyDigestRecipient, WeeklyDigestSnapshot
+from .weekly_models import (
+    WeeklyDigestRecipient,
+    WeeklyDigestSnapshot,
+    WeeklyManualRequest,
+)
 from .weekly_ownership import (
     bound_preparation,
     checkpoint_preparation,
@@ -70,6 +74,7 @@ def load_weekly_page(claim):
         "configuration__parish", "timezone_configuration"
     ).get(preparation=row)
     selected = retained_selection(snapshot)
+    manual = WeeklyManualRequest.objects.filter(pk=row.pk).exists()
     existing = set(
         WeeklyDigestRecipient.objects.filter(snapshot=snapshot).values_list(
             "address", flat=True
@@ -109,6 +114,7 @@ def load_weekly_page(claim):
                 parish_name=snapshot.configuration.parish.name,
                 campaign_name=snapshot.timezone_configuration.name,
                 campaign_timezone=snapshot.timezone_configuration.timezone,
+                manual=manual,
             )
         )
         plans.append(

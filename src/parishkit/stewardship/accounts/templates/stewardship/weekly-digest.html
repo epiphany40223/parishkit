@@ -2,6 +2,7 @@
 {% block title %}{% translate "Weekly information report" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Weekly information report" %}</h1>
+{% if manual %}<p class="notice">{% translate "Manually requested report. This is a separate report and does not replace the regularly scheduled weekly digest." %}</p>{% endif %}
 <p>{{ snapshot.configuration.parish.name }} — {{ snapshot.timezone_configuration.name }}</p>
 <p class="notice">{% translate "Pinned report: Family names and request text reflect this report's capture. Current request status is checked when you open the page. This page does not send email or update follow-up records." %}</p>
 {% if snapshot.preparation.mode == 'testing' %}<p class="notice">{% translate "This report was generated in Testing mode." %}</p>{% endif %}
@@ -9,7 +10,7 @@
 <dt>{% translate "Captured at" %}</dt><dd><time datetime="{{ snapshot.observed_at|date:'c' }}" data-local-instant>{{ snapshot.observed_at|date:'c' }}</time></dd>
 <dt>{% translate "Campaign timezone" %}</dt><dd>{{ snapshot.timezone_configuration.timezone }}</dd>
 <dt>{% translate "Submission sequence cutoff" %}</dt><dd>{{ snapshot.submission_watermark|number }}</dd>
-<dt>{% translate "New actionable requests at capture" %}</dt><dd>{{ information_count|number }}</dd>
+<dt>{% if manual %}{% translate "Current actionable requests at capture" %}{% else %}{% translate "New actionable requests at capture" %}{% endif %}</dt><dd>{{ information_count|number }}</dd>
 <dt>{% translate "Corrections" %}</dt><dd>{{ correction_count|number }}</dd>
 </dl>
 {% if not total %}<p>{% translate "This captured interval contained no new actionable requests or corrections. Delivery completion is tracked separately." %}</p>{% endif %}

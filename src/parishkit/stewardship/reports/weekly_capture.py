@@ -31,8 +31,8 @@ def retained_history(preparation):
     require_work_order()
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT stewardship_weekly_history_v1(%s,%s,%s)::text",
-            [preparation.campaign_id, preparation.mode, preparation.rehearsal_epoch_id],
+            "SELECT stewardship_weekly_preparation_history_v1(%s)::text",
+            [preparation.pk],
         )
         value = json.loads(cursor.fetchone()[0])
     return WeeklyHistory(
