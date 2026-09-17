@@ -10,13 +10,13 @@ from dataclasses import dataclass, field
 from datetime import date
 from html import escape
 from io import BytesIO
-from urllib.parse import urlsplit
 from uuid import UUID
 
 from parishkit.email.base import InlineImage
 from parishkit.stewardship.web.digest_content import CHART_ALT, CHART_ID
 
 from .charts import render_participation
+from .links import report_url
 from .participation import ParticipationDocument
 from .statistics import CampaignStatistics
 
@@ -97,29 +97,7 @@ class DailyDigestContent:
 
 def _report_url(document, public_origin):
     """Append only our protected route to the runtime's validated public origin."""
-    if type(public_origin) is not str or any(
-        ord(char) <= 32 or ord(char) == 127 for char in public_origin
-    ):
-        raise ValueError("Daily digest requires a public HTTP origin.")
-    try:
-        parsed = urlsplit(public_origin)
-        valid = (
-            parsed.scheme in {"http", "https"}
-            and parsed.hostname
-            and parsed.username is None
-            and parsed.password is None
-            and parsed.path in {"", "/"}
-            and not parsed.query
-            and not parsed.fragment
-            and "\\" not in public_origin
-        )
-        # Accessing port also rejects malformed/out-of-range port numbers.
-        _ = parsed.port
-    except ValueError:
-        valid = False
-    if not valid:
-        raise ValueError("Daily digest requires a public HTTP origin.")
-    return public_origin.rstrip("/") + document.report_path
+    return report_url(public_origin, document.report_path)
 
 
 def statistics_cards(statistics):

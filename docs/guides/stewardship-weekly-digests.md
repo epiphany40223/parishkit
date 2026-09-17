@@ -54,3 +54,26 @@ partition and both coverage floors; do not trade correctness for elapsed time.
 
 Implementation is in progress. The checkpoints are acceptance targets, not
 completion claims. BG-07.03 and the complete BG-07.05 matrix remain unchecked.
+
+### Rendering and isolated transport checkpoint
+
+The detached compiler preserves every selected item, explicit campaign-local
+timestamps, Family names/DUIDs, protected report/detail links, and distinct
+superseded/withdrawn corrections without former text. It visibly shortens only
+email excerpts; a 5,000-Family reference test verifies that no selected identity
+is dropped. Empty input cannot create an email. Manual reports are visibly
+labeled, and all private row/content types omit their fields from `repr`.
+
+The weekly helper accepts a distinct closed no-attachment payload and one Admin
+recipient. It shares maintained SMTP acceptance/uncertainty and private-pipe
+ownership without weakening the daily chart or Family payloads. Testing mail
+keeps the intended Admin visible while routing only to its configured test
+address. The stateless helper imports neither ORM models nor report compilers.
+No scheduler or durable capture authority is registered by this checkpoint.
+
+Validation: 264 initial report/routing/transport checks and 362 expanded shared
+Family/readiness/weekly transport checks passed. The full credential-free
+baseline passed 6,467 tests with 4,438 expected profile skips and two existing
+client-library deprecation warnings in 59.48 seconds. Ruff check/format pass.
+Durable inputs, fulfillment, schedule integration, protected routes, review
+rounds and final full validation remain outstanding.
