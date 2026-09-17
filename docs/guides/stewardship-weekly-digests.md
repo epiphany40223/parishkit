@@ -472,3 +472,26 @@ the intermediate renderer output. All 89 daily/weekly compiler checks pass in
 Final review/CI and merge receipts will also be retained on
 [PR #48](https://github.com/epiphany40223/parishkit/pull/48). Record the verified
 delivery in the coordinating task ledger before beginning the next increment.
+
+### Review round four and handoff
+
+Session `20260917-192814-303e0d` reviewed `8dcdd84` against `cf8c614`, narrowly
+covering the quote correction. Both vendors completed without degradation.
+Codex reported no findings. Claude reported six raw findings: four Low and two
+Medium, of which one was outside the diff and excluded by finalization. There
+were no High findings. The one validated Medium concern was test parity at the
+daily compiled-body validation boundary.
+
+Disposition: production already checks that boundary at retention and again
+at fanout. Keep those owners rather than add another repeated image/HTML
+validation in production. The shared daily compiler test helper now validates
+every rendered result through that actual boundary, so future canonicalization
+regressions fail the inexpensive compiler suite. All 89 daily/weekly compiler
+checks pass in 1.36 seconds. No SQL schema, privilege or deployment changed.
+
+Four review/fix rounds are complete, with no High issue in the final round and
+all accepted Medium-or-higher findings resolved. BG-07.03 is complete for its
+weekly scope; BG-07.04/.05, later Staff workflows and Gate 3 remain open.
+Exact-head CI/DCO and protected merge-queue checks are still required. Final
+receipts belong on PR #48 and the next coordinating delivery checkpoint, avoiding
+a documentation-only push merely to repeat the full acceptance suite.

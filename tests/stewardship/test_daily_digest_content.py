@@ -49,8 +49,10 @@ def document():
 
 
 def render(value):
-    """Use a public synthetic origin; no configured credentials or DNS are read."""
-    return render_daily_digest(value, public_origin="https://campaign.example.org")
+    """Exercise compilation through the actual retention/delivery boundary."""
+    result = render_daily_digest(value, public_origin="https://campaign.example.org")
+    validate_digest_body(result.html, result.text, result.chart.data)
+    return result
 
 
 @pytest.mark.parametrize("separator", ["\u00a0", "'", '"'])

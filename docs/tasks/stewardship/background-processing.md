@@ -235,7 +235,7 @@ Scope and dependencies: [BG-07 work package](../../plans/stewardship/background-
 
 - [x] BG-07.01 — Create idempotent submission confirmations.
 - [x] BG-07.02 — Build daily digests against exact immutable facts.
-- [ ] BG-07.03 — Build weekly information and correction digests.
+- [x] BG-07.03 — Build weekly information and correction digests.
 - [ ] BG-07.04 — Integrate post-close obligation inventory and explicit resolutions.
 - [ ] BG-07.05 — Test digest coverage, parity, recovery, and repeat safety.
 
@@ -297,9 +297,12 @@ also has bounded cleanup and independent schema evidence.
 The [protected-report checkpoint](../../guides/stewardship-weekly-digests.md#protected-report-and-detail-checkpoint)
 has exact-role, response-barrier, baseline and three-engine accessibility evidence.
 The [manual-report/runtime checkpoint](../../guides/stewardship-weekly-digests.md#manual-reporting-and-runtime-integration-checkpoint)
-has focused integration, security, fresh-schema and browser evidence. Required
-review rounds and final validation remain open; BG-07.03 and BG-07.05 are not
-complete.
+has focused integration, security, fresh-schema and browser evidence. Four
+successful dual-source review/fix rounds are now complete, with no High issues
+in the final round; the [handoff ledger](../../guides/stewardship-weekly-digests.md#review-round-four-and-handoff)
+records dispositions and correction tests. BG-07.03 is complete for the weekly
+implementation. Exact-head CI/DCO and protected delivery remain pending;
+BG-07.04/.05 and Gate 3 remain open.
 
 ## BG-08: Export and graph workers
 
