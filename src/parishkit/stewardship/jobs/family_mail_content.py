@@ -8,7 +8,6 @@ they never decrypt or copy a reusable link token's plaintext here.
 
 import json
 from dataclasses import dataclass
-from html import escape
 from uuid import UUID, uuid4
 
 from parishkit.stewardship.accounts.cryptography import (
@@ -17,7 +16,6 @@ from parishkit.stewardship.accounts.cryptography import (
     TokenPrivateKeyring,
     TokenPublicKeyring,
 )
-from parishkit.stewardship.accounts.policy_schema import normalized_email
 from parishkit.stewardship.web.content import (
     FAMILY_CODE_MARKER as CODE_PLACEHOLDER,
 )
@@ -35,9 +33,9 @@ from parishkit.stewardship.web.content import (
     validate_family_email,
 )
 
+from .family_mail_routing import route_family_mail
 from .outbox_validation import (
     DeliveryIdentity,
-    RenderInput,
     SealedSubstitutions,
     substitution_context,
 )
@@ -121,51 +119,20 @@ def render_family_mail(
         raise ValueError("Family content accepts only public substitutions.")
     for value in values.values():
         _no_reserved_markers(value)
-    intended = tuple(intended_recipients)
-    if (
-        not intended
-        or intended != tuple(sorted(set(intended)))
-        or any(normalized_email(address) != address for address in intended)
-    ):
-        raise ValueError("Family recipients must be canonical and distinct.")
     subject = _render_part(template.subject, values)
-    # Validate the completed public subject before reserving the Testing banner.
-    if len(subject) > 254 or any(char in subject for char in "\r\n\x00"):
-        raise ValueError("Invalid email subject substitution.")
     html = _render_part(template.html, values, html=True)
     text = _render_part(template.text, values)
-    routed = intended
-    if identity.mode == "testing":
-        if normalized_email(testing_recipient) != testing_recipient:
-            raise ValueError("Testing requires one canonical override recipient.")
-        routed = (testing_recipient,)
-        description = (
-            "TEST — sent to "
-            + testing_recipient
-            + " instead of "
-            + (
-                values.get("family_member_names")
-                or values.get("family_name")
-                or "Family"
-            )
-            + " ("
-            + ", ".join(intended)
-            + ")."
-        )
-        # Preserve the mandatory mode marker without failing an otherwise valid
-        # 254-character configured subject. Only Testing display is shortened.
-        subject = "[TEST] " + (subject if len(subject) <= 247 else subject[:246] + "…")
-        html = "<h2>TEST</h2><p>" + escape(description) + "</p>" + html
-        text = description + "\n\n" + text
-    elif testing_recipient is not None:
-        raise ValueError("Production mail cannot have a Testing override.")
-    return RenderInput(
+    return route_family_mail(
+        identity=identity,
         configuration_id=configuration_id,
         template_id=template_id,
         sender=sender,
         reply_to=reply_to,
-        intended_recipients=intended,
-        routed_recipients=routed,
+        intended_recipients=intended_recipients,
+        testing_recipient=testing_recipient,
+        family_name=values.get("family_member_names")
+        or values.get("family_name")
+        or "Family",
         subject=subject,
         html=html,
         text=text,

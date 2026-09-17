@@ -126,6 +126,45 @@ def test_schedule_template_reference(mismatch):
             configuration_version(document)
 
 
+def test_confirmation_selection_is_unique_but_scheduled_templates_are_not():
+    """Direct receipts cannot pick an arbitrary template from several revisions."""
+    document = content_document()
+    owner = document["sections"]["campaigns"][0]["id"]
+    document["sections"]["content"] += [
+        content(owner, kind="email", slot="reminder"),
+        content(owner, kind="email", slot="reminder"),
+        content(owner, kind="email", slot="confirmation"),
+    ]
+    assert configuration_version(document)
+    document["sections"]["content"].append(
+        content(owner, kind="email", slot="confirmation")
+    )
+    with pytest.raises(ConfigError):
+        configuration_version(document)
+
+
+@pytest.mark.parametrize(
+    "kind,slot,part",
+    [
+        ("email", "confirmation", "subject"),
+        ("email", "confirmation", "html"),
+        ("email", "confirmation", "text"),
+        ("page", "submission_confirmation", "html"),
+        ("page", "submission_confirmation", "text"),
+    ],
+)
+@pytest.mark.parametrize("private", ["family_code", "family_url"])
+def test_receipt_privacy_is_enforced_at_configuration_apply(kind, slot, part, private):
+    """Raw configuration cannot bypass either receipt authoring surface."""
+    document = content_document()
+    owner = document["sections"]["campaigns"][0]["id"]
+    document["sections"]["content"].append(
+        content(owner, kind=kind, slot=slot, **{part: "{{ " + private + " }}"})
+    )
+    with pytest.raises(ConfigError):
+        configuration_version(document)
+
+
 @pytest.mark.parametrize(
     "schema",
     [

@@ -119,6 +119,20 @@ def test_family_editor_accepts_explicit_text_with_anchor_link():
     assert form.is_valid(), form.errors
 
 
+@pytest.mark.parametrize(
+    "kind,slot", [("page", "submission_confirmation"), ("email", "confirmation")]
+)
+@pytest.mark.parametrize("private", ["family_code", "family_url"])
+def test_receipt_editor_rejects_credentials(kind, slot, private):
+    """Both the receipt template and separately selected block are credential-free."""
+    form = ContentForm(
+        fields(subject="Received", html="<p>{{ " + private + " }}</p>"),
+        kind=kind,
+        slot=slot,
+    )
+    assert not form.is_valid()
+
+
 def test_explicit_clear_and_safe_samples():
     """Clearing is explicit; samples never contain real Family identifiers."""
     form = ContentForm(fields(clear="on"), kind="page")

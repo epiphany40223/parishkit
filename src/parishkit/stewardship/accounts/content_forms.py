@@ -12,6 +12,7 @@ from parishkit.stewardship.web.content import (
     prepare_content,
     render_template,
     validate_family_email,
+    validate_receipt_content,
     validate_template,
 )
 from parishkit.stewardship.web.presentation import campaign_year, parish_date
@@ -112,6 +113,13 @@ class ContentForm(forms.Form):
             validate_template(prepared.text)
             if self.kind == "email":
                 validate_template(values["subject"], subject=True)
+            if (self.kind, self.slot) in {
+                ("email", "confirmation"),
+                ("page", "submission_confirmation"),
+            }:
+                validate_receipt_content(
+                    values.get("subject", ""), prepared.html, prepared.text
+                )
         except ValueError:
             self.add_error(
                 None,

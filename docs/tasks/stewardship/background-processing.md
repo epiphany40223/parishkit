@@ -246,7 +246,12 @@ only the current aggregate's directly attached fulfillment rows. The bounded
 `campaigns.recovery_coverage.covered_dates()` reader supplies exact date identities,
 not report facts or evidence of delivery.
 
-Evidence: Not started.
+Evidence: BG-07.01 is in progress on `pr/stewardship-submission-receipts`, from
+PR #45's verified merge `3bfec17a`. The
+[increment guide](../../guides/stewardship-submission-receipts.md) defines the
+coherent receipt delivery scope and internal acceptance checkpoints. Daily and
+weekly digests, complete post-close inventory and Gate 3 remain open; none of
+this package's tasks is yet claimed complete.
 
 ## BG-08: Export and graph workers
 

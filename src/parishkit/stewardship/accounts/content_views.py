@@ -72,6 +72,7 @@ def _catalog(request, configuration, campaign):
         emails.append(
             {
                 "label": label,
+                "singleton": slot == "confirmation",
                 "url": reverse("admin:content_edit", args=[campaign.pk, "email", slot]),
                 "revisions": [
                     {
@@ -224,7 +225,11 @@ def content_settings(request, campaign_id, kind=None, slot=None, revision_id=Non
                         for row in records
                         if (row["values"]["kind"], row["values"]["slot"])
                         == (kind, slot)
-                        and (kind == "page" or row["id"] == str(revision_id))
+                        and (
+                            kind == "page"
+                            or (slot == "confirmation" and revision_id is None)
+                            or row["id"] == str(revision_id)
+                        )
                     ),
                     None,
                 )

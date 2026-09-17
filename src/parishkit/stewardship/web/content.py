@@ -181,6 +181,21 @@ def validate_family_email(subject, html, text):
         raise ValueError("Each Family email body requires its code and link.")
 
 
+def validate_receipt_content(subject, html, text):
+    """Receipts never substitute access credentials, including in optional prose.
+
+    Use this at authoring, configuration apply and rendering. Reserved markers
+    are forbidden too: a receipt is never a credential-bearing dispatch input.
+    An empty subject is allowed for the separately authored body-only block;
+    the email template and final envelope enforce a nonempty subject.
+    """
+    for value, header in ((subject, True), (html, False), (text, False)):
+        if validate_template(value, subject=header) & FAMILY_CREDENTIAL_PLACEHOLDERS:
+            raise ValueError("Submission receipts cannot contain access credentials.")
+        if FAMILY_CODE_MARKER in value or FAMILY_LINK_MARKER in value:
+            raise ValueError("Submission receipts cannot contain reserved markers.")
+
+
 def validate_share_label(value):
     """Share options permit only non-private parish, period and pronoun values."""
     if type(value) is not str or not value.strip() or len(value) > 1024:

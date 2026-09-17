@@ -47,7 +47,9 @@ The [campaign statistics increment](../../guides/stewardship-campaign-statistics
 continues the Phase 4 calculation prerequisites on top of verified PR #44.
 Current population, eligibility/deliverability, exact current/comparison money,
 source-coherent selection and focused tests have passed local validation and
-three dual-source review/fix rounds. Protected delivery remains pending.
+three dual-source review/fix rounds. PR #45 subsequently passed all 24 exact-head
+checks plus DCO and all 24 protected merge-group checks, merging as `3bfec17a`
+on fresh `origin/main`; see its guide's protected-delivery record.
 Age/Ministry report calculations and complete package acceptance remain Phase 5
 work.
 
