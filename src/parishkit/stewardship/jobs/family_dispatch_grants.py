@@ -29,6 +29,9 @@ METADATA_FIELDS = (
 
 def add_dispatch_grants(tables, columns):
     """The isolated mail role resolves tokens and journals only fenced deliveries."""
+    from parishkit.stewardship.reports.digest_grants import add_digest_dispatch_grants
+
+    add_digest_dispatch_grants(tables, columns, private=True)
     add_receipt_reads(columns)
     for table in (
         "stewardship_campaign",
@@ -107,6 +110,9 @@ def add_dispatch_grants(tables, columns):
 
 def add_dispatch_scheduler_reads(tables, columns):
     """Schedule opaque work without access to recipients, bodies or sealed values."""
+    from parishkit.stewardship.reports.digest_grants import add_digest_dispatch_grants
+
+    add_digest_dispatch_grants(tables, columns, private=False)
     columns.setdefault("stewardship_outbox_message", {}).setdefault(
         "SELECT", set()
     ).update(METADATA_FIELDS)

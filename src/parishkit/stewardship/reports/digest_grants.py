@@ -5,6 +5,7 @@ def add_digest_grants(tables, columns, *, worker):
     """Share opaque ownership; only the general worker can capture report inputs."""
     tables.setdefault("stewardship_daily_digest_preparation", set()).add("SELECT")
     tables.setdefault("stewardship_recovery_replacement", set()).add("SELECT")
+    tables.setdefault("stewardship_daily_digest_completion_ready", set()).add("SELECT")
     if worker:
         tables["stewardship_daily_digest_preparation"].add("UPDATE")
         for name in ("snapshot", "ready", "recipient"):
@@ -26,3 +27,27 @@ def add_digest_grants(tables, columns, *, worker):
                 "through_date",
             }
         )
+
+
+def add_digest_dispatch_grants(tables, columns, *, private):
+    """MAIL reads compiled content; scheduler sees only opaque relationship IDs."""
+    tables.setdefault("stewardship_daily_digest_preparation", set()).add("SELECT")
+    tables.setdefault("stewardship_daily_digest_completion_ready", set()).add("SELECT")
+    columns.setdefault("stewardship_daily_digest_snapshot", {}).setdefault(
+        "SELECT", set()
+    ).update({"id", "preparation_id"})
+    if private:
+        for table in (
+            "stewardship_daily_digest_ready",
+            "stewardship_daily_digest_recipient",
+        ):
+            tables.setdefault(table, set()).add("SELECT")
+        columns.setdefault("stewardship_address_rule", {}).setdefault(
+            "SELECT", set()
+        ).update({"email", "roles", "configuration_id"})
+    else:
+        for table, fields in {
+            "stewardship_daily_digest_ready": {"id", "snapshot_id"},
+            "stewardship_daily_digest_recipient": {"id", "ready_id", "outbox_id"},
+        }.items():
+            columns.setdefault(table, {}).setdefault("SELECT", set()).update(fields)

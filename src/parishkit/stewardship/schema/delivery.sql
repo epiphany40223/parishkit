@@ -813,7 +813,7 @@ BEGIN
     SELECT * INTO r FROM public.stewardship_outbox_render WHERE id=e.render_id;
     SELECT * INTO m FROM public.stewardship_outbox_message WHERE id=e.message_id;
     IF e.id IS NULL OR r.id IS NULL OR m.id IS NULL OR e.previous_state<>'submitting'
-       OR m.purpose NOT IN ('initial','reminder','receipt') OR e.attempt<1
+       OR m.purpose NOT IN ('initial','reminder','receipt','daily_digest') OR e.attempt<1
        OR e.evidence_digest<>encode(sha256(convert_to(e.evidence_note,'UTF8')),'hex')
        OR e.provider_key_digest<>encode(sha256(convert_to(m.semantic_key::text,'UTF8')),'hex')
        THEN RETURN NULL; END IF;

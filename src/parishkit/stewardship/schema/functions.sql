@@ -3547,7 +3547,7 @@ BEGIN
            OR (OLD.state='failed' AND NEW.state NOT IN ('pending','skipped'))
            OR OLD.state IN ('succeeded','skipped','coalesced') THEN
             RAISE EXCEPTION 'Invalid occurrence transition' USING ERRCODE='23514'; END IF;
-        IF NEW.state='running' THEN
+        IF NEW.state='running' AND NOT public.stewardship_daily_digest_completion_v1(to_jsonb(NEW)) THEN
             SELECT * INTO t FROM stewardship_task_run WHERE id=NEW.task_id FOR UPDATE;
             IF NOT FOUND OR t.state<>'running' OR t.worker_id<>NEW.worker_id OR t.fence<>NEW.fence OR t.lease_expires_at<=clock_timestamp()
                OR NEW.lease_expires_at>t.lease_expires_at OR NEW.heartbeat_at>clock_timestamp()

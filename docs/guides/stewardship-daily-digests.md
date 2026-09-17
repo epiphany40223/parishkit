@@ -199,3 +199,32 @@ No indexes or row policies changed. Installed function differences were reviewed
 before updating the strict fingerprint. Existing development databases were
 neither upgraded nor deleted. Runtime delivery, report links, retry UI and the
 final review gates are still required; BG-07.02 remains unchecked.
+
+### Provider dispatch and aggregate completion checkpoint
+
+Individually addressed digests now use the maintained MAIL claim, isolated
+chart transport and shared bounded SMTP outcome protocol. Current Admin
+membership, revision, Testing epoch, pause and restore gates are checked before
+submission; no Family credential is decrypted or Family refusal propagated.
+Provider uncertainty remains explicit and cannot trigger an automatic resend.
+
+Completion requires every member of the immutable recipient cohort, including
+independently proven earlier acceptance. One successful sibling cannot complete
+a multi-Admin digest. A late accepted observation can commit after its provider
+task fails; a separate metadata-only task finishes the aggregate under a fresh
+claim without rewriting that failure. Crash recovery does not duplicate the
+fulfillment. Fully covered replacements finish without sending new messages.
+
+Validation: 32 dispatch/worker/finalization PostgreSQL tests, 78 shared-mail and
+schedule regressions, and 28 schedule/schema checks passed. The credential-free
+suite passed 6,345 tests with 4,370 profile skips and two existing deprecation
+warnings in 63.69 seconds. Ruff check and format validation passed. Independent
+fresh schemas against `0f58942` show one private metadata view, two changed
+schedule views, six new/four changed functions and three completion triggers;
+no existing columns, indexes or row policies changed. Installed function deltas
+were inspected before updating the strict catalog fingerprint. Both Docker
+build contexts include the new SQL asset. No retained database was modified.
+
+This remains an internal checkpoint. Admin reconciliation/retry controls, the
+authorized report route, runtime registration, integration validation and three
+review rounds still precede completion of BG-07.02 and PR delivery.

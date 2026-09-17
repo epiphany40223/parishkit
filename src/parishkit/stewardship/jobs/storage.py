@@ -186,6 +186,7 @@ def retry_failed(*, run_id, command_id, actor_id, correlation_id, admit):
         "report_fact_verification",
         "family_mail_prepare",
         "daily_digest_prepare",
+        "daily_digest_finalize",
     ):
         require_work_order()
     with _locked(correlation_id, root_id=original.root_id):

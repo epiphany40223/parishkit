@@ -29,7 +29,9 @@ LEFT JOIN LATERAL (
 ) messages ON true
 LEFT JOIN LATERAL (
     SELECT sum(t.version) AS versions FROM public.stewardship_task_run t
-    WHERE t.root_id=p.task_id OR t.root_id IN (
+    WHERE t.root_id=p.task_id
+      OR (t.task_type='daily_digest_finalize' AND t.domain_request_id=p.id)
+      OR t.root_id IN (
         SELECT m.task_id FROM public.stewardship_daily_digest_snapshot s
         JOIN public.stewardship_daily_digest_ready r ON r.snapshot_id=s.id
         JOIN public.stewardship_daily_digest_recipient recipient ON recipient.ready_id=r.id
@@ -51,7 +53,20 @@ SELECT o.id, o.definition_id, o.revision_id, o.state, o.version, o.outbox_id,
                        WHERE q.id=t.domain_request_id AND q.task_id=t.root_id
                          AND q.occurrence_id=o.id AND q.mode=o.mode))
                    OR (t.task_type='outbox_delivery' AND t.domain_request_id=m.id
-                       AND t.root_id=m.task_id AND m.semantic_key=o.id),false)
+                       AND t.root_id=m.task_id AND m.semantic_key=o.id)
+                   OR (d.kind='daily_digest' AND digest.occurrence_id=o.id AND (
+                       (t.task_type='daily_digest_prepare' AND t.root_id=digest.task_id)
+                       OR (t.task_type='daily_digest_finalize' AND EXISTS(
+                           SELECT 1 FROM public.stewardship_daily_digest_preparation preparation
+                           WHERE preparation.id=t.domain_request_id AND preparation.occurrence_id=o.id))
+                       OR (t.task_type='outbox_delivery' AND EXISTS (
+                           SELECT 1 FROM public.stewardship_outbox_message child
+                           JOIN public.stewardship_daily_digest_recipient recipient ON recipient.outbox_id=child.id
+                           JOIN public.stewardship_daily_digest_ready ready ON ready.id=recipient.ready_id
+                           JOIN public.stewardship_daily_digest_snapshot snapshot ON snapshot.id=ready.snapshot_id
+                           JOIN public.stewardship_daily_digest_preparation preparation ON preparation.id=snapshot.preparation_id
+                           WHERE child.id=t.domain_request_id AND child.task_id=t.root_id
+                             AND preparation.occurrence_id=o.id)))),false)
            ))
            OR m.state IN ('submitting','delivery_unknown')
            OR (m.state IN ('pending','retry_wait') AND resolution.action='retry_idempotent')
@@ -132,6 +147,9 @@ RETURNS SETOF uuid LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_t
     WHERE m.id IN (SELECT public.stewardship_schedule_message_ids_v1($1,$2))
     UNION SELECT p.task_id FROM public.stewardship_daily_digest_preparation p
     WHERE p.definition_id=$1 AND p.revision_id=$2
+    UNION SELECT t.root_id FROM public.stewardship_task_run t
+    JOIN public.stewardship_daily_digest_preparation p ON p.id=t.domain_request_id
+    WHERE t.task_type='daily_digest_finalize' AND p.definition_id=$1 AND p.revision_id=$2
 $$;
 REVOKE ALL ON FUNCTION public.stewardship_schedule_message_ids_v1(uuid,uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.stewardship_schedule_task_roots_v1(uuid,uuid) FROM PUBLIC;

@@ -15,6 +15,8 @@ from parishkit.stewardship.campaigns.production_models import ProductionCleanupT
 from parishkit.stewardship.campaigns.recovery_coverage import covered_dates
 from parishkit.stewardship.campaigns.schedule_models import (
     ScheduleDefinition,
+    ScheduleFulfillment,
+    ScheduleOccurrence,
     ScheduleRecoveryReplacement,
 )
 from parishkit.stewardship.campaigns.work_locks import work_transaction
@@ -23,6 +25,7 @@ from parishkit.stewardship.jobs.delivery_states import DeliveryAction
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage
 from parishkit.stewardship.jobs.outbox_storage import _status
+from parishkit.stewardship.jobs.storage import _status as task_status
 from parishkit.stewardship.reports.daily_digest import render_daily_digest
 from parishkit.stewardship.reports.digest_building import (
     admit_daily_facts,
@@ -48,6 +51,7 @@ from .test_daily_digest_planning_postgresql import INSTANT, allocate
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
 from .test_outbox_postgresql import change, provider_evidence, submit
 from .test_schedule_reconciliation_postgresql import replace_schedule
+from .test_taskrun_postgresql import act
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -201,6 +205,44 @@ def test_replacement_retains_all_dates_and_exact_per_admin_acceptance(
         assert [
             d.isoformat() for d in covered_dates(row.occurrence_id, mode=row.mode)
         ] == ready.snapshot.covered_dates
+
+
+def test_fully_accepted_replacement_completes_without_new_messages(family_mail):  # noqa: F811
+    """Complete recovered coverage only when every selected Admin is covered."""
+    with campaign_clock(INSTANT):
+        definition, original = messages(family_mail)
+        for message in original:
+            unknown = change(submit(_status(message)), DeliveryAction.MARK_UNKNOWN)
+            act(
+                task_status(TaskRun.objects.get(pk=message.task_id)),
+                "permanent_failure",
+            )
+            change(
+                unknown,
+                DeliveryAction.ACCEPT,
+                evidence=provider_evidence(),
+            )
+        assert (
+            replace_schedule(family_mail.service.store, definition, uuid4()).state
+            == "applied"
+        )
+        claim, ready = replacement_report()
+        with task_login(ServiceRole.WORKER, exact=True), work_transaction():
+            assert fanout_daily(claim).phase == "complete"
+        assert OutboxMessage.objects.count() == len(original)
+        assert not DailyDigestRecipient.objects.filter(
+            ready=ready, outbox__isnull=False
+        ).exists()
+        occurrence = ScheduleOccurrence.objects.get(
+            pk=ready.snapshot.preparation.occurrence_id
+        )
+        assert occurrence.state == "succeeded"
+        assert (
+            ScheduleFulfillment.objects.filter(
+                occurrence=occurrence, disposition="delivered"
+            ).count()
+            == 1
+        )
 
 
 def test_forged_prior_acceptance_is_denied_by_database(family_mail):  # noqa: F811
