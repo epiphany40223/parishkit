@@ -161,3 +161,33 @@ Final round-3 corrections pass all 22 actual-role verification/grant tests in
 37.78 seconds, plus repository Ruff/formatting, tracked Markdown and whitespace
 checks. The fixups are consolidated for PR delivery; exact-head CI/DCO and the
 protected merge-group checks remain required before merge.
+
+## CI identity-performance investigation
+
+The consolidated implementation `2147a7d` passed all 24 exact-head CI jobs and
+DCO in run `35168775231`. Its first attempt failed an existing Production
+identity lookup budget at 5,000 Families (p95 3.303 seconds versus the unchanged
+two-second limit). Two unchanged local reproductions passed, including branch
+coverage instrumentation. Rerunning the complete failed 420-test partition
+passed unchanged in 916.54 seconds, and the coverage aggregate accepted all
+same-head receipts.
+
+Protected merge-candidate run `35171368538` nevertheless reproduced the same
+failure at p95 3.316 seconds; the other 419 tests in that partition passed.
+The merge is not complete. Local passes do not establish that CI is merely
+noisy, and repeated blind retries are not a resolution. The investigation adds
+failure-only per-sample and per-query-ordinal timing evidence, never SQL text or
+parameters, while preserving both original performance and query-count limits.
+
+Focused dual-source review `20260916-220138-f37a05` examined the diagnostic delta
+`2147a7d..77c4ee6`. Both sources completed successfully; Codex found no findings,
+and Claude found two Low issues. Both are accepted: include the actual p95
+sample's query timings as well as the slowest sample, and attach safe evidence
+to query-count failures too. Four deterministic tests verify the failure
+diagnostics, private-value exclusion, exact percentile and unchanged boundary.
+The original diagnostic change also passed both PostgreSQL performance tests
+in 50.91 seconds. After both review corrections, the two database tests pass in
+54.87 seconds and the baseline passes 6,053 tests in 64.25 seconds (4,199
+profile skips and the same two client warnings). Repository Ruff/formatting,
+changed Markdown and whitespace checks pass. CI remains required; diagnostics
+alone do not claim to fix the underlying slowdown.
