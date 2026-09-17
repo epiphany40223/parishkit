@@ -753,7 +753,15 @@ Family browser uses the separate `thank_you` slot.
 
 Initial, reminder, confirmation, daily digest, weekly digest, and critical-alert
 templates have separate subject, sanitized HTML, and generated/edited plain-text
-versions. Family templates support only documented placeholders, including
+versions. The direct submission confirmation selects at most one email template
+per campaign; editing replaces its immutable revision, not an arbitrary member
+of a template list. Without a selected template, use the built-in non-sensitive
+confirmation subject/body. The separately selected `submission_confirmation`
+block is appended when present, and required receipt facts always appear
+independently of either optional authored body. Neither receipt authoring surface
+accepts access-code or secure-link placeholders. Scheduled email templates retain
+their explicit per-schedule revision selection.
+Family templates support only documented placeholders, including
 eligible names, code, secure link, generic URL, parish fields, dates, and
 campaign fields. Unknown placeholders are validation failures, not empty text.
 Initial invitations and reminders require the code and secure-link placeholders

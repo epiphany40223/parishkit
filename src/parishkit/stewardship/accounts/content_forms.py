@@ -12,6 +12,7 @@ from parishkit.stewardship.web.content import (
     prepare_content,
     render_template,
     validate_family_email,
+    validate_receipt_content,
     validate_template,
 )
 from parishkit.stewardship.web.presentation import campaign_year, parish_date
@@ -112,6 +113,13 @@ class ContentForm(forms.Form):
             validate_template(prepared.text)
             if self.kind == "email":
                 validate_template(values["subject"], subject=True)
+            if (self.kind, self.slot) in {
+                ("email", "confirmation"),
+                ("page", "submission_confirmation"),
+            }:
+                validate_receipt_content(
+                    values.get("subject", ""), prepared.html, prepared.text
+                )
         except ValueError:
             self.add_error(
                 None,
@@ -156,9 +164,12 @@ class ContentForm(forms.Form):
         }
 
 
-def sample_render(value, *, parish, campaign):
+def sample_render(value, *, parish, campaign, confirmation=False, receipt_block=None):
     """Never look up a real Family or generate a live code/link for a sample preview."""
-    if value is None:
+    confirmation = confirmation or (
+        value is not None and value.get("slot") == "confirmation"
+    )
+    if value is None and not confirmation:
         return None
     substitutions = {
         "parish_name": parish["name"],
@@ -192,6 +203,12 @@ def sample_render(value, *, parish, campaign):
         ),
     }
     assert set(substitutions) == PLACEHOLDERS
+    if confirmation:
+        from parishkit.stewardship.jobs.receipt_preview import sample_receipt
+
+        return sample_receipt(
+            value, substitutions=substitutions, campaign=campaign, block=receipt_block
+        )
     return {
         "html": render_template(value["html"], substitutions, html=True),
         "text": render_template(value["text"], substitutions),

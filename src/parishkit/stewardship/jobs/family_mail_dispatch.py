@@ -80,8 +80,13 @@ def bound_dispatch(status):
     row = OutboxMessage.objects.only(*METADATA_FIELDS).get(
         pk=status.domain_request_id,
         task_id=status.root_id,
-        purpose__in=("initial", "reminder"),
+        purpose__in=("initial", "reminder", "receipt"),
     )
+    if row.purpose == "receipt":
+        from .receipt_dispatch import bound_receipt
+
+        bound_receipt(row)
+        return row
     if not ScheduleOccurrence.objects.filter(
         pk=row.semantic_key,
         outbox_id=row.pk,
@@ -97,6 +102,10 @@ def bound_dispatch(status):
 def disposition(message):
     """Terminal invalidation cancels unsent work; temporary gates leave it queued."""
     require_work_order()
+    if message.purpose == "receipt":
+        from .receipt_dispatch import receipt_disposition
+
+        return receipt_disposition(message)
     runtime = SystemConfiguration.objects.get()
     population = CampaignCredentialState.objects.filter(
         campaign_id=message.campaign_id
@@ -232,8 +241,12 @@ def begin_submission(
         message = bound_dispatch(_status(task))
         if message.pk != identifier or message.state not in {"pending", "retry_wait"}:
             raise PermissionError("Family delivery is not unsent.")
-        row = ScheduleOccurrence.objects.select_related("definition", "revision").get(
-            pk=message.semantic_key
+        row = (
+            None
+            if message.purpose == "receipt"
+            else ScheduleOccurrence.objects.select_related(
+                "definition", "revision"
+            ).get(pk=message.semantic_key)
         )
         reason = disposition(message)
         if reason == "delivery_paused":
@@ -259,7 +272,7 @@ def begin_submission(
             return None
         if reason:
             cancel_unsent(message.pk, claim, reason=reason)
-            if row.state == "pending":
+            if row is not None and row.state == "pending":
                 _occurrence_change(row, claim, state="skipped", reason=reason)
             return None
         # The no-send caller has not loaded Workspace credentials. A resumed
@@ -273,14 +286,17 @@ def begin_submission(
             ).exists()
         ):
             raise FamilyDeliveryHeld("Family delivery configuration changed.")
-        decision = plan_family(
-            claim, family_id=message.family_id, worker_id=claim.worker_id
-        )
-        if decision.held:
-            raise FamilyDeliveryHeld("Family delivery recovery is held.")
-        if decision.selected != row.pk:
-            return None
-        scope, _ = _planning_scope(message.campaign_id)
+        if row is None:
+            scope = _scope(message.campaign_id)
+        else:
+            decision = plan_family(
+                claim, family_id=message.family_id, worker_id=claim.worker_id
+            )
+            if decision.held:
+                raise FamilyDeliveryHeld("Family delivery recovery is held.")
+            if decision.selected != row.pk:
+                return None
+            scope, _ = _planning_scope(message.campaign_id)
         if message.pause_hold_id is not None:
             release_message_hold(
                 message_id=message.pk,
@@ -296,9 +312,16 @@ def begin_submission(
                 ),
             )
             message.refresh_from_db()
-        render, sealed, mail = current_content(
-            message, row, scope, private=private, public_origin=public_origin
-        )
+        if row is None:
+            from .receipt_dispatch import current_receipt_content
+
+            render, sealed, mail = current_receipt_content(
+                message, scope, public_origin=public_origin
+            )
+        else:
+            render, sealed, mail = current_content(
+                message, row, scope, private=private, public_origin=public_origin
+            )
 
         def admit(action, identity, status, proposal=None):
             lock_task_claim(claim)
@@ -318,18 +341,19 @@ def begin_submission(
             sealed=sealed,
             admit=admit,
         )
-        _occurrence_change(
-            row,
-            claim,
-            state="running",
-            task_id=claim.run_id,
-            worker_id=claim.worker_id,
-            fence=claim.fence,
-            attempts=row.attempts + 1,
-            heartbeat_at=database_now(),
-            lease_expires_at=task.lease_expires_at,
-            reason="provider_submission",
-        )
+        if row is not None:
+            _occurrence_change(
+                row,
+                claim,
+                state="running",
+                task_id=claim.run_id,
+                worker_id=claim.worker_id,
+                fence=claim.fence,
+                attempts=row.attempts + 1,
+                heartbeat_at=database_now(),
+                lease_expires_at=task.lease_expires_at,
+                reason="provider_submission",
+            )
         status = change_message(
             message_id=message.pk,
             action=DeliveryAction.SUBMIT,
@@ -367,7 +391,11 @@ def finish_submission(identifier, claim, result):
             FamilyDeliveryStatus.TRANSIENT: DeliveryAction.RETRY_UNACCEPTED,
             FamilyDeliveryStatus.UNAVAILABLE: DeliveryAction.RETRY_UNACCEPTED,
         }[result.status]
-        row = ScheduleOccurrence.objects.get(pk=message.semantic_key)
+        row = (
+            None
+            if message.purpose == "receipt"
+            else ScheduleOccurrence.objects.get(pk=message.semantic_key)
+        )
         # Record definitive non-acceptance even when the original scope no longer
         # permits another attempt. Never relabel it as uncertain or accepted.
         if action is DeliveryAction.RETRY_UNACCEPTED:
@@ -380,9 +408,17 @@ def finish_submission(identifier, claim, result):
                 or runtime.mode != message.mode
                 or (
                     message.mode == "testing"
-                    and population.rehearsal_epoch_id != message.rehearsal_epoch_id
+                    and population.rehearsal_epoch_id
+                    != (
+                        message.rehearsal_epoch_id
+                        if row is not None
+                        else _receipt_epoch(message)
+                    )
                 )
-                or row.revision_id != row.definition.current_revision_id
+                or (
+                    row is not None
+                    and row.revision_id != row.definition.current_revision_id
+                )
             ):
                 action = DeliveryAction.FAIL_UNACCEPTED
 
@@ -411,14 +447,15 @@ def finish_submission(identifier, claim, result):
             DeliveryAction.FAIL_UNACCEPTED: "failed",
             DeliveryAction.RETRY_UNACCEPTED: "pending",
         }[action]
-        _occurrence_change(
-            row,
-            claim,
-            state=target,
-            lease_expires_at=None,
-            reason="smtp_" + result.status.value,
-        )
-        if action is DeliveryAction.ACCEPT:
+        if row is not None:
+            _occurrence_change(
+                row,
+                claim,
+                state=target,
+                lease_expires_at=None,
+                reason="smtp_" + result.status.value,
+            )
+        if action is DeliveryAction.ACCEPT and row is not None:
             ScheduleFulfillment.objects.create(
                 definition_id=row.definition_id,
                 mode=row.mode,
@@ -443,3 +480,10 @@ def finish_submission(identifier, claim, result):
                     correlation_id=claim.run_id,
                 )
         return result_status
+
+
+def _receipt_epoch(message):
+    """Read only the immutable response namespace while settling an attempt."""
+    from .receipt_dispatch import bound_receipt
+
+    return bound_receipt(message).rehearsal_epoch_id

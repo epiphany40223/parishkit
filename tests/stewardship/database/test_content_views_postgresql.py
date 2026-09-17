@@ -229,6 +229,41 @@ def test_content_stale_base_noop_and_route_scope(auth_service, google):
     assert post(browser, catalog, values(store)).status_code == 400
 
 
+def test_receipt_template_edits_one_selection_and_retains_old_revision(
+    auth_service, google
+):
+    """The direct-mail slot replaces its selection, not an arbitrary list member."""
+    store = auth_service.store
+    campaign, catalog, _ = setup(store)
+    row = content(str(campaign.pk), kind="email", slot="confirmation", subject="Before")
+    assert (
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [{"operation": "add", "section": "content", **row}],
+        ).state
+        == "applied"
+    )
+    before = SystemConfiguration.objects.get().active_configuration
+    browser, _ = signed_in()
+    path = catalog + "/email/confirmation"
+    with task_login(ServiceRole.WEB):
+        assert b"Edit receipt template" in browser.get(catalog).content
+        assert b"Before" in browser.get(path).content
+        preview = post(browser, path, values(store, subject="After"))
+        assert b"Submitted:" in preview.content and b"Questions:" in preview.content
+        accepted = post(browser, path, {"action": "confirm", "preview": token(preview)})
+    apply(store, accepted)
+    current = SystemConfiguration.objects.get().active_configuration
+    assert (
+        current.content_versions.filter(kind="email", slot="confirmation").count() == 1
+    )
+    assert current.content_versions.get(slot="confirmation").subject == "After"
+    assert before.content_versions.get(record_id=row["id"]).subject == "Before"
+    assert browser.get(path + "/" + row["id"]).status_code == 404
+
+
 def test_staff_cannot_read_or_edit_content(auth_service, google):
     """Staff's campaign reporting access does not imply configuration capability."""
     store = auth_service.store

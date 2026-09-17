@@ -16,7 +16,7 @@ from parishkit.stewardship.campaigns.rehearsals import code_context, prepare_reh
 from parishkit.stewardship.source.models import SourceCurrent, SourceMutationLease
 
 from ..test_source_corpus import source
-from .campaign_builders import add_draft, campaign_clock
+from .campaign_builders import add_draft, campaign_clock, change
 from .credential_builders import keys
 from .test_family_auth_postgresql import login
 from .test_source_families_postgresql import prepare, promote
@@ -59,14 +59,44 @@ def activate_response_service(harness):
         cleanup_rehearsal,
         invalidate_rehearsal,
     )
+    from parishkit.stewardship.responses.models import SubmissionReceiptOccurrence
 
     from .campaign_builders import command
+    from .test_cleanup_tasks_postgresql import queued, run
 
-    epoch = invalidate_rehearsal(
-        campaign_id=harness.campaign.pk, admit=lambda *args: True
-    )
-    while cleanup_rehearsal(epoch):
-        pass
+    if SubmissionReceiptOccurrence.objects.filter(
+        submission__campaign=harness.campaign, outbox__isnull=False
+    ).exists():
+        from parishkit.stewardship.campaigns.cleanup_requests import (
+            request_cancellation,
+        )
+        from parishkit.stewardship.campaigns.production_models import (
+            ProductionTransitionRequest,
+        )
+
+        cleanup = queued(harness)
+        assert run(cleanup)
+        completed = ProductionTransitionRequest.objects.get(pk=cleanup.request_id)
+        # This fixture owns only cleanup plus the separate lifecycle seam, not
+        # the later Admin go-live workflow. Close the completed request through
+        # its real cancellation owner before requesting independent activation.
+        assert (
+            request_cancellation(
+                request_id=completed.pk,
+                command_id=uuid4(),
+                expected_version=completed.version,
+                actor_id=uuid4(),
+                correlation_id=uuid4(),
+                admit=lambda *args: True,
+            ).state
+            == "cancelled"
+        )
+    else:
+        epoch = invalidate_rehearsal(
+            campaign_id=harness.campaign.pk, admit=lambda *args: True
+        )
+        while cleanup_rehearsal(epoch):
+            pass
     command(harness.campaign, uuid4(), Action.ACTIVATE)
     family = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=1)
     code = harness.rings.general.decrypt(
@@ -85,6 +115,32 @@ def response_service(auth_service, settings):
     SourceCurrent.objects.get_or_create(singleton=True)
     _, row, _ = add_draft(auth_service.store, auth_service.store.active(), uuid4())
     campaign = Campaign.objects.get(pk=UUID(row["id"]))
+    if not any(
+        item["values"]["kind"] == "email"
+        for item in auth_service.store.active().document()["sections"]["integrations"]
+    ):
+        result = change(
+            auth_service.store,
+            auth_service.store.active(),
+            uuid4(),
+            [
+                {
+                    "operation": "add",
+                    "section": "integrations",
+                    "id": str(uuid4()),
+                    "values": {
+                        "kind": "email",
+                        "settings": {
+                            "sender": "sender@example.org",
+                            "reply_to": "reply@example.org",
+                        },
+                        "credential_fingerprint": None,
+                    },
+                }
+            ],
+        )
+        assert result.state == "applied"
+        campaign.refresh_from_db()
     rings = keys()
     snapshot, claim = prepare(response_source())
     snapshot = promote(snapshot, claim, campaign, rings)
@@ -92,6 +148,7 @@ def response_service(auth_service, settings):
         auth_service.store, auth_service.limiter, rings.general, rings.mac, rings.public
     )
     settings.STEWARDSHIP_FAMILY_RUNTIME = service
+    settings.STEWARDSHIP_PUBLIC_ORIGIN = "https://parish.example.org"
     with campaign_clock(campaign.active_configuration.starts_at):
         prepare_rehearsals(
             campaign_id=campaign.pk,

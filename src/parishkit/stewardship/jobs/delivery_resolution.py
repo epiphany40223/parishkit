@@ -39,6 +39,8 @@ def _identity(message):
 
 def _prepare(message, *, general, public, public_origin):
     """Re-read source, template and retained credential references inside the lock."""
+    if message is not None and message.purpose == "receipt":
+        return _prepare_receipt(message)
     if (
         not isinstance(general, GeneralKeyring)
         or not isinstance(public, TokenPublicKeyring)
@@ -92,6 +94,15 @@ def _prepare(message, *, general, public, public_origin):
             for key, value in sealed.fields().items()
         },
     }
+
+
+def _prepare_receipt(message):
+    """Request a database-owned seed; Web cannot author a receipt delivery body."""
+    from .receipt_dispatch import receipt_disposition
+
+    if receipt_disposition(message) is not None:
+        raise PermissionError("Receipt retry is not currently admitted.")
+    return {"receipt": True}
 
 
 def resolve_delivery(
@@ -192,7 +203,7 @@ def resolve_delivery(
         correlation_id = command_id
         if retry:
             inputs = (
-                preparation_inputs()
+                preparation_inputs(message.purpose)
                 if preparation_inputs is not None
                 else dict(
                     general=general,

@@ -102,7 +102,7 @@ CREATE TABLE public.stewardship_audit_context (
     context jsonb NOT NULL,
     event_id uuid NOT NULL,
     CONSTRAINT audit_context_actor_kind CHECK (((actor_kind)::text = ANY ((ARRAY['portal_user'::character varying, 'family'::character varying, 'system'::character varying, 'operator'::character varying])::text[]))),
-    CONSTRAINT audit_context_schema_safe CHECK ((schema IN ('action','boundary','schedule') AND public.stewardship_safe_context_v1((schema)::text, context)))
+    CONSTRAINT audit_context_schema_safe CHECK ((schema IN ('action','boundary','schedule','email') AND public.stewardship_safe_context_v1((schema)::text, context)))
 );
 
 -- TABLE: stewardship_audit_event
@@ -2430,7 +2430,12 @@ CREATE TABLE "stewardship_submission_receipt" (
     "correlation_id" uuid NOT NULL,
     "submission_id" uuid NOT NULL UNIQUE,
     "disposition" varchar(28) NOT NULL,
-    CONSTRAINT "submission_receipt_disposition" CHECK (((disposition)::text = ANY ((ARRAY['pending_preparation'::character varying, 'no_deliverable_recipient'::character varying])::text[])))
+    "outbox_id" uuid NULL UNIQUE,
+    "preparation" jsonb NULL,
+    CONSTRAINT "submission_receipt_disposition" CHECK (
+        (disposition='queued' AND outbox_id IS NOT NULL) OR
+        (disposition='no_deliverable_recipient' AND outbox_id IS NULL)),
+    CONSTRAINT "submission_receipt_scrubbed" CHECK (preparation IS NULL)
 );
 CREATE TABLE "stewardship_ministry_request" ("id" uuid NOT NULL PRIMARY KEY,
     "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL,

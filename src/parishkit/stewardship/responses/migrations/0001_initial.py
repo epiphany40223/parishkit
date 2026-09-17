@@ -17,6 +17,7 @@ class Migration(migrations.Migration):
         ("stewardship_accounts", "0003_initial"),
         ("stewardship_campaigns", "0001_initial"),
         ("stewardship_source", "0001_initial"),
+        ("stewardship_jobs", "0002_initial_delivery"),
     ]
 
     operations = [
@@ -419,6 +420,15 @@ class Migration(migrations.Migration):
                             ),
                         ),
                         ("disposition", models.CharField(max_length=28)),
+                        ("preparation", models.JSONField(null=True)),
+                        (
+                            "outbox",
+                            models.OneToOneField(
+                                null=True,
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_jobs.outboxmessage",
+                            ),
+                        ),
                         (
                             "submission",
                             models.OneToOneField(
@@ -748,13 +758,18 @@ class Migration(migrations.Migration):
                 migrations.AddConstraint(
                     model_name="submissionreceiptoccurrence",
                     constraint=models.CheckConstraint(
-                        condition=models.Q(
-                            (
-                                "disposition__in",
-                                ["pending_preparation", "no_deliverable_recipient"],
-                            )
+                        condition=models.Q(disposition="queued", outbox__isnull=False)
+                        | models.Q(
+                            disposition="no_deliverable_recipient", outbox__isnull=True
                         ),
                         name="submission_receipt_disposition",
+                    ),
+                ),
+                migrations.AddConstraint(
+                    model_name="submissionreceiptoccurrence",
+                    constraint=models.CheckConstraint(
+                        condition=models.Q(preparation__isnull=True),
+                        name="submission_receipt_scrubbed",
                     ),
                 ),
             ]

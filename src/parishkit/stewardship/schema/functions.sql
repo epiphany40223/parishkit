@@ -1330,6 +1330,10 @@ BEGIN
         WHEN 'archive' THEN
             IF c.state<>'closed' OR NOT stewardship_campaign_quiet_v1(c.id) THEN
                 RAISE EXCEPTION 'Archive requires closed and quiet campaign' USING ERRCODE='23514'; END IF;
+            IF EXISTS (SELECT 1 FROM stewardship_outbox_message receipt
+                   WHERE receipt.campaign_id=c.id AND receipt.purpose='receipt'
+                     AND receipt.mode='production' AND receipt.state<>'delivered') THEN
+                RAISE EXCEPTION 'Archive requires resolved submission confirmations' USING ERRCODE='23514'; END IF;
             expected_state := 'archived';
         WHEN 'unarchive' THEN
             IF c.state<>'archived' OR NOT stewardship_campaign_quiet_v1(c.id) THEN
@@ -5074,7 +5078,7 @@ BEGIN
     allowed=CASE schema_name
         WHEN 'request' THEN ARRAY['method','status','outcome','source_fingerprint']
         WHEN 'task' THEN ARRAY['task_id','count','version','outcome']
-        WHEN 'email' THEN ARRAY['message_id','recipient_count','outcome']
+        WHEN 'email' THEN ARRAY['message_id','recipient_count','outcome','reason']
         WHEN 'source' THEN ARRAY['snapshot_id','generation','count','outcome']
         WHEN 'member_source' THEN ARRAY['family_duid','member_duid','field']
         WHEN 'provider' THEN ARRAY['status','provider_fingerprint','outcome']
@@ -5090,6 +5094,8 @@ BEGIN
         text_value=value#>>'{}';
         IF key='outcome' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('started','succeeded','denied','failed','retry','cancelled','changed') THEN RETURN false; END IF;
+        ELSIF key='reason' THEN
+            IF jsonb_typeof(value)<>'string' OR text_value<>'no_deliverable_recipient' THEN RETURN false; END IF;
         ELSIF key='kind' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('start','close') THEN RETURN false; END IF;
         ELSIF key IN ('before_state','after_state') THEN

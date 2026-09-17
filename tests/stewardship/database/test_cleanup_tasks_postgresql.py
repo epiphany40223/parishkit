@@ -30,6 +30,7 @@ from parishkit.stewardship.jobs.storage import _status as task_status
 
 from .test_background_grants_postgresql import task_login
 from .test_cleanup_batches_postgresql import make_testing_mail
+from .test_cleanup_inventory_postgresql import settle_test_receipts
 from .test_response_submission_postgresql import form_and_answers, submit
 from .test_taskrun_postgresql import act as task_act
 from .test_taskrun_postgresql import expire
@@ -40,6 +41,8 @@ pytestmark = pytest.mark.django_db(transaction=True)
 def queued(harness):
     """Admit only synthetic readiness, with actual inventory and gate ownership."""
     now = timezone.now()
+    with work_transaction():
+        settle_test_receipts(harness)
     return begin_cleanup(
         campaign_id=harness.campaign.pk,
         request_key=uuid4(),

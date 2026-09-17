@@ -27,10 +27,26 @@ from parishkit.stewardship.source.models import SourceSnapshotPin
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .campaign_builders import command, prepared_tokens
+from .response_builders import response_source
 from .test_family_auth_postgresql import login
 from .test_response_submission_postgresql import form_and_answers, submit
+from .test_source_families_postgresql import prepare, promote
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+
+@pytest.fixture
+def no_receipt_response(response_service):
+    """Legacy bounded cleanup handles responses without concrete mail deliveries.
+
+    Receipt-bearing submissions use the journaled cleanup-worker tests, which
+    additionally cover drained tasks, outbox history and immutable renders.
+    """
+    data = response_source()
+    data.members[3]["emailAddress"] = ""
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, response_service.campaign, response_service.rings)
+    return response_service
 
 
 def test_active_test_answers_cannot_be_purged(response_service):
@@ -87,9 +103,9 @@ def test_new_rehearsal_epoch_does_not_reuse_retained_response_versions(
 
 
 def test_bounded_cleanup_removes_chains_metadata_and_pins_but_keeps_reservations(
-    response_service,
+    no_receipt_response,
 ):
-    harness = response_service
+    harness = no_receipt_response
     for index in range(3):
         if index:
             client, response = login(harness.code)
@@ -124,10 +140,10 @@ def test_bounded_cleanup_removes_chains_metadata_and_pins_but_keeps_reservations
 
 
 def test_activation_rejects_unremoved_test_detail_even_after_credentials_are_gone(
-    response_service,
+    no_receipt_response,
     monkeypatch,
 ):
-    harness = response_service
+    harness = no_receipt_response
     form, answers = form_and_answers(harness)
     row = submit(harness, form, answers).submission
     epoch = invalidate_rehearsal(

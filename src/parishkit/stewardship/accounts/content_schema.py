@@ -14,6 +14,7 @@ from parishkit.stewardship.schema_primitives import invalid, typed
 from parishkit.stewardship.web.content import (
     prepare_content,
     validate_family_email,
+    validate_receipt_content,
     validate_template,
 )
 
@@ -70,7 +71,7 @@ def validate_content_records(document):
         ):
             invalid()
         identity = (owner, kind, slot)
-        if kind == "page" and identity in selected:
+        if (kind == "page" or slot == "confirmation") and identity in selected:
             invalid()
         selected.add(identity)
         try:
@@ -89,6 +90,13 @@ def validate_content_records(document):
                     )
             elif value["subject"] is not None:
                 invalid()
+            if (kind, slot) in {
+                ("email", "confirmation"),
+                ("page", "submission_confirmation"),
+            }:
+                validate_receipt_content(
+                    value["subject"] or "", value["html"], value["text"]
+                )
         except (ValueError, TypeError):
             invalid()
         content[record["id"]] = value

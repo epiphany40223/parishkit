@@ -87,8 +87,7 @@ def test_no_change_test_submission_is_complete_and_isolated(response_service):
         and row.family.effective_submission_id is None
     )
     assert (
-        SubmissionReceiptOccurrence.objects.get(submission=row).disposition
-        == "pending_preparation"
+        SubmissionReceiptOccurrence.objects.get(submission=row).disposition == "queued"
     )
     assert (
         FamilySession.objects.get(pk=form.baseline.family_session_id).revoked_at

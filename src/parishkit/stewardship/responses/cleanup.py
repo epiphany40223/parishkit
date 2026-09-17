@@ -39,6 +39,12 @@ def cleanup_test_responses(epoch_id, *, batch_size):
     ):
         raise StorageInvariantError("An active rehearsal cannot be cleaned up.")
     scope = {"submission__mode": "test", "submission__rehearsal_epoch_id": epoch.pk}
+    if SubmissionReceiptOccurrence.objects.filter(
+        **scope, outbox__isnull=False
+    ).exists():
+        raise StorageInvariantError(
+            "Receipt deliveries require journaled Production-transition cleanup."
+        )
     count = 0
     for model in (ProposedChange, MinistryRequest, SubmissionReceiptOccurrence):
         records = list(

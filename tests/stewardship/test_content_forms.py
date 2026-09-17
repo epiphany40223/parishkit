@@ -119,12 +119,27 @@ def test_family_editor_accepts_explicit_text_with_anchor_link():
     assert form.is_valid(), form.errors
 
 
+@pytest.mark.parametrize(
+    "kind,slot", [("page", "submission_confirmation"), ("email", "confirmation")]
+)
+@pytest.mark.parametrize("private", ["family_code", "family_url"])
+def test_receipt_editor_rejects_credentials(kind, slot, private):
+    """Both the receipt template and separately selected block are credential-free."""
+    form = ContentForm(
+        fields(subject="Received", html="<p>{{ " + private + " }}</p>"),
+        kind=kind,
+        slot=slot,
+    )
+    assert not form.is_valid()
+
+
 def test_explicit_clear_and_safe_samples():
     """Clearing is explicit; samples never contain real Family identifiers."""
     form = ContentForm(fields(clear="on"), kind="page")
     assert (
         form.is_valid() and form.values(campaign_id="example", slot="welcome") is None
     )
+
     value = content(
         "example",
         kind="email",
@@ -148,6 +163,38 @@ def test_explicit_clear_and_safe_samples():
             campaign=campaign(modules=["financial"], financial=financial())["values"],
         )["text"]
     )
+
+
+@pytest.mark.parametrize("configured", [False, True])
+def test_receipt_preview_includes_fixed_facts_and_optional_block(configured):
+    """Removing a receipt template previews the built-in confirmation, not silence."""
+    from parishkit.stewardship.web.content import SafeContent
+
+    value = (
+        content("example", kind="email", slot="confirmation")["values"]
+        if configured
+        else None
+    )
+    rendered = sample_render(
+        value,
+        parish={"name": "Example Parish"},
+        campaign=campaign()["values"],
+        confirmation=True,
+        receipt_block=SafeContent("<p>Optional follow-up.</p>", "Optional follow-up."),
+    )
+    for body in (rendered["html"], rendered["text"]):
+        assert "Sample Family" in body and "Submitted:" in body and "Questions:" in body
+        assert "Optional follow-up." in body
+        assert "SAMPLE" not in body and "sample-family" not in body
+
+
+@pytest.mark.parametrize("sections", [{}, {"content": []}])
+def test_receipt_preview_without_optional_content_section(sections):
+    """A parish without authored blocks can still preview ordinary content edits."""
+    from parishkit.stewardship.jobs.receipt_preview import confirmation_block
+    from parishkit.stewardship.web.content import SafeContent
+
+    assert confirmation_block({"sections": sections}, "example") == SafeContent("", "")
 
 
 def test_revision_patch_only_updates_actual_consumers():

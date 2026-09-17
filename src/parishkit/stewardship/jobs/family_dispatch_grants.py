@@ -29,6 +29,7 @@ METADATA_FIELDS = (
 
 def add_dispatch_grants(tables, columns):
     """The isolated mail role resolves tokens and journals only fenced deliveries."""
+    add_receipt_reads(columns)
     for table in (
         "stewardship_campaign",
         "stewardship_campaign_configuration",
@@ -109,3 +110,22 @@ def add_dispatch_scheduler_reads(tables, columns):
     columns.setdefault("stewardship_outbox_message", {}).setdefault(
         "SELECT", set()
     ).update(METADATA_FIELDS)
+    add_receipt_reads(columns)
+
+
+def add_receipt_reads(columns):
+    """Purpose identity reads never expose census, pledge or free-text answers."""
+    columns.setdefault("stewardship_submission", {}).setdefault("SELECT", set()).update(
+        {
+            "id",
+            "family_id",
+            "campaign_id",
+            "mode",
+            "rehearsal_epoch_id",
+            "submitted_at",
+            "configuration_id",
+        }
+    )
+    columns.setdefault("stewardship_submission_receipt", {}).setdefault(
+        "SELECT", set()
+    ).update({"id", "submission_id", "outbox_id", "disposition"})

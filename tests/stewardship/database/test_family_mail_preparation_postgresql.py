@@ -201,7 +201,7 @@ def claim(ticket, owner):
     )
 
 
-def test_response_after_enqueue_cancels_without_message(family_mail):
+def test_response_after_enqueue_cancels_invitation_but_preserves_receipt(family_mail):
     """The last local preparation boundary rechecks a newly submitted response."""
     due = ScheduleDefinition.objects.get().current_revision.due_at
     with campaign_clock(due):
@@ -215,7 +215,10 @@ def test_response_after_enqueue_cancels_without_message(family_mail):
     assert TaskRun.objects.get(pk=ticket.task_id).state == "cancelled"
     row = ScheduleOccurrence.objects.get(pk=ticket.occurrence_id)
     assert row.state == "skipped" and row.reason == "family_responded"
-    assert not OutboxMessage.objects.exists()
+    assert not OutboxMessage.objects.filter(
+        purpose__in=("initial", "reminder")
+    ).exists()
+    assert OutboxMessage.objects.get(purpose="receipt").state == "pending"
 
 
 def test_invalidated_epoch_never_rebinds_or_decrypts(family_mail, monkeypatch):

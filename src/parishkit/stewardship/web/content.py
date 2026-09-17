@@ -40,6 +40,8 @@ PLACEHOLDER = re.compile(r"{{\s*([a-z_]+)\s*}}")
 FAMILY_CREDENTIAL_PLACEHOLDERS = frozenset({"family_code", "family_url"})
 FAMILY_CODE_MARKER = "PARISHKIT_REDACTED_FAMILY_CODE"
 FAMILY_LINK_MARKER = "https://parishkit.invalid/redacted-family-link"
+# Keep identical to the non-sendable seed in stewardship_receipt_seed_v1.
+RECEIPT_ALLOCATION_MARKER = "PARISHKIT_PENDING_RECEIPT"
 SHARE_PLACEHOLDERS = frozenset(
     {
         "parish_name",
@@ -179,6 +181,28 @@ def validate_family_email(subject, html, text):
         for value in (html, text)
     ):
         raise ValueError("Each Family email body requires its code and link.")
+
+
+def validate_receipt_content(subject, html, text):
+    """Receipts never substitute access credentials, including in optional prose.
+
+    Use this at authoring, configuration apply and rendering. Reserved markers
+    are forbidden too: a receipt is never a credential-bearing dispatch input.
+    An empty subject is allowed for the separately authored body-only block;
+    the email template and final envelope enforce a nonempty subject.
+    """
+    for value, header in ((subject, True), (html, False), (text, False)):
+        if validate_template(value, subject=header) & FAMILY_CREDENTIAL_PLACEHOLDERS:
+            raise ValueError("Submission receipts cannot contain access credentials.")
+        if any(
+            marker in value
+            for marker in (
+                FAMILY_CODE_MARKER,
+                FAMILY_LINK_MARKER,
+                RECEIPT_ALLOCATION_MARKER,
+            )
+        ):
+            raise ValueError("Submission receipts cannot contain reserved markers.")
 
 
 def validate_share_label(value):

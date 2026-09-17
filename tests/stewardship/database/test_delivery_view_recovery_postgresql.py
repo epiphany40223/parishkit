@@ -125,7 +125,7 @@ def test_resend_replay_does_not_require_keys_again(family_mail, google, monkeypa
     monkeypatch.setattr(
         delivery_views,
         "_retry_inputs",
-        lambda: dict(
+        lambda purpose: dict(
             general=family_mail.rings.general,
             public=family_mail.rings.public,
             public_origin="http://localhost:8000",
@@ -144,7 +144,7 @@ def test_resend_replay_does_not_require_keys_again(family_mail, google, monkeypa
         )
         assert post(browser, path, values).status_code == 302
 
-        def unavailable():
+        def unavailable(purpose):
             """Fail if the replay needlessly asks for encryption configuration."""
             raise AssertionError("Replay must not load keys")
 

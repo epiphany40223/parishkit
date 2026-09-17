@@ -139,6 +139,7 @@ BEGIN
                 AND NOT EXISTS (SELECT 1 FROM public.stewardship_outbox_event WHERE render_id=i.target_id)
             WHEN 'outbox_messages' THEN NOT EXISTS (
                 SELECT 1 FROM public.stewardship_outbox_event WHERE message_id=i.target_id)
+                AND NOT EXISTS (SELECT 1 FROM public.stewardship_submission_receipt WHERE outbox_id=i.target_id)
                 AND NOT EXISTS (SELECT 1 FROM public.stewardship_outbox_render r
                     JOIN public.stewardship_outbox_message m ON m.id=r.message_id
                     WHERE m.id=i.target_id AND r.id<>m.render_id)
@@ -146,6 +147,7 @@ BEGIN
                 SELECT 1 FROM public.stewardship_proposed_change WHERE submission_id=i.target_id)
                 AND NOT EXISTS (SELECT 1 FROM public.stewardship_ministry_request WHERE submission_id=i.target_id)
                 AND NOT EXISTS (SELECT 1 FROM public.stewardship_submission_receipt WHERE submission_id=i.target_id)
+                AND NOT EXISTS (SELECT 1 FROM public.stewardship_outbox_message WHERE semantic_key=i.target_id AND purpose='receipt')
                 AND NOT EXISTS (SELECT 1 FROM public.stewardship_source_pin WHERE parent_kind='submission' AND parent_id=i.target_id)
                 AND NOT EXISTS (SELECT 1 FROM public.stewardship_submission WHERE prior_submission_id=i.target_id)
                 AND NOT EXISTS (SELECT 1 FROM public.stewardship_family_form_baseline WHERE prior_submission_id=i.target_id)

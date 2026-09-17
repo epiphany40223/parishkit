@@ -264,3 +264,14 @@ isolation cases pass in 71.89 seconds. Post-review validation passes all six
 lookup-shape and original reference-population performance cases in 52.32
 seconds, plus Ruff, formatting, changed Markdown and whitespace checks.
 Exact-head CI remains required; this review does not waive the failing benchmark.
+
+## Protected delivery
+
+PR #45's final head `420034eda1318d80063bd1ad098df885a5655a8f` passed all 24
+CI jobs in run `35181498683`, plus DCO. Combined coverage is 93.99% line and
+85.17% branch. All 24 protected merge-group checks passed in run `35182831699`,
+including the unchanged lookup performance benchmark. The queue merged PR #45
+on September 17, 2026, as `3bfec17a9bbeb2c04893b873691a6a5cf8d8dfda`, verified
+on freshly fetched `origin/main`. Earlier pending-delivery notes are superseded.
+BG-07's submission-confirmation increment follows from that verified tip;
+the later report UI and Gate 3 remain open.
