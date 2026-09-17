@@ -171,6 +171,9 @@ def render_daily_digest(document, *, public_origin):
         "Statistics: Current active population at generation.",
         chart.as_of_label,
     )
+    # Match weekly display normalization; retained observations remain exact.
+    # The strict HTML compiler boundary rejects NBSP parser rewrites.
+    labels = tuple(" ".join(label.split()) for label in labels)
     text = "\n".join(labels)
     text += "\n\n" + "\n".join(f"{label}: {value}" for label, value in cards)
     text += "\n\n" + " | ".join(headings)

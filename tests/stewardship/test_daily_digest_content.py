@@ -20,6 +20,7 @@ from parishkit.stewardship.reports.statistics import (
     CampaignStatistics,
     PopulationStatistics,
 )
+from parishkit.stewardship.web.digest_content import validate_digest_body
 
 from .test_participation_rendering import document as participation
 
@@ -50,6 +51,21 @@ def document():
 def render(value):
     """Use a public synthetic origin; no configured credentials or DNS are read."""
     return render_daily_digest(value, public_origin="https://campaign.example.org")
+
+
+def test_imported_labels_compile_without_mutating_retained_names():
+    """Daily and weekly mail must both tolerate imported display whitespace."""
+    whitespace = "\u00a0"
+    value = document()
+    chart = replace(
+        value.participation,
+        parish_name=f"Example{whitespace}Parish",
+        campaign_name=f"Annual{whitespace}Campaign",
+    )
+    result = render(replace(value, participation=chart))
+    validate_digest_body(result.html, result.text, result.chart.data)
+    assert "Example Parish" in result.html and "Annual Campaign" in result.html
+    assert chart.parish_name == f"Example{whitespace}Parish"
 
 
 def test_daily_digest_keeps_exact_values_and_accessible_inline_chart():
