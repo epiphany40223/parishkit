@@ -207,3 +207,44 @@ acceptance remain outstanding.
 The final 60-test PostgreSQL coverage/schema/runtime-grant run passed in 46.77
 seconds, including a forged Python coverage result rejected independently by
 SQL. Ruff check/format, Markdown checks and Django model-state drift checks pass.
+
+### Interval completion and maintained preparation checkpoint
+
+Weekly completion now derives the outcome from the entire immutable generation
+cohort. The final accepted child commits the normal running/succeeded occurrence
+history and delivered fulfillment together. Partial acceptance retains reported
+item history without advancing the successful interval. A coherent empty capture
+records explicit empty fulfillment without allocating or claiming provider mail.
+Later corrections remain eligible after intervening empty weeks.
+
+Late acceptance of a previously uncertain attempt commits truthfully even after
+the provider task fails. A distinct metadata-only finalizer obtains a fresh claim
+and records completion exactly once; it does not rewrite the failed provider
+task. Daily and weekly finalizers share the recovery mechanics but retain closed,
+separate task/model/SQL identities. The common fulfillment and occurrence guards
+branch before weekly metadata reads, preserving unrelated mail-role permissions.
+
+The provider-free weekly handler maintains its lease through bounded discovery,
+capture, detached rendering and atomic page retention. It reloads a changed
+coverage page without duplicating mail, exposes truthful coarse progress, and
+retains bounded recovery/failure behavior. The scheduler may admit queued metadata
+but cannot execute private compilation. These handlers are tested internally;
+assembled runtime registration, weekly provider dispatch/reconciliation, Testing
+cleanup, protected/manual views and required reviews remain open.
+
+Validation: 24 initial completion, late-reconciliation and allocation regressions
+passed in 82.47 seconds; the expanded 50-test existing Family/daily mail regression
+passed in 138.55 seconds. The current worker/completion/fresh-schema suite passed
+26 tests in 42.77 seconds, and 37 focused task/recovery cases passed in 0.21
+seconds. Independent fresh installations against `e2f9bfb` add only one private
+completion view, three functions and three constraint triggers; only the two
+intended shared guard function bodies changed. Installed definitions and unchanged
+owners/ACLs were compared before accepting the strict schema fingerprint. No
+retained database was upgraded or reset. Final increment acceptance remains open.
+
+The final current-source 44-test Family/daily/weekly regression passed in 94.22
+seconds. After explicitly registering the new SQL-only completion view in the
+closed permission-catalog test, 66 focused task/grant checks passed and the
+complete baseline passed 6,578 tests with 4,507 expected profile skips and the
+same two warnings in 61.13 seconds. Ruff check/format, Markdown checks and Django
+model-state drift checks pass.

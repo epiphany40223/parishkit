@@ -1,6 +1,7 @@
 """Completion proof failures never prevent fencing or durable task failure."""
 
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
@@ -50,3 +51,32 @@ def test_expiry_does_not_bypass_persisted_task_binding(monkeypatch):
         finalization.admit_finalization(
             "lease_expired", SimpleNamespace(state="running")
         )
+
+
+@pytest.mark.parametrize("kind", ["daily", "weekly"])
+def test_finalization_producers_keep_distinct_closed_task_namespaces(kind):
+    producer = (
+        finalization.DailyDigestFinalizeProducer
+        if kind == "daily"
+        else finalization.WeeklyDigestFinalizeProducer
+    )(uuid4())
+    assert producer.kind == kind
+    assert producer.task_type == f"{kind}_digest_finalize"
+
+
+@pytest.mark.parametrize("task_type", ["", "outbox_delivery", "weekly", "x;SELECT 1"])
+def test_finalization_rejects_uncompiled_sql_owner_names(task_type):
+    with pytest.raises(TypeError, match="identity and kind"):
+        finalization.DigestFinalizeProducer(uuid4(), task_type=task_type)
+
+
+@pytest.mark.parametrize(
+    "producer",
+    [
+        finalization.DailyDigestFinalizeProducer,
+        finalization.WeeklyDigestFinalizeProducer,
+    ],
+)
+def test_finalization_requires_service_uuid(producer):
+    with pytest.raises(TypeError, match="identity and kind"):
+        producer("not-a-service-identity")

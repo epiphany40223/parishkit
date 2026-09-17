@@ -136,9 +136,13 @@ def test_partially_covered_corrections_do_not_suppress_new_items(live_response_s
     harness = live_response_service
     respond(harness, "REQUEST-A")
     with campaign_clock(INSTANT):
-        claim, first = captured(harness)
+        claim, first = captured(harness, additional_admins=("second@example.org",))
         publish(claim)
-        accepted(WeeklyDigestRecipient.objects.get(snapshot=first))
+        accepted(
+            WeeklyDigestRecipient.objects.get(
+                snapshot=first, address="admin@example.org"
+            )
+        )
         definition = ScheduleDefinition.objects.get(kind="weekly_digest")
         assert (
             replace_schedule(harness.service.store, definition, uuid4()).state
@@ -149,7 +153,9 @@ def test_partially_covered_corrections_do_not_suppress_new_items(live_response_s
         respond_form(harness, form, answers)
         claim, second = replacement()
         publish(claim)
-        second_recipient = WeeklyDigestRecipient.objects.get(snapshot=second)
+        second_recipient = WeeklyDigestRecipient.objects.get(
+            snapshot=second, address="admin@example.org"
+        )
         assert second_recipient.corrections == [[first.information[0], "superseded"]]
         accepted(second_recipient)
         store = harness.service.store
@@ -174,7 +180,9 @@ def test_partially_covered_corrections_do_not_suppress_new_items(live_response_s
         respond_form(harness, form, answers)
         claim, third = replacement()
         page = publish(claim)
-        row = WeeklyDigestRecipient.objects.get(snapshot=third)
+        row = WeeklyDigestRecipient.objects.get(
+            snapshot=third, address="admin@example.org"
+        )
         assert len(third.corrections) == 2
         assert row.corrections == [[second.information[0], "superseded"]]
         assert row.information == third.information

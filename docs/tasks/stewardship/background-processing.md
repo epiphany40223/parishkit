@@ -288,7 +288,9 @@ The weekly renderer/isolated transport, coherent input selection and
 [durable capture/schedule-coverage checkpoints](../../guides/stewardship-weekly-digests.md#durable-capture-and-schedule-coverage-checkpoint)
 now have passing focused PostgreSQL, baseline and independently audited fresh
 schema evidence. The [per-Admin allocation/replacement checkpoint](../../guides/stewardship-weekly-digests.md#per-admin-allocation-and-replacement-coverage-checkpoint)
-now has focused regression evidence. Provider delivery, cleanup, fulfillment, manual
+now has focused regression evidence, as does the
+[interval-completion/maintained-worker checkpoint](../../guides/stewardship-weekly-digests.md#interval-completion-and-maintained-preparation-checkpoint).
+Provider delivery, cleanup, manual
 reports, protected routes, runtime assembly and the required review/final
 validation remain open; BG-07.03 and BG-07.05 are not complete.
 

@@ -494,8 +494,9 @@ supersedes that pending note. From verified fresh `origin/main`,
 `pr/stewardship-weekly-digests` now begins the coherent
 [weekly information/correction digest increment](../../guides/stewardship-weekly-digests.md).
 
-Its rendering, input selection, durable capture and per-Admin allocation/replacement
-checkpoints are implemented and tested. The [execution evidence](../../guides/stewardship-weekly-digests.md#execution-evidence)
+Its rendering, capture, per-Admin allocation/replacement and maintained
+preparation/interval-completion checkpoints are implemented and tested.
+The [execution evidence](../../guides/stewardship-weekly-digests.md#execution-evidence)
 tracks the remaining delivery/UI/cleanup integration and review acceptance;
 the weekly task and Phase 4 remain in progress.
 

@@ -35,6 +35,10 @@ from .weekly_selection import WeeklySelection
 LIMIT = 25
 
 
+class WeeklyCoverageChanged(StorageInvariantError):
+    """A detached page must be reloaded after a newly committed coverage proof."""
+
+
 @dataclass(frozen=True, repr=False)
 class WeeklyRecipientPlan:
     """Private detached subset and the actual messages covering omitted items."""
@@ -170,7 +174,7 @@ def retain_weekly_page(claim, page, contents):
     """
     require_work_order()
     if load_weekly_page(claim) != page or len(contents) != len(page.recipients):
-        raise StorageInvariantError(
+        raise WeeklyCoverageChanged(
             "Weekly recipient coverage changed during compilation."
         )
     row = bound_preparation(_status(lock_task_claim(claim)))

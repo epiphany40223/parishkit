@@ -47,13 +47,22 @@ pytestmark = pytest.mark.django_db(transaction=True)
 INSTANT = datetime(2026, 10, 29, tzinfo=UTC)
 
 
-def allocate():
+def allocate(*, claim_task=True):
     """Allocate under scheduler authority, then claim the root without any mail."""
     producer = WeeklyDigestProducer(uuid4())
+    schedules = DigestScheduleProducer(uuid4(), limit=1)
     with task_login(ServiceRole.SCHEDULER, exact=True), scheduler_session() as guard:
-        DigestScheduleProducer(uuid4(), limit=1)(guard)
-        (status,) = producer(guard)
+        for _ in range(15):
+            schedules(guard)
+            allocated = producer(guard)
+            if allocated:
+                (status,) = allocated
+                break
+        else:
+            pytest.fail("Weekly allocation did not reach an unfinished slot.")
         assert producer(guard) == ()
+    if not claim_task:
+        return status
     with work_transaction():
         status = change_run(
             run_id=status.run_id,

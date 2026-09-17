@@ -42,9 +42,8 @@ def messages():
     return OutboxMessage.objects.filter(purpose="weekly_digest")
 
 
-def captured(harness, *, additional_admins=()):
-    """Install selected weekly prose before freezing the real recipient cohort."""
-    claim = prepare(harness)
+def configure_content(harness, *, additional_admins=()):
+    """Install the selected immutable prose and any additional exact Admin rules."""
     definition = ScheduleDefinition.objects.get(kind="weekly_digest")
     template = content(str(harness.campaign.pk), kind="email", slot="weekly_digest")
     template["id"] = definition.current_revision.values["template_version"]
@@ -63,6 +62,12 @@ def captured(harness, *, additional_admins=()):
         ).state
         == "applied"
     )
+
+
+def captured(harness, *, additional_admins=()):
+    """Install selected weekly prose before freezing the real recipient cohort."""
+    claim = prepare(harness)
+    configure_content(harness, additional_admins=additional_admins)
     with task_login(ServiceRole.WORKER, exact=True), work_transaction():
         snapshot = capture_weekly_snapshot(claim)
     return claim, snapshot
@@ -125,10 +130,10 @@ def test_empty_snapshot_completes_preparation_without_allocating_mail(response_s
         assert retain(claim, page, contents).phase == "complete"
         assert not messages().exists()
         assert not WeeklyDigestRecipient.objects.exists()
-        # Preparation is not successful interval fulfillment.
+        # A coherently empty capture completes without claiming provider delivery.
         assert (
             ScheduleOccurrence.objects.get(pk=snapshot.preparation.occurrence_id).state
-            == "pending"
+            == "succeeded"
         )
 
 

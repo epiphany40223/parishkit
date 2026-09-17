@@ -3,6 +3,7 @@
 
 def add_weekly_grants(tables, columns, *, worker):
     """Add only capture projections, never follow-up mutations or all answers."""
+    tables.setdefault("stewardship_weekly_digest_completion_ready", set()).add("SELECT")
     tables.setdefault("stewardship_weekly_digest_preparation", set()).update(
         {"SELECT", "UPDATE" if worker else "INSERT"}
     )

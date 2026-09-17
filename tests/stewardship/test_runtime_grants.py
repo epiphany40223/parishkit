@@ -31,6 +31,7 @@ def test_grant_registry_names_existing_models_and_excludes_unrelated_download_da
         "stewardship_current_chair",  # Narrow SQL-only source projection.
         "stewardship_schedule_work_summary",  # Counts-only delivery projection.
         "stewardship_daily_digest_completion_ready",  # Opaque completed cohort IDs.
+        "stewardship_weekly_digest_completion_ready",  # Opaque resolved interval IDs.
     }
     assert WEB_INSERT_TABLES <= WEB_READ_TABLES
     assert WEB_UPDATE_TABLES <= WEB_READ_TABLES
