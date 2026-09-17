@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -10,6 +11,37 @@ from pathlib import Path
 from typing import Any
 
 from parishkit.config import ConfigError, reject_unknown_keys
+
+MAX_INLINE_BYTES = 10 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class InlineImage:
+    """An in-memory raster image referenced by ``cid:content_id`` in HTML.
+
+    This MIME helper never opens a path. The caller owns image decoding and
+    content safety; the builder bounds bytes and validates routing headers.
+    SVG/active formats are deliberately not supported by this convenience API.
+    """
+
+    data: bytes = field(repr=False)
+    content_id: str
+    mime_type: str = "image/png"
+
+    def __post_init__(self):
+        """Reject ambiguous IDs, unsupported image types and oversized payloads."""
+        if (
+            type(self.data) is not bytes
+            or not 0 < len(self.data) <= MAX_INLINE_BYTES
+            or type(self.content_id) is not str
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._@-]{0,127}", self.content_id)
+            or type(self.mime_type) is not str
+            or self.mime_type
+            not in {"image/png", "image/jpeg", "image/gif", "image/webp"}
+        ):
+            raise ConfigError(
+                "Inline image requires bounded raster bytes and a safe ID"
+            )
 
 
 @dataclass(frozen=True)
@@ -43,6 +75,7 @@ class Email:
     cc: Sequence[str] = field(default_factory=list)
     bcc: Sequence[str] = field(default_factory=list)
     attachments: Sequence[Attachment] = field(default_factory=list)
+    inline_images: Sequence[InlineImage] = field(default_factory=list)
 
 
 class EmailProvider(ABC):
@@ -66,13 +99,26 @@ def build_message(message: Email) -> EmailMessage:
 
     Builds a multipart/alternative message when HTML is present: the plain-text
     part is set first so non-HTML readers have a fallback, then the HTML part is
-    added as an alternative. Attachments are read from disk and attached with
-    their declared MIME type. Bcc is intentionally not written as a header here;
+    added as an alternative. Inline images form a related part of that HTML
+    alternative, leaving the text fallback and ordinary attachments separate.
+    Attachments are read from disk and attached with their declared MIME type.
+    Bcc is intentionally not written as a header here;
     providers pass bcc recipients at the SMTP envelope level. Raises
     :class:`ConfigError` if neither text nor HTML content is supplied.
     """
     if not message.text and not message.html:
         raise ConfigError("email requires text or HTML content")
+    inline_images = tuple(message.inline_images)
+    if inline_images and (
+        not message.html
+        or len(inline_images) > 16
+        or any(not isinstance(image, InlineImage) for image in inline_images)
+        or len({image.content_id for image in inline_images}) != len(inline_images)
+        or sum(len(image.data) for image in inline_images) > MAX_INLINE_BYTES
+    ):
+        raise ConfigError(
+            "Inline images require HTML, unique IDs and bounded total bytes"
+        )
     email_message = EmailMessage()
     email_message["Subject"] = message.subject
     email_message["From"] = message.sender
@@ -88,6 +134,15 @@ def build_message(message: Email) -> EmailMessage:
         email_message.set_content("This message requires an HTML-capable reader.")
     if message.html:
         email_message.add_alternative(message.html, subtype="html")
+        html_part = email_message.get_payload()[-1]
+        for image in inline_images:
+            html_part.add_related(
+                image.data,
+                maintype="image",
+                subtype=image.mime_type.split("/", 1)[1],
+                cid=f"<{image.content_id}>",
+                disposition="inline",
+            )
     for attachment in message.attachments:
         # MIME types are "maintype/subtype"; split once so add_attachment gets
         # the two parts it expects.

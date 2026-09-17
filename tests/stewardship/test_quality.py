@@ -68,6 +68,7 @@ def test_real_manifest_requires_package_and_extended_shared_modules():
         "parishkit.cli",
         "parishkit.cli_arguments",
         "parishkit.config",
+        "parishkit.email.base",
         "parishkit.paths",
     )
     assert "src/parishkit/stewardship/quality.py" in scope.files
