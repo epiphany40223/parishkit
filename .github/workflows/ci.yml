@@ -46,8 +46,9 @@ jobs:
       - name: Markdown lint
         run: python -m pymarkdown --config .pymarkdown.json scan $(git ls-files '*.md')
 
-      - name: Credential-free baseline
-        run: python -m pytest
+      # The required PostgreSQL coverage gate already runs the complete host
+      # baseline once, on shard 1. Compose independently checks image parity.
+      # Do not run a third, unmeasured copy in this lint/drift job.
 
       - name: Migration drift
         env:

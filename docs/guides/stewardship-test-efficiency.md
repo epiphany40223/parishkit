@@ -71,3 +71,33 @@ application bootstrap within parameter matrices. Shared infrastructure must
 preserve fresh mutable state, exact-role admission, genuine commit boundaries,
 and concurrent-race tests. The whole-suite relevance audit remains in progress;
 no wholesale removal or bootstrap caching is claimed by this first optimization.
+
+### Follow-up measurements and grouping
+
+The PR #48 run `35284928521` completed all Chromium and Firefox scenarios:
+their test steps took 99 and 232 seconds, respectively, versus 257 and 712 in
+the earlier run. These are observed CI comparisons, not controlled benchmarks;
+the suite also gained five scenarios. WebKit keeps its documented workaround.
+
+The setup wizard's five public pages now run as one authenticated journey,
+retaining every page's save/revisit/passive-session assertion and adding a final
+check that all five saved drafts coexist. This eliminates four repeated
+configuration bootstraps, OAuth logins and database flushes. Separate pure-form
+tests still cover individual input cases. On the same disposable local database,
+the focused before/after commands took 14.46 and 12.15 seconds including fresh
+schema setup. Five test nodes became one journey; no page case was removed.
+
+Code-generation validation now controls the sampler to verify our alphabet,
+length and rehearsal-prefix wiring, instead of assuming 1,000 random samples
+never collide. The real-database allocation test still forces a collision and
+verifies our retry and reservation behavior. No material timing gain is claimed
+for this relevance correction.
+
+CI had three complete baseline executions: standalone lint/validation, coverage
+shard one, and image parity. Remove only the first duplicate. The mandatory
+PostgreSQL gate still requires the full host baseline's successful execution and
+coverage receipt; Compose still runs the complete image baseline and compares
+its collection against the host. The lint/drift job retains those separate
+responsibilities. Release validation uses the same disposable tmpfs service as
+PR coverage, as required by the existing service-consistency test. Neither
+application persistence tests nor deployment storage use this optimization.

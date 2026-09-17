@@ -1,6 +1,7 @@
 """Independent key purposes, versioned envelopes and campaign-scoped credentials."""
 
 import json
+from unittest.mock import Mock, call
 from uuid import uuid4
 
 import pytest
@@ -134,12 +135,16 @@ def test_code_normalization_is_ascii_only(submitted, canonical):
     assert canonical_code(submitted) == canonical
 
 
-def test_mode_disjoint_generation_and_domain_separated_link_digest():
+def test_mode_disjoint_generation_and_domain_separated_link_digest(monkeypatch):
+    """Check our sampler wiring and namespaces, not the RNG's collision rate."""
+    choice = Mock(side_effect="ABCDEFGHABCDEFG")
+    monkeypatch.setattr(
+        "parishkit.stewardship.accounts.cryptography.secrets.choice", choice
+    )
+    assert new_code() == "ABCDEFGH"
+    assert new_code(testing=True) == "IABCDEFG"
+    assert choice.call_args_list == [call(ALPHABET)] * 15
     campaign = uuid4()
-    codes = {new_code() for _ in range(1000)}
-    assert len(codes) == 1000
-    assert all(len(code) == 8 and set(code) <= set(ALPHABET) for code in codes)
-    assert all(new_code(testing=True).startswith("I") for _ in range(50))
     token = new_token()
     assert len(token) == 43
     assert new_token(testing=True).startswith("test.")

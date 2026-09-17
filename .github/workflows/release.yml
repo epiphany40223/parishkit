@@ -23,6 +23,7 @@ jobs:
           POSTGRES_PASSWORD: disposable-test-only
         ports: ["55432:5432"]
         options: >-
+          --tmpfs /var/lib/postgresql:rw,size=2g
           --health-cmd "pg_isready -U stewardship_tests"
           --health-interval 2s --health-timeout 5s --health-retries 30
     permissions:
