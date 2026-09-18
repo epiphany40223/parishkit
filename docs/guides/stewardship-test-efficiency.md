@@ -127,3 +127,23 @@ application scenarios require the same starting state:
 No shared mutable fixture crosses independent tests, no SQL authorization or
 deferred-constraint semantics are weakened, and no input cases are dropped.
 This maintenance does not complete additional feature tasks or release Gate 3.
+
+### Avoid large rejected-statement dumps
+
+In PR #48's final run `35287511489`, shard three spent 235.08 seconds between
+the runner's PostgreSQL `docker logs` command and container removal. Its log
+contained individual rejected SQL statements of 8,389,913 and 1,049,469 bytes.
+Shard four's corresponding interval was about 0.09 seconds with no comparable
+large statement. These timestamps identify log copying, not database shutdown,
+as the observed teardown bottleneck; they are not a promise of a fixed speedup.
+
+Set only `log_min_error_statement=panic` through `POSTGRES_INITDB_ARGS` in the
+disposable PR and release validation services. PostgreSQL's
+[logging contract](https://www.postgresql.org/docs/18/runtime-config-logging.html#GUC-LOG-MIN-ERROR-STATEMENT)
+separates this from error-message filtering: error messages, details, hints and
+contexts remain at their defaults. Do not change `log_min_messages`, error
+verbosity, transaction durability or deployment configuration. Pytest retains
+its assertion tracebacks and client-side errors. The existing exact-service
+parity test also checks this bounded setting. A one-time pinned-image probe
+verified initdb accepts the setting and error messages still reach server logs;
+do not add recurring tests of PostgreSQL's own logging implementation.

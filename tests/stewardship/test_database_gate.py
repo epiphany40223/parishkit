@@ -95,6 +95,9 @@ def test_ci_explicitly_requires_postgresql_verification():
     )
     release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
     assert release["jobs"]["validate-build"]["services"] == shards["services"]
+    assert shards["services"]["postgres"]["env"]["POSTGRES_INITDB_ARGS"] == (
+        "--set=log_min_error_statement=panic"
+    )
 
 
 def test_ci_does_not_duplicate_the_coverage_baseline_in_lint_job():

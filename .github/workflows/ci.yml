@@ -194,6 +194,8 @@ jobs:
           POSTGRES_USER: stewardship_tests
           POSTGRES_DB: stewardship_tests
           POSTGRES_PASSWORD: disposable-test-only
+          # Keep errors/details, not multi-megabyte rejected payload statements.
+          POSTGRES_INITDB_ARGS: --set=log_min_error_statement=panic
         ports: ["55432:5432"]
         options: >-
           --tmpfs /var/lib/postgresql:rw,size=2g
