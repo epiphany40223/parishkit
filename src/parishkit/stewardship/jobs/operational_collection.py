@@ -18,6 +18,7 @@ from parishkit.stewardship.source.health import (
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .dispatch import Handler, RecoveryPlan
+from .mail_health import needs_mail_observation, observe_mail_health
 from .models import TaskRun
 from .operational_models import OperationalLogReceipt
 from .operational_sources import critical_log
@@ -45,7 +46,11 @@ def produce_collection(guard):
         raise PermissionError("Operational intake requires the owned scheduler.")
     guard.check()
     with work_transaction():
-        if not pending_logs().exists() and admitted_source_scope() is None:
+        if (
+            not pending_logs().exists()
+            and admitted_source_scope() is None
+            and not needs_mail_observation()
+        ):
             return ()
         key = uuid5(NAMESPACE, str(int(database_now().timestamp()) // 60))
         task = enqueue(
@@ -152,6 +157,13 @@ def _execute(execution):
         except Exception:
             execution.check()
             operational(Event.SOURCE_INVALID, level="CRITICAL")
+        try:
+            with transaction.atomic():
+                observe_mail_health()
+        except Exception:
+            execution.check()
+            # A monitoring defect must not recursively generate mail alerts.
+            operational(Event.TASK_FAILED, level="ERROR")
         execution.progress(len(page), len(page), phase=TaskPhase.VERIFYING)
         execution.transition("complete")
 

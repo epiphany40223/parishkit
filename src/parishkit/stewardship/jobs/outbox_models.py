@@ -348,11 +348,40 @@ class OutboxEvent(ImmutableRecord, DeliveryCommand):
     submitted_at = UTCDateTimeField(null=True)
     provider_deadline = UTCDateTimeField(null=True)
     finished_at = UTCDateTimeField(null=True)
+    provider_identity = models.CharField(
+        max_length=64, blank=True, default="", db_default="", editable=False
+    )
 
     class Meta:
         db_table = "stewardship_outbox_event"
         indexes = [
             models.Index(fields=["message", "attempt"], name="outbox_attempt_history"),
+            models.Index(
+                fields=["provider_identity", "-created_at", "-id"],
+                name="outbox_provider_history",
+                condition=models.Q(
+                    previous_state="submitting",
+                    submitted_at__isnull=False,
+                    reason__in=(
+                        "smtp_accepted",
+                        "smtp_transient",
+                        "smtp_unavailable",
+                        "smtp_permanent",
+                        "smtp_delivery_unknown",
+                        "smtp_systemic",
+                    ),
+                )
+                & (
+                    models.Q(evidence_note__startswith='{"health":"healthy",')
+                    | models.Q(evidence_note__startswith='{"health":"unavailable",')
+                    | models.Q(evidence_note__startswith='{"health":"systemic",')
+                ),
+            ),
+            models.Index(
+                fields=["provider_identity", "-created_at", "-id"],
+                name="outbox_provider_healthy",
+                condition=models.Q(evidence_note__startswith='{"health":"healthy",'),
+            ),
         ]
         constraints = [
             models.UniqueConstraint(

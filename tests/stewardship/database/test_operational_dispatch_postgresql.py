@@ -8,6 +8,7 @@ from django.test.utils import CaptureQueriesContext
 
 from parishkit.stewardship.accounts.key_files import write_private
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+from parishkit.stewardship.audit.models import OperationalLog
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.family_delivery import (
@@ -328,6 +329,7 @@ def test_operational_mail_records_all_outcomes_under_actual_mail_role(routing):
         assert message.state == expected[status.value]
         assert message.render.subject.startswith("[TESTING] CRITICAL:")
         assert message.sealed_substitutions is None
+    assert not OperationalLog.objects.filter(event="mail_provider_failed").exists()
 
 
 def test_revoked_admin_cancels_without_attempt_and_inflight_result_survives(routing):

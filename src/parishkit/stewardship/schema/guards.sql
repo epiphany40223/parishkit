@@ -5424,6 +5424,18 @@ CREATE INDEX stewardship_outbox_event_message_id_76759adb ON public.stewardship_
 CREATE INDEX stewardship_outbox_event_render_id_2b451d37 ON public.stewardship_outbox_event USING btree (render_id);
 CREATE INDEX stewardship_outbox_event_run_id_83bf61a0 ON public.stewardship_outbox_event USING btree (run_id);
 CREATE INDEX outbox_attempt_history ON public.stewardship_outbox_event USING btree (message_id, attempt);
+CREATE INDEX outbox_provider_history ON public.stewardship_outbox_event (provider_identity,created_at DESC,id DESC)
+    WHERE previous_state='submitting'
+      AND reason::text = ANY(ARRAY[
+          ('smtp_accepted'::varchar)::text, ('smtp_transient'::varchar)::text,
+          ('smtp_unavailable'::varchar)::text, ('smtp_permanent'::varchar)::text,
+          ('smtp_delivery_unknown'::varchar)::text, ('smtp_systemic'::varchar)::text])
+      AND submitted_at IS NOT NULL
+      AND (evidence_note LIKE '{"health":"healthy",%'
+          OR evidence_note LIKE '{"health":"unavailable",%'
+          OR evidence_note LIKE '{"health":"systemic",%');
+CREATE INDEX outbox_provider_healthy ON public.stewardship_outbox_event (provider_identity,created_at DESC,id DESC)
+    WHERE evidence_note LIKE '{"health":"healthy",%';
 ALTER TABLE "stewardship_testing_aggregate" ADD CONSTRAINT "stewardship_testing__campaign_id_520d6fde_fk_stewardsh" FOREIGN KEY ("campaign_id") REFERENCES "stewardship_campaign" ("id") DEFERRABLE INITIALLY DEFERRED;
 CREATE INDEX stewardship_testing_aggregate_correlation_id_e3223a56 ON public.stewardship_testing_aggregate USING btree (correlation_id);
 CREATE INDEX stewardship_testing_aggregate_campaign_id_520d6fde ON public.stewardship_testing_aggregate USING btree (campaign_id);
