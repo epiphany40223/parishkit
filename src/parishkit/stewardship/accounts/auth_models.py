@@ -65,6 +65,10 @@ class LimiterStoreHealth(MutableRecord):
     run_id = models.CharField(max_length=40)
     marker = models.UUIDField()
     evicted_keys = models.PositiveBigIntegerField()
+    observed_at = UTCDateTimeField(null=True)
+    admin_healthy_since = UTCDateTimeField(null=True)
+    family_healthy_since = UTCDateTimeField(null=True)
+    store_healthy_since = UTCDateTimeField(null=True)
 
     class Meta(MutableRecord.Meta):
         db_table = "stewardship_limiter_health"
@@ -77,4 +81,17 @@ class LimiterStoreHealth(MutableRecord):
                 condition=models.Q(run_id__regex=r"^[0-9a-f]{40}$"),
                 name="limiter_health_run_id",
             ),
+            *[
+                models.CheckConstraint(
+                    condition=models.Q(**{f"{kind}_healthy_since__isnull": True})
+                    | (
+                        models.Q(observed_at__isnull=False)
+                        & models.Q(
+                            **{f"{kind}_healthy_since__lte": models.F("observed_at")}
+                        )
+                    ),
+                    name=f"limiter_health_{kind}_window",
+                )
+                for kind in ("admin", "family", "store")
+            ],
         ]

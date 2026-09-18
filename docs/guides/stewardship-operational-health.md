@@ -267,3 +267,19 @@ one Low. Both reviewers confirm the exact installed trigger/function/mask and
 absence of an exemption. The Low wording clarification above distinguishes
 structural inventory assertions from behavioral SQL rejection tests. Final
 replacement exact-head CI/DCO remains required; the PR handoff records it.
+
+## Protected delivery
+
+PR [#51](https://github.com/epiphany40223/parishkit/pull/51) auto-merged as
+`fb945fb98d00331aa4ba542d6bcc11aea8d7497b`, verified on refreshed `origin/main`.
+Final head `e53b4e721ff0d9d0e18ea6114ab5f5f1a254937d` passed all 24 jobs in
+run `35310706689`, plus DCO. Combined scoped coverage is 93.88% line and
+84.84% branch. The three feature rounds and focused CI correction review above
+all completed successfully; no accepted Medium-or-higher issue remains.
+Six logical signed-off commits landed through the normal protected merge path,
+without a merge queue or protection bypass. PostgreSQL shard jobs took
+11m41s–16m19s on this final run; remaining runtime cost is not claimed solved.
+
+The [health-observation successor](stewardship-health-observation.md) begins
+from that exact verified main tip. BG-10 and Gate 3 remain incomplete; this
+receipt does not authorize real provider writes, deployment or release.

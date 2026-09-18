@@ -544,6 +544,18 @@ reconstruct counters from security logs. This accepted reset never permits
 serving a guessable-credential route while the limiter store itself is
 unavailable.
 
+Authentication recovery notifications require observed evidence. Abuse and
+counter-loss episodes resolve after five minutes of healthy observations, with
+no observation gap greater than 90 seconds. Each observation verifies actual
+store continuity and reads current aggregate counts without adding attempts or
+extending counter lifetimes. Missing evidence, a new failure, counter loss or
+a longer gap resets the window; elapsed silence alone cannot resolve an episode.
+Store-unavailability recovery still follows a successful real store operation.
+Continuing unavailability updates a fixed-size recovery fence on each failure,
+without creating per-request history rows. It adds at most one operational
+episode observation per minute; notification repetition follows the independent
+[suppression policy](../background-processing/spec.md#critical-errors-and-notification).
+
 ## Web security and privacy
 
 The implementation follows Django deployment checks and OWASP guidance:

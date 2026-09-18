@@ -152,7 +152,13 @@ class LocalBuckets:
 
 
 class Limiter:
-    """One service-scoped store; outage never silently weakens guessable routes."""
+    """One service-scoped store; outage never silently weakens guessable routes.
+
+    The incident callback accepts the optional observed_after SQL timestamp.
+    For limiter_available it returns True only after fenced recovery succeeds
+    (or nothing remains pending); False retains the local retry state. Other
+    incident kinds return None. Missing positive proof never clears that state.
+    """
 
     def __init__(
         self, client, key, *, incident, namespace="stewardship:auth:v1", limits=None
@@ -175,9 +181,41 @@ class Limiter:
         self.bucket_script = client.register_script(BUCKET)
         self.aggregate_script = client.register_script(AGGREGATE)
         self.fallback = LocalBuckets()
-        self.outage = False
+        self.outage_lock = Lock()
+        self.outage_generation = 0
+        self._outage = False
         self.health_lock = Lock()
         self.health_checked_at = None
+
+    @property
+    def outage(self):
+        """Read the retry flag under the same lock that owns its generation."""
+        with self.outage_lock:
+            return self._outage
+
+    @outage.setter
+    def outage(self, value):
+        """Every new local failure invalidates older successful observations."""
+        if type(value) is not bool:
+            raise TypeError("Outage state requires a boolean.")
+        with self.outage_lock:
+            if value:
+                self.outage_generation += 1
+            self._outage = value
+
+    def _outage_state(self):
+        """Capture an atomic generation/flag pair before external observation."""
+        with self.outage_lock:
+            return self.outage_generation, self._outage
+
+    def _recover_outage(self, generation, recovered):
+        """A stale success cannot erase a later thread's need to retry recovery."""
+        with self.outage_lock:
+            if recovered is not True:
+                self.outage_generation += 1
+                self._outage = True
+            elif generation == self.outage_generation:
+                self._outage = False
 
     def check_health(self, *, force=False):
         """Observe on first use and at most every 30 seconds in each process.
@@ -200,25 +238,27 @@ class Limiter:
                 or self.health_checked_at is None
                 or monotonic() - self.health_checked_at >= 30
             ):
+                generation, _ = self._outage_state()
                 try:
-                    result = observe_store(self.client, self.namespace)
+                    result = observe_store(self.client, self.namespace, self.limits)
                 finally:
                     # Failed INFO probes are throttled too; ordinary scripts
                     # still detect outages on every admission attempt.
                     self.health_checked_at = monotonic()
-                # Recovery is durable, not tied to the worker that saw loss.
-                # Each process checks at most once per observation interval.
-                self._notify("limiter_available", 0, 0, (0, 0, 0, 0))
-                self.outage = False
-                return result
+                if result is None:
+                    return False
+                # observe_store commits timestamp-fenced availability while it
+                # still holds the authentication lock. Do not resolve again here.
+                self._recover_outage(generation, result.available)
+                return result.lost
         finally:
             self.health_lock.release()
         return False
 
-    def _notify(self, *args):
+    def _notify(self, *args, **kwargs):
         """An unavailable durable incident store is a retryable auth outage."""
         try:
-            self.incident(*args)
+            return self.incident(*args, **kwargs)
         except DatabaseError:
             self.outage = True
             raise LimiterUnavailable(
@@ -239,6 +279,14 @@ class Limiter:
         """Durable, deduplicated health notification precedes generic unavailability."""
         try:
             self.check_health()
+            observed_after = None
+            generation, pending_outage = self._outage_state()
+            if pending_outage:
+                # Only outage recovery needs this extra SQL observation fence.
+                # Network I/O still occurs outside any application transaction.
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT statement_timestamp()")
+                    observed_after = cursor.fetchone()[0]
             result = script(**kwargs)
         except (RedisError, DatabaseError):
             self.outage = True
@@ -247,9 +295,15 @@ class Limiter:
             raise LimiterUnavailable(
                 "Authentication is temporarily unavailable."
             ) from None
-        if self.outage:
-            self._notify("limiter_available", 0, 0, (0, 0, 0, 0))
-            self.outage = False
+        if self.outage and observed_after is not None:
+            recovered = self._notify(
+                "limiter_available",
+                0,
+                0,
+                (0, 0, 0, 0),
+                observed_after=observed_after,
+            )
+            self._recover_outage(generation, recovered)
         return result
 
     def bucket(self, kind, source):

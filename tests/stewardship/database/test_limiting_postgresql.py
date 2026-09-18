@@ -361,7 +361,7 @@ def test_older_health_sample_cannot_overwrite_concurrent_baseline(
         value = original(key)
         if first[0]:
             first[0] = False
-            assert not observe_store(limiter.client, limiter.namespace)
+            assert not observe_store(limiter.client, limiter.namespace).lost
         return value
 
     monkeypatch.setattr(limiter.client, "get", overlapping)

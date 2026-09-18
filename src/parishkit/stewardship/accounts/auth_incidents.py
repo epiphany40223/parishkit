@@ -1,6 +1,6 @@
 """PostgreSQL-deduplicated, safe incident/notification intents for auth outages."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django.db import DatabaseError, connection, transaction
 from django.db.models import F
@@ -61,9 +61,15 @@ def record_link_rejection():
     record_login_rejection(Action.INVALID_LINK.value)
 
 
-def record_incident(kind, severity, window, counts):
-    """Persist safe counts and atomic critical intent; delivery stays asynchronous."""
+def record_incident(kind, severity, window, counts, *, observed_after=None):
+    """Persist safe counts and atomic critical intent; delivery stays asynchronous.
+
+    Availability returns True when both retained episodes resolve or neither is
+    pending, and False if a newer observation refuses recovery. Other kinds
+    return None. Callers use the boolean to retain pending local recovery work.
+    """
     from parishkit.stewardship.jobs.operational_content import IncidentKind
+    from parishkit.stewardship.jobs.operational_models import OperationalIncident
     from parishkit.stewardship.jobs.operational_sources import critical_auth
     from parishkit.stewardship.jobs.operational_storage import record_recovery
 
@@ -81,6 +87,13 @@ def record_incident(kind, severity, window, counts):
         raise ValueError("Authentication incident counts must be bounded integers.")
     if severity not in {0, 1, 2} or type(window) is not int or window < 0:
         raise ValueError("Invalid authentication incident level/window.")
+    if observed_after is not None and (
+        kind != "limiter_available"
+        or not isinstance(observed_after, datetime)
+        or observed_after.tzinfo is None
+        or observed_after.utcoffset() is None
+    ):
+        raise ValueError("Availability requires an aware observation timestamp.")
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute("SET LOCAL lock_timeout='1s'")
         cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [736225, 1])
@@ -90,12 +103,36 @@ def record_incident(kind, severity, window, counts):
             kind="limiter_unavailable", resolved_at__isnull=True
         )
         if kind == "limiter_available":
-            if pending.update(resolved_at=now, version=F("version") + 1):
+            current = pending.first()
+            if observed_after is not None:
+                if observed_after > now:
+                    raise ValueError("Availability cannot precede its observation.")
+                if current is not None and current.updated_at >= observed_after:
+                    return False
+            # The operational statement may be later than the auth statement in
+            # the same failure transaction. Check both fences before resolving
+            # either record, retaining both locks until this atomic commit.
+            episode = record_recovery(
+                IncidentKind.LIMITER_UNAVAILABLE, healthy_since=observed_after
+            )
+            if episode is not None and episode.resolved_at is None:
+                return False
+            if current is not None:
+                pending.update(resolved_at=now, version=F("version") + 1)
                 AuditEvent.objects.create(event_type="limiter_recovered")
-                record_recovery(IncidentKind.LIMITER_UNAVAILABLE)
-            return
+            return True
         if kind == "limiter_unavailable":
-            if pending.exists():
+            current = pending.first()
+            if current is not None:
+                # Update one fixed-size fence on every actual failure, without
+                # allocating per-request rows/notices. Only operational episode
+                # observations are throttled; recovery must see newer failures.
+                pending.update(version=F("version") + 1)
+                episode = OperationalIncident.objects.filter(
+                    kind=kind, resolved_at__isnull=True
+                ).first()
+                if episode is None or now - episode.last_seen >= timedelta(minutes=1):
+                    critical_auth(kind)
                 return
             window = int(now.timestamp() * 1_000_000)
         incident, created = AuthenticationIncident.objects.get_or_create(

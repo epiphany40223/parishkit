@@ -19,6 +19,7 @@ from parishkit.stewardship.source.setup_disposal import dispose_batch
 from parishkit.stewardship.source.snapshot_models import SourceSnapshot
 from parishkit.stewardship.source.version_models import ENTITY_MODELS
 
+from .setup_request_budgets import short_request_budgets
 from .test_background_grants_postgresql import task_login
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_runtime_auth_grants_postgresql import web_login
@@ -57,6 +58,7 @@ def cleanup_claim(attempt_id):
 
 def test_real_worker_removes_only_expired_setup_rows(setup_service, monkeypatch):
     """PII disappears but immutable source and setup result receipts survive."""
+    short_request_budgets(monkeypatch)
     values, request = prepared(setup_service, with_request=True)
     fake_provider(monkeypatch, pages())
     snapshot = run(*values, complete=True)
