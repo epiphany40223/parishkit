@@ -200,3 +200,26 @@ that input and re-raise the original exception unchanged, preserving its type
 and traceback. Expected SQL rejection and named unexpected-commit failures keep
 their existing paths. No dependency or runtime behavior changed. The third
 review round and final exact-head CI remain required.
+
+### Round three and protected delivery
+
+Session `20260917-202912-9484a0` reviewed `c7513a0` against `bca0d68`. Both
+vendors completed without degradation, with no validated findings and no High
+or Critical issues. Claude reported two raw Low items, one outside the changed
+file set; Codex reported no findings. The corrected four grouped authority tests
+passed in 17.77 seconds. All three review/fix rounds are complete and every
+accepted Medium-or-higher issue is resolved.
+
+[PR #49](https://github.com/epiphany40223/parishkit/pull/49) auto-merged at
+`70797cb2531062be298c94647253c960138a073d` on September 18, 2026 at 00:49:59 UTC,
+verified on refreshed `origin/main`. Exact reviewed head `c7513a0` passed all
+24 jobs in run `35291396014` and DCO, without a merge-queue run. Combined
+coverage is unchanged at 30,443/32,387 lines (94.00%) and 8,554/10,040 branches
+(85.20%). No complete local acceptance suite was duplicated.
+
+In that run, shard-three teardown took one second rather than the earlier
+236 seconds. Its full log shrank from 9,931,809 to 391,522 bytes, retaining
+normal error details. The slowest PostgreSQL job still took 19 minutes and
+26 seconds: this fixes specific overhead, not the overall database-test
+bottleneck. Further profiling and compatible grouping remain appropriate; no
+coverage or test gate was waived. No deployment or release occurred.

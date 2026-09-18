@@ -517,6 +517,15 @@ Before BG-10, a bounded test-maintenance increment addresses the requested
 [compatible fixture reuse](../../guides/stewardship-test-efficiency.md#compatible-database-fixture-reuse).
 It does not advance feature acceptance or Gate 3.
 
+That maintenance increment subsequently auto-merged in
+[PR #49](https://github.com/epiphany40223/parishkit/pull/49) as `70797cb2` after
+three successful dual-source review/fix rounds and all 25 exact-head CI/DCO
+checks passed. Its [delivery evidence](../../guides/stewardship-test-efficiency.md#round-three-and-protected-delivery)
+records unchanged coverage and the measured log-copy saving without claiming
+the remaining database-test bottleneck is solved. From the verified fresh tip,
+`pr/stewardship-operational-alerts` is the next BG-10 working branch. BG-10 is
+not yet complete, and Gate 3 remains open.
+
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).
 3. Complete required [RPT-02](reports.md#rpt-02-population-and-calculation-library) calculations and the [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics) fact-materialization service before [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests); report UI remains in Phase 5.
