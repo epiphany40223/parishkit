@@ -1,6 +1,7 @@
 """Exact-role SQL independently rejects forged and incomplete Ministry effects."""
 
 from copy import deepcopy
+from functools import partial
 from uuid import UUID, uuid4
 
 import pytest
@@ -24,24 +25,27 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 @pytest.mark.parametrize(
-    "faults",
+    "setup_fault,faults",
     [
         (
-            "current_join",
-            "noncurrent_leave",
-            "unknown_ministry",
-            "foreign_member",
-            "duplicate",
-            "boolean_id",
-            "string_id",
-            "extra_group",
-            "missing_member",
-            "disabled_census",
-            "proposed_without_census",
+            "common",
+            (
+                "current_join",
+                "noncurrent_leave",
+                "unknown_ministry",
+                "foreign_member",
+                "duplicate",
+                "boolean_id",
+                "string_id",
+                "extra_group",
+                "missing_member",
+                "disabled_census",
+                "proposed_without_census",
+            ),
         ),
-        ("inactive_ministry",),
-        ("unselected_ministry",),
-        ("proposed_leave",),
+        ("inactive_ministry", ("inactive_ministry",)),
+        ("unselected_ministry", ("unselected_ministry",)),
+        ("proposed_leave", ("proposed_leave",)),
     ],
     ids=[
         "common-fixture",
@@ -51,20 +55,19 @@ pytestmark = pytest.mark.django_db(transaction=True)
     ],
 )
 def test_sql_revalidates_complete_ministry_aggregate(
-    response_service, monkeypatch, faults
+    response_service, monkeypatch, setup_fault, faults
 ):
     """Bypass only Python answer validation; SQL still owns the admitted boundary."""
     # Only the common invalid-input cases share setup. Cases with different
     # configuration/census prerequisites retain independent fixture instances.
-    fault = faults[0]
     harness = response_service
-    form = start(harness, census=fault == "proposed_leave")
-    if fault == "unselected_ministry":
+    form = start(harness, census=setup_fault == "proposed_leave")
+    if setup_fault == "unselected_ministry":
         configure(harness, census=False, selected=(4,))
         from .test_response_http_postgresql import load_form
 
         form = load_form(harness)
-    elif fault == "inactive_ministry":
+    elif setup_fault == "inactive_ministry":
         configure(
             harness,
             census=False,
@@ -86,12 +89,12 @@ def test_sql_revalidates_complete_ministry_aggregate(
         form = load_form(harness)
     answers = answers_for(form)
     proposed_id = str(uuid4())
-    if fault == "proposed_leave":
+    if setup_fault == "proposed_leave":
         answers["proposed_members"][proposed_id] = member()
         answers["ministries"]["proposed_members"][proposed_id] = {"join": []}
     real = submission.validate_answers
 
-    def forge(*args, **kwargs):
+    def forge(fault, *args, **kwargs):
         """Alter a normalized aggregate, not source/configuration or SQL guards."""
         result = deepcopy(real(*args, **kwargs))
         choices = result["ministries"]["members"]["3"]
@@ -124,17 +127,24 @@ def test_sql_revalidates_complete_ministry_aggregate(
         return result
 
     with monkeypatch.context() as patch:
-        patch.setattr(submission, "validate_answers", forge)
         for fault in faults:
+            patch.setattr(submission, "validate_answers", partial(forge, fault))
             # A genuine independent transaction per attempted write preserves
             # deferred SQL checks. Only the expensive initial campaign is reused.
-            with web_login(), pytest.raises(IntegrityError), transaction.atomic():
-                submission.submit_family(
-                    harness.request,
-                    harness.service,
-                    baseline_id=UUID(form["baseline"]),
-                    payload=answers,
-                )
+            try:
+                with web_login(), transaction.atomic():
+                    submission.submit_family(
+                        harness.request,
+                        harness.service,
+                        baseline_id=UUID(form["baseline"]),
+                        payload=answers,
+                    )
+            except IntegrityError:
+                pass
+            else:
+                # Stop here: a committed bad write invalidates the shared
+                # baseline, so continuing would report misleading later errors.
+                pytest.fail(f"{fault}: SQL accepted a forged ministry aggregate")
             assert not Submission.objects.exists(), fault
             assert not MinistryRequest.objects.exists(), fault
     # Successful unchanged submission proves a prior failed case did not poison

@@ -11,6 +11,18 @@ or its duplicate CI run. A superseded PR run is cancelled; main runs retain
 independent concurrency groups. The review gates are unchanged. This follows
 [GitHub's workflow concurrency contract](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#concurrency).
 
+This removes a second execution of the same suite, not an identical validation
+context: the queue formerly retested against its then-current merge base. PR
+checks use [GitHub's test merge](https://github.com/actions/checkout#checkout-pull-request-head-commit-instead-of-merge-commit)
+when checking out a `pull_request` event, but do
+not automatically rerun for every later change to `main`. The repository does
+not currently require branches to be up to date. Post-merge main CI is the final
+landed-result check; concurrent independent PRs can therefore introduce an
+integration regression after their individual checks passed. Keep stewardship
+increments serial and inspect base drift before merging; refresh and revalidate
+when intervening changes affect the increment. Do not represent auto-merge as
+restoring the removed queue guarantee.
+
 ## Measured bottlenecks
 
 The successful PR #47 merge-group run `35243208902` measured PostgreSQL partition
@@ -128,6 +140,10 @@ No shared mutable fixture crosses independent tests, no SQL authorization or
 deferred-constraint semantics are weakened, and no input cases are dropped.
 This maintenance does not complete additional feature tasks or release Gate 3.
 
+After rebasing onto PR #48's verified merge, the three affected PostgreSQL
+modules passed all 81 collected tests in 65.04 seconds. Grouped case counts are
+separate from collected test nodes; all original fault/field inputs are retained.
+
 ### Avoid large rejected-statement dumps
 
 In PR #48's final run `35287511489`, shard three spent 235.08 seconds between
@@ -147,3 +163,26 @@ its assertion tracebacks and client-side errors. The existing exact-service
 parity test also checks this bounded setting. A one-time pinned-image probe
 verified initdb accepts the setting and error messages still reach server logs;
 do not add recurring tests of PostgreSQL's own logging implementation.
+
+## Maintenance review ledger
+
+### Round one
+
+Session `20260917-201132-a6800c` reviewed `32d9006` against merged PR #48's
+`8998542`. Both vendors completed without degradation; Codex reported no
+findings. Claude reported eleven raw findings: five Medium and six Low, with
+no High or Critical. All five validated Medium concerns were dispositioned:
+
+| Concern | Disposition |
+| --- | --- |
+| Intro specification still requires queue CI | Updated its authoritative CI description and linked this execution policy. |
+| Fault closure depends on rebinding the setup variable | Separate explicit setup selector and per-case fault argument; bind each validator using `partial`. |
+| Failed rejection does not name its fault | Explicit named failure if SQL accepts the forged aggregate. Keep fail-fast after an unexpectedly committed write: continuing from a consumed baseline would manufacture misleading later results. Every successful run still executes all cases. |
+| Fixture selection depends on tuple ordering | Parametrize the prerequisite selector alongside each fault tuple; selecting setup no longer depends on the first input. |
+| Queue removal obscures merged-result tradeoff | Document current non-strict protection and possible concurrent-base drift. Correct the review's stronger claim: PR checkout already tests a merge result, but not every later base revision. Main CI remains. |
+
+The four grouped authority tests pass in 18.73 seconds after these corrections,
+retaining all fourteen rejected inputs and four positive controls. Ruff and
+changed-document lint pass. The log-copy reduction was committed after this
+round's fixed snapshot and belongs to round two's review scope. The remaining
+review rounds and exact-head CI are still required before merge.
