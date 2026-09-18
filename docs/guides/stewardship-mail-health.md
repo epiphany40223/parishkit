@@ -199,3 +199,20 @@ Implementation fixups will be consolidated into one signed feature commit,
 separate from the predecessor delivery/scope receipt. The PR handoff retains
 the final checkpoint/tree mapping and exact-head CI/DCO receipts; verified merge
 delivery is committed by the next fresh-main increment, avoiding receipt-only CI.
+
+## Protected delivery
+
+PR [#56](https://github.com/epiphany40223/parishkit/pull/56) merged as
+`96a80fc29494dc6d6828262925eb3fb5adf7e10e` at 15:21:30 UTC on September 18,
+2026, verified on freshly fetched `origin/main`. Final head
+`066dd4083c70624e8515c36b41d183ee5116d0a4` passed all 24 CI jobs in run
+`35360172310`, plus DCO. All 3,832 database tests were accounted for across 12
+shards; scoped coverage was 93.91% line and 84.90% branch. The complete run took
+14 minutes 51 seconds including about one minute queued; the slowest PostgreSQL
+partition took 13 minutes 3 seconds.
+
+The final correction checkpoint `022d93c0` and consolidated head have identical
+tree `1c4d1f87d846bfaae118388726333356e9c34695`. Two logical signed commits
+landed through normal protected merge, without a queue or protection bypass.
+The [due-work successor](stewardship-due-work-health.md) starts from this verified
+main tip. Broader BG-10 acceptance and ADM-05 remain open.

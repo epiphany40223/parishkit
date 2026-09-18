@@ -402,6 +402,11 @@ The [mail-health increment](../../guides/stewardship-mail-health.md) now connect
 provider outcomes to durable alerts and recovery. Due-work monitoring still
 precedes BG-10 completion and ADM-05.
 
+PR #56 has merged; its [protected receipt](../../guides/stewardship-mail-health.md#protected-delivery)
+records exact-head checks, three review/fix rounds and verified main delivery.
+The [due-work increment](../../guides/stewardship-due-work-health.md) continues
+current-phase service observations and recovery before broader BG-10 acceptance.
+
 ## BG-11: Exceptional purge worker
 
 Scope and dependencies: [BG-11 work package](../../plans/stewardship/background-processing.md#bg-11-exceptional-purge-worker).
