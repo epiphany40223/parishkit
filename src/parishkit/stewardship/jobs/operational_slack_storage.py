@@ -72,11 +72,14 @@ def latest_attempt(status):
     )
 
 
-def configured_channel(runtime):
-    """A missing optional channel is a hold, not a provider failure."""
-    return AppliedIntegration.objects.filter(
+def configured_channel(runtime, *, delivery=False):
+    """Intake needs a channel; delivery also needs its selected credential proof."""
+    channels = AppliedIntegration.objects.filter(
         configuration_id=runtime.active_configuration_id, kind="slack"
-    ).exists()
+    )
+    if delivery:
+        channels = channels.filter(credential_fingerprint__isnull=False)
+    return channels.exists()
 
 
 def begin_submission(claim, *, store, configuration_id, fingerprint):
@@ -95,6 +98,7 @@ def begin_submission(claim, *, store, configuration_id, fingerprint):
         if (
             runtime.active_configuration_id != configuration_id
             or channel is None
+            or channel.credential_fingerprint is None
             or channel.credential_fingerprint != fingerprint
         ):
             raise FamilyDeliveryHeld("Operational Slack configuration changed.")

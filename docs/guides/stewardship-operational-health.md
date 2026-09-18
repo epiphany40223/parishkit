@@ -136,3 +136,116 @@ Regression tests use the actual composite MAIL owner, scheduler and PostgreSQL
 journals; only normal retry delays are shortened, not leases/provider deadlines.
 All 50 focused hold, hint-scan, operational dispatch/fanout and Family-worker
 PostgreSQL cases pass together in 89.73 seconds with one schema bootstrap.
+
+## Review round 1
+
+Pika session `20260918-004058-022416` reviews the complete `1895949..01ba955`
+diff with one successful Claude reviewer and one successful Codex reviewer.
+Raw findings: zero High/Critical, one Medium, six Low. Codex reports no
+actionable findings; its readonly environment lacks test dependencies, so the
+parent's focused validation and exact-head CI supply executable evidence.
+
+- Medium, retained notice backlog: retain the existing durable-intent behavior,
+  document it and add an actual enable/reconfigure delivery regression.
+  Optional channel absence does not silently expire historical notices. The
+  oldest 25 unallocated notices are admitted per scheduler pass, original
+  opening/resolution timestamps remain visible, and allocated notices cannot
+  replay after channel reconfiguration. No arbitrary age cutoff discards a
+  still-unreported critical condition. Email remains an independent channel.
+- Low, silent configuration holds: ordinary admission mismatches deliberately
+  remain holds, avoiding a log per Task per scan. Sustained configuration-health
+  observation belongs to the explicit next health-producer slice; the current
+  readiness check already fails on incoherent configuration. Do not claim the
+  operational-health package complete in this PR.
+- Low, vanished key: clarify the distinction and test it. An absent optional
+  mount in the compiled profile holds new delivery; an advertised mounted key
+  that is unreadable/invalid is a real bounded preparation failure and produces
+  durable ERROR on exhaustion. `read_private` raises a sanitized
+  `CryptographicError`, not an exposed `OSError`. Both preserve old submissions'
+  metadata recovery. No code change to credential classification is needed.
+- Low, result error naming: retain per-error logging, consistent with the
+  operational email channel and the requirement to persist every error. The
+  immutable result and Task journal distinguish retry from terminal failure;
+  generic `task_failed` log counts are not terminal Task counts. Only CRITICAL
+  logs feed critical collection; these ERROR/WARNING entries cannot recurse.
+- Low, trigger overhead: add an exact trigger `WHEN` predicate so ordinary
+  Task heartbeat/progress updates do not invoke the Slack failure function.
+- Low, transition-loss coverage: add real PostgreSQL recovery tests for absent
+  submission, committed accepted and committed not-sent outcomes. Accepted work
+  completes without resend; unsubmitted/not-sent work retains a delayed retry.
+- Low, unused fixture binding: replace it with an underscore.
+
+Post-fix validation passes 30 Slack/baseline cases in 41.59 seconds, Ruff and
+Markdown checks. The unchanged real 35-second forced-shutdown case was not
+repeated locally; exact-head CI still runs it. Fresh independent catalogs show
+only the named Slack task-error trigger definition changed from the preceding
+checkpoint; all other objects/counts are unchanged. The remaining two review
+rounds and exact-head CI/DCO are required before delivery.
+
+## Review round 2
+
+Pika session `20260918-005231-da0c48` reviews correction interval
+`01ba955..1c57ec7` with both vendors successful. Raw findings: zero
+High/Critical/Medium and seven Low (five Claude, two Codex); final verdict
+APPROVE with no accepted Medium-or-higher issue remaining.
+
+- Both reviewers request a backlog-bound test: add 27 notices with an actually
+  configured system lacking Slack, add the public channel through the real
+  configuration owner, then prove 25 oldest allocations followed by exactly
+  two, without replay. This also covers Claude's configured-channel-absence
+  concern separately from the pre-setup delivery regression.
+- Add direct duplicate-hint consumption after changing the channel and assert
+  the provider call count is still two. Rename the notice-ID fixture binding.
+- Retain the SQL function's defensive predicate as well as trigger admission.
+  The trigger avoids ordinary update overhead; the function remains a guarded
+  privileged entry point. Task state is non-null, so the two comparison forms
+  are equivalent. No schema rewrite solely for this Low duplication concern.
+- Codex's long-age coverage suggestion is deferred: the actual SQL producer
+  has no date predicate, and the tests now cover retained facts, initial setup,
+  applied absence/addition, bounded ordering and channel changes. These tests
+  do not claim to advance PostgreSQL's clock by days. Do not bypass immutable
+  history guards or add a sleep to manufacture an old timestamp.
+
+Only test precision and evidence change in this correction; production code and
+schema are unchanged. Both targeted cases pass in 11.97 seconds with one
+bootstrap; Ruff and Markdown checks pass. This test-only correction is folded
+into the prior correction commit; its parent `01ba955` remains the third
+round's base, preserving exact correction scope after amendment. The old
+reviewed `1c57ec7` is retained by a backup ref.
+
+Final round and exact-head CI/DCO remain mandatory. The
+PR handoff records their final results without an extra source-only receipt
+push; the successor records verified protected merge delivery.
+
+## Review round 3
+
+Pika session `20260918-005955-614d88` reviews `01ba955..4a00115` with both
+vendors successful. Raw findings: zero High/Critical, one Medium, five Low;
+Codex reports no actionable findings. The Medium is accepted and corrected:
+an applied channel with a null credential fingerprint can allocate durable
+metadata intent, but cannot claim new delivery even if an old key path is still
+mounted. After-claim loss is a journaled non-failure hold, and submission checks
+the selected fingerprint again. No attempt budget is spent while private
+credential installation/selection remains unfinished.
+
+The associated Low coverage concern shares that regression. Additional Low
+corrections name the 25-notice page constant, clarify the fixture's initial
+notice count and move the public-channel/private-fingerprint comment beside
+its configuration operation. New queued and definitive-not-sent routing tests
+prove that a channel change governs the next authorized send exactly once;
+previously accepted terminal Tasks remain non-replayable.
+
+The scoped correction changes no SQL/schema, credential-installation authority
+or outcome semantics. Under the controlling cycle, fixes and passing focused
+validation close this third round without requiring a fourth round merely
+because it contained corrections. Final exact-head CI/DCO still controls
+protected delivery, and BG-10 health producers/recovery remain unfinished.
+
+All 17 affected Slack PostgreSQL cases pass in 38.10 seconds with one
+bootstrap. The unchanged real forced-drain case remains in full CI, rather
+than being repeated locally. Ruff, formatting, Markdown and diff checks pass.
+The preceding reviewed tree is retained at
+`pr/stewardship-operational-health-round3-reviewed` before folding this
+correction into the logical Slack review/fix commit. All three successful
+dual-source rounds are complete with no unresolved accepted Medium-or-higher
+finding; the PR handoff supplies the final exact-head CI and merge receipt.

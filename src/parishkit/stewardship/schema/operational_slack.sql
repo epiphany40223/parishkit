@@ -126,5 +126,7 @@ BEGIN
     RETURN NULL;
 END $$;
 CREATE TRIGGER stewardship_ops_slack_task_error AFTER UPDATE ON stewardship_task_run
-FOR EACH ROW EXECUTE FUNCTION stewardship_ops_slack_task_error_v1();
+FOR EACH ROW WHEN (NEW.task_type='operational_slack' AND NEW.state='failed'
+    AND OLD.state IS DISTINCT FROM 'failed')
+EXECUTE FUNCTION stewardship_ops_slack_task_error_v1();
 REVOKE ALL ON FUNCTION stewardship_ops_slack_task_error_v1() FROM PUBLIC;

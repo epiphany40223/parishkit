@@ -35,9 +35,16 @@ from .queues import WorkQueue
 from .scheduler import SchedulerGuard
 from .storage import _status, enqueue
 
+NOTICE_BATCH = 25
+
 
 def produce_slack(guard):
-    """Allocate one stable notice intent without depending on an email cohort."""
+    """Allocate retained notices once, including backlog after channel enablement.
+
+    Optional channel absence holds intent rather than silently expiring alerts.
+    Drain at most 25 oldest notices per pass; both opening and resolution retain
+    their original timestamps. Reconfiguration never replays allocated notices.
+    """
     if not isinstance(guard, SchedulerGuard):
         raise PermissionError("Operational Slack requires its scheduler.")
     guard.check()
@@ -54,7 +61,7 @@ def produce_slack(guard):
                 )
             )
             .order_by("created_at", "pk")
-            .values_list("pk", flat=True)[:25]
+            .values_list("pk", flat=True)[:NOTICE_BATCH]
         )
         return tuple(
             enqueue(
@@ -141,9 +148,10 @@ def admit_task(action, status, *, store, available):
                 "Operational Slack configuration requires recovery."
             ) from None
         return False
-    if action == "effect" and (not available or not configured_channel(runtime)):
+    ready = available and configured_channel(runtime, delivery=True)
+    if action == "effect" and not ready:
         raise FamilyDeliveryHeld("Operational Slack channel is not configured.")
-    return available and configured_channel(runtime)
+    return ready
 
 
 def slack_handler(store, *, credential_path=None, scheduler=False):
@@ -202,7 +210,11 @@ def _execute(execution, *, store, credential_path):
                 else "permanent_failure"
             )
             return
-        if channel is None or credential_path is None:
+        if (
+            channel is None
+            or channel.credential_fingerprint is None
+            or credential_path is None
+        ):
             raise FamilyDeliveryHeld("Operational Slack channel is not configured.")
         candidate = read_private(credential_path)
         if file_fingerprint(candidate) != channel.credential_fingerprint:

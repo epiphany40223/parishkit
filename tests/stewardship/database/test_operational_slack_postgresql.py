@@ -23,6 +23,7 @@ from parishkit.stewardship.jobs.operational_slack_storage import (
     finish_submission,
 )
 from parishkit.stewardship.jobs.operational_slack_tasks import (
+    NOTICE_BATCH,
     TASK_TYPE,
     produce_slack,
     slack_handler,
@@ -46,12 +47,12 @@ KEY = b"synthetic-slack-key"
 @pytest.fixture
 def slack_setup(tmp_path):
     """One applied channel and an owner-only fake key, never a real integration."""
-    store, actor, notice, _ = configured_routing(
+    store, actor, notice_id, _ = configured_routing(
         tmp_path, slack_fingerprint=file_fingerprint(KEY)
     )
     path = tmp_path / "slack-key"
     write_private(path, KEY)
-    return store, actor, notice, path
+    return store, actor, notice_id, path
 
 
 def schedule():
@@ -283,8 +284,9 @@ def test_forced_shutdown_waits_for_real_deadline_then_never_resends(
     assert not consume(identifier, slack_setup)
 
 
+@pytest.mark.parametrize("failure", ["wrong_key", "missing_mounted_key"])
 def test_slack_preparation_exhaustion_logs_without_recursive_alerts(
-    slack_setup, monkeypatch
+    slack_setup, monkeypatch, failure
 ):
     """Real failed preparation consumes the bounded budget, without provider IO."""
     from parishkit.stewardship.jobs.operational_models import OperationalNotice
@@ -292,7 +294,10 @@ def test_slack_preparation_exhaustion_logs_without_recursive_alerts(
     monkeypatch.setattr(
         "parishkit.stewardship.jobs.operational_slack_tasks.retry_delay", lambda _: 1
     )
-    write_private(slack_setup[3], b"different-synthetic-key")
+    if failure == "wrong_key":
+        write_private(slack_setup[3], b"different-synthetic-key")
+    else:
+        slack_setup = (*slack_setup[:3], slack_setup[3].with_name("missing-key"))
     (identifier,) = schedule()
     for number in range(1, 6):
         assert consume(identifier, slack_setup)
@@ -315,7 +320,7 @@ def test_configuration_mismatch_holds_claim_without_spending_attempt(
     slack_setup, monkeypatch
 ):
     """Temporary authority loss consumes no attempt and cannot abort scheduler scans."""
-    store, _, _, path = slack_setup
+    store, _, _, _ = slack_setup
     (identifier,) = schedule()
     monkeypatch.setattr(store, "manifest_reference", lambda: (uuid4(), "f" * 64))
     for _ in range(7):
@@ -328,9 +333,17 @@ def test_configuration_mismatch_holds_claim_without_spending_attempt(
         assert owner.admit("hint", _status(TaskRun.objects.get(pk=identifier))) is False
 
 
-def test_channel_removed_after_claim_is_a_nonfailure_hold(slack_setup):
+@pytest.mark.parametrize("readd_without_key", [False, True])
+def test_channel_removed_after_claim_is_a_nonfailure_hold(
+    slack_setup, readd_without_key
+):
     """Removing an optional channel after claim cannot exhaust delivery work."""
-    store, _, _, path = slack_setup
+    store, actor, _, path = slack_setup
+    channel = next(
+        row
+        for row in store.active().document()["sections"]["integrations"]
+        if row["values"]["kind"] == "slack"
+    )
     (identifier,) = schedule()
     with task_login(ServiceRole.WORKER, exact=True):
         execution = claim_hint(
@@ -340,6 +353,17 @@ def test_channel_removed_after_claim_is_a_nonfailure_hold(slack_setup):
             handlers={TASK_TYPE: slack_handler(store, credential_path=path)},
         )
     remove_channel(slack_setup, "slack")
+    if readd_without_key:
+        channel["values"]["credential_fingerprint"] = None
+        assert (
+            change(
+                store,
+                store.active(),
+                actor,
+                [{"operation": "add", "section": "integrations", **channel}],
+            ).state
+            == "applied"
+        )
     with (
         task_login(ServiceRole.WORKER, exact=True, reconnect=True),
         maintain_execution(execution),
@@ -378,3 +402,238 @@ def test_slack_submission_rejects_wrong_fingerprint_and_scheduler_reads(slack_se
             ):
                 cursor.execute(f"SELECT {column} FROM stewardship_ops_slack_attempt")
     assert not OperationalSlackAttempt.objects.exists()
+
+
+@pytest.mark.parametrize(
+    "outcome", [None, DeliveryOutcome.ACCEPTED, DeliveryOutcome.NOT_SENT]
+)
+def test_recovery_uses_committed_fact_after_task_transition_loss(slack_setup, outcome):
+    """Missing Task finalization neither resends accepted work nor loses safe retry."""
+    from .test_taskrun_postgresql import act, expire
+
+    (identifier,) = schedule()
+    with task_login(ServiceRole.WORKER, exact=True):
+        execution = claimed(slack_setup)
+        if outcome is not None:
+            attempt, _, _ = begin(execution, slack_setup)
+            finish_submission(attempt, execution.claim, outcome)
+    running = act(
+        _status(TaskRun.objects.get(pk=identifier)), "heartbeat", lease_seconds=1
+    )
+    expire(running)
+    with task_login(ServiceRole.WORKER, exact=True):
+        assert recover_hint(
+            identifier,
+            queue=WorkQueue.GENERAL,
+            worker_id=uuid4(),
+            handlers={TASK_TYPE: slack_handler(slack_setup[0])},
+        )
+    row = TaskRun.objects.get(pk=identifier)
+    assert row.state == (
+        "succeeded" if outcome is DeliveryOutcome.ACCEPTED else "retry_wait"
+    )
+    assert OperationalSlackAttempt.objects.count() == int(outcome is not None)
+    assert OperationalSlackResult.objects.count() == int(outcome is not None)
+    assert not consume(identifier, slack_setup)
+
+
+def test_enabling_slack_drains_retained_notices_without_replaying_them(
+    tmp_path, monkeypatch
+):
+    """No age-based loss: delayed opened/resolved facts retain their original time."""
+    from parishkit.stewardship.jobs.operational_content import (
+        IncidentKind,
+        IncidentLevel,
+    )
+    from parishkit.stewardship.jobs.operational_models import OperationalNotice
+    from parishkit.stewardship.jobs.operational_policy import IncidentPolicy
+    from parishkit.stewardship.jobs.operational_storage import (
+        record_observation,
+        record_recovery,
+    )
+
+    record_observation(
+        IncidentKind.STORAGE_INTEGRITY, IncidentLevel.CRITICAL, policy=IncidentPolicy()
+    )
+    assert schedule() == ()
+    store, actor, notice_id, _ = configured_routing(
+        tmp_path, slack_fingerprint=file_fingerprint(KEY)
+    )
+    path = tmp_path / "slack-key"
+    write_private(path, KEY)
+    slack_setup = store, actor, notice_id, path
+    channel = next(
+        row
+        for row in store.active().document()["sections"]["integrations"]
+        if row["values"]["kind"] == "slack"
+    )
+    record_recovery(IncidentKind.STORAGE_INTEGRITY)
+    retained = list(OperationalNotice.objects.order_by("created_at", "pk"))
+    assert [notice.phase for notice in retained] == ["opened", "resolved"]
+    identifiers = schedule()
+    assert len(identifiers) == 2 and schedule() == ()
+    delivered = []
+
+    def submit(value, notification, *, seconds, check):
+        """Keep the original non-personal occurrence facts across deferred delivery."""
+        check()
+        delivered.append(notification.alert)
+        return DeliveryOutcome.ACCEPTED
+
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.operational_slack_tasks.submit_operational_slack",
+        submit,
+    )
+    for identifier in identifiers:
+        assert consume(identifier, slack_setup)
+    assert [alert.phase for alert in delivered] == [notice.phase for notice in retained]
+    assert [alert.observed_at for alert in delivered] == [
+        notice.observed_at for notice in retained
+    ]
+    assert (
+        change(
+            store,
+            store.active(),
+            actor,
+            [
+                {
+                    "operation": "update",
+                    "section": "integrations",
+                    "id": channel["id"],
+                    "values": {"settings": {"channel_id": "C456"}},
+                }
+            ],
+        ).state
+        == "applied"
+    )
+    assert schedule() == ()
+    for identifier in identifiers:
+        assert not consume(identifier, slack_setup)
+    assert len(delivered) == 2
+
+
+def test_configured_channel_absence_retains_oldest_bounded_backlog(slack_setup):
+    """Applied channel removal/addition holds notices, then pages without omission."""
+    from parishkit.stewardship.jobs.operational_content import (
+        IncidentKind,
+        IncidentLevel,
+    )
+    from parishkit.stewardship.jobs.operational_models import OperationalNotice
+    from parishkit.stewardship.jobs.operational_policy import IncidentPolicy
+    from parishkit.stewardship.jobs.operational_storage import (
+        record_observation,
+        record_recovery,
+    )
+
+    store, actor, _, _ = slack_setup
+    channel_id = next(
+        row["id"]
+        for row in store.active().document()["sections"]["integrations"]
+        if row["values"]["kind"] == "slack"
+    )
+    remove_channel(slack_setup, "slack")
+    assert OperationalNotice.objects.count() == 1
+    for kind in [
+        kind for kind in IncidentKind if kind is not IncidentKind.STORAGE_INTEGRITY
+    ][:13]:
+        record_observation(kind, IncidentLevel.CRITICAL, policy=IncidentPolicy())
+        record_recovery(kind)
+    notices = list(
+        OperationalNotice.objects.order_by("created_at", "pk").values_list(
+            "pk", flat=True
+        )
+    )
+    assert len(notices) == 27 and schedule() == ()
+    # Public configuration can restore a channel, but only the separate private
+    # installation workflow may supply an acknowledged credential fingerprint.
+    assert (
+        change(
+            store,
+            store.active(),
+            actor,
+            [
+                {
+                    "operation": "add",
+                    "section": "integrations",
+                    "id": channel_id,
+                    "values": {
+                        "kind": "slack",
+                        "settings": {"channel_id": "C456"},
+                        "credential_fingerprint": None,
+                    },
+                }
+            ],
+        ).state
+        == "applied"
+    )
+    first, second = schedule(), schedule()
+    assert len(first) == NOTICE_BATCH == 25 and len(second) == 2 and schedule() == ()
+    actual = {
+        row.pk: row.domain_request_id
+        for row in TaskRun.objects.filter(task_type=TASK_TYPE)
+    }
+    assert [actual[identifier] for identifier in first] == notices[:25]
+    assert [actual[identifier] for identifier in second] == notices[25:]
+    # A mounted old key cannot turn missing selected-key authority into failures.
+    for _ in range(7):
+        with pytest.raises(PermissionError):
+            consume(first[0], slack_setup)
+    assert TaskRun.objects.get(pk=first[0]).attempt == 0
+    assert not OperationalSlackAttempt.objects.exists()
+
+
+@pytest.mark.parametrize("retry", [False, True])
+def test_unsent_work_uses_current_channel_exactly_once(slack_setup, monkeypatch, retry):
+    """New routing governs queued and definitively-unsent work, never accepted work."""
+    store, actor, _, _ = slack_setup
+    (identifier,) = schedule()
+    calls = []
+    expected = (
+        [DeliveryOutcome.NOT_SENT, DeliveryOutcome.ACCEPTED]
+        if retry
+        else [DeliveryOutcome.ACCEPTED]
+    )
+
+    def submit(value, notification, *, seconds, check):
+        """Only provider exchange is fake; current routing and ownership are real."""
+        check()
+        calls.append(notification.channel_id)
+        return expected.pop(0)
+
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.operational_slack_tasks.submit_operational_slack",
+        submit,
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.operational_slack_tasks.retry_delay", lambda _: 1
+    )
+    if retry:
+        assert consume(identifier, slack_setup)
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_sleep(1.02)")
+    channel = next(
+        row
+        for row in store.active().document()["sections"]["integrations"]
+        if row["values"]["kind"] == "slack"
+    )
+    assert (
+        change(
+            store,
+            store.active(),
+            actor,
+            [
+                {
+                    "operation": "update",
+                    "section": "integrations",
+                    "id": channel["id"],
+                    "values": {"settings": {"channel_id": "C456"}},
+                }
+            ],
+        ).state
+        == "applied"
+    )
+    assert schedule() == ()
+    assert consume(identifier, slack_setup)
+    assert not consume(identifier, slack_setup)
+    assert calls == (["C123", "C456"] if retry else ["C456"])
+    assert TaskRun.objects.get(pk=identifier).state == "succeeded"
