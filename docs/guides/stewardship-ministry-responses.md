@@ -47,6 +47,10 @@ Keep fresh browser processes; do not restore the process reuse that previously
 hung WebKit. Record such a change as a separate logical commit and validate its
 selection/aggregation failure paths.
 
+The later [test-efficiency policy](stewardship-test-efficiency.md) supersedes
+this historical all-engine restriction for Chromium and Firefox only. WebKit
+retains the fresh-process workaround.
+
 ## Evidence
 
 Implementation, local validation and all three dual-model review/fix rounds

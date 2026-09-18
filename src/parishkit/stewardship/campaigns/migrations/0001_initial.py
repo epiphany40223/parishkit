@@ -3619,6 +3619,8 @@ class Migration(migrations.Migration):
                                         "daily_digest_snapshots",
                                         "daily_digest_fact_pins",
                                         "recovery_replacements",
+                                        "weekly_digest_recipients",
+                                        "weekly_digest_snapshots",
                                     ]
                                 ),
                                 name="production_target_category",

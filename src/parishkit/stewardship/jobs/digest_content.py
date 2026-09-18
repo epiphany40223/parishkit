@@ -5,6 +5,7 @@ from html import escape
 
 from parishkit.stewardship.accounts.policy_schema import normalized_email
 from parishkit.stewardship.reports.daily_digest import DailyDigestContent
+from parishkit.stewardship.reports.weekly_digest import WeeklyDigestContent
 from parishkit.stewardship.web.content import (
     ADMIN_DIGEST_PLACEHOLDERS,
     SafeContent,
@@ -13,8 +14,9 @@ from parishkit.stewardship.web.content import (
     render_template,
     validate_admin_digest_content,
 )
+from parishkit.stewardship.web.weekly_digest_content import validate_weekly_body
 
-from .outbox_validation import DeliveryIdentity, RenderInput
+from .outbox_validation import DeliveryIdentity, RenderInput, WeeklyRenderInput
 
 
 @dataclass(frozen=True, repr=False)
@@ -50,16 +52,22 @@ def render_digest_envelope(
     """Route exactly one intended Admin; current authorization belongs to the owner.
 
     The same intended recipient remains visible in Testing while the actual
-    envelope contains only the designated test mailbox. No Family identity or
-    credential enters this rendering path. The separately compiled chart is
-    retained by the snapshot owner and supplied only to the typed MIME adapter.
+    envelope contains only the designated test mailbox. Authored substitutions
+    remain public campaign values; private report values arrive only in the
+    separately compiled content, never as executable template expressions.
+    Daily chart bytes stay with the snapshot owner and typed MIME adapter.
     """
     if (
         not isinstance(identity, DeliveryIdentity)
-        or identity.purpose != "daily_digest"
+        or identity.purpose not in {"daily_digest", "weekly_digest"}
         or identity.credential_namespace != "none"
         or not isinstance(template, DigestTemplate)
-        or not isinstance(content, DailyDigestContent)
+        or not isinstance(
+            content,
+            DailyDigestContent
+            if identity.purpose == "daily_digest"
+            else WeeklyDigestContent,
+        )
     ):
         raise TypeError(
             "An exact Admin digest identity and typed content are required."
@@ -89,7 +97,12 @@ def render_digest_envelope(
         text = description + "\n\n" + text
     elif testing_recipient is not None:
         raise ValueError("Production mail cannot have a Testing override.")
-    return RenderInput(
+    if identity.purpose == "weekly_digest":
+        validate_weekly_body(html, text)
+    render_type = (
+        WeeklyRenderInput if identity.purpose == "weekly_digest" else RenderInput
+    )
+    return render_type(
         configuration_id=configuration_id,
         template_id=template_id,
         sender=sender,

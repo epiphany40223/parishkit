@@ -135,7 +135,7 @@ def _retry_inputs(purpose):
     origin = getattr(settings, "STEWARDSHIP_PUBLIC_ORIGIN", None)
     if origin is None:
         raise ConfigError("Mail preparation origin is unavailable.")
-    if purpose in {"receipt", "daily_digest"}:
+    if purpose in {"receipt", "daily_digest", "weekly_digest"}:
         return dict(general=None, public=None, public_origin=origin)
     keys = family_runtime()
     return dict(general=keys.general, public=keys.public, public_origin=origin)
@@ -457,12 +457,18 @@ def resolution_command(request, message_id):
 
 
 @require_POST
-def preparation_retry(request, task_id, *, daily=False):
+def preparation_retry(request, task_id, *, daily=False, weekly=False):
     """Retry one explicitly selected local preparation after its cause is fixed."""
     from parishkit.stewardship.reports.digest_retry import TASK_TYPES, retry_digest
 
     from .family_mail_tasks import TASK_TYPE, retry_preparation
 
+    digest = daily or weekly
+    digest_types = tuple(
+        kind
+        for kind in TASK_TYPES
+        if kind.startswith("weekly_" if weekly else "daily_")
+    )
     try:
         service = runtime()
         actor = _principal(request, service.store, activity=True)
@@ -476,10 +482,10 @@ def preparation_retry(request, task_id, *, daily=False):
         command_id = UUID(request.POST["command_id"])
         with _command_scope(request, service, actor):
             task = TaskRun.objects.get(
-                pk=task_id, task_type__in=TASK_TYPES if daily else (TASK_TYPE,)
+                pk=task_id, task_type__in=digest_types if digest else (TASK_TYPE,)
             )
-            if not daily:
-                # Daily's service binds the selected run, replay and Admin.
+            if not digest:
+                # The digest service binds the selected run, replay and Admin.
                 # Family's older service instead takes a preparation identity.
                 runs = TaskRun.objects.filter(root_id=task.root_id)
                 previous = runs.filter(retry_command_id=command_id).first()
@@ -490,10 +496,10 @@ def preparation_retry(request, task_id, *, daily=False):
                     raise StaleRecordError(
                         "The selected preparation is no longer current."
                     )
-            result = (retry_digest if daily else retry_preparation)(
+            result = (retry_digest if digest else retry_preparation)(
                 service.store,
                 actor.identity,
-                task.pk if daily else task.domain_request_id,
+                task.pk if digest else task.domain_request_id,
                 command_id=command_id,
             )
         response = redirect("admin:background_task_page", task_id=result.run_id)

@@ -80,8 +80,13 @@ def bound_dispatch(status):
     row = OutboxMessage.objects.only(*METADATA_FIELDS).get(
         pk=status.domain_request_id,
         task_id=status.root_id,
-        purpose__in=("initial", "reminder", "receipt", "daily_digest"),
+        purpose__in=("initial", "reminder", "receipt", "daily_digest", "weekly_digest"),
     )
+    if row.purpose == "weekly_digest":
+        from .weekly_dispatch import bound_weekly
+
+        bound_weekly(row)
+        return row
     if row.purpose == "daily_digest":
         from .digest_dispatch import bound_digest
 
@@ -107,6 +112,10 @@ def bound_dispatch(status):
 def disposition(message, *, check_recipient=False):
     """Terminal invalidation cancels unsent work; temporary gates leave it queued."""
     require_work_order()
+    if message.purpose == "weekly_digest":
+        from .weekly_dispatch import weekly_disposition
+
+        return weekly_disposition(message, check_recipient=check_recipient)
     if message.purpose == "daily_digest":
         from .digest_dispatch import digest_disposition
 
@@ -190,8 +199,8 @@ def cancel_unsent(identifier, claim, *, reason):
     require_work_order()
     owner = bound_dispatch(_status(lock_task_claim(claim)))
     row = OutboxMessage.objects.get(pk=identifier)
-    if owner.purpose == "daily_digest" and row.pk != owner.pk:
-        raise PermissionError("Daily cancellation cannot affect another Admin.")
+    if owner.purpose in {"daily_digest", "weekly_digest"} and row.pk != owner.pk:
+        raise PermissionError("Digest cancellation cannot affect another Admin.")
     if (row.family_id, row.campaign_id, row.mode) != (
         owner.family_id,
         owner.campaign_id,
@@ -254,7 +263,7 @@ def begin_submission(
             raise PermissionError("Family delivery is not unsent.")
         row = (
             None
-            if message.purpose in {"receipt", "daily_digest"}
+            if message.purpose in {"receipt", "daily_digest", "weekly_digest"}
             else ScheduleOccurrence.objects.select_related(
                 "definition", "revision"
             ).get(pk=message.semantic_key)
@@ -323,7 +332,11 @@ def begin_submission(
                 ),
             )
             message.refresh_from_db()
-        if message.purpose == "daily_digest":
+        if message.purpose == "weekly_digest":
+            from .weekly_dispatch import current_weekly_content
+
+            render, sealed, mail = current_weekly_content(message, scope)
+        elif message.purpose == "daily_digest":
             from .digest_dispatch import current_digest_content
 
             render, sealed, mail = current_digest_content(message, scope)
@@ -408,7 +421,7 @@ def finish_submission(identifier, claim, result):
         }[result.status]
         row = (
             None
-            if message.purpose in {"receipt", "daily_digest"}
+            if message.purpose in {"receipt", "daily_digest", "weekly_digest"}
             else ScheduleOccurrence.objects.get(pk=message.semantic_key)
         )
         # Record definitive non-acceptance even when the original scope no longer
@@ -499,6 +512,10 @@ def finish_submission(identifier, claim, result):
 
 def _report_epoch(message):
     """Read only the immutable response namespace while settling an attempt."""
+    if message.purpose == "weekly_digest":
+        from .weekly_dispatch import bound_weekly
+
+        return bound_weekly(message).rehearsal_epoch_id
     if message.purpose == "daily_digest":
         from .digest_dispatch import bound_digest
 

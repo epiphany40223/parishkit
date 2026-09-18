@@ -361,11 +361,15 @@ def serve_background(configuration, lease):
         from .campaigns.digest_schedule_planning import DigestScheduleProducer
         from .campaigns.schedule_production import FamilyScheduleProducer
         from .jobs.processes import serve_consumer, serve_scheduler
-        from .reports.digest_finalization import DailyDigestFinalizeProducer
+        from .reports.digest_finalization import (
+            DailyDigestFinalizeProducer,
+            WeeklyDigestFinalizeProducer,
+        )
         from .reports.digest_ownership import DailyDigestProducer
         from .reports.export_cleanup import produce_cleanup as produce_export_cleanup
         from .reports.fact_production import produce_facts
         from .reports.verification_production import produce_verifications
+        from .reports.weekly_ownership import WeeklyDigestProducer
         from .source.production import SourceProducer
         from .source.setup_cleanup import produce_setup_cleanup
         from .source.setup_final_production import produce_finalization
@@ -384,6 +388,8 @@ def serve_background(configuration, lease):
         digests = DigestScheduleProducer(uuid4())
         daily = DailyDigestProducer(uuid4())
         daily_finalization = DailyDigestFinalizeProducer(uuid4())
+        weekly = WeeklyDigestProducer(uuid4())
+        weekly_finalization = WeeklyDigestFinalizeProducer(uuid4())
 
         def produce(guard):
             """Expire abandoned setup even while exact candidate recovery is pending.
@@ -417,6 +423,8 @@ def serve_background(configuration, lease):
                 *independent_producer(guard, digests, guard),
                 *independent_producer(guard, daily, guard),
                 *independent_producer(guard, daily_finalization, guard),
+                *independent_producer(guard, weekly, guard),
+                *independent_producer(guard, weekly_finalization, guard),
                 *independent_producer(guard, producer, guard),
                 *independent_producer(guard, produce_cleanup, guard),
                 *independent_producer(guard, produce_export_cleanup, guard),

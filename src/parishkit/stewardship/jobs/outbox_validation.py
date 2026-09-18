@@ -173,9 +173,9 @@ def substitution_context(identity, render):
     )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class RenderInput:
-    """Non-secret content pinned to its configuration and optional template."""
+    """Credential-redacted, potentially private content pinned to configuration."""
 
     configuration_id: UUID
     template_id: UUID | None
@@ -210,9 +210,13 @@ class RenderInput:
                 type(value) is not str
                 or not value.strip()
                 or "\x00" in value
-                or len(value.encode("utf-8")) > 1_048_576
+                or len(value.encode("utf-8")) > self._body_limit()
             ):
                 raise ValueError("Invalid delivery body.")
+
+    def _body_limit(self):
+        """Ordinary Family/daily journal bodies retain their existing size limit."""
+        return 1_048_576
 
     def fields(self):
         """Produce a detached record payload and reproducible content fingerprint."""
@@ -234,6 +238,29 @@ class RenderInput:
             configuration_id=self.configuration_id,
             template_id=self.template_id,
         )
+
+
+class WeeklyRenderInput(RenderInput):
+    """Larger compiled weekly reports; binding still requires weekly purpose.
+
+    No new serialized fields enter the outbox schema or payload digest. Every
+    storage write independently checks purpose, and SQL checks the actual owning
+    message; this type cannot expand the Family/daily body contract.
+    """
+
+    def _body_limit(self):
+        """Use the same bound as the weekly compiler and isolated transport."""
+        from parishkit.stewardship.web.weekly_digest_content import (
+            MAX_WEEKLY_BODY_BYTES,
+        )
+
+        return MAX_WEEKLY_BODY_BYTES
+
+
+def validate_render_purpose(identity, render):
+    """Reject weekly-only capacity when a render is bound to any other purpose."""
+    if isinstance(render, WeeklyRenderInput) and identity.purpose != "weekly_digest":
+        raise ValueError("Weekly rendering requires weekly delivery identity.")
 
 
 @dataclass(frozen=True)

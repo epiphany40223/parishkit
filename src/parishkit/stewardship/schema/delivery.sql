@@ -284,7 +284,8 @@ LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
     IF current_user='pk_stewardship_worker' AND
        public.stewardship_family_mail_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),NULL) IS NOT TRUE
-       AND public.stewardship_daily_digest_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),NULL) IS NOT TRUE THEN
+       AND public.stewardship_daily_digest_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),NULL) IS NOT TRUE
+       AND public.stewardship_weekly_digest_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),NULL) IS NOT TRUE THEN
         RAISE EXCEPTION 'Outbox insertion requires current preparation ownership'
             USING ERRCODE='23514';
     END IF;
@@ -702,10 +703,15 @@ CREATE FUNCTION public.stewardship_outbox_render_shape_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp AS $$
 DECLARE
     recipients jsonb;
+    body_limit integer;
 BEGIN
+    -- Only a weekly message may retain the separately bounded multi-Family
+    -- compiled report. Unknown owners and other purposes keep the original cap.
+    body_limit:=CASE WHEN EXISTS(SELECT 1 FROM stewardship_outbox_message
+        WHERE id=NEW.message_id AND purpose='weekly_digest') THEN 8388608 ELSE 1048576 END;
     IF NEW.subject ~ E'[\r\n]' OR btrim(NEW.subject)=''
        OR btrim(NEW.html)='' OR btrim(NEW.text)=''
-       OR octet_length(NEW.html)>1048576 OR octet_length(NEW.text)>1048576
+       OR octet_length(NEW.html)>body_limit OR octet_length(NEW.text)>body_limit
        OR NEW.sender ~ E'[\r\n]' OR NEW.sender NOT LIKE '%@%'
        OR NEW.reply_to ~ E'[\r\n]' OR NEW.reply_to NOT LIKE '%@%' THEN
         RAISE EXCEPTION 'Invalid delivery render' USING ERRCODE='23514';
@@ -817,7 +823,7 @@ BEGIN
     SELECT * INTO r FROM public.stewardship_outbox_render WHERE id=e.render_id;
     SELECT * INTO m FROM public.stewardship_outbox_message WHERE id=e.message_id;
     IF e.id IS NULL OR r.id IS NULL OR m.id IS NULL OR e.previous_state<>'submitting'
-       OR m.purpose NOT IN ('initial','reminder','receipt','daily_digest') OR e.attempt<1
+       OR m.purpose NOT IN ('initial','reminder','receipt','daily_digest','weekly_digest') OR e.attempt<1
        OR e.evidence_digest<>encode(sha256(convert_to(e.evidence_note,'UTF8')),'hex')
        OR e.provider_key_digest<>encode(sha256(convert_to(m.semantic_key::text,'UTF8')),'hex')
        THEN RETURN NULL; END IF;

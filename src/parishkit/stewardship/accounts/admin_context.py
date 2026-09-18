@@ -65,6 +65,13 @@ def portal_chrome(request):
                 _("Campaign settings") if campaign else _("New campaign"),
             )
         )
+        if campaign:
+            navigation.append(
+                (
+                    reverse("admin:weekly_digest_manual", args=[campaign.pk]),
+                    _("Manual information report"),
+                )
+            )
     now = database_now()
     counts = None
     if allows(actor, Capability.BACKGROUND_WORK):

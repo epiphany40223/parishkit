@@ -17,10 +17,12 @@ from .readiness_delivery import DeliveryOutcome
 from .readiness_delivery_process import _submit_private
 from .readiness_delivery_worker import MAX_INPUT
 from .web.digest_content import MAX_BODY_BYTES, MAX_CHART_BYTES
+from .web.weekly_digest_content import MAX_WEEKLY_BODY_BYTES
 
 # JSON may expand each body byte into a six-byte control-character escape;
 # base64 chart overhead is below 2x. Admission and the private pipe must agree.
 MAX_DIGEST_INPUT = MAX_INPUT + 12 * MAX_BODY_BYTES + 2 * MAX_CHART_BYTES
+MAX_WEEKLY_INPUT = MAX_INPUT + 12 * MAX_WEEKLY_BODY_BYTES
 
 
 def submit_family(value, settings, mail, *, seconds, check):
@@ -52,6 +54,23 @@ def submit_digest(value, settings, mail, *, seconds, check):
         check=check,
         helper="digest_delivery_worker",
         limit=MAX_DIGEST_INPUT,
+    )
+
+
+def submit_weekly(value, settings, mail, *, seconds, check):
+    """Only the separately validated no-attachment weekly type gets this budget."""
+    from .weekly_delivery import WeeklyDeliveryMail
+
+    if not isinstance(mail, WeeklyDeliveryMail):
+        raise ValueError("Invalid private weekly submission invocation.")
+    return _submit_mail(
+        value,
+        settings,
+        mail,
+        seconds=seconds,
+        check=check,
+        helper="weekly_delivery_worker",
+        limit=MAX_WEEKLY_INPUT,
     )
 
 

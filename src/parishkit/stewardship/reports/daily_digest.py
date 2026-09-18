@@ -10,13 +10,13 @@ from dataclasses import dataclass, field
 from datetime import date
 from html import escape
 from io import BytesIO
-from urllib.parse import urlsplit
 from uuid import UUID
 
 from parishkit.email.base import InlineImage
 from parishkit.stewardship.web.digest_content import CHART_ALT, CHART_ID
 
 from .charts import render_participation
+from .links import report_url
 from .participation import ParticipationDocument
 from .statistics import CampaignStatistics
 
@@ -97,29 +97,7 @@ class DailyDigestContent:
 
 def _report_url(document, public_origin):
     """Append only our protected route to the runtime's validated public origin."""
-    if type(public_origin) is not str or any(
-        ord(char) <= 32 or ord(char) == 127 for char in public_origin
-    ):
-        raise ValueError("Daily digest requires a public HTTP origin.")
-    try:
-        parsed = urlsplit(public_origin)
-        valid = (
-            parsed.scheme in {"http", "https"}
-            and parsed.hostname
-            and parsed.username is None
-            and parsed.password is None
-            and parsed.path in {"", "/"}
-            and not parsed.query
-            and not parsed.fragment
-            and "\\" not in public_origin
-        )
-        # Accessing port also rejects malformed/out-of-range port numbers.
-        _ = parsed.port
-    except ValueError:
-        valid = False
-    if not valid:
-        raise ValueError("Daily digest requires a public HTTP origin.")
-    return public_origin.rstrip("/") + document.report_path
+    return report_url(public_origin, document.report_path)
 
 
 def statistics_cards(statistics):
@@ -193,24 +171,36 @@ def render_daily_digest(document, *, public_origin):
         "Statistics: Current active population at generation.",
         chart.as_of_label,
     )
+    # Match weekly display normalization; retained observations remain exact.
+    # The strict HTML compiler boundary rejects NBSP parser rewrites.
+    labels = tuple(" ".join(label.split()) for label in labels)
     text = "\n".join(labels)
     text += "\n\n" + "\n".join(f"{label}: {value}" for label, value in cards)
     text += "\n\n" + " | ".join(headings)
     text += "\n" + "\n".join(" | ".join(row) for row in rows)
     text += "\n\nOpen this exact report (staff login required): " + url
-    html = "".join("<p>" + escape(label) + "</p>" for label in labels)
+    # Canonical HTML leaves quotes literal in text nodes, not in attributes.
+    html = "".join("<p>" + escape(label, quote=False) + "</p>" for label in labels)
     html += "<h2>Current population statistics</h2><dl>"
     html += "".join(
-        "<dt>" + escape(label) + "</dt><dd>" + escape(value) + "</dd>"
+        "<dt>"
+        + escape(label, quote=False)
+        + "</dt><dd>"
+        + escape(value, quote=False)
+        + "</dd>"
         for label, value in cards
     )
     html += "</dl><h2>Daily participation</h2>"
     html += f'<img src="cid:{CHART_ID}" alt="{CHART_ALT}" width="720">'
     html += "<table><caption>Historical as of day</caption><thead><tr>"
-    html += "".join('<th scope="col">' + escape(label) + "</th>" for label in headings)
+    html += "".join(
+        '<th scope="col">' + escape(label, quote=False) + "</th>" for label in headings
+    )
     html += "</tr></thead><tbody>"
     html += "".join(
-        "<tr>" + "".join("<td>" + escape(value) + "</td>" for value in row) + "</tr>"
+        "<tr>"
+        + "".join("<td>" + escape(value, quote=False) + "</td>" for value in row)
+        + "</tr>"
         for row in rows
     )
     html += "</tbody></table>"

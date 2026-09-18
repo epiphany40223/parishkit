@@ -2988,12 +2988,28 @@ CREATE FUNCTION public.stewardship_fulfillment_guard_v1() RETURNS trigger
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
 BEGIN
+    -- Keep weekly private metadata out of query plans for unrelated mail roles.
+    IF NEW.disposition='empty' AND EXISTS(SELECT 1 FROM stewardship_schedule_definition
+        WHERE id=NEW.definition_id AND kind='weekly_digest') THEN
+        IF NEW.mode NOT IN ('testing','production') OR NEW.target='' OR NEW.slot=''
+          OR NOT EXISTS(SELECT 1 FROM stewardship_schedule_occurrence o
+            JOIN stewardship_weekly_digest_preparation p ON p.occurrence_id=o.id
+            JOIN stewardship_weekly_digest_completion_ready proof ON proof.preparation_id=p.id
+            WHERE o.id=NEW.occurrence_id AND o.definition_id=NEW.definition_id
+              AND o.mode=NEW.mode AND o.target=NEW.target AND o.slot=NEW.slot
+              AND o.state='succeeded' AND proof.disposition='empty' AND o.reason=proof.empty_reason) THEN
+            RAISE EXCEPTION 'Fulfillment requires exact semantic outcome evidence' USING ERRCODE='23514';
+        END IF;
+        RETURN NEW;
+    END IF;
     IF NEW.mode NOT IN ('testing','production') OR NEW.target='' OR NEW.slot='' OR NOT EXISTS (
         SELECT 1 FROM stewardship_schedule_occurrence o JOIN stewardship_schedule_definition d ON d.id=o.definition_id
         JOIN stewardship_schedule_definition wanted ON wanted.id=NEW.definition_id
         WHERE o.id=NEW.occurrence_id AND o.mode=NEW.mode AND d.campaign_id=wanted.campaign_id
           AND ((NEW.disposition='delivered' AND o.state='succeeded'
                 AND o.reason IS DISTINCT FROM 'daily_digest_no_current_recipients'
+                AND o.reason IS DISTINCT FROM 'weekly_digest_empty'
+                AND o.reason IS DISTINCT FROM 'weekly_digest_no_current_recipients'
                 AND o.definition_id=NEW.definition_id AND o.target=NEW.target AND o.slot=NEW.slot)
             OR (NEW.disposition='empty' AND d.kind='daily_digest' AND o.state='succeeded'
                 AND o.reason='daily_digest_no_current_recipients'
@@ -3496,6 +3512,7 @@ CREATE FUNCTION public.stewardship_occurrence_guard_v1() RETURNS trigger
 DECLARE d stewardship_schedule_definition%ROWTYPE; c stewardship_campaign%ROWTYPE;
     r stewardship_system_configuration%ROWTYPE; t stewardship_task_run%ROWTYPE;
     instant timestamptz := stewardship_campaign_now_v1();
+    digest_completed boolean := false;
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
     IF TG_OP='DELETE' THEN
@@ -3555,7 +3572,16 @@ BEGIN
            OR (OLD.state='failed' AND NEW.state NOT IN ('pending','skipped'))
            OR OLD.state IN ('succeeded','skipped','coalesced') THEN
             RAISE EXCEPTION 'Invalid occurrence transition' USING ERRCODE='23514'; END IF;
-        IF NEW.state='running' AND NOT public.stewardship_daily_digest_completion_v1(to_jsonb(NEW)) THEN
+        IF NEW.state='running' THEN
+            -- Branch before planning private report reads: SQL boolean order is
+            -- not a privilege boundary for unrelated Family/daily mail owners.
+            IF d.kind='weekly_digest' THEN
+                digest_completed:=public.stewardship_weekly_digest_completion_v1(to_jsonb(NEW));
+            ELSE
+                digest_completed:=public.stewardship_daily_digest_completion_v1(to_jsonb(NEW));
+            END IF;
+        END IF;
+        IF NEW.state='running' AND NOT digest_completed THEN
             SELECT * INTO t FROM stewardship_task_run WHERE id=NEW.task_id FOR UPDATE;
             IF NOT FOUND OR t.state<>'running' OR t.worker_id<>NEW.worker_id OR t.fence<>NEW.fence OR t.lease_expires_at<=clock_timestamp()
                OR NEW.lease_expires_at>t.lease_expires_at OR NEW.heartbeat_at>clock_timestamp()
@@ -6237,6 +6263,8 @@ BEGIN
         public.stewardship_family_mail_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
             CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE AND
         public.stewardship_daily_digest_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
+            CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE AND
+        public.stewardship_weekly_digest_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),
             CASE WHEN TG_OP='UPDATE' THEN to_jsonb(OLD) ELSE NULL END) IS NOT TRUE THEN
         RAISE EXCEPTION 'Worker configuration effects require atomic setup ownership'
             USING ERRCODE='23514';
@@ -9688,6 +9716,9 @@ BEGIN
                  WHERE family.campaign_id=NEW.id AND baseline.mode='test')
        OR EXISTS(SELECT 1 FROM stewardship_daily_digest_snapshot snapshot
                  JOIN stewardship_daily_digest_preparation p ON p.id=snapshot.preparation_id
+                 WHERE snapshot.campaign_id=NEW.id AND p.mode='testing')
+       OR EXISTS(SELECT 1 FROM stewardship_weekly_digest_snapshot snapshot
+                 JOIN stewardship_weekly_digest_preparation p ON p.id=snapshot.preparation_id
                  WHERE snapshot.campaign_id=NEW.id AND p.mode='testing') THEN
         RAISE EXCEPTION 'Campaign requires a complete current token generation and rehearsal cleanup' USING ERRCODE='23514'; END IF;
     IF generation.configuration_request_id IS NULL THEN
@@ -9874,8 +9905,10 @@ BEGIN
     SELECT * INTO previous FROM public.stewardship_schedule_occurrence WHERE id=NEW.previous_id FOR UPDATE;
     SELECT * INTO replacement FROM public.stewardship_schedule_occurrence WHERE id=NEW.replacement_id FOR UPDATE;
     IF NEW.preparation_id IS NOT NULL THEN
-        IF NEW.demand_id IS NOT NULL OR NOT public.stewardship_daily_digest_replacement_v1(to_jsonb(NEW)) THEN
-            RAISE EXCEPTION 'Recovery replacement requires current daily ownership' USING ERRCODE='23514';
+        IF NEW.demand_id IS NOT NULL OR NOT (
+            public.stewardship_daily_digest_replacement_v1(to_jsonb(NEW))
+            OR public.stewardship_weekly_digest_replacement_v1(to_jsonb(NEW))) THEN
+            RAISE EXCEPTION 'Recovery replacement requires current digest ownership' USING ERRCODE='23514';
         END IF;
         RETURN NEW;
     END IF;

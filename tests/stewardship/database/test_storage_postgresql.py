@@ -371,20 +371,24 @@ def test_all_concrete_mutable_records_have_enabled_guard(db):
     with connection.cursor() as cursor:
         for model in models:
             table = model._meta.db_table
-            if table == "stewardship_daily_digest_preparation":
+            if table in {
+                "stewardship_daily_digest_preparation",
+                "stewardship_weekly_digest_preparation",
+            }:
                 # This domain's single INSERT/UPDATE/DELETE guard compares an
                 # immutable identity tuple instead of generated per-field SQL.
+                kind = "weekly" if "weekly" in table else "daily"
                 cursor.execute(
                     "SELECT p.proname,t.tgtype,pg_get_functiondef(p.oid) "
                     "FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid "
                     "WHERE t.tgrelid=%s::regclass "
-                    "AND t.tgname='daily_digest_preparation_write' "
+                    "AND t.tgname=%s "
                     "AND t.tgenabled='O' AND NOT t.tgisinternal",
-                    [table],
+                    [table, f"{kind}_digest_preparation_write"],
                 )
                 row = cursor.fetchone()
                 assert row and row[:2] == (
-                    "stewardship_daily_digest_preparation_guard_v1",
+                    f"stewardship_{kind}_digest_preparation_guard_v1",
                     31,
                 )
                 compact = "".join(row[2].split())
@@ -471,6 +475,13 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
     # nonstandard names are not exceptions to SQL immutability.
     shared_immutable_guards = {
         **{
+            "stewardship_weekly_digest_" + name: (
+                "weekly_" + name + "_immutable",
+                "stewardship_weekly_immutable_v1",
+            )
+            for name in ("snapshot", "recipient")
+        },
+        **{
             "stewardship_daily_digest_" + name: (
                 "daily_digest_immutable",
                 "stewardship_daily_digest_immutable_v1",
@@ -502,6 +513,10 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
         "stewardship_family_mail_preparation": (
             "family_mail_ticket_guard",
             "stewardship_family_mail_ticket_v1",
+        ),
+        "stewardship_weekly_manual_request": (
+            "weekly_manual_guard",
+            "stewardship_weekly_manual_guard_v1",
         ),
         **{
             "stewardship_recipient_" + name: (
@@ -637,13 +652,17 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             conditional_insert_guards = {
                 "stewardship_family_mail_preparation",
                 "stewardship_fact_build_receipt",
+                "stewardship_weekly_manual_request",
             }
             expected_type = 31 if table in conditional_insert_guards else 27
             assert row[:2] == (function, expected_type), table
             assert "USINGERRCODE='23514'" in "".join(row[2].split())
             if table in conditional_insert_guards:
                 assert "IFTG_OP<>'INSERT'THENRAISEEXCEPTION" in "".join(row[2].split())
-            if function == "stewardship_daily_digest_immutable_v1":
+            if function in {
+                "stewardship_daily_digest_immutable_v1",
+                "stewardship_weekly_immutable_v1",
+            }:
                 # Verify the concrete cleanup category supplied to the common
                 # immutable guard, not just the presence of a generic function.
                 category = {
@@ -651,6 +670,8 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                     "stewardship_daily_digest_ready": "daily_digest_ready",
                     "stewardship_daily_digest_recipient": "daily_digest_recipients",
                     "stewardship_recovery_replacement": "recovery_replacements",
+                    "stewardship_weekly_digest_snapshot": "weekly_digest_snapshots",
+                    "stewardship_weekly_digest_recipient": "weekly_digest_recipients",
                 }[table]
                 cursor.execute(
                     "SELECT tgargs FROM pg_trigger WHERE tgrelid=%s::regclass "

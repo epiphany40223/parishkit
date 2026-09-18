@@ -308,6 +308,8 @@ def test_credential_service_publishes_only_after_admission(
         "digests",
         "daily",
         "daily_finalization",
+        "weekly",
+        "weekly_finalization",
         "source",
         "cleanup",
         "setup_cleanup",
@@ -348,6 +350,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                 "digests": "digest-receipt",
                 "daily": "daily-receipt",
                 "daily_finalization": "daily-finalization-receipt",
+                "weekly": "weekly-receipt",
+                "weekly_finalization": "weekly-finalization-receipt",
                 "source": "source-receipt",
                 "cleanup": "cleanup-receipt",
                 "export_cleanup": "export-cleanup-receipt",
@@ -379,6 +383,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
     digests = Mock(return_value=("digest-receipt",))
     daily = Mock(return_value=("daily-receipt",))
     daily_finalization = Mock(return_value=("daily-finalization-receipt",))
+    weekly = Mock(return_value=("weekly-receipt",))
+    weekly_finalization = Mock(return_value=("weekly-finalization-receipt",))
     guard, cleanup = Mock(), Mock(return_value=("cleanup-receipt",))
     export_cleanup = Mock(return_value=("export-cleanup-receipt",))
     facts = Mock(return_value=("facts-receipt",))
@@ -411,6 +417,14 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
     monkeypatch.setattr(
         "parishkit.stewardship.reports.digest_finalization.DailyDigestFinalizeProducer",
         lambda _: daily_finalization,
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.reports.weekly_ownership.WeeklyDigestProducer",
+        lambda _: weekly,
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.reports.digest_finalization.WeeklyDigestFinalizeProducer",
+        lambda _: weekly_finalization,
     )
     monkeypatch.setattr(
         "parishkit.stewardship.accounts.branding_cleanup.produce_cleanup", cleanup
@@ -468,6 +482,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
             "digests": digests,
             "daily": daily,
             "daily_finalization": daily_finalization,
+            "weekly": weekly,
+            "weekly_finalization": weekly_finalization,
             "source": producer,
             "cleanup": cleanup,
             "setup_cleanup": setup_cleanup,
@@ -509,6 +525,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                 digests,
                 daily,
                 daily_finalization,
+                weekly,
+                weekly_finalization,
                 producer,
                 cleanup,
                 export_cleanup,
@@ -526,6 +544,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         digests.assert_called_once_with(guard)
         daily.assert_called_once_with(guard)
         daily_finalization.assert_called_once_with(guard)
+        weekly.assert_called_once_with(guard)
+        weekly_finalization.assert_called_once_with(guard)
         producer.assert_called_once_with(guard)
         cleanup.assert_called_once_with(guard)
         export_cleanup.assert_called_once_with(guard)
@@ -535,10 +555,12 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         mail_recovery.assert_called_once_with()
         campaign_recovery.assert_called_once_with()
         slack_recovery.assert_called_once_with()
-        assert guard.check.call_count == 32
+        assert guard.check.call_count == 36
     else:
         daily.assert_not_called()
         daily_finalization.assert_not_called()
+        weekly.assert_not_called()
+        weekly_finalization.assert_not_called()
         boundary.assert_not_called()
         mail_recovery.assert_not_called()
         cleanup.assert_not_called()

@@ -97,6 +97,15 @@ def test_ci_explicitly_requires_postgresql_verification():
     assert release["jobs"]["validate-build"]["services"] == shards["services"]
 
 
+def test_ci_does_not_duplicate_the_coverage_baseline_in_lint_job():
+    """Host coverage and image parity own full runs; lint must not add a third."""
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    assert all(
+        "pytest" not in step.get("run", "")
+        for step in workflow["jobs"]["validate"]["steps"]
+    )
+
+
 @pytest.mark.parametrize(
     "filename,job",
     [("ci.yml", "stewardship-compose-core"), ("release.yml", "validate-build")],

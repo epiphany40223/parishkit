@@ -35,6 +35,7 @@ from .outbox_validation import (
     RenderInput,
     SealedSubstitutions,
     identifier,
+    validate_render_purpose,
 )
 from .storage import enqueue
 
@@ -180,6 +181,7 @@ def create_message(
         render, RenderInput
     ):
         raise TypeError("Typed delivery identity and render are required.")
+    validate_render_purpose(identity, render)
     credentials = _sealed_fields(identity, sealed)
     content = render.fields()
     digest = _command_digest("created", identity, render, sealed)
@@ -319,6 +321,8 @@ def change_message(
             )
         message = OutboxMessage.objects.select_for_update().get(pk=message_id)
         status = _status(message)
+        if render is not None:
+            validate_render_purpose(status.identity, render)
         previous = OutboxEvent.objects.filter(
             message=message, command_id=command_id
         ).first()
@@ -430,6 +434,7 @@ def prepare_message(
 
     def prepare(message, previous):
         """Compare replay with its own historical render, not a later selection."""
+        validate_render_purpose(_status(message).identity, render)
         content = render.fields()
         if previous is not None:
             recorded = OutboxRender.objects.get(pk=previous.render_id)

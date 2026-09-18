@@ -643,3 +643,17 @@ delivery: exact-head CI/DCO and the merge queue still must pass. BG-07.03,
 BG-07.04, complete BG-07.05, later Phase 5 report workflows and Gate 3 remain
 open. After this increment lands, begin the weekly digest increment from the
 verified fresh `origin/main` tip under the standing delivery authority.
+
+### Protected delivery
+
+[PR #47](https://github.com/epiphany40223/parishkit/pull/47) merged on September
+17, 2026 at 16:16:16 UTC as `e548809c70a695706ca3af7caee92cd8a0da1a29`.
+All 24 exact-head CI jobs (run `35240870523`) and DCO passed at `d344303`;
+all 24 protected merge-group jobs (run `35243208902`) passed at the merge
+commit. Freshly fetched `origin/main` was verified to contain that exact merge.
+No branch protection was bypassed and no deploy or release occurred.
+
+This supersedes the pending-delivery notes above. The next coherent increment
+is [weekly information and correction digests](stewardship-weekly-digests.md),
+branched from this verified merge. Gate 3 and the remaining Phase 4 work remain
+open.

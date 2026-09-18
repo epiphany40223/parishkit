@@ -30,6 +30,8 @@ class CleanupCategory(StrEnum):
     DIGEST_SNAPSHOT = "daily_digest_snapshots"
     DIGEST_FACT_PIN = "daily_digest_fact_pins"
     RECOVERY_REPLACEMENT = "recovery_replacements"
+    WEEKLY_RECIPIENT = "weekly_digest_recipients"
+    WEEKLY_SNAPSHOT = "weekly_digest_snapshots"
 
 
 @dataclass(frozen=True, repr=False)

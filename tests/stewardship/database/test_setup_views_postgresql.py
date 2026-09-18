@@ -63,25 +63,26 @@ def test_setup_get_is_passive_and_shows_testing_without_fake_completion(
     assert not Parish.objects.exists() and not setup_http.configured()
 
 
-@pytest.mark.parametrize("step", VALUES)
-def test_original_browser_saves_and_revisits_public_steps(setup_http, google, step):
-    """Actual web grants support requests and templates without activation."""
+def test_original_browser_saves_and_revisits_public_steps(setup_http, google):
+    """One real wizard session saves each public step without activating it."""
     with web_login():
         browser = started()
-        assert browser.get("/admin/setup/" + step).status_code == 200
-        version = SetupAttempt.objects.get().version
-        response = post(
-            browser,
-            "/admin/setup/" + step,
-            initial_values(step, VALUES[step]) | {"version": str(version)},
-        )
-        assert response.status_code == 302, response.content
-        assert response["Location"] == "/admin/setup"
-        assert SetupDraftSection.objects.get().values == VALUES[step]
-        assert b"Saved temporarily" in browser.get("/admin/setup").content
-        activity = PortalSession.objects.get().last_activity_at
-        assert browser.get("/admin/setup/" + step).status_code == 200
-        assert PortalSession.objects.get().last_activity_at == activity
+        for step, values in VALUES.items():
+            assert browser.get("/admin/setup/" + step).status_code == 200, step
+            version = SetupAttempt.objects.get().version
+            response = post(
+                browser,
+                "/admin/setup/" + step,
+                initial_values(step, values) | {"version": str(version)},
+            )
+            assert response.status_code == 302, (step, response.content)
+            assert response["Location"] == "/admin/setup"
+            assert SetupDraftSection.objects.get(step=step).values == values
+            assert b"Saved temporarily" in browser.get("/admin/setup").content
+            activity = PortalSession.objects.get().last_activity_at
+            assert browser.get("/admin/setup/" + step).status_code == 200
+            assert PortalSession.objects.get().last_activity_at == activity
+        assert dict(SetupDraftSection.objects.values_list("step", "values")) == VALUES
     assert not Parish.objects.exists()
 
 
