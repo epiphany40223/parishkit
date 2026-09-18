@@ -24,7 +24,7 @@ class StoreObservation:
     available: bool
 
 
-def observe_store(client, namespace, limits=None):
+def observe_store(client, namespace, limits=None, *, skip_busy=False):
     """Detect restart, eviction, or a lost permanent canary against durable state.
 
     Only safe INFO fields enter PostgreSQL. The canary is repaired after commit:
@@ -38,6 +38,8 @@ def observe_store(client, namespace, limits=None):
     Accepted samples update durable recovery windows with the supplied typed
     AuthenticationLimits, or the ordinary defaults. Incoherent but successful
     reads interrupt continuity; they are not a store-unavailability verdict.
+    A periodic observer may skip a busy health-observation lock without mutating
+    proof. Other lock/statement/persistence failures retain fail-closed behavior.
     """
     fingerprint = hashlib.sha256(namespace.encode("ascii")).hexdigest()
     marker_key = namespace + ":health:marker"
@@ -60,7 +62,12 @@ def observe_store(client, namespace, limits=None):
     counts, coherent = sample_counts(client, namespace, marker)
     with transaction.atomic(durable=True), connection.cursor() as cursor:
         cursor.execute("SET LOCAL lock_timeout='1s'")
-        cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [736227, 1])
+        if skip_busy:
+            cursor.execute("SELECT pg_try_advisory_xact_lock(%s, %s)", [736227, 1])
+            if not cursor.fetchone()[0]:
+                return None
+        else:
+            cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [736227, 1])
         row = LimiterStoreHealth.objects.filter(
             namespace_fingerprint=fingerprint
         ).first()

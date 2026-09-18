@@ -1,6 +1,7 @@
 """Operational process lifetimes retain a real shared offline-exclusion lease."""
 
 import logging
+import os
 import signal
 import sys
 from threading import Event as StopEvent
@@ -44,6 +45,7 @@ def gunicorn_options(configuration):
         "on_starting": publish_supervisor_identity,
         "umask": 0o077,
         "post_worker_init": admitted_worker_started,
+        "worker_exit": admitted_worker_exited,
         "accesslog": None,
         "errorlog": "-",
         "forwarded_allow_ips": "",  # The application admits its one exact proxy.
@@ -54,13 +56,37 @@ def gunicorn_options(configuration):
 
 
 def admitted_worker_started(worker):
-    """Publish loaded receipts without exposing hook failures to Gunicorn stderr."""
+    """Publish receipts, then start child-owned observations; keep failures private."""
     try:
+        from django.conf import settings
+
+        from .runtime_auth_health import PeriodicAuthenticationHealth
+
         publish_worker_receipts(worker)
+        observer = PeriodicAuthenticationHealth(
+            settings.STEWARDSHIP_AUTH_RUNTIME.limiter,
+            check=settings.STEWARDSHIP_WEB_LEASE.check,
+            active=lambda: worker.alive,
+            retire=lambda: worker.handle_exit(signal.SIGTERM, None),
+        )
+        worker.stewardship_auth_health = observer
+        observer.start()
     except Exception:
         raise ConfigError(
-            "Web worker readiness evidence could not be recorded."
+            "Web worker receipts or periodic observation could not be started."
         ) from None
+
+
+def admitted_worker_exited(server, worker):
+    """The hook also runs in the master after a lost child; never join there."""
+    if worker.pid != os.getpid():
+        return
+    observer = getattr(worker, "stewardship_auth_health", None)
+    if observer is not None:
+        try:
+            observer.close()
+        except Exception as error:
+            emit_failure(error, event=Event.AUTH_HEALTH_FAILED)
 
 
 def serve_web(configuration, lease):
@@ -119,6 +145,9 @@ def load_web_application(configuration, lease):
 
         lease.check()
         configure_web(configuration)
+        from django.conf import settings
+
+        settings.STEWARDSHIP_WEB_LEASE = lease
         application = get_wsgi_application()
         if configuration.profile is DeploymentProfile.DEVELOPMENT:
             from django.contrib.staticfiles.handlers import StaticFilesHandler

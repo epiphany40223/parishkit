@@ -478,6 +478,22 @@ def test_complete_foundation_bootstrap_and_online_exclusion(
         check_dependency_failure(
             file, project, layout.service_directory / "web.yaml", compose_run
         )
+        if provider_mode == "configured":
+            # Both development and production run the real child hook. This
+            # read-only probe makes no HTTP/auth calls that could create proof.
+            periodic = compose_run(
+                file,
+                project,
+                "exec",
+                "-T",
+                "web",
+                "python",
+                "-c",
+                Path(__file__).with_name("runtime_periodic_auth_probe.py").read_text(),
+                str(layout.service_directory / "web.yaml"),
+                timeout=90,
+            )
+            assert periodic.stdout.strip() == "PERIODIC_AUTH_OBSERVATION_OK"
         if production:
             from .runtime_ingress_checks import check_ingress
 

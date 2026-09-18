@@ -347,7 +347,7 @@ def test_family_runtime_lock_and_activity_grants_do_not_allow_source_writes():
     assert "INSERT" not in tables["stewardship_family_token"]
 
 
-@pytest.mark.parametrize("actual", [None, (1,), (40,)])
+@pytest.mark.parametrize("actual", [None, (1,), (40,), (44,)])
 def test_actual_sql_role_cap_must_match_deployment_budget(monkeypatch, actual):
     """A changed process/thread count cannot silently retain a stale role cap."""
     database = Mock()
@@ -357,7 +357,7 @@ def test_actual_sql_role_cap_must_match_deployment_budget(monkeypatch, actual):
     database.cursor.return_value.__exit__ = Mock(return_value=False)
     monkeypatch.setattr("django.db.connection", database)
     configuration = load_deployment(environ={})
-    if actual == (40,):
+    if actual == (44,):
         require_role_capacity(configuration)
     else:
         with pytest.raises(ConfigError, match="connection limit"):

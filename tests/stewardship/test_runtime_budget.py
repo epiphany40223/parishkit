@@ -10,7 +10,7 @@ from parishkit.stewardship.runtime_budget import RuntimeBudget, parse_budget
 
 def test_default_budget_accounts_for_all_classes_and_overlap():
     budget = RuntimeBudget()
-    assert budget.total_connections == 95
+    assert budget.total_connections == 99
     assert parse_budget({}) == budget
     budget.validate_database(maximum=100, reserved=3)
     budget.validate_database(maximum=200, reserved=2)
@@ -34,7 +34,7 @@ def test_health_connections_are_already_in_the_auxiliary_reserve():
     config = SimpleNamespace(runtime_budget=budget)
     assert (
         budget.auxiliary_connections
-        == 2 * budget.web_processes * budget.replicas * budget.rollout_overlap
+        == 3 * budget.web_processes * budget.replicas * budget.rollout_overlap
     )
     assert (
         budget.total_connections
@@ -45,10 +45,10 @@ def test_health_connections_are_already_in_the_auxiliary_reserve():
             + budget.operator_connections
             + budget.database_reserved
         )
-        == 103
+        == 107
     )
     with pytest.raises(ConfigError):
-        replace(budget, auxiliary_connections=7)
+        replace(budget, auxiliary_connections=11)
 
 
 def test_background_inventory_includes_worker_renewal_and_rollout_overlap():
