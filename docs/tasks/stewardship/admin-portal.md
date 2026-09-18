@@ -116,7 +116,11 @@ Scope and dependencies: [ADM-05 work package](../../plans/stewardship/admin-port
 - [ ] ADM-05.04 — Build guarded pre-start withdrawal.
 - [ ] ADM-05.05 — Test cleanup, readiness, and campaign-boundary races.
 
-Evidence: Not started.
+Evidence: In progress on `pr/stewardship-go-live-readiness` from verified PR #57
+merge `17f5f2fc`. The [increment guide](../../guides/stewardship-go-live-readiness.md)
+owns current readiness/impact and guarded cleanup controls. Activation,
+withdrawal, full handoff/load acceptance and Gate 3 remain later checkpoints;
+no ADM-05 task is complete yet.
 
 ## ADM-06: Restore release, delivery pause, reopen, and archive
 

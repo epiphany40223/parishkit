@@ -414,6 +414,11 @@ purge producers. Three successful dual-source due-work rounds are complete.
 Final-head CI/DCO and protected PR #57 delivery remain pending; afterward
 continue ADM-05 without a routine approval stop. Gate 3 remains open.
 
+PR #57 has now merged; its [protected receipt](../../guides/stewardship-due-work-health.md#protected-delivery)
+records all exact-head checks and verified main delivery. The current-phase
+BG-10 subset is delivered; the [ADM-05 increment](../../guides/stewardship-go-live-readiness.md)
+continues next without closing later backup/publication/purge obligations.
+
 ## BG-11: Exceptional purge worker
 
 Scope and dependencies: [BG-11 work package](../../plans/stewardship/background-processing.md#bg-11-exceptional-purge-worker).

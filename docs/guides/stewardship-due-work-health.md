@@ -223,3 +223,21 @@ policy. No deployment, live provider write or release is authorized by this map.
 After protected delivery, ADM-05 readiness/cleanup/activation/withdrawal is the
 next dependency-ready package. Its direct-activation load/recovery handoff and
 later delivery-pause/Gate 3 integration checks remain mandatory.
+
+## Protected delivery
+
+PR [#57](https://github.com/epiphany40223/parishkit/pull/57) merged as
+`17f5f2fcec069ccd7dd6e5c9fab8f278da24dadf` at 17:47:34 UTC on September 18,
+2026, verified on freshly fetched `origin/main`. Final head
+`6be7d09c18222f41e6b3c91bcd0be88731768ec2` passed all 24 jobs in
+[CI run 35374846447](https://github.com/epiphany40223/parishkit/actions/runs/35374846447)
+plus DCO. Combined scoped coverage is 93.92% line and 84.94% branch. The run
+took 14m46s including about 1m13s queued; its slowest PostgreSQL shard took
+12m37s. All three browser engines and all operational/Compose scenarios passed.
+
+The correction checkpoint `c1b7510e` and final head have identical tree
+`1b976c7f13566a6e20601f4e894800614e025f04`. Two logical signed-off commits
+landed through normal protected merge, with no queue or protection bypass.
+This supersedes the pending final-head delivery notes above. The
+[ADM-05 readiness increment](stewardship-go-live-readiness.md) begins from that
+verified main tip; Gate 3 and all later production-readiness boundaries remain.
