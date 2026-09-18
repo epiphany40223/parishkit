@@ -136,7 +136,6 @@ CREATE TABLE public.stewardship_auth_incident (
     identities integer NOT NULL,
     candidates integer NOT NULL,
     resolved_at timestamp with time zone,
-    notification_pending boolean NOT NULL,
     CONSTRAINT auth_incident_kind CHECK (((kind)::text = ANY ((ARRAY['limiter_unavailable'::character varying, 'limiter_state_lost'::character varying, 'admin_abuse'::character varying, 'family_abuse'::character varying])::text[]))),
     CONSTRAINT auth_incident_level CHECK (((level)::text = ANY ((ARRAY['WARNING'::character varying, 'CRITICAL'::character varying])::text[]))),
     CONSTRAINT stewardship_accounts_authenticationincident_positive_version CHECK ((version >= 1)),

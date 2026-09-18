@@ -342,6 +342,23 @@ def configure_background(configuration, *, stop, heartbeat):
                 ),
             )
     handlers = bind_authority(handlers, store, heartbeat=heartbeat)
+    if role in {ServiceRole.WORKER, ServiceRole.SCHEDULER}:
+        from dataclasses import replace
+
+        from .jobs.operational_collection import TASK_TYPE as OPERATIONAL_COLLECT
+        from .jobs.operational_collection import collection_handler
+        from .jobs.operational_fanout import TASK_TYPE as OPERATIONAL_PREPARE
+        from .jobs.operational_fanout import fanout_handler
+
+        # Safe operational intake stays available through restore/setup holds.
+        # It never reads campaign content or grants provider delivery authority.
+        handlers[OPERATIONAL_COLLECT] = replace(
+            collection_handler(scheduler=role is ServiceRole.SCHEDULER), pulse=heartbeat
+        )
+        handlers[OPERATIONAL_PREPARE] = replace(
+            fanout_handler(store, scheduler=role is ServiceRole.SCHEDULER),
+            pulse=heartbeat,
+        )
     # This is not ordinary selected-YAML authority. The compiled setup owner
     # repeats its exact original receipt/login/fences for every admitted action.
     if role is ServiceRole.SCHEDULER or (
@@ -383,8 +400,8 @@ def configure_background(configuration, *, stop, heartbeat):
             ),
             pulse=heartbeat,
         )
-        from .jobs.family_mail_delivery_tasks import delivery_handler
         from .jobs.family_mail_dispatch import TASK_TYPE as FAMILY_DISPATCH
+        from .jobs.outbox_dispatch import delivery_handler
 
         handlers[FAMILY_DISPATCH] = replace(
             delivery_handler(

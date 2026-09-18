@@ -360,6 +360,8 @@ def serve_background(configuration, lease):
         from .campaigns.boundary_production import produce_boundaries
         from .campaigns.digest_schedule_planning import DigestScheduleProducer
         from .campaigns.schedule_production import FamilyScheduleProducer
+        from .jobs.operational_collection import produce_collection
+        from .jobs.operational_fanout import produce_fanout
         from .jobs.processes import serve_consumer, serve_scheduler
         from .reports.digest_finalization import (
             DailyDigestFinalizeProducer,
@@ -398,6 +400,7 @@ def serve_background(configuration, lease):
             and is needed to unblock a selected-but-unapplied setup abort. Normal
             source production and file cleanup still require matching authority.
             """
+            operational = independent_producer(guard, produce_collection, guard)
             independent_producer(guard, produce_setup_expiry, guard)
             finalization = independent_producer(
                 guard, produce_finalization, assembled.store, guard
@@ -410,13 +413,15 @@ def serve_background(configuration, lease):
                 # A dead original session can still be expired above. While
                 # awaiting installer rollback, no ordinary producer is admitted.
                 initial_setup_hold(assembled.store)
-                return finalization
+                return (*operational, *finalization)
+            operational += independent_producer(guard, produce_fanout, guard)
             independent_producer(guard, recover_setup_mail)
             independent_producer(guard, recover_setup_slack)
             from .accounts.campaign_mail_delivery import recover_pending
 
             independent_producer(guard, recover_pending)
             return (
+                *operational,
                 *finalization,
                 *independent_producer(guard, produce_boundaries, guard),
                 *independent_producer(guard, schedules, guard),

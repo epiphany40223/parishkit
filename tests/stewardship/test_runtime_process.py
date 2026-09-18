@@ -316,6 +316,8 @@ def test_credential_service_publishes_only_after_admission(
         "export_cleanup",
         "facts",
         "verification",
+        "operational",
+        "operational_fanout",
     ],
 )
 def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
@@ -344,6 +346,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         assert actual is broker and stop is stops[0]
         if role is ServiceRole.SCHEDULER:
             outputs = {
+                "operational": "operational-receipt",
+                "operational_fanout": "operational-fanout-receipt",
                 "finalization": "finalization-receipt",
                 "boundary": "boundary-receipt",
                 "schedules": "schedule-receipt",
@@ -361,9 +365,14 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
             }
             assert kwargs["produce"](guard) == (
                 (
-                    ()
-                    if failing_producer == "finalization"
-                    else ("finalization-receipt",)
+                    tuple(
+                        outputs[owner]
+                        for owner in (
+                            "operational",
+                            "finalization",
+                        )
+                        if owner != failing_producer
+                    )
                 )
                 if held
                 else tuple(
@@ -389,6 +398,16 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
     export_cleanup = Mock(return_value=("export-cleanup-receipt",))
     facts = Mock(return_value=("facts-receipt",))
     verification = Mock(return_value=("verification-receipt",))
+    operational = Mock(return_value=("operational-receipt",))
+    operational_fanout = Mock(return_value=("operational-fanout-receipt",))
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.operational_fanout.produce_fanout",
+        operational_fanout,
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.operational_collection.produce_collection",
+        operational,
+    )
     expiry = Mock(return_value=0)
     matching.side_effect = lambda _: expiry.assert_called_once_with(guard)
     if held:
@@ -490,6 +509,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
             "export_cleanup": export_cleanup,
             "facts": facts,
             "verification": verification,
+            "operational": operational,
+            "operational_fanout": operational_fanout,
         }[failing_producer].side_effect = RuntimeError("synthetic-owner-failure")
     monkeypatch.setattr("parishkit.stewardship.jobs.processes.serve_consumer", serve)
     monkeypatch.setattr("parishkit.stewardship.jobs.processes.serve_scheduler", serve)
@@ -517,7 +538,9 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         matching.assert_called_once_with(assembled.store)
         finalization.assert_called_once_with(assembled.store, guard)
         expiry.assert_called_once_with(guard)
+        operational.assert_called_once_with(guard)
         if held:
+            operational_fanout.assert_not_called()
             hold.assert_called_once_with(assembled.store)
             for operation in (
                 boundary,
@@ -539,6 +562,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                 operation.assert_not_called()
             return
         hold.assert_not_called()
+        operational_fanout.assert_called_once_with(guard)
         boundary.assert_called_once_with(guard)
         schedules.assert_called_once_with(guard)
         digests.assert_called_once_with(guard)
@@ -555,8 +579,10 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         mail_recovery.assert_called_once_with()
         campaign_recovery.assert_called_once_with()
         slack_recovery.assert_called_once_with()
-        assert guard.check.call_count == 36
+        assert guard.check.call_count == 40
     else:
+        operational.assert_not_called()
+        operational_fanout.assert_not_called()
         daily.assert_not_called()
         daily_finalization.assert_not_called()
         weekly.assert_not_called()

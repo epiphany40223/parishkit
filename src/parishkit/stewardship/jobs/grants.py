@@ -82,6 +82,22 @@ def task_runtime_grants(role):
     if role is ServiceRole.WORKER:
         tables["stewardship_branding_bundle"].add("UPDATE")
         tables["stewardship_task_run"].add("UPDATE")
+        # Operational observations are bounded, non-personal signals. SQL owns
+        # derived state and creates notices; workers cannot insert notice rows.
+        tables["stewardship_ops_incident"] = {"SELECT", "INSERT"}
+        tables["stewardship_ops_notice"] = {"SELECT"}
+        tables["stewardship_ops_cohort"] = {"SELECT", "INSERT"}
+        tables["stewardship_ops_recipient"] = {"SELECT", "INSERT"}
+        tables["stewardship_ops_log_receipt"] = {"SELECT", "INSERT"}
+        columns["stewardship_ops_incident"] = {
+            "UPDATE": {
+                "signal_level",
+                "action",
+                "version",
+                "actor_id",
+                "correlation_id",
+            }
+        }
         from parishkit.stewardship.source.grants import add_refresh_worker_grants
 
         add_refresh_worker_grants(tables, columns)
@@ -96,6 +112,14 @@ def task_runtime_grants(role):
 
         add_setup_completion_grants(tables, columns)
     else:
+        columns["stewardship_ops_log_receipt"] = {"SELECT": {"log_id", "run_id"}}
+        columns["stewardship_ops_notice"] = {"SELECT": {"id", "created_at"}}
+        columns["stewardship_ops_cohort"] = {
+            "SELECT": {"id", "notice_id", "run_id", "recipient_count"}
+        }
+        columns["stewardship_ops_recipient"] = {
+            "SELECT": {"id", "cohort_id", "outbox_id"}
+        }
         from parishkit.stewardship.source.grants import add_refresh_scheduler_grants
 
         add_refresh_scheduler_grants(tables, columns)
@@ -163,6 +187,12 @@ def task_runtime_grants(role):
 
         add_schedule_planning_grants(tables, columns)
     from parishkit.stewardship.campaigns.boundary_grants import add_boundary_grants
+
+    columns["stewardship_operational_log"]["SELECT"].update({"id", "level"})
+    if role is ServiceRole.WORKER:
+        columns["stewardship_operational_log"]["SELECT"].update(
+            {"event", "correlation_id"}
+        )
 
     add_boundary_grants(tables, columns, worker=role is ServiceRole.WORKER)
     from parishkit.stewardship.campaigns.cleanup_grants import add_cleanup_grants

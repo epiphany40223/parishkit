@@ -22,6 +22,49 @@ EXAMPLES = tuple(
 )
 
 
+def test_operational_alert_policy_defaults_and_override_precedence(tmp_path):
+    """Non-secret deployment policy follows the shared YAML/environment precedence."""
+    default = load_deployment(environ={}).operational_alerts
+    assert (default.suppression_seconds, default.escalation_seconds) == (900, 900)
+    path = config_file(
+        tmp_path,
+        {"operational_alerts": {"suppression_seconds": 600, "escalation_seconds": 300}},
+    )
+    yaml_policy = load_deployment(path, environ={}).operational_alerts
+    assert (yaml_policy.suppression_seconds, yaml_policy.escalation_seconds) == (
+        600,
+        300,
+    )
+    name = "PARISHKIT_STEWARDSHIP_OPERATIONAL_SUPPRESSION_SECONDS"
+    result = load_deployment(path, environ={name: "120"}, overrides={name: "60"})
+    assert (
+        result.operational_alerts.suppression_seconds,
+        result.operational_alerts.escalation_seconds,
+    ) == (60, 300)
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        None,
+        [],
+        {"private@example.test": 60},
+        {"suppression_seconds": True},
+        {"suppression_seconds": 59},
+        {"escalation_seconds": 86401},
+        {"escalation_seconds": "private@example.test"},
+    ],
+)
+def test_operational_alert_configuration_rejects_invalid_values_privately(
+    tmp_path, values
+):
+    """Bad bounds, shapes and unknown keys cannot weaken operational suppression."""
+    path = config_file(tmp_path, {"operational_alerts": values})
+    with pytest.raises(ConfigError) as error:
+        load_deployment(path, environ={})
+    assert "private@example.test" not in str(error.value)
+
+
 def test_shipped_example_set_cannot_disappear():
     """A missing example tree must fail instead of yielding empty parametrizations."""
     assert len(EXAMPLES) >= 8, "shipped example coverage is incomplete"

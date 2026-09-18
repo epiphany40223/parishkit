@@ -173,6 +173,7 @@ def configure_web(configuration):
     }
     values["SOCIALACCOUNT_PROVIDERS"] = google_provider_settings(oauth)
     values["STEWARDSHIP_PROXY_HOPS"] = configuration.trusted_proxy_hops
+    values["STEWARDSHIP_OPERATIONAL_POLICY"] = configuration.operational_alerts
     values["STEWARDSHIP_TRUSTED_PROXY_NETWORKS"] = (
         (configuration.runtime_network.caddy + "/32",)
         if configuration.profile is DeploymentProfile.PRODUCTION

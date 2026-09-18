@@ -2243,7 +2243,6 @@ class Migration(migrations.Migration):
                             "resolved_at",
                             parishkit.stewardship.storage.UTCDateTimeField(null=True),
                         ),
-                        ("notification_pending", models.BooleanField(default=True)),
                     ],
                     options={
                         "db_table": "stewardship_auth_incident",

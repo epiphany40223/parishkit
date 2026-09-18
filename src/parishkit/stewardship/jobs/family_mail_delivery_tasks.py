@@ -51,11 +51,19 @@ class DeliveryCircuit:
     A known temporary handshake outage waits a minute before another probe;
     three consecutive outages stop the run. No cooldown changes durable mail
     outcomes or prevents settling work already in flight. Restart resets this
-    process-local circuit; durable Admin escalation belongs to BG-10.
+    process-local circuit; durable Admin escalation belongs to BG-10. Operational
+    consumers opt into a finite recovery cooldown; existing campaign consumers
+    retain their stop-until-restart policy. Neither variant alters durable facts.
     """
 
-    def __init__(self):
+    def __init__(self, *, recovery_seconds=None):
         """Keep circuit state shared by all dispatches using this handler."""
+        if recovery_seconds is not None and (
+            type(recovery_seconds) is not int or not 60 <= recovery_seconds <= 3600
+        ):
+            raise ValueError("Circuit recovery requires a bounded cooldown.")
+        self.recovery_seconds = recovery_seconds
+        self.recover_after = 0.0
         self.halted = Event()
         self.lock = Lock()
         self.failures = 0
@@ -64,6 +72,14 @@ class DeliveryCircuit:
     def blocks_new_send(self):
         """Admission alone observes the circuit; draining never consults it."""
         with self.lock:
+            if (
+                self.halted.is_set()
+                and self.recovery_seconds is not None
+                and monotonic() >= self.recover_after
+            ):
+                self.halted.clear()
+                self.failures = 0
+                self.probe_after = 0.0
             return self.halted.is_set() or monotonic() < self.probe_after
 
     def observe(self, health):
@@ -80,6 +96,8 @@ class DeliveryCircuit:
             if health is ProviderHealth.SYSTEMIC or self.failures >= 3:
                 newly_halted = not self.halted.is_set()
                 self.halted.set()
+                if newly_halted and self.recovery_seconds is not None:
+                    self.recover_after = monotonic() + self.recovery_seconds
                 return newly_halted
         return False
 

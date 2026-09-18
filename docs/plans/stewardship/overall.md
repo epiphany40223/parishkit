@@ -444,6 +444,10 @@ Execute in this order:
    RPT-03 report UI and full report validation remain in Phase 5; leave that
    package partially complete until then.
 6. **BG-10** — operational escalation and safe shutdown behavior.
+   Deliver the [incident-to-Admin-email slice](../../guides/stewardship-operational-alerts.md)
+   first, then optional Slack outcome ownership, remaining current-phase health
+   producers and notification/shutdown acceptance. This reviewability split
+   retains every BG-10 acceptance criterion; finish both before ADM-05/Gate 3.
 7. **ADM-05** — readiness, cleanup status/cancel, Production activation, and
    pre-start withdrawal.
    Before enabling direct activation, integrate **DAT-02** catch-up demands,

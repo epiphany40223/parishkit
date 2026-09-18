@@ -62,7 +62,11 @@ def record_link_rejection():
 
 
 def record_incident(kind, severity, window, counts):
-    """Persist safe counts only; BG notification consumers acknowledge delivery."""
+    """Persist safe counts and atomic critical intent; delivery stays asynchronous."""
+    from parishkit.stewardship.jobs.operational_content import IncidentKind
+    from parishkit.stewardship.jobs.operational_sources import critical_auth
+    from parishkit.stewardship.jobs.operational_storage import record_recovery
+
     if kind not in {
         "limiter_unavailable",
         "limiter_available",
@@ -88,6 +92,7 @@ def record_incident(kind, severity, window, counts):
         if kind == "limiter_available":
             if pending.update(resolved_at=now, version=F("version") + 1):
                 AuditEvent.objects.create(event_type="limiter_recovered")
+                record_recovery(IncidentKind.LIMITER_UNAVAILABLE)
             return
         if kind == "limiter_unavailable":
             if pending.exists():
@@ -106,3 +111,5 @@ def record_incident(kind, severity, window, counts):
         )
         if created:
             AuditEvent.objects.create(event_type=kind, subject_id=incident.pk)
+            if severity == 2:
+                critical_auth(kind)

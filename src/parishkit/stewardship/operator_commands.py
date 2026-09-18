@@ -27,6 +27,7 @@ def configure_operator_database(configuration):
     values.update(
         SECRET_KEY=secrets.token_urlsafe(48),
         DATABASES={"default": database_settings(configuration)},
+        STEWARDSHIP_OPERATIONAL_POLICY=configuration.operational_alerts,
     )
     settings.configure(**values)
     django.setup()
