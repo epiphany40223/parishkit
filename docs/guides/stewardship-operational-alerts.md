@@ -230,3 +230,19 @@ checks in 12.62 seconds. Runtime/private-transport regressions pass 277 checks i
 and the reviewed owner/result dispatch branches; no existing table or row policy
 changed at this checkpoint. Slack outcome ownership, other producer integration,
 shutdown acceptance, three dual-source review rounds and final CI remain open.
+
+## Focused test timing checkpoint
+
+CI run `35298891939` measured 105.47 seconds for the final-setup installer
+contention case and 51.48 seconds for cancellation between provider pages.
+These tests use synthetic provider exchanges but were waiting for production
+request, safety and retry budgets. Their shared setup helper now supplies a
+short actual request timeout, one-second additional safety margin and retry
+delay. The unchanged transport still reserves its full five-second forced drain;
+real database time, advisory locks, lease deadlines and admission checks remain.
+Production defaults and transport contract tests are unaffected.
+
+All 16 focused final-setup tests pass in 135.07 seconds with one database
+bootstrap. The two cases above take 18.90 and 9.23 seconds locally. These local
+and CI measurements are not a controlled machine-to-machine benchmark; the
+next full CI run must establish the resulting shard improvement.

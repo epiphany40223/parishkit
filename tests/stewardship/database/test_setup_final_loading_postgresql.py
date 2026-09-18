@@ -32,6 +32,7 @@ from parishkit.stewardship.source.setup_final_tasks import (
 from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSnapshot
 from parishkit.stewardship.storage import StorageInvariantError
 
+from .setup_request_budgets import short_request_budgets
 from .test_background_grants_postgresql import task_login
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_configuration_service_postgresql import (
@@ -49,6 +50,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 def prepared(service, monkeypatch, tmp_path, *, financial=False):
     """Use real original setup, initial target installation and YAML preparation."""
+    short_request_budgets(monkeypatch)
     if financial:
         from parishkit.stewardship.accounts.share_forms import default_share_options
 
