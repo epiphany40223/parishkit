@@ -495,3 +495,19 @@ weekly scope; BG-07.04/.05, later Staff workflows and Gate 3 remain open.
 Exact-head CI/DCO and protected merge-queue checks are still required. Final
 receipts belong on PR #48 and the next coordinating delivery checkpoint, avoiding
 a documentation-only push merely to repeat the full acceptance suite.
+
+### Protected delivery
+
+The human merged [PR #48](https://github.com/epiphany40223/parishkit/pull/48)
+on September 18, 2026 at 00:04:18 UTC as
+`8998542bfdfc3020052dc96dae24aceaf176e2cf`, verified on refreshed `origin/main`.
+Exact-head run `35287511489` passed all 24 CI jobs and DCO at `380eced`;
+combined coverage was 94.00% lines and 85.20% branches. Four successful
+dual-source review/fix rounds and their dispositions are recorded above.
+
+The human disabled the merge queue and enabled auto-merge before manually
+merging. The now-obsolete queue run `35289294784` was cancelled, not counted as
+acceptance evidence. This supersedes the pending queue requirement above;
+exact-head checks and review requirements are unchanged. Main-branch CI remains
+enabled. BG-07.04/.05 and Gate 3 remain open; no deployment, release or real
+provider delivery was authorized.

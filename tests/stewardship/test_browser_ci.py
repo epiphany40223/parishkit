@@ -341,8 +341,13 @@ def test_browser_workflow_contract():
 
 
 def test_ci_cancels_only_superseded_pr_heads():
-    """Our workflow keeps queue/main evidence independent of in-flight PR runs."""
+    """Keep main evidence independent and omit duplicate merge-queue runs."""
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    # PyYAML's YAML 1.1 resolver treats the Actions `on` key as a boolean.
+    assert workflow[True] == {
+        "pull_request": None,
+        "push": {"branches": ["main"]},
+    }
     assert workflow["concurrency"] == {
         "group": (
             "${{ github.workflow }}-"

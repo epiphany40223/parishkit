@@ -115,8 +115,10 @@ human merge-approval stops, including historical checkpoint wording below.
    scope since the previous gate, including already merged changes, using any
    explicitly approved evidence-reuse procedure stated at that gate. Create each
    subsequent branch from refreshed `origin/main` after its predecessor merges.
-7. Once local validation and the review loop pass, push and create the PR against
-   `origin/main` (or update the existing phase PR). Watch CI for the current head,
+7. Push coherent checkpoints and create a draft PR against `origin/main` early
+   so complete CI can run alongside peer review. Use focused local validation;
+   do not routinely repeat the full CI suite locally. Keep the PR draft until
+   the review loop passes. Watch CI for the current head,
    fix failures, rerun affected checks, and push corrections until required CI
    passes. Material CI fixes return to independent review without resetting the
    already completed round count. Record phase/task scope, reviewed SHA, round
@@ -125,11 +127,16 @@ human merge-approval stops, including historical checkpoint wording below.
 8. The human has granted standing authority to merge these implementation PRs
    through the normal protected workflow once the review loop, final-head CI
    and all applicable gate evidence pass. Record that authority and evidence;
-   do not bypass branch protection or treat CI alone as approval. Merge (or
-   enter the merge queue), wait for the result to land on `origin/main`, then
+   do not bypass branch protection or treat CI alone as approval. Use protected
+   merge or auto-merge, wait for the result to land on `origin/main`, then
    continue with the next dependency-ready increment without a routine approval
    stop. Formal implementation gates may advance under this same authority;
    the explicit product/security/operations approval at Gate 5 remains required.
+
+Human clarification, September 17, 2026: auto-merge is enabled and the merge
+queue is disabled to avoid repeating the same suite on a temporary queue head.
+Exact-head PR CI, DCO, review rounds and applicable gates remain mandatory. Do
+not request a second merge-queue CI run. Main-branch validation remains enabled.
 
 Autonomously investigate failures, implement specification-consistent fixes,
 commit with sign-off, push backups, run reviews, and correct CI. Ask during the

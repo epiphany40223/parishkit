@@ -5,9 +5,10 @@
 Use focused tests while implementing or correcting a finding. Commit and push
 coherent checkpoints early; let draft-PR CI run the complete acceptance suite
 while peer reviews proceed. Do not routinely repeat the same full suite locally
-and in CI. Required exact-head, coverage and protected merge-queue checks remain
-mandatory. A superseded PR run is cancelled; main and merge-queue runs retain
-independent concurrency groups. This follows
+and in CI. Required exact-head and coverage checks remain mandatory. Following
+the September 17 human decision, use protected auto-merge without a merge queue
+or its duplicate CI run. A superseded PR run is cancelled; main runs retain
+independent concurrency groups. The review gates are unchanged. This follows
 [GitHub's workflow concurrency contract](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#concurrency).
 
 ## Measured bottlenecks
@@ -101,3 +102,28 @@ its collection against the host. The lint/drift job retains those separate
 responsibilities. Release validation uses the same disposable tmpfs service as
 PR coverage, as required by the existing service-consistency test. Neither
 application persistence tests nor deployment storage use this optimization.
+
+### Compatible database fixture reuse
+
+The next bounded maintenance increment reuses expensive setup only where the
+application scenarios require the same starting state:
+
+- All 26 financial guard cases call ParishKit's immutable SQL scalar/JSON
+  function without inserting application rows. They now use rollback isolation
+  rather than a committed-test flush. Expected SQL errors remain inside their
+  own savepoints. A focused marker-only comparison took 15.07 seconds with
+  flushes versus 9.61 seconds with rollback, including fresh schema creation;
+  this is a local diagnostic, not a full-suite speedup claim.
+- The 15 member field reconstruction comparisons now read one immutable source
+  snapshot in a single test. Every field still compares SQL and Python source
+  values and availability, with the field name included on failure.
+- Four ministry authority fixture groups retain all 14 forged aggregate cases.
+  Eleven cases share identical campaign prerequisites; the other three retain
+  independent setup. Every rejected write still runs with the real web role in
+  a separate genuine transaction, checking that no submission or ministry
+  request survived. A final valid submission in each group proves failed
+  attempts did not poison the baseline or session.
+
+No shared mutable fixture crosses independent tests, no SQL authorization or
+deferred-constraint semantics are weakened, and no input cases are dropped.
+This maintenance does not complete additional feature tasks or release Gate 3.
