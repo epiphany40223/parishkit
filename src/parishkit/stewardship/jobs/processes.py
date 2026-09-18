@@ -15,6 +15,7 @@ from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.observability import emit_failure
 
 from .broker import BrokerRuntime, publish_hint
+from .due_work_health import DueWorkScan
 from .queues import ROLE_QUEUES
 from .scheduler import scan_once, scheduler_session
 
@@ -130,6 +131,7 @@ def serve_scheduler(runtime, *, handlers, lease, stop, heartbeat, produce):
     ):
         raise ConfigError("An isolated scheduler and compiled producer are required.")
     cursor, delay = None, 2
+    health = DueWorkScan()
     try:
         with scheduler_session() as guard:
             while not stop.is_set():
@@ -151,10 +153,19 @@ def serve_scheduler(runtime, *, handlers, lease, stop, heartbeat, produce):
                         publish=publish,
                         cursor=cursor,
                         stop=stop,
+                        health=health,
                     )
                     cursor = result.cursor
                 except Exception as error:
                     emit_failure(error)
+                    # Preserve fair suffix progress, but never let an observed
+                    # failure bridge two otherwise healthy sample windows.
+                    try:
+                        health.interrupted(guard)
+                    except Exception as health_error:
+                        emit_failure(health_error)
+                    finally:
+                        health.reset()
                     delay = min(60, delay * 2)
                 else:
                     delay = 2

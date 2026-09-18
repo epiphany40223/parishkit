@@ -341,10 +341,10 @@ Evidence: Not started.
 Scope and dependencies: [BG-10 work package](../../plans/stewardship/background-processing.md#bg-10-critical-notification-and-service-shutdown).
 
 - [ ] BG-10.01 — Create durable deduplicated critical events.
-- [ ] BG-10.02 — Dispatch operational Admin and optional Slack alerts.
+- [x] BG-10.02 — Dispatch operational Admin and optional Slack alerts.
 - [ ] BG-10.03 — Implement escalation, suppression, and recovery notices.
-- [ ] BG-10.04 — Implement graceful worker and scheduler shutdown.
-- [ ] BG-10.05 — Test notification failures and interrupted shutdown.
+- [x] BG-10.04 — Implement graceful worker and scheduler shutdown.
+- [x] BG-10.05 — Test notification failures and interrupted shutdown.
 
 Evidence: In progress on `pr/stewardship-operational-alerts` from verified
 PR #49 merge `70797cb2`. The [increment checkpoints](../../guides/stewardship-operational-alerts.md)
@@ -406,6 +406,13 @@ PR #56 has merged; its [protected receipt](../../guides/stewardship-mail-health.
 records exact-head checks, three review/fix rounds and verified main delivery.
 The [due-work increment](../../guides/stewardship-due-work-health.md) continues
 current-phase service observations and recovery before broader BG-10 acceptance.
+
+The [current-phase acceptance map](../../guides/stewardship-due-work-health.md#current-phase-bg-10-acceptance-map)
+now reconciles all Phase 4 notification/shutdown evidence. BG-10.02/.04/.05
+are implemented and tested; .01/.03 retain their later backup, publication and
+purge producers. Three successful dual-source due-work rounds are complete.
+Final-head CI/DCO and protected PR #57 delivery remain pending; afterward
+continue ADM-05 without a routine approval stop. Gate 3 remains open.
 
 ## BG-11: Exceptional purge worker
 

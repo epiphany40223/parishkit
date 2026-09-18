@@ -21,6 +21,78 @@ class Migration(migrations.Migration):
         migrations.SeparateDatabaseAndState(
             state_operations=[
                 migrations.CreateModel(
+                    name="DueWorkHealth",
+                    fields=[
+                        (
+                            "singleton",
+                            models.BooleanField(
+                                default=True, primary_key=True, serialize=False
+                            ),
+                        ),
+                        ("signal", models.CharField(max_length=7)),
+                        (
+                            "scan_started_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(),
+                        ),
+                        (
+                            "observed_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now()
+                            ),
+                        ),
+                        (
+                            "late_since",
+                            parishkit.stewardship.storage.UTCDateTimeField(null=True),
+                        ),
+                        (
+                            "clear_since",
+                            parishkit.stewardship.storage.UTCDateTimeField(null=True),
+                        ),
+                        (
+                            "last_failure_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(null=True),
+                        ),
+                        ("escalation_seconds", models.PositiveIntegerField()),
+                    ],
+                    options={
+                        "db_table": "stewardship_due_work_health",
+                        "constraints": [
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    escalation_seconds__range=(60, 86400)
+                                ),
+                                name="due_health_escalation",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(singleton=True),
+                                name="due_health_singleton",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    signal__in=("late", "clear", "unknown")
+                                ),
+                                name="due_health_signal",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    scan_started_at__lte=models.F("observed_at")
+                                )
+                                & (
+                                    models.Q(late_since__isnull=True)
+                                    | models.Q(late_since__lte=models.F("observed_at"))
+                                )
+                                & (
+                                    models.Q(clear_since__isnull=True)
+                                    | models.Q(
+                                        clear_since__lte=models.F("scan_started_at")
+                                    )
+                                ),
+                                name="due_health_times",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
                     name="TaskRun",
                     fields=[
                         (

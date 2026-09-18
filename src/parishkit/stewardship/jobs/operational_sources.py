@@ -38,6 +38,7 @@ def critical_log(event):
         Event.SOURCE_PROVIDER_FAILED: IncidentKind.SOURCE_REFRESH_FAILED,
         Event.MAIL_PROVIDER_FAILED: IncidentKind.MAIL_PROVIDER_UNAVAILABLE,
         Event.BOUNDARY_LAG: IncidentKind.SCHEDULER_LAG,
+        Event.DUE_WORK_LAG: IncidentKind.SCHEDULER_LAG,
         Event.PRODUCTION_CLEANUP_FAILED: IncidentKind.PRODUCTION_CLEANUP_FAILED,
     }.get(event, IncidentKind.SYSTEM_FAILURE)
     return record_observation(kind, IncidentLevel.CRITICAL, policy=configured_policy())

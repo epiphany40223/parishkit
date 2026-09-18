@@ -32,6 +32,9 @@ def task_runtime_grants(role):
     if role not in {ServiceRole.WORKER, ServiceRole.SCHEDULER}:
         raise ConfigError("This service has no general task SQL authority.")
     tables = {table: {"SELECT"} for table in READ_TABLES}
+    tables["stewardship_due_work_health"] = {"SELECT"}
+    if role is ServiceRole.SCHEDULER:
+        tables["stewardship_due_work_health"].add("INSERT")
     tables["stewardship_task_run"].add("INSERT")
     tables["stewardship_task_event"].add("INSERT")
     for table in (
@@ -65,6 +68,12 @@ def task_runtime_grants(role):
             "stewardship_campaign_credentials",
         )
     }
+    # Only the owned scheduler writes checkpoints; the collector's shared
+    # advisory lock avoids expanding workers' authority just to take row locks.
+    if role is ServiceRole.SCHEDULER:
+        columns["stewardship_due_work_health"] = {
+            "UPDATE": {"signal", "scan_started_at", "escalation_seconds"}
+        }
     # The ACK trigger takes FOR SHARE on its target-scoped receipt. Id-only
     # UPDATE permits that lock; RLS and mutation guards reject actual edits.
     columns["stewardship_secret_request"] = {"UPDATE": {"id"}}

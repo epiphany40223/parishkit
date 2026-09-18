@@ -579,6 +579,12 @@ records all three review/fix rounds, final-head CI/DCO and consolidated tree.
 The [due-work increment](../../guides/stewardship-due-work-health.md) now owns
 remaining current-phase service observations before BG-10 acceptance and ADM-05.
 
+Current-phase BG-10 implementation and three due-work review/fix rounds are
+complete; its [acceptance map](../../guides/stewardship-due-work-health.md#current-phase-bg-10-acceptance-map)
+retains later producer/operations owners. After final-head CI/DCO and protected
+PR #57 delivery, begin ADM-05 from verified fresh main. This does not release
+Gate 3 or enable real provider delivery.
+
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).
 3. Complete required [RPT-02](reports.md#rpt-02-population-and-calculation-library) calculations and the [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics) fact-materialization service before [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests); report UI remains in Phase 5.

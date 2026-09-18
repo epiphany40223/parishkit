@@ -26,6 +26,7 @@ class Event(StrEnum):
     FACT_DRIFT = "fact_drift"
     DELIVERY_UNKNOWN = "delivery_unknown"
     BOUNDARY_LAG = "campaign_boundary_lag"
+    DUE_WORK_LAG = "due_work_lag"
     PRODUCTION_CLEANUP_FAILED = "production_cleanup_failed"
     SOURCE_INVALID = "source_refresh_invalid"
     SOURCE_TENANT_MISMATCH = "source_tenant_mismatch"
