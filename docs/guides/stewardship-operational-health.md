@@ -66,3 +66,49 @@ real-commit, out-of-transaction rejection and concurrency checks retain full
 transaction semantics. All 227 tests across the eight affected helper/contract
 modules pass together in 70.67 seconds with one schema bootstrap. Ruff passes.
 Full CI remains required for the wider shared-helper consumer set.
+
+The pushed checkpoint `7b9735e` passes all 24 CI jobs plus DCO in run
+`35305933366`. PostgreSQL shards take 10m31s–15m37s individually, compared with
+the predecessor's slowest 18m34s shard. Runner scheduling still stretches the
+whole run to approximately 21 minutes; those queue delays and the remaining
+test costs are not claimed as solved by this change.
+
+## Independent Slack checkpoint
+
+The general Worker now owns optional operational Slack delivery separately
+from the mail cohort and isolated MAIL consumer. One stable Task per notice
+retains intent; append-only submission/result records pin current channel,
+configuration, mode, credential fingerprint and exact worker fence. A committed
+35-second provider/drain window precedes private external IO. Accepted and
+uncertain outcomes never authorize automatic resend; only definitive non-send
+may retry within the bounded preparation budget. Channel/configuration holds
+do not spend that budget. Both scheduler and Worker retain metadata recovery
+even when the optional credential mount disappears.
+
+SQL independently rejects forged notice, Task, fence, worker, actor,
+configuration, channel, fingerprint and mode values. Result ownership,
+immutability and recovery deadlines are also SQL-enforced. Failure records are
+ERROR/WARNING, never recursive CRITICAL notifications. No real Slack or email
+provider is contacted by tests.
+
+Eight initial PostgreSQL cases pass in 51.42 seconds, including one real
+35-second forced-drain deadline test, direct SQL forgery probes, all three
+provider outcomes during graceful stop, independent delivery without email,
+and configuration/channel holds. Runtime registry/producer checks pass all
+226 cases in 1.11 seconds. The fresh baseline/model/grant/routing group passes
+48 cases in 30.57 seconds; Django detects no model-state changes.
+
+### Fresh-install schema audit
+
+Independent fresh PostgreSQL databases install immutable predecessor `1895949`
+and this checkpoint. The predecessor matches its committed fingerprint.
+Per-object comparison adds only two Slack tables, 20 columns, 32 constraints,
+nine indexes, three functions and four triggers. Every preexisting object is
+unchanged, including all 28 policies. The new fingerprint records 182 relations,
+2,094 columns, 2,976 constraints, 898 indexes, 510 functions and 487 triggers.
+The model/SQL equivalence checks pass. No retained database is changed, deleted,
+upgraded or downgraded; this remains the unreleased fresh-install baseline.
+
+Current-phase health producers/recovery, additional hold integration and the
+three required dual-source review rounds are still pending. This is a backed-up
+implementation checkpoint, not BG-10 acceptance or Gate 3 approval.

@@ -89,6 +89,8 @@ def task_runtime_grants(role):
         tables["stewardship_ops_cohort"] = {"SELECT", "INSERT"}
         tables["stewardship_ops_recipient"] = {"SELECT", "INSERT"}
         tables["stewardship_ops_log_receipt"] = {"SELECT", "INSERT"}
+        tables["stewardship_ops_slack_attempt"] = {"SELECT", "INSERT"}
+        tables["stewardship_ops_slack_result"] = {"SELECT", "INSERT"}
         columns["stewardship_ops_incident"] = {
             "UPDATE": {
                 "signal_level",
@@ -112,6 +114,12 @@ def task_runtime_grants(role):
 
         add_setup_completion_grants(tables, columns)
     else:
+        columns["stewardship_ops_slack_attempt"] = {
+            "SELECT": {"id", "notice_id", "run_id", "fence", "deadline_at"}
+        }
+        columns["stewardship_ops_slack_result"] = {
+            "SELECT": {"id", "attempt_id", "outcome"}
+        }
         columns["stewardship_ops_log_receipt"] = {"SELECT": {"log_id", "run_id"}}
         columns["stewardship_ops_notice"] = {"SELECT": {"id", "created_at"}}
         columns["stewardship_ops_cohort"] = {

@@ -349,6 +349,8 @@ def configure_background(configuration, *, stop, heartbeat):
         from .jobs.operational_collection import collection_handler
         from .jobs.operational_fanout import TASK_TYPE as OPERATIONAL_PREPARE
         from .jobs.operational_fanout import fanout_handler
+        from .jobs.operational_slack_tasks import TASK_TYPE as OPERATIONAL_SLACK
+        from .jobs.operational_slack_tasks import slack_handler
 
         # Safe operational intake stays available through restore/setup holds.
         # It never reads campaign content or grants provider delivery authority.
@@ -357,6 +359,16 @@ def configure_background(configuration, *, stop, heartbeat):
         )
         handlers[OPERATIONAL_PREPARE] = replace(
             fanout_handler(store, scheduler=role is ServiceRole.SCHEDULER),
+            pulse=heartbeat,
+        )
+        # Keep the owner registered even without a mounted optional key: it
+        # can recover an old submission, while admission holds all new sends.
+        handlers[OPERATIONAL_SLACK] = replace(
+            slack_handler(
+                store,
+                credential_path=configuration.secrets.get("slack"),
+                scheduler=role is ServiceRole.SCHEDULER,
+            ),
             pulse=heartbeat,
         )
     # This is not ordinary selected-YAML authority. The compiled setup owner

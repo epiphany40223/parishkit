@@ -45,6 +45,7 @@ def schema_sql():
                 "operational_fanout",
                 "operational_render",
                 "operational_dispatch",
+                "operational_slack",
             )
         ]
     )
