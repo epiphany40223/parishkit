@@ -58,3 +58,23 @@ The old shard hints overestimate several now 8–15-second setup tests as
 must still run exactly once, and combined same-tree coverage remains mandatory.
 
 Implementation checkpoints and their test/review evidence follow as completed.
+
+### Shared-setup implementation checkpoint
+
+The repository test now executes all five SQL-rebinding rejections against one
+prepared mail exchange, with a separate rollback transaction for each mutation.
+Every rejection also checks SQLSTATE `23514` and verifies the complete exchange
+row remains unchanged. The disposal test uses the existing short fake-provider
+budget; the actual database deadline and provider drain remain intact.
+
+Focused execution of both PostgreSQL modules passes all 12 collected tests in
+51.62 seconds, with one 10.06-second schema bootstrap. The grouped rejection
+test body takes 3.91 seconds; the disposal body takes 8.83 seconds. This is
+focused local evidence, not a claim that complete CI already passed.
+
+Shard estimates now use the predecessor CI measurements, distinguish the
+unloaded disposal parameter from its real-lease sibling and reserve 240 seconds
+for the first shard's separate baseline. Unknown tests retain default weight;
+the selector still requires exhaustive, unique, deterministic ownership.
+All 53 quality/partition tests pass in 2.75 seconds; targeted Ruff, formatting,
+Markdown and whitespace checks also pass.

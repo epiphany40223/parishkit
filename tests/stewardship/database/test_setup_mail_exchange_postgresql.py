@@ -158,28 +158,27 @@ def test_submitting_journal_can_no_longer_relay_or_recover_credential(
             receive_credential(recipient)
 
 
-@pytest.mark.parametrize(
-    "mutation",
-    [
+def test_sql_cannot_rebind_mail_exchange(setup_service, monkeypatch, tmp_path):
+    """Each rejected write rolls back before the same original claim is reused."""
+    preparing(setup_service, monkeypatch, tmp_path)
+    original = SetupMailExchange.objects.values().get()
+    mutations = (
         {"delivery_id": uuid4()},
         {"run_id": uuid4()},
         {"task_fence": 99},
         {"worker_id": uuid4()},
         {"public_key": b"x" * 32},
-    ],
-)
-def test_sql_cannot_rebind_mail_exchange(
-    setup_service, monkeypatch, tmp_path, mutation
-):
-    """Even a schema-owner update cannot rewrite retained original claim metadata."""
-    preparing(setup_service, monkeypatch, tmp_path)
-    with (
-        pytest.raises(
-            DatabaseError, match="identity|binding|original ownership|reply once"
-        ),
-        work_transaction(),
-    ):
-        SetupMailExchange.objects.update(**mutation, version=F("version") + 1)
+    )
+    for mutation in mutations:
+        with (
+            pytest.raises(
+                DatabaseError, match="identity|binding|original ownership|reply once"
+            ) as rejected,
+            work_transaction(),
+        ):
+            SetupMailExchange.objects.update(**mutation, version=F("version") + 1)
+        assert rejected.value.__cause__.sqlstate == "23514", tuple(mutation)
+        assert SetupMailExchange.objects.values().get() == original, tuple(mutation)
 
 
 def test_general_worker_and_other_targets_have_no_mail_relay_access(

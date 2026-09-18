@@ -55,8 +55,19 @@ def test_large_suite_reserves_baseline_time(monkeypatch):
     monkeypatch.setattr(sharding, "SLOW_TEST_SECONDS", {})
     nodes = [f"test_a.py::case[{n}]" for n in range(2000)]
     groups = [partition(nodes, index, 8) for index in range(1, 9)]
-    assert max(map(len, groups[1:])) - len(groups[0]) == 90
+    assert max(map(len, groups[1:])) - len(groups[0]) == 240
     assert sorted(node for group in groups for node in group) == sorted(nodes)
+
+
+def test_parameter_cost_override_preserves_all_cases(monkeypatch):
+    """Different fixture waits change scheduling, never collection membership."""
+    monkeypatch.setattr(sharding, "SLOW_TEST_SECONDS", {"case": 100})
+    monkeypatch.setattr(sharding, "CASE_SECONDS", {"case[False]": 10})
+    nodes = ["a.py::case[False]", "a.py::case[True]", "a.py::new"]
+    assert [sharding.estimated_seconds(node) for node in nodes] == [10, 100, 1]
+    groups = [partition(nodes, index, 2) for index in (1, 2)]
+    assert sorted(node for group in groups for node in group) == sorted(nodes)
+    assert groups == [partition(nodes[::-1], index, 2) for index in (1, 2)]
 
 
 @pytest.fixture
