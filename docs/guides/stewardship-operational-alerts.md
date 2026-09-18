@@ -70,3 +70,55 @@ The compiler and transition checks together pass 74 tests in 0.26 seconds withou
 database startup. Policy defaults are 900 seconds for repeat suppression and
 sustained-warning escalation, bounded to 60–86,400 seconds; configuration wiring
 remains in progress. Database ownership and provider integration remain open.
+
+## Durable episode checkpoint
+
+The fresh-install baseline now includes operational episodes and immutable notice
+occurrences. One active episode per closed incident kind is serialized across
+processes. SQL computes counts, severity, observation time and resolution, and
+creates each notice in the same transaction. Notice failure rolls back the
+episode change. Recovery never reopens history; the next failure starts a new
+episode. The general worker may submit bounded observations but cannot edit
+derived state, rewrite pinned policy, insert notices or delete history. Other
+runtime identities receive no incident mutation grant.
+
+The application entry point has no caller-clock parameter. Controlled fixture
+insertion can represent an earlier finite observation for timing tests; ordinary
+observation/recovery uses the database statement clock. The producer still owns
+exactly-once consumption of its input; replaying a source event must not inflate
+occurrence counts. Producer integration remains unfinished.
+
+An independent fresh installation of predecessor `70797cb2` matched its retained
+fingerprint. Comparison with the new baseline found only the two owned tables:
+28 columns, 42 constraints, seven indexes, five functions and five triggers were
+added. No existing object changed or disappeared, and row policies are unchanged.
+Model-contract validation found literal-cast and expression-grouping differences
+in five new constraints; these were corrected to the model-compiled definitions
+before the final fingerprint was accepted. Retained development databases were
+not upgraded, reset or deleted.
+
+Validation passes 68 PostgreSQL checks in 20.18 seconds, including incident
+behavior, the actual worker/denied-role grants, concurrent absent-row creation,
+atomic rollback, full fresh catalog/model equivalence and immutable/version
+guards. The configuration/compiler/policy suite passes 189 checks in 0.35 seconds.
+No delivery consumer or provider authority is enabled by this checkpoint.
+
+## Operational policy configuration
+
+These technical settings live in deployment YAML, not campaign templates:
+
+```yaml
+deployment:
+  operational_alerts:
+    suppression_seconds: 900
+    escalation_seconds: 900
+```
+
+Each window is bounded to 60–86,400 seconds. Environment/explicit deployment
+overrides use `PARISHKIT_STEWARDSHIP_OPERATIONAL_SUPPRESSION_SECONDS` and
+`PARISHKIT_STEWARDSHIP_OPERATIONAL_ESCALATION_SECONDS`, with the existing
+explicit-over-environment-over-YAML precedence. Values are read at process
+startup. The producer pins that policy when opening an episode; changing
+deployment configuration affects new episodes, not recorded decisions or an
+already-active episode. Startup/producer wiring remains part of the next
+checkpoint. These settings never authorize routing, recipients or external I/O.

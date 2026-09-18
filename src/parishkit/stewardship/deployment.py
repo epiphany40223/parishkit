@@ -18,6 +18,7 @@ from parishkit.config import ConfigError, load_yaml_config
 from parishkit.paths import runtime_root
 
 from .authentication_policy import AuthenticationLimits
+from .jobs.operational_policy import IncidentPolicy
 from .runtime_budget import RuntimeBudget, parse_budget
 from .runtime_network import RuntimeNetwork, parse_network
 
@@ -150,6 +151,7 @@ class DeploymentConfiguration:
     configuration_file: Path | None = field(default=None, repr=False)
     runtime_budget: RuntimeBudget = field(default_factory=RuntimeBudget)
     runtime_network: RuntimeNetwork = field(default_factory=RuntimeNetwork)
+    operational_alerts: IncidentPolicy = field(default_factory=IncidentPolicy)
 
 
 def _mapping(value: object, keys: set[str] | frozenset[str], label: str) -> dict:
@@ -307,6 +309,7 @@ def load_deployment(
             "authentication_limits",
             "runtime_budget",
             "runtime_network",
+            "operational_alerts",
         },
         "deployment",
     )
@@ -530,6 +533,27 @@ def load_deployment(
             for item in limit_fields
         }
     )
+    alert_fields = fields(IncidentPolicy)
+    alert_config = _mapping(
+        deployment.get("operational_alerts", {}),
+        {item.name for item in alert_fields},
+        "operational alerts",
+    )
+    alert_policy = IncidentPolicy(
+        **{
+            item.name: _integer(
+                select(
+                    "OPERATIONAL_" + item.name.upper(),
+                    alert_config.get(item.name),
+                    item.default,
+                ),
+                "operational alert window",
+                60,
+                86400,
+            )
+            for item in alert_fields
+        }
+    )
     supplied_keys = set(explicit) | {
         key for key in env if key.startswith("PARISHKIT_STEWARDSHIP_")
     }
@@ -551,4 +575,5 @@ def load_deployment(
         path.expanduser().absolute() if path is not None else None,
         parse_budget(deployment.get("runtime_budget", {})),
         parse_network(deployment.get("runtime_network", {})),
+        alert_policy,
     )

@@ -348,9 +348,10 @@ Scope and dependencies: [BG-10 work package](../../plans/stewardship/background-
 
 Evidence: In progress on `pr/stewardship-operational-alerts` from verified
 PR #49 merge `70797cb2`. The [increment checkpoints](../../guides/stewardship-operational-alerts.md)
-record the initial typed incident/content contract and 42 focused passing
-checks. Durable ownership, dispatch and runtime integration remain incomplete;
-no notification or shutdown task is complete yet.
+record typed content/policy, durable episode/notice ownership, configured windows
+and independently audited fresh schema. The current checkpoint passes 189 pure
+and 68 PostgreSQL checks. Producer consumption, dispatch and runtime integration
+remain incomplete; no notification or shutdown task is complete yet.
 
 ## BG-11: Exceptional purge worker
 

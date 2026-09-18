@@ -24,6 +24,244 @@ class Migration(migrations.Migration):
         migrations.SeparateDatabaseAndState(
             state_operations=[
                 migrations.CreateModel(
+                    name="OperationalIncident",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "updated_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "version",
+                            models.PositiveBigIntegerField(default=1, editable=False),
+                        ),
+                        ("kind", models.CharField(max_length=32)),
+                        ("signal_level", models.CharField(max_length=8)),
+                        (
+                            "action",
+                            models.CharField(
+                                db_default="observe", default="observe", max_length=8
+                            ),
+                        ),
+                        ("suppression_seconds", models.PositiveIntegerField()),
+                        ("escalation_seconds", models.PositiveIntegerField()),
+                        (
+                            "level",
+                            models.CharField(
+                                db_default="WARNING", default="WARNING", max_length=8
+                            ),
+                        ),
+                        (
+                            "first_seen",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now()
+                            ),
+                        ),
+                        (
+                            "last_seen",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now()
+                            ),
+                        ),
+                        (
+                            "occurrences",
+                            models.PositiveBigIntegerField(db_default=1, default=1),
+                        ),
+                        (
+                            "last_notice_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(null=True),
+                        ),
+                        (
+                            "resolved_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(null=True),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_ops_incident",
+                        "abstract": False,
+                        "constraints": [
+                            models.CheckConstraint(
+                                condition=models.Q(version__gte=1),
+                                name="stewardship_jobs_operationalincident_positive_version",
+                            ),
+                            models.UniqueConstraint(
+                                condition=models.Q(resolved_at__isnull=True),
+                                fields=("kind",),
+                                name="ops_incident_active_kind",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    kind__in=(
+                                        "database_unavailable",
+                                        "storage_integrity",
+                                        "source_refresh_failed",
+                                        "source_stale",
+                                        "source_tenant_mismatch",
+                                        "source_destructive_change",
+                                        "mail_provider_unavailable",
+                                        "scheduler_lag",
+                                        "worker_unavailable",
+                                        "admin_abuse",
+                                        "family_abuse",
+                                        "limiter_unavailable",
+                                        "limiter_state_lost",
+                                        "publication_ambiguous",
+                                        "production_cleanup_failed",
+                                        "backup_rpo_breach",
+                                        "purge_inconsistency",
+                                        "purge_cleanup_failed",
+                                    )
+                                ),
+                                name="ops_incident_kind",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(level__in=("WARNING", "CRITICAL"))
+                                & models.Q(signal_level__in=("WARNING", "CRITICAL")),
+                                name="ops_incident_levels",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(action__in=("observe", "resolve")),
+                                name="ops_incident_action",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    suppression_seconds__range=(60, 86400)
+                                )
+                                & models.Q(escalation_seconds__range=(60, 86400)),
+                                name="ops_incident_windows",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(occurrences__gte=1)
+                                & models.Q(last_seen__gte=models.F("first_seen"))
+                                & (
+                                    models.Q(resolved_at__isnull=True)
+                                    | models.Q(resolved_at__gte=models.F("last_seen"))
+                                )
+                                & (
+                                    models.Q(
+                                        level="WARNING", last_notice_at__isnull=True
+                                    )
+                                    | models.Q(
+                                        level="CRITICAL",
+                                        last_notice_at__gte=models.F("first_seen"),
+                                    )
+                                    & models.Q(last_notice_at__isnull=False)
+                                ),
+                                name="ops_incident_shape",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
+                    name="OperationalNotice",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        ("incident_version", models.PositiveBigIntegerField()),
+                        ("phase", models.CharField(max_length=9)),
+                        ("level", models.CharField(max_length=8)),
+                        (
+                            "first_seen",
+                            parishkit.stewardship.storage.UTCDateTimeField(),
+                        ),
+                        (
+                            "observed_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(),
+                        ),
+                        ("occurrences", models.PositiveBigIntegerField()),
+                        (
+                            "incident",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_jobs.operationalincident",
+                            ),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_ops_notice",
+                        "constraints": [
+                            models.UniqueConstraint(
+                                fields=("incident", "incident_version"),
+                                name="ops_notice_version",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    phase__in=(
+                                        "opened",
+                                        "escalated",
+                                        "repeated",
+                                        "resolved",
+                                    )
+                                ),
+                                name="ops_notice_phase",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(level="CRITICAL")
+                                & models.Q(incident_version__gte=1)
+                                & models.Q(occurrences__gte=1)
+                                & models.Q(observed_at__gte=models.F("first_seen")),
+                                name="ops_notice_shape",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
                     name="DeliveryResolution",
                     fields=[
                         (
