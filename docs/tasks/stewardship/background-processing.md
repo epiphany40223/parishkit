@@ -396,6 +396,12 @@ supersedes pending delivery. The [source-health increment](../../guides/stewards
 begins from verified main `17d5d4d9` and owns current-scope freshness and
 successful-refresh recovery. Broader BG-10 acceptance remains unchecked.
 
+PR #55 has merged; its [protected receipt](../../guides/stewardship-source-health.md#protected-delivery)
+records the completed review/fix rounds, final-head CI/DCO and verified main.
+The [mail-health increment](../../guides/stewardship-mail-health.md) now connects
+provider outcomes to durable alerts and recovery. Due-work monitoring still
+precedes BG-10 completion and ADM-05.
+
 ## BG-11: Exceptional purge worker
 
 Scope and dependencies: [BG-11 work package](../../plans/stewardship/background-processing.md#bg-11-exceptional-purge-worker).

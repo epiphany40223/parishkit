@@ -154,3 +154,18 @@ These corrections are part of round 3, not an incomplete fourth round. The
 controlling delivery cycle requires passing correction tests and final-head
 CI/DCO before protected merge. The PR handoff records those final receipts;
 the successor records verified delivery without a receipt-only CI rerun.
+
+## Protected delivery
+
+PR [#55](https://github.com/epiphany40223/parishkit/pull/55) merged as
+`7b5c43b64f38a550bfb3cae6a62f66dd75266ad3` at 14:07 UTC on September 18, 2026,
+verified on freshly fetched `origin/main`. Final head
+`9ab4814ddce6d3d3a087305049605b4cc7936fe1` passed all 24 CI jobs in
+run `35352549899`, plus DCO. All 3,812 database tests were accounted for across
+12 shards; combined coverage was 93.92% line and 84.90% branch. The whole run
+took 14 minutes 56 seconds, including scheduling; the slowest PostgreSQL
+partition took 12 minutes 22 seconds. Two logical signed-off commits landed
+through normal protected merge, without a queue or protection bypass.
+
+The [mail-health successor](stewardship-mail-health.md) starts from that verified
+main tip. Broader BG-10 acceptance, due-work monitoring and ADM-05 remain open.
