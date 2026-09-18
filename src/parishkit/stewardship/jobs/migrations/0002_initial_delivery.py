@@ -332,6 +332,145 @@ class Migration(migrations.Migration):
                     },
                 ),
                 migrations.CreateModel(
+                    name="OperationalCohort",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        ("mode", models.CharField(max_length=16)),
+                        ("addresses", models.JSONField()),
+                        ("recipient_count", models.PositiveIntegerField()),
+                        ("slack_channel", models.CharField(max_length=64, null=True)),
+                        ("fence", models.PositiveBigIntegerField()),
+                        ("worker_id", models.UUIDField()),
+                        (
+                            "configuration",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_accounts.appliedconfigurationversion",
+                            ),
+                        ),
+                        (
+                            "notice",
+                            models.OneToOneField(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_jobs.operationalnotice",
+                            ),
+                        ),
+                        (
+                            "parish",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_accounts.parish",
+                            ),
+                        ),
+                        (
+                            "run",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_jobs.taskrun",
+                            ),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_ops_cohort",
+                        "constraints": [
+                            models.CheckConstraint(
+                                condition=models.Q(mode__in=("testing", "production")),
+                                name="ops_cohort_mode",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    fence__gte=1, recipient_count__gte=1
+                                ),
+                                name="ops_cohort_counts",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
+                    name="OperationalRecipient",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        ("address", models.EmailField(max_length=254)),
+                        (
+                            "cohort",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_jobs.operationalcohort",
+                            ),
+                        ),
+                        (
+                            "outbox",
+                            models.OneToOneField(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_jobs.outboxmessage",
+                            ),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_ops_recipient",
+                        "constraints": [
+                            models.UniqueConstraint(
+                                fields=("cohort", "address"),
+                                name="ops_recipient_address",
+                            )
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
                     name="DeliveryResolution",
                     fields=[
                         (

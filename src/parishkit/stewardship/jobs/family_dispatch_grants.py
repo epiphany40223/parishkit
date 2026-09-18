@@ -36,6 +36,8 @@ def add_dispatch_grants(tables, columns):
     add_weekly_dispatch_grants(tables, columns, private=True)
     add_receipt_reads(columns)
     for table in (
+        "stewardship_ops_incident",
+        "stewardship_ops_notice",
         "stewardship_campaign",
         "stewardship_campaign_configuration",
         "stewardship_campaign_work_gate",

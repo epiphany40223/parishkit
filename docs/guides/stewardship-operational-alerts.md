@@ -169,3 +169,39 @@ All 60 focused PostgreSQL checks pass in 34.67 seconds with one shared fresh
 database setup. Runtime, configuration and transport regressions pass 429 checks
 in 1.64 seconds; Ruff check/format pass. Actual recipient fanout, submission and
 outcome recovery are still unfinished, and no BG-10 checkbox is complete.
+
+Current recipient/content selection also passes three restricted-role PostgreSQL
+checks in 11.19 seconds, without a campaign or live providers. These verify exact
+Admin grants, Staff/Ministry/domain exclusion, Testing and restore exemptions,
+revocation, optional independent Slack routing and file/SQL coherence. The mail
+role can read the non-personal incident/notice facts, not mutate them. These
+readers are not send permits: durable fanout and submission admission remain open.
+
+## Durable recipient preparation checkpoint
+
+Each notice now receives one immutable exact-Admin cohort and bounded pages of
+individual outbox intents. Cohort capture, each child Task/render and its recipient
+receipt are guarded by the real preparation claim and commit atomically. Restart
+reuses retained recipient identities. Initial setup without routing leaves notices
+pending rather than consuming a retry budget. Preparation does not call providers
+or claim that an email was delivered.
+
+SQL independently compares fixed operational content, exact recipients, captured
+configuration and mode. An injected body or missing recipient receipt rolls back
+the page. Contract checks compare every closed kind and recovery content with the
+application compiler using one shared database setup. Dispatch will replace the
+captured-mode rendering with current-mode content under current Admin authority;
+the outbox's allocation-mode identity itself remains historical and immutable.
+
+All 40 focused PostgreSQL checks pass in 43.77 seconds, including existing Family
+mail preparation and complete fresh catalog/model agreement. Runtime and grant
+regressions pass 247 checks in 1.04 seconds. The independent fresh baseline audit
+contains five new operational tables and owned helpers; the only existing
+function change admits the new exact preparation owner. The prior auth-placeholder
+removal remains the only removed column/constraint; row policies are unchanged.
+Model equivalence caught and corrected a literal-cast difference in the new mode
+constraint before accepting the fingerprint. No development database was changed.
+
+Provider submission, Slack outcome ownership, remaining health producers and
+shutdown acceptance are still open. The draft is not ready for final reviews or
+merge, and BG-10/Gate 3 remain incomplete.

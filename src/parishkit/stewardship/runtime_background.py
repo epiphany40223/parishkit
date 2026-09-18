@@ -347,11 +347,17 @@ def configure_background(configuration, *, stop, heartbeat):
 
         from .jobs.operational_collection import TASK_TYPE as OPERATIONAL_COLLECT
         from .jobs.operational_collection import collection_handler
+        from .jobs.operational_fanout import TASK_TYPE as OPERATIONAL_PREPARE
+        from .jobs.operational_fanout import fanout_handler
 
         # Safe operational intake stays available through restore/setup holds.
         # It never reads campaign content or grants provider delivery authority.
         handlers[OPERATIONAL_COLLECT] = replace(
             collection_handler(scheduler=role is ServiceRole.SCHEDULER), pulse=heartbeat
+        )
+        handlers[OPERATIONAL_PREPARE] = replace(
+            fanout_handler(store, scheduler=role is ServiceRole.SCHEDULER),
+            pulse=heartbeat,
         )
     # This is not ordinary selected-YAML authority. The compiled setup owner
     # repeats its exact original receipt/login/fences for every admitted action.

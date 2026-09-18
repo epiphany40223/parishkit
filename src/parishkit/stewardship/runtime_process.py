@@ -361,6 +361,7 @@ def serve_background(configuration, lease):
         from .campaigns.digest_schedule_planning import DigestScheduleProducer
         from .campaigns.schedule_production import FamilyScheduleProducer
         from .jobs.operational_collection import produce_collection
+        from .jobs.operational_fanout import produce_fanout
         from .jobs.processes import serve_consumer, serve_scheduler
         from .reports.digest_finalization import (
             DailyDigestFinalizeProducer,
@@ -400,6 +401,7 @@ def serve_background(configuration, lease):
             source production and file cleanup still require matching authority.
             """
             operational = independent_producer(guard, produce_collection, guard)
+            operational += independent_producer(guard, produce_fanout, guard)
             independent_producer(guard, produce_setup_expiry, guard)
             finalization = independent_producer(
                 guard, produce_finalization, assembled.store, guard

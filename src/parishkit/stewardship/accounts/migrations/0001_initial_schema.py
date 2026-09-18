@@ -42,6 +42,8 @@ def schema_sql():
                 "exact_exports",
                 "fact_verification",
                 "operational_incidents",
+                "operational_fanout",
+                "operational_render",
             )
         ]
     )

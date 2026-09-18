@@ -317,6 +317,7 @@ def test_credential_service_publishes_only_after_admission(
         "facts",
         "verification",
         "operational",
+        "operational_fanout",
     ],
 )
 def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
@@ -346,6 +347,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         if role is ServiceRole.SCHEDULER:
             outputs = {
                 "operational": "operational-receipt",
+                "operational_fanout": "operational-fanout-receipt",
                 "finalization": "finalization-receipt",
                 "boundary": "boundary-receipt",
                 "schedules": "schedule-receipt",
@@ -365,7 +367,11 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                 (
                     tuple(
                         outputs[owner]
-                        for owner in ("operational", "finalization")
+                        for owner in (
+                            "operational",
+                            "operational_fanout",
+                            "finalization",
+                        )
                         if owner != failing_producer
                     )
                 )
@@ -394,6 +400,11 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
     facts = Mock(return_value=("facts-receipt",))
     verification = Mock(return_value=("verification-receipt",))
     operational = Mock(return_value=("operational-receipt",))
+    operational_fanout = Mock(return_value=("operational-fanout-receipt",))
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.operational_fanout.produce_fanout",
+        operational_fanout,
+    )
     monkeypatch.setattr(
         "parishkit.stewardship.jobs.operational_collection.produce_collection",
         operational,
@@ -500,6 +511,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
             "facts": facts,
             "verification": verification,
             "operational": operational,
+            "operational_fanout": operational_fanout,
         }[failing_producer].side_effect = RuntimeError("synthetic-owner-failure")
     monkeypatch.setattr("parishkit.stewardship.jobs.processes.serve_consumer", serve)
     monkeypatch.setattr("parishkit.stewardship.jobs.processes.serve_scheduler", serve)
@@ -528,6 +540,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         finalization.assert_called_once_with(assembled.store, guard)
         expiry.assert_called_once_with(guard)
         operational.assert_called_once_with(guard)
+        operational_fanout.assert_called_once_with(guard)
         if held:
             hold.assert_called_once_with(assembled.store)
             for operation in (
@@ -566,9 +579,10 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         mail_recovery.assert_called_once_with()
         campaign_recovery.assert_called_once_with()
         slack_recovery.assert_called_once_with()
-        assert guard.check.call_count == 38
+        assert guard.check.call_count == 40
     else:
         operational.assert_not_called()
+        operational_fanout.assert_not_called()
         daily.assert_not_called()
         daily_finalization.assert_not_called()
         weekly.assert_not_called()

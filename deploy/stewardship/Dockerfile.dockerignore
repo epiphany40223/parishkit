@@ -32,6 +32,8 @@
 !src/parishkit/stewardship/schema/exact_exports.sql
 !src/parishkit/stewardship/schema/fact_verification.sql
 !src/parishkit/stewardship/schema/operational_incidents.sql
+!src/parishkit/stewardship/schema/operational_fanout.sql
+!src/parishkit/stewardship/schema/operational_render.sql
 !src/parishkit/stewardship/schema/daily_digests.sql
 !src/parishkit/stewardship/schema/weekly_digests.sql
 !src/parishkit/stewardship/schema/weekly_manual.sql

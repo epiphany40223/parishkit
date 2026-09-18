@@ -138,3 +138,51 @@ class OperationalLogReceipt(ImmutableRecord):
                 name="ops_log_receipt_version",
             ),
         ]
+
+
+class OperationalCohort(ImmutableRecord):
+    """One frozen current-Admin cohort per notice, captured by its fenced worker."""
+
+    notice = models.OneToOneField(OperationalNotice, on_delete=models.PROTECT)
+    configuration = models.ForeignKey(
+        "stewardship_accounts.AppliedConfigurationVersion", on_delete=models.PROTECT
+    )
+    parish = models.ForeignKey("stewardship_accounts.Parish", on_delete=models.PROTECT)
+    mode = models.CharField(max_length=16)
+    addresses = models.JSONField()
+    recipient_count = models.PositiveIntegerField()
+    slack_channel = models.CharField(max_length=64, null=True)
+    run = models.ForeignKey("stewardship_jobs.TaskRun", on_delete=models.PROTECT)
+    fence = models.PositiveBigIntegerField()
+    worker_id = models.UUIDField()
+
+    class Meta:
+        db_table = "stewardship_ops_cohort"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(mode__in=("testing", "production")),
+                name="ops_cohort_mode",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(recipient_count__gte=1, fence__gte=1),
+                name="ops_cohort_counts",
+            ),
+        ]
+
+
+class OperationalRecipient(ImmutableRecord):
+    """Atomic one-Admin email intent; current authorization is rechecked at send."""
+
+    cohort = models.ForeignKey(OperationalCohort, on_delete=models.PROTECT)
+    address = models.EmailField()
+    outbox = models.OneToOneField(
+        "stewardship_jobs.OutboxMessage", on_delete=models.PROTECT
+    )
+
+    class Meta:
+        db_table = "stewardship_ops_recipient"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["cohort", "address"], name="ops_recipient_address"
+            ),
+        ]
