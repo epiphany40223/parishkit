@@ -4,15 +4,13 @@ from dataclasses import replace
 from uuid import uuid4
 
 import pytest
-from django.db import IntegrityError, transaction
+from django.db import transaction
 
 from parishkit.parishsoft import ParishSoftAPIError
 from parishkit.parishsoft_transport import SourceTransportDrainFailure
 from parishkit.stewardship.accounts.cryptography import CryptographicError
 from parishkit.stewardship.audit.models import OperationalLog
-from parishkit.stewardship.audit.services import operational
 from parishkit.stewardship.jobs.models import TaskRun
-from parishkit.stewardship.observability import Event
 from parishkit.stewardship.source.attempts import begin_refresh_attempt
 from parishkit.stewardship.source.canonical import InvalidSourcePayload
 from parishkit.stewardship.source.failures import settle_failed_read
@@ -42,17 +40,6 @@ def source_singletons():
     """Disposable flush recreates only idle source migration seeds."""
     SourceMutationLease.objects.get_or_create(singleton=True)
     SourceCurrent.objects.get_or_create(singleton=True)
-
-
-def test_event_registry_and_database_allowlist_agree():
-    """New closed diagnostics must be admitted without accepting arbitrary text."""
-    for event in Event:
-        operational(event)
-    assert OperationalLog.objects.count() == len(Event)
-    with pytest.raises(IntegrityError), transaction.atomic():
-        OperationalLog.objects.create(
-            event="PRIVATE-UNREGISTERED", level="INFO", schema="task", context={}
-        )
 
 
 @pytest.mark.parametrize("ready", [False, True])

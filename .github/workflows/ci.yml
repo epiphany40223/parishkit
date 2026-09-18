@@ -91,12 +91,11 @@ jobs:
 
   stewardship-operational:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         provider: [configured, initial, complete, abort]
-        production: ["False", "True"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -109,12 +108,17 @@ jobs:
           python -m pip install --no-build-isolation -r requirements.txt
       - name: Build development application image
         run: docker build -f deploy/stewardship/Dockerfile -t parishkit-stewardship:development .
-      - name: Validate isolated operational scenario
+      - name: Validate isolated development and production scenarios
         env:
           PARISHKIT_RUN_RUNTIME_TESTS: "1"
           PROVIDER_MODE: ${{ matrix.provider }}
-          PRODUCTION: ${{ matrix.production }}
-        run: python -m pytest "tests/stewardship/test_operational_compose.py::test_complete_foundation_bootstrap_and_online_exclusion[$PROVIDER_MODE-$PRODUCTION]" --require-no-skips --ci-progress --durations=10 -q
+        # Reuse installation/image bootstrap, never mutable runtime state.
+        # Each test owns a fresh UUID Compose project, credentials and volume.
+        run: >-
+          python -m pytest
+          "tests/stewardship/test_operational_compose.py::test_complete_foundation_bootstrap_and_online_exclusion[$PROVIDER_MODE-False]"
+          "tests/stewardship/test_operational_compose.py::test_complete_foundation_bootstrap_and_online_exclusion[$PROVIDER_MODE-True]"
+          --require-no-skips --ci-progress --durations=10 -q
 
   # Preserve the branch-protection check name, and fail on cancellation too.
   stewardship-compose:

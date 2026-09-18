@@ -28,11 +28,11 @@ duplicating full local and CI acceptance runs during ordinary development.
 
 ## Parallel CI and live progress
 
-Pull-request CI runs eight deterministic PostgreSQL partitions on eight separate
+Pull-request CI runs twelve deterministic PostgreSQL partitions on twelve separate
 runners, each with its own PostgreSQL/Valkey cluster. Only partition one also runs
 the credential-free baseline into its raw coverage database. The required
 `stewardship-postgresql` check independently collects the full database test
-universe, requires successful receipts for all eight exact partitions from the
+universe, requires successful receipts for all twelve exact partitions from the
 same source tree, and combines raw line/branch data before enforcing both 80%
 floors. Missing, failed, skipped, cancelled or stale partition evidence cannot
 pass. Coverage percentages are never averaged across partitions.
@@ -40,17 +40,20 @@ pass. Coverage percentages are never averaged across partitions.
 Partitions are cost-balanced, not equal-count hash buckets. The scheduler assigns
 known slow lease/drain and population tests first, then fills the least-loaded
 runner; shard one reserves time for baseline coverage. Rounded scheduling hints
-come from CI run `34754804591`. New tests always receive a default cost and are
+come from CI run `35309435892`. New tests always receive a default cost and are
 included. Hints change placement only, never deadlines, assertions or membership.
 Independent collection and exact execution receipts remain authoritative.
 
 That run passed all checks: PostgreSQL including aggregation completed in
 11 minutes 32 seconds, whereas Compose took 18 minutes 52 seconds. The latter
 was the overall bottleneck, including 15 minutes 28 seconds of serial operational
-tests. CI now puts each of the eight operational scenarios on its own runner.
+tests. CI subsequently isolated eight operational scenarios. The current
+[setup-reuse increment](stewardship-ci-bootstrap-reuse.md) pairs development and
+production on four runners, sharing image/dependency bootstrap while preserving
+each scenario's separate UUID project, credentials, database and runtime volume.
 The original `stewardship-compose` required check joins both the core container
 checks and the entire operational matrix, failing on any failure or cancellation.
-No shared database, container name, network or test volume crosses those runners.
+No shared database, container name, network or test volume crosses those scenarios.
 
 Each database test emits UTC `CI_PROGRESS` START and END records, including
 elapsed time after teardown. The last START without an END identifies the active

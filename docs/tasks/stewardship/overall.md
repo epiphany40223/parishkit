@@ -553,6 +553,14 @@ starts from that tip and closes the quiet-traffic authentication recovery gap,
 with separate measured CI improvements. Broader source/provider/due-work health
 observations still precede BG-10 completion and ADM-05.
 
+PR #53 has merged as `113fcd0f`, verified on refreshed `origin/main`, with all
+28 exact-head CI jobs, DCO and three successful review/fix rounds. Its
+[protected receipt](../../guides/stewardship-periodic-health.md#protected-delivery)
+records actual timing and coverage. The bounded
+[CI bootstrap-reuse increment](../../guides/stewardship-ci-bootstrap-reuse.md)
+now removes repeated setup and verified duplicate assertions while preserving
+all scenarios, before resuming broader BG-10 health producers.
+
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).
 3. Complete required [RPT-02](reports.md#rpt-02-population-and-calculation-library) calculations and the [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics) fact-materialization service before [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests); report UI remains in Phase 5.
