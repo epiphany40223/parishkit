@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from parishkit.stewardship.accounts.key_files import write_private
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
@@ -18,6 +19,7 @@ from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.operational_dispatch import (
     begin_submission,
     bound_operational,
+    cohort_state,
     finish_submission,
 )
 from parishkit.stewardship.jobs.operational_models import (
@@ -34,11 +36,15 @@ from ..policy_factory import address
 from .campaign_builders import change
 from .test_background_grants_postgresql import task_login
 from .test_family_mail_preparation_postgresql import family_mail as family_mail_fixture
+from .test_family_mail_worker_postgresql import (
+    dispatch_worker as dispatch_worker_fixture,
+)
 from .test_operational_fanout_postgresql import consume, schedule
 from .test_operational_routing_postgresql import routing as routing_fixture
 
 routing = routing_fixture
 family_mail = family_mail_fixture
+dispatch_worker = dispatch_worker_fixture
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
@@ -50,6 +56,196 @@ def allocated(routing):
     return list(
         OperationalRecipient.objects.select_related("outbox").order_by("address")
     )
+
+
+def test_failed_partial_fanout_cancels_children_without_provider_work(
+    routing, monkeypatch, tmp_path
+):
+    """A failed parent cannot strand already-committed operational outbox children."""
+    from parishkit.stewardship.audit.models import OperationalLog
+    from parishkit.stewardship.jobs import operational_fanout
+    from parishkit.stewardship.jobs.storage import change_run
+
+    store, _, _, _ = routing
+    monkeypatch.setattr(operational_fanout, "BATCH_SIZE", 1)
+    (identifier,) = schedule()
+    with task_login(ServiceRole.WORKER, exact=True):
+        execution = claim_hint(
+            identifier,
+            queue=WorkQueue.GENERAL,
+            worker_id=uuid4(),
+            handlers={
+                operational_fanout.TASK_TYPE: operational_fanout.fanout_handler(store)
+            },
+        )
+        with work_transaction():
+            assert operational_fanout.prepare_page(execution.claim, store) == (1, 2)
+            row = TaskRun.objects.get(pk=identifier)
+            # Inject a terminal parent via the real fenced journal. The child
+            # verifier must independently prove this state, not trust a callback.
+            change_run(
+                run_id=row.pk,
+                expected_version=row.version,
+                action="permanent_failure",
+                actor_id=row.worker_id,
+                correlation_id=row.correlation_id,
+                fence=row.fence,
+                admit=lambda *_: True,
+            )
+    message = OutboxMessage.objects.get()
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True, reconnect=True):
+        assert execute_hint(
+            message.task_id,
+            queue=WorkQueue.MAIL,
+            worker_id=uuid4(),
+            handlers={
+                "outbox_delivery": delivery_handler(
+                    store, credential_path=tmp_path / "nonexistent-credential"
+                )
+            },
+        )
+    message.refresh_from_db()
+    assert message.state == "cancelled" and message.reason == "preparation_failed"
+    assert message.attempt == 0 and OperationalRecipient.objects.count() == 1
+    assert TaskRun.objects.get(pk=message.task_id).state == "cancelled"
+    assert (
+        OperationalLog.objects.filter(level="ERROR", event="task_failed").count() == 2
+    )
+
+
+def test_removed_email_channel_holds_claims_without_exhaustion(routing):
+    """Absent routing may later return; it must not create a failed pending outbox."""
+    store, actor, _, _ = routing
+    first, second = allocated(routing)
+    message = second.outbox
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        running = claim(first.outbox, store)
+    email = next(
+        row
+        for row in store.active().document()["sections"]["integrations"]
+        if row["values"]["kind"] == "email"
+    )
+    assert (
+        change(
+            store,
+            store.active(),
+            actor,
+            [{"operation": "remove", "section": "integrations", "id": email["id"]}],
+        ).state
+        == "applied"
+    )
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        for _ in range(7):
+            with pytest.raises(PermissionError):
+                claim(message, store)
+    from parishkit.stewardship.jobs.family_mail_delivery_tasks import (
+        preparation_attempts,
+    )
+    from parishkit.stewardship.jobs.lifetime import maintain_execution
+
+    with (
+        task_login(ServiceRole.MAIL_DISPATCH, exact=True, reconnect=True),
+        maintain_execution(running),
+    ):
+        running.handler.execute(running)
+    held = TaskRun.objects.get(pk=first.outbox.task_id)
+    assert held.state == "retry_wait" and held.phase == "reconciling"
+    assert preparation_attempts(_status(held)) == 0
+    first.outbox.refresh_from_db()
+    assert first.outbox.attempt == 0 and first.outbox.state == "pending"
+    row = TaskRun.objects.get(pk=message.task_id)
+    assert row.state == "queued" and row.attempt == 0
+    assert (
+        change(
+            store,
+            store.active(),
+            actor,
+            [{"operation": "add", "section": "integrations", **email}],
+        ).state
+        == "applied"
+    )
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        assert claim(message, store) is not None
+
+
+@pytest.mark.parametrize(
+    "failure", [FamilyDeliveryStatus.SYSTEMIC, FamilyDeliveryStatus.UNAVAILABLE]
+)
+def test_provider_cooldown_preserves_unclaimed_intents_until_recovery(
+    routing, monkeypatch, tmp_path, failure
+):
+    """The maintained solo consumer cannot spend held recipients' attempt budgets."""
+    from parishkit.stewardship.jobs import family_mail_delivery_tasks as circuit_owner
+
+    store, actor, _, _ = routing
+    assert (
+        change(
+            store,
+            store.active(),
+            actor,
+            [
+                {
+                    "operation": "add",
+                    "section": "login_rules",
+                    **address(f"extra{i}@example.org"),
+                }
+                for i in range(2)
+            ],
+        ).state
+        == "applied"
+    )
+    messages = [item.outbox for item in allocated(routing)]
+    path = tmp_path / "workspace"
+    write_private(path, b"synthetic-workspace")
+    clock, outcomes, sent = [100.0], [], []
+    monkeypatch.setattr(circuit_owner, "monotonic", lambda: clock[0])
+
+    def submit(candidate, settings, mail, *, seconds, check):
+        """Replace only external SMTP; preserve committed attempts and live checks."""
+        assert not connection.in_atomic_block
+        check()
+        sent.append(mail.semantic_key)
+        return FamilyDeliveryResult(outcomes.pop(0), 1)
+
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.operational_mail_tasks.submit_operational_mail",
+        submit,
+    )
+    owner = delivery_handler(store, credential_path=path)
+
+    def deliver(message):
+        """Repeated hints share the real process circuit and fresh SQL admission."""
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True, reconnect=True):
+            return execute_hint(
+                message.task_id,
+                queue=WorkQueue.MAIL,
+                worker_id=uuid4(),
+                handlers={"outbox_delivery": owner},
+            )
+
+    attempts = 1 if failure is FamilyDeliveryStatus.SYSTEMIC else 3
+    for index in range(attempts):
+        outcomes.append(failure)
+        assert deliver(messages[index])
+        if index + 1 < attempts:
+            clock[0] += 60
+    waiting = messages[-1]
+    for _ in range(7):
+        with pytest.raises(PermissionError):
+            deliver(waiting)
+        clock[0] += 5
+    waiting.refresh_from_db()
+    assert waiting.state == "pending" and waiting.attempt == 0
+    assert TaskRun.objects.get(pk=waiting.task_id).attempt == 0
+    assert len(sent) == attempts
+    # An hour later there is still a pending intent, not a time-based expiration.
+    # Real Task/provider clocks are unchanged; only the process cooldown advances.
+    clock[0] += 3600
+    outcomes.append(FamilyDeliveryStatus.ACCEPTED)
+    assert deliver(waiting)
+    waiting.refresh_from_db()
+    assert waiting.state == "delivered" and waiting.attempt == 1
+    assert len(sent) == attempts + 1 and not outcomes
 
 
 def claim(message, store):
@@ -113,6 +309,10 @@ def test_operational_mail_records_all_outcomes_under_actual_mail_role(routing):
                 bound_operational(_status(TaskRun.objects.get(pk=message.task_id))).pk
                 == message.pk
             )
+            with CaptureQueriesContext(connection) as queries:
+                assert cohort_state(message) == (True, False)
+            # One required lock-order proof and one cohort metadata query.
+            assert len(queries) == 2
         with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
             execution = claim(message, store)
             mail, deadline, attempt = begin(message, execution, store)
@@ -310,7 +510,7 @@ def test_abandoned_operational_submission_becomes_uncertain(routing, monkeypatch
 
 
 def test_allocation_mode_is_historical_but_dispatch_content_uses_current_mode(
-    family_mail,
+    dispatch_worker,
 ):
     """Actual campaign activation neither deletes nor reroutes operational alerts."""
     from parishkit.stewardship.jobs.operational_content import (
@@ -322,7 +522,8 @@ def test_allocation_mode_is_historical_but_dispatch_content_uses_current_mode(
 
     from .response_builders import activate_response_service
 
-    store = family_mail.service.store
+    harness, _ = dispatch_worker
+    store = harness.service.store
     record_observation(
         IncidentKind.STORAGE_INTEGRITY,
         level=IncidentLevel.CRITICAL,
@@ -332,7 +533,7 @@ def test_allocation_mode_is_historical_but_dispatch_content_uses_current_mode(
     consume(identifier, store)
     message = OutboxMessage.objects.get(purpose="operational")
     assert message.mode == "testing"
-    activate_response_service(family_mail)
+    activate_response_service(harness)
     with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
         execution = claim(message, store)
         mail, _, _ = begin(message, execution, store)

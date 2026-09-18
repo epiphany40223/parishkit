@@ -369,7 +369,6 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                         outputs[owner]
                         for owner in (
                             "operational",
-                            "operational_fanout",
                             "finalization",
                         )
                         if owner != failing_producer
@@ -540,8 +539,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         finalization.assert_called_once_with(assembled.store, guard)
         expiry.assert_called_once_with(guard)
         operational.assert_called_once_with(guard)
-        operational_fanout.assert_called_once_with(guard)
         if held:
+            operational_fanout.assert_not_called()
             hold.assert_called_once_with(assembled.store)
             for operation in (
                 boundary,
@@ -563,6 +562,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                 operation.assert_not_called()
             return
         hold.assert_not_called()
+        operational_fanout.assert_called_once_with(guard)
         boundary.assert_called_once_with(guard)
         schedules.assert_called_once_with(guard)
         digests.assert_called_once_with(guard)

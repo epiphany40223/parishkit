@@ -54,9 +54,18 @@ def consume(identifier):
         )
 
 
-def test_python_and_sql_critical_logs_are_consumed_once_with_current_policy(settings):
+def test_python_and_sql_critical_logs_are_consumed_once_with_current_policy(
+    settings, monkeypatch
+):
     """Exact receipts retain old timestamps without reading private context."""
     settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(120, 600)
+    from parishkit.stewardship.jobs import operational_collection
+
+    # Pin only the producer's minute bucket. Incident and lease clocks stay real;
+    # the idempotence assertion must not fail when this test crosses a minute.
+    with transaction.atomic():
+        instant = database_now()
+    monkeypatch.setattr(operational_collection, "database_now", lambda: instant)
     operational(Event.TASK_FAILED, level="CRITICAL")
     with transaction.atomic():
         earlier = database_now() - timedelta(days=1)

@@ -26,8 +26,9 @@ from .operational_dispatch import (
     begin_submission,
     bound_operational,
     cancel_unsent,
-    complete_cohort,
+    cohort_state,
     finish_submission,
+    preparation_failed,
     recipient_current,
     recover_submission,
 )
@@ -94,12 +95,26 @@ def admit_task(action, status, *, store, circuit):
         return action == "effect" or (
             message.state != "submitting" and action in {"hint", "claim"}
         )
-    if action not in {"hint", "claim", "effect"} or not complete_cohort(message):
+    if action not in {"hint", "claim", "effect"}:
         return False
+    complete, failed = cohort_state(message)
+    if not complete:
+        return failed
     if circuit.blocks_new_send():
         return False
-    mail_authority(store)
-    return True
+    runtime = mail_authority(store)
+    return action == "effect" or _channels_configured(runtime)
+
+
+def _channels_configured(runtime):
+    """Missing configuration holds unsent work without consuming provider attempts."""
+    return (
+        AppliedIntegration.objects.filter(
+            configuration_id=runtime.active_configuration_id,
+            kind__in=("email", "google_workspace"),
+        ).count()
+        == 2
+    )
 
 
 def delivery_handler(store, *, credential_path=None, scheduler=False):
@@ -108,7 +123,9 @@ def delivery_handler(store, *, credential_path=None, scheduler=False):
         not scheduler and not isinstance(credential_path, Path)
     ):
         raise TypeError("Operational mail requires its compiled service profile.")
-    circuit = DeliveryCircuit()
+    # Operational alerts must recover without a human restarting an otherwise
+    # healthy, heartbeating process. Only new sends consult this finite cooldown.
+    circuit = DeliveryCircuit(recovery_seconds=300)
 
     def unavailable(execution):
         """No scheduler callback can be used to open a private provider pipe."""
@@ -143,11 +160,17 @@ def _execute(execution, *, store, credential_path, circuit):
     try:
         with execution.effect():
             message = bound_operational(_status(lock_task_claim(execution.claim)))
-            if message.state in {"pending", "retry_wait"} and not recipient_current(
-                message
-            ):
-                cancel_unsent(message, execution.claim)
-                message.refresh_from_db()
+            if message.state in {"pending", "retry_wait"}:
+                reason = (
+                    "preparation_failed"
+                    if preparation_failed(message)
+                    else "recipient_revoked"
+                    if not recipient_current(message)
+                    else None
+                )
+                if reason is not None:
+                    cancel_unsent(message, execution.claim, reason=reason)
+                    message.refresh_from_db()
             terminal = {
                 "delivered": "complete",
                 "cancelled": "safe_cancel",
@@ -156,6 +179,10 @@ def _execute(execution, *, store, credential_path, circuit):
             }.get(message.state)
             if terminal is None:
                 runtime = mail_authority(store)
+                if not _channels_configured(runtime):
+                    raise FamilyDeliveryHeld(
+                        "Operational mail channel is not configured."
+                    )
                 configuration_id = runtime.active_configuration_id
                 workspace = AppliedIntegration.objects.get(
                     configuration_id=configuration_id, kind="google_workspace"

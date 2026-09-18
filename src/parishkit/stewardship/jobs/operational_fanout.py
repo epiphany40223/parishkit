@@ -5,10 +5,12 @@ from uuid import UUID, uuid5
 
 from django.db import connection
 
+from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.configuration_models import (
     AppliedIntegration,
     Parish,
 )
+from parishkit.stewardship.accounts.models import AddressRule
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.domain import SystemMode
 from parishkit.stewardship.campaigns.work_locks import (
@@ -16,9 +18,12 @@ from parishkit.stewardship.campaigns.work_locks import (
     work_transaction,
 )
 from parishkit.stewardship.observability import correlation
+from parishkit.stewardship.runtime_background import matching_authority
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .dispatch import Handler, RecoveryPlan
+from .family_mail_delivery_tasks import preparation_attempts
+from .family_mail_dispatch import FamilyDeliveryHeld
 from .models import TaskRun
 from .operational_models import (
     OperationalCohort,
@@ -47,6 +52,9 @@ def _configured():
     return (
         version is not None
         and Parish.objects.filter(configuration_id=version).exists()
+        and AddressRule.objects.filter(
+            configuration_id=version, roles__contains=["administrator"]
+        ).exists()
         and AppliedIntegration.objects.filter(
             configuration_id=version, kind="email"
         ).exists()
@@ -125,12 +133,12 @@ def recovery_fanout(status):
         return RecoveryPlan("recovery_complete")
     return (
         RecoveryPlan("recovery_fail")
-        if row.attempt >= 5
+        if preparation_attempts(status) >= 5
         else RecoveryPlan("recovery_retry", 30)
     )
 
 
-def admit_fanout(action, status):
+def admit_fanout(action, status, *, store=None):
     """Campaign holds cannot suppress alerts, but Task and input identity still bind."""
     require_work_order()
     if status.task_type != TASK_TYPE or not isinstance(status.domain_request_id, UUID):
@@ -145,25 +153,44 @@ def admit_fanout(action, status):
         return True
     if action == "complete":
         return _completed(row)
+    if action == "retryable_failure":
+        return row.phase == TaskPhase.RECONCILING.value
     if action == "recovery_hint" and row.state == "running":
         return True
     if action.startswith("recovery_"):
         plan = recovery_fanout(status)
         return plan is not None and (action == "recovery_hint" or action == plan.action)
-    return action in {"hint", "claim", "effect"}
+    if action not in {"hint", "claim", "effect"}:
+        return False
+    if store is None:
+        return False
+    # A recovery mismatch is an admission hold, not five consumed attempts.
+    # Running owners convert a mid-page mismatch to a journaled held retry.
+    try:
+        matching_authority(store)
+    except ConfigError:
+        if action == "effect":
+            raise FamilyDeliveryHeld(
+                "Operational configuration requires recovery."
+            ) from None
+        return False
+    configured = _configured()
+    if action == "effect" and not configured:
+        raise FamilyDeliveryHeld("Operational routing is not configured yet.")
+    return configured
 
 
 def _capture(claim, store):
     """Capture once; later pages preserve the cohort despite configuration changes."""
     row = _current(_status(lock_task_claim(claim)))
-    route = current_routing(store)
     cohort = OperationalCohort.objects.filter(notice_id=row.domain_request_id).first()
     if cohort is not None:
         if not TaskRun.objects.filter(pk=cohort.run_id, root_id=row.root_id).exists():
             raise PermissionError("Operational cohort belongs to a different Task.")
         return cohort
+    route = current_routing(store)
     if route.sender is None or route.reply_to is None or not route.admins:
-        raise PermissionError("Operational routing is not configured yet.")
+        raise FamilyDeliveryHeld("Operational routing is not configured yet.")
     return OperationalCohort.objects.create(
         notice_id=row.domain_request_id,
         configuration_id=route.configuration_id,
@@ -245,12 +272,17 @@ def _execute(execution, *, store):
         )
     while True:
         execution.check()
-        with execution.effect():
-            count, total = prepare_page(execution.claim, store)
-            execution.progress(count, total, phase=TaskPhase.VERIFYING)
-            if count == total:
-                execution.transition("complete")
-                return
+        try:
+            with execution.effect():
+                count, total = prepare_page(execution.claim, store)
+                execution.progress(count, total, phase=TaskPhase.VERIFYING)
+                if count == total:
+                    execution.transition("complete")
+                    return
+        except (ConfigError, FamilyDeliveryHeld):
+            execution.progress(0, 0, phase=TaskPhase.RECONCILING)
+            execution.transition("retryable_failure", retry_seconds=30)
+            return
 
 
 def fanout_handler(store, *, scheduler=False):
@@ -264,7 +296,7 @@ def fanout_handler(store, *, scheduler=False):
 
     return Handler(
         WorkQueue.GENERAL,
-        admit_fanout,
+        partial(admit_fanout, store=store),
         unavailable if scheduler else partial(_execute, store=store),
         recover=recovery_fanout,
         scope=work_transaction,

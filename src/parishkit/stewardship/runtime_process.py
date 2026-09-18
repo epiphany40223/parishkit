@@ -401,7 +401,6 @@ def serve_background(configuration, lease):
             source production and file cleanup still require matching authority.
             """
             operational = independent_producer(guard, produce_collection, guard)
-            operational += independent_producer(guard, produce_fanout, guard)
             independent_producer(guard, produce_setup_expiry, guard)
             finalization = independent_producer(
                 guard, produce_finalization, assembled.store, guard
@@ -415,6 +414,7 @@ def serve_background(configuration, lease):
                 # awaiting installer rollback, no ordinary producer is admitted.
                 initial_setup_hold(assembled.store)
                 return (*operational, *finalization)
+            operational += independent_producer(guard, produce_fanout, guard)
             independent_producer(guard, recover_setup_mail)
             independent_producer(guard, recover_setup_slack)
             from .accounts.campaign_mail_delivery import recover_pending

@@ -18,6 +18,7 @@ from parishkit.stewardship.operational_delivery import (
 )
 from parishkit.stewardship.runtime_background import mail_authority
 
+from .family_mail_dispatch import FamilyDeliveryHeld
 from .operational_content import (
     AlertPhase,
     IncidentKind,
@@ -96,7 +97,9 @@ def notice_alert(notice_id, mode):
 def current_mail(store, *, notice_id, address, semantic_key):
     """Recheck this exact Admin and rebuild current-mode content and audit render."""
     route = current_routing(store)
-    if address not in route.admins or route.sender is None or route.reply_to is None:
+    if route.sender is None or route.reply_to is None:
+        raise FamilyDeliveryHeld("Operational mail channel is not configured.")
+    if address not in route.admins:
         raise PermissionError("Operational mail recipient or channel is unavailable.")
     alert = notice_alert(notice_id, route.mode)
     return mail_render(

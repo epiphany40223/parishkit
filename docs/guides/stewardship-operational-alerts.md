@@ -10,8 +10,8 @@ The branch starts at verified PR #49 merge `70797cb2`.
 ## Scope and boundaries
 
 Deliver a coherent path from bounded incident observations through durable
-deduplication, escalation/recovery and per-Admin email plus optional Slack
-notification. Reuse the existing auth incident producer, task/outbox journals,
+deduplication, escalation/recovery and per-Admin email notification. Reuse the
+existing auth incident producer, task/outbox journals,
 exact-role service boundaries and isolated provider transports. Do not create
 a parallel authentication detector or a caller-controlled operational exemption.
 
@@ -29,7 +29,15 @@ backup, restore and purge producers remain with their owning phases; defining
 a closed incident kind does not enable those workflows. No historical upgrade
 compatibility or retained-development-database changes belong here.
 
-Gate 3 remains closed. Use fake/disposable transports only; no real provider
+At the email-dispatch checkpoint, the increment is split at its independently
+testable incident-to-email boundary to keep review cost bounded. Optional Slack
+has a closed transport and current-channel reader here, but no runtime submission
+owner. The next increment must complete Slack outcome ownership, remaining
+current-phase health producers and notification/shutdown acceptance before
+advancing to ADM-05 or Gate 3. This is a delivery boundary, not removal of any
+BG-10 acceptance criterion; all BG-10 task checkboxes remain open.
+
+Gate 3 has not passed. Use fake/disposable transports only; no real provider
 delivery, deployment or release is authorized by this increment.
 
 ## Checkpoints
@@ -37,9 +45,10 @@ delivery, deployment or release is authorized by this increment.
 1. Define the closed incident taxonomy and typed, fixed-content alert compiler.
 2. Implement durable incident/occurrence ownership, suppression/escalation and
    recovery with strict SQL admission and fresh-install schema evidence.
-3. Bind current Admin recipients and optional Slack, scheduled preparation and
+3. Bind current Admin recipients, scheduled preparation and
    independently authorized delivery with explicit outcome/retry handling.
-4. Integrate existing producers and complete notification/shutdown fault tests.
+4. Integrate existing critical-log/auth producers and email delivery fault tests;
+   retain the explicitly deferred Slack/health/shutdown handoff above.
 5. Finish at least three dual-source review/fix rounds and exact-head CI, then
    deliver through the protected auto-merge cycle.
 
@@ -49,8 +58,8 @@ The first checkpoint provides a closed incident taxonomy, validated non-personal
 facts and fixed subject/HTML/plaintext alternatives. Mode and recovery are
 explicit, counts use USA grouping, and timestamps are labelled UTC. UTC timezone
 objects returned by database adapters normalize without changing presentation.
-This compiler is not a dispatch authorization boundary and currently has no
-production consumer.
+At this checkpoint the compiler was not yet connected to a dispatch owner;
+the subsequent email-dispatch checkpoint below supplies that boundary.
 
 All 42 focused compiler checks pass in 0.06 seconds; Ruff check/format pass.
 No database schema or grants have changed at this checkpoint. Durable storage,
@@ -120,8 +129,8 @@ overrides use `PARISHKIT_STEWARDSHIP_OPERATIONAL_SUPPRESSION_SECONDS` and
 explicit-over-environment-over-YAML precedence. Values are read at process
 startup. The producer pins that policy when opening an episode; changing
 deployment configuration affects new episodes, not recorded decisions or an
-already-active episode. Startup/producer wiring remains part of the next
-checkpoint. These settings never authorize routing, recipients or external I/O.
+already-active episode. Web/operator startup now wires the validated policy for
+the incident producers. These settings never authorize recipients or external I/O.
 
 ## Private transport checkpoint
 
@@ -246,3 +255,125 @@ All 16 focused final-setup tests pass in 135.07 seconds with one database
 bootstrap. The two cases above take 18.90 and 9.23 seconds locally. These local
 and CI measurements are not a controlled machine-to-machine benchmark; the
 next full CI run must establish the resulting shard improvement.
+
+CI run `35300838349` subsequently passed all checks on `c9fd22f`. Its corresponding
+two test calls took 19.12 and 8.33 seconds, and shard 6 test time fell from 716.11
+to 553.91 seconds. The slowest PostgreSQL job still took 18m06s, so this is a
+measured targeted improvement, not completion of the overall CI-speed work.
+
+## Review round 1 correction record
+
+Dual-source review `20260917-225013-916ecb` reviewed `70797cb2..c9fd22f`, with
+three Claude shards and one Pika-owned Codex reviewer. Both sources completed
+without degradation. Raw severities were two HIGH, seven MEDIUM and 16 LOW;
+Pika produced eight validated entries by merging two distinct issues at one
+location. Corrections treat those as distinct findings rather than losing either.
+Corrections pass all 60 focused PostgreSQL checks in 44.20 seconds and 228
+runtime/circuit regressions in 0.99 seconds. Ruff and Markdown lint pass. A fresh
+independent catalog comparison against the previous checkpoint changes only the
+incident state, operational dispatch and delivery-error function bodies; every
+other catalog object is identical. The checked-in fingerprint and full model
+contract pass. This completes round 1; round 2 reviews the correction delta.
+
+- Accepted HIGH: operational provider trip held new work forever. The operational
+  consumer now opts into a five-minute cooldown; campaign circuit behavior and
+  in-flight drainage are unchanged. Tests cover systemic and repeated temporary
+  outages followed by recovery.
+- Accepted MEDIUM within the merged entry: terminal incomplete fanout stranded
+  children. Exact unsent children now cancel with `preparation_failed`, with SQL
+  independently proving the latest parent's terminal state and incomplete cohort.
+  Parent exhaustion and child cancellation create fixed ERROR records, not alerts.
+- Accepted HIGH: enqueue/claim during authority mismatch exhausted preparation.
+  Production now waits for coherence; hint/claim repeat that check, and a later
+  capture race records a held retry excluded from the failure budget.
+- Accepted MEDIUM: page capture needlessly reselected routing. Existing cohorts
+  now retain their captured recipients without reading new routing; compiled
+  admission still verifies coherence before executing a page.
+- Accepted MEDIUM: absent email settings could exhaust a live intent. Channel
+  absence holds claims; loss after claim uses the existing held-retry journal.
+  Tests remove and restore the actual configured channel without spending attempts.
+- Accepted MEDIUM: web could write worker-owned incident kinds. SQL now restricts
+  that identity to the four authentication kinds on both INSERT and UPDATE.
+- Partly accepted MEDIUM: intake needs routable Admins. The metadata predicate
+  now checks exact Admin existence and capture races become holds. Domain-wide
+  Admins and email records missing mandatory sender/reply-to are already rejected
+  by policy/configuration validation; no invalid-configuration fallback is added.
+- Rejected MEDIUM (false positive): unknown log events poisoning the collector.
+  `schema/tables.sql` already has `operational_event_safe`, whose closed values
+  match `Event`; an attempted unknown SQL insert fails before collection. No
+  obsolete-schema/enum-rename compatibility is required in this fresh baseline.
+- Deferred MEDIUM to the explicitly scoped next health-producer increment:
+  healthy-window resolution for `admin_abuse`, `family_abuse` and
+  `limiter_state_lost`, plus repeated observations for sustained limiter outage.
+  Only `limiter_unavailable` currently supplies an observed recovery signal.
+  Elapsed silence must not manufacture recovery. Complete these before BG-10
+  or Gate 3, alongside the deferred Slack/shutdown acceptance.
+- Fixed LOW: pin only the collection test's scheduler-minute bucket so a minute
+  rollover cannot spuriously fail idempotence. Real database/incident clocks stay
+  unchanged. Other LOW suggestions remain non-blocking; provider uncertainty
+  already creates the shared durable WARNING, invoker-only helper ACLs follow
+  existing ownership conventions, and full producer-volume tuning belongs to
+  the later performance acceptance. No HIGH/MEDIUM issue is silently downgraded.
+
+## Review round 2 correction record
+
+Dual-source review `20260917-231657-031dfd` reviewed `c9fd22f..8c62ad2` with
+one Claude and one Pika-owned Codex reviewer. Both completed without degradation.
+Raw severities were zero HIGH, two MEDIUM and six LOW; both MEDIUM entries
+validated. The dispositions below preserve the bounded provider policy rather
+than replacing admission with an effectful half-open reservation.
+
+- Fixed MEDIUM: authority mismatch escaped fanout hint admission as `ConfigError`
+  and aborted the scheduler's entire mixed page. Hint/claim now return a held
+  admission result, while effect-time races still become journaled held retries.
+  A real-role mixed scheduler test proves the collector's hint is published and
+  the held preparation consumes no attempt.
+- Rejected MEDIUM (false positive): the claim that a cooldown admits every queued
+  alert simultaneously and exhausts them after ten minutes does not match the
+  maintained solo, concurrency-one consumer. Each subsequent send rechecks the
+  shared circuit; denied hints consume neither Task nor provider attempts. Actual
+  provider attempts remain bounded, and definitive systemic nonacceptance remains
+  a durable terminal failure with an ERROR record, as designed. New PostgreSQL
+  tests cover both systemic and repeated temporary outages, seven denied hints
+  with zero attempts, and successful later delivery after a simulated hour.
+  Only the process cooldown clock and external SMTP are replaced; SQL clocks,
+  live role admission, Task execution and durable outcomes are real.
+- Fixed LOW: combine repeated cohort and parent-state reads into one metadata
+  query, retaining the separate mandatory lock-order proof. The real-role test
+  asserts the resulting two-query budget.
+- Fixed LOW: cover channel removal after an existing MAIL claim as well as before
+  claim. The maintained execution journals a held retry without consuming a
+  preparation or provider attempt; restoring the channel admits waiting work.
+- Clarified LOW: Gate 3 has not passed. Slack runtime ownership, remaining health
+  producers and shutdown acceptance still have their explicit next-increment
+  owner. Invalid/missing routing remains a hold; elapsed silence is not recovery.
+
+Post-fix validation passes all 21 focused PostgreSQL tests in 32.10 seconds,
+228 runtime/circuit checks in 1.10 seconds, Ruff and Markdown lint. No SQL catalog
+object changed in this round. Full CI run `35302605738` passed all 24 checks plus
+DCO on the prior head `8c62ad2`; the correction head requires its own CI. Round 2
+is complete; round 3 reviews its correction delta with surrounding context.
+
+## Review round 3 and delivery handoff
+
+Dual-source review `20260917-233552-6256a7` reviewed `8c62ad2..547d2a9` with
+one Claude and one Pika-owned Codex reviewer. Both completed without degradation;
+raw severities were zero HIGH, zero MEDIUM and two LOW. Finalization approved
+with no validated Medium-or-higher findings. Codex's read-only review could not
+run pytest because its sandbox had no writable temporary directory; the parent
+ran the focused tests recorded above, and full CI remains independently required.
+
+The LOW request for denied-claim coverage is already handled by the neighboring
+seven-denied-claims regression; the mixed-scheduler test independently proves the
+collector hint survives. Keep both contracts without repeating fixture setup.
+The low-confidence raw-SQL table-name suggestion is non-blocking: this repository
+uses fixed SQL identifiers for the fresh baseline, with real-role/schema tests
+checking the matching model/table/grant contract. No accepted finding remains.
+
+All three review/fix rounds are complete. The final history is consolidated into
+eight adjacent logical groups, preserving the final tree exactly; signed-off
+history and exact-head CI/DCO must pass before protected merge. The PR records
+the final tested SHA, CI and merge receipt; its successor records the verified
+main merge. Full BG-10 remains incomplete for the explicitly named Slack,
+health-producer and shutdown scope above. No live provider, deployment, release
+or Gate 3 approval is implied.

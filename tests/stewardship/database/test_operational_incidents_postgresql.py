@@ -325,3 +325,36 @@ def test_other_runtime_roles_have_no_incident_mutation_authority():
             ):
                 cursor.execute("INSERT INTO stewardship_ops_incident DEFAULT VALUES")
             assert error.value.__cause__.sqlstate == "42501", role
+
+
+@pytest.mark.django_db(transaction=True)
+def test_web_can_only_observe_and_resolve_authentication_kinds():
+    """Raw web SQL cannot spoof or clear worker-owned operational episodes."""
+    from .test_runtime_auth_grants_postgresql import web_login
+
+    worker_kind = IncidentKind.STORAGE_INTEGRITY
+    worker_incident = record_observation(
+        worker_kind, IncidentLevel.CRITICAL, policy=POLICY
+    )
+    with web_login():
+        for kind in (
+            IncidentKind.ADMIN_ABUSE,
+            IncidentKind.FAMILY_ABUSE,
+            IncidentKind.LIMITER_UNAVAILABLE,
+            IncidentKind.LIMITER_STATE_LOST,
+        ):
+            row = record_observation(kind, IncidentLevel.CRITICAL, policy=POLICY)
+            assert record_recovery(kind).pk == row.pk
+        for operation in (
+            lambda: record_observation(
+                IncidentKind.SYSTEM_FAILURE, IncidentLevel.CRITICAL, policy=POLICY
+            ),
+            lambda: record_observation(
+                worker_kind, IncidentLevel.CRITICAL, policy=POLICY
+            ),
+            lambda: record_recovery(worker_kind),
+        ):
+            with pytest.raises(IntegrityError), transaction.atomic():
+                operation()
+    worker_incident.refresh_from_db()
+    assert worker_incident.occurrences == 1 and worker_incident.resolved_at is None

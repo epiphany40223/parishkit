@@ -70,6 +70,15 @@ BEGIN
             AND a.roles @> '["administrator"]'::jsonb
           WHERE recipient.outbox_id=message.id AND a.email=recipient.address);
       END IF;
+      IF proposed->>'action'='cancel_unsent' AND proposed->>'reason'='preparation_failed' THEN
+        RETURN EXISTS(SELECT 1 FROM stewardship_ops_recipient recipient
+          JOIN stewardship_ops_cohort c ON c.id=recipient.cohort_id
+          JOIN stewardship_task_run original ON original.id=c.run_id
+          WHERE recipient.outbox_id=message.id
+            AND (SELECT count(*) FROM stewardship_ops_recipient WHERE cohort_id=c.id)<c.recipient_count
+            AND (SELECT state FROM stewardship_task_run WHERE root_id=original.root_id
+              ORDER BY retry_sequence DESC LIMIT 1) IN ('failed','cancelled'));
+      END IF;
       RETURN false;
     END IF;
     IF relation_name='stewardship_outbox_render' THEN
@@ -88,7 +97,8 @@ RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,
 DECLARE failed boolean:=false;
 BEGIN
     IF TG_TABLE_NAME='stewardship_outbox_event' THEN
-      IF NEW.state NOT IN ('retry_wait','permanent_failure') OR NEW.reason NOT LIKE 'smtp_%'
+      IF NOT ((NEW.state IN ('retry_wait','permanent_failure') AND NEW.reason LIKE 'smtp_%')
+        OR (NEW.state='cancelled' AND NEW.reason='preparation_failed'))
         THEN RETURN NULL; END IF;
       failed:=EXISTS(SELECT 1 FROM stewardship_outbox_message
         WHERE id=NEW.message_id AND purpose='operational');
@@ -96,7 +106,8 @@ BEGIN
       -- Most Task events are claims/progress/heartbeats. Do not plan or execute
       -- a delivery lookup for each of those unrelated high-volume events.
       IF NEW.action NOT IN ('permanent_failure','recovery_fail') THEN RETURN NULL; END IF;
-      failed:=EXISTS(SELECT 1 FROM stewardship_task_run t
+      failed:=EXISTS(SELECT 1 FROM stewardship_task_run WHERE id=NEW.run_id
+          AND task_type='operational_prepare') OR EXISTS(SELECT 1 FROM stewardship_task_run t
           JOIN stewardship_outbox_message m ON m.id=t.domain_request_id AND m.task_id=t.root_id
           WHERE t.id=NEW.run_id AND t.task_type='outbox_delivery' AND m.purpose='operational'
             AND m.state IN ('pending','retry_wait'));

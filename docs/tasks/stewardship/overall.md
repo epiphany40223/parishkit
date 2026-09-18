@@ -524,7 +524,7 @@ checks passed. Its [delivery evidence](../../guides/stewardship-test-efficiency.
 records unchanged coverage and the measured log-copy saving without claiming
 the remaining database-test bottleneck is solved. From the verified fresh tip,
 `pr/stewardship-operational-alerts` is the next BG-10 working branch. BG-10 is
-not yet complete, and Gate 3 remains open.
+not yet complete, and Gate 3 has not passed.
 
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).

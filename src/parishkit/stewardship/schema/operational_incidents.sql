@@ -81,6 +81,10 @@ BEGIN
     IF TG_OP='DELETE' THEN
         RAISE EXCEPTION 'Operational episode history cannot be deleted' USING ERRCODE='23514';
     END IF;
+    IF session_user='pk_stewardship_web' AND NEW.kind NOT IN
+      ('limiter_unavailable','limiter_state_lost','admin_abuse','family_abuse') THEN
+        RAISE EXCEPTION 'Web operational signals are limited to authentication' USING ERRCODE='23514';
+    END IF;
     IF TG_OP='INSERT' THEN
         IF NEW.version<>1 OR NEW.action<>'observe' OR NEW.occurrences<>1
            OR NEW.level<>'WARNING' OR NEW.last_notice_at IS NOT NULL

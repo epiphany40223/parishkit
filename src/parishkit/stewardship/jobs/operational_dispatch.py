@@ -26,7 +26,7 @@ from .family_mail_dispatch import (
 )
 from .family_mail_results import result_evidence
 from .models import TaskRun
-from .operational_models import OperationalCohort, OperationalRecipient
+from .operational_models import OperationalRecipient
 from .operational_routing import current_mail
 from .outbox_models import OutboxMessage
 from .outbox_storage import change_message, prepare_message
@@ -66,16 +66,36 @@ def bound_operational(status):
     return message
 
 
+def cohort_state(message):
+    """Read completion and latest-parent failure in one metadata-only query."""
+    require_work_order()
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT (SELECT count(*) FROM stewardship_ops_recipient "
+            "WHERE cohort_id=c.id)=c.recipient_count, "
+            "(SELECT state FROM stewardship_task_run WHERE root_id=parent.root_id "
+            "ORDER BY retry_sequence DESC LIMIT 1) IN ('failed','cancelled') "
+            "FROM stewardship_ops_recipient r "
+            "JOIN stewardship_ops_cohort c ON c.id=r.cohort_id "
+            "JOIN stewardship_task_run parent ON parent.id=c.run_id "
+            "WHERE r.outbox_id=%s",
+            [message.pk],
+        )
+        result = cursor.fetchone()
+    if result is None:
+        raise PermissionError("Operational cohort binding is unavailable.")
+    return result
+
+
 def complete_cohort(message):
     """Metadata-only completion never reads an address or a rendered message."""
-    recipient = OperationalRecipient.objects.only("cohort_id").get(outbox_id=message.pk)
-    cohort = OperationalCohort.objects.only("recipient_count").get(
-        pk=recipient.cohort_id
-    )
-    return (
-        OperationalRecipient.objects.filter(cohort=cohort).count()
-        == cohort.recipient_count
-    )
+    return cohort_state(message)[0]
+
+
+def preparation_failed(message):
+    """An incomplete cohort whose latest preparation run is terminal cannot send."""
+    complete, failed = cohort_state(message)
+    return failed and not complete
 
 
 def recipient_current(message):
@@ -158,9 +178,11 @@ def begin_submission(identifier, claim, *, store, configuration_id):
         return mail, message.provider_deadline, status.attempt
 
 
-def cancel_unsent(message, claim):
-    """Revocation is cancellation of this exact Admin intent, never acceptance."""
+def cancel_unsent(message, claim, *, reason="recipient_revoked"):
+    """Terminal preparation or revocation cancels only an exact unsent intent."""
     require_work_order()
+    if reason not in {"recipient_revoked", "preparation_failed"}:
+        raise ValueError("Unknown operational cancellation reason.")
 
     def admit(action, identity, status, proposal):
         """No revoked-recipient cancellation can affect another message."""
@@ -168,7 +190,11 @@ def cancel_unsent(message, claim):
         return (
             action is DeliveryAction.CANCEL_UNSENT
             and current.pk == status.message_id == message.pk
-            and not recipient_current(current)
+            and (
+                preparation_failed(current)
+                if reason == "preparation_failed"
+                else not recipient_current(current)
+            )
         )
 
     return change_message(
@@ -178,7 +204,7 @@ def cancel_unsent(message, claim):
         expected_version=message.version,
         actor_id=claim.worker_id,
         correlation_id=claim.run_id,
-        evidence=DeliveryEvidence(reason="recipient_revoked"),
+        evidence=DeliveryEvidence(reason=reason),
         admit=admit,
     )
 

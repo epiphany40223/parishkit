@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from django.db import DatabaseError, IntegrityError, connection, transaction
 
+from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.domain import SystemMode
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
@@ -249,3 +250,76 @@ def test_unconfigured_notifications_remain_pending_without_failed_tasks():
     assert schedule() == ()
     assert OperationalNotice.objects.count() == 1
     assert not TaskRun.objects.exists()
+
+
+def test_configuration_mismatch_never_consumes_fanout_attempts(routing, monkeypatch):
+    """A prolonged restore hold must not exhaust a notice before a worker can use it."""
+    store, _, _, _ = routing
+    (identifier,) = schedule()
+    actual = store.manifest_reference
+    monkeypatch.setattr(store, "manifest_reference", lambda: (uuid4(), "f" * 64))
+    for _ in range(7):
+        with pytest.raises(PermissionError):
+            consume(identifier, store)
+    task = TaskRun.objects.get(pk=identifier)
+    assert task.state == "queued" and task.attempt == 0
+    assert not OperationalCohort.objects.exists()
+    monkeypatch.setattr(store, "manifest_reference", actual)
+    assert consume(identifier, store)
+    assert OperationalRecipient.objects.count() == 2
+
+
+def test_held_fanout_does_not_block_safe_collection_hints(routing, monkeypatch):
+    """One held purpose cannot abort a mixed scheduler page or consume its hints."""
+    from parishkit.stewardship.audit.services import operational
+    from parishkit.stewardship.jobs.operational_collection import (
+        TASK_TYPE as COLLECT,
+    )
+    from parishkit.stewardship.jobs.operational_collection import (
+        collection_handler,
+        produce_collection,
+    )
+    from parishkit.stewardship.jobs.scheduler import scan_once
+    from parishkit.stewardship.observability import Event
+
+    store, _, _, _ = routing
+    (preparation,) = schedule()
+    operational(Event.TASK_FAILED, level="CRITICAL")
+    monkeypatch.setattr(store, "manifest_reference", lambda: (uuid4(), "f" * 64))
+    hints = []
+    with task_login(ServiceRole.SCHEDULER, exact=True), scheduler_session() as guard:
+        (collector,) = produce_collection(guard)
+        result = scan_once(
+            guard,
+            handlers={
+                TASK_TYPE: fanout_handler(store, scheduler=True),
+                COLLECT: collection_handler(scheduler=True),
+            },
+            publish=hints.append,
+        )
+    assert result.published == 1
+    assert [hint.run_id for hint in hints] == [collector]
+    assert TaskRun.objects.get(pk=preparation).attempt == 0
+
+
+def test_capture_coherence_race_is_a_journaled_hold(routing, monkeypatch):
+    """Loss between claim and capture retains a non-failure checkpoint for recovery."""
+    from parishkit.stewardship.jobs import operational_fanout
+    from parishkit.stewardship.jobs.family_mail_delivery_tasks import (
+        preparation_attempts,
+    )
+    from parishkit.stewardship.jobs.storage import _status
+
+    store, _, _, _ = routing
+    (identifier,) = schedule()
+
+    def unavailable(store):
+        """Simulate the second authority observation failing, not ownership itself."""
+        raise ConfigError("Synthetic configuration race.")
+
+    monkeypatch.setattr(operational_fanout, "current_routing", unavailable)
+    assert consume(identifier, store)
+    row = TaskRun.objects.get(pk=identifier)
+    assert row.state == "retry_wait" and row.phase == "reconciling"
+    assert preparation_attempts(_status(row)) == 0
+    assert not OperationalCohort.objects.exists()
