@@ -24,28 +24,39 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 @pytest.mark.parametrize(
-    "fault",
+    "faults",
     [
-        "current_join",
-        "noncurrent_leave",
-        "unknown_ministry",
-        "inactive_ministry",
-        "unselected_ministry",
-        "proposed_leave",
-        "foreign_member",
-        "duplicate",
-        "boolean_id",
-        "string_id",
-        "extra_group",
-        "missing_member",
-        "disabled_census",
-        "proposed_without_census",
+        (
+            "current_join",
+            "noncurrent_leave",
+            "unknown_ministry",
+            "foreign_member",
+            "duplicate",
+            "boolean_id",
+            "string_id",
+            "extra_group",
+            "missing_member",
+            "disabled_census",
+            "proposed_without_census",
+        ),
+        ("inactive_ministry",),
+        ("unselected_ministry",),
+        ("proposed_leave",),
+    ],
+    ids=[
+        "common-fixture",
+        "inactive-ministry",
+        "unselected-ministry",
+        "proposed-member",
     ],
 )
 def test_sql_revalidates_complete_ministry_aggregate(
-    response_service, monkeypatch, fault
+    response_service, monkeypatch, faults
 ):
     """Bypass only Python answer validation; SQL still owns the admitted boundary."""
+    # Only the common invalid-input cases share setup. Cases with different
+    # configuration/census prerequisites retain independent fixture instances.
+    fault = faults[0]
     harness = response_service
     form = start(harness, census=fault == "proposed_leave")
     if fault == "unselected_ministry":
@@ -112,16 +123,30 @@ def test_sql_revalidates_complete_ministry_aggregate(
             result["proposed_members"] = {"new": {"first_name": "Unscoped"}}
         return result
 
-    monkeypatch.setattr(submission, "validate_answers", forge)
-    with web_login(), pytest.raises(IntegrityError), transaction.atomic():
-        submission.submit_family(
+    with monkeypatch.context() as patch:
+        patch.setattr(submission, "validate_answers", forge)
+        for fault in faults:
+            # A genuine independent transaction per attempted write preserves
+            # deferred SQL checks. Only the expensive initial campaign is reused.
+            with web_login(), pytest.raises(IntegrityError), transaction.atomic():
+                submission.submit_family(
+                    harness.request,
+                    harness.service,
+                    baseline_id=UUID(form["baseline"]),
+                    payload=answers,
+                )
+            assert not Submission.objects.exists(), fault
+            assert not MinistryRequest.objects.exists(), fault
+    # Successful unchanged submission proves a prior failed case did not poison
+    # the shared baseline/session and that these were not generic admission errors.
+    with web_login():
+        accepted = submission.submit_family(
             harness.request,
             harness.service,
             baseline_id=UUID(form["baseline"]),
             payload=answers,
         )
-    assert not Submission.objects.exists()
-    assert not MinistryRequest.objects.exists()
+    assert Submission.objects.get().pk == accepted.submission.pk
 
 
 def test_missing_derived_ministry_work_rolls_back_every_final_effect(

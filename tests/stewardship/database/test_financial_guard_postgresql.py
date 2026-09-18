@@ -8,7 +8,9 @@ from django.db import IntegrityError, connection, transaction
 
 from ..test_financial_answers import CHECK, OPTIONS, OTHER
 
-pytestmark = pytest.mark.django_db(transaction=True)
+# This module calls only our immutable scalar/JSON SQL function. Each case
+# needs a rollback boundary, not a full-schema flush or a genuine commit.
+pytestmark = pytest.mark.django_db
 
 
 def guard(answer, *, annual=Decimal("12.30")):
