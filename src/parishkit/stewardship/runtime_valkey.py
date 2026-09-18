@@ -30,7 +30,7 @@ def web_acl(password):
     digest = _password_digest(password)
     commands = (
         "+ping +evalsha +eval +script|load +script|exists +time "
-        "+zremrangebyscore +zadd +expire +zremrangebyrank +zcard "
+        "+zremrangebyscore +zadd +expire +zremrangebyrank +zcard +zcount "
         "+hmget +hset +get +set +exists +del +hincrby +hgetall "
         "+select +client|setinfo +info"
     )

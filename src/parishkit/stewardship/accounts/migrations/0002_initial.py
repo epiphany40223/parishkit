@@ -613,6 +613,22 @@ class Migration(migrations.Migration):
                         ("run_id", models.CharField(max_length=40)),
                         ("marker", models.UUIDField()),
                         ("evicted_keys", models.PositiveBigIntegerField()),
+                        (
+                            "observed_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(null=True),
+                        ),
+                        (
+                            "admin_healthy_since",
+                            parishkit.stewardship.storage.UTCDateTimeField(null=True),
+                        ),
+                        (
+                            "family_healthy_since",
+                            parishkit.stewardship.storage.UTCDateTimeField(null=True),
+                        ),
+                        (
+                            "store_healthy_since",
+                            parishkit.stewardship.storage.UTCDateTimeField(null=True),
+                        ),
                     ],
                     options={
                         "db_table": "stewardship_limiter_health",

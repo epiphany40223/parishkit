@@ -374,6 +374,10 @@ records the result. Remaining observations/recovery are now in progress on
 `pr/stewardship-health-observation` from verified main `fb945fb9`; the
 [successor guide](../../guides/stewardship-health-observation.md) records scope
 and checkpoints without prematurely marking the full package complete.
+PR #52 isolates authentication recovery and measured test-efficiency changes.
+Its following service-health checkpoint must provide bounded periodic forced
+limiter probes: request/startup samples alone do not deliver unattended recovery
+for a quiet parish. BG-10.03 stays incomplete until that integration passes.
 
 ## BG-11: Exceptional purge worker
 

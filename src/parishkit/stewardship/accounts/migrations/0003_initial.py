@@ -233,6 +233,28 @@ class Migration(migrations.Migration):
                         name="limiter_health_run_id",
                     ),
                 ),
+                *[
+                    migrations.AddConstraint(
+                        model_name="limiterstorehealth",
+                        constraint=models.CheckConstraint(
+                            condition=models.Q(
+                                **{f"{kind}_healthy_since__isnull": True}
+                            )
+                            | (
+                                models.Q(observed_at__isnull=False)
+                                & models.Q(
+                                    **{
+                                        f"{kind}_healthy_since__lte": models.F(
+                                            "observed_at"
+                                        )
+                                    }
+                                )
+                            ),
+                            name=f"limiter_health_{kind}_window",
+                        ),
+                    )
+                    for kind in ("admin", "family", "store")
+                ],
                 migrations.AddField(
                     model_name="ministryactivity",
                     name="configuration",

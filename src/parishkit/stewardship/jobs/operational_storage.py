@@ -47,8 +47,12 @@ def record_observation(kind, level, *, policy):
         return row
 
 
-def record_recovery(kind):
-    """Resolve an existing episode once; health does not create empty incidents."""
+def record_recovery(kind, *, healthy_since=None):
+    """Resolve once, optionally fencing against failures after healthy proof began.
+
+    The optional cutoff is checked under the same episode lock as observation;
+    an older healthy sample cannot erase a newly recorded failure.
+    """
     if not isinstance(kind, IncidentKind):
         raise TypeError("Typed operational incident kind is required.")
     with transaction.atomic(), connection.cursor() as cursor:
@@ -58,7 +62,7 @@ def record_recovery(kind):
             .filter(kind=kind.value, resolved_at__isnull=True)
             .first()
         )
-        if row is not None:
+        if row is not None and (healthy_since is None or row.last_seen < healthy_since):
             OperationalIncident.objects.filter(pk=row.pk).update(
                 action="resolve",
                 version=row.version + 1,

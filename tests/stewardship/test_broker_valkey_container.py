@@ -127,6 +127,27 @@ def connection(endpoint, role):
     )
 
 
+def test_real_web_acl_allows_read_only_recovery_counts(valkey_endpoint):
+    """The deployed web command vocabulary must admit the actual recovery script."""
+    from parishkit.stewardship.accounts.limiter_recovery import sample_counts
+
+    client = connection(valkey_endpoint, ServiceRole.WEB)
+    namespace = "stewardship:auth:v1:recovery-test:" + uuid4().hex
+    try:
+        marker = b"synthetic-canary"
+        client.set(namespace + ":health:marker", marker)
+        seconds, micros = client.time()
+        client.zadd(
+            namespace + ":aggregate:family:attempts",
+            {"synthetic-attempt": seconds + micros / 1_000_000},
+        )
+        counts, coherent = sample_counts(client, namespace, marker)
+        assert coherent
+        assert counts == {"admin": [0, 0, 0, 0], "family": [1, 0, 0, 0]}
+    finally:
+        client.close()
+
+
 @pytest.mark.parametrize("recovery", ["reject", "visibility"])
 def test_real_transport_can_publish_consume_and_ack_one_uuid(valkey_endpoint, recovery):
     """The narrowed ACL supports actual Kombu operations, not just a guessed list."""
