@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import pytest
 from django.contrib.sessions.models import Session
-from django.db import DatabaseError, connection, transaction
+from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.http import HttpResponse
 from django.test import Client, RequestFactory
 
@@ -29,7 +29,7 @@ from parishkit.stewardship.accounts.sessions import (
     NamespacedSessionMiddleware,
     database_now,
 )
-from parishkit.stewardship.audit.models import AuditEvent
+from parishkit.stewardship.audit.models import AuditEvent, OperationalLog
 from parishkit.stewardship.audit.services import operational
 from parishkit.stewardship.observability import Event
 from parishkit.stewardship.service_boundaries import ALLOWED_SECRETS
@@ -49,6 +49,16 @@ pytestmark = pytest.mark.django_db(transaction=True)
 def test_all_operational_events_are_admitted_by_sql(event):
     """New Python events cannot drift from the database's closed event set."""
     assert operational(event).event == event.value
+
+
+@pytest.mark.django_db(transaction=False)
+def test_unregistered_operational_event_is_rejected_by_sql():
+    """The closed logging contract rejects arbitrary text without source setup."""
+    with pytest.raises(IntegrityError) as error, transaction.atomic():
+        OperationalLog.objects.create(
+            event="PRIVATE-UNREGISTERED", level="INFO", schema="task", context={}
+        )
+    assert error.value.__cause__.diag.constraint_name == "operational_event_safe"
 
 
 @pytest.mark.parametrize("target", sorted(SECRET_TARGETS))
