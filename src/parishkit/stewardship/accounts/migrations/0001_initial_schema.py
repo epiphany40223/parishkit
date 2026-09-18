@@ -23,6 +23,7 @@ def schema_sql():
                 "seed",
                 "guards",
                 "delivery",
+                "mail_health",
                 "family_dispatch",
                 "production",
                 "cleanup",

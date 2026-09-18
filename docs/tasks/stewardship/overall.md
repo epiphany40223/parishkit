@@ -567,6 +567,12 @@ records the completed reviews, exact-head CI and human-authorized check-name
 update. The [source-health increment](../../guides/stewardship-source-health.md)
 now resumes BG-10 feature work; provider/due-work health remains separately open.
 
+PR #55 subsequently merged as `7b5c43b6`, verified on refreshed `origin/main`.
+Its [protected delivery receipt](../../guides/stewardship-source-health.md#protected-delivery)
+supersedes pending review/CI notes. The [mail-health increment](../../guides/stewardship-mail-health.md)
+now owns provider alerts and actual-success recovery; due-work health and final
+BG-10 acceptance remain before ADM-05.
+
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).
 3. Complete required [RPT-02](reports.md#rpt-02-population-and-calculation-library) calculations and the [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics) fact-materialization service before [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests); report UI remains in Phase 5.

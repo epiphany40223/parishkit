@@ -235,6 +235,7 @@ BEGIN
             WHEN 'source_refresh_held' THEN 'source_refresh_failed'
             WHEN 'source_credential_failed' THEN 'source_refresh_failed'
             WHEN 'source_provider_failed' THEN 'source_refresh_failed'
+            WHEN 'mail_provider_failed' THEN 'mail_provider_unavailable'
             WHEN 'campaign_boundary_lag' THEN 'scheduler_lag'
             WHEN 'production_cleanup_failed' THEN 'production_cleanup_failed'
             ELSE 'system_failure' END

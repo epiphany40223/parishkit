@@ -34,6 +34,7 @@ class Event(StrEnum):
     SOURCE_HELD = "source_refresh_held"
     SOURCE_CREDENTIAL_FAILED = "source_credential_failed"
     SOURCE_PROVIDER_FAILED = "source_provider_failed"
+    MAIL_PROVIDER_FAILED = "mail_provider_failed"
     INSTALLER_REQUEST_FAILED = "installer_request_failed"
     HANDOFF_KEY_MISMATCH = "credential_handoff_key_mismatch"
     AUTHENTICATION_LIMITS_WEAKENED = "authentication_limits_weakened"
