@@ -132,28 +132,34 @@ def test_explicit_unknown_birth_date_survives_repeat_visit(
     assert field(load_form(harness), "birth_date")["value"] == "unknown"
 
 
-@pytest.mark.parametrize(
-    "definition", MEMBER_FIELDS, ids=lambda definition: definition.name
-)
-def test_expanded_sql_source_reconstruction_matches_python(
-    response_service, definition
-):
+def test_expanded_sql_source_reconstruction_matches_python(response_service):
     """Source values and availability must match independently in both languages."""
     form, _ = form_and_answers(response_service)
-    source = next(
-        item.source
-        for item in form.inputs.fields
-        if item.entity == "member" and item.field == definition.name
-    )
     with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT stewardship_response_field_source_v1(%s,%s,%s,%s)",
-            [form.baseline.source_id, form.baseline.family_id, "3", definition.name],
-        )
-        result = cursor.fetchone()[0]
-    if isinstance(result, str):
-        result = json.loads(result)
-    assert result == {"available": source.available, "value": source.value}
+        # Every field reads the same immutable snapshot; creating a campaign
+        # and authenticating again for each field adds no isolation coverage.
+        for definition in MEMBER_FIELDS:
+            source = next(
+                item.source
+                for item in form.inputs.fields
+                if item.entity == "member" and item.field == definition.name
+            )
+            cursor.execute(
+                "SELECT stewardship_response_field_source_v1(%s,%s,%s,%s)",
+                [
+                    form.baseline.source_id,
+                    form.baseline.family_id,
+                    "3",
+                    definition.name,
+                ],
+            )
+            result = cursor.fetchone()[0]
+            if isinstance(result, str):
+                result = json.loads(result)
+            assert result == {
+                "available": source.available,
+                "value": source.value,
+            }, definition.name
 
 
 @pytest.mark.parametrize(

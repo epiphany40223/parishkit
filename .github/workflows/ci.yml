@@ -1,12 +1,9 @@
 name: CI
 
-# Run the same validation on pull requests, on merge-queue groups, and on
-# pushes to main. The merge_group trigger is required for the merge queue:
-# without it no checks run on the temporary queue branches, so the queue
-# cannot fail a queued pull request.
+# Validate the exact PR head and landed main. The repository uses protected
+# auto-merge, not a merge queue, so there is no duplicate queue validation run.
 on:
   pull_request:
-  merge_group:
   push:
     branches: [main]
 
@@ -14,7 +11,7 @@ permissions:
   contents: read
 
 # Superseded PR heads cannot satisfy the final-head gate. Stop spending runner
-# time on them; main and merge-queue events keep unique, uncancelled groups.
+# time on them; main events keep unique, uncancelled groups.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -197,6 +194,8 @@ jobs:
           POSTGRES_USER: stewardship_tests
           POSTGRES_DB: stewardship_tests
           POSTGRES_PASSWORD: disposable-test-only
+          # Keep errors/details, not multi-megabyte rejected payload statements.
+          POSTGRES_INITDB_ARGS: --set=log_min_error_statement=panic
         ports: ["55432:5432"]
         options: >-
           --tmpfs /var/lib/postgresql:rw,size=2g
