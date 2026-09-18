@@ -54,6 +54,8 @@ def test_warning_polls_durable_count_and_survives_unavailable_response(
     page, component_origin
 ):
     """Failed polling never hides uncertainty or turns a GET into session activity."""
+    from playwright.sync_api import expect
+
     page.clock.install(time=NOW)
     count = [1234]
     requests = []
@@ -81,15 +83,29 @@ def test_warning_polls_durable_count_and_survives_unavailable_response(
     page.goto(component_origin + "/delivery")
     warning = page.locator("[data-delivery-warning]")
     assert warning.locator("..").get_attribute("aria-live") == "polite"
+    unavailable = page.locator("[data-background-unavailable]")
     for index, value in enumerate((1234, 1234, None, "bad", 0)):
         count[0] = value
+        failed = value is None or value == "bad"
+        # This separate indicator is the poll handler's final success/error
+        # action. Give it the opposite state so even unchanged warning values
+        # have an observable completion edge. Do not touch the warning itself.
+        unavailable.evaluate(
+            "(element, hidden) => { element.hidden = hidden; }", failed
+        )
         with page.expect_response("**/admin/background/counts"):
             page.clock.fast_forward(30000)
-        if value == 0:
-            assert warning.is_hidden()
+        if failed:
+            expect(unavailable).to_be_visible()
         else:
-            assert warning.is_visible()
-            assert "1,234" in warning.inner_text()
+            expect(unavailable).to_be_hidden()
+        if value == 0:
+            # Response arrival precedes asynchronous JSON handling and DOM writes.
+            # Wait for application state, not an arbitrary sleep or a retry run.
+            expect(warning).to_be_hidden()
+        else:
+            expect(warning).to_be_visible()
+            expect(warning).to_contain_text("1,234")
         if value == "bad":
             assert page.locator("[data-background-total]").inner_text() == "0"
         if index == 0:
