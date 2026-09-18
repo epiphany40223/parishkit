@@ -377,3 +377,19 @@ the final tested SHA, CI and merge receipt; its successor records the verified
 main merge. Full BG-10 remains incomplete for the explicitly named Slack,
 health-producer and shutdown scope above. No live provider, deployment, release
 or Gate 3 approval is implied.
+
+## Protected delivery
+
+[PR #50](https://github.com/epiphany40223/parishkit/pull/50) auto-merged as
+`18959490893f60f25648bf580a56b210fdeec999`, verified on refreshed `origin/main`.
+Final head `c12d5dc5232db21834b1a5b8c317366a2e2d55d1` passed all 24 CI jobs in
+run `35304228883` and DCO. No merge queue or protection bypass was used. The
+eight logical signed-off commits retain the exact pre-squash tree. This receipt
+supersedes earlier pending-review/CI/merge notes, not the remaining BG-10 scope.
+
+PostgreSQL shard 1 remained the slowest at 18m34s, followed by the 45-second
+coverage aggregation. The baseline runs only on shard 1; schema bootstrap is
+once per shard. Continue measured fixture/cost improvements without removing
+application behavior or permission coverage. The
+[remaining operational health increment](stewardship-operational-health.md)
+starts from this verified merge; Gate 3 has not passed.
