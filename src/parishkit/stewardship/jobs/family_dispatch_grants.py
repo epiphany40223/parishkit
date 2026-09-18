@@ -38,6 +38,8 @@ def add_dispatch_grants(tables, columns):
     for table in (
         "stewardship_ops_incident",
         "stewardship_ops_notice",
+        "stewardship_ops_cohort",
+        "stewardship_ops_recipient",
         "stewardship_campaign",
         "stewardship_campaign_configuration",
         "stewardship_campaign_work_gate",

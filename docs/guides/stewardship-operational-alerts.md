@@ -205,3 +205,28 @@ constraint before accepting the fingerprint. No development database was changed
 Provider submission, Slack outcome ownership, remaining health producers and
 shutdown acceptance are still open. The draft is not ready for final reviews or
 merge, and BG-10/Gate 3 remain incomplete.
+
+## Operational email dispatch checkpoint
+
+The shared outbox Task now selects independently admitted campaign and operational
+owners from stored identity. Operational MAIL rechecks the complete cohort,
+current exact Admin, coherent configuration and installed Workspace fingerprint;
+it commits an attempt before using the closed private helper. Current-mode fixed
+content is enforced independently in SQL. Provider outcomes and abandoned-attempt
+uncertainty use the existing numbered outbox journal; no unknown result permits
+automatic resend. In-flight observations remain valid after mode/grant changes.
+
+Definitive failures and exhausted preparation create fixed ERROR logs from their
+immutable evidence, not recursive CRITICAL email events. This uses guarded SQL
+triggers rather than granting MAIL arbitrary log insertion. A focused systemic-
+failure test caught that permission distinction before this checkpoint committed.
+The triggers return before delivery lookups for unrelated progress/heartbeat work.
+
+The operational plus existing Family dispatch suite passes 23 PostgreSQL checks
+in 56.67 seconds. The expanded operational/schema suite passes 24 in 28.66 seconds;
+the final logging-trigger optimization and fresh fingerprint pass three targeted
+checks in 12.62 seconds. Runtime/private-transport regressions pass 277 checks in
+1.35 seconds. The independent fresh audit adds only operational helpers/triggers
+and the reviewed owner/result dispatch branches; no existing table or row policy
+changed at this checkpoint. Slack outcome ownership, other producer integration,
+shutdown acceptance, three dual-source review rounds and final CI remain open.

@@ -400,8 +400,8 @@ def configure_background(configuration, *, stop, heartbeat):
             ),
             pulse=heartbeat,
         )
-        from .jobs.family_mail_delivery_tasks import delivery_handler
         from .jobs.family_mail_dispatch import TASK_TYPE as FAMILY_DISPATCH
+        from .jobs.outbox_dispatch import delivery_handler
 
         handlers[FAMILY_DISPATCH] = replace(
             delivery_handler(

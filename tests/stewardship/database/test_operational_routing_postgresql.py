@@ -10,6 +10,7 @@ from parishkit.stewardship.accounts.configuration_installation import (
     prepare_initial_configuration,
 )
 from parishkit.stewardship.accounts.configuration_schema import validate_sections
+from parishkit.stewardship.accounts.key_files import file_fingerprint
 from parishkit.stewardship.campaigns.domain import SystemMode
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
@@ -62,6 +63,16 @@ def routing(tmp_path):
             ),
             ("slack", {"channel_id": "C123"}),
         )
+    )
+    document["sections"]["integrations"].append(
+        {
+            "id": str(uuid4()),
+            "values": {
+                "kind": "google_workspace",
+                "settings": {"delegated_email": "sender@example.org"},
+                "credential_fingerprint": file_fingerprint(b"synthetic-workspace"),
+            },
+        }
     )
     store, actor = AuthorityStore(tmp_path, validate_sections), uuid4()
     prepare_initial_configuration(

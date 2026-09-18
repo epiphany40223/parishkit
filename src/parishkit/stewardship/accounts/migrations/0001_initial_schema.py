@@ -44,6 +44,7 @@ def schema_sql():
                 "operational_incidents",
                 "operational_fanout",
                 "operational_render",
+                "operational_dispatch",
             )
         ]
     )
