@@ -18,7 +18,25 @@ from parishkit.stewardship.quality_sharding import partition, tree_digest
 ROOT = Path(__file__).resolve().parents[2]
 
 
-@pytest.mark.parametrize("count", [1, 2, 8, 32])
+def test_workflow_partition_count_matches_required_combiner():
+    """The real matrix and strict coverage receipt count cannot silently drift."""
+    import yaml
+
+    jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
+    shard = jobs["stewardship-postgresql-shard"]
+    indexes = shard["strategy"]["matrix"]["shard"]
+    assert 1 <= len(indexes) <= 32
+    assert indexes == list(range(1, len(indexes) + 1))
+    for job, operation in (
+        (shard, "shard"),
+        (jobs["stewardship-postgresql"], "combine"),
+    ):
+        commands = [step.get("run", "") for step in job["steps"]]
+        command = next(line for line in commands if f"quality_ci {operation} " in line)
+        assert f"--count {len(indexes)} " in command
+
+
+@pytest.mark.parametrize("count", [1, 2, 8, 12, 32])
 def test_complete_disjoint_stable_partition(count):
     """Every newly collected test is assigned exactly once, without a file list."""
     nodes = [f"tests/stewardship/database/test_a.py::test_{n}" for n in range(1000)]

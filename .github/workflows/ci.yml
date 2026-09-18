@@ -180,7 +180,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     services:
       valkey:
         image: valkey/valkey:9.1.2@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
@@ -214,7 +214,7 @@ jobs:
           python -m pip install -r requirements/stewardship-build.txt
           python -m pip install --no-build-isolation -r requirements.txt
       - name: Measure isolated database partition
-        run: python -m parishkit.stewardship.quality_ci shard --index ${{ matrix.shard }} --count 8 --output "$RUNNER_TEMP/stewardship-shard"
+        run: python -m parishkit.stewardship.quality_ci shard --index ${{ matrix.shard }} --count 12 --output "$RUNNER_TEMP/stewardship-shard"
       - name: Retain successful shard evidence
         uses: actions/upload-artifact@v4
         with:
@@ -250,7 +250,7 @@ jobs:
           pattern: stewardship-coverage-*
           path: ${{ runner.temp }}/stewardship-shards
       - name: Scoped line and branch coverage
-        run: python -m parishkit.stewardship.quality_ci combine --count 8 --input "$RUNNER_TEMP/stewardship-shards" --report "$RUNNER_TEMP/stewardship-coverage.json"
+        run: python -m parishkit.stewardship.quality_ci combine --count 12 --input "$RUNNER_TEMP/stewardship-shards" --report "$RUNNER_TEMP/stewardship-coverage.json"
       - name: Retain combined coverage
         uses: actions/upload-artifact@v4
         with:

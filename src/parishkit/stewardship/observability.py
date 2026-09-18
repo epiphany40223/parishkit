@@ -35,6 +35,7 @@ class Event(StrEnum):
     INSTALLER_REQUEST_FAILED = "installer_request_failed"
     HANDOFF_KEY_MISMATCH = "credential_handoff_key_mismatch"
     AUTHENTICATION_LIMITS_WEAKENED = "authentication_limits_weakened"
+    AUTH_HEALTH_FAILED = "authentication_health_observation_failed"
     UNSTRUCTURED = "unstructured_log_suppressed"
 
 
@@ -42,6 +43,7 @@ class FailureKind(StrEnum):
     """Safe operational categories, never exception text or credential values."""
 
     DATABASE = "database_unavailable"
+    LIMITER = "authentication_limiter_unavailable"
     CREDENTIAL = "credential_unavailable"
     CONFIGURATION = "configuration_unavailable"
     FILESYSTEM = "filesystem_unavailable"
@@ -119,11 +121,13 @@ def emit_failure(error, *, event=Event.TASK_FAILED):
 
     from .accounts.credential_errors import CredentialValidationUnavailable
     from .accounts.cryptography import CryptographicError
+    from .accounts.limiting import LimiterUnavailable
 
     kind = next(
         (
             kind
             for cls, kind in (
+                (LimiterUnavailable, FailureKind.LIMITER),
                 (DatabaseError, FailureKind.DATABASE),
                 (CredentialValidationUnavailable, FailureKind.CREDENTIAL),
                 (CryptographicError, FailureKind.CREDENTIAL),

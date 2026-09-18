@@ -64,11 +64,11 @@ def prior_healthy_window(limiter):
 
 
 @pytest.mark.parametrize("kind", ["admin_abuse", "family_abuse", "limiter_state_lost"])
-def test_real_healthy_probe_resolves_once_across_process_restart(auth_service, kind):
+def test_real_healthy_probe_resolves_once_across_process_restart(real_limiter, kind):
     """Current INFO, canary and real counters complete retained healthy proof."""
     from parishkit.stewardship.accounts.limiting import Limiter
 
-    limiter = auth_service.limiter
+    limiter = real_limiter
     now = prior_healthy_window(limiter)
     episode = prior_episode(kind, earlier=now - timedelta(minutes=6))
     replacement = Limiter(
@@ -90,9 +90,9 @@ def test_real_healthy_probe_resolves_once_across_process_restart(auth_service, k
 
 
 @pytest.mark.parametrize("interruption", ["gap", "canary", "new_failure", "abuse"])
-def test_missing_continuity_never_resolves(auth_service, interruption):
+def test_missing_continuity_never_resolves(real_limiter, interruption):
     """Old proof cannot hide missing samples, counter loss or current failures."""
-    limiter = auth_service.limiter
+    limiter = real_limiter
     now = prior_healthy_window(limiter)
     episode = prior_episode("family_abuse", earlier=now - timedelta(minutes=6))
     if interruption == "gap":
@@ -115,7 +115,7 @@ def test_missing_continuity_never_resolves(auth_service, interruption):
     assert not OperationalNotice.objects.filter(phase="resolved").exists()
 
 
-def test_continuing_outage_is_bounded_but_not_silently_forgotten(auth_service):
+def test_continuing_outage_is_bounded_but_not_silently_forgotten(real_limiter):
     """One old outage is reobserved once; a request flood cannot storm notices."""
     earlier = instant() - timedelta(minutes=16)
     episode = prior_episode("limiter_unavailable", earlier=earlier)
@@ -131,9 +131,9 @@ def test_continuing_outage_is_bounded_but_not_silently_forgotten(auth_service):
     ) == ["opened", "repeated"]
 
 
-def test_probe_preserves_real_counter_contents_and_ttl(auth_service):
+def test_probe_preserves_real_counter_contents_and_ttl(real_limiter):
     """Recovery reads are observations, not artificial traffic or counter resets."""
-    limiter = auth_service.limiter
+    limiter = real_limiter
     limiter.failed("family", "192.0.2.1")
     key = limiter.namespace + ":aggregate:family:attempts"
     values = limiter.client.zrange(key, 0, -1, withscores=True)
@@ -143,7 +143,7 @@ def test_probe_preserves_real_counter_contents_and_ttl(auth_service):
     assert 0 < limiter.client.pttl(key) <= ttl
 
 
-def test_fenced_recovery_does_not_resolve_a_newer_observation(auth_service):
+def test_fenced_recovery_does_not_resolve_a_newer_observation(real_limiter):
     """The shared incident owner rechecks the proof cutoff under its own lock."""
     from parishkit.stewardship.jobs.operational_content import IncidentKind
     from parishkit.stewardship.jobs.operational_storage import record_recovery
@@ -157,9 +157,9 @@ def test_fenced_recovery_does_not_resolve_a_newer_observation(auth_service):
 
 
 @pytest.mark.parametrize("kind", ["admin", "family", "store"])
-def test_sql_rejects_window_start_after_its_observation(auth_service, kind):
+def test_sql_rejects_window_start_after_its_observation(real_limiter, kind):
     """Direct application SQL cannot retain internally contradictory proof."""
-    auth_service.limiter.check_health(force=True)
+    real_limiter.check_health(force=True)
     row = LimiterStoreHealth.objects.get()
     with pytest.raises(DatabaseError) as rejected, transaction.atomic():
         LimiterStoreHealth.objects.update(
@@ -171,9 +171,9 @@ def test_sql_rejects_window_start_after_its_observation(auth_service, kind):
     assert getattr(row, f"{kind}_healthy_since") is None
 
 
-def test_failure_during_probe_resets_old_proof(auth_service, monkeypatch):
+def test_failure_during_probe_resets_old_proof(real_limiter, monkeypatch):
     """A later failure commit wins even when the sampled counters look quiet."""
-    limiter = auth_service.limiter
+    limiter = real_limiter
     now = prior_healthy_window(limiter)
     episode = prior_episode("family_abuse", earlier=now - timedelta(minutes=6))
     original = limiter.client.info
@@ -203,7 +203,7 @@ def test_failure_during_probe_resets_old_proof(auth_service, monkeypatch):
     ],
 )
 def test_counter_only_recovery_uses_detector_thresholds(
-    auth_service,
+    real_limiter,
     kind,
     attempts,
     sources,
@@ -211,7 +211,7 @@ def test_counter_only_recovery_uses_detector_thresholds(
     healthy,
 ):
     """Isolate actual count predicates from the independently tested failure fence."""
-    limiter = auth_service.limiter
+    limiter = real_limiter
     now = prior_healthy_window(limiter)
     episode = prior_episode(kind + "_abuse", earlier=now - timedelta(minutes=6))
     seconds, micros = limiter.client.time()
@@ -233,11 +233,11 @@ def test_counter_only_recovery_uses_detector_thresholds(
 
 
 def test_canary_change_during_successful_probe_is_not_an_outage(
-    auth_service,
+    real_limiter,
     monkeypatch,
 ):
     """Counter loss interrupts proof without pretending a working store is down."""
-    limiter = auth_service.limiter
+    limiter = real_limiter
     now = prior_healthy_window(limiter)
     episode = prior_episode("family_abuse", earlier=now - timedelta(minutes=6))
     original = limiter.client.get
@@ -260,9 +260,9 @@ def test_canary_change_during_successful_probe_is_not_an_outage(
     assert LimiterStoreHealth.objects.get().family_healthy_since is None
 
 
-def test_reobserved_old_outage_restarts_proof(auth_service):
+def test_reobserved_old_outage_restarts_proof(real_limiter):
     """A new failure observation matters even though its incident identity is old."""
-    limiter = auth_service.limiter
+    limiter = real_limiter
     now = prior_healthy_window(limiter)
     episode = prior_episode("family_abuse", earlier=now - timedelta(minutes=6))
     prior_episode("limiter_unavailable", earlier=now - timedelta(minutes=16))
@@ -274,13 +274,13 @@ def test_reobserved_old_outage_restarts_proof(auth_service):
 
 
 def test_discarded_probe_cannot_advance_proof_or_notify_recovery(
-    auth_service,
+    real_limiter,
     monkeypatch,
 ):
     """A newer accepted sample remains the complete retained window state."""
     from parishkit.stewardship.accounts.limiter_health import observe_store
 
-    limiter = auth_service.limiter
+    limiter = real_limiter
     limiter.check_health(force=True)
     original = limiter.client.get
     newer = []
@@ -312,11 +312,11 @@ def test_discarded_probe_cannot_advance_proof_or_notify_recovery(
     notify.assert_not_called()
 
 
-def test_new_outage_after_probe_commit_is_not_resolved(auth_service, monkeypatch):
+def test_new_outage_after_probe_commit_is_not_resolved(real_limiter, monkeypatch):
     """A successful probe cannot emit a second, unfenced recovery after commit."""
     from parishkit.stewardship.accounts import limiter_health
 
-    limiter = auth_service.limiter
+    limiter = real_limiter
     original = limiter_health.observe_store
 
     def later_failure(*args):
@@ -333,11 +333,11 @@ def test_new_outage_after_probe_commit_is_not_resolved(auth_service, monkeypatch
 
 
 def test_outage_during_probe_cannot_be_resolved_by_its_older_start(
-    auth_service,
+    real_limiter,
     monkeypatch,
 ):
     """Even resolution under the lock must retain an observation-time fence."""
-    limiter = auth_service.limiter
+    limiter = real_limiter
     original = limiter.client.info
 
     def later_failure(section):
@@ -360,11 +360,11 @@ def test_outage_during_probe_cannot_be_resolved_by_its_older_start(
 
 
 def test_successful_counter_recovery_has_the_same_observation_fence(
-    auth_service,
+    real_limiter,
     monkeypatch,
 ):
     """An INFO-throttled real counter cannot erase a concurrently newer outage."""
-    limiter = auth_service.limiter
+    limiter = real_limiter
     limiter.check_health(force=True)
     limiter.outage = True
     original = limiter.bucket_script
@@ -386,11 +386,11 @@ def test_successful_counter_recovery_has_the_same_observation_fence(
     assert OperationalIncident.objects.get().resolved_at is not None
 
 
-def test_window_helper_itself_preserves_a_newer_sample(auth_service):
+def test_window_helper_itself_preserves_a_newer_sample(real_limiter):
     """The helper cannot return a timestamp rollback even without its outer guard."""
     from parishkit.stewardship.accounts.limiter_recovery import update_windows
 
-    limiter = auth_service.limiter
+    limiter = real_limiter
     limiter.check_health(force=True)
     row = LimiterStoreHealth.objects.get()
     result = update_windows(
@@ -409,7 +409,7 @@ def test_window_helper_itself_preserves_a_newer_sample(auth_service):
 
 
 def test_failure_transaction_straddling_probe_keeps_both_records_open(
-    auth_service,
+    real_limiter,
     monkeypatch,
 ):
     """Capture the real SQL clock between auth and operational failure writes."""
@@ -464,11 +464,11 @@ def test_failure_transaction_straddling_probe_keeps_both_records_open(
 
 
 def test_suppressed_repeat_failure_still_advances_recovery_fence(
-    auth_service,
+    real_limiter,
     monkeypatch,
 ):
     """Do not create per-request alerts, but retain every newer failure cutoff."""
-    limiter = auth_service.limiter
+    limiter = real_limiter
     limiter.check_health(force=True)
     record_incident("limiter_unavailable", 2, 0, (0, 0, 0, 0))
     limiter.outage = True
@@ -497,7 +497,7 @@ def test_suppressed_repeat_failure_still_advances_recovery_fence(
 
 @pytest.mark.parametrize("path", ["probe", "counter"])
 def test_later_thread_failure_keeps_retry_state_after_success(
-    auth_service,
+    real_limiter,
     monkeypatch,
     path,
 ):
@@ -508,7 +508,7 @@ def test_later_thread_failure_keeps_retry_state_after_success(
 
     from parishkit.stewardship.accounts import limiter_health
 
-    limiter = auth_service.limiter
+    limiter = real_limiter
     limiter.check_health(force=True)
 
     def fail_in_other_thread():

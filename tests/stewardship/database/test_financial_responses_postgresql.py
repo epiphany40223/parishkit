@@ -3,6 +3,7 @@
 from copy import deepcopy
 from dataclasses import asdict
 from decimal import Decimal
+from functools import partial
 from uuid import UUID, uuid4
 
 import pytest
@@ -124,10 +125,7 @@ def test_financial_source_refresh_requires_explicit_new_submit(response_service)
         assert respond(harness, fresh, answers).annual_pledge == Decimal("75.00")
 
 
-@pytest.mark.parametrize("fault", ["frequency", "option", "missing", "extra"])
-def test_financial_insert_guard_independent_of_python(
-    response_service, monkeypatch, fault
-):
+def test_financial_insert_guard_independent_of_python(response_service, monkeypatch):
     """Bypassing only answer validation still cannot commit an invalid financial row."""
     harness = response_service
     financial_source(harness)
@@ -136,7 +134,7 @@ def test_financial_insert_guard_independent_of_python(
     answers["financial"] = {"annual_pledge": "1", "frequency": "annual", "shares": {}}
     real = submission.validate_answers
 
-    def forge(*args, **kwargs):
+    def forge(fault, *args, **kwargs):
         """Keep admission and all other owners real; corrupt only the normalized row."""
         result = deepcopy(real(*args, **kwargs))
         if fault == "frequency":
@@ -149,21 +147,29 @@ def test_financial_insert_guard_independent_of_python(
             result["financial"]["payment"] = "not allowed"
         return result
 
-    monkeypatch.setattr(submission, "validate_answers", forge)
-    with (
-        web_login(),
-        pytest.raises(IntegrityError, match="Financial"),
-        transaction.atomic(),
-    ):
-        submission.submit_family(
-            harness.request,
-            harness.service,
-            baseline_id=UUID(form["baseline"]),
-            payload=answers,
-        )
-    assert not Submission.objects.exists()
-    assert not SubmissionReceiptOccurrence.objects.exists()
-    assert not SourceSnapshotPin.objects.filter(parent_kind="submission").exists()
+    # These rejected writes share the same unchanged baseline; each attempt has
+    # its own rollback. Successful submissions and concurrent flows remain
+    # independently initialized tests, not transactions nested around commits.
+    for fault in ("frequency", "option", "missing", "extra"):
+        with monkeypatch.context() as patch:
+            patch.setattr(submission, "validate_answers", partial(forge, fault))
+            with (
+                web_login(),
+                pytest.raises(IntegrityError, match="Financial") as rejected,
+                transaction.atomic(),
+            ):
+                submission.submit_family(
+                    harness.request,
+                    harness.service,
+                    baseline_id=UUID(form["baseline"]),
+                    payload=answers,
+                )
+        assert rejected.value.__cause__.sqlstate == "23514", fault
+        assert not Submission.objects.exists(), fault
+        assert not SubmissionReceiptOccurrence.objects.exists(), fault
+        assert not SourceSnapshotPin.objects.filter(
+            parent_kind="submission"
+        ).exists(), fault
 
 
 def test_financial_derived_failure_rolls_back_then_can_retry(

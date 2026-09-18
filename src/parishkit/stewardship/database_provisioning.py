@@ -42,7 +42,7 @@ def role_limit(configuration, role):
             budget.web_processes
             * budget.replicas
             * budget.rollout_overlap
-            * (budget.web_threads + 2)  # Two bounded health-observation threads.
+            * (budget.web_threads + 3)  # Readiness, metrics and periodic auth health.
         )
     if role in {ServiceRole.CONFIG_INSTALLER, ServiceRole.CREDENTIAL_INSTALLER}:
         return configuration.runtime_budget.rollout_overlap

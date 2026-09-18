@@ -217,7 +217,7 @@ class Limiter:
             elif generation == self.outage_generation:
                 self._outage = False
 
-    def check_health(self, *, force=False):
+    def check_health(self, *, force=False, skip_busy=False):
         """Observe on first use and at most every 30 seconds in each process.
 
         The durable baseline survives this process. OPS health/scheduler callers
@@ -225,6 +225,10 @@ class Limiter:
         An unavailable probe follows the same fail-closed path as failed counters.
         Call outside application transactions: the health observation commits its
         independent baseline. Contending threads skip the probe, not admission.
+        Only unattended probes use skip_busy to also skip a sibling's SQL health
+        lock. False is not evidence of a new accepted sample: skipped/throttled
+        observations return it too, without changing durable proof or recovery.
+        A skipped SQL-lock attempt still resets this process's probe throttle.
         """
         from .limiter_health import observe_store
 
@@ -240,7 +244,11 @@ class Limiter:
             ):
                 generation, _ = self._outage_state()
                 try:
-                    result = observe_store(self.client, self.namespace, self.limits)
+                    # Preserve the ordinary admission probe's calling contract.
+                    options = {"skip_busy": True} if skip_busy else {}
+                    result = observe_store(
+                        self.client, self.namespace, self.limits, **options
+                    )
                 finally:
                     # Failed INFO probes are throttled too; ordinary scripts
                     # still detect outages on every admission attempt.
@@ -254,6 +262,20 @@ class Limiter:
         finally:
             self.health_lock.release()
         return False
+
+    def observe_health(self):
+        """Force an unattended probe and retain failures without synthetic traffic."""
+        try:
+            return self.check_health(force=True, skip_busy=True)
+        except (RedisError, DatabaseError):
+            raise self._unavailable_error() from None
+
+    def _unavailable_error(self):
+        """Share request/periodic failure intent without retaining private errors."""
+        self.outage = True
+        with suppress(LimiterUnavailable):
+            self._notify("limiter_unavailable", 2, 0, (0, 0, 0, 0))
+        return LimiterUnavailable("Authentication is temporarily unavailable.")
 
     def _notify(self, *args, **kwargs):
         """An unavailable durable incident store is a retryable auth outage."""
@@ -289,12 +311,7 @@ class Limiter:
                     observed_after = cursor.fetchone()[0]
             result = script(**kwargs)
         except (RedisError, DatabaseError):
-            self.outage = True
-            with suppress(LimiterUnavailable):
-                self._notify("limiter_unavailable", 2, 0, (0, 0, 0, 0))
-            raise LimiterUnavailable(
-                "Authentication is temporarily unavailable."
-            ) from None
+            raise self._unavailable_error() from None
         if self.outage and observed_after is not None:
             recovered = self._notify(
                 "limiter_available",

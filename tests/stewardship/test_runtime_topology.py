@@ -347,7 +347,7 @@ def test_renderer_refuses_unsupported_multi_container_runtime(tmp_path):
         runtime_budget=replace(
             configuration.runtime_budget,
             replicas=2,
-            auxiliary_connections=16,
+            auxiliary_connections=24,
             database_connections=200,
         ),
     )

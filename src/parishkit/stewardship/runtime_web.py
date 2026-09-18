@@ -84,7 +84,7 @@ def valkey_client(configuration, *, telemetry=False):
         password=password,
         socket_connect_timeout=0.05 if telemetry else 3,
         socket_timeout=0.05 if telemetry else 3,
-        max_connections=configuration.runtime_budget.web_threads + 2,
+        max_connections=configuration.runtime_budget.web_threads + 3,
         retry_on_timeout=False,
         retry=Retry(NoBackoff(), 0),
     )

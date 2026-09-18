@@ -219,9 +219,10 @@ configuration, filesystem or unexpected-failure category. A separate failed-pass
 event records the loop's retry; neither event includes exception text or paths.
 Readiness and metrics observations have short caches and bounded response waits;
 a hung dependency cannot spawn unlimited monitoring threads. Their two possible
-SQL observation connections per web process are included across rollout overlap
+SQL observation connections per web process, plus the independent periodic
+authentication observer, are included across rollout overlap
 in the deployment's auxiliary reserve and actual web-role connection limit.
-The default total connection budget is now 95, including 8 auxiliary connections
+The default total connection budget is now 99, including 12 auxiliary connections
 and 36 background connections. Mail-dispatch reserves its own execution/renewal
 connections across rollout overlap and receives only its individual SQL/Valkey
 credentials plus the mail key inventory. The three provider credential installers

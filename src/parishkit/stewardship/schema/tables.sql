@@ -1206,7 +1206,8 @@ CREATE TABLE public.stewardship_operational_log (
         'installer_request_failed','source_refresh_invalid','source_member_unusable',
         'source_refresh_held','source_credential_failed','source_provider_failed',
         'credential_handoff_key_mismatch','setup_credential_staged','delivery_unknown',
-        'setup_credential_scrubbed','campaign_boundary_lag','production_cleanup_failed')),
+        'setup_credential_scrubbed','campaign_boundary_lag','production_cleanup_failed',
+        'authentication_health_observation_failed')),
     CONSTRAINT operational_log_level CHECK (((level)::text = ANY ((ARRAY['DEBUG'::character varying, 'INFO'::character varying, 'WARNING'::character varying, 'ERROR'::character varying, 'CRITICAL'::character varying])::text[])))
 );
 
