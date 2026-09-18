@@ -385,6 +385,12 @@ starts from verified main `08367cb7` to deliver unattended authentication
 observations within web lifecycle/resource boundaries. Remaining source,
 provider and due-work service health still own their subsequent checkpoint.
 
+PR #53 has merged; its [protected receipt](../../guides/stewardship-periodic-health.md#protected-delivery)
+records all final-head checks, coverage and verified main delivery. The requested
+[CI setup-reuse maintenance](../../guides/stewardship-ci-bootstrap-reuse.md)
+precedes the remaining source/provider/due-work observers without checking off
+unfinished BG-10 acceptance.
+
 ## BG-11: Exceptional purge worker
 
 Scope and dependencies: [BG-11 work package](../../plans/stewardship/background-processing.md#bg-11-exceptional-purge-worker).

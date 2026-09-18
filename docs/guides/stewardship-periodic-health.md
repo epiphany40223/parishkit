@@ -178,3 +178,25 @@ MEDIUM-or-higher finding remains. The final test assertions and docstring are
 round-3 corrections, not an unreviewed expansion of production behavior. Keep
 the final exact-head CI/DCO and protected merge receipt in PR #53 and the next
 increment's linked delivery record; no full BG-10 or Gate 3 completion is claimed.
+
+## Protected delivery
+
+[PR #53](https://github.com/epiphany40223/parishkit/pull/53) merged through the
+protected workflow at `2026-09-18T08:02:57Z` as `113fcd0f`. A fresh fetch verified
+that exact commit on `origin/main` before starting its successor. Final head
+`ee795262` consists of four signed-off logical commits and has the same tree
+`10d01fa4b737145005c036d464a393dd725d3f34` as post-round-3 checkpoint `bf553a0`.
+Local backup branches retain both pre-squash review and correction histories.
+
+[CI run 35321000210](https://github.com/epiphany40223/parishkit/actions/runs/35321000210)
+passes all 28 jobs at that exact head, plus DCO. Twelve isolated PostgreSQL
+partitions and complete combined evidence pass; scoped coverage is 93.89% lines
+and 84.85% branches. All eight operational scenarios, core Compose and all three
+browser engines pass. This supersedes earlier pending CI/delivery notes.
+
+Actual PostgreSQL job execution spans 8m51s–11m58s, versus the predecessor's
+maximum 16m24s. End-to-end CI is 16m10s including queueing and the 50-second
+aggregate; two late shards start about three minutes after the first group.
+The [setup-reuse increment](stewardship-ci-bootstrap-reuse.md) addresses measured
+repeated image/dependency setup and runner contention before broader BG-10
+source/provider/due-work observations. No full BG-10/Gate 3 claim is implied.
