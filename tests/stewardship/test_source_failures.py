@@ -6,6 +6,7 @@ from parishkit.config import ConfigError
 from parishkit.parishsoft import ParishSoftAPIError
 from parishkit.parishsoft_changes import ChangeFeedIncomplete
 from parishkit.parishsoft_pagination import IncompleteSourceCollection
+from parishkit.parishsoft_source import SourceOrganizationMismatch
 from parishkit.parishsoft_transport import (
     InvalidSourceResponse,
     SourceTransportDrainFailure,
@@ -14,6 +15,7 @@ from parishkit.parishsoft_transport import (
 from parishkit.retry import RetryError, TransientRetryError
 from parishkit.stewardship.accounts.cryptography import CryptographicError
 from parishkit.stewardship.jobs.lifetime import ExecutionInterrupted
+from parishkit.stewardship.observability import Event
 from parishkit.stewardship.source.canonical import InvalidSourcePayload
 from parishkit.stewardship.source.errors import (
     SourceCredentialChanged,
@@ -22,8 +24,25 @@ from parishkit.stewardship.source.errors import (
 )
 from parishkit.stewardship.source.failures import classify_read_failure
 from parishkit.stewardship.source.leases import SourceFenceLost, SourceLeaseUnavailable
+from parishkit.stewardship.source.loading import DestructiveSourceChange
 from parishkit.stewardship.source.outcomes import failure_action, retry_delay
 from parishkit.stewardship.storage import StorageInvariantError
+
+
+@pytest.mark.parametrize(
+    "kind,event",
+    [
+        (SourceOrganizationMismatch, Event.SOURCE_TENANT_MISMATCH),
+        (DestructiveSourceChange, Event.SOURCE_DESTRUCTIVE_CHANGE),
+    ],
+)
+def test_source_safety_failures_keep_specific_value_free_classification(kind, event):
+    """Specific fatal source conditions cannot collapse into generic parser errors."""
+    decision = classify_read_failure(
+        RetryError("PRIVATE", kind("PRIVATE")), has_source_claim=True
+    )
+    assert decision.event is event and not decision.retry and not decision.contention
+    assert "PRIVATE" not in repr(decision)
 
 
 @pytest.mark.parametrize(

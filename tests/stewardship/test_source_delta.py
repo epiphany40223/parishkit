@@ -7,9 +7,11 @@ import pytest
 from test_parishsoft_source import source as client_factory
 
 from parishkit.parishsoft_changes import ChangeFeedIncomplete
+from parishkit.parishsoft_source import SourceOrganizationMismatch
 from parishkit.stewardship.source.corpus import normalize_core
 from parishkit.stewardship.source.cursors import refresh_cursor
 from parishkit.stewardship.source.delta import load_delta_source
+from parishkit.stewardship.source.loading import DestructiveSourceChange
 from parishkit.stewardship.source.windows import RefreshWindow
 
 from .test_source_corpus import TODAY, source
@@ -65,6 +67,29 @@ def arguments():
 
 def client(tmp_path, rows):
     return client_factory(tmp_path, [[{"organizationID": 5}], *rows])
+
+
+def test_wrong_tenant_propagates_from_delta_feed_before_household_reads(tmp_path):
+    """The actual feed validation cannot become authority for a full fallback."""
+    provider = client_factory(tmp_path, [[{"organizationID": 999}]])
+    with pytest.raises(SourceOrganizationMismatch):
+        load_delta_source(provider, **arguments())
+    assert len(provider.session.calls) == 1
+
+
+@pytest.mark.parametrize("error", [SourceOrganizationMismatch, DestructiveSourceChange])
+def test_ambiguous_delta_slice_requires_full_confirmation(tmp_path, monkeypatch, error):
+    """Specific slice failures retain the established whole-source fallback owner."""
+
+    def failed_slice(*args, **kwargs):
+        """Inject at the shared slice boundary after actual feed tenant validation."""
+        raise error("Synthetic invalid source")
+
+    monkeypatch.setattr(
+        "parishkit.stewardship.source.delta.load_family_slice", failed_slice
+    )
+    with pytest.raises(ChangeFeedIncomplete):
+        load_delta_source(client(tmp_path, [[indication()]]), **arguments())
 
 
 def test_unchanged_household_round_trip_does_not_copy_any_source_payload(tmp_path):

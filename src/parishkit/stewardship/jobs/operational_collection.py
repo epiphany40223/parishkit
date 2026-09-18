@@ -2,14 +2,19 @@
 
 from uuid import UUID, uuid5
 
-from django.db import connection
+from django.db import connection, transaction
 
 from parishkit.stewardship.audit.models import OperationalLog
+from parishkit.stewardship.audit.services import operational
 from parishkit.stewardship.campaigns.work_locks import (
     require_work_order,
     work_transaction,
 )
 from parishkit.stewardship.observability import Event, correlation
+from parishkit.stewardship.source.health import (
+    admitted_source_scope,
+    observe_source_health,
+)
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .dispatch import Handler, RecoveryPlan
@@ -40,7 +45,7 @@ def produce_collection(guard):
         raise PermissionError("Operational intake requires the owned scheduler.")
     guard.check()
     with work_transaction():
-        if not pending_logs().exists():
+        if not pending_logs().exists() and admitted_source_scope() is None:
             return ()
         key = uuid5(NAMESPACE, str(int(database_now().timestamp()) // 60))
         task = enqueue(
@@ -138,6 +143,15 @@ def _execute(execution):
                     worker_id=execution.claim.worker_id,
                     actor_id=execution.claim.worker_id,
                 )
+        try:
+            # A source-specific defect must not roll back unrelated alert intake.
+            # Failed samples retain no partial health effects; the next collector
+            # receives only this safe diagnostic, never the exception's values.
+            with transaction.atomic():
+                observe_source_health()
+        except Exception:
+            execution.check()
+            operational(Event.SOURCE_INVALID, level="CRITICAL")
         execution.progress(len(page), len(page), phase=TaskPhase.VERIFYING)
         execution.transition("complete")
 

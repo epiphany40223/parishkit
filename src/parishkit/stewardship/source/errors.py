@@ -32,3 +32,7 @@ class SourceScopeChanged(PermissionError):
 
 class SourceCredentialChanged(PermissionError):
     """Loaded source bytes no longer match their explicitly bound fingerprint."""
+
+
+class SourceOrganizationChanged(PermissionError):
+    """Applied tenant configuration conflicts with retained source truth."""

@@ -1204,6 +1204,7 @@ CREATE TABLE public.stewardship_operational_log (
         'startup_validated','request_completed','report_audit_failed','task_started','task_completed',
         'task_failed','fact_drift','unstructured_log_suppressed','authentication_limits_weakened',
         'installer_request_failed','source_refresh_invalid','source_member_unusable',
+        'source_tenant_mismatch','source_destructive_change',
         'source_refresh_held','source_credential_failed','source_provider_failed',
         'credential_handoff_key_mismatch','setup_credential_staged','delivery_unknown',
         'setup_credential_scrubbed','campaign_boundary_lag','production_cleanup_failed',

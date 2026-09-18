@@ -121,16 +121,22 @@ deployment:
   operational_alerts:
     suppression_seconds: 900
     escalation_seconds: 900
+    source_stale_seconds: 1800
 ```
 
 Each window is bounded to 60–86,400 seconds. Environment/explicit deployment
-overrides use `PARISHKIT_STEWARDSHIP_OPERATIONAL_SUPPRESSION_SECONDS` and
-`PARISHKIT_STEWARDSHIP_OPERATIONAL_ESCALATION_SECONDS`, with the existing
+overrides use `PARISHKIT_STEWARDSHIP_OPERATIONAL_SUPPRESSION_SECONDS`,
+`PARISHKIT_STEWARDSHIP_OPERATIONAL_ESCALATION_SECONDS` and
+`PARISHKIT_STEWARDSHIP_OPERATIONAL_SOURCE_STALE_SECONDS`, with the existing
 explicit-over-environment-over-YAML precedence. Values are read at process
 startup. The producer pins that policy when opening an episode; changing
 deployment configuration affects new episodes, not recorded decisions or an
 already-active episode. Web/operator startup now wires the validated policy for
-the incident producers. These settings never authorize recipients or external I/O.
+the incident producers. The source freshness threshold instead applies at each
+sample; changing it cannot resolve an existing incident without a new successful
+source observation. See [source health](stewardship-source-health.md) for initial
+grace and full-refresh recovery evidence. These settings never authorize recipients
+or external I/O.
 
 ## Private transport checkpoint
 

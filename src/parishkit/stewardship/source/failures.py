@@ -12,6 +12,7 @@ from django.db import connection
 
 from parishkit.parishsoft import ParishSoftAPIError
 from parishkit.parishsoft_pagination import IncompleteSourceCollection
+from parishkit.parishsoft_source import SourceOrganizationMismatch
 from parishkit.parishsoft_transport import InvalidSourceResponse, SourceTransportError
 from parishkit.retry import RetryError, TransientRetryError
 from parishkit.stewardship.accounts.cryptography import CryptographicError
@@ -28,6 +29,7 @@ from .attempts import _bindings
 from .canonical import InvalidSourcePayload
 from .errors import SourceCredentialChanged, SourceScopeChanged
 from .leases import SourceLeaseUnavailable, release_source, verify_source
+from .loading import DestructiveSourceChange
 from .models import SourceMutationLease
 from .outcomes import (
     _request,
@@ -57,6 +59,10 @@ def classify_read_failure(error, *, has_source_claim):
             return None
         seen.add(id(error))
         error = error.last_exception
+    if isinstance(error, SourceOrganizationMismatch):
+        return ReadFailure(False, False, Event.SOURCE_TENANT_MISMATCH)
+    if isinstance(error, DestructiveSourceChange):
+        return ReadFailure(False, False, Event.SOURCE_DESTRUCTIVE_CHANGE)
     if isinstance(
         error, (InvalidSourcePayload, IncompleteSourceCollection, InvalidSourceResponse)
     ):

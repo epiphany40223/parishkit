@@ -26,12 +26,17 @@ class IncidentPolicy:
 
     suppression_seconds: int = 900
     escalation_seconds: int = 900
+    source_stale_seconds: int = 1800
 
     def __post_init__(self):
         """Prevent zero-delay notification storms and unbounded escalation delays."""
         if any(
             type(value) is not int or not 60 <= value <= 86400
-            for value in (self.suppression_seconds, self.escalation_seconds)
+            for value in (
+                self.suppression_seconds,
+                self.escalation_seconds,
+                self.source_stale_seconds,
+            )
         ):
             raise ValueError("Operational incident windows must be 60–86,400 seconds.")
 
