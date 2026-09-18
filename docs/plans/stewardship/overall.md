@@ -138,6 +138,11 @@ queue is disabled to avoid repeating the same suite on a temporary queue head.
 Exact-head PR CI, DCO, review rounds and applicable gates remain mandatory. Do
 not request a second merge-queue CI run. Main-branch validation remains enabled.
 
+Human clarification, September 18, 2026: Pika's `--force-round` is authorized
+when its default round cap would prevent the required review rounds. Preserve
+the permission preflight, dual-source completion and all acceptance criteria;
+the override does not turn a failed review into a completed round.
+
 Autonomously investigate failures, implement specification-consistent fixes,
 commit with sign-off, push backups, run reviews, and correct CI. Ask during the
 cycle only when proceeding genuinely needs new authority or a product/security

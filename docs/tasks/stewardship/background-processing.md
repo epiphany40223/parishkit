@@ -391,6 +391,11 @@ records all final-head checks, coverage and verified main delivery. The requeste
 precedes the remaining source/provider/due-work observers without checking off
 unfinished BG-10 acceptance.
 
+PR #54 has merged; its [protected receipt](../../guides/stewardship-ci-bootstrap-reuse.md#protected-delivery)
+supersedes pending delivery. The [source-health increment](../../guides/stewardship-source-health.md)
+begins from verified main `17d5d4d9` and owns current-scope freshness and
+successful-refresh recovery. Broader BG-10 acceptance remains unchecked.
+
 ## BG-11: Exceptional purge worker
 
 Scope and dependencies: [BG-11 work package](../../plans/stewardship/background-processing.md#bg-11-exceptional-purge-worker).
