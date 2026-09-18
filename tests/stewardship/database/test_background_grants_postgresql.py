@@ -22,6 +22,7 @@ from parishkit.stewardship.runtime_grants import admit_columns, runtime_grants
 
 from .campaign_builders import draft_campaign
 from .credential_builders import family_campaign
+from .role_grants import grant_runtime
 from .test_work_admission_postgresql import ordinary
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -47,29 +48,7 @@ def task_login(service, *, reconnect=False, exact=False):
     try:
         tables, columns = runtime_grants(service)
         with connection.cursor() as cursor:
-            cursor.execute(sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(role))
-            for table, privileges in tables.items():
-                cursor.execute(
-                    sql.SQL("GRANT {} ON public.{} TO {}").format(
-                        sql.SQL(", ").join(
-                            sql.SQL(value) for value in sorted(privileges)
-                        ),
-                        sql.Identifier(table),
-                        role,
-                    )
-                )
-            for table, privileges in columns.items():
-                for privilege, names in privileges.items():
-                    cursor.execute(
-                        sql.SQL("GRANT {} ({}) ON public.{} TO {}").format(
-                            sql.SQL(privilege),
-                            sql.SQL(", ").join(
-                                sql.Identifier(name) for name in sorted(names)
-                            ),
-                            sql.Identifier(table),
-                            role,
-                        )
-                    )
+            grant_runtime(cursor, name, tables, columns)
             cursor.execute(sql.SQL("SET SESSION AUTHORIZATION {}").format(role))
         if reconnect:
             connection_created.connect(restrict_connection, weak=False)

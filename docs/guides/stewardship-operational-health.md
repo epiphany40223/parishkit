@@ -40,3 +40,29 @@ against the same application test before claiming a saving.
 The current whole-project acceptance remains incomplete. This guide records
 checkpoints as they pass; it does not mark BG-10 complete merely because its
 email predecessor merged.
+
+## Compatible fixture checkpoint
+
+The four shared web, Task, configuration-installer and credential-target role
+helpers now use a common fixture-only grant compiler. It groups tables only when
+their complete privilege sets match and retains each table's exact column lists.
+One short setup transaction replaces per-GRANT commits. Each context still
+creates its own role, uses actual session authorization, handles reconnects,
+checks admission where previously required, and destroys only that fixture role.
+There is no cross-test role cache or production permission change.
+
+The same profiled six-outcome mail test passes with 2,490 SQL executions instead
+of 3,559. Its 14 role contexts fall from 0.803 to 0.480 seconds and its test body
+from 2.12 to 1.71 seconds. These are local representative measurements, not a
+whole-suite or CI saving claim. Both profiles use identical application code;
+only current-worktree fixture helpers differ. The editable local test install
+is then rebound to this worktree before subsequent implementation changes.
+
+Six validation-only test families now override their mixed modules' transaction
+marker with rollback isolation: member-source and boundary diagnostic privacy,
+invalid coverage manifests, operational event vocabulary, credential-consumer
+vocabulary and sealed key-ID grammar. All parameter cases remain; neighboring
+real-commit, out-of-transaction rejection and concurrency checks retain full
+transaction semantics. All 227 tests across the eight affected helper/contract
+modules pass together in 70.67 seconds with one schema bootstrap. Ruff passes.
+Full CI remains required for the wider shared-helper consumer set.

@@ -78,6 +78,7 @@ def test_lag_warning_threshold_and_restart_deduplication(scheduled, offset, expe
 
 
 @pytest.mark.parametrize("key,value", [(None, None), *INVALID])
+@pytest.mark.django_db(transaction=False)
 def test_sql_boundary_context_privacy_matches_python(key, value):
     """Raw SQL cannot evade typed state/date/identifier checks in Python."""
     payload = {**context(), "occurrence_id": str(IDENTIFIER)}

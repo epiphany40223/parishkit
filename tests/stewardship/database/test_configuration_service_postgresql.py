@@ -20,6 +20,7 @@ from parishkit.stewardship.deployment import ServiceRole, load_deployment
 from ..test_ministry_activity import activity
 from ..test_request_patch import parish_patch
 from .campaign_builders import draft_campaign, initialized
+from .role_grants import grant_runtime
 
 pytestmark = pytest.mark.django_db(transaction=True)
 ROLE = "pk_stewardship_config_installer"
@@ -37,18 +38,7 @@ def config_role():
         )
     try:
         with connection.cursor() as cursor:
-            cursor.execute(f'GRANT USAGE ON SCHEMA public TO "{ROLE}"')
-            for table, grants in CONFIGURATION_GRANTS.items():
-                # Identifiers/privileges are the fixed reviewed registry only.
-                cursor.execute(
-                    f'GRANT {", ".join(sorted(grants))} ON "{table}" TO "{ROLE}"'
-                )
-            for table, privileges in CONFIGURATION_COLUMNS.items():
-                for privilege, columns in privileges.items():
-                    cursor.execute(
-                        f"GRANT {privilege} ({', '.join(sorted(columns))}) "
-                        f'ON "{table}" TO "{ROLE}"'
-                    )
+            grant_runtime(cursor, ROLE, CONFIGURATION_GRANTS, CONFIGURATION_COLUMNS)
         yield
     finally:
         with connection.cursor() as cursor:
