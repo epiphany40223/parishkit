@@ -1,0 +1,40 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Go-live readiness" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Go-live readiness" %}</h1>
+<p>{{ campaign.active_configuration.name }}</p>
+<p>{% translate "As of" %} <time data-local-instant datetime="{{ preview.observed_at|instant }}">{{ preview.observed_at|instant }}</time></p>
+<p class="notice">{% translate "This preview has not changed the campaign or deleted any Testing data. Production activation requires completed cleanup and a separate final confirmation." %}</p>
+<p>{% if preview.target_state == 'scheduled' %}{% translate "If confirmed before the start, the campaign would be scheduled for Production." %}{% elif preview.target_state == 'active' %}{% translate "If confirmed now, the campaign would become active immediately." %}{% else %}{% translate "The campaign has closed and cannot go live with these dates." %}{% endif %}</p>
+<section class="panel"><h2>{% translate "Configuration and data checks" %}</h2>
+{% if problems %}<ul>{% for problem in problems %}<li>{{ problem }}</li>{% endfor %}</ul>{% else %}<p>{% translate "Current database checks passed. Public-origin verification and irreversible cleanup acknowledgement are still required." %}</p>{% endif %}
+<p><a href="{% url 'admin:campaign_settings' campaign.pk %}">{% translate "Review campaign settings" %}</a> · <a href="{% url 'admin:integrations' %}">{% translate "Review integrations" %}</a> · <a href="{% url 'admin:content_catalog' campaign.pk %}">{% translate "Review content and mail templates" %}</a></p>
+{% if preview.source.observed_at %}<p>{% translate "Full source observation started" %}: <time data-local-instant datetime="{{ preview.source.observed_at|instant }}">{{ preview.source.observed_at|instant }}</time></p>{% endif %}
+</section>
+<section class="panel"><h2>{% translate "Family mail impact" %}</h2>
+<dl><dt>{% translate "Active Families" %}</dt><dd>{{ counts.active|number }}</dd>
+<dt>{% translate "Families with an eligible email address" %}</dt><dd>{{ email_eligibility|out_of }}</dd>
+<dt>{% translate "Families without an eligible email address" %}</dt><dd>{{ no_email|out_of }}</dd>
+<dt>{% translate "Immediately due Family messages" %}</dt><dd>{{ counts.messages|number }}</dd>
+<dt>{% translate "Coalesced Family schedule slots (not additional messages)" %}</dt><dd>{{ counts.coalesced_slots|number }}</dd>
+<dt>{% translate "Skipped Family schedule slots" %}</dt><dd>{{ counts.skipped_slots|number }}</dd>
+<dt>{% translate "Families with blocked delivery work" %}</dt><dd>{{ counts.blocked_families|number }}</dd></dl>
+<p>{% translate "Testing responses and Testing deliveries do not satisfy live mail. Execution rechecks current eligibility; a later source change may alter these counts." %}</p>
+</section>
+<section class="panel"><h2>{% translate "Testing cleanup inventory" %}</h2>
+<p>{% translate "Completed deletion cannot be undone, even if cleanup is cancelled later. Stable Production Family codes and operational notifications are excluded." %}</p>
+<dl><dt>{% translate "Testing submissions" %}</dt><dd>{{ preview.cleanup.submissions|number }}</dd>
+<dt>{% translate "Distinct Families with Testing submissions" %}</dt><dd>{{ preview.cleanup.families|number }}</dd>
+<dt>{% translate "Testing messages" %}</dt><dd>{{ preview.cleanup.messages|number }}</dd>
+<dt>{% translate "Unresolved Testing deliveries" %}</dt><dd>{{ preview.cleanup.unresolved|number }}</dd>
+<dt>{% translate "Total inventoried records" %}</dt><dd>{{ preview.cleanup.inventory.total|number }}</dd></dl>
+<p><a href="{% url 'admin:go_live_families' campaign.pk %}">{% translate "View Families with Testing submissions" %}</a></p>
+<details><summary>{% translate "Inventory by record category" %}</summary><dl>{% for category,count in inventory %}<dt>{{ category }}</dt><dd>{{ count|number }}</dd>{% empty %}<dt>{% translate "No Testing records are currently inventoried." %}</dt>{% endfor %}</dl></details>
+</section>
+<section class="panel"><h2>{% translate "Public-origin verification" %}</h2>
+<p>{% translate "Check the configured public URL and DNS without sending email or starting cleanup. No database transaction is held during this bounded check." %}</p>
+{% if origin_verified is True %}<p role="status">{% translate "The configured public origin passed URL and DNS checks. This does not replace the external TLS and deployment smoke tests." %}</p>{% elif origin_verified is False %}<p role="alert">{% translate "Public-origin verification failed or timed out. Check deployment URL and DNS settings, then retry." %}</p>{% endif %}
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="verify"><button type="submit">{% translate "Verify readiness and public origin" %}</button></form>
+</section>
+<p><a href="">{% translate "Refresh readiness preview" %}</a></p>
+{% endblock %}

@@ -60,5 +60,26 @@ nightly full-refresh scheduling.
 Focused validation so far: 20 pure impact cases (including a 5,000-Family stream),
 three PostgreSQL Family-reader cases (including page boundaries and actual web
 role), and four PostgreSQL source-readiness cases (full/delta anchors, exact
-expiry, changed window and unavailable/future evidence) pass. These are internal
-checkpoints, not a completed web workflow, review gate or PR acceptance.
+expiry, changed window and unavailable/future evidence) pass.
+
+The next checkpoint adds the passive Admin readiness/inventory screen and
+bounded affected-Family listing. Explicit URL/DNS verification uses a fixed
+five-second resolver helper outside database transactions; GET never invokes
+it. Resolution checks do not replace external TLS/deployment smoke tests. An
+accepted configuration- and credential-bound Family test remains separate from
+provider installation acknowledgements. Missing evidence remains a blocker.
+
+Additional focused validation passes: six configuration-reference cases, seven
+origin-adapter cases, two restricted-role cleanup-inventory cases and seven
+Admin HTTP cases. The latter cover access denial, passive activity, exact close,
+response-time revocation, explicit DNS verification, closed input fields, and
+rejection of a signed intent when current readiness is incomplete. Cleanup
+mutation/progress endpoints, their SQL authority, full happy-path/race/browser
+acceptance and peer review remain in progress; no destructive control is exposed
+by these checkpoints.
+
+[Draft PR #58](https://github.com/epiphany40223/parishkit/pull/58) runs full CI
+alongside implementation. Its first checkpoint `9ff513d` passed all 25 reported
+CI/DCO checks ([run 35406113971](https://github.com/epiphany40223/parishkit/actions/runs/35406113971)).
+These are internal checkpoints, not completed workflow, review-gate or PR
+acceptance. No review round has been counted for this PR yet.

@@ -242,6 +242,7 @@ def configure_web(configuration):
     settings.STEWARDSHIP_MEDIA_ROOT = configuration.paths["media"]
     settings.STEWARDSHIP_REPORTS_ROOT = configuration.paths["reports"]
     settings.STEWARDSHIP_PUBLIC_ORIGIN = configuration.public_origin
+    settings.STEWARDSHIP_DEPLOYMENT_PROFILE = configuration.profile.value
     client = valkey_client(configuration)
     limiter_key = hmac.digest(
         rings["django_signing"].active.material,

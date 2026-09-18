@@ -14,6 +14,7 @@ from .accounts import (
     content_history,
     content_views,
     family_authentication,
+    go_live_views,
     integration_selection_views,
     integration_views,
     ministry_views,
@@ -195,6 +196,16 @@ admin_patterns = [
         name="share_settings",
     ),
     path("campaign/new", campaign_views.campaign_settings, name="campaign_new"),
+    path(
+        "campaign/<uuid:campaign_id>/go-live",
+        go_live_views.readiness,
+        name="go_live",
+    ),
+    path(
+        "campaign/<uuid:campaign_id>/go-live/families",
+        go_live_views.testing_families,
+        name="go_live_families",
+    ),
     path(
         "campaign/<uuid:campaign_id>/settings",
         campaign_views.campaign_settings,
