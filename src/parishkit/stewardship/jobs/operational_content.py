@@ -21,6 +21,8 @@ class IncidentKind(StrEnum):
 
     DATABASE_UNAVAILABLE = "database_unavailable"
     STORAGE_INTEGRITY = "storage_integrity"
+    TASK_FAILED = "task_failed"
+    SYSTEM_FAILURE = "system_failure"
     SOURCE_REFRESH_FAILED = "source_refresh_failed"
     SOURCE_STALE = "source_stale"
     SOURCE_TENANT_MISMATCH = "source_tenant_mismatch"
@@ -59,6 +61,8 @@ TITLES = MappingProxyType(
     {
         IncidentKind.DATABASE_UNAVAILABLE: "Database unavailable",
         IncidentKind.STORAGE_INTEGRITY: "Storage integrity requires attention",
+        IncidentKind.TASK_FAILED: "Background task failed",
+        IncidentKind.SYSTEM_FAILURE: "System operation requires attention",
         IncidentKind.SOURCE_REFRESH_FAILED: "Parish data refresh failed",
         IncidentKind.SOURCE_STALE: "Parish data refresh is overdue",
         IncidentKind.SOURCE_TENANT_MISMATCH: "Parish data organization mismatch",

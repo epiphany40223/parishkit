@@ -259,6 +259,18 @@ def runtime_grants(role, *, target=None):
     # guard rejects an id-only update, and the actual stream is READ ONLY.
     columns = {"stewardship_download_policy": {"UPDATE": {"id"}}}
     if role is ServiceRole.WEB:
+        # Login incidents and critical diagnostics retain atomic safe intent,
+        # never rendered messages, recipients or provider mutation authority.
+        tables["stewardship_ops_incident"] = {"SELECT", "INSERT"}
+        columns["stewardship_ops_incident"] = {
+            "UPDATE": {
+                "signal_level",
+                "action",
+                "version",
+                "actor_id",
+                "correlation_id",
+            }
+        }
         # Setup progress observes live source ownership, never mutates the lease.
         columns["stewardship_source_lease"] = {
             "SELECT": {

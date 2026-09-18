@@ -116,6 +116,15 @@ def deliver_notification(value, notification):
             raise ValueError("Invalid notification.")
     except (ConfigError, ValueError, TypeError):
         return DeliveryOutcome.NOT_SENT
+    return _post_notification(token, notification)
+
+
+def _post_notification(token, notification):
+    """Share bounded Slack transport after each purpose validates its closed type.
+
+    This internal transport is not an authorization boundary or a generic text
+    notification API. Entry points own type validation and durable admission.
+    """
     try:
         with requests.Session() as session:
             session.trust_env = False

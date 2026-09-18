@@ -16,6 +16,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("stewardship_accounts", "0003_initial"),
+        ("stewardship_audit", "0001_initial"),
         ("stewardship_campaigns", "0001_initial"),
         ("stewardship_jobs", "0001_initial"),
     ]
@@ -124,6 +125,8 @@ class Migration(migrations.Migration):
                                     kind__in=(
                                         "database_unavailable",
                                         "storage_integrity",
+                                        "task_failed",
+                                        "system_failure",
                                         "source_refresh_failed",
                                         "source_stale",
                                         "source_tenant_mismatch",
@@ -258,6 +261,73 @@ class Migration(migrations.Migration):
                                 & models.Q(observed_at__gte=models.F("first_seen")),
                                 name="ops_notice_shape",
                             ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
+                    name="OperationalLogReceipt",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        ("incident_version", models.PositiveBigIntegerField()),
+                        ("fence", models.PositiveBigIntegerField()),
+                        ("worker_id", models.UUIDField()),
+                        (
+                            "incident",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_jobs.operationalincident",
+                            ),
+                        ),
+                        (
+                            "log",
+                            models.OneToOneField(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_audit.operationallog",
+                            ),
+                        ),
+                        (
+                            "run",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_jobs.taskrun",
+                            ),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_ops_log_receipt",
+                        "constraints": [
+                            models.CheckConstraint(
+                                condition=models.Q(incident_version__gte=1)
+                                & models.Q(fence__gte=1),
+                                name="ops_log_receipt_version",
+                            )
                         ],
                     },
                 ),

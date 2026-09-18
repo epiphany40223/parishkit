@@ -316,7 +316,7 @@ def test_worker_can_observe_but_cannot_forge_notices_or_policy_edits():
 @pytest.mark.django_db(transaction=True)
 def test_other_runtime_roles_have_no_incident_mutation_authority():
     """A role name, queue hint or general DB login cannot manufacture alert work."""
-    for role in (ServiceRole.WEB, ServiceRole.SCHEDULER, ServiceRole.MAIL_DISPATCH):
+    for role in (ServiceRole.SCHEDULER, ServiceRole.MAIL_DISPATCH):
         with task_login(role, exact=True):
             with (
                 pytest.raises(DatabaseError) as error,

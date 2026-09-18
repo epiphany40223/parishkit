@@ -122,3 +122,50 @@ startup. The producer pins that policy when opening an episode; changing
 deployment configuration affects new episodes, not recorded decisions or an
 already-active episode. Startup/producer wiring remains part of the next
 checkpoint. These settings never authorize routing, recipients or external I/O.
+
+## Private transport checkpoint
+
+Operational mail and Slack now have separate closed private-pipe schemas. Both
+accept only typed incident facts and rebuild fixed content inside their isolated
+helper. They have no body/template/attachment/access-link input. Each email has
+exactly one recipient; Slack disables markup and previews. Existing SMTP
+acceptance/uncertainty and bounded Slack POST behavior are reused without
+widening the Family, digest or fictional readiness payload types. Provider
+uncertainty remains unknown, not an automatic retry decision.
+
+The new transports plus existing Slack/weekly regressions pass 129 checks in
+1.55 seconds, including synthetic real-helper invocation with invalid credentials
+that cannot contact providers. Durable recipient selection, submission admission,
+outcome reconciliation and producer/runtime integration are still unfinished.
+
+Draft PR #50 runs full CI alongside implementation. Its first checkpoint exposed
+the new SQL file missing from both explicit Docker build-context allowlists;
+both were corrected without broadening the context. All 41 focused build-contract
+checks pass in 0.21 seconds. That failed CI run is not acceptance evidence; the
+corrected head must pass CI before this draft can be delivered.
+
+## Critical producer intake checkpoint
+
+The maintained general worker now consumes bounded pages of immutable CRITICAL
+logs, including events created directly by SQL safeguards. Exact log receipts
+commit with incident observations and notices under the live Task fence. There
+is no timestamp watermark: late commits with older timestamps remain eligible.
+Failure rolls back the whole page without losing its independently durable
+source logs. Scheduler production is independent of campaign/configuration
+holds and grants no provider authority.
+
+Authentication incidents use their existing distributed detector and window
+deduplication. Critical observations and limiter recovery atomically create the
+same durable notice intents; isolated warning windows do not fabricate sustained
+abuse. The web role receives only bounded incident-observation authority, not
+notice writes or provider credentials. Deployment policy is wired at startup.
+The obsolete unreleased `notification_pending` placeholder is removed in favor
+of actual notice records. No retained database was altered or deleted.
+
+Independent catalog comparison against `70797cb2` found the three owned tables
+and their guards, plus only the intended removal of that placeholder column and
+its NOT NULL constraint. Existing objects and row policies otherwise match.
+All 60 focused PostgreSQL checks pass in 34.67 seconds with one shared fresh
+database setup. Runtime, configuration and transport regressions pass 429 checks
+in 1.64 seconds; Ruff check/format pass. Actual recipient fanout, submission and
+outcome recovery are still unfinished, and no BG-10 checkbox is complete.

@@ -86,6 +86,7 @@ def task_runtime_grants(role):
         # derived state and creates notices; workers cannot insert notice rows.
         tables["stewardship_ops_incident"] = {"SELECT", "INSERT"}
         tables["stewardship_ops_notice"] = {"SELECT"}
+        tables["stewardship_ops_log_receipt"] = {"SELECT", "INSERT"}
         columns["stewardship_ops_incident"] = {
             "UPDATE": {
                 "signal_level",
@@ -109,6 +110,7 @@ def task_runtime_grants(role):
 
         add_setup_completion_grants(tables, columns)
     else:
+        columns["stewardship_ops_log_receipt"] = {"SELECT": {"log_id", "run_id"}}
         from parishkit.stewardship.source.grants import add_refresh_scheduler_grants
 
         add_refresh_scheduler_grants(tables, columns)
@@ -176,6 +178,12 @@ def task_runtime_grants(role):
 
         add_schedule_planning_grants(tables, columns)
     from parishkit.stewardship.campaigns.boundary_grants import add_boundary_grants
+
+    columns["stewardship_operational_log"]["SELECT"].update({"id", "level"})
+    if role is ServiceRole.WORKER:
+        columns["stewardship_operational_log"]["SELECT"].update(
+            {"event", "correlation_id"}
+        )
 
     add_boundary_grants(tables, columns, worker=role is ServiceRole.WORKER)
     from parishkit.stewardship.campaigns.cleanup_grants import add_cleanup_grants

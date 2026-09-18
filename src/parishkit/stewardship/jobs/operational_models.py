@@ -116,3 +116,25 @@ class OperationalNotice(ImmutableRecord):
                 name="ops_notice_shape",
             ),
         ]
+
+
+class OperationalLogReceipt(ImmutableRecord):
+    """Exactly-once handoff of an immutable critical log, including SQL producers."""
+
+    log = models.OneToOneField(
+        "stewardship_audit.OperationalLog", on_delete=models.PROTECT
+    )
+    incident = models.ForeignKey(OperationalIncident, on_delete=models.PROTECT)
+    incident_version = models.PositiveBigIntegerField()
+    run = models.ForeignKey("stewardship_jobs.TaskRun", on_delete=models.PROTECT)
+    fence = models.PositiveBigIntegerField()
+    worker_id = models.UUIDField()
+
+    class Meta:
+        db_table = "stewardship_ops_log_receipt"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(incident_version__gte=1) & models.Q(fence__gte=1),
+                name="ops_log_receipt_version",
+            ),
+        ]

@@ -109,7 +109,10 @@ def test_distributed_threshold_counts_repeated_dictionary_and_deduplicates(
     assert incident.attempts == 100
     assert incident.sources == sources
     assert incident.candidates == 1
-    assert incident.notification_pending
+    from parishkit.stewardship.jobs.operational_models import OperationalNotice
+
+    assert incident.level == "WARNING"
+    assert not OperationalNotice.objects.exists()
     limiter.failed(kind, "192.0.2.1")
     assert AuthenticationIncident.objects.count() == 1
     assert limiter.elevated(kind)
@@ -270,7 +273,9 @@ def test_counter_loss_creates_durable_critical_intent(auth_service, loss, monkey
     assert limiter.check_health(force=True)
     incident = AuthenticationIncident.objects.get(kind="limiter_state_lost")
     assert incident.level == "CRITICAL"
-    assert incident.notification_pending
+    from parishkit.stewardship.jobs.operational_models import OperationalNotice
+
+    assert OperationalNotice.objects.get().incident.kind == "limiter_state_lost"
     assert not limiter.check_health(force=True)
     replacement = Limiter(
         limiter.client,

@@ -32,7 +32,7 @@ CREATE TABLE "stewardship_ops_notice" (
 );
 ALTER TABLE "stewardship_ops_incident" ADD CONSTRAINT "stewardship_jobs_operationalincident_positive_version" CHECK ("version" >= 1);
 CREATE UNIQUE INDEX "ops_incident_active_kind" ON "stewardship_ops_incident" ("kind") WHERE "resolved_at" IS NULL;
-ALTER TABLE "stewardship_ops_incident" ADD CONSTRAINT "ops_incident_kind" CHECK ("kind"::text = ANY(ARRAY[('database_unavailable'::varchar)::text, ('storage_integrity'::varchar)::text, ('source_refresh_failed'::varchar)::text, ('source_stale'::varchar)::text, ('source_tenant_mismatch'::varchar)::text, ('source_destructive_change'::varchar)::text, ('mail_provider_unavailable'::varchar)::text, ('scheduler_lag'::varchar)::text, ('worker_unavailable'::varchar)::text, ('admin_abuse'::varchar)::text, ('family_abuse'::varchar)::text, ('limiter_unavailable'::varchar)::text, ('limiter_state_lost'::varchar)::text, ('publication_ambiguous'::varchar)::text, ('production_cleanup_failed'::varchar)::text, ('backup_rpo_breach'::varchar)::text, ('purge_inconsistency'::varchar)::text, ('purge_cleanup_failed'::varchar)::text]));
+ALTER TABLE "stewardship_ops_incident" ADD CONSTRAINT "ops_incident_kind" CHECK ("kind"::text = ANY(ARRAY[('database_unavailable'::varchar)::text, ('storage_integrity'::varchar)::text, ('task_failed'::varchar)::text, ('system_failure'::varchar)::text, ('source_refresh_failed'::varchar)::text, ('source_stale'::varchar)::text, ('source_tenant_mismatch'::varchar)::text, ('source_destructive_change'::varchar)::text, ('mail_provider_unavailable'::varchar)::text, ('scheduler_lag'::varchar)::text, ('worker_unavailable'::varchar)::text, ('admin_abuse'::varchar)::text, ('family_abuse'::varchar)::text, ('limiter_unavailable'::varchar)::text, ('limiter_state_lost'::varchar)::text, ('publication_ambiguous'::varchar)::text, ('production_cleanup_failed'::varchar)::text, ('backup_rpo_breach'::varchar)::text, ('purge_inconsistency'::varchar)::text, ('purge_cleanup_failed'::varchar)::text]));
 ALTER TABLE "stewardship_ops_incident" ADD CONSTRAINT "ops_incident_levels" CHECK ("level"::text = ANY(ARRAY[('WARNING'::varchar)::text, ('CRITICAL'::varchar)::text]) AND "signal_level"::text = ANY(ARRAY[('WARNING'::varchar)::text, ('CRITICAL'::varchar)::text]));
 ALTER TABLE "stewardship_ops_incident" ADD CONSTRAINT "ops_incident_action" CHECK ("action"::text = ANY(ARRAY[('observe'::varchar)::text, ('resolve'::varchar)::text]));
 ALTER TABLE "stewardship_ops_incident" ADD CONSTRAINT "ops_incident_windows" CHECK ("suppression_seconds">=60 AND "suppression_seconds"<=86400 AND ("escalation_seconds">=60 AND "escalation_seconds"<=86400));
@@ -180,3 +180,65 @@ FOR EACH ROW EXECUTE FUNCTION public.stewardship_ops_notice_binding_v1();
 REVOKE ALL ON FUNCTION public.stewardship_ops_incident_notice_v1() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.stewardship_ops_incident_state_v1() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.stewardship_ops_notice_binding_v1() FROM PUBLIC;
+
+-- Critical SQL producers are consumed exactly once, not missed by a Python hook.
+CREATE TABLE "stewardship_ops_log_receipt" (
+    "id" uuid NOT NULL PRIMARY KEY,
+    "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL,
+    "actor_id" uuid NULL, "correlation_id" uuid NOT NULL,
+    "log_id" uuid NOT NULL UNIQUE, "incident_id" uuid NOT NULL,
+    "incident_version" bigint NOT NULL CHECK ("incident_version" >= 0),
+    "run_id" uuid NOT NULL, "fence" bigint NOT NULL CHECK ("fence" >= 0),
+    "worker_id" uuid NOT NULL,
+    CONSTRAINT "ops_log_receipt_version" CHECK (("incident_version" >= 1 AND "fence" >= 1))
+);
+ALTER TABLE "stewardship_ops_log_receipt" ADD CONSTRAINT "stewardship_ops_log__log_id_70e6fcd8_fk_stewardsh" FOREIGN KEY ("log_id") REFERENCES "stewardship_operational_log" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_ops_log_receipt" ADD CONSTRAINT "stewardship_ops_log__incident_id_74efd4e9_fk_stewardsh" FOREIGN KEY ("incident_id") REFERENCES "stewardship_ops_incident" ("id") DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE "stewardship_ops_log_receipt" ADD CONSTRAINT "stewardship_ops_log__run_id_1fa0689a_fk_stewardsh" FOREIGN KEY ("run_id") REFERENCES "stewardship_task_run" ("id") DEFERRABLE INITIALLY DEFERRED;
+CREATE INDEX "stewardship_ops_log_receipt_correlation_id_96edbfa2" ON "stewardship_ops_log_receipt" ("correlation_id");
+CREATE INDEX "stewardship_ops_log_receipt_incident_id_74efd4e9" ON "stewardship_ops_log_receipt" ("incident_id");
+CREATE INDEX "stewardship_ops_log_receipt_run_id_1fa0689a" ON "stewardship_ops_log_receipt" ("run_id");
+
+CREATE FUNCTION public.stewardship_ops_log_receipt_immutable_v1()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'Historical records are append-only' USING ERRCODE='23514';
+END;
+$$;
+CREATE TRIGGER stewardship_ops_log_receipt_immutable_guard_v1
+BEFORE UPDATE OR DELETE ON public.stewardship_ops_log_receipt
+FOR EACH ROW EXECUTE FUNCTION public.stewardship_ops_log_receipt_immutable_v1();
+
+CREATE FUNCTION public.stewardship_ops_log_receipt_binding_v1()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+SET search_path TO pg_catalog,public,pg_temp AS $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM public.stewardship_task_run r
+        JOIN public.stewardship_operational_log l ON l.id=NEW.log_id
+        JOIN public.stewardship_ops_incident i ON i.id=NEW.incident_id
+        WHERE r.id=NEW.run_id AND r.task_type='operational_collect'
+        AND r.state='running' AND r.fence=NEW.fence AND r.worker_id=NEW.worker_id
+        AND r.lease_expires_at>clock_timestamp()
+        AND l.level='CRITICAL' AND l.correlation_id=NEW.correlation_id
+        AND i.version=NEW.incident_version AND i.level='CRITICAL' AND i.resolved_at IS NULL
+        AND i.correlation_id=NEW.correlation_id AND i.kind=CASE l.event
+            WHEN 'task_failed' THEN 'task_failed'
+            WHEN 'fact_drift' THEN 'storage_integrity'
+            WHEN 'source_refresh_invalid' THEN 'source_refresh_failed'
+            WHEN 'source_refresh_held' THEN 'source_refresh_failed'
+            WHEN 'source_credential_failed' THEN 'source_refresh_failed'
+            WHEN 'source_provider_failed' THEN 'source_refresh_failed'
+            WHEN 'campaign_boundary_lag' THEN 'scheduler_lag'
+            WHEN 'production_cleanup_failed' THEN 'production_cleanup_failed'
+            ELSE 'system_failure' END
+    ) THEN
+        RAISE EXCEPTION 'Critical log intake requires exact current ownership' USING ERRCODE='23514';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+CREATE TRIGGER stewardship_ops_log_receipt_binding
+BEFORE INSERT ON public.stewardship_ops_log_receipt
+FOR EACH ROW EXECUTE FUNCTION public.stewardship_ops_log_receipt_binding_v1();
+REVOKE ALL ON FUNCTION public.stewardship_ops_log_receipt_binding_v1() FROM PUBLIC;

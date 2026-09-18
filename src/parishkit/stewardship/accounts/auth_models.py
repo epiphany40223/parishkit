@@ -26,7 +26,6 @@ class AuthenticationIncident(MutableRecord):
     identities = models.PositiveIntegerField()
     candidates = models.PositiveIntegerField()
     resolved_at = UTCDateTimeField(null=True)
-    notification_pending = models.BooleanField(default=True)
 
     class Meta(MutableRecord.Meta):
         db_table = "stewardship_auth_incident"
