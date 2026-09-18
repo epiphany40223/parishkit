@@ -281,8 +281,21 @@ def runtime_grants(role, *, target=None):
                 "heartbeat_at",
             }
         }
-        # Dashboard timestamps need no source cursor, validation or payload access.
-        columns["stewardship_source_snapshot"] = {"SELECT": {"id", "promoted_at"}}
+        # Readiness verifies the full-observation anchor using permanent public
+        # manifest metadata. Cursor load evidence contains completeness counts,
+        # not source payloads; validation/content/corpus columns remain private.
+        columns["stewardship_source_snapshot"] = {
+            "SELECT": {
+                "id",
+                "organization_id",
+                "kind",
+                "state",
+                "started_at",
+                "completed_at",
+                "promoted_at",
+                "cursor",
+            }
+        }
         # Login holds these current-epoch/credential rows against rotation and
         # cleanup. PostgreSQL requires an UPDATE privilege for a row lock;
         # id-only grants permit locking, not guarded credential mutation.

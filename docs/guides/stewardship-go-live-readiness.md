@@ -40,3 +40,25 @@ reviewability split, not removal of ADM-05.03/.04/.05 or Gate 3 acceptance.
 Implementation is in progress; no ADM-05 checkbox is complete yet. Tests use
 synthetic providers and disposable databases. No real provider call, retained
 database deletion, deployment, release or historical upgrade is authorized.
+
+## Implementation checkpoints
+
+The read-only Family impact collector uses the execution coalescing planner,
+streams complete groups in 200-Family pages, and separately counts immediately
+due messages, coalesced slots, skipped slots and blocked Families. Its digest
+binds eligibility, live responses, source generations, current schedule revisions
+and Production coverage/attempts. It never allocates delivery work or reads
+Family codes. Testing fulfillment does not count as live coverage.
+
+Full-source readiness follows the current snapshot's permanent full-load anchor,
+verifies tenant and selected campaign/fund window, and uses the configured
+source-staleness threshold (default 30 minutes) from the full load's start.
+A newer delta does not extend that deadline. Missing or stale evidence requires
+a new full refresh before cleanup can begin. This is distinct from routine
+nightly full-refresh scheduling.
+
+Focused validation so far: 20 pure impact cases (including a 5,000-Family stream),
+three PostgreSQL Family-reader cases (including page boundaries and actual web
+role), and four PostgreSQL source-readiness cases (full/delta anchors, exact
+expiry, changed window and unavailable/future evidence) pass. These are internal
+checkpoints, not a completed web workflow, review gate or PR acceptance.
