@@ -8,6 +8,14 @@ and [critical notification contract](../specs/stewardship/background-processing/
 
 ## Scope
 
+Delivery subdivision for review cost: PR #51 owns independent Slack, its
+notification-shutdown evidence, the adjacent admission-hold corrections and
+the separate fixture-efficiency checkpoint. Remaining current-phase health
+producers and healthy-window recovery follow in a fresh successor PR from
+verified main. This keeps an independently testable channel boundary without
+mixing a new health-sampling contract into the same review. The overall BG-10
+scope below is unchanged; no task is marked complete prematurely.
+
 1. Complete independent optional Slack submission and durable outcomes using the
    existing worker credential mount and fixed private transport. Email absence
    or failure must not prevent this channel; current channel/credential and
@@ -109,6 +117,22 @@ unchanged, including all 28 policies. The new fingerprint records 182 relations,
 The model/SQL equivalence checks pass. No retained database is changed, deleted,
 upgraded or downgraded; this remains the unreleased fresh-install baseline.
 
-Current-phase health producers/recovery, additional hold integration and the
+The additional preparation-exhaustion case passes in 15.26 seconds including
+schema bootstrap. It confirms five real local failures terminate and produce
+one durable ERROR, with no provider call or recursive notification.
+
+Current-phase health producers/recovery remain in the successor slice. The
 three required dual-source review rounds are still pending. This is a backed-up
 implementation checkpoint, not BG-10 acceptance or Gate 3 approval.
+
+## Admission-hold integration
+
+Configuration mismatches no longer abort a mixed scheduler hint page, including
+ordinary authority-wrapped owners; SQL/transport outages still abort normally.
+Operational and Family mail classify pre-submission authority loss as a hold.
+Mail and operational fanout reset their attempt phase before actual preparation,
+so a previous held attempt cannot exempt subsequent real failures forever.
+Regression tests use the actual composite MAIL owner, scheduler and PostgreSQL
+journals; only normal retry delays are shortened, not leases/provider deadlines.
+All 50 focused hold, hint-scan, operational dispatch/fanout and Family-worker
+PostgreSQL cases pass together in 89.73 seconds with one schema bootstrap.

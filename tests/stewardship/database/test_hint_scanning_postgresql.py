@@ -3,6 +3,7 @@
 import pytest
 from django.core.exceptions import ObjectDoesNotExist
 
+from parishkit.config import ConfigError
 from parishkit.stewardship.jobs.dispatch import Handler, WorkQueue
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.scanning import collect_hints
@@ -53,14 +54,15 @@ def test_unknown_task_types_are_not_dynamically_imported_or_routed():
     assert TaskRun.objects.get().state == "queued"
 
 
-def test_raised_gate_denial_also_advances_past_held_work():
+@pytest.mark.parametrize("error_type", [PermissionError, ConfigError])
+def test_raised_gate_denial_also_advances_past_held_work(error_type):
     """Concrete admission services raise safely without poisoning the whole page."""
     held, wanted = queued(), queued()
 
     def admit(action, status):
         """Reject one durable scope while a later independent operation is ready."""
         if status.run_id == held.run_id:
-            raise PermissionError("Synthetic held work")
+            raise error_type("Synthetic held work")
         return True
 
     registry = {"dispatch_probe": Handler(WorkQueue.GENERAL, admit, lambda *args: None)}

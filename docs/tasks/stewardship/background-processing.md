@@ -364,6 +364,9 @@ the [protected receipt](../../guides/stewardship-operational-alerts.md#protected
 supersedes its pending delivery status. The
 [remaining health/notification increment](../../guides/stewardship-operational-health.md)
 owns the unfinished BG-10 scope from verified merge `1895949`.
+PR #51 is the independent Slack/shutdown and admission-hold slice, with a
+separate fixture-efficiency checkpoint. Remaining health producers/recovery
+follow in the next fresh-main increment before BG-10 acceptance or ADM-05.
 
 ## BG-11: Exceptional purge worker
 

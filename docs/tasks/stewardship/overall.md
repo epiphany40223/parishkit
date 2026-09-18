@@ -532,6 +532,10 @@ CI/DCO checks passed. Its [protected delivery receipt](../../guides/stewardship-
 supersedes pending notes. The [remaining BG-10 increment](../../guides/stewardship-operational-health.md)
 starts from that tip on `pr/stewardship-operational-health`; Slack ownership,
 remaining health producers and shutdown acceptance precede ADM-05.
+For reviewability, PR #51 delivers independent Slack, notification-shutdown
+evidence and adjacent hold corrections, alongside its separate test-efficiency
+checkpoint. Current-phase health sampling/recovery follows from verified main
+in the next coherent increment; BG-10 remains unchecked until that completion.
 
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).

@@ -270,6 +270,7 @@ def _execute(execution, *, store):
         raise StorageInvariantError(
             "Operational preparation requires maintained ownership."
         )
+    execution.progress(0, 0, phase=TaskPhase.PREPARING)
     while True:
         execution.check()
         try:
