@@ -537,6 +537,14 @@ evidence and adjacent hold corrections, alongside its separate test-efficiency
 checkpoint. Current-phase health sampling/recovery follows from verified main
 in the next coherent increment; BG-10 remains unchecked until that completion.
 
+PR #51 has now auto-merged as `fb945fb9`, verified on refreshed `origin/main`,
+after all 24 final-head CI jobs plus DCO and the required reviews passed.
+Its [protected receipt](../../guides/stewardship-operational-health.md#protected-delivery)
+supersedes pending delivery notes. The
+[health-observation increment](../../guides/stewardship-health-observation.md)
+starts on `pr/stewardship-health-observation` from that exact tip and owns the
+remaining current-phase BG-10 observations/recovery before ADM-05.
+
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).
 3. Complete required [RPT-02](reports.md#rpt-02-population-and-calculation-library) calculations and the [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics) fact-materialization service before [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests); report UI remains in Phase 5.

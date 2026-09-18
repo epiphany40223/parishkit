@@ -368,6 +368,13 @@ PR #51 is the independent Slack/shutdown and admission-hold slice, with a
 separate fixture-efficiency checkpoint. Remaining health producers/recovery
 follow in the next fresh-main increment before BG-10 acceptance or ADM-05.
 
+PR #51 has landed with all exact-head checks and reviews passing; its
+[protected delivery receipt](../../guides/stewardship-operational-health.md#protected-delivery)
+records the result. Remaining observations/recovery are now in progress on
+`pr/stewardship-health-observation` from verified main `fb945fb9`; the
+[successor guide](../../guides/stewardship-health-observation.md) records scope
+and checkpoints without prematurely marking the full package complete.
+
 ## BG-11: Exceptional purge worker
 
 Scope and dependencies: [BG-11 work package](../../plans/stewardship/background-processing.md#bg-11-exceptional-purge-worker).
