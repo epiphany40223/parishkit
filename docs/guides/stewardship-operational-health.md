@@ -249,3 +249,21 @@ The preceding reviewed tree is retained at
 correction into the logical Slack review/fix commit. All three successful
 dual-source rounds are complete with no unresolved accepted Medium-or-higher
 finding; the PR handoff supplies the final exact-head CI and merge receipt.
+
+## CI guard-inventory correction
+
+Run `35309435892` finds one missing test-inventory registration: the two Slack
+facts use their shared INSERT/UPDATE/DELETE ownership trigger instead of the
+default append-only trigger name. Register both actual names and functions in
+the existing shared-guard inventory. The test still requires enabled row-level
+triggers, the exact operation mask, a non-INSERT branch that raises immediately
+and the expected SQL error code; neither table is exempted from protection.
+Production code and the independently audited schema are unchanged. All 39
+storage PostgreSQL tests pass in 11.03 seconds with one bootstrap.
+
+Pika session `20260918-011831-0577a4` successfully reviews the exact correction
+`13ad4b2..2a8c0b1` with both vendors. Raw findings: zero High/Critical/Medium,
+one Low. Both reviewers confirm the exact installed trigger/function/mask and
+absence of an exemption. The Low wording clarification above distinguishes
+structural inventory assertions from behavioral SQL rejection tests. Final
+replacement exact-head CI/DCO remains required; the PR handoff records it.
