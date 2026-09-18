@@ -379,6 +379,12 @@ Its following service-health checkpoint must provide bounded periodic forced
 limiter probes: request/startup samples alone do not deliver unattended recovery
 for a quiet parish. BG-10.03 stays incomplete until that integration passes.
 
+PR #52 has landed; its [protected receipt](../../guides/stewardship-health-observation.md#protected-delivery)
+records final-head checks and merge verification. The [periodic-health increment](../../guides/stewardship-periodic-health.md)
+starts from verified main `08367cb7` to deliver unattended authentication
+observations within web lifecycle/resource boundaries. Remaining source,
+provider and due-work service health still own their subsequent checkpoint.
+
 ## BG-11: Exceptional purge worker
 
 Scope and dependencies: [BG-11 work package](../../plans/stewardship/background-processing.md#bg-11-exceptional-purge-worker).

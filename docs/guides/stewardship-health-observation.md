@@ -244,3 +244,18 @@ The delivery handoff records the consolidated exact SHA/tree and protected
 checks. Consolidate corrective commits without altering their final tree,
 retain the reviewed predecessors locally, and require fresh final-head CI/DCO.
 Do not treat intermediate CI or this review-loop completion as merge evidence.
+
+## Protected delivery
+
+[PR #52](https://github.com/epiphany40223/parishkit/pull/52) merged at
+2026-09-18 07:03:29 UTC as `08367cb78a5459b9077d9baeca7778b79a0a4ea6`,
+verified on freshly fetched `origin/main`. Final head `8cd54cc7` contains three
+signed-off logical commits; its tree `175bbda9` is identical to the post-round-3
+correction tree at `bff7528`. All 24 jobs in exact-head CI run `35316183897`
+and DCO pass. Same-tree coverage is 93.89% lines and 84.85% branches.
+PostgreSQL jobs range from 9 minutes 48 seconds to 16 minutes 24 seconds.
+
+Standing human authority permits this protected merge and continuation without
+a merge-queue rerun. The [periodic-health increment](stewardship-periodic-health.md)
+closes the explicitly deferred quiet-traffic gap next; the broader BG-10 package
+and Gate 3 remain incomplete. No deployment or release is authorized.
