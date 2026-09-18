@@ -5,7 +5,10 @@ from datetime import date
 
 from parishkit.config import ConfigError
 from parishkit.parishsoft import load_families_and_members, load_funds
-from parishkit.parishsoft_source import CoherentParishSoftClient
+from parishkit.parishsoft_source import (
+    CoherentParishSoftClient,
+    SourceOrganizationMismatch,
+)
 
 from .canonical import InvalidSourcePayload
 from .corpus import KINDS, normalize_core
@@ -13,6 +16,10 @@ from .giving import load_giving
 from .windows import RefreshWindow
 
 TREND_COLLECTIONS = ("family", "member", "ministry", "roster", "fund")
+
+
+class DestructiveSourceChange(InvalidSourcePayload):
+    """Complete-looking source data unexpectedly removes core parish records."""
 
 
 @dataclass(frozen=True)
@@ -42,7 +49,9 @@ def validate_count_trend(counts, *, previous_full_counts, maximum_drop_percent=2
         ):
             raise InvalidSourcePayload("Source count evidence is incomplete.")
     if counts is None or counts["family"] == 0 or counts["member"] == 0:
-        raise InvalidSourcePayload("Source Family/Member corpus is unexpectedly empty.")
+        raise DestructiveSourceChange(
+            "Source Family/Member corpus is unexpectedly empty."
+        )
     if previous_full_counts is None:
         return
     for kind in TREND_COLLECTIONS:
@@ -50,7 +59,7 @@ def validate_count_trend(counts, *, previous_full_counts, maximum_drop_percent=2
         if before and (
             not after or (before - after) * 100 > before * maximum_drop_percent
         ):
-            raise InvalidSourcePayload(
+            raise DestructiveSourceChange(
                 "Source corpus exceeds the permitted count loss."
             )
 
@@ -89,7 +98,7 @@ def load_full_source(
         corpus = normalize_core(data, as_of=as_of)
         giving = load_giving(client, corpus=corpus, window=window, as_of=as_of)
         corpus.update(pledge=giving.pledges, contribution=giving.contributions)
-    except InvalidSourcePayload:
+    except (InvalidSourcePayload, SourceOrganizationMismatch):
         raise
     except (ConfigError, KeyError, TypeError, ValueError, OverflowError):
         # Ordinary shared tools retain their diagnostics. The app boundary

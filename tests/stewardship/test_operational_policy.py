@@ -91,7 +91,9 @@ def test_counter_saturates_without_losing_critical_notification_work():
     assert result.notification is AlertPhase.REPEATED
 
 
-@pytest.mark.parametrize("name", ["suppression_seconds", "escalation_seconds"])
+@pytest.mark.parametrize(
+    "name", ["suppression_seconds", "escalation_seconds", "source_stale_seconds"]
+)
 @pytest.mark.parametrize("value", [True, None, "900", 0, 59, 86401])
 def test_policy_windows_are_bounded_configuration_values(name, value):
     """Reject untyped or storm-prone operational window settings."""

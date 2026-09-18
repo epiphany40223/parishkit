@@ -1,14 +1,20 @@
 """Whole-load validation never treats a partial/large-loss source as new truth."""
 
+from dataclasses import replace
 from uuid import uuid4
 
 import pytest
 from test_parishsoft_source import family, member, page
 from test_parishsoft_source import source as client_factory
 
+from parishkit.parishsoft_source import SourceOrganizationMismatch
 from parishkit.stewardship.source.canonical import InvalidSourcePayload
 from parishkit.stewardship.source.corpus import KINDS
-from parishkit.stewardship.source.loading import load_full_source, validate_count_trend
+from parishkit.stewardship.source.loading import (
+    DestructiveSourceChange,
+    load_full_source,
+    validate_count_trend,
+)
 from parishkit.stewardship.source.windows import RefreshWindow
 
 from .test_source_corpus import TODAY
@@ -107,7 +113,7 @@ def test_loss_threshold_is_compared_to_last_full_counts(kind):
     """The configured percent is inclusive, uses integers and rejects larger drops."""
     before = counts(**{kind: 100})
     validate_count_trend(counts(**{kind: 75}), previous_full_counts=before)
-    with pytest.raises(InvalidSourcePayload, match="count loss"):
+    with pytest.raises(DestructiveSourceChange, match="count loss"):
         validate_count_trend(counts(**{kind: 74}), previous_full_counts=before)
 
 
@@ -124,7 +130,7 @@ def test_giving_window_and_contact_edits_do_not_trigger_identity_loss_alarm():
 @pytest.mark.parametrize("kind", ["family", "member"])
 def test_initial_unexpected_empty_corpus_fails_closed(kind):
     """First setup cannot certify a blank parish from an incomplete load."""
-    with pytest.raises(InvalidSourcePayload, match="empty"):
+    with pytest.raises(DestructiveSourceChange, match="empty"):
         validate_count_trend(counts(**{kind: 0}), previous_full_counts=None)
 
 
@@ -147,10 +153,47 @@ def test_incomplete_count_evidence_cannot_establish_a_comparison(value):
 def test_large_loss_result_is_not_returned_to_staging(tmp_path):
     """Successful transport and valid rows do not override the corpus safety check."""
     client = client_factory(tmp_path, provider_pages())
-    with pytest.raises(InvalidSourcePayload, match="count loss"):
+    with pytest.raises(DestructiveSourceChange, match="count loss"):
         load_full_source(
             client,
             window=RefreshWindow(None, ()),
             as_of=TODAY,
             previous_full_counts=counts(),
         )
+
+
+def test_wrong_tenant_retains_specific_classification_through_full_loader(tmp_path):
+    """The generic ValueError redactor must not swallow the safe tenant signal."""
+    client = client_factory(tmp_path, [[{"organizationID": 999}]])
+    with pytest.raises(SourceOrganizationMismatch):
+        load_full_source(client, window=RefreshWindow(None, ()), as_of=TODAY)
+    assert len(client.session.calls) == 1
+
+
+@pytest.mark.parametrize("rows", [None, {}, [], [None], [{"organizationID": True}]])
+def test_malformed_organization_is_invalid_data_not_a_proven_mismatch(tmp_path, rows):
+    """An unreadable identity must not claim a positively observed other parish."""
+    client = client_factory(tmp_path, [rows])
+    with pytest.raises(InvalidSourcePayload):
+        load_full_source(client, window=RefreshWindow(None, ()), as_of=TODAY)
+
+
+@pytest.mark.parametrize("name", [None, True, "", "  "])
+def test_missing_expected_name_is_not_a_proven_name_mismatch(tmp_path, name):
+    """A missing name is malformed evidence rather than a positive other parish."""
+    client = client_factory(
+        tmp_path, [[{"organizationID": 5, "organizationReportName": name}]]
+    )
+    client.config = replace(client.config, expected_organization="Expected Parish")
+    with pytest.raises(InvalidSourcePayload):
+        load_full_source(client, window=RefreshWindow(None, ()), as_of=TODAY)
+
+
+def test_different_valid_id_proves_mismatch_even_when_optional_name_is_missing(
+    tmp_path,
+):
+    """Positive numeric evidence takes precedence over an absent descriptive name."""
+    client = client_factory(tmp_path, [[{"organizationID": 999}]])
+    client.config = replace(client.config, expected_organization="Expected Parish")
+    with pytest.raises(SourceOrganizationMismatch):
+        load_full_source(client, window=RefreshWindow(None, ()), as_of=TODAY)

@@ -26,6 +26,7 @@ def test_operational_alert_policy_defaults_and_override_precedence(tmp_path):
     """Non-secret deployment policy follows the shared YAML/environment precedence."""
     default = load_deployment(environ={}).operational_alerts
     assert (default.suppression_seconds, default.escalation_seconds) == (900, 900)
+    assert default.source_stale_seconds == 1800
     path = config_file(
         tmp_path,
         {"operational_alerts": {"suppression_seconds": 600, "escalation_seconds": 300}},
@@ -41,6 +42,13 @@ def test_operational_alert_policy_defaults_and_override_precedence(tmp_path):
         result.operational_alerts.suppression_seconds,
         result.operational_alerts.escalation_seconds,
     ) == (60, 300)
+    assert (
+        load_deployment(
+            path,
+            environ={"PARISHKIT_STEWARDSHIP_OPERATIONAL_SOURCE_STALE_SECONDS": "2400"},
+        ).operational_alerts.source_stale_seconds
+        == 2400
+    )
 
 
 @pytest.mark.parametrize(
@@ -53,6 +61,9 @@ def test_operational_alert_policy_defaults_and_override_precedence(tmp_path):
         {"suppression_seconds": 59},
         {"escalation_seconds": 86401},
         {"escalation_seconds": "private@example.test"},
+        {"source_stale_seconds": True},
+        {"source_stale_seconds": 59},
+        {"source_stale_seconds": 86401},
     ],
 )
 def test_operational_alert_configuration_rejects_invalid_values_privately(

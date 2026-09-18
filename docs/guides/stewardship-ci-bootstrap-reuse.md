@@ -60,3 +60,26 @@ do not duplicate that complete matrix locally. Final CI duration, paired job
 results, exact head and three review rounds are recorded in the PR handoff,
 then linked by the successor's delivery receipt. Savings above are measured
 bootstrap costs, not an unverified promise of final wall-clock improvement.
+
+## Protected delivery
+
+[PR #54](https://github.com/epiphany40223/parishkit/pull/54) merged on September
+18, 2026 at 13:01:18 UTC as `17d5d4d9e919a5bd050ceb02996afbbb2771071e`, verified
+on freshly fetched `origin/main`. Three successful dual-source rounds reviewed
+`113fcd0f..e56e9a4`: sessions `20260918-040748-6a88f4`,
+`20260918-041140-45b726`, and `20260918-071320-3f46ba`. The first round's four
+Low notes were evidence-dispositioned in the PR; subsequent rounds had no
+findings. No accepted Medium-or-higher issue remains.
+
+Exact-head CI run `35322728438` passed all 24 jobs and DCO at `e56e9a4`, tree
+`8a660366ba9644ecbd37d1174e5cb509aa3d833f`. Stewardship coverage is 93.90% lines
+and 84.86% branches. Paired operational jobs took 4m57s–6m53s; PostgreSQL jobs
+took 7m21s–12m49s. Initial queue delays overlapped predecessor main validation,
+so this run does not establish an end-to-end speedup.
+
+The human authorized replacing the obsolete operational required-check names
+with all four paired-job names. Ruleset `18237970` was read back and verified
+against that exact change: every other rule, application binding, condition,
+enforcement setting and bypass list is unchanged. No protection was bypassed.
+The [source-health increment](stewardship-source-health.md) follows from this
+verified merge; broader BG-10 and Gate 3 remain open.

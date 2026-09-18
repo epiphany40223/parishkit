@@ -28,6 +28,8 @@ class Event(StrEnum):
     BOUNDARY_LAG = "campaign_boundary_lag"
     PRODUCTION_CLEANUP_FAILED = "production_cleanup_failed"
     SOURCE_INVALID = "source_refresh_invalid"
+    SOURCE_TENANT_MISMATCH = "source_tenant_mismatch"
+    SOURCE_DESTRUCTIVE_CHANGE = "source_destructive_change"
     SOURCE_MEMBER_UNUSABLE = "source_member_unusable"
     SOURCE_HELD = "source_refresh_held"
     SOURCE_CREDENTIAL_FAILED = "source_credential_failed"

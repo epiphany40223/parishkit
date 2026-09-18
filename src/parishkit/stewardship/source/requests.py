@@ -13,7 +13,7 @@ from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .canonical import canonical_payload
-from .errors import SourceScopeChanged
+from .errors import SourceOrganizationChanged, SourceScopeChanged
 from .models import SourceCurrent, SourceMutationLease, SourceSnapshot
 from .refresh_models import REFRESH_CAUSES, SourceRefreshCommand, SourceRefreshRequest
 from .windows import refresh_window
@@ -59,7 +59,9 @@ def _organization(scope):
     organization_id = int(value)
     current = SourceCurrent.objects.values_list("organization_id", flat=True).first()
     if current is not None and current != organization_id:
-        raise PermissionError("The source organization differs from retained truth.")
+        raise SourceOrganizationChanged(
+            "The source organization differs from retained truth."
+        )
     return organization_id
 
 

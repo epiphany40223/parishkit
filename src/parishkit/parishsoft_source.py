@@ -18,6 +18,12 @@ from parishkit.parishsoft_pagination import (
 )
 
 PAGE = PageContract("PageSize", "PageNumber", envelope=True)
+
+
+class SourceOrganizationMismatch(IncompleteSourceCollection):
+    """A fresh organization response did not prove the configured tenant identity."""
+
+
 POST_CONTRACTS = {
     "families/search": (
         PageContract(
@@ -149,18 +155,27 @@ class CoherentParishSoftClient(ParishSoftClient):
         """Require one exact numeric organization before any scoped collection read."""
         self._organization_id = None
         rows = super().post_uncached("organizations/search", {})
-        if (
-            type(rows) is not list
-            or len(rows) != 1
-            or type(rows[0]) is not dict
-            or _identifier(rows[0], "organizationID") != self.expected_organization_id
-            or (
-                self.config.expected_organization is not None
-                and rows[0].get("organizationReportName")
-                != self.config.expected_organization
+        if type(rows) is not list or len(rows) != 1 or type(rows[0]) is not dict:
+            raise IncompleteSourceCollection(
+                "Source organization response is incomplete."
             )
+        if _identifier(rows[0], "organizationID") != self.expected_organization_id:
+            raise SourceOrganizationMismatch(
+                "Source organization is not the expected tenant."
+            )
+        if self.config.expected_organization is not None and (
+            type(rows[0].get("organizationReportName")) is not str
+            or not rows[0]["organizationReportName"].strip()
         ):
             raise IncompleteSourceCollection(
+                "Source organization response is incomplete."
+            )
+        if (
+            self.config.expected_organization is not None
+            and rows[0].get("organizationReportName")
+            != self.config.expected_organization
+        ):
+            raise SourceOrganizationMismatch(
                 "Source organization is not the expected tenant."
             )
         self._organization_id = self.expected_organization_id

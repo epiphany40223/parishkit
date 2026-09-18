@@ -230,6 +230,8 @@ BEGIN
             WHEN 'task_failed' THEN 'task_failed'
             WHEN 'fact_drift' THEN 'storage_integrity'
             WHEN 'source_refresh_invalid' THEN 'source_refresh_failed'
+            WHEN 'source_tenant_mismatch' THEN 'source_tenant_mismatch'
+            WHEN 'source_destructive_change' THEN 'source_destructive_change'
             WHEN 'source_refresh_held' THEN 'source_refresh_failed'
             WHEN 'source_credential_failed' THEN 'source_refresh_failed'
             WHEN 'source_provider_failed' THEN 'source_refresh_failed'
