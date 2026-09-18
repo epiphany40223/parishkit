@@ -29,6 +29,7 @@ from parishkit.stewardship.source.setup_handoff import (
 )
 from parishkit.stewardship.storage import StaleRecordError
 
+from .role_grants import grant_runtime
 from .test_background_grants_postgresql import task_login
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_runtime_auth_grants_postgresql import web_login
@@ -57,17 +58,7 @@ def target_login(target="parishsoft", *, reconnect=False):
             ServiceRole.CREDENTIAL_INSTALLER, target=target
         )
         with connection.cursor() as cursor:
-            cursor.execute(f'GRANT USAGE ON SCHEMA public TO "{role}"')
-            for table, privileges in tables.items():
-                cursor.execute(
-                    f'GRANT {",".join(sorted(privileges))} ON "{table}" TO "{role}"'
-                )
-            for table, privileges in columns.items():
-                for privilege, names in privileges.items():
-                    selected = ",".join(f'"{name}"' for name in sorted(names))
-                    cursor.execute(
-                        f'GRANT {privilege} ({selected}) ON "{table}" TO "{role}"'
-                    )
+            grant_runtime(cursor, role, tables, columns)
             cursor.execute(f'SET SESSION AUTHORIZATION "{role}"')
         if reconnect:
             connection_created.connect(restrict_connection, weak=False)

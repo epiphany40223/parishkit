@@ -362,6 +362,7 @@ def serve_background(configuration, lease):
         from .campaigns.schedule_production import FamilyScheduleProducer
         from .jobs.operational_collection import produce_collection
         from .jobs.operational_fanout import produce_fanout
+        from .jobs.operational_slack_tasks import produce_slack
         from .jobs.processes import serve_consumer, serve_scheduler
         from .reports.digest_finalization import (
             DailyDigestFinalizeProducer,
@@ -415,6 +416,7 @@ def serve_background(configuration, lease):
                 initial_setup_hold(assembled.store)
                 return (*operational, *finalization)
             operational += independent_producer(guard, produce_fanout, guard)
+            operational += independent_producer(guard, produce_slack, guard)
             independent_producer(guard, recover_setup_mail)
             independent_producer(guard, recover_setup_slack)
             from .accounts.campaign_mail_delivery import recover_pending

@@ -14,6 +14,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import connection, transaction
 from django.db.models import Q
 
+from parishkit.config import ConfigError
 from parishkit.stewardship.observability import emit_failure
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
@@ -104,9 +105,11 @@ def collect_hints(*, handlers, cursor=None, limit=100):
                 )
                 if handler.admit(action, _status(row)) is True:
                     hints.append(ExecutionHint(row.pk, handler.queue))
-        except PermissionError:
+        except (PermissionError, ConfigError):
             # A raised gate denial and an explicit False are equally held work;
             # neither may pin the cursor forever on an ineligible prefix.
+            # Selected-YAML recovery is another scope-local admission hold;
+            # operational collection/recovery may remain independently eligible.
             continue
         except (StaleRecordError, StorageInvariantError, ObjectDoesNotExist) as error:
             # One broken durable scope must not discard earlier hints or strand

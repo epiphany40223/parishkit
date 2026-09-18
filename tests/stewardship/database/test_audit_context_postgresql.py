@@ -124,6 +124,7 @@ def test_raw_sql_cannot_store_secret_bearing_context(context):
         ],
     ],
 )
+@pytest.mark.django_db(transaction=False)
 def test_sql_member_source_diagnostic_privacy(context, valid):
     """Independent SQL prevents raw inserts from evading the closed Python schema."""
     with connection.cursor() as cursor:

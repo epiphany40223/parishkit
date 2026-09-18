@@ -475,6 +475,13 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
     # nonstandard names are not exceptions to SQL immutability.
     shared_immutable_guards = {
         **{
+            "stewardship_ops_slack_" + name: (
+                "stewardship_ops_slack_" + name + "_write",
+                "stewardship_ops_slack_write_v1",
+            )
+            for name in ("attempt", "result")
+        },
+        **{
             "stewardship_weekly_digest_" + name: (
                 "weekly_" + name + "_immutable",
                 "stewardship_weekly_immutable_v1",
@@ -650,6 +657,8 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             row = cursor.fetchone()
             assert row is not None, table
             conditional_insert_guards = {
+                "stewardship_ops_slack_attempt",
+                "stewardship_ops_slack_result",
                 "stewardship_family_mail_preparation",
                 "stewardship_fact_build_receipt",
                 "stewardship_weekly_manual_request",

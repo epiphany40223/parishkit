@@ -71,6 +71,7 @@ VALID = {"items": [ITEM], "daily_range": None}
         ],
     ],
 )
+@pytest.mark.django_db(transaction=False)
 def test_invalid_coverage_is_rejected_by_python_and_sql(manifest):
     """Malformed or noncanonical manifests cannot claim exact coverage."""
     with pytest.raises(ValueError):

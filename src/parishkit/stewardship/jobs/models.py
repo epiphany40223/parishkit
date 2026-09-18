@@ -201,6 +201,10 @@ from .operational_models import (  # noqa: E402,F401
     OperationalNotice,
     OperationalRecipient,
 )
+from .operational_slack_models import (  # noqa: E402,F401
+    OperationalSlackAttempt,
+    OperationalSlackResult,
+)
 from .outbox_models import (  # noqa: E402,F401
     DeliveryPauseHold,
     OutboxEvent,

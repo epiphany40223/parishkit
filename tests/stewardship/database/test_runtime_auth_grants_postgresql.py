@@ -10,6 +10,7 @@ from django.test import Client
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.runtime_grants import runtime_grants
 
+from .role_grants import grant_runtime
 from .test_family_auth_postgresql import family_service, login  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -25,18 +26,8 @@ def web_login():
         cursor.execute(f'CREATE ROLE "{role}" LOGIN NOINHERIT')
     try:
         with connection.cursor() as cursor:
-            cursor.execute(f'GRANT USAGE ON SCHEMA public TO "{role}"')
             tables, columns = runtime_grants(ServiceRole.WEB)
-            for table, privileges in tables.items():
-                cursor.execute(
-                    f'GRANT {", ".join(sorted(privileges))} ON "{table}" TO "{role}"'
-                )
-            for table, privileges in columns.items():
-                for privilege, names in privileges.items():
-                    names = ",".join(f'"{name}"' for name in sorted(names))
-                    cursor.execute(
-                        f'GRANT {privilege} ({names}) ON "{table}" TO "{role}"'
-                    )
+            grant_runtime(cursor, role, tables, columns)
             cursor.execute(f'SET SESSION AUTHORIZATION "{role}"')
         yield
     finally:

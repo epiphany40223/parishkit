@@ -359,6 +359,15 @@ round; the guide records every disposition. Final consolidated-head CI/DCO and
 protected merge remain pending. No full notification or shutdown task is
 complete yet.
 
+PR #50 subsequently merged after all required reviews and exact-head checks;
+the [protected receipt](../../guides/stewardship-operational-alerts.md#protected-delivery)
+supersedes its pending delivery status. The
+[remaining health/notification increment](../../guides/stewardship-operational-health.md)
+owns the unfinished BG-10 scope from verified merge `1895949`.
+PR #51 is the independent Slack/shutdown and admission-hold slice, with a
+separate fixture-efficiency checkpoint. Remaining health producers/recovery
+follow in the next fresh-main increment before BG-10 acceptance or ADM-05.
+
 ## BG-11: Exceptional purge worker
 
 Scope and dependencies: [BG-11 work package](../../plans/stewardship/background-processing.md#bg-11-exceptional-purge-worker).

@@ -45,12 +45,14 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 @pytest.mark.parametrize("event", list(Event))
+@pytest.mark.django_db(transaction=False)
 def test_all_operational_events_are_admitted_by_sql(event):
     """New Python events cannot drift from the database's closed event set."""
     assert operational(event).event == event.value
 
 
 @pytest.mark.parametrize("target", sorted(SECRET_TARGETS))
+@pytest.mark.django_db(transaction=False)
 def test_sql_consumer_vocabulary_matches_service_mounts(target):
     """Every target has identical required consumers in Python and PostgreSQL."""
     expected = {
@@ -65,6 +67,7 @@ def test_sql_consumer_vocabulary_matches_service_mounts(target):
 
 
 @pytest.mark.parametrize("kid", ["_2026-09", "-rotation", "a_B-9", "a.b", "", "a" * 49])
+@pytest.mark.django_db(transaction=False)
 def test_sealed_key_id_sql_matches_python_grammar(kid):
     """Operator key IDs accepted by the keyring also pass sealed SQL admission."""
     envelope = json.dumps({"v": 1, "alg": "sealedbox-v1", "kid": kid, "body": "YQ"})

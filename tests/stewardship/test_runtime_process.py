@@ -318,6 +318,7 @@ def test_credential_service_publishes_only_after_admission(
         "verification",
         "operational",
         "operational_fanout",
+        "operational_slack",
     ],
 )
 def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
@@ -348,6 +349,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
             outputs = {
                 "operational": "operational-receipt",
                 "operational_fanout": "operational-fanout-receipt",
+                "operational_slack": "operational-slack-receipt",
                 "finalization": "finalization-receipt",
                 "boundary": "boundary-receipt",
                 "schedules": "schedule-receipt",
@@ -400,6 +402,11 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
     verification = Mock(return_value=("verification-receipt",))
     operational = Mock(return_value=("operational-receipt",))
     operational_fanout = Mock(return_value=("operational-fanout-receipt",))
+    operational_slack = Mock(return_value=("operational-slack-receipt",))
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.operational_slack_tasks.produce_slack",
+        operational_slack,
+    )
     monkeypatch.setattr(
         "parishkit.stewardship.jobs.operational_fanout.produce_fanout",
         operational_fanout,
@@ -511,6 +518,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
             "verification": verification,
             "operational": operational,
             "operational_fanout": operational_fanout,
+            "operational_slack": operational_slack,
         }[failing_producer].side_effect = RuntimeError("synthetic-owner-failure")
     monkeypatch.setattr("parishkit.stewardship.jobs.processes.serve_consumer", serve)
     monkeypatch.setattr("parishkit.stewardship.jobs.processes.serve_scheduler", serve)
@@ -541,6 +549,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         operational.assert_called_once_with(guard)
         if held:
             operational_fanout.assert_not_called()
+            operational_slack.assert_not_called()
             hold.assert_called_once_with(assembled.store)
             for operation in (
                 boundary,
@@ -563,6 +572,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
             return
         hold.assert_not_called()
         operational_fanout.assert_called_once_with(guard)
+        operational_slack.assert_called_once_with(guard)
         boundary.assert_called_once_with(guard)
         schedules.assert_called_once_with(guard)
         digests.assert_called_once_with(guard)
@@ -579,10 +589,11 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         mail_recovery.assert_called_once_with()
         campaign_recovery.assert_called_once_with()
         slack_recovery.assert_called_once_with()
-        assert guard.check.call_count == 40
+        assert guard.check.call_count == 42
     else:
         operational.assert_not_called()
         operational_fanout.assert_not_called()
+        operational_slack.assert_not_called()
         daily.assert_not_called()
         daily_finalization.assert_not_called()
         weekly.assert_not_called()

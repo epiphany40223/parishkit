@@ -38,6 +38,11 @@ pytestmark = pytest.mark.django_db(transaction=True)
 @pytest.fixture
 def routing(tmp_path):
     """Install one coherent configuration without a campaign or provider keys."""
+    return configured_routing(tmp_path)
+
+
+def configured_routing(tmp_path, *, slack_fingerprint=None):
+    """Reuse coherent setup while making only the requested channel installed."""
     document = configuration_document()
     records = [
         address(),
@@ -53,7 +58,9 @@ def routing(tmp_path):
             "values": {
                 "kind": kind,
                 "settings": settings,
-                "credential_fingerprint": None,
+                "credential_fingerprint": slack_fingerprint
+                if kind == "slack"
+                else None,
             },
         }
         for kind, settings in (

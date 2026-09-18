@@ -6,6 +6,7 @@ from pathlib import Path
 
 from django.db import connection, connections
 
+from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.configuration_models import AppliedIntegration
 from parishkit.stewardship.accounts.key_files import file_fingerprint, read_private
 from parishkit.stewardship.campaigns.work_locks import work_transaction
@@ -102,7 +103,14 @@ def admit_task(action, status, *, store, circuit):
         return failed
     if circuit.blocks_new_send():
         return False
-    runtime = mail_authority(store)
+    try:
+        runtime = mail_authority(store)
+    except ConfigError:
+        if action == "effect":
+            raise FamilyDeliveryHeld(
+                "Operational configuration requires recovery."
+            ) from None
+        return False
     return action == "effect" or _channels_configured(runtime)
 
 
@@ -156,6 +164,7 @@ def _execute(execution, *, store, credential_path, circuit):
     """Pin credentials, commit the attempt, submit privately, and retain certainty."""
     if connection.in_atomic_block or not execution.control.active:
         raise StorageInvariantError("Operational mail requires maintained ownership.")
+    execution.progress(0, 0, phase=TaskPhase.PREPARING)
     submitted = launched = False
     try:
         with execution.effect():

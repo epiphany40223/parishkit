@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from django.db import connection, connections
 
+from parishkit.config import ConfigError
 from parishkit.stewardship.accounts.configuration_models import AppliedIntegration
 from parishkit.stewardship.accounts.key_files import file_fingerprint, read_private
 from parishkit.stewardship.campaigns.work_locks import work_transaction
@@ -195,7 +196,12 @@ def admit_task(action, status, *, store, circuit):
         return True
     if circuit.blocks_new_send():
         return False
-    mail_authority(store)
+    try:
+        mail_authority(store)
+    except ConfigError:
+        if action == "effect":
+            raise FamilyDeliveryHeld("Mail configuration requires recovery.") from None
+        return False
     return True
 
 
@@ -240,6 +246,7 @@ def _execute(execution, *, private, public_origin, credential_path, circuit):
     """Pin credentials, durably begin, then run one bounded private submission."""
     if connection.in_atomic_block or not execution.control.active:
         raise StorageInvariantError("Family mail requires maintained worker lifetime.")
+    execution.progress(0, 0, phase=TaskPhase.PREPARING)
     submitted = False
     launched = False
     message = None

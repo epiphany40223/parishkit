@@ -25,6 +25,165 @@ class Migration(migrations.Migration):
         migrations.SeparateDatabaseAndState(
             state_operations=[
                 migrations.CreateModel(
+                    name="OperationalSlackAttempt",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "notice",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_jobs.operationalnotice",
+                            ),
+                        ),
+                        (
+                            "run",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_jobs.taskrun",
+                            ),
+                        ),
+                        ("fence", models.PositiveBigIntegerField()),
+                        ("worker_id", models.UUIDField()),
+                        (
+                            "configuration",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_accounts.appliedconfigurationversion",
+                            ),
+                        ),
+                        ("channel_id", models.CharField(max_length=64)),
+                        ("fingerprint", models.CharField(max_length=64)),
+                        ("mode", models.CharField(max_length=16)),
+                        (
+                            "deadline_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now()
+                            ),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_ops_slack_attempt",
+                        "constraints": [
+                            models.UniqueConstraint(
+                                fields=("run", "fence"), name="ops_slack_fence"
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(("fence__gte", 1)),
+                                name="ops_slack_positive_fence",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    ("mode__in", ("testing", "production"))
+                                ),
+                                name="ops_slack_mode",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    ("channel_id__regex", "^[CG][A-Z0-9]{1,63}$"),
+                                    ("fingerprint__regex", "^[0-9a-f]{64}$"),
+                                ),
+                                name="ops_slack_target_shape",
+                            ),
+                        ],
+                        "indexes": [],
+                    },
+                ),
+                migrations.CreateModel(
+                    name="OperationalSlackResult",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "attempt",
+                            models.OneToOneField(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_jobs.operationalslackattempt",
+                            ),
+                        ),
+                        ("outcome", models.CharField(max_length=24)),
+                        ("reason", models.CharField(max_length=8)),
+                    ],
+                    options={
+                        "db_table": "stewardship_ops_slack_result",
+                        "constraints": [
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    (
+                                        "outcome__in",
+                                        ("accepted", "not_sent", "delivery_unknown"),
+                                    )
+                                ),
+                                name="ops_slack_outcome",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    ("reason", "provider"),
+                                    models.Q(
+                                        ("outcome", "delivery_unknown"),
+                                        ("reason", "recovery"),
+                                    ),
+                                    _connector="OR",
+                                ),
+                                name="ops_slack_result_reason",
+                            ),
+                        ],
+                        "indexes": [],
+                    },
+                ),
+                migrations.CreateModel(
                     name="OperationalIncident",
                     fields=[
                         (
