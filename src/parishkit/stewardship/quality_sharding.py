@@ -89,7 +89,17 @@ def partition(nodeids: list[str], index: int, count: int) -> list[str]:
     # must not yield an empty shard merely because no real baseline runs there.
     if sum(estimated_seconds(node) for node in nodeids) > count * 180:
         loads[0] = 240
-    for node in sorted(nodeids, key=lambda node: (-estimated_seconds(node), node)):
+    # Lexical ties repeatedly put the same parameter positions on one runner.
+    # A stable digest spreads those unrelated fixture costs without randomizing
+    # collection or omitting any node. Return each owner's nodes in normal order.
+    for node in sorted(
+        nodeids,
+        key=lambda node: (
+            -estimated_seconds(node),
+            hashlib.sha256(node.encode()).digest(),
+            node,
+        ),
+    ):
         target = min(range(count), key=lambda shard: (loads[shard], shard))
         groups[target].append(node)
         loads[target] += estimated_seconds(node)

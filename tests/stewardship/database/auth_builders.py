@@ -32,9 +32,8 @@ def valkey_client():
 
 
 @pytest.fixture
-def auth_service(tmp_path, settings):
-    """Require the explicit loopback test services; missing Valkey fails, not skips."""
-    store, _, _ = initialized(tmp_path)
+def real_limiter():
+    """Isolate real counters without unrelated configuration or Google setup."""
     client = valkey_client()
     assert client.ping()
     namespace = "parishkit-test:" + uuid4().hex
@@ -44,9 +43,22 @@ def auth_service(tmp_path, settings):
         incident=record_incident,
         namespace=namespace,
     )
+    try:
+        yield limiter
+    finally:
+        keys = list(client.scan_iter(namespace + ":*"))
+        if keys:
+            client.delete(*keys)
+        client.close()
+
+
+@pytest.fixture
+def auth_service(tmp_path, settings, real_limiter):
+    """Keep full configuration and HTTP login assembly for authentication tests."""
+    store, _, _ = initialized(tmp_path)
     # These focused authentication tests explicitly model completed setup;
     # the setup integration suites exercise the real durable completion marker.
-    settings.STEWARDSHIP_AUTH_RUNTIME = AuthRuntime(store, limiter, lambda: True)
+    settings.STEWARDSHIP_AUTH_RUNTIME = AuthRuntime(store, real_limiter, lambda: True)
     settings.SOCIALACCOUNT_PROVIDERS = {
         "google": {
             "OAUTH_PKCE_ENABLED": True,
@@ -59,13 +71,7 @@ def auth_service(tmp_path, settings):
             ],
         },
     }
-    try:
-        yield settings.STEWARDSHIP_AUTH_RUNTIME
-    finally:
-        keys = list(client.scan_iter(namespace + ":*"))
-        if keys:
-            client.delete(*keys)
-        client.close()
+    return settings.STEWARDSHIP_AUTH_RUNTIME
 
 
 @pytest.fixture

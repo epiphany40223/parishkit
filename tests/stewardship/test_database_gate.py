@@ -79,10 +79,12 @@ def test_ci_explicitly_requires_postgresql_verification():
         step.get("run", "")
         for step in workflow["jobs"]["stewardship-postgresql"]["steps"]
     )
-    assert "parishkit.stewardship.quality_ci combine --count 8" in commands
     shards = workflow["jobs"]["stewardship-postgresql-shard"]
     gate = workflow["jobs"]["stewardship-postgresql"]
-    assert shards["strategy"]["matrix"]["shard"] == list(range(1, 9))
+    indexes = shards["strategy"]["matrix"]["shard"]
+    count = len(indexes)
+    assert 1 <= count <= 32 and indexes == list(range(1, count + 1))
+    assert f"parishkit.stewardship.quality_ci combine --count {count} " in commands
     assert shards["strategy"]["fail-fast"] is False
     assert gate["needs"] == "stewardship-postgresql-shard"
     assert gate["if"] == "${{ always() }}"
@@ -90,7 +92,8 @@ def test_ci_explicitly_requires_postgresql_verification():
     assert shards["timeout-minutes"] == 25
     assert gate["timeout-minutes"] == 10
     assert any(
-        "quality_ci shard --index ${{ matrix.shard }} --count 8" in step.get("run", "")
+        "quality_ci shard --index ${{ matrix.shard }} --count " + str(count) + " "
+        in step.get("run", "")
         for step in shards["steps"]
     )
     release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())

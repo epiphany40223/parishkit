@@ -223,7 +223,10 @@ def test_release_requires_ci_quality_gates_before_build(step_name):
                 '--report "$RUNNER_TEMP/stewardship-coverage.json"'
             ),
         }
-        assert "quality_ci combine --count 8" in expected["run"]
+        count = len(
+            ci["jobs"]["stewardship-postgresql-shard"]["strategy"]["matrix"]["shard"]
+        )
+        assert f"quality_ci combine --count {count} " in expected["run"]
     else:
         assert matches == [expected]
     build = next(step for step in steps if step.get("name") == "Build artifacts")

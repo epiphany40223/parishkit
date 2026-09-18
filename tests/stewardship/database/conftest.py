@@ -3,7 +3,7 @@
 import pytest
 from django.conf import settings
 
-from .auth_builders import auth_service, google  # noqa: F401
+from .auth_builders import auth_service, google, real_limiter  # noqa: F401
 from .response_builders import live_response_service, response_service  # noqa: F401
 
 
