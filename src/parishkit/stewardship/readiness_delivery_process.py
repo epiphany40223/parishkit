@@ -56,13 +56,17 @@ def submit_sample(value, settings, mail, *, seconds, check):
 
 def _submit_private(payload, *, helper, seconds, check, decode=None):
     """Share finite transport, but admit only compiled delivery-helper entry points."""
-    # Only the chart-bearing adapter receives the larger bounded input budget.
-    # Existing readiness and Family helpers keep their original limits.
+    # Each compiled report adapter has its own bounded input budget. Existing
+    # readiness and Family helpers keep their original limits and payload types.
     limit = MAX_INPUT
     if helper == "digest_delivery_worker":
         from .family_delivery_process import MAX_DIGEST_INPUT
 
         limit = MAX_DIGEST_INPUT
+    elif helper == "weekly_delivery_worker":
+        from .family_delivery_process import MAX_WEEKLY_INPUT
+
+        limit = MAX_WEEKLY_INPUT
     if (
         helper
         not in {
@@ -70,6 +74,7 @@ def _submit_private(payload, *, helper, seconds, check, decode=None):
             "readiness_notification_worker",
             "family_delivery_worker",
             "digest_delivery_worker",
+            "weekly_delivery_worker",
         }
         or type(payload) is not bytes
         or not 0 < len(payload) <= limit
@@ -78,7 +83,14 @@ def _submit_private(payload, *, helper, seconds, check, decode=None):
         or not 0 < seconds <= 30
         or not callable(check)
         or (decode is not None and not callable(decode))
-        or (helper in {"family_delivery_worker", "digest_delivery_worker"})
+        or (
+            helper
+            in {
+                "family_delivery_worker",
+                "digest_delivery_worker",
+                "weekly_delivery_worker",
+            }
+        )
         != (decode is not None)
     ):
         raise ValueError("Invalid private delivery invocation.")

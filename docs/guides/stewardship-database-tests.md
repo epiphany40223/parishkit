@@ -22,7 +22,9 @@ python -m parishkit.stewardship.quality --postgresql \
 Choose a new report path each time; existing files are never overwritten. Without
 `--postgresql`, the runner measures only baseline coverage and may fail the floors
 as database-backed functionality grows. CI's PostgreSQL job owns the combined
-coverage gate; the baseline and Compose jobs retain their independent tests.
+coverage gate and host baseline; Compose retains its independent image-parity
+run. Follow the [test-efficiency policy](stewardship-test-efficiency.md) to avoid
+duplicating full local and CI acceptance runs during ordinary development.
 
 ## Parallel CI and live progress
 

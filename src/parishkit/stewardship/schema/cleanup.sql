@@ -25,6 +25,8 @@ RETURNS text LANGUAGE sql IMMUTABLE SET search_path TO pg_catalog, public, pg_te
         WHEN 'daily_digest_snapshots' THEN 'stewardship_daily_digest_snapshot'
         WHEN 'daily_digest_fact_pins' THEN 'stewardship_fact_pin'
         WHEN 'recovery_replacements' THEN 'stewardship_recovery_replacement'
+        WHEN 'weekly_digest_recipients' THEN 'stewardship_weekly_digest_recipient'
+        WHEN 'weekly_digest_snapshots' THEN 'stewardship_weekly_digest_snapshot'
         ELSE NULL END
 $$;
 REVOKE ALL ON FUNCTION public.stewardship_cleanup_relation_v1(text) FROM PUBLIC;
@@ -137,6 +139,8 @@ BEGIN
                     AND EXISTS(SELECT 1 FROM public.stewardship_daily_digest_snapshot WHERE id=parent_id))))
             WHEN 'daily_digest_ready' THEN NOT EXISTS (
                 SELECT 1 FROM public.stewardship_daily_digest_recipient WHERE ready_id=i.target_id)
+            WHEN 'weekly_digest_snapshots' THEN NOT EXISTS (
+                SELECT 1 FROM public.stewardship_weekly_digest_recipient WHERE snapshot_id=i.target_id)
             WHEN 'daily_digest_fact_pins' THEN NOT EXISTS (
                 SELECT 1 FROM public.stewardship_fact_pin p
                 JOIN public.stewardship_daily_digest_ready r ON r.snapshot_id=p.parent_id
@@ -158,6 +162,7 @@ BEGIN
                 SELECT 1 FROM public.stewardship_outbox_event WHERE message_id=i.target_id)
                 AND NOT EXISTS (SELECT 1 FROM public.stewardship_submission_receipt WHERE outbox_id=i.target_id)
                 AND NOT EXISTS (SELECT 1 FROM public.stewardship_daily_digest_recipient WHERE outbox_id=i.target_id)
+                AND NOT EXISTS (SELECT 1 FROM public.stewardship_weekly_digest_recipient WHERE outbox_id=i.target_id)
                 AND NOT EXISTS (SELECT 1 FROM public.stewardship_outbox_render r
                     JOIN public.stewardship_outbox_message m ON m.id=r.message_id
                     WHERE m.id=i.target_id AND r.id<>m.render_id)

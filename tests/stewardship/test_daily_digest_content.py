@@ -20,6 +20,7 @@ from parishkit.stewardship.reports.statistics import (
     CampaignStatistics,
     PopulationStatistics,
 )
+from parishkit.stewardship.web.digest_content import validate_digest_body
 
 from .test_participation_rendering import document as participation
 
@@ -48,8 +49,27 @@ def document():
 
 
 def render(value):
-    """Use a public synthetic origin; no configured credentials or DNS are read."""
-    return render_daily_digest(value, public_origin="https://campaign.example.org")
+    """Exercise compilation through the actual retention/delivery boundary."""
+    result = render_daily_digest(value, public_origin="https://campaign.example.org")
+    validate_digest_body(result.html, result.text, result.chart.data)
+    return result
+
+
+@pytest.mark.parametrize("separator", ["\u00a0", "'", '"'])
+def test_imported_labels_compile_without_mutating_retained_names(separator):
+    """Both mail compilers must tolerate display whitespace and literal quotes."""
+    value = document()
+    chart = replace(
+        value.participation,
+        parish_name=f"Example{separator}Parish",
+        campaign_name=f"Annual{separator}Campaign",
+    )
+    result = render(replace(value, participation=chart))
+    validate_digest_body(result.html, result.text, result.chart.data)
+    display = " " if separator == "\u00a0" else separator
+    assert f"Example{display}Parish" in result.html
+    assert f"Annual{display}Campaign" in result.html
+    assert chart.parish_name == f"Example{separator}Parish"
 
 
 def test_daily_digest_keeps_exact_values_and_accessible_inline_chart():
@@ -248,7 +268,8 @@ def test_branding_is_escaped_and_render_is_reproducible():
     second = render_daily_digest(value, public_origin="https://campaign.example.org/")
     assert first == second
     assert '<img src="evil">' not in first.html
-    assert "&lt;img src=&quot;evil&quot;&gt;" in first.html
+    assert '&lt;img src="evil"&gt;' in first.html
+    validate_digest_body(first.html, first.text, first.chart.data)
     assert '<img src="evil">' in first.text
     assert "evil" not in repr(first)
     with pytest.raises(TypeError):

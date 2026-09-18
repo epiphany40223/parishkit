@@ -358,3 +358,9 @@ from .verification_models import (  # noqa: E402,F401
     FactVerificationRequest,
     FactVerificationResult,
 )
+from .weekly_models import (  # noqa: E402,F401
+    WeeklyDigestPreparation,
+    WeeklyDigestRecipient,
+    WeeklyDigestSnapshot,
+    WeeklyManualRequest,
+)

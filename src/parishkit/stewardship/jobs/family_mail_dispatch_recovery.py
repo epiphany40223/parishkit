@@ -43,7 +43,7 @@ def record_abandoned_submission(status, *, actor_id):
         evidence=DeliveryEvidence(reason="recovery_unknown"),
         admit=admit,
     )
-    if row.purpose in {"receipt", "daily_digest"}:
+    if row.purpose in {"receipt", "daily_digest", "weekly_digest"}:
         return result
     occurrence = ScheduleOccurrence.objects.get(pk=row.semantic_key)
     updated = ScheduleOccurrence.objects.filter(

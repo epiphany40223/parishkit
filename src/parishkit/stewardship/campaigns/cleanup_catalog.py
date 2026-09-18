@@ -23,6 +23,10 @@ from parishkit.stewardship.reports.digest_models import (
     DailyDigestSnapshot,
 )
 from parishkit.stewardship.reports.models import CampaignFactPin
+from parishkit.stewardship.reports.weekly_models import (
+    WeeklyDigestRecipient,
+    WeeklyDigestSnapshot,
+)
 from parishkit.stewardship.responses.models import (
     FamilyFormBaseline,
     ProposedChange,
@@ -117,6 +121,11 @@ def inventory_queries(campaign_id):
         preparation__rehearsal_epoch_id__in=epochs,
     )
     ready = DailyDigestReady.objects.filter(snapshot_id__in=snapshots.values("pk"))
+    weekly = WeeklyDigestSnapshot.objects.filter(
+        campaign_id=campaign_id,
+        preparation__mode="testing",
+        preparation__rehearsal_epoch_id__in=epochs,
+    )
     queries = {
         CleanupCategory.BASELINE: baselines,
         CleanupCategory.SESSION_DATA: sessions.filter(session__isnull=False),
@@ -172,6 +181,10 @@ def inventory_queries(campaign_id):
         CleanupCategory.DIGEST_SNAPSHOT: snapshots,
         CleanupCategory.DIGEST_FACT_PIN: CampaignFactPin.objects.filter(
             parent_kind="digest", parent_id__in=snapshots.values("pk")
+        ),
+        CleanupCategory.WEEKLY_SNAPSHOT: weekly,
+        CleanupCategory.WEEKLY_RECIPIENT: WeeklyDigestRecipient.objects.filter(
+            snapshot_id__in=weekly.values("pk")
         ),
     }
     return MappingProxyType(queries)
