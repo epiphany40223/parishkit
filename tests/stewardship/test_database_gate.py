@@ -137,7 +137,7 @@ def test_ci_requires_every_operational_container_module(filename, job):
 
 
 def test_compose_matrix_and_required_gate_cover_all_scenarios():
-    """Isolated runners retain all eight scenarios and fail closed as one check."""
+    """Four shared-build runners retain all eight isolated runtime scenarios."""
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
     jobs = workflow["jobs"]
     operational = jobs["stewardship-operational"]
@@ -145,20 +145,29 @@ def test_compose_matrix_and_required_gate_cover_all_scenarios():
         "fail-fast": False,
         "matrix": {
             "provider": ["configured", "initial", "complete", "abort"],
-            "production": ["False", "True"],
         },
     }
     step = operational["steps"][-1]
     assert step["env"] == {
         "PARISHKIT_RUN_RUNTIME_TESTS": "1",
         "PROVIDER_MODE": "${{ matrix.provider }}",
-        "PRODUCTION": "${{ matrix.production }}",
     }
-    assert step["run"] == (
-        'python -m pytest "tests/stewardship/test_operational_compose.py::'
+    cases = [
+        '"tests/stewardship/test_operational_compose.py::'
         "test_complete_foundation_bootstrap_and_online_exclusion"
-        '[$PROVIDER_MODE-$PRODUCTION]" --require-no-skips '
-        "--ci-progress --durations=10 -q"
+        f'[$PROVIDER_MODE-{production}]"'
+        for production in ("False", "True")
+    ]
+    assert step["run"] == " ".join(
+        [
+            "python -m pytest",
+            *cases,
+            "--require-no-skips --ci-progress --durations=10 -q",
+        ]
+    )
+    assert operational["timeout-minutes"] == 15
+    assert (
+        sum("docker build" in item.get("run", "") for item in operational["steps"]) == 1
     )
     # Compare against pytest itself, not another copy of today's parameters.
     # A new parameter or second test must not silently disappear from PR CI.
@@ -187,7 +196,7 @@ def test_compose_matrix_and_required_gate_cover_all_scenarios():
         "tests/stewardship/test_operational_compose.py::"
         f"test_complete_foundation_bootstrap_and_online_exclusion[{provider}-{production}]"
         for provider in matrix["provider"]
-        for production in matrix["production"]
+        for production in ("False", "True")
     }
     assert actual == expected, collected.stdout + collected.stderr
     gate = jobs["stewardship-compose"]
