@@ -18,6 +18,7 @@ from parishkit.stewardship.source.health import (
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .dispatch import Handler, RecoveryPlan
+from .due_work_health import needs_due_work_observation, observe_due_work_health
 from .mail_health import needs_mail_observation, observe_mail_health
 from .models import TaskRun
 from .operational_models import OperationalLogReceipt
@@ -50,6 +51,7 @@ def produce_collection(guard):
             not pending_logs().exists()
             and admitted_source_scope() is None
             and not needs_mail_observation()
+            and not needs_due_work_observation()
         ):
             return ()
         key = uuid5(NAMESPACE, str(int(database_now().timestamp()) // 60))
@@ -163,6 +165,12 @@ def _execute(execution):
         except Exception:
             execution.check()
             # A monitoring defect must not recursively generate mail alerts.
+            operational(Event.TASK_FAILED, level="ERROR")
+        try:
+            with transaction.atomic():
+                observe_due_work_health()
+        except Exception:
+            execution.check()
             operational(Event.TASK_FAILED, level="ERROR")
         execution.progress(len(page), len(page), phase=TaskPhase.VERIFYING)
         execution.transition("complete")

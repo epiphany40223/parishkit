@@ -1207,6 +1207,7 @@ CREATE TABLE public.stewardship_operational_log (
         'source_tenant_mismatch','source_destructive_change',
         'source_refresh_held','source_credential_failed','source_provider_failed',
         'mail_provider_failed',
+        'due_work_lag',
         'credential_handoff_key_mismatch','setup_credential_staged','delivery_unknown',
         'setup_credential_scrubbed','campaign_boundary_lag','production_cleanup_failed',
         'authentication_health_observation_failed')),

@@ -127,7 +127,9 @@ def _release(raw):
         raise
 
 
-def scan_once(guard, *, handlers, publish, cursor=None, limit=100, stop=None):
+def scan_once(
+    guard, *, handlers, publish, cursor=None, limit=100, stop=None, health=None
+):
     """Emit a bounded page of hints; failed delivery remains durable and replayable.
 
     The runtime transport must impose a finite publication timeout and translate
@@ -140,17 +142,30 @@ def scan_once(guard, *, handlers, publish, cursor=None, limit=100, stop=None):
     if stop is not None and not isinstance(stop, Event):
         raise ValueError("Scheduler drainage requires a process-owned stop event.")
     guard.check()
-    hints, position = collect_hints(handlers=handlers, cursor=cursor, limit=limit)
+    if health is not None and cursor is None:
+        health.begin()
+    hints, position = collect_hints(
+        handlers=handlers, cursor=cursor, limit=limit, health=health
+    )
     published = unconfirmed = 0
     for hint in hints:
         guard.check()
         if stop is not None and stop.is_set():
+            if health is not None:
+                health.reset()
             return ScanResult(None, published, unconfirmed)
         try:
             publish(hint)
         except HintPublicationUnavailable:
             unconfirmed += 1
+            if health is not None:
+                health.unknown()
         else:
             published += 1
     guard.check()
+    if health is not None:
+        if stop is not None and stop.is_set():
+            health.reset()
+        else:
+            health.finish(guard, complete=position is None)
     return ScanResult(position, published, unconfirmed)

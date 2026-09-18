@@ -60,7 +60,7 @@ def due(row, now):
     )
 
 
-def collect_hints(*, handlers, cursor=None, limit=100):
+def collect_hints(*, handlers, cursor=None, limit=100, health=None):
     """Select one fair page with fresh domain admission, without publishing I/O.
 
     Publishers run after every transaction here has committed. A hint may become
@@ -98,18 +98,25 @@ def collect_hints(*, handlers, cursor=None, limit=100):
                 _locked(candidate.correlation_id, root_id=candidate.root_id),
             ):
                 row = TaskRun.objects.select_for_update().get(pk=candidate.pk)
-                if not due(row, database_now()):
+                instant = database_now()
+                if not due(row, instant):
                     continue
                 action = (
                     "recovery_hint" if row.state in {"running", "abandoned"} else "hint"
                 )
                 if handler.admit(action, _status(row)) is True:
+                    if health is not None:
+                        health.admitted(row, instant)
                     hints.append(ExecutionHint(row.pk, handler.queue))
+                elif health is not None:
+                    health.unknown()
         except (PermissionError, ConfigError):
             # A raised gate denial and an explicit False are equally held work;
             # neither may pin the cursor forever on an ineligible prefix.
             # Selected-YAML recovery is another scope-local admission hold;
             # operational collection/recovery may remain independently eligible.
+            if health is not None:
+                health.unknown()
             continue
         except (StaleRecordError, StorageInvariantError, ObjectDoesNotExist) as error:
             # One broken durable scope must not discard earlier hints or strand
@@ -117,6 +124,8 @@ def collect_hints(*, handlers, cursor=None, limit=100):
             # a closed diagnostic while advancing the same fair page cursor.
             # Database/transport failures still abort the scan as service outages.
             emit_failure(error)
+            if health is not None:
+                health.unknown()
     position = (
         ScanCursor(page[-1].not_before, page[-1].pk) if len(page) == limit else None
     )

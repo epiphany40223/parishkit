@@ -43,6 +43,7 @@ def schema_sql():
                 "exact_exports",
                 "fact_verification",
                 "operational_incidents",
+                "due_work_health",
                 "operational_fanout",
                 "operational_render",
                 "operational_dispatch",
