@@ -186,3 +186,17 @@ retaining all fourteen rejected inputs and four positive controls. Ruff and
 changed-document lint pass. The log-copy reduction was committed after this
 round's fixed snapshot and belongs to round two's review scope. The remaining
 review rounds and exact-head CI are still required before merge.
+
+### Round two
+
+Session `20260917-202005-b4ad42` reviewed `bca0d68` against `32d9006`, including
+the log-copy reduction and every first-round correction. Both vendors completed
+without degradation; Codex reported no findings. Claude reported eight raw
+findings: one Medium and seven Low, with no High or Critical.
+
+The one validated Medium concern was missing per-fault attribution when a
+grouped attempt raises an unexpected exception. Add an exception note naming
+that input and re-raise the original exception unchanged, preserving its type
+and traceback. Expected SQL rejection and named unexpected-commit failures keep
+their existing paths. No dependency or runtime behavior changed. The third
+review round and final exact-head CI remain required.

@@ -141,6 +141,9 @@ def test_sql_revalidates_complete_ministry_aggregate(
                     )
             except IntegrityError:
                 pass
+            except Exception as error:
+                error.add_note(f"Ministry aggregate fault: {fault}")
+                raise
             else:
                 # Stop here: a committed bad write invalidates the shared
                 # baseline, so continuing would report misleading later errors.
