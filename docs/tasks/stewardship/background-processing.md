@@ -346,7 +346,11 @@ Scope and dependencies: [BG-10 work package](../../plans/stewardship/background-
 - [ ] BG-10.04 — Implement graceful worker and scheduler shutdown.
 - [ ] BG-10.05 — Test notification failures and interrupted shutdown.
 
-Evidence: Not started.
+Evidence: In progress on `pr/stewardship-operational-alerts` from verified
+PR #49 merge `70797cb2`. The [increment checkpoints](../../guides/stewardship-operational-alerts.md)
+record the initial typed incident/content contract and 42 focused passing
+checks. Durable ownership, dispatch and runtime integration remain incomplete;
+no notification or shutdown task is complete yet.
 
 ## BG-11: Exceptional purge worker
 
