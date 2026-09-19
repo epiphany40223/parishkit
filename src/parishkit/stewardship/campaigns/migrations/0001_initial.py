@@ -25,6 +25,112 @@ class Migration(migrations.Migration):
         migrations.SeparateDatabaseAndState(
             state_operations=[
                 migrations.CreateModel(
+                    name="ProductionConfirmation",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "request",
+                            models.OneToOneField(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_campaigns.productiontransitionrequest",
+                            ),
+                        ),
+                        (
+                            "preparation",
+                            models.OneToOneField(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_campaigns.productiontokenpreparation",
+                            ),
+                        ),
+                        (
+                            "activation",
+                            models.OneToOneField(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_campaigns.campaigntransition",
+                            ),
+                        ),
+                        (
+                            "generation",
+                            models.OneToOneField(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_campaigns.familyaccesstokengeneration",
+                            ),
+                        ),
+                        ("request_key", models.UUIDField(unique=True)),
+                        ("session_id", models.UUIDField()),
+                        (
+                            "authenticated_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(),
+                        ),
+                        (
+                            "expires_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(),
+                        ),
+                        (
+                            "preview_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(),
+                        ),
+                        ("preview_counts", models.JSONField()),
+                        ("expected_request_version", models.PositiveBigIntegerField()),
+                        ("expected_campaign_version", models.PositiveBigIntegerField()),
+                        ("expected_runtime_version", models.PositiveBigIntegerField()),
+                        ("impact_revision", models.PositiveBigIntegerField()),
+                        ("readiness_digest", models.CharField(max_length=64)),
+                        ("target_state", models.CharField(max_length=9)),
+                    ],
+                    options={
+                        "db_table": "stewardship_production_confirmation",
+                        "constraints": [
+                            models.CheckConstraint(
+                                condition=models.Q(expected_request_version__gte=1)
+                                & models.Q(expected_campaign_version__gte=1)
+                                & models.Q(expected_runtime_version__gte=1)
+                                & models.Q(impact_revision__gte=1),
+                                name="production_confirmation_versions",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    readiness_digest__regex=r"^[0-9a-f]{64}$"
+                                ),
+                                name="production_confirmation_digest",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    target_state__in=("scheduled", "active")
+                                ),
+                                name="production_confirmation_target",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
                     name="ActivationImpactRevision",
                     fields=[
                         (

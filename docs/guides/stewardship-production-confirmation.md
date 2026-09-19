@@ -82,3 +82,29 @@ including long paginated history and DST folds. Twelve pure cases pass in
 passes in 24.14 seconds, demonstrating post-cleanup readiness, no Family or
 occurrence enumeration in its short recheck, unchanged mode, and invalidation
 after changed mail eligibility. No final-confirmation command is exposed yet.
+
+## Atomic confirmation checkpoint
+
+An immutable confirmation receipt binds the exact preview, current Admin session,
+post-cleanup Google authentication, expected versions and selected generation.
+Its private SQL owner atomically changes lifecycle and mode, releases the gate,
+and creates the existing bounded catch-up demand/task only for direct activation.
+Web access gains receipt intake, not general lifecycle or mode mutation. Final
+confirmation performs no Family, occurrence or outgoing-message enumeration.
+
+Two real restricted-role cases cover scheduled and direct-active confirmation,
+rejection of authentication predating cleanup, and identical replay. Both pass
+in 39.79 seconds. The browser workflow and negative/race acceptance still follow;
+these internal checks do not complete ADM-05.03.
+
+Independent fresh databases with suffixes `r` and `s` compare immutable `99eb462`
+with this candidate. The final inventory adds one table, 20 columns, 36
+constraints, seven indexes, two private functions and two triggers. Only the
+existing Production-request state guard and go-live gate guard change; their
+narrow activation exceptions require the exact confirmation receipt. Existing
+owners, ACLs and policies are preserved. The second audit corrects only the
+target-state literal cast to exactly match the Django model declaration, without
+normalizing or weakening the contract test. All 18 strict schema/model and
+immutable-guard cases pass in 18.52 seconds. Totals are 187 relations, 2,150
+columns, 3,072 constraints, 920 indexes, 529 functions, 516 triggers and 28
+policies. No retained database is upgraded, downgraded or deleted.

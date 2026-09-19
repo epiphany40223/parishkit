@@ -107,7 +107,10 @@ BEGIN
            AND EXISTS (
             SELECT 1 FROM public.stewardship_production_request request
             JOIN public.stewardship_production_manifest manifest ON manifest.request_id=request.id
-            WHERE request.campaign_id=NEW.campaign_id AND request.state='cancelled'
+            WHERE request.campaign_id=NEW.campaign_id AND (request.state='cancelled'
+                OR (request.state='activated' AND EXISTS(
+                    SELECT 1 FROM public.stewardship_production_confirmation confirmation
+                    WHERE confirmation.request_id=request.id)))
                 AND request.gate_version<=OLD.version
            ) AND NOT EXISTS (
             SELECT 1 FROM public.stewardship_production_request
