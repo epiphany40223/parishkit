@@ -84,3 +84,11 @@ next ready candidate; the completed first three rounds remain valid.
 Future model additions should include this short guard-inventory check alongside
 the fresh-schema/model comparison in the same local bootstrap, so bookkeeping
 omissions are caught before a full candidate CI run.
+
+Pika correction session `20260919-151440-cc94ec` reviewed `453401e` to
+`ac09327` with the actual SQL guard and denial-test context. Exact preflight
+and both reviewers completed cleanly (Codex: 159 seconds). Finalization is
+APPROVE with two raw Low findings below cutoff, zero Medium/High/Critical and
+no failed/degraded agents or verdict mismatch. Draft validation run
+`35463720703` passes. The corrected head still requires complete candidate CI;
+no failed/cancelled predecessor is represented as successful delivery.
