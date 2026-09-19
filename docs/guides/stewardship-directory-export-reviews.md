@@ -61,3 +61,26 @@ Three review/fix rounds and applicable focused validation are complete. The
 review exit criterion is satisfied, but the ready candidate still needs full
 exact-head CI/DCO and protected delivery. Subsequent documentation merely
 records these results; the candidate's source tree remains the reviewed code.
+
+## Candidate CI inventory correction
+
+Candidate `453401e` preserves reviewed acceptance tree `73c80882` from retained
+head `a1525b6` on `pr/stewardship-directory-exports-reviewed`. Full run
+`35462698243` passed validation, all browser/container jobs and ten database
+partitions before partition 9 reported one failure: the generic immutability
+inventory lacked the directory snapshot's custom trigger/function mapping.
+Partition 9 otherwise passed 334 tests. Returning the PR to draft cancelled
+the one remaining partition; this run is not full-suite acceptance.
+
+Register `directory_export_capture` / `stewardship_directory_export_capture_v1`
+in the existing custom-name and conditional-insert inventories. This does not
+change application/schema code or skip immutability validation: the test still
+requires an enabled row-level BEFORE INSERT/UPDATE/DELETE trigger, SQLSTATE
+23514 and the explicit non-insert rejection. The feature's actual update/delete
+denial tests already passed. The corrected inventory test passes locally in
+12.55 seconds. A focused independent review of this correction precedes the
+next ready candidate; the completed first three rounds remain valid.
+
+Future model additions should include this short guard-inventory check alongside
+the fresh-schema/model comparison in the same local bootstrap, so bookkeeping
+omissions are caught before a full candidate CI run.
