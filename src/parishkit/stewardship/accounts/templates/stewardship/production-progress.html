@@ -13,6 +13,14 @@
 <dt>{% translate "Processed items" %}</dt><dd>{{ demand.items_completed|number }}</dd>
 <dt>{% translate "Last worker update" %}</dt><dd><time data-local-instant datetime="{{ task.updated_at|instant }}">{{ task.updated_at|instant }}</time></dd></dl>
 <p>{% translate "The total may change while preparation runs; these are durable processed counts, not a percentage or a count of messages sent." %}</p>
+<h3>{% translate "Preview compared with preparation outcomes" %}</h3>
+<p>{% translate "These count-only observations were saved when each complete group was prepared, using its current eligibility and recipients. They are message candidates, not rendered or sent mail; delivery owners recheck eligibility and content again. Only the selected configuration is counted after a configuration restart." %}</p>
+{% if not complete %}<p>{% translate "Partial results: unfinished groups are not counted yet. Differences so far are not final reductions." %}</p>{% endif %}
+{% for row in outcomes %}<section><h4>{{ row.label }}</h4><dl>
+<dt>{% translate "Confirmed preview" %}</dt><dd>{{ row.preview|number }}</dd>
+<dt>{% if complete %}{% translate "Prepared" %}{% else %}{% translate "Prepared so far" %}{% endif %}</dt><dd>{{ row.actual|number }}</dd>
+<dt>{% if complete %}{% translate "Difference" %}{% else %}{% translate "Difference so far" %}{% endif %}</dt><dd>{{ row.difference|number }}</dd>
+</dl></section>{% endfor %}
 {% if demand.failure_code and not complete %}<p role="alert">{% translate "Preparation needs recovery. Review the worker state; automatic recovery may still be running. A terminal failure can be retried without repeating committed groups." %}</p>{% endif %}
 {% if control %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ control }}"><button type="submit">{% translate "Retry failed mail preparation" %}</button></form>{% endif %}
 </section>{% else %}<p>{% translate "This campaign was confirmed before its start. Normal campaign boundaries and scheduling own its mail; no direct-activation catch-up was requested." %}</p>{% endif %}

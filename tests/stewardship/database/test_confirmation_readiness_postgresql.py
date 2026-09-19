@@ -11,6 +11,7 @@ import pytest
 from django.core import signing
 from django.db import connection
 from django.db.models import F
+from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
 
 from parishkit.stewardship.accounts.authentication import runtime
@@ -23,6 +24,7 @@ from parishkit.stewardship.accounts.sessions import database_now, issue_admin
 from parishkit.stewardship.campaigns.activation_models import ProductionTokenPreparation
 from parishkit.stewardship.campaigns.activation_tasks import token_handler
 from parishkit.stewardship.campaigns.activation_tokens import TASK_TYPE
+from parishkit.stewardship.campaigns.catchup_tasks import catchup_handler
 from parishkit.stewardship.campaigns.confirmation_models import ProductionConfirmation
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.models import ActivationCatchUpDemand
@@ -210,8 +212,14 @@ def test_fresh_confirmation_atomically_activates_and_replays(
         assert confirm(*arguments, token=token, typed="Production").pk == receipt.pk
         with monkeypatch.context() as patch:
             patch.setattr(signing, "time", SimpleNamespace(time=lambda: time() + 301))
+            with pytest.raises(signing.SignatureExpired):
+                signing.loads(
+                    token, salt="stewardship-production-confirmation-v1", max_age=300
+                )
             assert post(browser, path, values).status_code == 302
             assert ProductionConfirmation.objects.count() == 1
+        with override_settings(STEWARDSHIP_PUBLIC_ORIGIN="http://localhost:8001"):
+            assert confirm(*arguments, token=token, typed="Production").pk == receipt.pk
         progress_path = response["Location"]
         page = browser.get(progress_path)
         assert page.status_code == 200, page.content
@@ -245,6 +253,36 @@ def test_fresh_confirmation_atomically_activates_and_replays(
             assert post(browser, progress_path, retry).status_code == 302
             assert post(browser, progress_path, competing).status_code == 409
             assert not browser.get(progress_path).context["complete"]
+        # Current eligibility can change after confirmation. Freeze the group's
+        # actual result, not a later recomputation against mutable Family data.
+        with work_transaction():
+            FamilyCampaign.objects.filter(campaign=campaign).update(
+                email_deliverable=False, version=F("version") + 1
+            )
+        latest = TaskRun.objects.filter(root_id=demand.task_root_id).latest(
+            "retry_sequence"
+        )
+        with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
+            assert execute_hint(
+                latest.pk,
+                queue=WorkQueue.GENERAL,
+                worker_id=uuid4(),
+                handlers={"activation_catchup": catchup_handler()},
+            )
+        with web_login():
+            page = browser.get(progress_path)
+            assert page.context["complete"]
+            family_outcome = page.context["outcomes"][0]
+            assert family_outcome["preview"] > 0
+            assert family_outcome["actual"] == 0
+            assert family_outcome["difference"] == -family_outcome["preview"]
+            assert b"Differences so far are not final reductions" not in page.content
+        with work_transaction():
+            FamilyCampaign.objects.filter(campaign=campaign).update(
+                email_deliverable=True, version=F("version") + 1
+            )
+        with web_login():
+            assert browser.get(progress_path).context["outcomes"][0] == family_outcome
     PortalUser.objects.update(disabled=True, version=F("version") + 1)
     with web_login():
         assert browser.get(progress_path).status_code == 403

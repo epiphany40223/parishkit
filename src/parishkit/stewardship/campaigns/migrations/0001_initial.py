@@ -881,6 +881,7 @@ class Migration(migrations.Migration):
                         ("items", models.PositiveBigIntegerField()),
                         ("fence", models.PositiveBigIntegerField()),
                         ("complete", models.BooleanField(default=False)),
+                        ("outcome_counts", models.JSONField(default=dict)),
                         (
                             "phase",
                             models.CharField(default="enumerating", max_length=32),

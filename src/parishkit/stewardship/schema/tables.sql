@@ -422,6 +422,7 @@ CREATE TABLE public.stewardship_catchup_checkpoint (
     task_id uuid NOT NULL,
     complete boolean NOT NULL,
     phase character varying(32) NOT NULL,
+    outcome_counts jsonb NOT NULL,
     CONSTRAINT stewardship_catchup_checkpoint_fence_check CHECK ((fence >= 0)),
     CONSTRAINT stewardship_catchup_checkpoint_items_check CHECK ((items >= 0)),
     CONSTRAINT stewardship_catchup_checkpoint_sequence_check CHECK ((sequence >= 0))

@@ -223,3 +223,52 @@ owners, ACLs and all other catalog objects remain identical. Both extra HTTP
 settings-link/replay cases pass in 41.47 seconds after moving the active settings
 visit outside the passive-page idle measurement. Candidate `0cba0b7` passes full
 CI run `35421010733`; correction-head CI and rounds 2 and 3 remain required.
+
+### Round 2
+
+Pika session `20260919-004343-af8de4` reviews `0cba0b7..ee8da05`. Both sources
+complete without degradation, failed agents, mismatch or salvage. Raw findings
+are three Medium and seven Low, with no High/Critical. Two Medium findings are
+validated; Claude's matching outcome-report finding is filtered because its
+cited file was outside the correction diff, not because the defect is absent.
+It is included in the correction below. Claude independently accepts the
+recorded web-service trust-boundary rationale; neither source renews that High.
+
+- Both sources, outcome comparison: fixed with immutable count-only observations
+  in completed Family/digest checkpoints. The progress page compares the bound
+  preview with prepared message candidates and coalesced semantic slots, marks
+  partial results, and does not call preparation rendering or delivery. Current
+  eligibility/recipients are rechecked by existing owners. Configuration restarts
+  select their own completed groups; completed demands retain their completion
+  configuration even after later edits. Forwarded semantic coverage is counted
+  once. Scheduled activation has zero immediately-due work and no catch-up;
+  later boundary/scheduler work remains ordinary mail, not this activation's
+  immediately-due comparison.
+- Codex Medium, index-only instrumentation: fixed by disabling index-only scans
+  locally in the measured transaction. A deliberately nested 5,000-Family scan
+  proves the harness rejects enumeration. The measured actual confirmation
+  passes the constant-read/no-write bounds. Deferred constraints run before the
+  final sample. See PostgreSQL's [statistics counter semantics](https://www.postgresql.org/docs/18/monitoring-stats.html).
+  Query/time measurements include the explicitly disclosed instrumentation.
+- Low fixes: remove the redundant age-free signature parse; allow committed
+  exact replay after an origin edit while retaining origin checks for new
+  intent; prove the expiry clock patch actually expires the token. Deferred
+  trigger measurement is included in the instrumentation correction above.
+- Low deferrals/rejections: retain brief locked authority checks for expired
+  Admin replay rather than introducing another preflight race; browser typing
+  is deliberately stricter about surrounding whitespace than the tolerant
+  server. The low-confidence hypothetical writer without work order is not a
+  demonstrated current defect; current lifecycle/submission/preparation owners
+  serialize their effects. No permission or admission guard is weakened.
+
+The first 20 affected confirmation/load/catch-up cases pass in 107.69 seconds;
+the strengthened 19 HTTP/catch-up cases pass in 62.53 seconds. Nineteen strict
+schema/confirmation-guard cases pass in 49.59 seconds, and nine three-engine
+browser cases pass in 12.44 seconds. Ruff and model-state drift checks pass.
+Independent fresh databases with suffix `u` verify immutable `ee8da05` and add
+only the checkpoint count column and its non-null constraint, changing only
+`stewardship_checkpoint_guard_v1()`. Owners, ACLs and policies are unchanged.
+Totals: 187 relations, 2,151 columns, 3,073 constraints, 920 indexes, 529 functions,
+516 triggers and 28 policies. No retained database is changed or deleted.
+Full CI run `35422067466` passes for `ee8da05`; this correction needs its own
+final-head CI and the third dual-source review before delivery.

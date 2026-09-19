@@ -310,6 +310,7 @@ class CatchUpCheckpoint(ImmutableRecord):
     fence = models.PositiveBigIntegerField()
     phase = models.CharField(max_length=32, default="enumerating")
     complete = models.BooleanField(default=False)
+    outcome_counts = models.JSONField(default=dict)
 
     class Meta:
         db_table = "stewardship_catchup_checkpoint"

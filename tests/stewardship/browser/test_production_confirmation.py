@@ -57,6 +57,12 @@ def test_confirmation_and_progress_are_accessible(
         "heading", name="Preparing initial campaign mail"
     ).is_visible()
     assert "5,678" in page.locator("main").inner_text()
+    assert "4,800" in page.locator("main").inner_text()
+    assert "-200" in page.locator("main").inner_text()
+    assert (
+        "Differences so far are not final reductions"
+        in page.locator("main").inner_text()
+    )
 
 
 def test_production_forms_do_not_require_javascript(browser_engine, component_origin):

@@ -118,9 +118,6 @@ def confirm(
         campaign,
         runtime,
     ):
-        # Signature integrity and current authority also gate historical replay.
-        # Only an uncommitted intent needs still-fresh DNS/preview evidence.
-        _binding(token)
         actor = principal(request, service)
         configuration = editable_configuration(service)
         if (
@@ -135,9 +132,6 @@ def confirm(
             str(preparation_id),
         ) or configuration.current_campaign_id != campaign_id:
             raise PermissionError("Production confirmation belongs to another scope.")
-        origin, profile = go_live_commands.configured_origin()
-        if (origin, profile.value) != (binding["origin"], binding["profile"]):
-            raise StaleRecordError("Public origin changed after preview.")
         previous = ProductionConfirmation.objects.filter(
             request_key=UUID(binding["key"])
         ).first()
@@ -154,6 +148,10 @@ def confirm(
             ):
                 raise PermissionError("Confirmation replay belongs to another intent.")
             return previous
+        # A committed replay needs current authority, not renewed DNS evidence.
+        origin, profile = go_live_commands.configured_origin()
+        if (origin, profile.value) != (binding["origin"], binding["profile"]):
+            raise StaleRecordError("Public origin changed after preview.")
         _binding(token, max_age=300)
         state = collect_readiness(
             request, service, campaign_id, transition_id, preparation_id

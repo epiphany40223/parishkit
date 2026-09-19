@@ -9,7 +9,7 @@ from time import perf_counter
 from uuid import uuid4
 
 import pytest
-from django.db import connection
+from django.db import connection, transaction
 from django.test.utils import CaptureQueriesContext
 
 from parishkit.stewardship.accounts import confirmation_commands
@@ -80,8 +80,14 @@ def observe_final_transaction(monkeypatch, observed):
     def measured(*args, **kwargs):
         """Record nested trigger activity before this real transaction commits."""
         with original(*args, **kwargs) as scope:
+            # Index-only scans can avoid every heap fetch. This measurement run
+            # deliberately requires heap-visible reads, including private SQL.
+            with connection.cursor() as cursor:
+                cursor.execute("SET LOCAL enable_indexonlyscan = off")
             before = relation_access()
             yield scope
+            with connection.cursor() as cursor:
+                cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
             after = relation_access()
             observed.update(
                 {
@@ -94,6 +100,37 @@ def observe_final_transaction(monkeypatch, observed):
             )
 
     monkeypatch.setattr(confirmation_commands, "campaign_transaction", measured)
+
+
+def assert_bounded_relations(observed):
+    """Reject population reads or writes, allowing only fixed referential probes."""
+    assert set(observed) == set(RELATIONS)
+    assert all(
+        sum(counters[:2]) <= 4 and counters[2:] == (0, 0, 0)
+        for counters in observed.values()
+    ), observed
+
+
+def verify_nested_scan_detector():
+    """Prove our acceptance harness rejects a deliberately nested corpus scan."""
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL enable_indexonlyscan = off")
+        cursor.execute("SET LOCAL enable_seqscan = off")
+        before = relation_access()
+        cursor.execute(
+            "DO $$ BEGIN PERFORM count(*) FROM public.stewardship_family_campaign; "
+            "END $$"
+        )
+        after = relation_access()
+        observed = {
+            name: tuple(
+                new - old for old, new in zip(before[name], after[name], strict=True)
+            )
+            for name in RELATIONS
+        }
+        assert sum(observed[RELATIONS[0]][:2]) >= 5000
+        with pytest.raises(AssertionError):
+            assert_bounded_relations(observed)
 
 
 def reference_inputs(monkeypatch):
@@ -218,6 +255,7 @@ def test_reference_confirmation_and_family_submit_during_incomplete_catchup(
     observed = {}
     observe_final_transaction(monkeypatch, observed)
     with web_login():
+        verify_nested_scan_detector()
         preview, verified, token = fresh(arguments)
         assert verified and token and preview.families.counts.active == 5000
         assert preview.families.counts.messages == 5000
@@ -233,12 +271,7 @@ def test_reference_confirmation_and_family_submit_during_incomplete_catchup(
             for row in queries
             if "pg_stat_xact_user_tables" not in row["sql"]
         )
-        assert set(observed) == set(RELATIONS)
-        # Permit only constant-size referential checks, not population scans.
-        assert all(
-            sum(counters[:2]) <= 4 and counters[2:] == (0, 0, 0)
-            for counters in observed.values()
-        ), observed
+        assert_bounded_relations(observed)
     assert not ScheduleOccurrence.objects.exists()
     assert not OutboxMessage.objects.exists()
     demand = ActivationCatchUpDemand.objects.get(activation_id=receipt.activation_id)

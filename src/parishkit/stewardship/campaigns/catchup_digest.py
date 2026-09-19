@@ -12,6 +12,7 @@ from django.db.models import Q
 from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.storage import StorageInvariantError
 
+from .catchup_counts import digest_counts
 from .catchup_errors import CatchUpPreparationHeld
 from .catchup_ownership import claim_event
 from .catchup_preparation import _checkpoint, receipt_key
@@ -253,4 +254,7 @@ def prepare_digest(demand, claim, scope, definition, cursor):
         else prefix + "digests:",
         phase="digests",
         items=created + len(rows) + len(previous),
+        outcome_counts=digest_counts(demand, scope, definition, selected)
+        if not more
+        else None,
     )

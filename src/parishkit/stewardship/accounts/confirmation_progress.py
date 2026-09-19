@@ -3,7 +3,9 @@
 from uuid import UUID, uuid4
 
 from django.core import signing
+from django.utils.translation import gettext_lazy as _
 
+from parishkit.stewardship.campaigns.catchup_counts import prepared_counts
 from parishkit.stewardship.campaigns.catchup_tasks import (
     admit_catchup,
     completed,
@@ -20,6 +22,13 @@ from parishkit.stewardship.storage import StaleRecordError
 from .admin_editing import editable_configuration, principal
 
 SALT = "stewardship-production-progress-v1"
+
+COUNT_LABELS = (
+    ("family_messages", _("Family message candidates")),
+    ("daily_messages", _("Daily Admin message candidates")),
+    ("weekly_messages", _("Weekly Admin message candidates")),
+    ("coalesced_slots", _("Coalesced semantic slots")),
+)
 
 
 def _current(request, service, campaign_id, *, passive=True):
@@ -47,6 +56,7 @@ def progress(request, service, campaign_id):
             activation_id=receipt.activation_id
         ).first()
         task, ready, control = None, False, None
+        outcomes = []
         if demand:
             ready = completed(demand)
             task = (
@@ -54,6 +64,18 @@ def progress(request, service, campaign_id):
                 .order_by("-retry_sequence")
                 .first()
             )
+            actual = prepared_counts(
+                demand, receipt.request.campaign.active_configuration_id
+            )
+            outcomes = [
+                {
+                    "label": label,
+                    "preview": receipt.preview_counts[key],
+                    "actual": actual[key],
+                    "difference": actual[key] - receipt.preview_counts[key],
+                }
+                for key, label in COUNT_LABELS
+            ]
             if task and task.state == "failed" and not ready and eligible(demand):
                 control = signing.dumps(
                     {
@@ -74,6 +96,7 @@ def progress(request, service, campaign_id):
             "task": task,
             "complete": ready,
             "control": control,
+            "outcomes": outcomes,
         }
 
 

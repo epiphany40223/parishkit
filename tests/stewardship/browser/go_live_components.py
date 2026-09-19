@@ -102,6 +102,14 @@ def components(context, admin):
         "task": progress["task"],
         "complete": False,
         "control": "synthetic-retry",
+        "outcomes": [
+            {
+                "label": "Family message candidates",
+                "preview": 5000,
+                "actual": 4800,
+                "difference": -200,
+            }
+        ],
     }
     return {
         path: (
