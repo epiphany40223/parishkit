@@ -164,7 +164,9 @@ def ministry_page(campaign_id, query, principal, *, ministry_id=None, action="jo
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT stewardship_ministry_report_v1("
-            "%s,%s::jsonb,%s,%s::bigint[],%s,%s,%s,%s)::text",
+            "campaign_uuid => %s, filters => %s::jsonb, operational => %s, "
+            "ministry_scope => %s::bigint[], ministry_id => %s, request_action => %s, "
+            "page_limit => %s, page_offset => %s)::text",
             [
                 campaign_id,
                 json.dumps(query.form_values()),

@@ -60,26 +60,24 @@ def admit_campaign(campaign_id, *, mutating):
 
 
 def audit(action, request, actor_id, *, outcome, count=None):
-    """Reference the retained request; do not duplicate report rows or filter values."""
+    """Reference immutable request scope once, without copying filters or rows.
+
+    The request permanently records its exact Ministry set and privacy projection.
+    Referencing it keeps audit cost constant even for parish-wide exports, while
+    retaining the precise scope of each leader export and download.
+    """
     context = {"outcome": outcome}
     if count is not None:
         context["count"] = count
-    scope = (
-        request.authorization_scope.get("ministries", ())
-        if request.report == "ministry"
-        else ()
+    record_action(
+        action,
+        actor_kind=ActorKind.PORTAL_USER,
+        actor_id=actor_id,
+        subject_id=request.pk,
+        parish_id=request.configuration.parish.pk,
+        campaign_id=request.campaign_id,
+        context=context,
     )
-    for ministry in scope or (None,):
-        record_action(
-            action,
-            actor_kind=ActorKind.PORTAL_USER,
-            actor_id=actor_id,
-            subject_id=request.pk,
-            parish_id=request.configuration.parish.pk,
-            campaign_id=request.campaign_id,
-            context=context
-            | ({"ministry_duid": ministry} if ministry is not None else {}),
-        )
 
 
 def create_export(

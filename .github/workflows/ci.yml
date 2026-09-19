@@ -59,7 +59,7 @@ jobs:
           tests/stewardship/test_exact_export_ui.py
           tests/stewardship/test_ministry_exports.py
           tests/stewardship/test_information_rendering.py
-          tests/stewardship/test_directories.py
+          tests/stewardship/test_ministry_reports.py
           --require-no-skips -q
 
       - name: Migration drift

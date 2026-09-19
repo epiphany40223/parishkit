@@ -91,6 +91,7 @@ def test_complete_columns_and_csv_privacy(action):
         assert report.rows[0][-1] == "Volunteer"
     else:
         assert report.rows[0][-1] == "3 out of 4 (75%)"
+        assert report.sheet_name == "Ministry summary"
 
 
 @pytest.mark.parametrize("format", ["xlsx", "pdf"])

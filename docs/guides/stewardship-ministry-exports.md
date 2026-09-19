@@ -59,3 +59,9 @@ No retained database was deleted and no historical migration path was introduced
 Draft CI substitutes the focused export module for the previous Ministry module
 while retaining the ten-module bound. Exact-head full CI, three completed
 dual-source rounds and protected merge are still required.
+
+The final Staff-to-leader downgrade regression passed in 15.27 seconds. The
+first [independent review/correction round](stewardship-ministry-export-reviews.md)
+is complete, with its High packaging omission and both Medium findings fixed.
+Focused post-correction checks pass. Later rounds now review that delta with
+surrounding lifecycle context; full ready-candidate CI and delivery remain open.

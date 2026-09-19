@@ -17,8 +17,7 @@ from .ministries import MinistryQuery, can_report
 def scope_authorized(principal, scope):
     """Retained operational columns cannot pass through a later role downgrade."""
     return allows(principal, Capability.MINISTRY_REPORT) or (
-        can_report(principal)
-        and scope.get("operational") is False
+        scope.get("operational") is False
         and bool(scope.get("ministries"))
         and all(
             allows(principal, Capability.MINISTRY_REPORT, ministry_id=value)

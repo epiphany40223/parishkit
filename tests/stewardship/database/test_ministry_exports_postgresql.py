@@ -1,14 +1,17 @@
 """Complete Ministry capture and actual-role requester/worker/download boundaries."""
 
+import io
 import json
 from datetime import timedelta
 from uuid import uuid4
 
 import pytest
-from django.db import DatabaseError, connection
+from django.db import DatabaseError, connection, transaction
 
 from parishkit.stewardship.accounts.policy_models import PortalUser
+from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.read_guards import DownloadPool, ReadLimits
+from parishkit.stewardship.campaigns.runtime_models import CampaignWorkGate
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.dispatch import execute_hint
@@ -26,6 +29,7 @@ from parishkit.stewardship.reports.export_services import (
     issue_download,
 )
 from parishkit.stewardship.reports.export_tasks import export_handler, load_document
+from parishkit.stewardship.reports.information_rendering import render_information
 from parishkit.stewardship.reports.ministries import MinistryQuery
 from parishkit.stewardship.reports.ministry_exports import create_ministry_export
 
@@ -118,6 +122,23 @@ def test_capture_scope_and_revocation(response_service, google):
         ],
     )
     admin = user("admin@example.org").pk
+    leaving = create(harness, admin, ministry_id=4, action="leave")
+    leaving.refresh_from_db()
+    with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
+        capture = leaving.ministry_snapshot.document
+        assert capture["rows"][0]["current_role"] == "Chairperson"
+        assert capture["rows"][0]["emails"] is None
+        document = load_document(leaving)
+        assert document.rows[0][-1] == "Chairperson"
+        assert len(document.headings) == 9
+        assert "Email" not in document.headings and "Phones" not in document.headings
+        for format in ("csv", "xlsx", "pdf"):
+            output = io.BytesIO()
+            render_information(document, output, format=format)
+            assert output.getvalue()
+            if format == "csv":
+                assert b"Chairperson" in output.getvalue()
+                assert b"valid@example.org" not in output.getvalue()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert (
             export_status(harness.service.store, actor, request.pk)["state"] == "queued"
@@ -198,6 +219,12 @@ def test_complete_capture_stays_stable_after_source_promotion(response_service):
     assert empty.authorization_scope["ministries"] == [9]
     summary = create(harness, actor, ministry_id=None, action="summary")
     assert summary.ministry_snapshot.row_count == 2
+    assert (
+        AuditEvent.objects.filter(
+            event_type="export_requested", subject_id=summary.pk
+        ).count()
+        == 1
+    )
     assert (
         MinistryExportSnapshot.objects.get(pk=summary.ministry_snapshot_id).document[
             "rows"
@@ -393,3 +420,32 @@ def test_operational_capture_cannot_survive_staff_downgrade(
         )
     limited = create(harness, actor)
     assert limited.authorization_scope["operational"] is False
+    # Only the future purge owner's sentinel is synthetic in this disposable DB.
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(
+            "ALTER TABLE stewardship_campaign_work_gate DISABLE TRIGGER USER"
+        )
+        CampaignWorkGate.objects.create(
+            campaign=harness.campaign,
+            request_id=uuid4(),
+            initiated_by_id=uuid4(),
+            state="preparing",
+        )
+        cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+        cursor.execute("ALTER TABLE stewardship_campaign_work_gate ENABLE TRIGGER USER")
+    before = MinistryExportSnapshot.objects.count()
+    with pytest.raises(PermissionError):
+        create(harness, actor)
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(DatabaseError),
+        work_transaction(),
+    ):
+        MinistryExportSnapshot.objects.create(
+            campaign_id=harness.campaign.pk,
+            configuration_id=limited.configuration_id,
+            actor_id=actor,
+            correlation_id=uuid4(),
+            parameters=limited.parameters,
+        )
+    assert MinistryExportSnapshot.objects.count() == before

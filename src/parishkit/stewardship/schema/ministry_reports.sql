@@ -1,4 +1,8 @@
 -- One query owns interactive pages and complete immutable export captures.
+-- Only authorized join rows reach contact projection; summary and leave rows
+-- never fetch contact payloads. Select latest intent before filtering states,
+-- including hidden Ministries, so history cannot resurrect replaced requests.
+-- NULL page_limit selects every matching row for an immutable export capture.
 CREATE FUNCTION stewardship_ministry_report_v1(
     campaign_uuid uuid, filters jsonb, operational boolean, ministry_scope bigint[],
     ministry_id integer DEFAULT NULL, request_action text DEFAULT 'join',

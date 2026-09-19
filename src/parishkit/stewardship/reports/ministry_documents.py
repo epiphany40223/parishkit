@@ -167,5 +167,11 @@ def ministry_document(payload, parameters, *, parish_name, requested_at, timezon
                 )
             )
     return MinistryDocument(
-        metadata, tuple(rows), payload["total"], requested_at, headings, title
+        metadata,
+        tuple(rows),
+        payload["total"],
+        requested_at,
+        headings,
+        title,
+        sheet_name="Ministry summary" if action == "summary" else "Ministry requests",
     )
