@@ -62,3 +62,32 @@ Both corrected PostgreSQL scenarios passed together in 18.15 seconds; Ruff,
 formatting and whitespace checks passed. This completes round 2 with no
 unresolved accepted Medium-or-higher finding. Draft CI `35466737240` at its
 reviewed head passed fast validation; full candidate acceptance remains pending.
+
+## Round 3: identifier-boundary and successful-page regressions
+
+Pika session `20260919-162134-171938` reviewed
+`573775235ae139e04eff7ea65f84fd05ecafa461` through
+`b0dfe456c4546d21f7d2d8d730ef8f732977a13e`, tree
+`56130bcde48028aa295106d6e27368707252acf7`. Its fresh exact permission preflight
+passed. Claude completed; Codex completed cleanly in 157 seconds with zero
+findings. Pika's zero-result Codex telemetry says `parsed: false`, but the
+actual run exited zero without a timeout/stall and finalization reported no
+degradation, failed agent or verdict mismatch.
+
+Raw findings: one Medium and one Low, no High/Critical. The Medium was validated
+and accepted; the Low was below the configured cutoff. The accepted finding
+identified an unintended consequence of moving operational authority inside the
+discovery subquery: Admin/Staff could not discover an empty Ministry draft even
+though direct report access remained valid. Fixed by preserving their outer
+operational authorization while keeping bigint-safe filtering for leader scope.
+The actual-role regression now covers both empty selection and unsupported-only
+draft IDs: Admin navigation/picker/detail remain available and leader access
+still requires an in-range assigned intersection. The targeted test passed in
+17.03 seconds.
+
+This completes three independent review/fix rounds. No accepted Medium-or-higher
+finding remains; the final round found no High/Critical. Corrections and their
+passing regression are part of round 3 under the controlling delivery cycle,
+not an assertion that the raw review was finding-free. Draft CI `35467116278`
+passed fast validation. Full exact-head CI/DCO and protected merge remain the
+delivery boundary.

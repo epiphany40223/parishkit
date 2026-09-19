@@ -72,3 +72,17 @@ Review and exact-head CI evidence will be added before delivery.
 guarded authorized campaign picker, denies unassigned campaign summaries and
 moves all Ministry selection values into native private POST state. No full
 package or gate acceptance is inferred from the completed first round.
+
+## Interactive acceptance checkpoint
+
+All three [independent review/fix rounds](stewardship-ministry-report-reviews.md)
+are now complete, including identifier-boundary and empty-draft regressions.
+No accepted Medium-or-higher finding remains; the final round found no
+High/Critical. RPT-06.01/.02/.04 and the interactive .05 checks are implemented
+and validated. RPT-06.03 remains open for complete-result exports and their
+scope/privacy/lifecycle validation; assignee/contact editing remains ADM-08.
+
+The reviewed commits and recorded corrections will be retained on a backup
+branch and consolidated into a single logical feature commit with an identical
+tree. Final-head full CI/DCO and protected merge are still required. M5/Gate 3
+and production-readiness boundaries are unchanged.

@@ -411,6 +411,36 @@ def test_campaign_choices_intersect_enabled_modules_and_assignments(
         response, body = read(admin, unowned)
         assert response.status_code == 200 and b"Choir" in body
         assert b"2,147,483,648" not in body and b"9,223,372,036,854,775,807" not in body
+    # Admin/Staff may inspect unfinished configuration even when a draft has
+    # no supported selected Ministry; a leader still needs a real intersection.
+    for selected in ([], [2**31, 2**63 - 1]):
+        assert (
+            change(
+                store,
+                store.active(),
+                uuid4(),
+                [
+                    {
+                        "operation": "update",
+                        "section": "campaigns",
+                        "id": successor["id"],
+                        "values": {"ministry_duids": selected},
+                    }
+                ],
+            ).state
+            == "applied"
+        )
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            assert admin.get("/admin/ministry-reports/")["Location"] == unowned
+            assert browser.get("/admin/ministry-reports/")["Location"] == owned
+            response, body = read(admin, "/admin/ministry-reports/campaigns/")
+            assert response.status_code == 200 and unowned.encode() in body
+            response, body = read(admin, unowned)
+            assert (
+                response.status_code == 200
+                and b"No matching authorized Ministries" in body
+            )
+            assert read(browser, unowned)[0].status_code == 403
     assert (
         change(
             store,
