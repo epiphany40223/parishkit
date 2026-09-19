@@ -298,6 +298,13 @@ Scope and dependencies: [DAT-07 work package](../../plans/stewardship/data.md#da
 - [ ] DAT-07.04 — Enforce append-only history and terminal secret scrubbing.
 - [ ] DAT-07.05 — Test corrections, terminal states, and audit privacy.
 
+Current Staff-note evidence: the [additional-information increment](../../guides/stewardship-additional-followup.md)
+adds immutable note/workflow revisions, database-owned completion attribution,
+replay uniqueness, paired projection/audit enforcement and narrow web grants.
+Its fresh-baseline audit, focused tests and three dual-source rounds pass;
+protected delivery remains open.
+Other follow-up and later-phase consumers keep DAT-07 unchecked.
+
 Evidence: The [Phase 3A record](../../guides/stewardship-phase-3a.md) implements
 live additional-information replacement/withdrawal, immutable confirmation
 intent stubs, response audit, and bounded invalidated-Testing detail cleanup.

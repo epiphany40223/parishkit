@@ -28,7 +28,7 @@ The [native exact-export increment](../../guides/stewardship-exact-export-ui.md)
 adds participation's current-input queue/status/cancel/retry forms and explicit
 expired-file regeneration from retained facts. Focused real-role PostgreSQL and
 three-engine browser tests and three dual-source review rounds pass; protected
-delivery remains open in PR #65.
+delivery completed in PR #65; its guide records the protected receipt.
 This extends .04/.06 evidence without claiming full-catalog acceptance.
 
 ## RPT-02: Population and calculation library
@@ -110,13 +110,19 @@ tracked in the increment handoff.
 
 Scope and dependencies: [RPT-04 work package](../../plans/stewardship/reports.md#rpt-04-additional-information-workflow-report).
 
-- [ ] RPT-04.01 — Build searchable information queues and history.
-- [ ] RPT-04.02 — Integrate concurrent-safe follow-up and notes editing.
-- [ ] RPT-04.03 — Expose corrections to previously digested information.
+- [x] RPT-04.01 — Build searchable information queues and history.
+- [x] RPT-04.02 — Integrate concurrent-safe follow-up and notes editing.
+- [x] RPT-04.03 — Expose corrections to previously digested information.
 - [ ] RPT-04.04 — Export complete text and optional workflow history.
-- [ ] RPT-04.05 — Test withdrawal, corrections, authorization, and digest parity.
+- [x] RPT-04.05 — Test withdrawal, corrections, authorization, and digest parity.
 
-Evidence: Not started.
+In-progress evidence: the [Staff follow-up increment](../../guides/stewardship-additional-followup.md)
+implements .01/.02/.03 and corresponding .05 cases, with real restricted-role,
+concurrency, replacement/withdrawal, source parity and three-engine browser
+validation and three completed dual-source review/fix rounds. Protected
+delivery remains open in PR #66. Complete-text and
+optional-history exports remain .04's next coherent increment; full package
+acceptance is not claimed.
 
 ## RPT-05: Family code and postal-outreach reports
 

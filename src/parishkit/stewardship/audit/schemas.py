@@ -66,6 +66,8 @@ class Action(StrEnum):
     DAILY_DIGEST_VIEWED = "daily_digest_viewed"
     WEEKLY_DIGEST_VIEWED = "weekly_digest_viewed"
     PARTICIPATION_VIEWED = "participation_viewed"
+    INFORMATION_VIEWED = "information_viewed"
+    INFORMATION_UPDATED = "information_updated"
     DASHBOARD_VIEWED = "dashboard_viewed"
     PRESENCE_VIEWED = "family_presence_viewed"
     SETUP_STARTED = "setup_started"

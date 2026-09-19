@@ -10017,3 +10017,13 @@ BEGIN
         USING ERRCODE='23514'; END IF;
     RETURN NEW;
 END $$;
+
+-- Digest semantics exclude Staff workflow edits. Submitted text is immutable,
+-- and each item can transition from actionable to exactly one immutable terminal
+-- disposition. A stable token therefore captures all digest-relevant changes.
+CREATE FUNCTION stewardship_information_digest_version_v1(disposition text)
+RETURNS bigint LANGUAGE sql IMMUTABLE STRICT
+SET search_path TO pg_catalog,public,pg_temp AS $$
+    SELECT CASE $1 WHEN 'current_actionable' THEN 1::bigint
+        WHEN 'superseded' THEN 2::bigint WHEN 'withdrawn' THEN 3::bigint END
+$$;

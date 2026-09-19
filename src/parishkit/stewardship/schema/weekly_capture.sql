@@ -44,7 +44,10 @@ $$;
 CREATE FUNCTION stewardship_weekly_history_v1(campaign uuid,mode text,epoch uuid)
 RETURNS jsonb LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
     WITH snapshots AS MATERIALIZED (
-        SELECT s.*,p.occurrence_id FROM stewardship_weekly_digest_snapshot s
+        -- Explicit projection lets the web reader share semantic history without
+        -- gaining access to the snapshot's retained private recipient cohort.
+        SELECT s.id,s.preparation_id,s.submission_watermark,s.corrections,p.occurrence_id
+        FROM stewardship_weekly_digest_snapshot s
         JOIN stewardship_weekly_digest_preparation p ON p.id=s.preparation_id
         WHERE p.campaign_id=$1 AND p.mode=$2 AND p.rehearsal_epoch_id IS NOT DISTINCT FROM $3
     ), completed AS MATERIALIZED (
@@ -108,7 +111,8 @@ BEGIN
       OR NEW.information IS DISTINCT FROM selected->'information'
       OR NEW.corrections IS DISTINCT FROM selected->'corrections'
       OR NEW.item_versions IS DISTINCT FROM (
-          SELECT coalesce(jsonb_object_agg(i.id::text,i.version),'{}'::jsonb)
+          SELECT coalesce(jsonb_object_agg(i.id::text,
+              stewardship_information_digest_version_v1(i.disposition)),'{}'::jsonb)
           FROM public.stewardship_additional_information i
           WHERE selected->'information' ? i.id::text OR EXISTS(
               SELECT 1 FROM jsonb_array_elements(selected->'corrections') correction

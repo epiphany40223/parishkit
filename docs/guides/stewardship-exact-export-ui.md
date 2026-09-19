@@ -46,3 +46,16 @@ included in draft CI; complete candidate CI remains required before merge.
 The [review ledger](stewardship-exact-export-ui-reviews.md) records round endpoints,
 raw severities, accepted corrections and evidence-backed dispositions. Existing
 native workspace regressions also passed: three PostgreSQL cases in 27.12 seconds.
+
+## Protected delivery
+
+PR [#65](https://github.com/epiphany40223/parishkit/pull/65) merged September 19,
+2026 at 13:56:53 UTC as `b60e39f4`, verified on freshly fetched `origin/main`.
+Candidate `f13f8f5ead464aa28ed895f56163be587c3c4789` is one signed-off logical
+commit; tree `cf2833ab26a77e9a6a633f1a578a33ebe622c5d7` exactly matches preserved
+pre-squash checkpoint `cb8ddc04`. The final-head
+[full CI run](https://github.com/epiphany40223/parishkit/actions/runs/35446386814)
+passed all 24 jobs, including twelve PostgreSQL shards, three browser engines,
+all container scenarios and coverage aggregation. DCO also passed. The run
+lasted 17 minutes 56 seconds (13:38:54–13:56:50 UTC); draft pushes ran only fast
+checks. This delivers the increment, not the complete catalog or Gate 3.

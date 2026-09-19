@@ -56,6 +56,7 @@ def schema_sql():
                 "delivery_control",
                 "delivery_recovery",
                 "delivery_closed",
+                "information_followup",
             )
         ]
     )

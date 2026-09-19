@@ -10,6 +10,7 @@
 <p>{{ campaign.active_configuration.name }}</p>
 <p>{% translate "Track first responses and pledges. Repeat submissions do not increase participation. Testing responses are excluded." %}</p>
 <p><a href="{{ picker_url }}">{% translate "Choose a retained campaign" %}</a></p>
+<p><a href="{% url 'admin:information_queue' campaign.pk %}">{% translate "Additional-information staff queue" %}</a></p>
 <form method="get" action="{% url 'admin:participation' campaign.pk %}" data-report-options>
 <label for="scope">{% translate "Chart population" %}</label>
 <select id="scope" name="scope"><option value="historical"{% if query.scope == 'historical' %} selected{% endif %}>{% translate "Historical as of day" %}</option><option value="current"{% if query.scope == 'current' %} selected{% endif %}>{% translate "Current population" %}</option></select>

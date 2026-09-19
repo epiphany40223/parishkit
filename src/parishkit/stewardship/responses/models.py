@@ -308,6 +308,55 @@ class AdditionalInformationItem(MutableRecord):
         ]
 
 
+class AdditionalInformationRevision(ImmutableRecord):
+    """An authorized Staff edit with immutable notes and completion attribution.
+
+    The item retains current checkbox state; this history owns notes and the
+    completing Staff identity. Family-driven disposition changes still advance
+    the same item version, invalidating stale Staff forms without erasing notes.
+    """
+
+    item = models.ForeignKey(
+        AdditionalInformationItem, on_delete=models.PROTECT, related_name="revisions"
+    )
+    expected_version = models.PositiveBigIntegerField()
+    request_key = models.UUIDField()
+    follow_up_needed = models.BooleanField()
+    followed_up = models.BooleanField()
+    confirm_clear = models.BooleanField(default=False)
+    notes = models.TextField(default="", blank=True)
+    followed_up_at = UTCDateTimeField(null=True)
+    followed_up_by_id = models.UUIDField(null=True)
+
+    class Meta:
+        db_table = "stewardship_information_revision"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("item", "expected_version"), name="information_revision_version"
+            ),
+            models.UniqueConstraint(
+                fields=("actor_id", "request_key"), name="information_revision_replay"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(expected_version__gte=1, actor_id__isnull=False),
+                name="information_revision_identity",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    followed_up=True,
+                    followed_up_at__isnull=False,
+                    followed_up_by_id__isnull=False,
+                )
+                | models.Q(
+                    followed_up=False,
+                    followed_up_at__isnull=True,
+                    followed_up_by_id__isnull=True,
+                ),
+                name="information_revision_completion",
+            ),
+        ]
+
+
 class SubmissionReceiptOccurrence(ImmutableRecord):
     """One atomic receipt or proven no-recipient outcome per accepted submission.
 
