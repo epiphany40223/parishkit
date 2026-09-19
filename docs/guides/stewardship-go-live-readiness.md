@@ -223,6 +223,20 @@ finding has a passing correction/regression, and the final round has no High or
 Critical finding. The earlier nine three-engine browser checks and independent
 fresh-schema audit remain applicable. Exact-head CI/DCO still gates delivery.
 
+### Final CI fixture correction
+
+CI on consolidated head `1a9e5154` exposed a race in an existing report browser
+test: the component server omitted `/admin/presence?format=count`, which Admin
+chrome requests immediately. Waiting for that response reproduces the 404 on
+all three engines, independently of CI timing. The fixture now returns the
+synthetic count, and the regression waits for the response and rendered count
+before checking console errors. Error diagnostics retain the failing URL;
+unknown routes still fail, and the existing service-failure test still overrides
+the endpoint explicitly. No application behavior, schema or permissions changed.
+All 15 focused report/presence browser cases pass in 15.27 seconds across the
+three engines, with Ruff and formatting passing. Exact corrected-head CI remains
+required before delivery.
+
 ## Acceptance and delivery boundary
 
 - ADM-05.01: complete current configuration/source/integration/test-mail checks,

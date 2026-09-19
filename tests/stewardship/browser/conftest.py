@@ -134,6 +134,9 @@ def component_origin():
         "watchdog_at": None,
     }
     responses = {
+        # Admin chrome immediately polls this endpoint, including on report pages.
+        # Failure-specific tests can still replace it with an explicit route.
+        "/admin/presence?format=count": ("application/json", '{"count":0}'),
         "/login": ("text/html", render_to_string("stewardship/login.html", context)),
         "/family-login": (
             "text/html",
