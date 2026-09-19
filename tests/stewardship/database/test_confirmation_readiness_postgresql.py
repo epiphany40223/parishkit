@@ -14,17 +14,21 @@ from parishkit.stewardship.accounts.authentication import runtime
 from parishkit.stewardship.accounts.confirmation_commands import confirm, verify_preview
 from parishkit.stewardship.accounts.confirmation_preview import collect_preview
 from parishkit.stewardship.accounts.confirmation_readiness import collect_readiness
+from parishkit.stewardship.accounts.models import PortalSession, PortalUser
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import database_now, issue_admin
 from parishkit.stewardship.campaigns.activation_models import ProductionTokenPreparation
 from parishkit.stewardship.campaigns.activation_tasks import token_handler
 from parishkit.stewardship.campaigns.activation_tokens import TASK_TYPE
+from parishkit.stewardship.campaigns.confirmation_models import ProductionConfirmation
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.models import ActivationCatchUpDemand
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.dispatch import execute_hint
+from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.queues import WorkQueue
+from parishkit.stewardship.jobs.storage import _status
 from parishkit.stewardship.storage import StaleRecordError
 
 from . import test_setup_preparation_postgresql as setup_inputs
@@ -38,6 +42,7 @@ from .test_activation_views_postgresql import (  # noqa: F401
 from .test_background_grants_postgresql import task_login
 from .test_setup_mail_views_postgresql import web_login
 from .test_setup_views_postgresql import post
+from .test_taskrun_postgresql import act
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -151,10 +156,31 @@ def test_fresh_confirmation_atomically_activates_and_replays(
 
     monkeypatch.setattr(setup_inputs, "first_campaign", dated_campaign)
     monkeypatch.setattr(setup_inputs, "schedule", dated_schedule)
-    preparation, arguments = prepare(request.getfixturevalue("ready_links"))
+    links = request.getfixturevalue("ready_links")
+    browser, links_path = links[:2]
+    preparation, arguments = prepare(links)
     login, service = arguments[:2]
     campaign = preparation.transition.campaign
+    path = f"{links_path}/{preparation.pk}/confirm"
     with web_login():
+        activity = PortalSession.objects.get(
+            pk=login.portal_session.pk
+        ).last_activity_at
+        page = browser.get(path)
+        assert page.status_code == 200, page.content
+        assert page["Cache-Control"] == "no-store"
+        assert not page.context["fresh"]
+        assert page.context["preview"] is None
+        assert browser.head(path).status_code == 200
+        assert (
+            PortalSession.objects.get(pk=login.portal_session.pk).last_activity_at
+            == activity
+        )
+        assert browser.post(path, {"action": "verify"}).status_code == 403
+        assert (
+            post(browser, path, {"action": "verify", "actor": "other"}).status_code
+            == 400
+        )
         preview, verified, token = verify_preview(*arguments)
         assert verified and token and not preview.problems
         with pytest.raises(PermissionError, match="after cleanup"):
@@ -165,8 +191,23 @@ def test_fresh_confirmation_atomically_activates_and_replays(
             store=service.store,
             authenticated_at=database_now(),
         )
-        receipt = confirm(*arguments, token=token, typed="Production")
+        browser.cookies["pk_admin"] = login.session.session_key
+        page = post(browser, path, {"action": "verify"})
+        assert page.status_code == 200, page.content
+        assert page.context["fresh"]
+        token = page.context["confirmation_token"]
+        values = {"action": "confirm", "preview": token, "typed": "Production"}
+        assert post(browser, path, values | {"typed": "Testing"}).status_code == 400
+        response = post(browser, path, values)
+        assert response.status_code == 302, response.content
+        assert post(browser, path, values).status_code == 302
+        receipt = ProductionConfirmation.objects.get()
         assert confirm(*arguments, token=token, typed="Production").pk == receipt.pk
+        progress_path = response["Location"]
+        page = browser.get(progress_path)
+        assert page.status_code == 200, page.content
+        assert page["Cache-Control"] == "no-store"
+        assert (b"Campaign active" if active else b"Campaign scheduled") in page.content
     campaign.refresh_from_db()
     preparation.transition.refresh_from_db()
     assert campaign.state == ("active" if active else "scheduled")
@@ -178,3 +219,23 @@ def test_fresh_confirmation_atomically_activates_and_replays(
     assert demands.count() == int(active)
     if active:
         assert demands.get().task_root_id is not None
+        demand = demands.get()
+        with work_transaction():
+            act(
+                act(_status(TaskRun.objects.get(pk=demand.task_root_id)), "claim"),
+                "permanent_failure",
+            )
+        with web_login():
+            page = browser.get(progress_path)
+            assert b"Preparing initial campaign mail" in page.content
+            retry = {"control": page.context["control"]}
+            assert retry["control"]
+            competing = {"control": browser.get(progress_path).context["control"]}
+            assert post(browser, progress_path, retry).status_code == 302
+            assert post(browser, progress_path, retry).status_code == 302
+            assert post(browser, progress_path, competing).status_code == 409
+            assert not browser.get(progress_path).context["complete"]
+    PortalUser.objects.update(disabled=True, version=F("version") + 1)
+    with web_login():
+        assert browser.get(progress_path).status_code == 403
+        assert post(browser, path, values).status_code == 403

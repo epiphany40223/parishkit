@@ -108,3 +108,25 @@ normalizing or weakening the contract test. All 18 strict schema/model and
 immutable-guard cases pass in 18.52 seconds. Totals are 187 relations, 2,150
 columns, 3,072 constraints, 920 indexes, 529 functions, 516 triggers and 28
 policies. No retained database is upgraded, downgraded or deleted.
+
+## Confirmation and progress forms
+
+The preparation page now links to passive final-readiness status. Only an
+explicit CSRF-protected verification enumerates impact and checks public DNS;
+fresh post-cleanup Google authentication and typed `Production` admit the exact
+signed confirmation. Native forms work without JavaScript. Status separates
+campaign lifecycle from durable mail-preparation completion, exposes real worker
+timestamps/counts without an invented denominator, and offers exact safe retry.
+It never calls task success proof of completed coverage or delivered email.
+
+Three real-database scenarios pass in 56.06 seconds, covering bounded readiness,
+both HTTP activation outcomes, CSRF/stray-field rejection, passive idle behavior,
+fresh authentication, identical confirmation/retry replay, competing retry and
+revocation. A late post-effect failure rolls back mode, generation, receipt and
+gate together and permits retry. The stale-scope/expiry/start/close/source-age,
+changed eligibility and cancelled-preparation scenario passes in 25.06 seconds.
+Nine browser cases pass in 10.98 seconds across Chromium, Firefox and WebKit,
+320/1,280-pixel widths, native keyboard submission, no-JavaScript controls and
+WCAG scans. The component test receives its synthetic POST locally rather than
+depending on browser-specific native error-page navigation. Reference-load,
+additional SQL/race acceptance and peer reviews remain open.

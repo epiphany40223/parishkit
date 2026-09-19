@@ -10,7 +10,15 @@ from parishkit.stewardship.campaigns.domain import Percentage
 
 def components(context, admin):
     """Keep acknowledgement and durable status browser tests free of infrastructure."""
-    campaign = Value(pk=UUID(int=58), active_configuration=Value(name="Annual census"))
+    campaign = Value(
+        pk=UUID(int=58),
+        state="active",
+        active_configuration=Value(
+            name="Annual census",
+            starts_at=context["server_now"],
+            ends_at=context["deadline"],
+        ),
+    )
     preview = Value(
         observed_at=context["server_now"],
         target_state="active",
@@ -72,6 +80,29 @@ def components(context, admin):
         ],
         "page": 1,
     }
+    confirmation = ready | {
+        "state": Value(
+            target_state="active",
+            observed_at=context["server_now"],
+            impact_revision=1234,
+        ),
+        "transition": links["transition"],
+        "confirmation_token": "synthetic-confirmation",
+        "fresh": True,
+    }
+    production = {
+        "campaign": campaign,
+        "receipt": Value(created_at=context["server_now"]),
+        "demand": Value(
+            phase="families",
+            groups_completed=1234,
+            items_completed=5678,
+            failure_code="recovery_required",
+        ),
+        "task": progress["task"],
+        "complete": False,
+        "control": "synthetic-retry",
+    }
     return {
         path: (
             "text/html",
@@ -81,5 +112,15 @@ def components(context, admin):
             ("/go-live", "stewardship/go-live-readiness.html", ready),
             ("/go-live-cleanup", "stewardship/go-live-cleanup.html", progress),
             ("/go-live-links", "stewardship/go-live-links.html", links),
+            (
+                "/production-confirmation",
+                "stewardship/production-confirmation.html",
+                confirmation,
+            ),
+            (
+                "/production-progress",
+                "stewardship/production-progress.html",
+                production,
+            ),
         )
     }

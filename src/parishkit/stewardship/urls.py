@@ -12,6 +12,7 @@ from .accounts import (
     campaign_views,
     clone_views,
     code_reports,
+    confirmation_views,
     content_history,
     content_views,
     family_authentication,
@@ -216,6 +217,16 @@ admin_patterns = [
         "campaign/<uuid:campaign_id>/go-live/cleanup/<uuid:request_id>/links",
         activation_views.links,
         name="go_live_links",
+    ),
+    path(
+        "campaign/<uuid:campaign_id>/go-live/cleanup/<uuid:request_id>/links/<uuid:preparation_id>/confirm",
+        confirmation_views.confirmation,
+        name="production_confirmation",
+    ),
+    path(
+        "campaign/<uuid:campaign_id>/production",
+        confirmation_views.progress,
+        name="production_progress",
     ),
     path(
         "campaign/<uuid:campaign_id>/settings",
