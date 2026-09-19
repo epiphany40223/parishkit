@@ -130,5 +130,26 @@ def components(context, admin):
                 "stewardship/production-progress.html",
                 production,
             ),
+            (
+                "/production-withdrawal",
+                "stewardship/production-withdrawal.html",
+                {
+                    "campaign": campaign,
+                    "available": True,
+                    "fresh": True,
+                    "preview": {
+                        "reason": "Correct the schedule",
+                        "inventory": {
+                            "occurrences": 1234,
+                            "cancellable": 1200,
+                            "messages": 1200,
+                            "failed": 34,
+                            "delivered": 0,
+                            "blocking": 0,
+                        },
+                    },
+                    "withdrawal_token": "synthetic-withdrawal",
+                },
+            ),
         )
     }

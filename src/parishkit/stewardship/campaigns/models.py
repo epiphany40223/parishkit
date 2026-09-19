@@ -208,3 +208,4 @@ from .schedule_models import (  # noqa: E402,F401
     ScheduleRecoveryReplacement,
     ScheduleSelection,
 )
+from .withdrawal_models import ProductionWithdrawal  # noqa: E402,F401

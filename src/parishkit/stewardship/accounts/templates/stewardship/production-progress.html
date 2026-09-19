@@ -25,4 +25,5 @@
 {% if control %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ control }}"><button type="submit">{% translate "Retry failed mail preparation" %}</button></form>{% endif %}
 </section>{% else %}<p>{% translate "This campaign was confirmed before its start. Normal campaign boundaries and scheduling own its mail; no direct-activation catch-up was requested." %}</p>{% endif %}
 <p><a href="">{% translate "Refresh Production progress" %}</a> · <a href="{% url 'admin:campaign_settings' campaign.pk %}">{% translate "Review campaign settings" %}</a></p>
+{% if withdrawal_available %}<p><a href="{% url 'admin:production_withdrawal' campaign.pk %}">{% translate "Withdraw from Production" %}</a></p>{% endif %}
 {% endblock %}
