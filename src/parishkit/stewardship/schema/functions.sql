@@ -5194,7 +5194,7 @@ BEGIN
         WHEN 'provider' THEN ARRAY['status','provider_fingerprint','outcome']
         WHEN 'exception' THEN ARRAY['outcome','retryable']
         WHEN 'action' THEN ARRAY['version','before_version','after_version','outcome','source_fingerprint','candidate_fingerprint','count',
-            'matching_count','page','directory_reason','directory_phone','directory_response','directory_sort','search_used','exact_code_used']
+            'matching_count','page','directory_reason','directory_phone','directory_response','directory_sort','search_used','exact_code_used','ministry_duid']
         WHEN 'boundary' THEN ARRAY['occurrence_id','kind','intended_unix_microseconds','actual_unix_microseconds','lag_microseconds','before_state','after_state']
         WHEN 'schedule' THEN ARRAY['definition_id','previous_revision_id','selected_revision_id','cancelled_messages','skipped_occurrences','failed_occurrences','delivered_slots']
         ELSE NULL END;
@@ -5217,7 +5217,7 @@ BEGIN
                 'maiden_name','birth_date','gender','email','home_phone',
                 'mobile_phone','work_phone','marital_status','language','death_date'
             ) THEN RETURN false; END IF;
-        ELSIF key IN ('family_duid','member_duid') THEN
+        ELSIF key IN ('family_duid','member_duid','ministry_duid') THEN
             IF jsonb_typeof(value)<>'number' OR text_value!~'^[0-9]{1,10}$' THEN RETURN false; END IF;
             IF text_value::numeric NOT BETWEEN 1 AND 2147483647 THEN RETURN false; END IF;
         ELSIF key='method' THEN

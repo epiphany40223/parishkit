@@ -86,3 +86,20 @@ rounds satisfy the review exit rule; no accepted Medium-or-higher remains.
 PR #69 still requires full exact-head CI/DCO and protected merge before the next
 Ministry-report increment can start from refreshed main. M5 and Gate 3 remain
 open; there is no production-readiness, deployment or release authorization.
+
+## Protected delivery
+
+PR #69 merged as `c64a9662a3b63d448012d597e3bca3a05186ff26` at
+19:36:49 UTC on September 19, 2026, verified on freshly fetched `origin/main`.
+Candidate `c6ec27c3e04167e88720cd9e090daf607759cb88` passed all 24 full CI
+jobs in run `35463995306`, plus DCO. The full run took 17 minutes, 5 seconds
+(19:19:37–19:36:42 UTC). It includes all twelve database partitions, all three
+browser engines, every Compose scenario and the combined coverage gate.
+
+The final one-commit tree `f662aa1df6e10eacfb22a4bb1a52428925ba37dc`
+matches retained head `52b75962` on
+`pr/stewardship-directory-exports-reviewed-v2`. The original three-round
+history also remains on `pr/stewardship-directory-exports-reviewed`. The ledger
+records the extra independently reviewed CI inventory correction; failed,
+cancelled and draft-skipped runs are not counted as acceptance. Protected
+auto-merge used the standing delivery authority, without deployment or release.

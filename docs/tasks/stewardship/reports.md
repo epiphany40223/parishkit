@@ -162,17 +162,32 @@ No accepted Medium-or-higher finding remains. Full exact-head CI/DCO and
 protected delivery remain pending; do not start RPT-06 on an unmerged branch
 or infer M5/Gate 3 acceptance from this package alone.
 
+Subsequently delivered through PR #69: all 24 exact-head CI jobs and DCO passed,
+and merge `c64a9662` was verified on refreshed `origin/main` before RPT-06 began.
+See the linked guide's protected-delivery receipt.
+
 ## RPT-06: Ministry summary and detail
 
 Scope and dependencies: [RPT-06 work package](../../plans/stewardship/reports.md#rpt-06-ministry-summary-and-detail).
 
-- [ ] RPT-06.01 — Build Ministry join/leave counts and cross-links.
-- [ ] RPT-06.02 — Build privacy-scoped Member detail.
+- [x] RPT-06.01 — Build Ministry join/leave counts and cross-links.
+- [x] RPT-06.02 — Build privacy-scoped Member detail.
 - [ ] RPT-06.03 — Add scoped search, filters, and exports.
-- [ ] RPT-06.04 — Apply request supersession to counts.
-- [ ] RPT-06.05 — Test assignment boundaries, privacy, and inactive controls.
+- [x] RPT-06.04 — Apply request supersession to counts.
+- [x] RPT-06.05 — Test assignment boundaries, privacy, and inactive controls.
 
-Evidence: Not started.
+In-progress evidence: the [scoped interactive Ministry increment](../../guides/stewardship-ministry-reports.md)
+starts from verified PR #69 merge `c64a9662`. It owns summary/detail, current
+assignment/contact privacy and live request-history queries. Complete exports
+and follow-up editing retain their subsequent owning slices; no whole RPT-06
+task was claimed complete at that initial checkpoint.
+
+PR #70 now completes .01/.02/.04 and interactive .05 validation after three
+[independent review/fix rounds](../../guides/stewardship-ministry-report-reviews.md).
+No accepted Medium-or-higher finding remains. .03 keeps complete-result exports
+and their dedicated privacy/scope/lifecycle tests open; ADM-08 keeps follow-up
+editing. Full exact-head CI/DCO and protected merge remain pending. This does
+not close all RPT-06 work, M5 or Gate 3.
 
 ## RPT-07: Multi-Ministry follow-up packet
 
