@@ -146,6 +146,11 @@ record exact-role, replay/race/rollback, bounded-load, outcome-comparison and
 browser evidence. Corrected-head CI/DCO and protected merge remain required.
 ADM-05.04 and withdrawal/repeated-go-live portions of ADM-05.05 remain open.
 
+PR #60 merged as `6bc3238` after all final-head CI/DCO checks passed; see its
+[protected receipt](../../guides/stewardship-production-confirmation.md#protected-delivery).
+ADM-05.04/.05 now continue on the fresh-main
+[pre-start withdrawal branch](../../guides/stewardship-production-withdrawal.md).
+
 ## ADM-06: Restore release, delivery pause, reopen, and archive
 
 Scope and dependencies: [ADM-06 work package](../../plans/stewardship/admin-portal.md#adm-06-restore-release-delivery-pause-reopen-and-archive).
