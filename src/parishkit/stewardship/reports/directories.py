@@ -6,10 +6,15 @@ from datetime import datetime
 from uuid import UUID
 
 from django.db import connection
+from django.db.models import Q
+from django.utils.datastructures import MultiValueDict
 
 from parishkit.stewardship.accounts.cryptography import canonical_code
 from parishkit.stewardship.campaigns.credential_keys import key_set_lock
-from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+from parishkit.stewardship.campaigns.credential_models import (
+    FamilyCampaign,
+    FamilyCodeFingerprint,
+)
 from parishkit.stewardship.campaigns.family_identity import code_context
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.web.content import bounded_text
@@ -43,6 +48,12 @@ class DirectoryQuery:
     @classmethod
     def parse(cls, parameters):
         """Reject duplicate/unknown values and canonicalize friendly manual codes."""
+        if type(parameters) is dict:
+            if any(type(value) is not str for value in parameters.values()):
+                raise ValueError("Directory filters require text values.")
+            parameters = MultiValueDict(
+                {key: [value] for key, value in parameters.items()}
+            )
         values = filters(parameters, allowed=set(cls.__dataclass_fields__))
         values["page"] = parse_page(values.get("page", "1"))
         query = cls(**values)
@@ -108,6 +119,65 @@ def address_lines(address):
     return tuple(filter(None, lines))
 
 
+def selection_parameters(campaign_id, query, *, postal, mac):
+    """Bind private exact-code input to an immutable Family ID under key locks.
+
+    Persisting this selection never persists a plaintext code or a MAC key
+    version. Regeneration therefore remains stable after ordinary key rotation.
+    Unknown codes retain an explicit empty exact selection, not an unfiltered
+    query. Callers hold the campaign read/work barrier and key inventory lock.
+    """
+    if not isinstance(campaign_id, UUID) or not isinstance(query, DirectoryQuery):
+        raise ValueError("Directory selection requires typed scope and filters.")
+    if type(postal) is not bool:
+        raise ValueError("Directory kind must be explicit.")
+    query = DirectoryQuery.parse(query.form_values() | {"page": str(query.page)})
+    family_id = None
+    if query.exact_code:
+        candidates = mac.lookups(campaign_id, query.exact_code)
+        choices = Q(pk__in=[])
+        for key, digest in candidates.items():
+            choices |= Q(key_id=key, digest=digest)
+        identities = list(
+            FamilyCodeFingerprint.objects.filter(choices, campaign_id=campaign_id)
+            .values_list("family_id", flat=True)
+            .distinct()[:2]
+        )
+        if len(identities) > 1:
+            raise ReadUnavailable("Exact-code selection is unavailable.")
+        family_id = str(identities[0]) if identities else None
+    values = query.form_values()
+    values.pop("exact_code")
+    return {
+        "filters": values,
+        "postal": postal,
+        "exact": bool(query.exact_code),
+        "family_id": family_id,
+    }
+
+
+def add_codes(campaign_id, rows, *, general):
+    """Decrypt only the selected identities under the caller's key/read barriers."""
+    identities = {
+        str(row.pk): row
+        for row in FamilyCampaign.objects.filter(
+            campaign_id=campaign_id,
+            pk__in=[row["family_id"] for row in rows if row["family_id"]],
+        ).only("id", "code_ciphertext")
+    }
+    for row in rows:
+        identity = identities.get(row["family_id"])
+        row["code"] = (
+            general.decrypt(
+                identity.code_ciphertext, context=code_context(identity.pk)
+            ).decode("ascii")
+            if identity and identity.code_ciphertext
+            else None
+        )
+        row["reason_label"] = REASONS[row["reason"]]
+        row["address_lines"] = address_lines(row["address"])
+
+
 def directory_page(campaign_id, query, *, postal, general, mac):
     """Read one SQL page, then decrypt only its codes under the caller's read guard.
 
@@ -116,51 +186,18 @@ def directory_page(campaign_id, query, *, postal, general, mac):
     the outer campaign read guard prevents purge through response completion.
     No Family session, public limiter or opaque email token is involved.
     """
-    if not isinstance(campaign_id, UUID) or not isinstance(query, DirectoryQuery):
-        raise ValueError("Directory selection requires typed scope and filters.")
-    if type(postal) is not bool:
-        raise ValueError("Directory kind must be explicit.")
     with key_set_lock(general, mac):
-        candidates = (
-            mac.lookups(campaign_id, query.exact_code) if query.exact_code else {}
-        )
+        parameters = selection_parameters(campaign_id, query, postal=postal, mac=mac)
         with connection.cursor() as cursor:
             cursor.execute(
                 DIRECTORY,
-                {
-                    "campaign": campaign_id,
-                    "filters": json.dumps(query.form_values() | {"exact_code": ""}),
-                    "exact": bool(query.exact_code),
-                    "candidates": json.dumps(candidates),
-                    "postal": postal,
-                    "size": PAGE_SIZE,
-                    "offset": (query.page - 1) * PAGE_SIZE,
-                },
+                (campaign_id, json.dumps(parameters), query.page),
             )
             result = cursor.fetchone()
         if result is None or result[0] is None:
             raise ReadUnavailable("Directory source information is unavailable.")
         report = json.loads(result[0])
-        if report.pop("code_matches") > 1:
-            raise ReadUnavailable("Exact-code selection is unavailable.")
-        identities = {
-            str(row.pk): row
-            for row in FamilyCampaign.objects.filter(
-                campaign_id=campaign_id,
-                pk__in=[row["family_id"] for row in report["rows"] if row["family_id"]],
-            ).only("id", "code_ciphertext")
-        }
-        for row in report["rows"]:
-            identity = identities.get(row["family_id"])
-            row["code"] = (
-                general.decrypt(
-                    identity.code_ciphertext, context=code_context(identity.pk)
-                ).decode("ascii")
-                if identity and identity.code_ciphertext
-                else None
-            )
-            row["reason_label"] = REASONS[row["reason"]]
-            row["address_lines"] = address_lines(row["address"])
+        add_codes(campaign_id, report["rows"], general=general)
         report["metadata"]["source_as_of"] = datetime.fromisoformat(
             report["metadata"]["source_as_of"]
         )

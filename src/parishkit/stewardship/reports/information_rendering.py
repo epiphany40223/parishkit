@@ -1,4 +1,4 @@
-"""Safe complete-text exports, including long paragraphs spanning PDF pages."""
+"""Safe complete-text exports shared by information and Family-directory reports."""
 
 import csv
 import io
@@ -9,8 +9,6 @@ from textwrap import wrap
 from unicodedata import category
 
 from parishkit.stewardship.web.exports import csv_cell
-
-from .information_documents import HEADINGS
 
 FORMAT_NOTE = (
     "Unsupported characters use Unicode escapes (\\uXXXX or \\UXXXXXXXX); "
@@ -62,9 +60,11 @@ def information_csv(document, output):
     wrapper = io.TextIOWrapper(output, encoding="utf-8", newline="", write_through=True)
     try:
         writer = csv.writer(wrapper, lineterminator="\r\n")
-        writer.writerow((*HEADINGS, *(key for key, _ in document.metadata)))
+        writer.writerow((*document.headings, *(key for key, _ in document.metadata)))
         trailer = tuple(csv_cell(value) for _, value in document.metadata)
-        writer.writerow(("Report metadata", *("" for _ in HEADINGS[1:]), *trailer))
+        writer.writerow(
+            ("Report metadata", *("" for _ in document.headings[1:]), *trailer)
+        )
         for row in document.rows:
             writer.writerow((*map(csv_cell, row), *trailer))
         wrapper.flush()
@@ -81,15 +81,17 @@ def information_xlsx(document, output):
     book = Workbook()
     try:
         sheet = book.active
-        sheet.title = "Information"
-        for row_index, values in enumerate(chain((HEADINGS,), document.rows), 1):
+        sheet.title = document.sheet_name
+        for row_index, values in enumerate(
+            chain((document.headings,), document.rows), 1
+        ):
             for column, value in enumerate(values, 1):
                 cell = sheet.cell(row_index, column, visible_text(value))
                 cell.data_type = "s"
                 cell.alignment = Alignment(wrap_text=True, vertical="top")
                 if row_index == 1:
                     cell.font = Font(bold=True)
-        for index, heading in enumerate(HEADINGS, 1):
+        for index, heading in enumerate(document.headings, 1):
             sheet.column_dimensions[get_column_letter(index)].width = (
                 70 if heading in {"Submitted text", "Staff notes"} else 28
             )
@@ -124,7 +126,7 @@ def information_lines(document, *, width=108):
     supported = pdf_font()[1]
     for record in chain(
         (document.metadata, (("Text representation", FORMAT_NOTE),)),
-        (zip(HEADINGS, row, strict=True) for row in document.rows),
+        (zip(document.headings, row, strict=True) for row in document.rows),
     ):
         for label, value in record:
             prefix = label + ": "
@@ -165,7 +167,7 @@ def information_pdf(document, output):
         PdfPages(
             output,
             metadata={
-                "Title": "Additional information and follow-up",
+                "Title": document.title,
                 "CreationDate": document.requested_at,
                 "ModDate": document.requested_at,
             },
@@ -175,9 +177,7 @@ def information_pdf(document, output):
             page = tuple(islice(lines, 34))
             figure = Figure(figsize=(11, 8.5), facecolor="white")
             try:
-                figure.text(
-                    0.05, 0.95, "Additional information and follow-up", fontsize=13
-                )
+                figure.text(0.05, 0.95, document.title, fontsize=13)
                 figure.text(0.05, 0.90, "Field / complete value", fontsize=10)
                 for index, line in enumerate(page):
                     figure.text(

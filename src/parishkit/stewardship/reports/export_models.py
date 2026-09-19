@@ -42,6 +42,38 @@ class InformationExportSnapshot(ImmutableRecord):
         ]
 
 
+class DirectoryExportSnapshot(ImmutableRecord):
+    """Complete source/contact capture; stable Family references, never codes."""
+
+    campaign = models.ForeignKey(
+        "stewardship_campaigns.Campaign", on_delete=models.PROTECT, db_index=False
+    )
+    source = models.ForeignKey(
+        "stewardship_source.SourceSnapshot", on_delete=models.PROTECT, db_index=False
+    )
+    configuration = models.ForeignKey(
+        "stewardship_accounts.AppliedConfigurationVersion",
+        on_delete=models.PROTECT,
+        db_index=False,
+    )
+    actor_id = models.UUIDField(editable=False)
+    correlation_id = models.UUIDField(editable=False)
+    parameters = models.JSONField()
+    document = models.JSONField(default=dict)
+    row_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = "stewardship_directory_export_snapshot"
+        indexes = [
+            models.Index(
+                fields=("correlation_id",), name="directory_export_correlation"
+            ),
+            models.Index(fields=("campaign",), name="directory_export_campaign"),
+            models.Index(fields=("source",), name="directory_export_source"),
+            models.Index(fields=("configuration",), name="directory_export_config"),
+        ]
+
+
 class ExportRequest(ImmutableRecord):
     """One canonical report request and its exact retained calculation generation."""
 
@@ -56,6 +88,9 @@ class ExportRequest(ImmutableRecord):
     )
     information_snapshot = models.ForeignKey(
         InformationExportSnapshot, on_delete=models.PROTECT, null=True, db_index=False
+    )
+    directory_snapshot = models.ForeignKey(
+        DirectoryExportSnapshot, on_delete=models.PROTECT, null=True, db_index=False
     )
     configuration = models.ForeignKey(
         "stewardship_accounts.AppliedConfigurationVersion", on_delete=models.PROTECT
@@ -77,11 +112,20 @@ class ExportRequest(ImmutableRecord):
                     report="participation",
                     fact_set__isnull=False,
                     information_snapshot__isnull=True,
+                    directory_snapshot__isnull=True,
                 )
                 | models.Q(
                     report="additional_information",
                     fact_set__isnull=True,
                     information_snapshot__isnull=False,
+                    directory_snapshot__isnull=True,
+                    format__in=("csv", "xlsx", "pdf"),
+                )
+                | models.Q(
+                    report__in=("family_directory", "postal_outreach"),
+                    fact_set__isnull=True,
+                    information_snapshot__isnull=True,
+                    directory_snapshot__isnull=False,
                     format__in=("csv", "xlsx", "pdf"),
                 ),
                 name="export_report_known",
@@ -97,6 +141,9 @@ class ExportRequest(ImmutableRecord):
             ),
             models.Index(
                 fields=("information_snapshot",), name="export_information_snapshot"
+            ),
+            models.Index(
+                fields=("directory_snapshot",), name="export_directory_snapshot"
             ),
         ]
 

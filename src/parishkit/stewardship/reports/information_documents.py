@@ -3,6 +3,7 @@
 import json
 from dataclasses import dataclass
 from datetime import datetime
+from typing import ClassVar
 from zoneinfo import ZoneInfo
 
 from .weekly_presentation import DISPOSITIONS
@@ -36,6 +37,9 @@ class InformationDocument:
     rows: tuple[tuple[str, ...], ...]
     item_count: int
     requested_at: datetime
+    headings: ClassVar[tuple[str, ...]] = HEADINGS
+    title: ClassVar[str] = "Additional information and follow-up"
+    sheet_name: ClassVar[str] = "Information"
 
 
 def information_document(payload, parameters, *, parish_name, requested_at, timezone):

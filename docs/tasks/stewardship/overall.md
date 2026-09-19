@@ -717,8 +717,17 @@ PR #68 implements .01/.02/.04 and interactive .05 with three completed
 Full exact-head CI/DCO and protected merge remain pending. After verifying
 that merge on refreshed main, continue with RPT-05.03 complete-result directory
 exports and remaining .05 export tests; RPT-05/M5/Gate 3 are not yet complete.
+PR #68 subsequently merged as `8dc00e9c` after all 24 full exact-head CI jobs
+and DCO passed; see its [protected receipt](../../guides/stewardship-family-directories.md#protected-delivery).
+Fresh branch `pr/stewardship-directory-exports` starts from that verified main
+tip for [complete-result directory exports](../../guides/stewardship-directory-exports.md).
 Complete-result exports follow separately; neither this branch nor its
 predecessor releases the incomplete report catalog or Gate 3.
+
+PR #69 now completes remaining RPT-05.03/.05 implementation and focused
+acceptance, with [three completed dual-source review/fix rounds](../../guides/stewardship-directory-export-reviews.md).
+After full exact-head CI/DCO and protected delivery, verify refreshed main and
+begin RPT-06 scoped Ministry reporting. M5 and Gate 3 remain open.
 
 1. Finish [BG-08](background-processing.md#bg-08-export-and-graph-workers); implement [RPT-01](reports.md#rpt-01-shared-report-framework-and-campaign-selection) and finish [RPT-02](reports.md#rpt-02-population-and-calculation-library).
 2. Complete [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics), [RPT-04](reports.md#rpt-04-additional-information-workflow-report), [RPT-05](reports.md#rpt-05-family-code-and-postal-outreach-reports), [RPT-06](reports.md#rpt-06-ministry-summary-and-detail), [RPT-07](reports.md#rpt-07-multi-ministry-follow-up-packet), and the reporting slice of [RPT-08](reports.md#rpt-08-census-and-financial-reports).

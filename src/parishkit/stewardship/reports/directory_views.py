@@ -1,5 +1,7 @@
 """Native private-POST Family directories with response-lifetime read admission."""
 
+from uuid import uuid4
+
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError
 from django.http import HttpResponse
@@ -20,11 +22,13 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import Event, emit_failure
+from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.presentation import out_of
 from parishkit.stewardship.web.responses import campaign_response
 
 from .directories import PAGE_SIZE, REASONS, DirectoryQuery, directory_page
+from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .read_admission import admit_report_read
 
@@ -138,6 +142,11 @@ def directory(request, campaign_id, *, postal=False):
             )
             count = len(report["rows"])
             total = report["total"]
+            mutable = True
+            try:
+                admit_campaign(campaign_id, mutating=True)
+            except PermissionError:
+                mutable = False
             route = "admin:postal_directory" if postal else "admin:family_directory"
             context = report | {
                 "postal_proportion": out_of(
@@ -149,6 +158,9 @@ def directory(request, campaign_id, *, postal=False):
                 "query_fields": query.form_values(),
                 "report_url": reverse(route, args=(campaign_id,)),
                 "reasons": REASONS,
+                "mutable": mutable,
+                "request_key": uuid4(),
+                "export_timezones": sorted(timezone_names()),
                 "previous_page": query.page - 1 if query.page > 1 else None,
                 "next_page": query.page + 1
                 if query.page * PAGE_SIZE < report["total"]
