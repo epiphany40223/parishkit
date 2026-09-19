@@ -45,7 +45,7 @@ class ExactExportRequest(ImmutableRecord):
                 name="exact_export_scope",
             ),
             models.CheckConstraint(
-                condition=models.Q(format__in=("csv", "png", "pdf")),
+                condition=models.Q(format__in=("csv", "png", "pdf", "xlsx")),
                 name="exact_export_format",
             ),
         ]

@@ -1511,7 +1511,9 @@ class Migration(migrations.Migration):
                 migrations.AddConstraint(
                     model_name="exportrequest",
                     constraint=models.CheckConstraint(
-                        condition=models.Q(("format__in", ("csv", "png", "pdf"))),
+                        condition=models.Q(
+                            ("format__in", ("csv", "png", "pdf", "xlsx"))
+                        ),
                         name="export_format_known",
                     ),
                 ),
@@ -1816,7 +1818,9 @@ class Migration(migrations.Migration):
                 migrations.AddConstraint(
                     model_name="exactexportrequest",
                     constraint=models.CheckConstraint(
-                        condition=models.Q(("format__in", ("csv", "png", "pdf"))),
+                        condition=models.Q(
+                            ("format__in", ("csv", "png", "pdf", "xlsx"))
+                        ),
                         name="exact_export_format",
                     ),
                 ),

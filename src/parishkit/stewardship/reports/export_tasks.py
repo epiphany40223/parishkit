@@ -185,6 +185,10 @@ def _execute(execution, *, store, root):
             execution.check()
             if request.format == "csv":
                 participation_csv(document, stream)
+            elif request.format == "xlsx":
+                from .spreadsheets import participation_xlsx
+
+                participation_xlsx(document, stream)
             else:
                 render_participation(document, stream, format=request.format)
             guard.check()

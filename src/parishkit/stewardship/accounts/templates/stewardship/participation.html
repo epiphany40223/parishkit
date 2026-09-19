@@ -1,0 +1,70 @@
+{% extends 'stewardship/base.html' %}{% load i18n static stewardship %}
+{% block title %}{% translate "Participation and campaign statistics" %}{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{% static 'stewardship/digest-v1.css' %}">
+<script src="{% static 'stewardship/digest-v1.js' %}" defer></script>
+<script src="{% static 'stewardship/report-v1.js' %}" defer></script>
+{% endblock %}
+{% block content %}
+<h1>{% translate "Participation and campaign statistics" %}</h1>
+<p>{{ campaign.active_configuration.name }}</p>
+<p>{% translate "Track first responses and pledges. Repeat submissions do not increase participation. Testing responses are excluded." %}</p>
+<p><a href="{{ picker_url }}">{% translate "Choose a retained campaign" %}</a></p>
+<form method="get" action="{% url 'admin:participation' campaign.pk %}" data-report-options>
+<label for="scope">{% translate "Chart population" %}</label>
+<select id="scope" name="scope"><option value="historical"{% if query.scope == 'historical' %} selected{% endif %}>{% translate "Historical as of day" %}</option><option value="current"{% if query.scope == 'current' %} selected{% endif %}>{% translate "Current population" %}</option></select>
+<label for="sort">{% translate "Daily table order" %}</label>
+<select id="sort" name="sort"><option value="date_asc"{% if query.sort == 'date_asc' %} selected{% endif %}>{% translate "Oldest date first" %}</option><option value="date_desc"{% if query.sort == 'date_desc' %} selected{% endif %}>{% translate "Newest date first" %}</option></select>
+<label for="timezone">{% translate "Report and export timezone" %}</label>
+<select id="timezone" name="timezone">{% for zone in timezones %}<option value="{{ zone }}"{% if zone == query.timezone %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
+<p class="help">{% translate "Campaign dates stay in the campaign timezone. Page timestamps use your browser timezone when JavaScript is available; UTC is shown otherwise." %}</p>
+<label><input type="checkbox" name="inactive" value="yes"{% if query.inactive %} checked{% endif %}> {% translate "Show a separate inactive subtotal for statistics only" %}</label>
+<button type="submit">{% translate "Apply report options" %}</button>
+</form>
+<section class="panel"><h2>{% translate "Current active population statistics" %}</h2>
+<p>{% translate "These cards use current eligibility and latest live answers. They can differ from the historical chart. Inactive subtotals do not change the active denominator." %}</p>
+{% if campaign.state == 'archived' %}<p class="notice">{% translate "Archived campaign: source information is retained from its last reconciled snapshot, not a successor campaign." %}</p>{% endif %}
+<dl><dt>{% translate "Observed at" %}</dt><dd><time datetime="{{ statistics.observed_at|date:'c' }}" data-local-instant>{{ statistics.observed_at|date:'c' }}</time></dd>
+<dt>{% translate "Source generation" %}</dt><dd>{% if statistics.source_generation %}{{ statistics.source_generation|number }}{% else %}{% translate "Unavailable" %}{% endif %}</dd>
+<dt>{% translate "Source as of" %}</dt><dd>{% if statistics.source_as_of %}<time datetime="{{ statistics.source_as_of|date:'c' }}" data-local-instant>{{ statistics.source_as_of|date:'c' }}</time>{% else %}{% translate "Unavailable" %}{% endif %}</dd>
+<dt>{% translate "Submission sequence cutoff" %}</dt><dd>{{ statistics.submission_watermark|number }}</dd>
+{% for label,value in cards %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
+{% if statistics.financial %}
+<p>{% translate "Upcoming pledge period:" %} {{ statistics.financial.upcoming.start|date:'Y-m-d' }} — {{ statistics.financial.upcoming.end|date:'Y-m-d' }}. {% translate "Fund DUIDs:" %} {% for fund in statistics.financial.upcoming.funds %}{{ fund|number }}{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
+<p>{% translate "Comparison period:" %} {{ statistics.financial.comparison.start|date:'Y-m-d' }} — {{ statistics.financial.comparison.end|date:'Y-m-d' }}. {% translate "Fund DUIDs:" %} {% for fund in statistics.financial.comparison.funds %}{{ fund|number }}{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
+<p>{% translate "Giving observed at:" %} {% if statistics.giving %}<time datetime="{{ statistics.giving.observed_at|date:'c' }}" data-local-instant>{{ statistics.giving.observed_at|date:'c' }}</time> ({% translate "through" %} {{ statistics.giving.through_date|date:'Y-m-d' }}){% else %}{% translate "Unavailable" %}{% endif %}</p>
+{% endif %}
+{% if query.inactive %}<h3>{% translate "Inactive subtotal — separate from active statistics" %}</h3><dl>{% for label,value in inactive_cards %}<dt>{{ label }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>{% endif %}
+</section>
+<section class="panel" data-digest-chart>
+<h2>{% translate "Daily participation" %} — {% if query.scope == 'historical' %}{% translate "Historical as of day" %}{% else %}{% translate "Current population" %}{% endif %}</h2>
+{% if selection.updating %}<p class="notice" role="status">{% translate "Updating — the latest complete report is shown below when available. Its source and submission cutoff may be older than the statistics above. Refresh this page to check progress." %}</p>{% endif %}
+{% if chart %}
+<dl><dt>{% translate "Chart source generation" %}</dt><dd>{{ chart.source_generation|number }}</dd>
+<dt>{% translate "Chart source as of" %}</dt><dd><time datetime="{{ chart.source_as_of|date:'c' }}" data-local-instant>{{ chart.source_as_of|date:'c' }}</time></dd>
+<dt>{% translate "Chart submission sequence cutoff" %}</dt><dd>{{ chart.submission_watermark|number }}</dd>
+<dt>{% translate "Campaign timezone" %}</dt><dd>{{ chart.campaign_timezone }}</dd></dl>
+{% if chart.days %}
+<img class="digest-chart" src="{{ chart_url }}" alt="{% translate 'Daily first submissions, cumulative participating Families, and annual pledges when enabled. Exact values are in the following table.' %}" width="1440" height="840">
+{{ chart_interaction|json_script:'digest-chart-data' }}
+<div data-digest-controls hidden><p>{% translate "Point to a date, tap it, or use the date slider to inspect exact values." %}</p><label for="digest-day">{% translate "Inspect campaign date" %}</label><input id="digest-day" type="range" min="0" max="{{ chart_last_index }}" value="{{ chart_last_index }}" step="1"><p data-digest-values role="status" aria-live="polite"></p></div>
+<div class="table-scroll"><table><caption>{{ chart.scope_label }} — {% translate "exact daily values" %}</caption><thead><tr>{% for heading in headings %}<th scope="col">{{ heading }}</th>{% endfor %}</tr></thead><tbody>{% for row in rows %}<tr>{% for value in row %}<td>{{ value }}</td>{% endfor %}</tr>{% empty %}<tr><td colspan="4">{% translate "No dates on this page. Select an earlier page." %}</td></tr>{% endfor %}</tbody></table></div>
+<nav aria-label="{% translate 'Daily table pages' %}">{% if previous_url %}<a href="{{ previous_url }}">{% translate "Previous page" %}</a>{% endif %} {% translate "Page" %} {{ query.page|number }} {% if next_url %}<a href="{{ next_url }}">{% translate "Next page" %}</a>{% endif %}</nav>
+{% else %}<p>{% translate "There are no campaign dates to display yet." %}</p>{% endif %}
+{% else %}<p>{% translate "Participation chart unavailable. No complete report is ready for this population yet; no zero values have been assumed." %}</p>{% endif %}
+</section>
+<section class="panel"><h2>{% translate "Export participation" %}</h2>
+{% if not export_allowed %}<p class="notice">{% translate "New exports are unavailable while campaign work is gated, including purge preparation. Existing completed exports may still be downloaded while read access remains open." %}</p>{% endif %}
+{% if chart %}
+<p>{% translate "Export all daily rows from the exact chart shown above, not just this page. Statistics cards and their inactive subtotal are not part of this participation export." %}</p>
+<p>{{ chart.scope_label }}; {{ row_count|number }} {% translate "daily rows; dates ascending; timezone:" %} {{ query.timezone }}.</p>
+<p class="notice">{% translate "Sensitive parish report: download only to a trusted device and share only with authorized recipients." %}</p>
+<form method="post" action="{% url 'admin:report_export_create' campaign.pk %}">{% csrf_token %}
+<input type="hidden" name="fact_set_id" value="{{ chart.fact_set_id }}"><input type="hidden" name="browser_timezone" value="{{ query.timezone }}"><input type="hidden" name="request_key" value="{{ export_key }}">
+<label for="export-format">{% translate "Export format" %}</label><select id="export-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="png">PNG</option><option value="pdf">PDF</option></select>
+<button type="submit"{% if not export_allowed %} disabled{% endif %}>{% translate "Generate export" %}</button></form>
+{% else %}<p>{% translate "Exports of the displayed chart become available when a complete generation is ready." %}</p>{% endif %}
+<h3>{% translate "Your recent exports for this campaign" %}</h3>
+<ul>{% for job in recent_exports %}<li><a href="{% url 'admin:report_export' job.pk %}">{{ job.format|upper }} — <time datetime="{{ job.created_at|date:'c' }}" data-local-instant>{{ job.created_at|date:'c' }}</time></a></li>{% empty %}<li>{% translate "No exports requested yet." %}</li>{% endfor %}</ul>
+</section>
+{% endblock %}

@@ -1,0 +1,22 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Participation export" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Participation export" %}</h1>
+<dl><dt>{% translate "Status" %}</dt><dd><span role="status">{{ status.state }}</span></dd>
+<dt>{% translate "Format" %}</dt><dd>{{ job.format|upper }}</dd>
+<dt>{% translate "Requester reference" %}</dt><dd>{{ job.requester_id }}</dd>
+<dt>{% translate "Population" %}</dt><dd>{% if job.parameters.population_scope == 'historical' %}{% translate "Historical as of day" %}{% else %}{% translate "Current population" %}{% endif %}</dd>
+<dt>{% translate "Source generation" %}</dt><dd>{{ job.fact_set.source_generation|number }}</dd>
+<dt>{% translate "Submission sequence cutoff" %}</dt><dd>{{ job.fact_set.submission_watermark|number }}</dd>
+<dt>{% translate "Requested at" %}</dt><dd><time datetime="{{ job.created_at|date:'c' }}" data-local-instant>{{ job.created_at|date:'c' }}</time></dd>
+<dt>{% translate "Export timezone" %}</dt><dd>{{ job.browser_timezone }}</dd>
+{% if status.expires_at %}<dt>{% translate "File expires at" %}</dt><dd><time datetime="{{ status.expires_at }}" data-local-instant>{{ status.expires_at }}</time></dd>{% endif %}</dl>
+<p>{% translate "This export retains its exact inputs and original request time across retries. Refreshing status does not extend your login session." %}</p>
+<p><a href="{% url 'admin:report_export' job.pk %}">{% translate "Refresh status" %}</a></p>
+{% if not mutable %}<p class="notice">{% translate "Campaign work is gated. New exports, cancellation and retry are unavailable; authorized completed downloads remain available while read access stays open." %}</p>{% endif %}
+{% if status.state == 'ready' %}<form method="post" action="{% url 'admin:report_export_download' job.pk %}">{% csrf_token %}<button type="submit">{% translate "Download export" %}</button></form>{% endif %}
+{% if can_cancel %}<form method="post" action="{% url 'admin:report_export_cancel' job.pk %}">{% csrf_token %}<button type="submit"{% if not mutable %} disabled{% endif %}>{% translate "Cancel export" %}</button></form>{% endif %}
+{% if status.state == 'failed' %}<form method="post" action="{% url 'admin:report_export_retry' job.pk %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ retry_key }}"><button type="submit"{% if not mutable %} disabled{% endif %}>{% translate "Retry export" %}</button></form>{% endif %}
+{% if status.state == 'expired' %}<p>{% translate "The generated file has expired. Its request metadata remains. Return to the report to request another export." %}</p>{% endif %}
+<p><a href="{{ report_url }}">{% translate "Return to this campaign report" %}</a></p>
+{% endblock %}

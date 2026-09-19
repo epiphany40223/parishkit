@@ -1,0 +1,7 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Campaign reports" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Campaign reports" %}</h1>
+<p>{% translate "No retained campaign is currently available for reporting." %}</p>
+<p><a href="{% url 'admin:index' %}">{% translate "Return to the administration portal" %}</a></p>
+{% endblock %}

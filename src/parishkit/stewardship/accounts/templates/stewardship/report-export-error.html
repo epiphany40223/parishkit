@@ -1,0 +1,8 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Export action unavailable" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Export action unavailable" %}</h1>
+{% if busy %}<p role="status">{% translate "Downloads are temporarily busy. Your generated export has not been discarded. Return to its status page and retry in a few seconds." %}</p>{% elif temporary %}<p role="status">{% translate "Export processing is temporarily unavailable. Your access has not been denied. Return to the report or status page and retry in a few seconds." %}</p>{% else %}<p role="alert">{% translate "The export request could not be completed. Reload its status or report before trying again." %}</p>{% endif %}
+{% if request_id %}<p><a href="{% url 'admin:report_export' request_id %}">{% translate "Return to export status" %}</a></p>{% endif %}
+{% if campaign_id %}<p><a href="{% url 'admin:participation' campaign_id %}">{% translate "Return to campaign report" %}</a></p>{% endif %}
+{% endblock %}

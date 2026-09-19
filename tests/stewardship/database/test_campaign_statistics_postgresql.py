@@ -312,12 +312,14 @@ def test_configured_campaign_without_source_is_unavailable(tmp_path):
 
 def test_archived_financial_observation_does_not_follow_a_new_global_source(
     response_service,
+    google,
 ):
     """Archived cards use their own retained giving window, not a successor's."""
     from parishkit.stewardship.campaigns.lifecycle import Action
     from parishkit.stewardship.campaigns.work_locks import work_transaction
     from parishkit.stewardship.jobs.models import TaskRun
     from parishkit.stewardship.jobs.storage import _status
+    from parishkit.stewardship.reports.selection import current_inputs
     from parishkit.stewardship.source.leases import release_source
     from parishkit.stewardship.source.snapshots import promote_snapshot
 
@@ -342,6 +344,22 @@ def test_archived_financial_observation_does_not_follow_a_new_global_source(
         finally:
             release_source(claim)
         result = calculate_statistics(capture_statistics(harness.campaign.pk))
+        for scope in ("historical", "current"):
+            inputs, _ = current_inputs(harness.campaign.pk, scope)
+            assert inputs.source_id == retained.pk
+        from .auth_builders import signed_in
+        from .test_report_workspace_postgresql import read
+
+        browser, _ = signed_in()
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            response, body = read(
+                browser, f"/admin/reports/{harness.campaign.pk}/participation/"
+            )
+            assert response.status_code == 200
+            assert b"Archived campaign" in body and b"$1,200.00" in body
+            response, picker = read(browser, "/admin/reports/campaigns/")
+            assert response.status_code == 200
+            assert str(harness.campaign.pk).encode() in picker
     assert result.source_id == retained.pk
     assert result.active.comparison_pledge.canonical == "1200.00"
     assert result.giving is not None

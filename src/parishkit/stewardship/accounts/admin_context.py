@@ -41,6 +41,8 @@ def portal_chrome(request):
     admin = allows(actor, Capability.CONFIGURE)
     campaign = configuration.current_campaign
     navigation = [(reverse("admin:index"), _("Home"))]
+    if allows(actor, Capability.CAMPAIGN_REPORT):
+        navigation.append((reverse("admin:reports"), _("Campaign reports")))
     if admin:
         navigation.extend(
             [

@@ -39,7 +39,7 @@ class ExportRequest(ImmutableRecord):
                 condition=models.Q(report="participation"), name="export_report_known"
             ),
             models.CheckConstraint(
-                condition=models.Q(format__in=("csv", "png", "pdf")),
+                condition=models.Q(format__in=("csv", "png", "pdf", "xlsx")),
                 name="export_format_known",
             ),
         ]

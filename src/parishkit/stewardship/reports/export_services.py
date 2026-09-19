@@ -84,7 +84,7 @@ def create_export(
         for value in (user_id, campaign_id, fact_set_id, request_key)
     ):
         raise ValueError("Export identities must be canonical UUIDs.")
-    if type(format) is not str or format not in {"csv", "png", "pdf"}:
+    if type(format) is not str or format not in {"csv", "png", "pdf", "xlsx"}:
         raise ValueError("Unsupported participation export format.")
     if type(browser_timezone) is not str or browser_timezone not in timezone_names():
         raise ValueError("Export timezone must be an IANA name.")
