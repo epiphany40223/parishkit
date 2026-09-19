@@ -96,11 +96,12 @@ def create_export(
         ).first()
         if previous is not None:
             if (
+                previous.report,
                 previous.campaign_id,
                 previous.fact_set_id,
                 previous.format,
                 previous.browser_timezone,
-            ) != (campaign_id, fact_set_id, format, browser_timezone):
+            ) != ("participation", campaign_id, fact_set_id, format, browser_timezone):
                 raise ValueError("Export request identity is already bound.")
             return previous
         facts = (
@@ -193,6 +194,21 @@ def regenerate_export(store, user_id, request_id, *, request_key):
         publication = ExportPublication.objects.filter(request=original).first()
         if publication is None or publication.expires_at > database_now():
             raise ExportConflict("Only expired exports can be regenerated.")
+        if original.report == "additional_information":
+            from .information import InformationQuery
+            from .information_exports import create_information_export
+
+            return create_information_export(
+                store,
+                user_id,
+                campaign_id=original.campaign_id,
+                query=InformationQuery.parse(original.parameters["filters"]),
+                history=original.parameters["history"],
+                format=original.format,
+                browser_timezone=original.browser_timezone,
+                request_key=request_key,
+                snapshot=original.information_snapshot,
+            )
         return create_export(
             store,
             user_id,

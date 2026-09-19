@@ -113,7 +113,7 @@ Scope and dependencies: [RPT-04 work package](../../plans/stewardship/reports.md
 - [x] RPT-04.01 — Build searchable information queues and history.
 - [x] RPT-04.02 — Integrate concurrent-safe follow-up and notes editing.
 - [x] RPT-04.03 — Expose corrections to previously digested information.
-- [ ] RPT-04.04 — Export complete text and optional workflow history.
+- [x] RPT-04.04 — Export complete text and optional workflow history.
 - [x] RPT-04.05 — Test withdrawal, corrections, authorization, and digest parity.
 
 In-progress evidence: the [Staff follow-up increment](../../guides/stewardship-additional-followup.md)
@@ -123,6 +123,17 @@ validation and three completed dual-source review/fix rounds. Protected
 delivery remains open in PR #66. Complete-text and
 optional-history exports remain .04's next coherent increment; full package
 acceptance is not claimed.
+
+PR #66's [protected delivery](../../guides/stewardship-additional-followup.md#protected-delivery)
+now supersedes the pending note. The [complete-text/history export increment](../../guides/stewardship-information-exports.md)
+starts on refreshed main `6a636680`; .04 remains unchecked while implementation,
+validation and review are in progress.
+
+That in-progress checkpoint is superseded: .04 implementation and focused
+acceptance now pass, with [three completed dual-source review/fix rounds](../../guides/stewardship-information-export-reviews.md).
+All five accepted Medium findings are fixed; the final round has no Medium-or-
+higher findings. PR #67 still requires full exact-head CI/DCO and protected
+delivery before starting RPT-05 on fresh main. No integrated gate is released.
 
 ## RPT-05: Family code and postal-outreach reports
 

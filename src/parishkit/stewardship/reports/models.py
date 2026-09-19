@@ -353,6 +353,7 @@ from .export_models import (  # noqa: E402,F401
     ExportDownloadUse,
     ExportPublication,
     ExportRequest,
+    InformationExportSnapshot,
 )
 from .verification_models import (  # noqa: E402,F401
     FactVerificationRequest,
