@@ -44,6 +44,7 @@ def test_confirmation_and_progress_are_accessible(
         "/production-withdrawal",
         "/production-confirmation",
         "/production-progress",
+        "/production-scheduled",
     ):
         page.goto(component_origin + path)
         assert page.evaluate(
@@ -56,6 +57,9 @@ def test_confirmation_and_progress_are_accessible(
         })).violations.map(({id,impact}) => ({id,impact}))""")
             == []
         )
+    assert page.get_by_role("link", name="Withdraw from Production").is_visible()
+    page.goto(component_origin + "/production-progress")
+    assert page.get_by_role("link", name="Withdraw from Production").count() == 0
     assert page.get_by_role("heading", name="Campaign active", exact=True).is_visible()
     assert page.get_by_role(
         "heading", name="Preparing initial campaign mail"

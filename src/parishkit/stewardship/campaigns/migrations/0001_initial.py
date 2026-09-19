@@ -446,6 +446,10 @@ class Migration(migrations.Migration):
                             models.PositiveBigIntegerField(db_default=0, default=0),
                         ),
                         (
+                            "production_cycle",
+                            models.PositiveBigIntegerField(db_default=0, default=0),
+                        ),
+                        (
                             "resumed_at",
                             parishkit.stewardship.storage.UTCDateTimeField(null=True),
                         ),
@@ -2160,6 +2164,10 @@ class Migration(migrations.Migration):
                             "recovery_generation",
                             models.PositiveBigIntegerField(default=0, db_default=0),
                         ),
+                        (
+                            "production_cycle",
+                            models.PositiveBigIntegerField(db_default=0, default=0),
+                        ),
                         ("outbox_id", models.UUIDField(null=True)),
                         ("worker_id", models.UUIDField(null=True)),
                         ("fence", models.PositiveBigIntegerField(default=0)),
@@ -3331,6 +3339,7 @@ class Migration(migrations.Migration):
                             "target",
                             "slot",
                             "recovery_generation",
+                            "production_cycle",
                         ),
                         name="schedule_occurrence_semantic_revision",
                     ),

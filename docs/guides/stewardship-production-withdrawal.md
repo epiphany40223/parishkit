@@ -99,3 +99,62 @@ no existing container, volume or retained database was deleted or reset.
   test login; fixing fixture lifetime did not change runtime admission.
 - Three dual-source review/fix rounds and exact-head CI remain required before
   delivery. Formal task completion is not claimed yet.
+
+## Review round 1 corrections
+
+Full-PR review `6bc3238` → `609baf7`, Pika session
+`20260919-020238-094f54`, completed both Claude and Codex without degradation.
+Claude reported one Medium and five Lows; Codex approved with no findings.
+There were no High/Critical findings. The validated Medium is accepted:
+retained cancelled occurrences previously suppressed a later activation using
+the same schedule revision.
+
+The correction adds the [Production execution cycle](../specs/stewardship/data/spec.md#schedule-revisions-and-fulfillment)
+to occurrence identity, independently of semantic fulfillment and deliverability
+recovery. Only an evidenced withdrawal advances it. Allocation, readiness,
+catch-up, ordinary Family/digest planning and SQL recovery keys use that cycle;
+old work cannot gain dispatch permission. A persistent digest producer also
+resets its cursor for the new cycle. The repeated-go-live test now retains
+cancelled Family, daily and weekly occurrences before completing a new actual
+test/cleanup/preparation/confirmation cycle and planning replacement work.
+
+Low dispositions:
+
+- Fixed the missing progress entry-link coverage: actual eligible HTTP context,
+  withdrawn rejection and scheduled/active browser components including WCAG.
+- Removed the redundant private inventory wrapper; the already privileged
+  guard reads the count-only view directly.
+- Retained correlated occurrence/outbox events as cancellation outcome evidence.
+  The receipt binds the pre-inventory; duplicating those durable effects into
+  a second aggregate journal would add redundant state, not missing provenance.
+- Retained the short passive work-order lock for a coherent current runtime and
+  receipt projection, consistent with adjacent configuration/progress owners.
+  No long-running provider or worker action occurs in the page transaction.
+- Additional enabled Staff/Minister and second-Admin permutations are a Low
+  coverage follow-up for the integrated Gate 3 authorization matrix. The shared
+  current-Admin capability guard, signed actor binding, independent SQL Admin/
+  session check, arbitrary-actor negative and revoked-authority replay tests
+  remain mandatory and are not relaxed.
+
+Initial CI's build failure was the omitted withdrawal SQL Docker allowlist entry.
+Both build contexts now include it. Eleven PostgreSQL shards and all three
+browser engines passed on the initial head; the remaining shard caught that
+same packaging omission. These results do not substitute for corrected-head CI.
+
+Correction catalogs `/tmp/parishkit-withdrawal-cycle-before.json` (verified
+`609baf7`) and `/tmp/parishkit-withdrawal-cycle-after-z.json` add two columns and
+four constraints, extend one unique constraint/index, change eight named guard/
+effect functions and remove only the redundant inventory wrapper. Relations,
+triggers, policies and other objects/ACLs are unchanged. The reviewed strict
+fixture has 189 relations, 2,171 columns, 3,102 constraints, 925 indexes,
+532 functions, 518 triggers and 28 policies. Worker boundary grants include the
+new column because their shared transition effect preserves it; SQL requires
+exact withdrawal evidence for any advance. No retained database is upgraded.
+
+Post-correction validation: 86 browser/build/grant/identity tests passed in
+17.14 seconds; 34 digest-planning/recovery/schema checks passed in 61.32 seconds
+alongside a repeated-cycle fixture failure (superseded content version lookup).
+The fixture now selects current content and installs valid digest templates.
+The complete retained-work/new-cycle regression passed in 28.24 seconds.
+Fresh schema/model equivalence, lint, formatting and migration-state checks
+passed. Round 1 is complete; subsequent correction rounds remain required.

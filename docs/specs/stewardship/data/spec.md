@@ -276,6 +276,14 @@ The occurrence key is unique. That database constraint, rather than scheduler
 timing alone, makes insertion/recovery idempotent and prevents two revisions or
 workers from creating the same revision-specific work.
 
+Production occurrence identity also includes a campaign execution cycle. A
+successful pre-start withdrawal advances that cycle atomically; reactivation
+can allocate fresh work even if the schedule revision is unchanged. Retired
+occurrences and delivery history remain immutable and cannot be retried into
+the new cycle. Testing uses cycle zero. This execution identity is separate
+from deliverability-recovery generations and from semantic fulfillment below:
+withdrawal never makes an already covered semantic slot deliverable again.
+
 `ScheduleFulfillment` records that a semantic slot is covered independently of
 revision. Its disposition is `delivered`, `coalesced`, or `empty`. An `empty`
 daily-digest row requires an audited successful occurrence whose entire original

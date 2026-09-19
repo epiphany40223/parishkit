@@ -62,6 +62,7 @@ def _excluded(row):
 def discover_dates(claim):
     """Materialize at most 100 dates, retaining the cursor even for skipped days."""
     row, scope = _bound(claim, "dates")
+    cycle = scope.campaign.production_cycle if row.mode == "production" else 0
     definition = ScheduleDefinition.objects.select_related("current_revision").get(
         pk=row.definition_id
     )
@@ -94,6 +95,7 @@ def discover_dates(claim):
             mode=row.mode,
             target="admins",
             slot__in=keys,
+            production_cycle=cycle,
         ).values_list("slot", flat=True)
     )
     for slot in page.slots:
@@ -104,12 +106,13 @@ def discover_dates(claim):
             definition=definition,
             revision_id=row.revision_id,
             mode=row.mode,
+            production_cycle=cycle,
             routing="production" if row.mode == "production" else "testing_override",
             target="admins",
             slot=slot.key,
             due_at=slot.due_at,
             occurrence_key=occurrence_key(
-                row.revision_id, row.mode, "admins", slot.key
+                row.revision_id, row.mode, "admins", slot.key, production_cycle=cycle
             ),
             pause_version=scope.campaign.pause_version
             if row.mode == "production" and scope.campaign.delivery_paused
@@ -133,6 +136,7 @@ def cover_dates(claim):
     including messages awaiting provider acknowledgement or explicit recovery.
     """
     row, scope = _bound(claim, "cover")
+    cycle = scope.campaign.production_cycle if row.mode == "production" else 0
     correlation = claim_event(claim)
     owned = WeeklyDigestPreparation.objects.exclude(pk=row.pk).filter(
         occurrence_id__isnull=False
@@ -143,6 +147,7 @@ def cover_dates(claim):
             mode=row.mode,
             target="admins",
             state="pending",
+            production_cycle=cycle,
             task_id__isnull=True,
             outbox_id__isnull=True,
             due_at__lte=row.cutoff,
@@ -169,11 +174,14 @@ def cover_dates(claim):
             definition_id=row.definition_id,
             revision_id=row.revision_id,
             mode=row.mode,
+            production_cycle=cycle,
             routing="production" if row.mode == "production" else "testing_override",
             target="admins",
             slot=slot,
             due_at=previous_aggregates[0][1],
-            occurrence_key=occurrence_key(row.revision_id, row.mode, "admins", slot),
+            occurrence_key=occurrence_key(
+                row.revision_id, row.mode, "admins", slot, production_cycle=cycle
+            ),
             pause_version=scope.campaign.pause_version
             if row.mode == "production" and scope.campaign.delivery_paused
             else None,

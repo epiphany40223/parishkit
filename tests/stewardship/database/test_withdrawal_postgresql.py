@@ -5,7 +5,7 @@
 from datetime import datetime, timedelta
 from time import time
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from django.core import signing
@@ -93,6 +93,9 @@ def test_withdrawal_http_is_exact_atomic_and_preserves_cleanup(scheduled, monkey
     campaign = item.campaign
     revision = campaign.readiness_revision
     with web_login():
+        progress = item.browser.get(f"/admin/campaign/{campaign.pk}/production")
+        assert progress.status_code == 200
+        assert progress.context["withdrawal_available"]
         page = item.browser.get(item.path)
         assert page.status_code == 200, page.content
         assert page.context["available"] and page.context["fresh"]
@@ -143,6 +146,10 @@ def test_withdrawal_http_is_exact_atomic_and_preserves_cleanup(scheduled, monkey
         result = item.browser.get(item.path)
         assert b"Withdrawal completed" in result.content
         assert not result.context["available"]
+        assert (
+            item.browser.get(f"/admin/campaign/{campaign.pk}/production").status_code
+            == 403
+        )
         # Old signed activation intent cannot reactivate the withdrawn campaign.
         replay = confirm(
             *item.activation_arguments, token=item.activation_token, typed="Production"
@@ -270,19 +277,44 @@ def test_next_go_live_requires_new_test_cleanup_links_and_confirmation(
     from parishkit.stewardship.campaigns.confirmation_models import (
         ProductionConfirmation,
     )
+    from parishkit.stewardship.campaigns.digest_schedule_planning import (
+        DigestScheduleProducer,
+    )
+    from parishkit.stewardship.campaigns.family_schedule_planning import plan_family
     from parishkit.stewardship.campaigns.production_models import (
         ProductionTransitionRequest,
     )
+    from parishkit.stewardship.campaigns.schedule_models import ScheduleOccurrence
     from parishkit.stewardship.deployment import ServiceRole
     from parishkit.stewardship.jobs.dispatch import execute_hint
     from parishkit.stewardship.jobs.queues import WorkQueue
+    from parishkit.stewardship.jobs.scheduler import scheduler_session
 
     from .test_background_grants_postgresql import task_login
     from .test_campaign_mail_postgresql import deliver
     from .test_cleanup_tasks_postgresql import run
+    from .test_daily_digest_fanout_postgresql import configure_content as daily_content
+    from .test_digest_schedule_planning_postgresql import add_digest
+    from .test_weekly_fanout_postgresql import configure_content as weekly_content
+    from .test_withdrawal_work_postgresql import future_message
 
     item = scheduled
     login, service, campaign_id = item.arguments
+    for weekly in (False, True):
+        add_digest(service.store, item.campaign, weekly=weekly)
+    harness = SimpleNamespace(service=service, campaign=item.campaign)
+    daily_content(harness)
+    weekly_content(harness)
+    previous, _ = future_message(item)
+    cutoff = item.campaign.active_configuration.starts_at + timedelta(days=9)
+    producer = DigestScheduleProducer(uuid4())
+    with (
+        campaign_clock(cutoff),
+        task_login(ServiceRole.SCHEDULER, exact=True, reconnect=True),
+        scheduler_session() as guard,
+    ):
+        first_reports = producer(guard) + producer(guard)
+        assert all(report.created for report in first_reports)
     with web_login():
         _, token = commands.preview(
             *item.arguments, reason="Revise before opening", acknowledged=True
@@ -292,7 +324,9 @@ def test_next_go_live_requires_new_test_cleanup_links_and_confirmation(
         assert "family_test_mail_required" in state.problems
         _, _, old_evidence = go_live_commands.verify_preview(*item.arguments)
         assert old_evidence is None
-        template = ContentVersion.objects.get(slot="initial")
+        template = ContentVersion.objects.get(
+            slot="initial", configuration_id=service.store.active().version_id
+        )
         preview = campaign_mail.prepare(login, service, campaign_id, template.record_id)
         campaign_mail.request_sample(
             login,
@@ -347,3 +381,49 @@ def test_next_go_live_requires_new_test_cleanup_links_and_confirmation(
     assert item.campaign.state == "scheduled"
     assert item.campaign.active_token_generation_id == second.generation_id
     assert SystemConfiguration.objects.get().mode == "production"
+    previous.refresh_from_db()
+    assert previous.state == "skipped" and previous.reason == "production_withdrawn"
+    assert previous.production_cycle == 0
+    assert item.campaign.production_cycle == 1
+    with (
+        campaign_clock(previous.due_at),
+        task_login(ServiceRole.SCHEDULER, exact=True, reconnect=True),
+        scheduler_session() as guard,
+    ):
+        result = plan_family(
+            guard,
+            family_id=UUID(previous.target.removeprefix("family:")),
+            worker_id=uuid4(),
+        )
+        assert result.created == 1
+    replacement = ScheduleOccurrence.objects.get(
+        revision_id=previous.revision_id,
+        target=previous.target,
+        production_cycle=1,
+    )
+    assert replacement.state == "pending"
+    assert replacement.occurrence_key != previous.occurrence_key
+    assert replacement.slot == previous.slot
+    with (
+        campaign_clock(cutoff),
+        task_login(ServiceRole.SCHEDULER, exact=True, reconnect=True),
+        scheduler_session() as guard,
+    ):
+        # Reuse the same long-lived producer, not just a clean process cursor.
+        next_reports = producer(guard) + producer(guard)
+        assert [report.created for report in next_reports] == [
+            report.created for report in first_reports
+        ]
+    assert (
+        ScheduleOccurrence.objects.filter(
+            definition__kind__in=("daily_digest", "weekly_digest"),
+            production_cycle=0,
+        )
+        .exclude(state="skipped", reason="production_withdrawn")
+        .count()
+        == 0
+    )
+    assert ScheduleOccurrence.objects.filter(
+        definition__kind__in=("daily_digest", "weekly_digest"),
+        production_cycle=1,
+    ).count() == sum(report.created for report in first_reports)

@@ -147,6 +147,11 @@ def disposition(message, *, check_recipient=False):
         return "scope_replaced"
     scope = _scope(message.campaign_id)
     if (
+        message.mode == "production"
+        and occurrence.production_cycle != scope.campaign.production_cycle
+    ):
+        return "scope_replaced"
+    if (
         scope.instant >= scope.campaign.active_configuration.ends_at
         or scope.campaign.state in {"closed", "archived"}
     ):

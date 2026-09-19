@@ -115,7 +115,10 @@ def _candidates(campaign, definition, cutoff, bind):
         existing = {}
         for row in (
             ScheduleOccurrence.objects.filter(
-                **common, revision_id=definition.current_revision_id, slot__in=keys
+                **common,
+                revision_id=definition.current_revision_id,
+                slot__in=keys,
+                production_cycle=campaign.production_cycle,
             )
             .order_by("slot", "-recovery_generation")
             .distinct("slot")

@@ -280,6 +280,7 @@ def test_background_grants_keep_initial_completion_separate_from_general_authori
             "ever_active",
             "active_token_generation_id",
             "readiness_revision",
+            "production_cycle",
             "version",
             "actor_id",
             "correlation_id",

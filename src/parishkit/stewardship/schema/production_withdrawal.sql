@@ -1,6 +1,12 @@
 -- Current metadata only. The preview exposes counts and an opaque fingerprint,
 -- never recipients or message bodies. Work-order serialization makes the same
 -- snapshot authoritative during confirmation; every change advances a version.
+-- These are part of the fresh installation, not an upgrade of retained DBs.
+ALTER TABLE public.stewardship_campaign ADD COLUMN production_cycle bigint DEFAULT 0 NOT NULL CHECK(production_cycle>=0);
+ALTER TABLE public.stewardship_schedule_occurrence ADD COLUMN production_cycle bigint DEFAULT 0 NOT NULL CHECK(production_cycle>=0);
+ALTER TABLE public.stewardship_schedule_occurrence DROP CONSTRAINT schedule_occurrence_semantic_revision;
+ALTER TABLE public.stewardship_schedule_occurrence ADD CONSTRAINT schedule_occurrence_semantic_revision
+    UNIQUE(revision_id,mode,target,slot,recovery_generation,production_cycle);
 CREATE VIEW public.stewardship_withdrawal_inventory AS
     WITH scope AS (
         SELECT current_campaign_id AS campaign_id FROM public.stewardship_system_configuration
@@ -52,12 +58,6 @@ CREATE VIEW public.stewardship_withdrawal_inventory AS
         ) AS value
     ) SELECT scope.campaign_id,totals.value AS inventory FROM scope CROSS JOIN totals;
 REVOKE ALL ON public.stewardship_withdrawal_inventory FROM PUBLIC;
-CREATE FUNCTION public.stewardship_withdrawal_inventory_v1(campaign uuid)
-RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path TO pg_catalog,public,pg_temp AS $$
-    SELECT inventory FROM public.stewardship_withdrawal_inventory WHERE campaign_id=$1
-$$;
-REVOKE ALL ON FUNCTION public.stewardship_withdrawal_inventory_v1(uuid) FROM PUBLIC;
 
 CREATE TABLE public.stewardship_production_withdrawal (
     id uuid NOT NULL PRIMARY KEY,
@@ -128,7 +128,7 @@ BEGIN
        OR btrim(NEW.reason)='' OR NOT NEW.cleanup_acknowledged THEN
         RAISE EXCEPTION 'Withdrawal is no longer admitted' USING ERRCODE='23514';
     END IF;
-    current_inventory:=public.stewardship_withdrawal_inventory_v1(campaign.id);
+    SELECT inventory INTO current_inventory FROM public.stewardship_withdrawal_inventory WHERE campaign_id=campaign.id;
     IF NEW.inventory IS DISTINCT FROM current_inventory OR (current_inventory->>'blocking')::bigint<>0 THEN
         RAISE EXCEPTION 'Withdrawal work changed or remains uncertain' USING ERRCODE='23514';
     END IF;

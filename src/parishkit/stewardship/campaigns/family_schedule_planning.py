@@ -198,6 +198,7 @@ def plan_family(guard, *, family_id, worker_id):
                 family_id, held=True, reason="initial_unfulfilled"
             )
         rows, created = [], 0
+        cycle = scope.campaign.production_cycle if mode == "production" else 0
         existing = {
             row.revision_id: row
             for row in ScheduleOccurrence.objects.filter(
@@ -205,6 +206,7 @@ def plan_family(guard, *, family_id, worker_id):
                 mode=mode,
                 target=target,
                 slot="once",
+                production_cycle=cycle,
             )
             .order_by("revision_id", "-recovery_generation")
             .distinct("revision_id")
@@ -228,7 +230,9 @@ def plan_family(guard, *, family_id, worker_id):
                 raise StorageInvariantError(
                     "Schedule revision has inconsistent due time."
                 )
-            key = occurrence_key(revision.pk, mode, target, due.key)
+            key = occurrence_key(
+                revision.pk, mode, target, due.key, production_cycle=cycle
+            )
             row = existing.get(revision.pk)
             if row is None and (catchup or (eligible and not responded)):
                 row = ScheduleOccurrence.objects.create(
@@ -242,6 +246,7 @@ def plan_family(guard, *, family_id, worker_id):
                     slot=due.key,
                     due_at=due.due_at,
                     occurrence_key=key,
+                    production_cycle=cycle,
                     pause_version=scope.campaign.pause_version
                     if scope.campaign.delivery_paused and mode == "production"
                     else None,

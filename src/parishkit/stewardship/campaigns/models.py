@@ -72,6 +72,7 @@ class Campaign(MutableRecord):
     resumed_at = UTCDateTimeField(null=True)
     active_token_generation_id = models.UUIDField(null=True)
     readiness_revision = models.PositiveBigIntegerField(default=0, db_default=0)
+    production_cycle = models.PositiveBigIntegerField(default=0, db_default=0)
 
     class Meta(MutableRecord.Meta):
         db_table = "stewardship_campaign"

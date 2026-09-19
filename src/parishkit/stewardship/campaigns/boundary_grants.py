@@ -18,6 +18,7 @@ def add_boundary_grants(tables, columns, *, worker):
             "ever_active",
             "active_token_generation_id",
             "readiness_revision",
+            "production_cycle",
             "version",
             "actor_id",
             "correlation_id",

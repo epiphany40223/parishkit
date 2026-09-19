@@ -131,6 +131,16 @@ def components(context, admin):
                 production,
             ),
             (
+                "/production-scheduled",
+                "stewardship/production-progress.html",
+                production
+                | {
+                    "campaign": Value(**(vars(campaign) | {"state": "scheduled"})),
+                    "demand": None,
+                    "withdrawal_available": True,
+                },
+            ),
+            (
                 "/production-withdrawal",
                 "stewardship/production-withdrawal.html",
                 {

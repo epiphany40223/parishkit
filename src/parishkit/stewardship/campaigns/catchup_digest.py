@@ -39,8 +39,13 @@ def _new_occurrence(claim, correlation, scope, definition, slot, due):
         target="admins",
         slot=slot,
         due_at=due,
+        production_cycle=scope.campaign.production_cycle,
         occurrence_key=occurrence_key(
-            definition.current_revision_id, "production", "admins", slot
+            definition.current_revision_id,
+            "production",
+            "admins",
+            slot,
+            production_cycle=scope.campaign.production_cycle,
         ),
         pause_version=scope.campaign.pause_version
         if scope.campaign.delivery_paused
@@ -116,6 +121,7 @@ def prepare_digest(demand, claim, scope, definition, cursor):
                 mode="production",
                 target="admins",
                 slot__in=slots,
+                production_cycle=scope.campaign.production_cycle,
             ).values_list("slot", flat=True)
         )
         excluded |= existing
@@ -149,6 +155,7 @@ def prepare_digest(demand, claim, scope, definition, cursor):
             mode="production",
             target="admins",
             due_at__lte=demand.cutoff,
+            production_cycle=scope.campaign.production_cycle,
         )
         .exclude(slot__startswith="recovery:")
         .exclude(_excluded(definition))
@@ -197,6 +204,7 @@ def prepare_digest(demand, claim, scope, definition, cursor):
         mode="production",
         target="admins",
         slot=recovery_slot,
+        production_cycle=scope.campaign.production_cycle,
     ).first()
     created = 0
     if selected is None and (choice == "aggregate" or previous):

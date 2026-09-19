@@ -30,7 +30,9 @@ def _identifiers(*required, optional=()):
         raise TypeError("Occurrence identifiers must be canonical UUIDs.")
 
 
-def occurrence_key(revision_id, mode, target, slot, *, recovery_generation=0):
+def occurrence_key(
+    revision_id, mode, target, slot, *, recovery_generation=0, production_cycle=0
+):
     """Hash an unambiguous revision-specific identity; no private values in errors."""
     if not isinstance(revision_id, UUID) or mode not in {"testing", "production"}:
         raise ValueError("Invalid occurrence revision or mode.")
@@ -41,9 +43,17 @@ def occurrence_key(revision_id, mode, target, slot, *, recovery_generation=0):
         raise ValueError("Invalid semantic occurrence identity.")
     if type(recovery_generation) is not int or not 0 <= recovery_generation < 2**63:
         raise ValueError("Invalid deliverability recovery generation.")
+    if (
+        type(production_cycle) is not int
+        or not 0 <= production_cycle < 2**63
+        or (mode == "testing" and production_cycle)
+    ):
+        raise ValueError("Invalid Production execution cycle.")
     identity = [str(revision_id), mode, target, slot]
     if recovery_generation:
         identity.append(recovery_generation)
+    if production_cycle:
+        identity.append(["production_cycle", production_cycle])
     return hashlib.sha256(
         json.dumps(
             identity,
@@ -69,7 +79,6 @@ def create_occurrence(
     if not callable(admit):
         raise TypeError("Occurrence admission callback is required.")
     _identifiers(definition_id, revision_id, actor_id, correlation_id)
-    key = occurrence_key(revision_id, mode, target, slot)
     definition = ScheduleDefinition.objects.get(pk=definition_id)
     with campaign_transaction(
         definition.campaign_id, correlation_id=correlation_id
@@ -78,6 +87,8 @@ def create_occurrence(
             pk=definition_id
         )
         admit("create_occurrence", campaign, runtime, definition)
+        cycle = campaign.production_cycle if mode == "production" else 0
+        key = occurrence_key(revision_id, mode, target, slot, production_cycle=cycle)
         existing = ScheduleOccurrence.objects.filter(occurrence_key=key).first()
         if existing:
             if existing.definition_id != definition_id or existing.due_at != due_at:
@@ -92,6 +103,7 @@ def create_occurrence(
             slot=slot,
             due_at=due_at,
             occurrence_key=key,
+            production_cycle=cycle,
             pause_version=campaign.pause_version
             if campaign.delivery_paused and mode == "production"
             else None,
