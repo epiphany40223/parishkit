@@ -169,6 +169,10 @@ def directory(request, campaign_id, *, postal=False):
             open_content=content,
             on_close=finish,
         )
+        if response.status_code == 503 and not response.streaming:
+            # The shared guard has already released its read transaction. Give
+            # this report its safe recovery navigation, never private contents.
+            return _error(campaign_id, postal=postal, status=503)
         handed_off = response.status_code == 200 and response.streaming
         return response
     except (PermissionError, ObjectDoesNotExist):

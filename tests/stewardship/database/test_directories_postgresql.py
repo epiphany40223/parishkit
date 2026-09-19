@@ -373,3 +373,8 @@ def test_directory_unavailability_and_invalid_filters_are_private(
         assert b"private source" not in body and harness.code.encode() not in body
         assert response["Cache-Control"] == "no-store"
         assert response["Retry-After"] == "5"
+        recovery = f"/admin/campaign/{harness.campaign.pk}/family-codes"
+        assert f'href="{recovery}"'.encode() in body
+        recovered, codes = read(browser, recovery)
+        assert recovered.status_code == 200 and harness.code.encode() in codes
+        assert recovered["Cache-Control"] == "no-store"
