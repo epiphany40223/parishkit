@@ -46,7 +46,7 @@ FOR EACH ROW EXECUTE FUNCTION stewardship_weekly_manual_guard_v1();
 CREATE FUNCTION stewardship_weekly_manual_allocate_v1() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE c stewardship_campaign%ROWTYPE; d stewardship_schedule_definition%ROWTYPE;
-    runtime stewardship_system_configuration%ROWTYPE; epoch uuid;
+    runtime stewardship_system_configuration%ROWTYPE; epoch uuid; cycle bigint;
     instant timestamptz:=stewardship_campaign_now_v1(); slot text:='manual:'||NEW.id::text;
 BEGIN
     SELECT * INTO c FROM stewardship_campaign WHERE id=NEW.campaign_id;
@@ -56,14 +56,16 @@ BEGIN
     IF runtime.mode='testing' THEN
         SELECT rehearsal_epoch_id INTO epoch FROM stewardship_campaign_credentials WHERE campaign_id=c.id;
     END IF;
+    cycle:=CASE WHEN runtime.mode='production' THEN c.production_cycle ELSE 0 END;
     INSERT INTO stewardship_schedule_occurrence(
         id,actor_id,correlation_id,version,definition_id,revision_id,mode,routing,
-        target,slot,due_at,occurrence_key,state,fence,attempts,reason,pause_version)
+        target,slot,due_at,occurrence_key,state,fence,attempts,reason,pause_version,production_cycle)
     VALUES(NEW.id,NEW.actor_id,NEW.id,1,d.id,d.current_revision_id,runtime.mode,
         CASE runtime.mode WHEN 'testing' THEN 'testing_override' ELSE 'production' END,
         'admins',slot,instant,encode(sha256(convert_to(
-            '["'||d.current_revision_id::text||'","'||runtime.mode||'","admins","'||slot||'"]','UTF8')),'hex'),
-        'pending',0,0,'',CASE WHEN runtime.mode='production' AND c.delivery_paused THEN c.pause_version ELSE NULL END);
+            '["'||d.current_revision_id::text||'","'||runtime.mode||'","admins","'||slot||'"'
+            ||CASE WHEN cycle>0 THEN ',["production_cycle",'||cycle::text||']' ELSE '' END||']','UTF8')),'hex'),
+        'pending',0,0,'',CASE WHEN runtime.mode='production' AND c.delivery_paused THEN c.pause_version ELSE NULL END,cycle);
     INSERT INTO stewardship_weekly_digest_preparation(
         id,actor_id,correlation_id,version,campaign_id,definition_id,revision_id,
         campaign_configuration_id,task_id,mode,rehearsal_epoch_id,cutoff,phase,occurrence_id)

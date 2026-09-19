@@ -24,7 +24,7 @@ from parishkit.stewardship.jobs.outbox_validation import (
 from parishkit.stewardship.storage import StaleRecordError
 
 from ..test_outbox_validation import rendering
-from .campaign_builders import admit_test_work, campaign_clock
+from .campaign_builders import admit_test_work, advance, campaign_clock, claimed_task
 from .test_outbox_postgresql import change, permit, provider_evidence, submit
 from .test_setup_mail_views_postgresql import web_login
 from .test_withdrawal_postgresql import (  # noqa: F401
@@ -97,6 +97,22 @@ def future_message(item):
             outbox_id=message.message_id, version=F("version") + 1
         )
     return row, message
+
+
+def fail_retained(item, row, message):
+    """Retain a genuinely failed task, occurrence and proven-unaccepted message."""
+    from .test_taskrun_postgresql import act
+
+    actor = item.arguments[0].portal_session.principal_id
+    with campaign_clock(row.due_at):
+        task = claimed_task("schedule_occurrence", row.pk, actor)
+        row = advance(row, actor, "running", task_id=task.run_id, fence=task.fence)
+        message = change(
+            submit(message), Action.FAIL_UNACCEPTED, evidence=provider_evidence()
+        )
+        advance(row, actor, "failed", fence=task.fence)
+        act(task, "permanent_failure")
+    return message
 
 
 def test_uncertain_work_blocks_then_proven_unsent_work_cancels_atomically(scheduled):

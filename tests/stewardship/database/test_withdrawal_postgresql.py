@@ -262,8 +262,9 @@ def test_withdrawal_direct_sql_rechecks_session_inventory_and_lock_order(schedul
             )
 
 
+@pytest.mark.parametrize("failed", [False, True])
 def test_next_go_live_requires_new_test_cleanup_links_and_confirmation(
-    scheduled, tmp_path
+    scheduled, tmp_path, failed
 ):
     """Complete a second real cycle, never revive the old test or prepared links."""
     from parishkit.stewardship.accounts import campaign_mail, go_live_commands
@@ -285,18 +286,21 @@ def test_next_go_live_requires_new_test_cleanup_links_and_confirmation(
         ProductionTransitionRequest,
     )
     from parishkit.stewardship.campaigns.schedule_models import ScheduleOccurrence
+    from parishkit.stewardship.campaigns.schedules import occurrence_key
     from parishkit.stewardship.deployment import ServiceRole
     from parishkit.stewardship.jobs.dispatch import execute_hint
     from parishkit.stewardship.jobs.queues import WorkQueue
     from parishkit.stewardship.jobs.scheduler import scheduler_session
+    from parishkit.stewardship.reports.weekly_manual import request_manual_report
 
+    from .production_cycle_checks import reject_retired_cycle
     from .test_background_grants_postgresql import task_login
     from .test_campaign_mail_postgresql import deliver
     from .test_cleanup_tasks_postgresql import run
     from .test_daily_digest_fanout_postgresql import configure_content as daily_content
     from .test_digest_schedule_planning_postgresql import add_digest
     from .test_weekly_fanout_postgresql import configure_content as weekly_content
-    from .test_withdrawal_work_postgresql import future_message
+    from .test_withdrawal_work_postgresql import fail_retained, future_message
 
     item = scheduled
     login, service, campaign_id = item.arguments
@@ -305,7 +309,9 @@ def test_next_go_live_requires_new_test_cleanup_links_and_confirmation(
     harness = SimpleNamespace(service=service, campaign=item.campaign)
     daily_content(harness)
     weekly_content(harness)
-    previous, _ = future_message(item)
+    previous, old_message = future_message(item)
+    if failed:
+        old_message = fail_retained(item, previous, old_message)
     cutoff = item.campaign.active_configuration.starts_at + timedelta(days=9)
     producer = DigestScheduleProducer(uuid4())
     with (
@@ -382,9 +388,28 @@ def test_next_go_live_requires_new_test_cleanup_links_and_confirmation(
     assert item.campaign.active_token_generation_id == second.generation_id
     assert SystemConfiguration.objects.get().mode == "production"
     previous.refresh_from_db()
-    assert previous.state == "skipped" and previous.reason == "production_withdrawn"
+    if failed:
+        assert previous.state == "failed"
+    else:
+        assert previous.state == "skipped" and previous.reason == "production_withdrawn"
     assert previous.production_cycle == 0
     assert item.campaign.production_cycle == 1
+    with campaign_clock(previous.due_at):
+        reject_retired_cycle(item, previous, old_message, failed=failed)
+        with web_login():
+            command = uuid4()
+            request_manual_report(
+                service.store,
+                login.portal_session.principal_id,
+                campaign_id,
+                command_id=command,
+                configuration_id=SystemConfiguration.objects.get().active_configuration_id,
+            )
+        manual = ScheduleOccurrence.objects.get(pk=command)
+        assert manual.production_cycle == 1
+        assert manual.occurrence_key == occurrence_key(
+            manual.revision_id, "production", "admins", manual.slot, production_cycle=1
+        )
     with (
         campaign_clock(previous.due_at),
         task_login(ServiceRole.SCHEDULER, exact=True, reconnect=True),
@@ -426,4 +451,6 @@ def test_next_go_live_requires_new_test_cleanup_links_and_confirmation(
     assert ScheduleOccurrence.objects.filter(
         definition__kind__in=("daily_digest", "weekly_digest"),
         production_cycle=1,
-    ).count() == sum(report.created for report in first_reports)
+    ).exclude(slot__startswith="manual:").count() == sum(
+        report.created for report in first_reports
+    )

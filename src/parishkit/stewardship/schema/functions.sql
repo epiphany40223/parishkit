@@ -3384,7 +3384,7 @@ BEGIN
         SELECT max(o.due_at) INTO expected FROM public.stewardship_schedule_occurrence o
         WHERE o.definition_id=d.id AND o.mode='production' AND o.target='admins'
             AND o.id<>(proposed->>'id')::uuid AND o.due_at<=demand.cutoff
-            AND ((o.revision_id=d.current_revision_id AND o.state='pending'
+            AND ((o.revision_id=d.current_revision_id AND o.state='pending' AND o.production_cycle=c.production_cycle
                     AND o.task_id IS NULL AND o.outbox_id IS NULL
                     AND NOT starts_with(o.slot,'recovery:')
                     AND NOT public.stewardship_schedule_slot_excluded_v1(o.definition_id,o.mode,o.target,o.slot))
@@ -9749,9 +9749,11 @@ BEGIN
        OR EXISTS(SELECT 1 FROM stewardship_rehearsal_credential c
                  JOIN stewardship_rehearsal_epoch e ON e.id=c.epoch_id WHERE e.campaign_id=NEW.id)
        OR EXISTS(SELECT 1 FROM stewardship_submission WHERE campaign_id=NEW.id AND mode='test')
+       -- A scalar PK lookup keeps this a baseline-driven existence probe. A
+       -- join may instead scan every Family when cleanup left stale statistics.
        OR EXISTS(SELECT 1 FROM stewardship_family_form_baseline baseline
-                 JOIN stewardship_family_campaign family ON family.id=baseline.family_id
-                 WHERE family.campaign_id=NEW.id AND baseline.mode='test')
+                 WHERE baseline.mode='test' AND (SELECT family.campaign_id
+                     FROM stewardship_family_campaign family WHERE family.id=baseline.family_id)=NEW.id)
        OR EXISTS(SELECT 1 FROM stewardship_daily_digest_snapshot snapshot
                  JOIN stewardship_daily_digest_preparation p ON p.id=snapshot.preparation_id
                  WHERE snapshot.campaign_id=NEW.id AND p.mode='testing')

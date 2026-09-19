@@ -129,13 +129,20 @@ def test_transient_database_failure_records_sanitized_retry_and_retains_hold(
     assert not CatchUpCheckpoint.objects.exists()
 
 
-def test_digest_preparation_spans_pages_without_releasing_partial_coverage(tmp_path):
+@pytest.mark.parametrize("cycle", [0, 1])
+def test_digest_preparation_spans_pages_without_releasing_partial_coverage(
+    tmp_path, cycle
+):
     """More than 100 dates require separate materialization and coverage commits."""
     store, campaign, actor = draft_campaign(
         tmp_path,
         campaign_record(start_date="2026-01-01", end_date="2026-12-31"),
     )
     definition = add_digest(store, campaign)
+    if cycle:
+        from .production_cycle_checks import withdraw_before_start
+
+        withdraw_before_start(campaign, actor)
     with campaign_clock(datetime(2026, 4, 20, 12, tzinfo=UTC)):
         command(campaign, actor, Action.ACTIVATE)
         demand = ActivationCatchUpDemand.objects.get()

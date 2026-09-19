@@ -61,15 +61,20 @@ def _prepare(message, *, general, public, public_origin):
         raise PermissionError("This delivery belongs to an earlier scope.")
     if message.mode == "production" and scope.campaign.delivery_paused:
         raise PermissionError("Resume campaign delivery before authorizing a retry.")
-    family = FamilyCampaign.objects.get(pk=message.family_id)
-    source = load_family_mail_source(family)
-    if not source.recipients.status.email_deliverable:
-        raise PermissionError("No current deliverable recipient is available.")
     occurrence = ScheduleOccurrence.objects.select_related(
         "revision", "definition"
     ).get(pk=message.semantic_key)
     if occurrence.revision_id != occurrence.definition.current_revision_id:
         raise PermissionError("This delivery schedule has been replaced.")
+    if (
+        message.mode == "production"
+        and occurrence.production_cycle != scope.campaign.production_cycle
+    ):
+        raise PermissionError("This delivery belongs to an earlier scope.")
+    family = FamilyCampaign.objects.get(pk=message.family_id)
+    source = load_family_mail_source(family)
+    if not source.recipients.status.email_deliverable:
+        raise PermissionError("No current deliverable recipient is available.")
     identity = _identity(message)
     render = current_render(
         identity,

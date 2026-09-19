@@ -158,3 +158,61 @@ The fixture now selects current content and installs valid digest templates.
 The complete retained-work/new-cycle regression passed in 28.24 seconds.
 Fresh schema/model equivalence, lint, formatting and migration-state checks
 passed. Round 1 is complete; subsequent correction rounds remain required.
+
+## Review round 2 corrections
+
+Correction review `609baf7` → `b7008ad`, session
+`20260919-022838-2ce7ec`, completed both sources without degradation. Claude
+reported one Medium and three Lows; Codex reported one Medium. No High/Critical
+findings were reported. Both Medium findings are accepted:
+
+- The SQL-only manual weekly allocator missed the cycle discriminator. It now
+  derives the current cycle and hashes the same identity as Python. Both actual
+  repeated-go-live scenarios request an Admin manual report and verify its key.
+- Add negative cycle-authority coverage, not just successful reactivation.
+  Tests now exercise worker campaign-write denial, the independent SQL cycle
+  guard, scheduler retired-cycle insertion, failed-occurrence retry, old outbox
+  retry, preparation/dispatch disposition and current-Admin retry presentation.
+  Runtime service-owner gates reject some forged writes before the cycle guard;
+  separate schema-owner negative probes exercise that additional guard without
+  disabling any protection. A copied unrendered preparation read projection
+  covers the pre-outbox failure case without altering stored history.
+
+Low dispositions: align the SQL catch-up pending set with the Python current-
+cycle selection; reject retired Family retry intent with a friendly earlier-
+scope error and suppress its retry eligibility before private preparation.
+These include the real out-of-diff-file retry finding that Pika filtered by path.
+Keep the short explicit Testing/Production cycle conditional at its owners;
+extracting that expression alone would not unify the independent SQL policy.
+
+Nonzero-cycle catch-up and deliverability recovery exercise the actual SQL key
+validators through maintained worker execution. Four parameterized scenarios
+and the preceding strict fingerprint passed. The cancelled-work repeated cycle
+also passes with campaign/occurrence rejection probes and manual weekly intent.
+The failed-work scenario additionally checks permanent-failure history and
+retired retry handling; fixture corrections preserve the actual service roles,
+required work transaction and earlier owner-denial layers.
+The final failed-work regression passed in 29.06 seconds. The preceding combined
+run passed the cancelled-work regression and the 5,000-Family load acceptance
+in 89.11 seconds; its failed-work fixture error was subsequently corrected.
+
+### CI reference-load correction
+
+CI run `35426692238` passed all container/browser jobs and eleven database
+shards; shard 11 caught 5,000 Family index fetches in final confirmation.
+The token-activation cleanup check joined empty Testing form baselines to the
+Family table, permitting a Family-first plan after cleanup. A scalar indexed
+Family lookup now runs only for matching Testing baselines. The unchanged
+reference-load acceptance passes, including bounded nested SQL reads, zero
+per-Family writes, sub-two-second final confirmation and concurrent Family
+submission during unfinished catch-up. This corrects the query, not its bound.
+
+Fresh catalogs `/tmp/parishkit-withdrawal-round2-before.json` (`b7008ad`) and
+`/tmp/parishkit-withdrawal-round2-after-c.json` differ only in four function
+bodies: manual weekly allocation, catch-up shape validation, delivery retry
+eligibility and token activation. Counts, constraints, grants, indexes, triggers
+and policies are unchanged. The strict fingerprint is updated only after this
+comparison; no existing database is upgraded or deleted.
+The final strict fingerprint and ordinary Testing manual-report worker passed
+in 12.66 seconds. Round 2 is complete; round 3 and corrected-head CI/DCO remain
+required before protected delivery.

@@ -141,9 +141,14 @@ def test_missed_optimistic_update_cannot_create_false_coverage(
         assert plan(guard, family.pk, actor).coalesced == 2
 
 
-def test_source_recovery_can_finish_held_activation_preparation(tmp_path):
+@pytest.mark.parametrize("cycle", [0, 1])
+def test_source_recovery_can_finish_held_activation_preparation(tmp_path, cycle):
     """A source correction cannot strand the bounded activation worker forever."""
     _, campaign, actor, rings = family_campaign(tmp_path)
+    if cycle:
+        from .production_cycle_checks import withdraw_before_start
+
+        withdraw_before_start(campaign, actor)
     family = FamilyCampaign.objects.get()
     definition = ScheduleDefinition.objects.get()
     populate(campaign, rings, [FamilyStatus(1, True, True, True, False)], generation=2)
@@ -168,6 +173,7 @@ def test_source_recovery_can_finish_held_activation_preparation(tmp_path):
         demand.refresh_from_db()
         assert demand.completed_at is not None
         recovered = ScheduleOccurrence.objects.get(state="pending")
+        assert recovered.production_cycle == cycle
         assert recovered.recovery_generation > 0
         assert ScheduleOccurrence.objects.filter(state="skipped").count() == 1
 
