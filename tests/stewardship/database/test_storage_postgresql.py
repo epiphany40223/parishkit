@@ -478,6 +478,10 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             "directory_export_capture",
             "stewardship_directory_export_capture_v1",
         ),
+        "stewardship_ministry_export_snapshot": (
+            "ministry_export_capture",
+            "stewardship_ministry_export_capture_v1",
+        ),
         "stewardship_information_export_snapshot": (
             "information_export_capture",
             "stewardship_information_export_capture_v1",
@@ -696,6 +700,7 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             assert row is not None, table
             conditional_insert_guards = {
                 "stewardship_directory_export_snapshot",
+                "stewardship_ministry_export_snapshot",
                 "stewardship_information_export_snapshot",
                 "stewardship_information_revision",
                 "stewardship_delivery_control",

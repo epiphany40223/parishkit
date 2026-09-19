@@ -99,7 +99,9 @@ def detail(request, request_id):
     """Passive status never renews login; query/render remain guarded until close."""
     try:
         service = runtime()
-        principal = _principal(request, service.store, read_only=True)
+        principal = _principal(
+            request, service.store, read_only=True, ministry_jobs=True
+        )
         if request.GET:
             raise ValueError("Export status has no query fields.")
         # Only the lock identity is loaded before the barrier.
@@ -109,7 +111,9 @@ def detail(request, request_id):
 
         def fresh(guard):
             """Neither request UUID nor earlier session access bypasses revocation."""
-            current = _principal(request, service.store, read_only=True)
+            current = _principal(
+                request, service.store, read_only=True, ministry_jobs=True
+            )
             if current.identity != principal.identity:
                 raise PermissionError("Report access changed.")
             admit_campaign(campaign_id, mutating=False)
@@ -127,9 +131,17 @@ def detail(request, request_id):
                     "configuration__parish",
                     "information_snapshot",
                     "directory_snapshot",
+                    "ministry_snapshot",
                 )
-                .defer("information_snapshot__document", "directory_snapshot__document")
+                .defer(
+                    "information_snapshot__document",
+                    "directory_snapshot__document",
+                    "ministry_snapshot__document",
+                )
                 .annotate(
+                    ministry_source_generation=F(
+                        "ministry_snapshot__source__generation"
+                    ),
                     information_source_generation=F(
                         "information_snapshot__source__generation"
                     ),
@@ -145,7 +157,10 @@ def detail(request, request_id):
                 admit_campaign(campaign_id, mutating=True)
             except PermissionError:
                 mutable = False
-            if job.report == "additional_information":
+            if job.report == "ministry":
+                title = "Ministry export"
+                report_url = reverse("admin:ministry_report", args=(campaign_id,))
+            elif job.report == "additional_information":
                 title = "Additional-information export"
                 report_url = reverse("admin:information_queue", args=(campaign_id,))
             elif job.report in {"family_directory", "postal_outreach"}:
@@ -199,7 +214,7 @@ def command(request, request_id, *, action):
     """Closed route-selected actions share cancellation/retry/download authority."""
     try:
         service = runtime()
-        principal = _principal(request, service.store)
+        principal = _principal(request, service.store, ministry_jobs=True)
         values = _body(
             request, {"request_key"} if action in {"retry", "regenerate"} else set()
         )

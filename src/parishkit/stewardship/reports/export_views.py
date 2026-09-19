@@ -77,12 +77,16 @@ def _body(request, fields):
     return {field: request.POST[field] for field in fields}
 
 
-def _principal(request, store, *, read_only=False):
-    """Anonymous, expired and Ministry-only sessions fail before identity access."""
+def _principal(request, store, *, read_only=False, ministry_jobs=False):
+    """Job entry admits leaders; request-specific services still enforce ownership."""
+    from .ministries import can_report
+
     principal = authenticated_admin(
         request, store=store, activity=not read_only, read_only=read_only
     )
-    if not allows(principal, Capability.CAMPAIGN_REPORT):
+    if not allows(principal, Capability.CAMPAIGN_REPORT) and not (
+        ministry_jobs and can_report(principal)
+    ):
         raise PermissionError("This export is unavailable.")
     return principal
 
@@ -119,7 +123,7 @@ def status(request, request_id):
         if request.GET:
             raise ValueError("Export status does not accept query parameters.")
         service = runtime()
-        principal = _principal(request, service.store)
+        principal = _principal(request, service.store, ministry_jobs=True)
         return _json(export_status(service.store, principal.identity, request_id))
     except SAFE_FAILURES:
         return denial()
@@ -133,7 +137,7 @@ def cancel(request, request_id):
     try:
         _body(request, set())
         service = runtime()
-        principal = _principal(request, service.store)
+        principal = _principal(request, service.store, ministry_jobs=True)
         cancel_export(service.store, principal.identity, request_id)
         return _json({"id": str(request_id), "state": "cancelled"})
     except ExportConflict:
@@ -150,7 +154,7 @@ def download_grant(request, request_id):
     try:
         _body(request, set())
         service = runtime()
-        principal = _principal(request, service.store)
+        principal = _principal(request, service.store, ministry_jobs=True)
         grant = issue_download(service.store, principal.identity, request_id)
         return _json(
             {"grant": str(grant.pk), "expires_at": grant.expires_at.isoformat()}
@@ -210,7 +214,7 @@ def download(request):
     """Serve bytes in-app with bounded download admission through response close."""
     try:
         service = runtime()
-        principal = _principal(request, service.store)
+        principal = _principal(request, service.store, ministry_jobs=True)
         values = _body(request, {"grant"})
         return download_with_grant(request, service, principal, UUID(values["grant"]))
     except SAFE_FAILURES:
@@ -243,7 +247,9 @@ def download_with_grant(request, service, principal, grant_id):
 
         def fresh(guard):
             """Recheck session and artifact on the dedicated read connection."""
-            current = _principal(request, service.store, read_only=True)
+            current = _principal(
+                request, service.store, read_only=True, ministry_jobs=True
+            )
             if current.identity != principal.identity:
                 raise ReadUnavailable("This export is unavailable.")
             authorize(service.store, current.identity, request=job)

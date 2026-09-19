@@ -147,6 +147,8 @@ FIELDS = {
         "search_used",
         "exact_code_used",
         "ministry_duid",
+        "ministry_duids",
+        "ministry_operational",
     },
 }
 
@@ -189,6 +191,13 @@ def sanitize(kind, values):
         elif key in {"family_duid", "member_duid", "ministry_duid"}:
             valid = type(value) is int and 0 < value < 2**31
             safe[key] = value
+        elif key == "ministry_duids":
+            valid = (
+                type(value) is list
+                and all(type(item) is int and 0 < item < 2**31 for item in value)
+                and value == sorted(set(value))
+            )
+            safe[key] = list(value) if valid else None
         elif key == "method":
             valid = type(value) is str and value in {"GET", "HEAD", "POST"}
             safe[key] = value
@@ -198,7 +207,12 @@ def sanitize(kind, values):
         elif key.endswith("_fingerprint"):
             valid = type(value) is str and re.fullmatch(r"[0-9a-f]{64}", value)
             safe[key] = value
-        elif key in {"retryable", "search_used", "exact_code_used"}:
+        elif key in {
+            "retryable",
+            "search_used",
+            "exact_code_used",
+            "ministry_operational",
+        }:
             valid = type(value) is bool
             safe[key] = value
         elif key.startswith("directory_"):
