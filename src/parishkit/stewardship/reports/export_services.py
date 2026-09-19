@@ -60,15 +60,21 @@ def admit_campaign(campaign_id, *, mutating):
 
 
 def audit(action, request, actor_id, *, outcome, count=None):
-    """Reference immutable request scope once, without copying filters or rows.
+    """Retain non-sensitive result scope once, without copying filters or rows.
 
-    The request permanently records its exact Ministry set and privacy projection.
-    Referencing it keeps audit cost constant even for parish-wide exports, while
-    retaining the precise scope of each leader export and download.
+    SQL captured the filtered result Ministries separately from lifecycle scope.
+    Copy only those numeric identifiers and the privacy projection into retained
+    audit context, so attribution survives later campaign-detail purge. One
+    event avoids per-Ministry chained writes for parish-wide exports.
     """
     context = {"outcome": outcome}
     if count is not None:
         context["count"] = count
+    if request.report == "ministry":
+        context.update(
+            ministry_duids=request.authorization_scope["result_ministries"],
+            ministry_operational=request.authorization_scope["operational"],
+        )
     record_action(
         action,
         actor_kind=ActorKind.PORTAL_USER,

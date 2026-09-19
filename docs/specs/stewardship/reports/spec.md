@@ -329,13 +329,17 @@ age suffices.
 
 Lists are searchable/filterable/sortable and exportable as CSV, XLSX, or PDF.
 Every leader view/export is audited with Ministry scope.
-An export audit event records this scope by reference to its immutable export
-request, whose retained authorization scope contains the exact Ministry set and
-privacy projection. One event per action is sufficient; per-Ministry audit
-fan-out is not required. Ministry-scoped audit queries resolve that reference
-while the request remains retained, rather than relying only on the scalar
-Ministry identifier used by interactive view events. This representation does
-not change current-policy checks or authorized report columns.
+An export audit event retains the sorted Ministry DUID set actually included
+after filtering, plus whether the captured contact projection was operational
+or publish-restricted. This result scope is distinct from the potentially wider
+authorization scope used for lifecycle checks. An empty summary has an empty
+result scope; a named detail section retains its Ministry even with no matching
+Members. One event per action is sufficient; per-Ministry audit fan-out is not
+required. These non-sensitive identifiers survive campaign-detail purge with
+the audit event and contain no names, contacts, filters or Member values.
+The [Admin log owner](../admin-portal/spec.md#logs) includes this set when
+filtering audit events by Ministry; it must not depend on retained export rows.
+This representation does not change current-policy checks or report columns.
 
 ## Multi-Ministry follow-up packet
 

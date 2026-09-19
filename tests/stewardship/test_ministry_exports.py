@@ -9,12 +9,51 @@ import pytest
 from openpyxl import load_workbook
 
 from parishkit.stewardship.accounts.policy import Principal
+from parishkit.stewardship.audit.schemas import ContextKind, sanitize
 from parishkit.stewardship.reports.information_rendering import (
     information_lines,
     render_information,
 )
 from parishkit.stewardship.reports.ministry_documents import ministry_document
 from parishkit.stewardship.reports.ministry_exports import scope_authorized
+
+AUDIT_SCOPE_CASES = (
+    ({"ministry_duids": [], "ministry_operational": False}, True),
+    ({"ministry_duids": [1, 4, 2**31 - 1], "ministry_operational": True}, True),
+    *(
+        ({"ministry_duids": value}, False)
+        for value in (
+            None,
+            "private",
+            {"name": "private"},
+            ["private"],
+            [True],
+            [0],
+            [-1],
+            [2**31],
+            [1.0],
+            [1, 1],
+            [9, 4],
+            [[1]],
+        )
+    ),
+    *(
+        ({"ministry_operational": value}, False)
+        for value in (None, "true", "private", 1, [], {})
+    ),
+)
+
+
+@pytest.mark.parametrize("context,valid", AUDIT_SCOPE_CASES)
+def test_retained_audit_scope_has_no_private_values(context, valid):
+    """Audit scope permits only sorted unique DUIDs and a real privacy boolean."""
+    if valid:
+        safe = sanitize(ContextKind.ACTION, context)
+        assert safe == context
+        assert safe["ministry_duids"] is not context["ministry_duids"]
+    else:
+        with pytest.raises(ValueError):
+            sanitize(ContextKind.ACTION, context)
 
 
 def document(*, action="join", count=52):
@@ -83,17 +122,17 @@ def test_complete_columns_and_csv_privacy(action):
     assert "hidden" not in output.getvalue().decode()
     assert "Birth date" not in report.headings
     assert dict(report.metadata)["Requested at"] == "2026-09-19T11:00:00-04:00"
+    assert report.sheet_name == (
+        "Ministry summary" if action == "summary" else "Ministry requests"
+    )
     if action == "join":
-        assert report.sheet_name == "Ministry requests"
         assert rows[-1][0] == "'=Example Member"
         assert "Not published" in report.rows[0]
     elif action == "leave":
-        assert report.sheet_name == "Ministry requests"
         assert "Email" not in report.headings and "Phones" not in report.headings
         assert report.rows[0][-1] == "Volunteer"
     else:
         assert report.rows[0][-1] == "3 out of 4 (75%)"
-        assert report.sheet_name == "Ministry summary"
 
 
 @pytest.mark.parametrize("format", ["xlsx", "pdf"])

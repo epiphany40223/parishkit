@@ -105,7 +105,13 @@ BEGIN
        OR (NEW.document->'authorized'<>'true'::jsonb AND
            (ministry_id IS NOT NULL OR current_scope->'operational'<>'true'::jsonb))
     THEN RAISE EXCEPTION 'Ministry export inputs are unavailable' USING ERRCODE='23514'; END IF;
-    NEW.authorization_scope:=NEW.document->'authorization_scope';
+    -- Lifecycle authority intentionally covers the whole selected policy scope.
+    -- Audit attribution instead names only Ministries present after filtering,
+    -- including a named empty detail section but not an empty summary result.
+    NEW.authorization_scope:=NEW.document->'authorization_scope' || jsonb_build_object(
+        'result_ministries',coalesce((SELECT jsonb_agg((value->>'duid')::bigint
+            ORDER BY (value->>'duid')::bigint)
+            FROM jsonb_array_elements(NEW.document->'summaries')), '[]'::jsonb));
     NEW.source_id:=(NEW.document->'metadata'->>'source_id')::uuid;
     NEW.row_count:=(NEW.document->>'total')::integer;
     RETURN NEW;

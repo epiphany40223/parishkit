@@ -172,7 +172,7 @@ Scope and dependencies: [RPT-06 work package](../../plans/stewardship/reports.md
 
 - [x] RPT-06.01 — Build Ministry join/leave counts and cross-links.
 - [x] RPT-06.02 — Build privacy-scoped Member detail.
-- [ ] RPT-06.03 — Add scoped search, filters, and exports.
+- [x] RPT-06.03 — Add scoped search, filters, and exports.
 - [x] RPT-06.04 — Apply request supersession to counts.
 - [x] RPT-06.05 — Test assignment boundaries, privacy, and inactive controls.
 
@@ -192,6 +192,12 @@ not close all RPT-06 work, M5 or Gate 3.
 PR #70 subsequently passed all 24 exact-head CI jobs and DCO and merged as
 `5b0d3051`, verified on refreshed main. The [complete-result export increment](../../guides/stewardship-ministry-exports.md)
 now owns .03 and export-specific scope/privacy/lifecycle acceptance.
+
+PR #71 completes .03 implementation and focused acceptance after
+[three independent review/fix rounds](../../guides/stewardship-ministry-export-reviews.md#round-3).
+All accepted Medium-or-higher findings are fixed. Full exact-head CI/DCO and
+protected delivery remain required before the next fresh-main increment.
+This closes the implementation checkbox, not M5/Gate 3 or later follow-up work.
 
 ## RPT-07: Multi-Ministry follow-up packet
 

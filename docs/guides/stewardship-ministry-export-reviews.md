@@ -63,8 +63,8 @@ Raw findings: no High/Critical, one Medium and seven Low; the Medium was
 Claude-only. It requested normative clarification of the constant-cost scope
 reference adopted in round 1. The specification now explicitly describes that
 representation and requires Ministry-scoped audit queries to resolve the
-retained request reference. A strengthened database assertion follows the audit
-subject to the exact operational `[4, 9]` scope. The change documents audit
+retained request reference. The database assertion verifies the retained request's
+exact operational `[4, 9]` scope. The change documents audit
 representation, not permission expansion or weaker contact privacy.
 
 Low corrections reconcile the stale fast-CI paragraph, explain its focused
@@ -81,3 +81,46 @@ until round 3 and its corrections pass. Round-two correction validation passed
 the strengthened PostgreSQL capture/audit case in 15.06 seconds and three
 literal worksheet/column cases in 0.25 seconds. Ruff lint/format and changed
 Markdown checks passed. No production code changed in this correction round.
+
+## Round 3
+
+Session `20260919-174739-e7bf12` independently reviewed
+`804bc1a9444c13de60fd8b507407e12c0e2c4cce` to
+`2848f94af4b2186f85f29993ee3a129febd474e7` (tree
+`99d7997d9dbd1cd6dc17827d2c80488fee31e55d`), explicitly including surrounding
+export/audit lifecycle authority. Exact Claude permission preflight passed.
+Codex exited zero in 165 seconds with no timeout/stall; Claude delivered its
+validated artifact. Finalization reported no failed agents, degradation,
+verdict mismatch or salvage requirement.
+
+Raw findings: no High/Critical, three Medium and six Low. The three validated
+Medium findings (two Claude, one Codex) were verified and corrected:
+
+1. **Filtered result scope:** lifecycle scope intentionally includes the full
+   authorized selection, but audit attribution must use the Ministries actually
+   included after filtering. SQL now captures this distinct numeric set and
+   the audit helper records it without changing authorization.
+2. **Audit-side test strength:** selecting a known request's event did not prove
+   reverse Ministry lookup. Tests now query campaign audit events independently,
+   verify exact detail, unfiltered, filtered and empty-summary scope, and search
+   retained context by Ministry without joining an export request.
+3. **Retention:** reference-only scope would be lost after campaign-detail
+   purge. The event now retains only numeric Ministry identifiers and the
+   privacy boolean in a closed Python/SQL-validated context. Tests reject
+   private values, malformed IDs, booleans-as-IDs, duplicates and disorder.
+
+The [report contract](../specs/stewardship/reports/spec.md#ministry-change-summary)
+and linked ADM-08/RPT-09 log owner control this representation. No private
+report rows, names, contact values or search filters enter the audit context.
+All six Low comments were also addressed: name the log-query owner, remove the
+duplicate audit query, consolidate worksheet assertions, cross-link normative
+prose, accurately describe round-two evidence, and reflow the fast-CI paragraph.
+
+An independent fresh-schema comparison changed only two existing functions;
+there are no table/column/constraint/grant changes or retained-database deletions.
+Post-correction validation passed 34 fast output/scope/privacy cases in 0.79
+seconds and 22 actual-role PostgreSQL, independent SQL privacy and schema cases
+in 33.44 seconds, sharing one database bootstrap. These fixes complete round 3
+under the automated cycle, not an automatic fourth round. No accepted Medium-
+or-higher finding remains. Full exact-head CI/DCO and protected delivery remain
+required; this record does not release M5 or Gate 3.

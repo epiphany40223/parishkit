@@ -9,7 +9,7 @@ import pytest
 from django.db import DatabaseError, connection, transaction
 
 from parishkit.stewardship.accounts.policy_models import PortalUser
-from parishkit.stewardship.audit.models import AuditEvent
+from parishkit.stewardship.audit.models import AuditContext
 from parishkit.stewardship.campaigns.read_guards import DownloadPool, ReadLimits
 from parishkit.stewardship.campaigns.runtime_models import CampaignWorkGate
 from parishkit.stewardship.campaigns.work_locks import work_transaction
@@ -101,7 +101,15 @@ def test_capture_scope_and_revocation(response_service, google):
         "capability": "ministry_report",
         "operational": False,
         "ministries": [9],
+        "result_ministries": [9],
     }
+    recorded = AuditContext.objects.get(
+        event__event_type="export_requested",
+        event__campaign_reference=harness.campaign.pk,
+    )
+    assert recorded.event.subject_id == request.pk
+    assert recorded.context["ministry_duids"] == [9]
+    assert recorded.context["ministry_operational"] is False
     assert "valid@example.org" not in json.dumps(snapshot.document)
     assert "202-555-0123" in json.dumps(snapshot.document)
     assert "1960-01-01" not in json.dumps(snapshot.document)
@@ -219,18 +227,54 @@ def test_complete_capture_stays_stable_after_source_promotion(response_service):
     assert empty.authorization_scope["ministries"] == [9]
     summary = create(harness, actor, ministry_id=None, action="summary")
     assert summary.ministry_snapshot.row_count == 2
-    assert (
-        AuditEvent.objects.filter(
-            event_type="export_requested", subject_id=summary.pk
-        ).count()
-        == 1
+    filtered = create(
+        harness,
+        actor,
+        ministry_id=None,
+        action="summary",
+        query=MinistryQuery(search="4"),
     )
-    event = AuditEvent.objects.get(event_type="export_requested", subject_id=summary.pk)
-    assert ExportRequest.objects.get(pk=event.subject_id).authorization_scope == {
-        "capability": "ministry_report",
-        "operational": True,
-        "ministries": [4, 9],
+    no_ministries = create(
+        harness,
+        actor,
+        ministry_id=None,
+        action="summary",
+        query=MinistryQuery(search="No such Ministry"),
+    )
+    assert filtered.authorization_scope["ministries"] == [4, 9]
+    assert filtered.authorization_scope["result_ministries"] == [4]
+    assert no_ministries.authorization_scope["ministries"] == [4, 9]
+    assert no_ministries.authorization_scope["result_ministries"] == []
+    # Query audit-side evidence without a request handle or join to campaign
+    # detail. The retained context itself proves attribution after detail purge.
+    events = list(
+        AuditContext.objects.filter(
+            event__event_type="export_requested",
+            event__campaign_reference=harness.campaign.pk,
+        ).select_related("event")
+    )
+    assert len(events) == 5
+    assert {event.event.subject_id: event.context for event in events} == {
+        request.pk: {
+            "outcome": "started",
+            "count": count,
+            "ministry_duids": ministries,
+            "ministry_operational": True,
+        }
+        for request, count, ministries in (
+            (result, 52, [9]),
+            (empty, 0, [9]),
+            (summary, 2, [4, 9]),
+            (filtered, 1, [4]),
+            (no_ministries, 0, []),
+        )
     }
+    assert set(
+        AuditContext.objects.filter(
+            event__campaign_reference=harness.campaign.pk,
+            context__ministry_duids__contains=[4],
+        ).values_list("event__subject_id", flat=True)
+    ) == {summary.pk, filtered.pk}
     assert (
         MinistryExportSnapshot.objects.get(pk=summary.ministry_snapshot_id).document[
             "rows"
