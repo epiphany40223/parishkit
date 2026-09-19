@@ -183,6 +183,13 @@ not broadly credentialed placeholders. ARC-06.03-.07 remain mixed-scope tasks;
 their foundation mount/isolation checks now have real-container evidence in the
 [review ledger](../../guides/stewardship-phase-1c-reviews.md).
 
+Phase 4 now rechecks the actual mail/general/scheduler registries, queues, SQL
+identities and kernel mounts in the [service handoff](../../guides/stewardship-delivery-pause.md#phase-4-service-and-milestone-handoff).
+Operational mail is no longer a reserved profile. General services retain only
+token public keys; remaining target-replacement, rotation and backup/escrow
+owners keep ARC-06.03–.07 open. Final delivery acceptance is recorded in that
+increment's review ledger; no deployment approval is implied.
+
 ## ARC-07: Application-level privacy and audit primitives
 
 Scope and dependencies: [ARC-07 work package](../../plans/stewardship/architecture.md#arc-07-application-level-privacy-and-audit-primitives).

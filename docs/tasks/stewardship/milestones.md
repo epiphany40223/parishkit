@@ -1753,7 +1753,12 @@ Scope: [Phase 4](../../plans/stewardship/overall.md#phase-4-production-schedulin
 Keep live dispatch and final Production activation within the environments
 permitted by the master plan until Gate 3 is complete.
 
-Evidence: Not started.
+Evidence: the [Phase 4 acceptance and service map](../../guides/stewardship-delivery-pause.md#phase-4-service-and-milestone-handoff)
+links the delivered scheduling, communication, notification and go-live evidence
+to current restricted-role and real-container checks. The final pause/resolution
+increment is implemented and undergoing correction reviews. Leave these milestone
+boxes open until its review loop, exact-head CI/DCO and protected delivery pass;
+Phase 5 has not started and integrated Gate 3 is not waived.
 
 ## Phase 5: Reporting and staff workflows
 

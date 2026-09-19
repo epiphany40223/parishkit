@@ -102,23 +102,54 @@ CREATE VIEW public.stewardship_delivery_closed_coverage AS
     WHERE p.mode='production' AND recipient.outbox_id IS NOT NULL;
 REVOKE ALL ON public.stewardship_delivery_closed_coverage FROM PUBLIC;
 
+-- One semantic resolution owns the union of explicitly cancelled children,
+-- never accepted siblings. Keep the individual subsets in the message journal.
+CREATE FUNCTION public.stewardship_delivery_closed_slot_coverage_v1(occurrence uuid)
+RETURNS jsonb LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
+    WITH cancelled AS MATERIALIZED (
+        SELECT c.coverage FROM public.stewardship_delivery_closed_coverage c
+        JOIN public.stewardship_outbox_message m ON m.id=c.message_id
+        WHERE c.occurrence_id=$1 AND m.state='cancelled' AND m.reason='admin_post_close_skip'
+          AND EXISTS(SELECT 1 FROM public.stewardship_delivery_message_resolution d
+              WHERE d.message_id=m.id AND d.decision='cancel')
+    ), items AS (
+        SELECT DISTINCT item FROM cancelled
+        CROSS JOIN LATERAL jsonb_array_elements(coverage->'items') item
+    ) SELECT jsonb_build_object('items',coalesce((
+            SELECT jsonb_agg(item ORDER BY item->>'kind',item->>'id') FROM items),'[]'::jsonb),
+        'daily_range',(SELECT coverage->'daily_range' FROM cancelled LIMIT 1))
+$$;
+REVOKE ALL ON FUNCTION public.stewardship_delivery_closed_slot_coverage_v1(uuid) FROM PUBLIC;
+
 -- A semantic skip covers only its frozen inputs. Expose opaque current proof
 -- IDs, not the snapshot, item text or versions, to scheduling/dispatch roles.
 -- A later version or new live item must remain an obligation, even for the
--- same logical schedule slot after a revision or a future reopen.
+-- same logical schedule slot after a revision or a future reopen. A later
+-- completed automatic snapshot may discharge those new inputs; that must not
+-- revive every earlier skipped slot or discard its retained history.
 CREATE VIEW public.stewardship_postclose_current AS
     SELECT resolved.id FROM public.stewardship_postclose_resolution resolved
     JOIN public.stewardship_schedule_occurrence o ON o.id=resolved.occurrence_id
     JOIN public.stewardship_schedule_definition d ON d.id=o.definition_id
-    WHERE NOT EXISTS(
+    WHERE (d.kind='daily_digest' AND NOT EXISTS(
         SELECT 1 FROM jsonb_array_elements(resolved.coverage->'items') item
         LEFT JOIN public.stewardship_additional_information i ON i.id=(item->>'id')::uuid
         WHERE item->>'kind' IN ('item','correction')
-            AND to_jsonb(i.version) IS DISTINCT FROM item->'version')
-    AND (d.kind='daily_digest' OR (d.kind='weekly_digest' AND EXISTS(
+            AND to_jsonb(i.version) IS DISTINCT FROM item->'version'))
+    OR (d.kind='weekly_digest' AND EXISTS(
         SELECT 1 FROM public.stewardship_weekly_digest_preparation p
         JOIN public.stewardship_weekly_digest_snapshot s ON s.preparation_id=p.id
-        WHERE p.occurrence_id=o.id
+        JOIN public.stewardship_weekly_digest_preparation original ON original.occurrence_id=o.id
+        JOIN public.stewardship_weekly_digest_snapshot old ON old.preparation_id=original.id
+        WHERE p.campaign_id=resolved.campaign_id AND p.mode=resolved.mode
+            AND p.rehearsal_epoch_id IS NOT DISTINCT FROM original.rehearsal_epoch_id
+            AND s.submission_watermark>=old.submission_watermark AND s.observed_at>=old.observed_at
+            AND NOT EXISTS(SELECT 1 FROM public.stewardship_weekly_manual_request WHERE id=p.id)
+            AND (EXISTS(SELECT 1 FROM public.stewardship_schedule_fulfillment f
+                    WHERE f.occurrence_id=p.occurrence_id AND f.mode=p.mode AND f.target='admins'
+                        AND f.disposition IN ('delivered','empty'))
+                OR EXISTS(SELECT 1 FROM public.stewardship_postclose_resolution later
+                    WHERE later.occurrence_id=p.occurrence_id AND later.mode=p.mode))
             AND NOT EXISTS(
                 SELECT 1 FROM jsonb_each(s.item_versions) version
                 LEFT JOIN public.stewardship_additional_information i ON i.id=version.key::uuid
@@ -128,7 +159,7 @@ CREATE VIEW public.stewardship_postclose_current AS
                 JOIN public.stewardship_submission submission ON submission.id=i.submission_id
                 WHERE submission.campaign_id=resolved.campaign_id AND submission.mode='live'
                     AND submission.campaign_sequence>s.submission_watermark)
-    )));
+    ));
 REVOKE ALL ON public.stewardship_postclose_current FROM PUBLIC;
 
 CREATE VIEW public.stewardship_delivery_closed_coverage_summary AS
@@ -205,7 +236,9 @@ BEGIN
     WHERE proof.transaction_id=pg_current_xact_id() AND proof.backend=pg_backend_pid()
         AND proof.reason='admin_post_close_skip' AND o.id=proof.occurrence_id;
     WITH covered AS (
-        SELECT DISTINCT covered.obligation_key,covered.coverage,o.id AS occurrence_id,o.task_id
+        SELECT DISTINCT covered.obligation_key,
+            public.stewardship_delivery_closed_slot_coverage_v1(o.id) AS coverage,
+            o.id AS occurrence_id,o.task_id
         FROM public.stewardship_schedule_effect proof
         JOIN public.stewardship_schedule_occurrence o ON o.id=proof.occurrence_id
         JOIN public.stewardship_delivery_closed_coverage covered ON covered.occurrence_id=o.id

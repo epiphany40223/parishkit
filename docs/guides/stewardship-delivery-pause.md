@@ -234,3 +234,44 @@ No existing object is removed; existing ACLs, row policies and triggers remain
 unchanged. Both catalogs and all development databases remain retained.
 Checkpoint `946bfdd` CI `35432537356` passed. Current-head CI, remaining handoff
 evidence and all three review rounds remain required; PR #62 stays draft.
+
+## Phase 4 service and milestone handoff
+
+This is the current-phase recheck required by the
+[master plan](../plans/stewardship/overall.md#phase-4-production-scheduling-delivery-and-notifications),
+not an integrated Gate 3 review or production approval. Final review/CI acceptance
+and protected delivery below must precede Phase 5.
+
+| Milestone | Evidence and retained boundary |
+| --- | --- |
+| M4.01: Testing and operational routing | [Family dispatch](stewardship-family-mail-dispatch.md), [receipts](stewardship-submission-receipts.md), [daily](stewardship-daily-digests.md) and [weekly](stewardship-weekly-digests.md) exercise immutable campaign routing. [Operational notifications](stewardship-due-work-health.md#current-phase-bg-10-acceptance-map) retain their separate classification and pause exemption. |
+| M4.02: Cleanup and atomic activation | [Readiness/cleanup](stewardship-go-live-readiness.md), [final confirmation](stewardship-production-confirmation.md) and [withdrawal](stewardship-production-withdrawal.md) retain restart/cancellation, exact version checks, bounded catch-up and reference-load evidence. |
+| M4.03: Scheduled communication and recovery | The Family/receipt/digest guides above record durable occurrences, accepted-recipient deduplication, failure/unknown outcomes, worker/scheduler recovery and current exact-role tests. This increment adds full overdue Family/digest recovery, including unmaterialized slots. |
+| M4.04: Pause, uncertainty and close | This guide and its [review ledger](stewardship-delivery-pause-reviews.md) record actual restricted-role commands, Family submissions, in-flight retry holds, selective release, exact cancellation, rollback and three-engine browser checks. |
+| M4.05: Actual service boundaries | The integration matrix below checks the real compiled registries, queue identities, SQL grants and kernel mounts. Providers are synthetic; no live parish delivery or deployment is claimed. |
+
+The general worker's compiled registry now owns source refresh, token preparation,
+cleanup, Family preparation, facts/exports, daily/weekly preparation and completion,
+and operational collection/Slack. It has token public keys, never private token
+or Workspace credentials. Scheduler admission is metadata-only and consumes no
+worker queue. Mail dispatch owns setup/campaign test mail and outbox delivery;
+it alone receives token private keys and the Workspace credential. Its bootstrap
+exception never silently substitutes a missing configured credential. The
+configuration and target credential installers retain their separate authority.
+
+| Integration evidence | What it proves |
+| --- | --- |
+| `test_runtime_background.py` | Actual compiled registries, key inventories, startup ordering, absent/mismatched credential refusal and fresh authority checks before domain effects. |
+| `test_background_grants_postgresql.py` and the delivery/digest database suites | Actual narrow SQL identities: scheduler enqueues but cannot claim; workers prepare but cannot dispatch; MAIL cannot obtain general private records or fabricate provider capability. |
+| `test_operational_compose.py` | Non-root commands, real Linux kernel mount admission, bootstrap/complete/abort profiles, restricted SQL, configured consumer recreation and durable state under both development and production-shaped overlays. |
+| `test_broker_valkey_container.py`, `runtime_broker_probe.py`, `test_worker_lifetime_postgresql.py` | Real broker queue/ACL behavior and signal handling, plus separately tested SQL claims, independent lease renewal, no new claims after stop and truthful in-flight drain. The broker transport probe intentionally substitutes its domain handler; it is not claimed as a full campaign demonstration. |
+
+CI runs these existing current-functionality checks together with this increment;
+do not repeat the full container/database suites locally merely for handoff.
+ARC-06.03–.07 and OPS-01.02 remain mixed-phase tasks: target replacement,
+backup/escrow, token-key retirement and remaining offline commands are not completed
+by enabling mail. OPS-02's existing isolation remains intact; no broader mount
+or shared credential was introduced for routing convenience. Full BG-07.04/.05
+archive inventory/report parity and ADM-06 restore/reopen/archive/Return still
+belong to their documented later owners. Gate 3, Gate 5, real-provider smoke
+tests, deployment and release remain separate boundaries.

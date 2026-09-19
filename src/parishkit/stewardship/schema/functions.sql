@@ -4134,11 +4134,12 @@ BEGIN
         WHERE decision.decision='cancel' AND command.action='resolve'
             AND command.actor_id=NEW.actor_id AND command.correlation_id=NEW.correlation_id
             AND command.reason=NEW.reason AND c.id=NEW.campaign_id AND c.state='closed'
-            AND covered.obligation_key=NEW.obligation_key AND covered.coverage=NEW.coverage
+            AND covered.obligation_key=NEW.obligation_key
             AND m.state='cancelled' AND m.reason='admin_post_close_skip'
-            AND ((covered.purpose='receipt' AND NEW.occurrence_id IS NULL
+            AND ((covered.purpose='receipt' AND covered.coverage=NEW.coverage AND NEW.occurrence_id IS NULL
                 AND NEW.outbox_id=m.id AND NEW.task_id=m.task_id)
               OR (covered.occurrence_id=NEW.occurrence_id AND NEW.outbox_id IS NULL
+                AND NEW.coverage=public.stewardship_delivery_closed_slot_coverage_v1(NEW.occurrence_id)
                 AND public.stewardship_delivery_closed_digest_v1(NEW.occurrence_id)
                 AND EXISTS(SELECT 1 FROM public.stewardship_schedule_occurrence o
                     WHERE o.id=NEW.occurrence_id AND o.state='skipped' AND o.reason='admin_post_close_skip'

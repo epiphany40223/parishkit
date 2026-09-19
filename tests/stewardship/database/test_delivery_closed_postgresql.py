@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from django.db import connection
+from django.db import DatabaseError, connection
 
 from parishkit.stewardship.accounts import delivery_control_commands as commands
 from parishkit.stewardship.accounts.family_authentication import FamilyRuntime
@@ -35,6 +35,7 @@ from parishkit.stewardship.jobs.outbox_models import OutboxMessage
 from parishkit.stewardship.jobs.scheduler import scheduler_session
 from parishkit.stewardship.reports.digest_models import DailyDigestRecipient
 from parishkit.stewardship.reports.digest_tasks import daily_handler
+from parishkit.stewardship.reports.weekly_models import WeeklyDigestRecipient
 from parishkit.stewardship.responses.models import (
     AdditionalInformationItem,
     SubmissionReceiptOccurrence,
@@ -42,6 +43,7 @@ from parishkit.stewardship.responses.models import (
 from parishkit.stewardship.storage import StaleRecordError
 
 from .campaign_builders import campaign_clock, close_campaign
+from .campaign_builders import change as configure
 from .test_background_grants_postgresql import task_login
 from .test_daily_digest_dispatch_postgresql import allocated, begin
 from .test_daily_digest_planning_postgresql import allocate
@@ -56,6 +58,7 @@ from .test_response_http_postgresql import post as family_post
 from .test_schedule_reconciliation_postgresql import replace_schedule
 from .test_setup_mail_views_postgresql import web_login
 from .test_setup_views_postgresql import post
+from .test_weekly_capture_postgresql import allocate as allocate_weekly
 from .test_weekly_tasks_postgresql import execute as execute_weekly
 from .test_weekly_tasks_postgresql import queued as queue_weekly
 from .test_withdrawal_postgresql import (  # noqa: F401
@@ -106,6 +109,16 @@ def test_inflight_retries_acquire_hold_atomically_and_keep_uncertainty(scheduled
         # SMTP deliberately never claims provider idempotency. Exercise this
         # storage-only reconciliation branch through the journal's test owner,
         # without widening the actual MAIL role's authority to invent it.
+        with (
+            task_login(ServiceRole.MAIL_DISPATCH, exact=True),
+            pytest.raises(DatabaseError),
+        ):
+            change_delivery(
+                unknown,
+                DeliveryAction.RETRY_IDEMPOTENT,
+                retry_seconds=30,
+                evidence=provider_evidence(),
+            )
         change_delivery(
             unknown,
             DeliveryAction.RETRY_IDEMPOTENT,
@@ -378,6 +391,169 @@ def test_closed_receipt_and_weekly_skips_are_durable_not_provider_acceptance(
             is later_response
         )
         assert PostCloseMailResolution.objects.filter(pk=resolved.pk).exists()
+        if later_response:
+            # The later automatic report consumes all due slots and accepts the
+            # newer input. Its current proof also discharges the older slot;
+            # another revision must not continually revive that old skip.
+            status = allocate_weekly(claim_task=False)
+            with task_login(ServiceRole.WORKER, exact=True):
+                execute_weekly(status)
+            recipients = WeeklyDigestRecipient.objects.filter(
+                snapshot__preparation__task_id=status.run_id
+            ).select_related("outbox", "snapshot__preparation")
+            assert recipients.count() == 2
+            for recipient in recipients:
+                with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+                    execution = claim(recipient.outbox)
+                    assert begin(recipient.outbox, execution) is not None
+                    finish_submission(
+                        recipient.outbox_id,
+                        execution.claim,
+                        FamilyDeliveryResult(Status.ACCEPTED, 1),
+                    )
+            assert ScheduleFulfillment.objects.filter(
+                occurrence_id=recipients.first().snapshot.preparation.occurrence_id,
+                disposition="delivered",
+            ).exists()
+            with (
+                task_login(ServiceRole.SCHEDULER, exact=True),
+                connection.cursor() as cursor,
+            ):
+                cursor.execute(
+                    "SELECT id FROM stewardship_postclose_current WHERE id=%s",
+                    [resolved.pk],
+                )
+                assert cursor.fetchone() == (resolved.pk,)
+
+
+@pytest.mark.parametrize("accept_first", [False, True])
+def test_closed_weekly_resolution_unions_only_cancelled_recipient_subsets(
+    scheduled, settings, accept_first
+):
+    """Different real per-Admin subsets produce one exact semantic skip, not two."""
+    item = scheduled
+    harness = SimpleNamespace(campaign=item.campaign, service=item.arguments[1])
+    with campaign_clock(
+        item.campaign.active_configuration.starts_at + timedelta(days=9)
+    ):
+        submit_while_paused(item, settings, text="Original request")
+        status = queue_weekly(harness)
+        with task_login(ServiceRole.WORKER, exact=True):
+            execute_weekly(status)
+        original = WeeklyDigestRecipient.objects.order_by("address").first()
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            execution = claim(original.outbox)
+            assert begin(original.outbox, execution) is not None
+            finish_submission(
+                original.outbox_id,
+                execution.claim,
+                FamilyDeliveryResult(Status.ACCEPTED, 1),
+            )
+        definition = ScheduleDefinition.objects.get(kind="weekly_digest")
+        assert (
+            replace_schedule(item.arguments[1].store, definition, uuid4()).state
+            == "applied"
+        )
+        submit_while_paused(item, settings, text="Replacement request")
+        status = allocate_weekly(claim_task=False)
+        with task_login(ServiceRole.WORKER, exact=True):
+            execute_weekly(status)
+        correction = WeeklyDigestRecipient.objects.select_related("outbox").get(
+            snapshot__preparation__task_id=status.run_id, address=original.address
+        )
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            execution = claim(correction.outbox)
+            assert begin(correction.outbox, execution) is not None
+            finish_submission(
+                correction.outbox_id,
+                execution.claim,
+                FamilyDeliveryResult(Status.ACCEPTED, 1),
+            )
+        store = item.arguments[1].store
+        assert (
+            configure(
+                store,
+                store.active(),
+                uuid4(),
+                [
+                    {
+                        "operation": "update",
+                        "section": "schedules",
+                        "id": str(definition.pk),
+                        "values": {"time": "11:00:00"},
+                    }
+                ],
+            ).state
+            == "applied"
+        )
+        submit_while_paused(
+            item, settings, text="Third request after partial correction"
+        )
+        status = allocate_weekly(claim_task=False)
+        with task_login(ServiceRole.WORKER, exact=True):
+            execute_weekly(status)
+        recipients = list(
+            WeeklyDigestRecipient.objects.filter(
+                snapshot__preparation__task_id=status.run_id
+            )
+            .select_related("outbox", "snapshot__preparation")
+            .order_by("address")
+        )
+        assert len(recipients) == 2
+        assert recipients[0].corrections != recipients[1].corrections
+        if accept_first:
+            with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+                execution = claim(recipients[0].outbox)
+                assert begin(recipients[0].outbox, execution) is not None
+                finish_submission(
+                    recipients[0].outbox_id,
+                    execution.claim,
+                    FamilyDeliveryResult(Status.ACCEPTED, 1),
+                )
+        cancelled = recipients[1:] if accept_first else recipients
+        expected = sorted(
+            {
+                (kind, key)
+                for recipient in cancelled
+                for kind, key in [("item", key) for key in recipient.information]
+                + [("correction", key) for key, _ in recipient.corrections]
+            }
+        )
+        with web_login():
+            _, token = commands.preview_pause(
+                *item.arguments, reason="Resolve differing weekly subsets"
+            )
+            commands.confirm(*item.arguments, token=token)
+        close_campaign(item.campaign, uuid4())
+    with (
+        campaign_clock(item.campaign.active_configuration.ends_at + timedelta(hours=1)),
+        web_login(),
+    ):
+        _, token = commands.preview_resolution(
+            *item.arguments,
+            reason="Cancel remaining exact weekly contents",
+            decision="cancel",
+            types=["weekly_digest"],
+        )
+        commands.confirm(*item.arguments, token=token)
+    resolution = PostCloseMailResolution.objects.get(
+        occurrence_id=recipients[0].snapshot.preparation.occurrence_id
+    )
+    assert resolution.coverage == {
+        "daily_range": None,
+        "items": [
+            {
+                "kind": kind,
+                "id": key,
+                "version": recipients[0].snapshot.item_versions[key],
+            }
+            for kind, key in expected
+        ],
+    }
+    assert OutboxMessage.objects.get(pk=recipients[0].outbox_id).state == (
+        "delivered" if accept_first else "cancelled"
+    )
+    assert OutboxMessage.objects.get(pk=recipients[1].outbox_id).state == "cancelled"
 
 
 def test_closed_resolution_releases_only_selected_mail_and_can_cancel_without_health(
