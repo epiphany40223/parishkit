@@ -8,8 +8,15 @@ from uuid import uuid4
 import pytest
 from openpyxl import load_workbook
 
+from parishkit.stewardship.accounts.configuration_models import (
+    AppliedConfigurationVersion,
+    Parish,
+)
 from parishkit.stewardship.accounts.policy import Principal
-from parishkit.stewardship.audit.schemas import ContextKind, sanitize
+from parishkit.stewardship.audit.schemas import Action, ContextKind, Outcome, sanitize
+from parishkit.stewardship.reports import export_services
+from parishkit.stewardship.reports.exact_models import ExactExportRequest
+from parishkit.stewardship.reports.export_models import ExportRequest
 from parishkit.stewardship.reports.information_rendering import (
     information_lines,
     render_information,
@@ -42,6 +49,82 @@ AUDIT_SCOPE_CASES = (
         for value in (None, "true", "private", 1, [], {})
     ),
 )
+
+
+@pytest.mark.parametrize("kind", ["exact", "participation", "ministry"])
+@pytest.mark.parametrize("action", [Action.EXPORT_REQUESTED, Action.EXPORT_CANCELLED])
+def test_shared_audit_preserves_each_request_model(monkeypatch, kind, action):
+    """Exact-generation requests share the audit helper but have no report field."""
+    configuration = AppliedConfigurationVersion(parish=Parish())
+    request = (ExactExportRequest if kind == "exact" else ExportRequest)(
+        configuration=configuration,
+        campaign_id=uuid4(),
+    )
+    if kind != "exact":
+        request.report = kind
+        request.authorization_scope = {
+            "operational": False,
+            "ministries": [4, 9],
+            "result_ministries": [4],
+        }
+    recorded = []
+    monkeypatch.setattr(
+        export_services,
+        "record_action",
+        lambda action, **evidence: recorded.append((action, evidence)),
+    )
+    actor = uuid4()
+    export_services.audit(action, request, actor, outcome=Outcome.STARTED, count=1)
+    assert len(recorded) == 1
+    actual_action, evidence = recorded[0]
+    assert actual_action == action
+    assert evidence["subject_id"] == request.pk
+    assert evidence["campaign_id"] == request.campaign_id
+    assert evidence["parish_id"] == configuration.parish.pk
+    assert evidence["actor_id"] == actor
+    assert evidence["context"] == (
+        {"outcome": Outcome.STARTED, "count": 1}
+        | (
+            {"ministry_duids": [4], "ministry_operational": False}
+            if kind == "ministry"
+            else {}
+        )
+    )
+
+
+@pytest.mark.parametrize("kind", ["exact", "participation", "ministry"])
+@pytest.mark.parametrize(
+    "roles,scope,owner,permitted",
+    [
+        (("staff",), (), True, {"exact", "participation", "ministry"}),
+        (("ministry_leader",), (4, 9), True, {"ministry"}),
+        (("ministry_leader",), (9,), True, set()),
+        (("staff",), (), False, set()),
+        (("administrator",), (), False, {"exact", "participation", "ministry"}),
+    ],
+)
+def test_shared_authorization_keeps_request_model_boundaries(
+    monkeypatch,
+    kind,
+    roles,
+    scope,
+    owner,
+    permitted,
+):
+    """Exact requests keep global report/ownership policy, never Ministry grants."""
+    actor = Principal(uuid4(), frozenset(roles), frozenset(scope))
+    request = (ExactExportRequest if kind == "exact" else ExportRequest)(
+        requester_id=actor.identity if owner else uuid4(),
+    )
+    if kind != "exact":
+        request.report = kind
+        request.authorization_scope = {"operational": False, "ministries": [4, 9]}
+    monkeypatch.setattr(export_services, "current_principal", lambda *_: actor)
+    if kind in permitted:
+        assert export_services.authorize(None, actor.identity, request=request) == actor
+    else:
+        with pytest.raises(PermissionError):
+            export_services.authorize(None, actor.identity, request=request)
 
 
 @pytest.mark.parametrize("context,valid", AUDIT_SCOPE_CASES)

@@ -36,7 +36,7 @@ def authorize(store, user_id, *, request=None):
     """Reload current coherent policy; possession of an opaque UUID is not access."""
     principal = current_principal(store, user_id)
     permitted = allows(principal, Capability.CAMPAIGN_REPORT)
-    if request is not None and request.report == "ministry":
+    if isinstance(request, ExportRequest) and request.report == "ministry":
         from .ministry_exports import scope_authorized
 
         permitted = scope_authorized(principal, request.authorization_scope)
@@ -70,7 +70,7 @@ def audit(action, request, actor_id, *, outcome, count=None):
     context = {"outcome": outcome}
     if count is not None:
         context["count"] = count
-    if request.report == "ministry":
+    if isinstance(request, ExportRequest) and request.report == "ministry":
         context.update(
             ministry_duids=request.authorization_scope["result_ministries"],
             ministry_operational=request.authorization_scope["operational"],

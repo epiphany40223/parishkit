@@ -124,3 +124,25 @@ in 33.44 seconds, sharing one database bootstrap. These fixes complete round 3
 under the automated cycle, not an automatic fourth round. No accepted Medium-
 or-higher finding remains. Full exact-head CI/DCO and protected delivery remain
 required; this record does not release M5 or Gate 3.
+
+## Candidate CI correction
+
+The first ready candidate `0bef267d748d1f81a2e3a4f21338bda3a5295d50`
+preserved corrected tree `25a05858f21c238c68d41fe3e2f0f481539bf465` from
+`5fd4b028b45f9ddcae38dac989a769e12e26b7f4`. Full run `35471954307`
+passed validation, DCO, all browser engines and all container scenarios. Database
+shards 10 and 6 exposed the shared helpers' assumption that every request has a
+`report` field; `ExactExportRequest` does not. Other database shards were
+cancelled by matrix failure handling. This is a real application regression,
+not a flaky provider/infrastructure test or valid merge evidence.
+
+The PR returned to draft. Both shared authorization and audit helpers now apply
+Ministry-specific behavior only to the compiled `ExportRequest` model. Exact
+requests retain their existing global report capability and ownership rules.
+A new fast test first reproduced the audit failure, then all 55 fast cases
+passed in 0.87 seconds, including 21 shared-model audit/authorization cases.
+Ten focused real-role PostgreSQL cases passed in 27.53 seconds: exact-generation
+handoff, cancellation, compaction protection, recovery ownership and retained
+Ministry capture. No schema changed. The correction receives an independent
+dual-source review before the new full exact-head candidate run; the three
+completed rounds above are retained rather than restarted.
