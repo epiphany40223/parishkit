@@ -32,3 +32,15 @@ the next independent review rather than being treated as previously reviewed.
 Fresh-install schema/model checks pass (two tests, 16.92 seconds); five focused
 worker/scheduler assembly tests pass (0.35 seconds). The complete suite is
 reserved for the ready candidate.
+
+## Round 2
+
+Pika session `20260919-144541-b6a6b9` reviewed `8b2633f` to `5c80468`,
+covering the Docker correction and prior disposition with surrounding policy
+and export context. Exact permission preflight passed. Both reviewers completed
+without timeout, stall, failed agent or degradation; Codex took 155 seconds.
+Finalization returned APPROVE with zero raw or validated findings. The focused
+Docker allowlist regression passes in 0.05 seconds; draft CI run `35462198196`
+passes validation. Draft-only aggregate failures reflect intentionally skipped
+full suites and are not merge evidence. Two rounds are complete; the third
+review and full candidate CI/DCO remain required.
