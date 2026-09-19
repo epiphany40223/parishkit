@@ -20,6 +20,7 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.responses.information import update_information
 from parishkit.stewardship.responses.models import AdditionalInformationItem
+from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 from parishkit.stewardship.web.contracts import expected_version, filters
 from parishkit.stewardship.web.responses import campaign_response
@@ -172,6 +173,7 @@ def _page_response(request, campaign_id, *, item_id=None):
                 previous_history=history_page - 1 if history_page > 1 else None,
                 next_history=history_page + 1 if more_history else None,
                 request_key=uuid4(),
+                export_timezones=sorted(timezone_names()) if not item_id else (),
                 previous_page=query.page - 1 if query.page > 1 else None,
                 next_page=query.page + 1
                 if query.page * PAGE_SIZE < result["total"]

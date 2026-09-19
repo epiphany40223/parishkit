@@ -24,6 +24,75 @@ class Migration(migrations.Migration):
         migrations.SeparateDatabaseAndState(
             state_operations=[
                 migrations.CreateModel(
+                    name="InformationExportSnapshot",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        ("actor_id", models.UUIDField(editable=False)),
+                        ("correlation_id", models.UUIDField(editable=False)),
+                        (
+                            "campaign",
+                            models.ForeignKey(
+                                to="stewardship_campaigns.campaign",
+                                on_delete=django.db.models.deletion.PROTECT,
+                                db_index=False,
+                            ),
+                        ),
+                        (
+                            "source",
+                            models.ForeignKey(
+                                to="stewardship_source.sourcesnapshot",
+                                on_delete=django.db.models.deletion.PROTECT,
+                                db_index=False,
+                            ),
+                        ),
+                        (
+                            "configuration",
+                            models.ForeignKey(
+                                to="stewardship_accounts.appliedconfigurationversion",
+                                on_delete=django.db.models.deletion.PROTECT,
+                                db_index=False,
+                            ),
+                        ),
+                        ("parameters", models.JSONField()),
+                        ("document", models.JSONField(default=dict)),
+                        ("row_count", models.PositiveIntegerField(default=0)),
+                    ],
+                    options={
+                        "db_table": "stewardship_information_export_snapshot",
+                        "indexes": [
+                            models.Index(
+                                fields=["correlation_id"],
+                                name="information_export_correlation",
+                            ),
+                            models.Index(
+                                fields=["campaign"], name="information_export_campaign"
+                            ),
+                            models.Index(
+                                fields=["source"], name="information_export_source"
+                            ),
+                            models.Index(
+                                fields=["configuration"],
+                                name="information_export_config",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
                     name="WeeklyManualRequest",
                     fields=[
                         (
@@ -1347,6 +1416,15 @@ class Migration(migrations.Migration):
                         ("parameters", models.JSONField()),
                         ("authorization_scope", models.JSONField()),
                         (
+                            "information_snapshot",
+                            models.ForeignKey(
+                                to="stewardship_reports.informationexportsnapshot",
+                                on_delete=django.db.models.deletion.PROTECT,
+                                null=True,
+                                db_index=False,
+                            ),
+                        ),
+                        (
                             "campaign",
                             models.ForeignKey(
                                 on_delete=django.db.models.deletion.PROTECT,
@@ -1365,6 +1443,7 @@ class Migration(migrations.Migration):
                             models.ForeignKey(
                                 on_delete=django.db.models.deletion.PROTECT,
                                 to="stewardship_reports.campaigndailyfactset",
+                                null=True,
                             ),
                         ),
                         (
@@ -1490,6 +1569,13 @@ class Migration(migrations.Migration):
                 migrations.AddIndex(
                     model_name="exportrequest",
                     index=models.Index(
+                        fields=["information_snapshot"],
+                        name="export_information_snapshot",
+                    ),
+                ),
+                migrations.AddIndex(
+                    model_name="exportrequest",
+                    index=models.Index(
                         fields=["requester_id", "created_at"],
                         name="export_requester_history",
                     ),
@@ -1504,7 +1590,17 @@ class Migration(migrations.Migration):
                 migrations.AddConstraint(
                     model_name="exportrequest",
                     constraint=models.CheckConstraint(
-                        condition=models.Q(("report", "participation")),
+                        condition=models.Q(
+                            report="participation",
+                            fact_set__isnull=False,
+                            information_snapshot__isnull=True,
+                        )
+                        | models.Q(
+                            report="additional_information",
+                            fact_set__isnull=True,
+                            information_snapshot__isnull=False,
+                            format__in=("csv", "xlsx", "pdf"),
+                        ),
                         name="export_report_known",
                     ),
                 ),

@@ -474,6 +474,10 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
     # Shared guards must still prove their actual enabled row-level contracts;
     # nonstandard names are not exceptions to SQL immutability.
     shared_immutable_guards = {
+        "stewardship_information_export_snapshot": (
+            "information_export_capture",
+            "stewardship_information_export_capture_v1",
+        ),
         "stewardship_information_revision": (
             "stewardship_information_revision_guard",
             "stewardship_information_revision_guard_v1",
@@ -687,6 +691,7 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             row = cursor.fetchone()
             assert row is not None, table
             conditional_insert_guards = {
+                "stewardship_information_export_snapshot",
                 "stewardship_information_revision",
                 "stewardship_delivery_control",
                 "stewardship_delivery_message_resolution",

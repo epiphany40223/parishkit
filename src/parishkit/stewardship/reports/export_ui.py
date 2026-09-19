@@ -3,9 +3,11 @@
 from uuid import UUID, uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
+from django.db.models import F
 from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
@@ -119,9 +121,18 @@ def detail(request, request_id):
 
         def content():
             """Safe job state and inputs come from the existing requester owner."""
-            job = ExportRequest.objects.select_related(
-                "fact_set", "configuration__parish"
-            ).get(pk=request_id)
+            job = (
+                ExportRequest.objects.select_related(
+                    "fact_set", "configuration__parish", "information_snapshot"
+                )
+                .defer("information_snapshot__document")
+                .annotate(
+                    information_source_generation=F(
+                        "information_snapshot__source__generation"
+                    )
+                )
+                .get(pk=request_id)
+            )
             state = export_status(service.store, principal.identity, request_id)
             mutable = True
             try:
@@ -133,7 +144,12 @@ def detail(request, request_id):
                 "status": state,
                 "mutable": mutable,
                 "retry_key": uuid4(),
-                "report_url": ReportQuery(
+                "report_title": "Additional-information export"
+                if job.report == "additional_information"
+                else "Participation export",
+                "report_url": reverse("admin:information_queue", args=(campaign_id,))
+                if job.report == "additional_information"
+                else ReportQuery(
                     scope=job.parameters["population_scope"],
                     timezone=job.browser_timezone,
                 ).url(campaign_id),

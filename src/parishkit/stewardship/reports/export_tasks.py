@@ -128,6 +128,16 @@ def _abort_render_worker():
 
 def load_document(request):
     """Load exactly one pinned ready generation inside the caller's campaign guard."""
+    if request.report == "additional_information":
+        from .information_documents import information_document
+
+        return information_document(
+            request.information_snapshot.document,
+            request.parameters,
+            parish_name=request.configuration.parish.name,
+            requested_at=request.created_at,
+            timezone=request.browser_timezone,
+        )
     facts = CampaignDailyFactSet.objects.get(
         pk=request.fact_set_id, campaign_id=request.campaign_id, state="ready"
     )
@@ -180,10 +190,14 @@ def _execute(execution, *, store, root):
         document = load_document(request)
 
         def render(stream):
-            """The only compiled renderer consumes the exact pinned document."""
+            """Closed report dispatch consumes only the retained typed document."""
             guard.check()
             execution.check()
-            if request.format == "csv":
+            if request.report == "additional_information":
+                from .information_rendering import render_information
+
+                render_information(document, stream, format=request.format)
+            elif request.format == "csv":
                 participation_csv(document, stream)
             elif request.format == "xlsx":
                 from .spreadsheets import participation_xlsx
@@ -208,7 +222,11 @@ def _execute(execution, *, store, root):
             attempt=attempt,
             size=receipt.size,
             sha256=receipt.sha256,
-            row_count=len(document.days),
+            row_count=(
+                document.item_count
+                if request.report == "additional_information"
+                else len(document.days)
+            ),
             expires_at=database_now() + timedelta(days=7),
             actor_id=execution.claim.worker_id,
             correlation_id=attempt.claim_event_id,
