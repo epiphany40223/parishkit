@@ -18,6 +18,7 @@ from parishkit.stewardship.storage import StorageInvariantError
 
 from .family_schedule_planning import _planning_scope
 from .models import RestoreDeliveryHold
+from .postclose_coverage import resolved_slots
 from .schedule_evaluation import SchedulePlan
 from .schedule_models import ScheduleDefinition, ScheduleFulfillment, ScheduleOccurrence
 from .schedules import occurrence_key
@@ -142,6 +143,10 @@ class DigestScheduleProducer:
                 )
             }
             excluded = covered | held
+            excluded.update(
+                item["slot"]
+                for item in resolved_slots(definition.pk, mode, slots=identities)
+            )
             for slot in page.slots:
                 guard.check()
                 if slot.key in excluded:

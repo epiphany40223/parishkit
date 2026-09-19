@@ -22,6 +22,7 @@ from .delivery_forecast import next_due
 from .sessions import require_fresh
 
 SALT = "stewardship-delivery-control-v1"
+RESOLVABLE_TYPES = frozenset({"receipt", "daily_digest", "weekly_digest"})
 
 
 def _current(request, service, campaign_id, *, passive=False):
@@ -109,6 +110,76 @@ def _resume_selection(campaign):
     }
 
 
+def _action_available(campaign, action):
+    """Keep post-close resolution separate from ordinary live resume."""
+    if action == "pause":
+        return not campaign.delivery_paused
+    if action == "resume":
+        return _prestart_resume(campaign) or _family_resume(campaign)
+    return (
+        action == "resolve" and campaign.delivery_paused and campaign.state == "closed"
+    )
+
+
+def _clears_pause(current, types):
+    """Selected held rows are released/cancelled; uncertainty cannot be cleared."""
+    selected = sum(current["types"].get(kind, {}).get("held", 0) for kind in types)
+    return (
+        current["held"] == selected
+        and not current["submitting"]
+        and not current["unknown"]
+    )
+
+
+def _closed_selection(campaign, current, *, decision, types):
+    """Bind only selected held types; cancellation never requires provider health."""
+    if (
+        type(decision) is not str
+        or decision not in {"release", "cancel", "clear"}
+        or type(types) is not list
+        or any(type(kind) is not str or kind not in RESOLVABLE_TYPES for kind in types)
+        or types != sorted(set(types))
+    ):
+        raise ValueError("Select valid held-message types and a resolution.")
+    count = sum(current["types"].get(kind, {}).get("held", 0) for kind in types)
+    if (decision == "clear" and (types or not _clears_pause(current, types))) or (
+        decision != "clear" and count == 0
+    ):
+        raise StaleRecordError("Select held messages, or clear a fully resolved pause.")
+    proof = health(campaign.pk) if decision == "release" else None
+    if proof is not None and not proof["ready"]:
+        raise StaleRecordError(
+            "Releasing held messages requires a current sender check."
+        )
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT coverage,preparing "
+            "FROM stewardship_delivery_closed_coverage_summary "
+            "WHERE campaign_id=%s",
+            [campaign.pk],
+        )
+        coverage, preparing = cursor.fetchone()
+    if preparing or (
+        decision == "cancel"
+        and any(
+            current["types"].get(kind, {}).get("submitting", 0)
+            or current["types"].get(kind, {}).get("unknown", 0)
+            for kind in types
+        )
+    ):
+        raise StaleRecordError(
+            "Wait for report preparation and reconcile selected uncertain mail first."
+        )
+    coverage = json.loads(coverage) if isinstance(coverage, str) else coverage
+    return {
+        "plan": "closed",
+        "decision": decision,
+        "types": types,
+        "health": proof,
+        "coverage": {kind: coverage[kind] for kind in types if kind in coverage},
+    }
+
+
 def family_recovery_impact(campaign_id):
     """Count complete due groups, including obligations not yet in the outbox."""
     with connection.cursor() as cursor:
@@ -151,6 +222,7 @@ def page(request, service, campaign_id):
             "available": _available(campaign, runtime),
             "fresh": fresh,
             "resume_available": _prestart_resume(campaign) or _family_resume(campaign),
+            "resolve_available": _action_available(campaign, "resolve"),
             "inventory": inventory(campaign_id),
             "next_due": next_due(campaign, _now()),
             "health": health(campaign_id),
@@ -186,7 +258,22 @@ def preview_resume(request, service, campaign_id, *, reason):
     return _preview(request, service, campaign_id, reason=reason, action="resume")
 
 
-def _preview(request, service, campaign_id, *, reason, action):
+def preview_resolution(request, service, campaign_id, *, reason, decision, types):
+    """Preview selected closed-campaign mail without changing Family access."""
+    return _preview(
+        request,
+        service,
+        campaign_id,
+        reason=reason,
+        action="resolve",
+        decision=decision,
+        types=types,
+    )
+
+
+def _preview(
+    request, service, campaign_id, *, reason, action, decision=None, types=None
+):
     """Bind current health when release is requested; pause never requires it."""
     if (
         type(reason) is not str
@@ -197,11 +284,7 @@ def _preview(request, service, campaign_id, *, reason, action):
         raise ValueError("Enter a delivery-control reason of at most 1,024 characters.")
     with work_transaction():
         actor, runtime, campaign = _current(request, service, campaign_id)
-        if not _available(campaign, runtime) or (
-            campaign.delivery_paused
-            if action == "pause"
-            else not (_prestart_resume(campaign) or _family_resume(campaign))
-        ):
+        if not _available(campaign, runtime) or not _action_available(campaign, action):
             raise StaleRecordError("This delivery control is not currently available.")
         selected = {}
         current = inventory(campaign_id)
@@ -218,6 +301,10 @@ def _preview(request, service, campaign_id, *, reason, action):
                 raise StaleRecordError(
                     "Wait for report preparation and resolve uncertain digests first."
                 )
+        elif action == "resolve":
+            selected = _closed_selection(
+                campaign, current, decision=decision, types=types
+            )
         now = _now()
         binding = {
             "key": str(uuid4()),
@@ -301,12 +388,7 @@ def confirm(request, service, campaign_id, *, token):
             return previous
         _binding(token, max_age=300)
         if (
-            binding["action"] not in {"pause", "resume"}
-            or (
-                campaign.delivery_paused
-                if binding["action"] == "pause"
-                else not (_prestart_resume(campaign) or _family_resume(campaign))
-            )
+            not _action_available(campaign, binding["action"])
             or not _available(campaign, runtime)
             or campaign.version != binding["campaign_version"]
             or runtime.version != binding["runtime_version"]
@@ -323,12 +405,29 @@ def confirm(request, service, campaign_id, *, token):
                     or not binding["selection"].get("health", {}).get("ready")
                 )
             )
+            or (
+                binding["action"] == "resolve"
+                and binding["selection"]
+                != _closed_selection(
+                    campaign,
+                    binding["inventory"],
+                    decision=binding["selection"].get("decision"),
+                    types=binding["selection"].get("types"),
+                )
+            )
         ):
             raise StaleRecordError("Delivery inputs changed; review a new preview.")
         return DeliveryControlCommand.objects.create(
             id=key,
             **values,
-            control_id=uuid4(),
+            control_id=(
+                None
+                if binding["action"] == "resolve"
+                and not _clears_pause(
+                    binding["inventory"], binding["selection"]["types"]
+                )
+                else uuid4()
+            ),
             session_id=request.portal_session.pk,
             authenticated_at=require_fresh(request),
             correlation_id=current_correlation(),

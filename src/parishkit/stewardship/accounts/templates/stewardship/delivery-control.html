@@ -50,6 +50,22 @@
 <p>{% translate "The current sender proof, live inventory, campaign dates and authentication will be checked again. A changed input cancels this confirmation without releasing mail." %}</p>
 {% if control_token and fresh %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ control_token }}"><button type="submit">{% translate "Confirm resume of live delivery" %}</button></form>{% endif %}</section>{% endif %}
 {% endif %}
+{% if resolve_available %}<section class="panel"><h2>{% translate "Resolve held messages" %}</h2>
+<p>{% translate "The campaign is closed. Invitations and reminders follow the ordinary close policy and cannot be released here. Select held receipts or Admin reports to release after a sender check, or cancel with a reason. This does not reopen Family access." %}</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="preview_resolve">
+<fieldset><legend>{% translate "Message types" %}</legend>
+<label><input type="checkbox" name="receipt" value="yes"> {% translate "Submission receipts" %} ({{ inventory.types.receipt.held|default:0|number }})</label>
+<label><input type="checkbox" name="daily_digest" value="yes"> {% translate "Daily Admin reports" %} ({{ inventory.types.daily_digest.held|default:0|number }})</label>
+<label><input type="checkbox" name="weekly_digest" value="yes"> {% translate "Weekly Admin reports" %} ({{ inventory.types.weekly_digest.held|default:0|number }})</label></fieldset>
+<label for="resolution-decision">{% translate "Resolution" %}</label><select id="resolution-decision" name="decision"><option value="release">{% translate "Release selected held messages" %}</option><option value="cancel">{% translate "Cancel selected held messages" %}</option><option value="clear">{% translate "Clear an empty, fully resolved pause (select no types)" %}</option></select>
+<label for="resolution-reason">{% translate "Reason" %}</label><textarea id="resolution-reason" name="reason" required maxlength="1024">{{ preview.reason }}</textarea>
+<button type="submit">{% translate "Preview held-message resolution" %}</button></form>
+{% if preview.action == 'resolve' %}<section class="panel"><h3>{% translate "Exact held-message resolution" %}</h3><p>{{ preview.reason }}</p>
+<p>{% translate "Decision" %}: {{ preview.selection.decision }}. {% translate "Selected types" %}: {{ preview.selection.types|join:", " }}.</p>
+<ul>{% for kind, counts in preview.inventory.types.items %}{% if kind in preview.selection.types %}<li>{{ kind }}: {{ counts.held|number }} {% translate "held messages" %}</li>{% endif %}{% endfor %}</ul>
+{% for kind, counts in preview.selection.coverage.items %}<p>{{ kind }}: {% translate "Covered item-version references across selected messages" %}: {{ counts.items|number }}; {% translate "Covered daily ranges across selected messages" %}: {{ counts.daily_ranges|number }}.</p>{% endfor %}
+<p>{% translate "These preview counts are checked again at confirmation. Other held types and uncertain deliveries stay unresolved. The pause clears only when no held or uncertain messages remain." %}</p>
+{% if control_token and fresh %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ control_token }}"><button type="submit">{% translate "Confirm held-message resolution" %}</button></form>{% endif %}</section>{% endif %}</section>{% endif %}
 {% else %}
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="preview_pause"><label for="pause-reason">{% translate "Reason for pausing live delivery" %}</label><textarea id="pause-reason" name="reason" required maxlength="1024">{{ preview.reason }}</textarea><button type="submit">{% translate "Preview pause" %}</button></form>
 {% if preview %}<section class="panel"><h2>{% translate "Exact pause preview" %}</h2><p>{{ preview.reason }}</p>

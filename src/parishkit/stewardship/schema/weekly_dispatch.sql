@@ -14,7 +14,7 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
         WHERE m.id=$1 AND m.purpose='weekly_digest' AND m.credential_namespace='none' AND m.family_id IS NULL
           AND m.campaign_id=p.campaign_id AND m.mode=p.mode AND p.phase='complete'
           AND o.state IN ('pending','running') AND o.due_at<=stewardship_campaign_now_v1()
-          AND NOT (m.mode='production' AND c.delivery_paused)
+          AND (NOT (m.mode='production' AND c.delivery_paused) OR stewardship_delivery_message_released_v1(m.id))
           AND stewardship_weekly_digest_scope_v1(p.campaign_id,p.revision_id,p.campaign_configuration_id,p.mode,p.rehearsal_epoch_id)
           AND NOT stewardship_schedule_slot_excluded_v1(o.definition_id,o.mode,o.target,o.slot))
 $$;

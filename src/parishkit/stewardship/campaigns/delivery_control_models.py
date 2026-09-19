@@ -36,3 +36,36 @@ class DeliveryControlCommand(ImmutableRecord):
                 name="delivery_control_action",
             ),
         ]
+
+
+class HeldMessageResolution(ImmutableRecord):
+    """Exact closed-message decision, owned only by the private command effect."""
+
+    command = models.ForeignKey(DeliveryControlCommand, on_delete=models.PROTECT)
+    message = models.ForeignKey(
+        "stewardship_jobs.OutboxMessage", on_delete=models.PROTECT
+    )
+    campaign = models.ForeignKey("Campaign", on_delete=models.PROTECT)
+    previous_version = models.PositiveBigIntegerField()
+    pause_version = models.PositiveBigIntegerField()
+    decision = models.CharField(max_length=8)
+
+    class Meta:
+        db_table = "stewardship_delivery_message_resolution"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("command", "message"), name="held_resolution_command"
+            ),
+            models.UniqueConstraint(
+                fields=("message", "pause_version"), name="held_resolution_pause"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(previous_version__gte=1)
+                & models.Q(pause_version__gte=1),
+                name="held_resolution_versions",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(decision__in=["release", "cancel"]),
+                name="held_resolution_decision",
+            ),
+        ]

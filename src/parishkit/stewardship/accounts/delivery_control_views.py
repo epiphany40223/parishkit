@@ -21,9 +21,14 @@ def control(request, campaign_id):
     try:
         service = runtime()
         action = request.POST.get("action") if request.method == "POST" else None
+        fields = {"action", "reason"}
+        if action == "confirm":
+            fields = {"action", "preview"}
+        elif action == "preview_resolve":
+            fields |= {"decision", *commands.RESOLVABLE_TYPES}
         _closed(
             request,
-            {"action", "preview"} if action == "confirm" else {"action", "reason"},
+            fields,
         )
         if action == "confirm":
             commands.confirm(
@@ -45,6 +50,20 @@ def control(request, campaign_id):
             )
             context["preview"], context["control_token"] = preview(
                 request, service, campaign_id, reason=request.POST.get("reason", "")
+            )
+        elif action == "preview_resolve":
+            types = sorted(
+                kind for kind in commands.RESOLVABLE_TYPES if kind in request.POST
+            )
+            if any(request.POST[kind] != "yes" for kind in types):
+                raise ValueError("Invalid held-message selection.")
+            context["preview"], context["control_token"] = commands.preview_resolution(
+                request,
+                service,
+                campaign_id,
+                reason=request.POST.get("reason", ""),
+                decision=request.POST.get("decision", ""),
+                types=types,
             )
         elif request.method == "POST":
             raise ValueError("Invalid delivery-control action.")

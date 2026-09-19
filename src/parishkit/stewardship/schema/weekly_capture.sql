@@ -50,10 +50,12 @@ RETURNS jsonb LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp A
     ), completed AS MATERIALIZED (
         SELECT s.* FROM snapshots s
         WHERE NOT EXISTS(SELECT 1 FROM stewardship_weekly_manual_request WHERE id=s.preparation_id)
-          AND EXISTS(
+          AND (EXISTS(
             SELECT 1 FROM stewardship_schedule_fulfillment f
             WHERE f.occurrence_id=s.occurrence_id AND f.mode=$2 AND f.target='admins'
               AND f.disposition IN ('delivered','empty'))
+            OR EXISTS(SELECT 1 FROM stewardship_postclose_resolution resolved
+                WHERE resolved.occurrence_id=s.occurrence_id AND resolved.mode=$2))
     ), reported AS (
         SELECT DISTINCT item FROM snapshots s
         JOIN stewardship_weekly_digest_recipient r ON r.snapshot_id=s.id

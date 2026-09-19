@@ -478,6 +478,10 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             "delivery_control_guard",
             "stewardship_delivery_control_guard_v1",
         ),
+        "stewardship_delivery_message_resolution": (
+            "delivery_message_resolution_guard",
+            "stewardship_delivery_message_resolution_guard_v1",
+        ),
         "stewardship_production_withdrawal": (
             "production_withdrawal_guard",
             "stewardship_production_withdrawal_guard_v1",
@@ -680,6 +684,7 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             assert row is not None, table
             conditional_insert_guards = {
                 "stewardship_delivery_control",
+                "stewardship_delivery_message_resolution",
                 "stewardship_production_withdrawal",
                 "stewardship_production_confirmation",
                 "stewardship_production_tokens",

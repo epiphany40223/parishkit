@@ -193,3 +193,42 @@ unchanged. All 17 strict schema/model-equivalence checks passed in 18.64 seconds
 Catalogs remain separately retained, with no database upgrades or deletions.
 Post-close resolution, remaining integration/browser acceptance,
 three review rounds and final-head CI remain required; the PR stays draft.
+
+## Closed-message resolution checkpoint
+
+The native closed-campaign workflow previews exact selected receipt/digest
+counts, semantic coverage and current versions. Release requires the current
+sender check; cancellation requires a reason but no working provider. A private,
+immutable per-message decision permits only the selected message to cross its
+current pause. Another type remains held, and a later pause invalidates that
+permission. Ordinary invitation/reminder close admission still cancels Family
+mail without provider transport or reopening access. The same transaction clears
+the pause only after held and uncertain obligations are resolved.
+
+New live outboxes now receive their durable pause hold before insertion,
+including receipts created by final Family submission and worker-created reports.
+Cancellation retains exact receipt UUIDs or schedule-slot/item-version/daily-range
+coverage in the existing post-close resolution journal. It does not insert
+provider-delivery fulfillment. Scheduler and digest discovery consult these
+semantic resolutions; weekly history advances the resolved interval without
+claiming that cancelled actionable content was reported. Unfinished preparation
+and selected uncertain mail prevent cancellation.
+
+The actual restricted-role Family-submit, receipt/weekly cancellation, selected
+daily release, closed invitation cancellation and new-report hold scenarios
+passed together with all schema/model and immutable-guard checks: 20 tests in
+58.16 seconds. Thirty runtime-grant checks passed in 0.14 seconds, and
+`makemigrations --check --dry-run` found no model-state changes. Nine real-template
+Chromium/Firefox/WebKit checks passed in 16.61 seconds across mobile/desktop
+layouts, WCAG checks, keyboard forms and JavaScript-disabled resolution.
+The extended weekly scenario also passed in 29.14 seconds: a real schedule
+replacement and restarted restricted scheduler do not recreate a cancelled slot.
+
+Independent catalog `after-k`, compared object-by-object with `after-i`, adds
+the immutable per-message journal, three views, 22 columns, 19 constraints,
+seven indexes, six functions and two triggers. Ten existing function bodies
+change for narrowly proven release, immediate holds and semantic cancellation.
+No existing object is removed; existing ACLs, row policies and triggers remain
+unchanged. Both catalogs and all development databases remain retained.
+Checkpoint `946bfdd` CI `35432537356` passed. Current-head CI, remaining handoff
+evidence and all three review rounds remain required; PR #62 stays draft.

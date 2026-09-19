@@ -55,6 +55,7 @@ def schema_sql():
                 "production_withdrawal",
                 "delivery_control",
                 "delivery_recovery",
+                "delivery_closed",
             )
         ]
     )

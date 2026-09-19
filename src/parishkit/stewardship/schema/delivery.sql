@@ -509,7 +509,9 @@ BEGIN
                 WHERE c.id=NEW.campaign_id AND NEW.routing='production'
                   AND ((NEW.action='hold' AND c.delivery_paused AND c.pause_version=NEW.pause_version)
                     OR (NEW.action='release_hold' AND NOT c.delivery_paused
-                        AND c.pause_version>OLD.pause_version))
+                        AND c.pause_version>OLD.pause_version)
+                    OR (NEW.action='release_hold'
+                        AND public.stewardship_delivery_message_released_v1(NEW.id)))
             ) THEN
                 RAISE EXCEPTION 'Delivery hold must match campaign pause state' USING ERRCODE='23514';
             END IF;
@@ -556,7 +558,8 @@ BEGIN
                 JOIN public.stewardship_campaign_credentials k ON k.campaign_id=c.id
                 WHERE c.id=NEW.campaign_id AND s.mode='production'
                   AND NOT s.restore_review_required AND NOT k.go_live_gate
-                  AND c.state IN ('scheduled','active','closed') AND NOT c.delivery_paused
+                  AND c.state IN ('scheduled','active','closed')
+                  AND (NOT c.delivery_paused OR public.stewardship_delivery_message_released_v1(NEW.id))
             ) THEN
                 RAISE EXCEPTION 'Production delivery is not currently admitted' USING ERRCODE='23514';
             END IF;

@@ -97,6 +97,8 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp A
 DECLARE campaign public.stewardship_campaign%ROWTYPE;
     runtime public.stewardship_system_configuration%ROWTYPE;
     instant timestamptz; current_inventory jsonb; current_health jsonb; family_impact jsonb; digest_impact jsonb;
+    selected_types jsonb; selected_count bigint; clears_pause boolean;
+    current_coverage jsonb; preparing bigint;
 BEGIN
     IF TG_OP<>'INSERT' THEN
         RAISE EXCEPTION 'Delivery control intent is immutable' USING ERRCODE='23514';
@@ -139,6 +141,45 @@ BEGIN
         WHERE campaign_id=campaign.id;
     IF NEW.inventory IS DISTINCT FROM current_inventory THEN
         RAISE EXCEPTION 'Delivery work changed; review a new preview' USING ERRCODE='23514';
+    END IF;
+    IF NEW.action='resolve' THEN
+        IF NOT campaign.delivery_paused OR campaign.state<>'closed'
+           OR jsonb_typeof(NEW.selection->'types') IS DISTINCT FROM 'array'
+           OR coalesce(NEW.selection->>'decision','') NOT IN ('release','cancel','clear') THEN
+            RAISE EXCEPTION 'Held-message resolution requires a closed paused campaign' USING ERRCODE='23514';
+        END IF;
+        SELECT coalesce(jsonb_agg(kind ORDER BY kind),'[]') INTO selected_types
+            FROM (SELECT DISTINCT value AS kind FROM jsonb_array_elements_text(NEW.selection->'types')
+                WHERE value IN ('receipt','daily_digest','weekly_digest')) types;
+        SELECT coalesce(sum((current_inventory->'types'->kind->>'held')::bigint),0) INTO selected_count
+            FROM jsonb_array_elements_text(selected_types) kind;
+        SELECT coverage,s.preparing INTO current_coverage,preparing
+            FROM public.stewardship_delivery_closed_coverage_summary s WHERE campaign_id=campaign.id;
+        SELECT coalesce(jsonb_object_agg(key,value),'{}') INTO current_coverage
+            FROM jsonb_each(current_coverage) WHERE selected_types ? key;
+        clears_pause:=(current_inventory->>'held')::bigint=selected_count
+            AND (current_inventory->>'submitting')::bigint=0 AND (current_inventory->>'unknown')::bigint=0;
+        current_health:='null'::jsonb;
+        IF NEW.selection->>'decision'='release' THEN
+            SELECT health INTO current_health FROM public.stewardship_delivery_control_health
+                WHERE campaign_id=campaign.id;
+            IF (current_health->>'ready')::boolean IS DISTINCT FROM true THEN
+                RAISE EXCEPTION 'Held-message release requires current sender health' USING ERRCODE='23514';
+            END IF;
+        END IF;
+        IF NEW.selection IS DISTINCT FROM jsonb_build_object('plan','closed','decision',NEW.selection->>'decision',
+                'types',selected_types,'health',current_health,'coverage',current_coverage)
+           OR preparing IS DISTINCT FROM 0
+           OR (NEW.selection->>'decision'='cancel' AND EXISTS(
+                SELECT 1 FROM jsonb_array_elements_text(selected_types) kind
+                WHERE (current_inventory->'types'->kind->>'submitting')::bigint>0
+                    OR (current_inventory->'types'->kind->>'unknown')::bigint>0))
+           OR (NEW.control_id IS NOT NULL) IS DISTINCT FROM clears_pause
+           OR (NEW.selection->>'decision'='clear' AND (NOT clears_pause OR selected_types<>'[]'::jsonb))
+           OR (NEW.selection->>'decision'<>'clear' AND selected_count=0) THEN
+            RAISE EXCEPTION 'Held-message selection changed; review exact current counts' USING ERRCODE='23514';
+        END IF;
+        RETURN NEW;
     END IF;
     IF NEW.control_id IS NULL OR NEW.action NOT IN ('pause','resume') THEN
         RAISE EXCEPTION 'Delivery control action is not admitted' USING ERRCODE='23514';
@@ -198,6 +239,10 @@ CREATE FUNCTION public.stewardship_delivery_control_effect_v1() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE hold uuid; pause bigint;
 BEGIN
+    IF NEW.action='resolve' THEN
+        PERFORM public.stewardship_delivery_resolve_closed_v1(NEW.id);
+        RETURN NEW;
+    END IF;
     IF NEW.action='resume' AND NEW.selection->>'plan'='family' THEN
         PERFORM public.stewardship_delivery_recover_families_v1(NEW.id);
         PERFORM public.stewardship_delivery_recover_digests_v1(NEW.id);
@@ -237,3 +282,32 @@ END $$;
 REVOKE ALL ON FUNCTION public.stewardship_delivery_control_effect_v1() FROM PUBLIC;
 CREATE TRIGGER delivery_control_effect AFTER INSERT ON public.stewardship_delivery_control
     FOR EACH ROW EXECUTE FUNCTION public.stewardship_delivery_control_effect_v1();
+
+-- Report preparation may continue during a live pause. Attach the same durable
+-- hold before a new outbox exists, so count previews never depend on whether a
+-- mail worker happened to inspect that message. Operational/Testing routing is
+-- immutable and exempt; this trigger cannot reroute any message.
+CREATE FUNCTION public.stewardship_delivery_new_hold_v1() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE campaign public.stewardship_campaign%ROWTYPE; hold uuid;
+BEGIN
+    IF NEW.mode<>'production' OR NEW.routing<>'production'
+       OR NEW.purpose NOT IN ('initial','reminder','receipt','daily_digest','weekly_digest') THEN RETURN NEW; END IF;
+    PERFORM pg_advisory_xact_lock(736220,1);
+    SELECT * INTO campaign FROM public.stewardship_campaign WHERE id=NEW.campaign_id;
+    IF NOT campaign.delivery_paused THEN RETURN NEW; END IF;
+    INSERT INTO public.stewardship_delivery_pause_hold(id,campaign_id,pause_version,actor_id,correlation_id)
+        VALUES(gen_random_uuid(),campaign.id,campaign.pause_version,NEW.actor_id,NEW.correlation_id)
+        ON CONFLICT(campaign_id,pause_version) DO NOTHING;
+    SELECT id INTO hold FROM public.stewardship_delivery_pause_hold
+        WHERE campaign_id=campaign.id AND pause_version=campaign.pause_version;
+    IF NEW.pause_hold_id IS NOT NULL AND (NEW.pause_hold_id<>hold
+        OR NEW.pause_version IS DISTINCT FROM campaign.pause_version) THEN
+        RAISE EXCEPTION 'New delivery must retain the current pause hold' USING ERRCODE='23514';
+    END IF;
+    NEW.pause_hold_id:=hold; NEW.pause_version:=campaign.pause_version;
+    RETURN NEW;
+END $$;
+REVOKE ALL ON FUNCTION public.stewardship_delivery_new_hold_v1() FROM PUBLIC;
+CREATE TRIGGER aa_delivery_new_hold BEFORE INSERT ON public.stewardship_outbox_message
+    FOR EACH ROW EXECUTE FUNCTION public.stewardship_delivery_new_hold_v1();

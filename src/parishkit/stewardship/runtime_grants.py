@@ -217,11 +217,23 @@ def runtime_grants(role, *, target=None):
     if role is ServiceRole.MAIL_DISPATCH:
         from .accounts.setup_mail_grants import mail_runtime_grants
 
-        return mail_runtime_grants()
+        tables, columns = mail_runtime_grants()
+        tables["stewardship_delivery_message_release"] = {"SELECT"}
+        columns.setdefault("stewardship_postclose_resolution", {}).setdefault(
+            "SELECT", set()
+        ).update({"id", "campaign_id", "mode", "obligation_key", "occurrence_id"})
+        return tables, columns
     if role in {ServiceRole.WORKER, ServiceRole.SCHEDULER}:
         from .jobs.grants import task_runtime_grants
 
-        return task_runtime_grants(role)
+        tables, columns = task_runtime_grants(role)
+        tables["stewardship_delivery_message_release"] = {"SELECT"}
+        columns.setdefault("stewardship_postclose_resolution", {}).setdefault(
+            "SELECT", set()
+        ).update({"id", "campaign_id", "mode", "obligation_key", "occurrence_id"})
+        if role is ServiceRole.WORKER:
+            tables.setdefault("stewardship_delivery_pause_hold", set()).add("SELECT")
+        return tables, columns
     if role is ServiceRole.CONFIG_INSTALLER:
         return {table: set(grants) for table, grants in CONFIGURATION_GRANTS.items()}, {
             table: {privilege: set(names) for privilege, names in columns.items()}
@@ -416,6 +428,7 @@ def runtime_grants(role, *, target=None):
         tables["stewardship_delivery_control_health"] = {"SELECT"}
         tables["stewardship_delivery_family_recovery_summary"] = {"SELECT"}
         tables["stewardship_delivery_digest_recovery_summary"] = {"SELECT"}
+        tables["stewardship_delivery_closed_coverage_summary"] = {"SELECT"}
         for table in (
             "stewardship_production_tokens",
             "stewardship_production_token_cancel",
@@ -430,6 +443,8 @@ def runtime_grants(role, *, target=None):
         from .reports.digest_grants import add_digest_download_grants
 
         add_digest_download_grants(columns)
+    if role is ServiceRole.WEB:
+        tables["stewardship_delivery_message_release"] = {"SELECT"}
     return tables, columns
 
 

@@ -200,7 +200,8 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
           AND NOT EXISTS (SELECT 1 FROM public.stewardship_outbox_message unresolved
               WHERE unresolved.family_id=f.id AND unresolved.campaign_id=c.id AND unresolved.mode=m.mode
                 AND unresolved.id<>m.id AND unresolved.state IN ('submitting','delivery_unknown'))
-          AND ((m.mode='production' AND s.mode='live' AND c.state IN ('scheduled','active','closed') AND NOT c.delivery_paused)
+          AND ((m.mode='production' AND s.mode='live' AND c.state IN ('scheduled','active','closed')
+                AND (NOT c.delivery_paused OR public.stewardship_delivery_message_released_v1(m.id)))
             OR (m.mode='testing' AND s.mode='test' AND c.state='draft' AND s.rehearsal_epoch_id=k.rehearsal_epoch_id
               AND EXISTS(SELECT 1 FROM public.stewardship_rehearsal_epoch e
                   WHERE e.id=s.rehearsal_epoch_id AND e.state='active')))
