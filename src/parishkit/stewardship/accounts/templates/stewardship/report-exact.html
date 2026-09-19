@@ -1,0 +1,27 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Queued participation export" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Queued participation export" %}</h1>
+<dl><dt>{% translate "Status" %}</dt><dd><span role="status">{{ status.state }}</span></dd>
+<dt>{% translate "Format" %}</dt><dd>{{ job.format|upper }}</dd>
+<dt>{% translate "Population" %}</dt><dd>{% if job.population_scope == 'historical' %}{% translate "Historical as of day" %}{% else %}{% translate "Current population" %}{% endif %}</dd>
+<dt>{% translate "Source generation" %}</dt><dd>{{ source.generation|number }}</dd>
+<dt>{% translate "Source as of" %}</dt><dd><time datetime="{{ source.promoted_at|date:'c' }}" data-local-instant>{{ source.promoted_at|date:'c' }}</time></dd>
+<dt>{% translate "Submission sequence cutoff" %}</dt><dd>{{ job.submission_watermark|number }}</dd>
+<dt>{% translate "Through campaign date" %}</dt><dd>{{ job.through_date|date:'Y-m-d' }}</dd>
+<dt>{% translate "Campaign timezone" %}</dt><dd>{{ job.timezone_configuration.timezone }}</dd>
+<dt>{% translate "Export timezone" %}</dt><dd>{{ job.browser_timezone }}</dd>
+<dt>{% translate "Requested at" %}</dt><dd><time datetime="{{ job.created_at|date:'c' }}" data-local-instant>{{ job.created_at|date:'c' }}</time></dd></dl>
+<p>{% translate "These inputs were frozen when you requested the export. Waiting and retrying never substitute a newer source or submission cutoff. Refreshing status does not extend your login session." %}</p>
+{% if status.export_id %}
+<p>{% translate "The exact calculation is ready; file generation and download use its retained inputs." %}</p>
+<p><a href="{% url 'admin:report_export' status.export_id %}">{% translate "Open generated-file status and download" %}</a></p>
+{% elif status.state == 'failed' %}<p role="alert">{% translate "The exact calculation failed. You may retry with the same inputs when campaign work is allowed." %}</p>
+{% elif status.state == 'cancelled' %}<p>{% translate "This export was cancelled. Its request history is retained." %}</p>
+{% else %}<p>{% translate "Waiting for the exact calculation. No substitute file will be offered." %}</p>{% endif %}
+<p><a href="{% url 'admin:report_exact' job.pk %}">{% translate "Refresh status" %}</a></p>
+{% if not mutable %}<p class="notice">{% translate "Campaign work is gated. Cancellation and retry are unavailable; authorized completed downloads remain available while read access stays open." %}</p>{% endif %}
+{% if can_cancel %}<form method="post" action="{% url 'admin:report_exact_cancel' job.pk %}">{% csrf_token %}<button type="submit"{% if not mutable %} disabled{% endif %}>{% translate "Cancel export" %}</button></form>{% endif %}
+{% if status.state == 'failed' %}<form method="post" action="{% url 'admin:report_exact_retry' job.pk %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ retry_key }}"><button type="submit"{% if not mutable %} disabled{% endif %}>{% translate "Retry export" %}</button></form>{% endif %}
+<p><a href="{{ report_url }}">{% translate "Return to this campaign report" %}</a></p>
+{% endblock %}

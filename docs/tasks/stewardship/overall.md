@@ -674,6 +674,17 @@ verify that merge, rebase the preserved reporting branch, and complete its
 protected CI/merge before starting native queued-exact waiting/regeneration
 controls on the next fresh-main branch. No integrated gate is released here.
 
+That pending-delivery checkpoint is superseded: PR #64 merged as `07f80e5b`
+and PR #63 as `351cf375`, both with full final-head CI/DCO. The
+[workspace protected receipt](../../guides/stewardship-report-workspace.md#protected-delivery)
+records the exact candidates and runs. Branch `pr/stewardship-exact-export-ui`
+starts at verified `351cf375` and implements the
+[native exact-export and regeneration increment](../../guides/stewardship-exact-export-ui.md).
+Focused PostgreSQL, browser and unit validation and
+[three dual-source review rounds](../../guides/stewardship-exact-export-ui-reviews.md#round-3)
+pass; PR #65 still requires protected final-head delivery. The report catalog
+and integrated Gate 3 remain open.
+
 1. Finish [BG-08](background-processing.md#bg-08-export-and-graph-workers); implement [RPT-01](reports.md#rpt-01-shared-report-framework-and-campaign-selection) and finish [RPT-02](reports.md#rpt-02-population-and-calculation-library).
 2. Complete [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics), [RPT-04](reports.md#rpt-04-additional-information-workflow-report), [RPT-05](reports.md#rpt-05-family-code-and-postal-outreach-reports), [RPT-06](reports.md#rpt-06-ministry-summary-and-detail), [RPT-07](reports.md#rpt-07-multi-ministry-follow-up-packet), and the reporting slice of [RPT-08](reports.md#rpt-08-census-and-financial-reports).
 3. [ADM-07](admin-portal.md#adm-07-user-rules-and-ministry-assignments) → [ADM-08](admin-portal.md#adm-08-manual-refresh-follow-up-queues-and-logs) → [RPT-09](reports.md#rpt-09-logs-and-daily-email-parity); connect [RPT-04](reports.md#rpt-04-additional-information-workflow-report)/[RPT-06](reports.md#rpt-06-ministry-summary-and-detail) follow-up and verify [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests) parity.

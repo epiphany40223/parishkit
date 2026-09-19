@@ -120,3 +120,19 @@ and corrected history is retained at `pr/stewardship-report-reviewed`
 this receipt and adding the 22 focused workspace unit tests to fast preflight.
 Consolidate the review fixups into the implementation commit while retaining
 the separate M4 handoff commit. Final exact-head CI is still required.
+
+## Protected delivery
+
+PR #63 merged as `351cf375c055b6023d445cfcb18ea88d9dcf1668`, verified on
+freshly fetched `origin/main`. Candidate `5908f4b` passed all 24 jobs plus DCO
+in run `35442872969` after the three recorded dual-source review/fix rounds.
+The final tree `12e32f9de977c959934e522a14b873634e24e486` exactly matches the
+unsquashed corrected candidate. The two signed-off commits separate the M4
+handoff from the report implementation. CI elapsed time was 27m27s, including
+substantial runner queueing behind main's simultaneous full validation; it is
+not a measurement of test execution alone.
+
+The next fresh-main branch is `pr/stewardship-exact-export-ui`, completing the
+[native waiting and regeneration slice](stewardship-exact-export-ui.md).
+Earlier pending-delivery notes are superseded; full report-catalog and Gate 3
+acceptance remain open.

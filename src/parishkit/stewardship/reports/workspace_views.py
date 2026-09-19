@@ -29,6 +29,7 @@ from .charts import render_participation
 from .daily_digest import population_cards, statistics_cards
 from .digest_presentation import participation_context
 from .documents import participation_document
+from .exact_models import ExactExportRequest
 from .export_models import ExportRequest
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES, _principal
@@ -234,9 +235,25 @@ def _page_context(campaign_id, query, selected, principal):
         else (),
         "timezones": sorted(timezone_names()),
         "export_key": uuid4(),
+        "exact_key": uuid4(),
+        "exact_row_count": max(
+            0,
+            (
+                selected.expected.through_date
+                - campaign.active_configuration.start_date
+            ).days
+            + 1,
+        )
+        if selected.expected is not None
+        else None,
         "export_allowed": mutable,
         "recent_exports": list(
             ExportRequest.objects.filter(
+                campaign_id=campaign_id, requester_id=principal.identity
+            ).order_by("-created_at", "id")[:10]
+        ),
+        "recent_exact_exports": list(
+            ExactExportRequest.objects.filter(
                 campaign_id=campaign_id, requester_id=principal.identity
             ).order_by("-created_at", "id")[:10]
         ),
