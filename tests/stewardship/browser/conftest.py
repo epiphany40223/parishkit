@@ -50,6 +50,7 @@ from .digest_components import components as digest_components
 from .directory_components import components as directory_components
 from .go_live_components import components as go_live_components
 from .information_components import components as information_components
+from .ministry_components import components as ministry_components
 from .pause_components import components as pause_components
 from .report_components import components as report_components
 from .weekly_components import components as weekly_components
@@ -1031,6 +1032,7 @@ def component_origin():
     responses.update(report_components(context, admin))
     responses.update(information_components(context, admin))
     responses.update(directory_components(context, admin))
+    responses.update(ministry_components(context, admin))
     responses.update(weekly_components(context, admin))
     responses.update(go_live_components(context, admin))
     responses.update(pause_components(context, admin))
