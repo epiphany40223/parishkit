@@ -275,3 +275,16 @@ inspection verifies pinned search paths and schema-owner-only execution ACLs.
 Counts are 183 relations, 2,107 columns, 2,994 constraints, 901 indexes,
 519 functions, 495 triggers and 28 policies. Only the three affected fingerprint
 categories were updated after this comparison; strict baseline tests pass.
+
+## Protected delivery
+
+PR #58 merged through protected auto-merge on September 19, 2026 at 01:32:41 UTC
+as `47ec359982151ef1cc28f24f391c2f6d97faef8b`, verified on refreshed `origin/main`.
+Corrected head `765ea213ea2f5399b8f73afa835042cfcaea9c13` passed all 24 jobs in
+[CI run 35412153979](https://github.com/epiphany40223/parishkit/actions/runs/35412153979)
+and DCO. All three completed dual-source review rounds and the narrow browser
+fixture correction are recorded above. This supersedes prior pending-delivery
+notes without claiming activation, withdrawal or Gate 3 acceptance.
+
+The [activation increment](stewardship-production-activation.md) starts from
+that verified merge on `pr/stewardship-production-activation`.
