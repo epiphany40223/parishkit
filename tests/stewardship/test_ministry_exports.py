@@ -52,8 +52,7 @@ AUDIT_SCOPE_CASES = (
 
 
 @pytest.mark.parametrize("kind", ["exact", "participation", "ministry"])
-@pytest.mark.parametrize("action", [Action.EXPORT_REQUESTED, Action.EXPORT_CANCELLED])
-def test_shared_audit_preserves_each_request_model(monkeypatch, kind, action):
+def test_shared_audit_preserves_each_request_model(monkeypatch, kind):
     """Exact-generation requests share the audit helper but have no report field."""
     configuration = AppliedConfigurationVersion(parish=Parish())
     request = (ExactExportRequest if kind == "exact" else ExportRequest)(
@@ -74,10 +73,12 @@ def test_shared_audit_preserves_each_request_model(monkeypatch, kind, action):
         lambda action, **evidence: recorded.append((action, evidence)),
     )
     actor = uuid4()
-    export_services.audit(action, request, actor, outcome=Outcome.STARTED, count=1)
+    export_services.audit(
+        Action.EXPORT_REQUESTED, request, actor, outcome=Outcome.STARTED, count=1
+    )
     assert len(recorded) == 1
     actual_action, evidence = recorded[0]
-    assert actual_action == action
+    assert actual_action == Action.EXPORT_REQUESTED
     assert evidence["subject_id"] == request.pk
     assert evidence["campaign_id"] == request.campaign_id
     assert evidence["parish_id"] == configuration.parish.pk

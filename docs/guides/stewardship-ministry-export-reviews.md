@@ -146,3 +146,20 @@ handoff, cancellation, compaction protection, recovery ownership and retained
 Ministry capture. No schema changed. The correction receives an independent
 dual-source review before the new full exact-head candidate run; the three
 completed rounds above are retained rather than restarted.
+
+Correction review `20260919-181557-5c3edd` independently covered `0bef267d`
+to `c03ebc9674646e51154cbcd1d17de327f0cc3bb6` (tree
+`00f9606562c2acf35d18f828995d488cb86c8da3`) and surrounding exact-export
+callers. Permission preflight passed; Codex exited zero in 165 seconds with
+no timeout/stall, and Claude delivered its valid artifact. Finalization approved
+with no validated findings, failed agents, degradation or verdict mismatch.
+Raw severities were four Low and no Medium/High/Critical.
+
+Two Low suggestions were applied: explain the sibling-model boundary beside
+both helpers, and remove redundant action parametrization from the fast test.
+Actual cancellation remains covered by the PostgreSQL case. Two alternative
+suggestions were declined: adding hypothetical stray attributes to an exact
+request does not model a supported caller, and adding a new report property to
+that model is unnecessary interface expansion for this correction. The tests
+use actual supported models; future report kinds require their own review.
+Post-review changes are comments and removal of duplicate test cases only.

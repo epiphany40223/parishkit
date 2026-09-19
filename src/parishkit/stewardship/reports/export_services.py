@@ -1,4 +1,4 @@
-"""Owning authorization and immutable request allocation for compiled reports."""
+"""Shared exact/compiled authorization and audit; compiled request allocation."""
 
 from datetime import timedelta
 from uuid import UUID, uuid4
@@ -36,6 +36,8 @@ def authorize(store, user_id, *, request=None):
     """Reload current coherent policy; possession of an opaque UUID is not access."""
     principal = current_principal(store, user_id)
     permitted = allows(principal, Capability.CAMPAIGN_REPORT)
+    # ExactExportRequest is a sibling model with no report column. Its callers
+    # keep global capability policy, never compiled Ministry scope authority.
     if isinstance(request, ExportRequest) and request.report == "ministry":
         from .ministry_exports import scope_authorized
 
@@ -70,6 +72,7 @@ def audit(action, request, actor_id, *, outcome, count=None):
     context = {"outcome": outcome}
     if count is not None:
         context["count"] = count
+    # Exact-generation requests share this helper but have no Ministry payload.
     if isinstance(request, ExportRequest) and request.report == "ministry":
         context.update(
             ministry_duids=request.authorization_scope["result_ministries"],
