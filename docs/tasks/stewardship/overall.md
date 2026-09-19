@@ -656,6 +656,15 @@ evidence required by the master plan's Phase 4 handoff.
 
 Source scope: [Phase 5: Reports and staff workflows](../../plans/stewardship/overall.md#phase-5-reports-exports-users-and-follow-up).
 
+Execution checkpoint (September 19, 2026 UTC): PR #62 merged as `2c3151e6`
+after all 25 final-head CI/DCO checks passed; its
+[protected receipt](../../guides/stewardship-delivery-pause.md#protected-delivery)
+releases M4. Branch `pr/stewardship-report-workspace` starts at that verified
+`origin/main` tip. Begin the [shared report workspace increment](../../guides/stewardship-report-workspace.md)
+with Admin/Staff participation/statistics and native export controls, reusing
+the delivered calculations and workers. Full report-catalog, Ministry scoping,
+follow-up and integrated Gate 3 acceptance remain open.
+
 1. Finish [BG-08](background-processing.md#bg-08-export-and-graph-workers); implement [RPT-01](reports.md#rpt-01-shared-report-framework-and-campaign-selection) and finish [RPT-02](reports.md#rpt-02-population-and-calculation-library).
 2. Complete [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics), [RPT-04](reports.md#rpt-04-additional-information-workflow-report), [RPT-05](reports.md#rpt-05-family-code-and-postal-outreach-reports), [RPT-06](reports.md#rpt-06-ministry-summary-and-detail), [RPT-07](reports.md#rpt-07-multi-ministry-follow-up-packet), and the reporting slice of [RPT-08](reports.md#rpt-08-census-and-financial-reports).
 3. [ADM-07](admin-portal.md#adm-07-user-rules-and-ministry-assignments) → [ADM-08](admin-portal.md#adm-08-manual-refresh-follow-up-queues-and-logs) → [RPT-09](reports.md#rpt-09-logs-and-daily-email-parity); connect [RPT-04](reports.md#rpt-04-additional-information-workflow-report)/[RPT-06](reports.md#rpt-06-ministry-summary-and-detail) follow-up and verify [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests) parity.
