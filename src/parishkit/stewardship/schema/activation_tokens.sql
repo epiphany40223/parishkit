@@ -44,7 +44,8 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
           AND NOT EXISTS(SELECT 1 FROM stewardship_campaign_work_gate WHERE state IN ('preparing','running'))
     );
 $$;
-REVOKE ALL ON FUNCTION public.stewardship_production_tokens_current_v1(public.stewardship_production_tokens) FROM PUBLIC;
+-- This read-only invoker predicate uses only the caller's existing metadata
+-- grants. Unlike the trigger-only definers below, it confers no extra authority.
 
 CREATE FUNCTION public.stewardship_production_tokens_intake_v1() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp AS $$
@@ -117,3 +118,155 @@ END $$;
 REVOKE ALL ON FUNCTION public.stewardship_production_tokens_task_pin_v1() FROM PUBLIC;
 CREATE CONSTRAINT TRIGGER production_tokens_task_pin AFTER INSERT ON public.stewardship_task_run
 DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.stewardship_production_tokens_task_pin_v1();
+
+CREATE FUNCTION public.stewardship_production_token_write_v1(relation_name text, proposed jsonb, prior jsonb)
+RETURNS boolean LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE preparation public.stewardship_production_tokens%ROWTYPE;
+        generation public.stewardship_family_token_generation%ROWTYPE;
+        can_prepare boolean; can_dispose boolean; preparation_claim boolean;
+BEGIN
+    IF current_user<>'pk_stewardship_worker'
+       OR relation_name NOT IN ('stewardship_family_token_generation','stewardship_family_token')
+       OR NOT EXISTS(SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid() AND locktype='advisory'
+            AND classid=736220 AND objid=1 AND objsubid=2 AND mode='ExclusiveLock' AND granted) THEN
+        RETURN false;
+    END IF;
+    IF relation_name='stewardship_family_token_generation' THEN
+        SELECT * INTO generation FROM jsonb_populate_record(NULL::public.stewardship_family_token_generation,proposed);
+    ELSE
+        SELECT * INTO generation FROM stewardship_family_token_generation
+            WHERE id=(proposed->>'generation_id')::uuid;
+    END IF;
+    SELECT * INTO preparation FROM stewardship_production_tokens
+        WHERE id=generation.operation_id AND task_id=generation.task_id;
+    IF preparation.id IS NULL OR generation.campaign_id IS DISTINCT FROM
+        (SELECT campaign_id FROM stewardship_production_request WHERE id=preparation.transition_id)
+       OR EXISTS(SELECT 1 FROM stewardship_system_configuration WHERE restore_review_required)
+       OR EXISTS(SELECT 1 FROM stewardship_campaign_work_gate WHERE state IN ('preparing','running')) THEN
+        RETURN false;
+    END IF;
+    preparation_claim:=EXISTS(SELECT 1 FROM stewardship_task_run task
+        WHERE task.root_id=preparation.task_id AND task.domain_request_id=preparation.id
+            AND task.task_type='production_tokens' AND task.state='running'
+            AND task.worker_id IS NOT NULL AND task.lease_expires_at>clock_timestamp());
+    can_prepare:=public.stewardship_production_tokens_current_v1(preparation);
+    can_dispose:=NOT can_prepare AND (preparation_claim OR EXISTS(
+        SELECT 1 FROM stewardship_production_token_cancel cancellation
+        JOIN stewardship_task_run task ON task.root_id=cancellation.task_id
+            AND task.domain_request_id=cancellation.id AND task.task_type='production_token_cleanup'
+        WHERE cancellation.preparation_id=preparation.id AND task.state='running'
+            AND task.worker_id IS NOT NULL AND task.lease_expires_at>clock_timestamp()
+    )) AND generation.state<>'active' AND NOT EXISTS(SELECT 1 FROM stewardship_campaign
+        WHERE active_token_generation_id=generation.id);
+    IF relation_name='stewardship_family_token_generation' THEN
+        IF prior IS NULL THEN
+            RETURN preparation_claim AND can_prepare
+                AND generation.state='building' AND generation.checkpoint=0
+                AND generation.coverage_count=0 AND generation.coverage_digest=''
+                AND generation.completed_at IS NULL AND generation.configuration_request_id IS NULL
+                AND generation.configuration_id=preparation.configuration_id
+                AND generation.source_snapshot_id=preparation.source_snapshot_id
+                AND generation.source_generation=preparation.source_generation
+                AND generation.credential_epoch=preparation.credential_epoch
+                AND generation.key_inventory_digest=preparation.key_inventory_digest
+                AND generation.actor_id=preparation.actor_id
+                AND generation.restore_id IS NOT DISTINCT FROM
+                    (SELECT restore_id FROM stewardship_credential_deployment)
+                AND EXISTS(SELECT 1 FROM stewardship_credential_key_state keys,
+                    LATERAL jsonb_array_elements(keys.inventory) key
+                    WHERE keys.kind='token_public' AND keys.inventory_digest=preparation.key_inventory_digest
+                        AND key->>'id'=generation.key_id AND key->>'usage'='active');
+        END IF;
+        IF can_dispose THEN
+            RETURN prior->>'state' IN ('building','ready','failed') AND generation.state='cancelled'
+                AND proposed-ARRAY['state','version','updated_at']=prior-ARRAY['state','version','updated_at'];
+        END IF;
+        RETURN preparation_claim AND can_prepare
+            AND prior->>'state' IN ('building','ready') AND generation.state IN ('building','ready')
+            AND proposed-ARRAY['state','checkpoint','coverage_count','coverage_digest','completed_at','version','updated_at']
+                =prior-ARRAY['state','checkpoint','coverage_count','coverage_digest','completed_at','version','updated_at'];
+    END IF;
+    IF prior IS NULL THEN
+        RETURN preparation_claim AND can_prepare AND generation.state='building'
+            AND (proposed->>'campaign_id')::uuid=generation.campaign_id
+            AND proposed->>'destroyed_at' IS NULL AND proposed->>'rotated_at' IS NULL
+            AND public.stewardship_valid_sealed_candidate_v1(proposed->>'ciphertext')
+            AND (proposed->>'ciphertext')::jsonb->>'kid'=generation.key_id
+            AND proposed->>'digest' ~ '^[0-9a-f]{64}$';
+    END IF;
+    RETURN can_dispose AND generation.state IN ('cancelled','failed','superseded')
+        AND prior->>'destroyed_at' IS NULL AND proposed->>'ciphertext' IS NULL
+        AND proposed->>'digest' IS NULL
+        AND (proposed->>'destroyed_at')::timestamptz=public.stewardship_campaign_now_v1()
+        AND proposed-ARRAY['ciphertext','digest','destroyed_at','version','updated_at']
+            =prior-ARRAY['ciphertext','digest','destroyed_at','version','updated_at'];
+END $$;
+
+CREATE FUNCTION public.stewardship_production_token_insert_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+BEGIN
+    IF current_user<>'pk_stewardship_worker' THEN RETURN NEW; END IF;
+    IF TG_TABLE_NAME='stewardship_family_token' THEN
+        IF EXISTS(SELECT 1 FROM stewardship_family_token_generation
+            WHERE id=NEW.generation_id AND state='active') THEN
+            -- Existing source-promotion issuance retains its current-live guard.
+            RETURN NEW;
+        END IF;
+    END IF;
+    IF NOT public.stewardship_production_token_write_v1(TG_TABLE_NAME,to_jsonb(NEW),NULL) THEN
+        RAISE EXCEPTION 'Inactive links require their current preparation owner' USING ERRCODE='42501';
+    END IF;
+    RETURN NEW;
+END $$;
+REVOKE ALL ON FUNCTION public.stewardship_production_token_insert_v1() FROM PUBLIC;
+CREATE TRIGGER aa_production_token_insert BEFORE INSERT ON stewardship_family_token_generation
+FOR EACH ROW EXECUTE FUNCTION public.stewardship_production_token_insert_v1();
+CREATE TRIGGER aa_production_token_insert BEFORE INSERT ON stewardship_family_token
+FOR EACH ROW EXECUTE FUNCTION public.stewardship_production_token_insert_v1();
+
+CREATE FUNCTION public.stewardship_production_tokens_terminal_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE preparation public.stewardship_production_tokens%ROWTYPE;
+        generation public.stewardship_family_token_generation%ROWTYPE;
+        clean boolean;
+BEGIN
+    IF NEW.task_type NOT IN ('production_tokens','production_token_cleanup')
+       OR NEW.action NOT IN ('complete','recovery_complete','safe_cancel','recovery_cancel') THEN
+        RETURN NEW;
+    END IF;
+    IF NEW.task_type='production_tokens' THEN
+        SELECT * INTO preparation FROM stewardship_production_tokens
+            WHERE id=NEW.domain_request_id AND task_id=NEW.root_id;
+    ELSE
+        SELECT p.* INTO preparation FROM stewardship_production_token_cancel c
+            JOIN stewardship_production_tokens p ON p.id=c.preparation_id
+            WHERE c.id=NEW.domain_request_id AND c.task_id=NEW.root_id;
+    END IF;
+    IF preparation.id IS NULL THEN
+        RAISE EXCEPTION 'Production link completion has no intent' USING ERRCODE='23514';
+    END IF;
+    SELECT * INTO generation FROM stewardship_family_token_generation
+        WHERE operation_id=preparation.id AND task_id=preparation.task_id;
+    clean:=generation.id IS NULL OR (generation.state IN ('cancelled','failed','superseded')
+        AND NOT EXISTS(SELECT 1 FROM stewardship_family_token
+            WHERE generation_id=generation.id AND destroyed_at IS NULL));
+    IF NEW.task_type='production_token_cleanup' THEN
+        IF clean AND NEW.action IN ('complete','recovery_complete') THEN RETURN NEW; END IF;
+    ELSIF NEW.action IN ('safe_cancel','recovery_cancel') THEN
+        IF clean AND NOT public.stewardship_production_tokens_current_v1(preparation) THEN RETURN NEW; END IF;
+    ELSIF generation.state='ready' AND public.stewardship_production_tokens_current_v1(preparation)
+        AND generation.configuration_id=preparation.configuration_id
+        AND generation.source_snapshot_id=preparation.source_snapshot_id
+        AND generation.source_generation=preparation.source_generation
+        AND generation.credential_epoch=preparation.credential_epoch
+        AND generation.key_inventory_digest=preparation.key_inventory_digest
+        AND generation.coverage_digest=preparation.eligibility_digest
+        AND generation.coverage_count=preparation.eligible_count
+        AND generation.completed_at IS NOT NULL THEN
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'Production link task lacks its terminal domain proof' USING ERRCODE='23514';
+END $$;
+REVOKE ALL ON FUNCTION public.stewardship_production_tokens_terminal_v1() FROM PUBLIC;
+CREATE TRIGGER production_tokens_terminal BEFORE UPDATE ON stewardship_task_run
+FOR EACH ROW EXECUTE FUNCTION public.stewardship_production_tokens_terminal_v1();

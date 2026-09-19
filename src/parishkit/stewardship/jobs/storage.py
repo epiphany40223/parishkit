@@ -178,6 +178,8 @@ def retry_failed(*, run_id, command_id, actor_id, correlation_id, admit):
     if original.task_type in (
         "outbox_delivery",
         "production_cleanup",
+        "production_tokens",
+        "production_token_cleanup",
         "activation_catchup",
         "report_export",
         "report_export_cleanup",

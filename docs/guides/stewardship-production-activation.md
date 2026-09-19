@@ -88,3 +88,30 @@ Combined focused validation passes 44 input, PostgreSQL preparation and complete
 schema-contract cases in 22.83 seconds. Full Ruff/format, migration-state drift,
 changed-Markdown and diff checks pass. This is an internal checkpoint, not a
 completed ADM-05 task or a reviewed release candidate.
+
+## Maintained preparation and disposal checkpoint
+
+The general worker now seals inactive links in bounded batches through the
+maintained dispatcher, with repeated claim/input checks and atomic manifest/task
+completion. A separate immutable cancellation intent owns bounded disposal.
+Cancellation before preparation, after preparation and after credential-epoch
+change never selects live links or changes stable codes. The scheduler reads
+completion evidence without receiving token execution or private-value access.
+Recovery accepts only a current ready manifest or proven stale disposal.
+
+Restricted-role tests exercise both worker and scheduler logins. The scheduler's
+deployment-metadata id-only UPDATE grant permits row locking; immutable identity
+and mandatory-version guards reject actual edits. SQL independently rejects a
+task success without its completed domain proof. CI's immutable-model inventory
+now registers the two new shared INSERT/UPDATE/DELETE guards, verifying their
+enabled row-level rejection contract instead of assuming generated guard names.
+
+An independent comparison installed immutable `8c9d290` and this checkpoint in
+new retained databases `stewardship_mail_health_before_20260918l` and
+`stewardship_mail_health_after_20260918l`. The predecessor fingerprint matched.
+Only functions/triggers changed: three new functions and three new triggers;
+the existing boundary guard delegates exact inactive-generation effects, and
+the current-input predicate becomes a read-only SECURITY INVOKER function usable
+with existing caller metadata grants. It gains no elevated execution authority.
+All table, column, constraint, index, policy and ownership fingerprints remain
+unchanged. Totals are 525 functions and 501 triggers; other totals remain above.

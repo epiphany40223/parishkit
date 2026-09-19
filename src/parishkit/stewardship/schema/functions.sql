@@ -6160,11 +6160,15 @@ DECLARE target_campaign uuid; event public.stewardship_campaign_transition%ROWTY
         permitted boolean;
 BEGIN
     -- Full credential owners retain their existing workflows. The general
-    -- worker gets only a close-triggered scrub, never secret read/replacement.
+    -- worker has closing-boundary or exact inactive-preparation ownership,
+    -- never private secret read/replacement authority.
     IF has_column_privilege(current_user,'public.stewardship_family_token','ciphertext','SELECT') THEN
         RETURN NEW;
     END IF;
     PERFORM pg_advisory_xact_lock(736220,1);
+    IF public.stewardship_production_token_write_v1(TG_TABLE_NAME,to_jsonb(NEW),to_jsonb(OLD)) THEN
+        RETURN NEW;
+    END IF;
     IF TG_TABLE_NAME='stewardship_family_session' THEN
         SELECT campaign_id INTO target_campaign FROM public.stewardship_family_campaign
             WHERE id=NEW.family_id;

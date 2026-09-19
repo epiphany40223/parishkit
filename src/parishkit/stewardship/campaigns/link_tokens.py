@@ -325,7 +325,16 @@ def prepare_generation_batch(*, generation_id, public, admit, batch_size=500):
                 actor_id=generation.actor_id,
                 subject_id=generation.pk,
             )
-        generation.save()
+        generation.save(
+            update_fields=(
+                "checkpoint",
+                "version",
+                "state",
+                "coverage_digest",
+                "coverage_count",
+                "completed_at",
+            )
+        )
         return generation
 
 
@@ -364,7 +373,7 @@ def cancel_generation(*, generation_id, admit):
                 "An active token generation cannot be cancelled."
             )
         row.state, row.version = "cancelled", row.version + 1
-        row.save()
+        row.save(update_fields=("state", "version"))
         AuditEvent.objects.create(
             event_type="family_tokens_cancelled",
             subject_id=row.pk,
