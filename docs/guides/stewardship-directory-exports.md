@@ -73,3 +73,6 @@ This is a fresh-install baseline update, not an upgrade promise or DB deletion.
 Fast draft CI replaces one older follow-up test module with the new directory
 rendering module, retaining the ten-module limit. Complete candidate CI remains
 the final delivery check; reviews and protected delivery are still pending.
+
+The [review/correction ledger](stewardship-directory-export-reviews.md) records
+completed rounds and dispositions; pending delivery is not a gate release.
