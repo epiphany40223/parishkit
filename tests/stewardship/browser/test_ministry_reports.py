@@ -46,11 +46,12 @@ def test_ministry_search_without_scripts(browser_engine, component_origin):
         page.goto(component_origin + "/ministry-detail")
         page.get_by_label("Search Member name or DUID").fill("Private name")
         page.get_by_label("Request history").select_option("all")
-        page.route("**/9/join/", lambda route: route.fulfill(body="Filtered"))
+        page.route("**/ministries/join/", lambda route: route.fulfill(body="Filtered"))
         with page.expect_request(lambda request: request.method == "POST") as sent:
             page.get_by_role("button", name="Apply filters").click()
         assert "search=Private+name" in sent.value.post_data
         assert "history=all" in sent.value.post_data
+        assert "ministry=9" in sent.value.post_data
         assert "Private" not in sent.value.url and "?" not in sent.value.url
     finally:
         context.close()

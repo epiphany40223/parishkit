@@ -108,6 +108,39 @@ def can_report(principal):
     )
 
 
+def campaign_ids(principal):
+    """Discover only readable, Ministry-enabled campaign identities in scope.
+
+    Labels remain behind the response guard. This same predicate controls both
+    the default redirect and explicit selection, never the global pointer.
+    """
+    if not can_report(principal):
+        raise PermissionError("Ministry report access is unavailable.")
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """SELECT c.id FROM stewardship_campaign c
+            JOIN stewardship_campaign_configuration cc
+                ON cc.id=c.active_configuration_id
+            LEFT JOIN stewardship_campaign_credentials k ON k.campaign_id=c.id
+            LEFT JOIN stewardship_source_current sc ON sc.singleton
+            JOIN stewardship_source_snapshot ss ON ss.id=CASE
+                WHEN c.state='archived' THEN k.source_snapshot_id
+                ELSE sc.snapshot_id END
+            WHERE c.state IN ('draft','scheduled','active','closed','archived')
+                AND cc.values->'modules' ? 'ministry'
+                AND ss.state='promoted' AND ss.compacted_at IS NULL
+                AND (%s OR EXISTS(SELECT 1
+                    FROM jsonb_array_elements_text(cc.values->'ministry_duids') n
+                    WHERE n::integer=ANY(%s::integer[])))
+            ORDER BY c.created_at DESC,c.id""",
+            [
+                allows(principal, Capability.MINISTRY_REPORT),
+                sorted(value for value in principal.ministries if value < 2**31),
+            ],
+        )
+        return tuple(row[0] for row in cursor.fetchall())
+
+
 def ministry_page(campaign_id, query, principal, *, ministry_id=None, action="join"):
     """Read under the response guard using its freshly resolved actor, not a cookie.
 
@@ -144,7 +177,13 @@ def ministry_page(campaign_id, query, principal, *, ministry_id=None, action="jo
     if value is None:
         raise ReadUnavailable("Ministry report inputs are unavailable.")
     result = json.loads(value[0])
-    if ministry_id is not None and not result["authorized"]:
+    if result.get("disabled"):
+        raise PermissionError("Ministry reporting is not enabled for this campaign.")
+    if result.get("unavailable"):
+        raise ReadUnavailable("Ministry report inputs are unavailable.")
+    if not result["authorized"] and (
+        ministry_id is not None or not allows(principal, Capability.MINISTRY_REPORT)
+    ):
         raise PermissionError("Ministry report access is unavailable.")
     if ministry_id is not None and not result["summaries"]:
         # A changed activity filter can legitimately hide a selected Ministry;

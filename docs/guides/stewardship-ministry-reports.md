@@ -67,3 +67,8 @@ there is no historical upgrade/downgrade path or database deletion.
 Fast draft CI replaces the prior directory-rendering module with the focused
 Ministry module; the ten-module bound and full ready-candidate suite remain.
 Review and exact-head CI evidence will be added before delivery.
+
+[Round 1 review/corrections](stewardship-ministry-report-reviews.md) now adds the
+guarded authorized campaign picker, denies unassigned campaign summaries and
+moves all Ministry selection values into native private POST state. No full
+package or gate acceptance is inferred from the completed first round.

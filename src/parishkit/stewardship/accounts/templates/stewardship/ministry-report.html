@@ -2,11 +2,13 @@
 {% block title %}{% translate "Ministry requests" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Ministry requests" %}</h1>
+<p><a href="{% url 'admin:ministry_report_campaigns' %}">{% translate "Choose a retained campaign" %}</a></p>
 <p>{{ metadata.name }} — {% translate "Source generation" %} {{ metadata.source_generation|number }}; {% translate "source as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time>.</p>
 <p>{% translate "Ages as of" %} {{ metadata.report_date }} ({{ metadata.timezone }}). {% translate "Request date filters use the parish timezone. Displayed times use your browser timezone when scripts are available; otherwise UTC." %}</p>
 <p>{% translate "Current counts exclude cancelled and superseded requests. Inactive Ministries retain their requests. Follow-up progress counts resolved or closed requests; it is not a record of contact attempts." %}</p>
 {% if ministry_id %}<p><a href="{{ summary_url }}">{% translate "All authorized Ministries" %}</a></p>{% endif %}
 <form method="post" action="{{ report_url }}">{% csrf_token %}
+{% if ministry_id %}<input type="hidden" name="ministry" value="{{ ministry_id }}">{% endif %}
 <label for="ministry-search">{% if ministry_id %}{% translate "Search Member name or DUID" %}{% else %}{% translate "Search Ministry name or DUID" %}{% endif %}</label><input id="ministry-search" name="search" maxlength="200" value="{{ query.search }}">
 <label for="ministry-activity">{% translate "Ministry activity" %}</label><select id="ministry-activity" name="activity"><option value="any">{% translate "Any" %}</option><option value="active"{% if query.activity == 'active' %} selected{% endif %}>{% translate "Active" %}</option><option value="inactive"{% if query.activity == 'inactive' %} selected{% endif %}>{% translate "Inactive" %}</option><option value="unavailable"{% if query.activity == 'unavailable' %} selected{% endif %}>{% translate "Unavailable in source" %}</option></select>
 {% if ministry_id %}
@@ -20,7 +22,7 @@
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Ministry summary' %}"><table><caption>{% translate "Current Ministry request summary" %}</caption>
 <thead><tr><th scope="col">{% translate "Ministry" %}</th><th scope="col">{% translate "Joining" %}</th><th scope="col">{% translate "Leaving" %}</th><th scope="col">{% translate "Unresolved" %}</th><th scope="col">{% translate "Follow-up progress" %}</th></tr></thead>
 <tbody>{% for ministry in summaries %}<tr><td>{{ ministry.name }} — {% translate "DUID" %} {{ ministry.duid|number }}<br>{% if ministry.active is None %}{% translate "Unavailable in source" %}{% elif ministry.active %}{% translate "Active" %}{% else %}{% translate "Inactive" %}{% endif %}</td>
-<td><a href="{% url 'admin:ministry_joiners' campaign_id ministry.duid %}">{{ ministry.joining|number }} {% translate "join requests" %}</a></td><td><a href="{% url 'admin:ministry_leavers' campaign_id ministry.duid %}">{{ ministry.leaving|number }} {% translate "leave requests" %}</a></td><td>{{ ministry.unresolved|number }}</td><td>{{ ministry.progress }}</td></tr>{% empty %}<tr><td colspan="5">{% translate "No matching authorized Ministries." %}</td></tr>{% endfor %}</tbody></table></div>
+<td><form method="post" action="{% url 'admin:ministry_joiners' campaign_id %}">{% csrf_token %}<input type="hidden" name="ministry" value="{{ ministry.duid }}"><button type="submit">{{ ministry.joining|number }} {% translate "join requests" %}</button></form></td><td><form method="post" action="{% url 'admin:ministry_leavers' campaign_id %}">{% csrf_token %}<input type="hidden" name="ministry" value="{{ ministry.duid }}"><button type="submit">{{ ministry.leaving|number }} {% translate "leave requests" %}</button></form></td><td>{{ ministry.unresolved|number }}</td><td>{{ ministry.progress }}</td></tr>{% empty %}<tr><td colspan="5">{% translate "No matching authorized Ministries." %}</td></tr>{% endfor %}</tbody></table></div>
 {% if ministry_id %}
 <h2>{% if action == 'join' %}{% translate "Prospective joiners" %}{% else %}{% translate "Requested leavers" %}{% endif %}</h2>
 {% if query.history == 'all' %}<p class="notice">{% translate "History is selected. Superseded and cancelled rows are historical versions, not additional current requests. Identity and contact columns use the displayed source generation, not the historical submission's source." %}</p>{% endif %}

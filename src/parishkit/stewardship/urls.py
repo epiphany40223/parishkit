@@ -80,17 +80,23 @@ family_patterns = [
 admin_patterns = [
     path("ministry-reports/", ministry_report_views.index, name="ministry_reports"),
     path(
+        "ministry-reports/campaigns/",
+        ministry_report_views.picker,
+        name="ministry_report_campaigns",
+    ),
+    path(
         "reports/<uuid:campaign_id>/ministries/",
         ministry_report_views.report,
         name="ministry_report",
     ),
     path(
-        "reports/<uuid:campaign_id>/ministries/<int:ministry_id>/join/",
+        "reports/<uuid:campaign_id>/ministries/join/",
         ministry_report_views.report,
+        {"action": "join"},
         name="ministry_joiners",
     ),
     path(
-        "reports/<uuid:campaign_id>/ministries/<int:ministry_id>/leave/",
+        "reports/<uuid:campaign_id>/ministries/leave/",
         ministry_report_views.report,
         {"action": "leave"},
         name="ministry_leavers",

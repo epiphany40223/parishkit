@@ -17,13 +17,14 @@ WITH selected AS MATERIALIZED (
     CROSS JOIN stewardship_system_configuration sys
     LEFT JOIN stewardship_campaign_credentials k ON k.campaign_id=c.id
     LEFT JOIN stewardship_source_current sc ON sc.singleton
-    WHERE c.id=%(campaign)s AND cc.values->'modules' ? 'ministry'
+    WHERE c.id=%(campaign)s
 ), source AS MATERIALIZED (
     SELECT x.*,s.organization_id,s.generation AS source_generation,
         s.promoted_at AS source_as_of,statement_timestamp() AS observed_at,
         (statement_timestamp() AT TIME ZONE x.timezone)::date AS report_date
     FROM selected x JOIN stewardship_source_snapshot s ON s.id=x.source_id
     WHERE s.state='promoted' AND s.compacted_at IS NULL
+        AND x.values->'modules' ? 'ministry'
 ), ministries AS MATERIALIZED (
     SELECT n.duid::integer AS duid,
         coalesce(nullif(btrim(p.canonical::jsonb->>'name'),''),
@@ -178,7 +179,10 @@ WITH selected AS MATERIALIZED (
     LIMIT %(limit)s OFFSET CASE WHEN %(ministry)s::integer IS NULL
         THEN %(offset)s ELSE 0 END
 )
-SELECT jsonb_build_object(
+SELECT CASE WHEN NOT z.values->'modules' ? 'ministry'
+    THEN jsonb_build_object('disabled',true)
+    WHEN x.id IS NULL THEN jsonb_build_object('unavailable',true)
+    ELSE jsonb_build_object(
     'authorized',EXISTS(SELECT 1 FROM ministries),
     'metadata',jsonb_build_object('id',x.id,'name',x.name,'timezone',x.timezone,
         'source_id',x.source_id,'source_generation',x.source_generation,
@@ -191,6 +195,6 @@ SELECT jsonb_build_object(
         CASE WHEN %(sort)s='name_desc' THEN lower(name) END DESC,lower(name),duid)
         FROM summary_page p),'[]'::jsonb),
     'rows',coalesce((SELECT jsonb_agg(to_jsonb(d)-'ordinal' ORDER BY ordinal)
-        FROM detail d),'[]'::jsonb))::text
-FROM source x
+        FROM detail d),'[]'::jsonb)) END::text
+FROM selected z LEFT JOIN source x ON true
 """

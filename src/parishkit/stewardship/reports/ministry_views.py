@@ -12,6 +12,7 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
+from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.storage import StorageInvariantError
@@ -19,9 +20,15 @@ from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
 
 from .export_views import SAFE_FAILURES
-from .ministries import PAGE_SIZE, STATES, MinistryQuery, can_report, ministry_page
+from .ministries import (
+    PAGE_SIZE,
+    STATES,
+    MinistryQuery,
+    campaign_ids,
+    can_report,
+    ministry_page,
+)
 from .read_admission import admit_report_read
-from .workspace_views import campaign_ids
 
 
 def _principal(request, store, *, read_only=False):
@@ -39,10 +46,10 @@ def index(request):
     """Discover only campaign identities; selected report admission owns all data."""
     try:
         service = runtime()
-        _principal(request, service.store)
+        actor = _principal(request, service.store)
         if request.GET:
             raise ValueError("Invalid Ministry navigation.")
-        choices = campaign_ids()
+        choices = campaign_ids(actor)
         current = SystemConfiguration.objects.values_list(
             "current_campaign_id", flat=True
         ).get()
@@ -56,6 +63,64 @@ def index(request):
         )
         response["Cache-Control"] = "no-store"
         return response
+    except (PermissionError, ObjectDoesNotExist):
+        return denial()
+    except SAFE_FAILURES:
+        return denial(status=503, retry=5)
+    except ValueError:
+        return private_response("Invalid Ministry filters.\n", status=400)
+
+
+@require_GET
+def picker(request):
+    """Guard campaign labels and reload assignment scope before offering choices."""
+    try:
+        service = runtime()
+        actor = _principal(request, service.store)
+        if request.GET:
+            raise ValueError("Invalid Ministry navigation.")
+        identities = campaign_ids(actor)
+        if not identities:
+            response = render(request, "stewardship/report-empty.html")
+            response["Cache-Control"] = "no-store"
+            return response
+        selected = ()
+
+        def authorize(guard):
+            """Do not admit newly authorized labels outside the acquired guards."""
+            nonlocal selected
+            fresh = _principal(request, service.store, read_only=True)
+            if fresh.identity != actor.identity:
+                raise PermissionError("Ministry report access changed.")
+            authorized = frozenset(campaign_ids(fresh))
+            selected = tuple(value for value in identities if value in authorized)
+            for identifier in selected:
+                admit_report_read(identifier)
+
+        def content():
+            """Only guarded, currently authorized campaign labels enter the picker."""
+            choices = [
+                {
+                    "name": row.active_configuration.name,
+                    "url": reverse("admin:ministry_report", args=[row.pk]),
+                }
+                for row in Campaign.objects.filter(pk__in=selected)
+                .select_related("active_configuration")
+                .order_by("-created_at", "id")
+            ]
+            return iter(
+                (
+                    render_to_string(
+                        "stewardship/report-campaigns.html",
+                        {"campaigns": choices},
+                        request=request,
+                    ).encode(),
+                )
+            )
+
+        return campaign_response(
+            request, identities, authorize=authorize, open_content=content
+        )
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except SAFE_FAILURES:
@@ -92,7 +157,7 @@ def _audit(actor, campaign_id, query, outcome, count=0, total=0, scope=()):
 
 
 @require_http_methods(["GET", "POST"])
-def report(request, campaign_id, *, ministry_id=None, action="join"):
+def report(request, campaign_id, *, action=None):
     """Hold purge protection through projection, rendering and streaming."""
     finish, handed_off = None, False
     try:
@@ -102,6 +167,19 @@ def report(request, campaign_id, *, ministry_id=None, action="join"):
             raise ValueError("Ministry filters require private POST state.")
         parameters = request.POST.copy()
         parameters.pop("csrfmiddlewaretoken", None)
+        ministry_id = None
+        if action is not None:
+            values = parameters.pop("ministry", [])
+            if (
+                len(values) != 1
+                or not values[0].isascii()
+                or not values[0].isdecimal()
+                or len(values[0]) > 10
+                or str(int(values[0])) != values[0]
+                or not 0 < int(values[0]) < 2**31
+            ):
+                raise ValueError("A canonical Ministry selection is required.")
+            ministry_id = int(values[0])
         query = MinistryQuery.parse(parameters, detail=ministry_id is not None)
         admit_report_read(campaign_id)
         _audit(actor, campaign_id, query, Outcome.STARTED)
@@ -139,7 +217,11 @@ def report(request, campaign_id, *, ministry_id=None, action="join"):
             """Only detached authorized data is passed to the native report template."""
             nonlocal count, total, scope
             result = ministry_page(
-                campaign_id, query, actor, ministry_id=ministry_id, action=action
+                campaign_id,
+                query,
+                actor,
+                ministry_id=ministry_id,
+                action=action or "join",
             )
             count = len(
                 result["rows"] if ministry_id is not None else result["summaries"]
@@ -155,7 +237,8 @@ def report(request, campaign_id, *, ministry_id=None, action="join"):
                 "ministry_id": ministry_id,
                 "action": action,
                 "query": query,
-                "query_fields": query.form_values(),
+                "query_fields": query.form_values()
+                | ({"ministry": ministry_id} if ministry_id is not None else {}),
                 "states": STATES,
                 "report_url": request.path_info,
                 "summary_url": reverse("admin:ministry_report", args=[campaign_id]),

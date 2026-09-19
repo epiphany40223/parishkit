@@ -11,10 +11,11 @@ from parishkit.stewardship.audit.models import AuditContext
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.ministries import MinistryQuery, ministry_page
 
+from ..campaign_factory import campaign as campaign_record
 from ..census_factory import member
 from ..policy_factory import address, assignment
 from .auth_builders import signed_in
-from .campaign_builders import change
+from .campaign_builders import add_draft, change, close_campaign
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_information_followup_postgresql import search
@@ -127,7 +128,7 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
     google[0]["email"] = "leader@example.org"
     browser, _ = signed_in()
     root = f"/admin/reports/{harness.campaign.pk}/ministries/"
-    route = root + "9/join/"
+    route = root + "join/"
     from parishkit.stewardship.reports import ministry_views
 
     real_principal = ministry_views._principal
@@ -139,7 +140,7 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
 
     with monkeypatch.context() as scoped_patch:
         scoped_patch.setattr(ministry_views, "_principal", previously_staff)
-        response, body = read(browser, route)
+        response, body = search(browser, route, {"ministry": "9"})
         assert response.status_code == 200 and b"valid@example.org" not in body
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = read(browser, root)
@@ -149,17 +150,21 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
             and b"Choir" not in body
         )
         assert b"Ministry reports" in body and b"Family codes" not in body
-        response, body = read(browser, route)
+        response, body = search(browser, route, {"ministry": "9"})
         assert response.status_code == 200 and response["Cache-Control"] == "no-store"
         assert b"Not published" in body and b"valid@example.org" not in body
         assert b"202-555-0123" in body and b"1960-01-01" not in body
-        assert read(browser, root + "4/leave/")[0].status_code == 403
+        assert search(browser, root + "leave/", {"ministry": "4"})[0].status_code == 403
         assert browser.post(route, {"search": "Private"}).status_code == 403
-        response, body = search(browser, route, {"search": "Example"})
+        response, body = search(browser, route, {"ministry": "9", "search": "Example"})
         assert response.status_code == 200 and b"Member Middle Example" in body
         assert b"?search=" not in body
         response, body = read(browser, route + "?search=Private")
         assert response.status_code == 400 and b"Private" not in body
+        assert read(browser, route)[0].status_code == 400
+        assert b"/ministries/9/" not in body
+        for value in ("0", "09", "2147483648", "private@example.org"):
+            assert search(browser, route, {"ministry": value})[0].status_code == 400
     contexts = list(
         AuditContext.objects.filter(
             event__event_type="ministry_report_viewed"
@@ -209,7 +214,7 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
         ).state
         == "applied"
     )
-    assert read(browser, route)[0].status_code == 403
+    assert search(browser, route, {"ministry": "9"})[0].status_code == 403
 
 
 def test_testing_hidden_proposed_and_resolved_intent(response_service):
@@ -319,3 +324,105 @@ def test_detail_pagination_is_complete_stable_and_source_scoped(response_service
     ]
     assert first["metadata"]["source_id"] == second["metadata"]["source_id"]
     assert page(harness, ministry=9, page="3")["rows"] == []
+
+
+def test_campaign_choices_intersect_enabled_modules_and_assignments(
+    response_service, google
+):
+    """A newer unrelated campaign never hides an older authorized Ministry report."""
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+    from parishkit.stewardship.campaigns.lifecycle import Action
+    from parishkit.stewardship.campaigns.runtime import return_to_testing
+    from parishkit.stewardship.jobs.models import TaskRun
+    from parishkit.stewardship.jobs.storage import _status
+
+    from .campaign_builders import admit_test_work, campaign_clock, command
+    from .test_taskrun_postgresql import act
+
+    harness = response_service
+    start(harness)
+    harness = activate_response_service(harness)
+    store = harness.service.store
+    actor = uuid4()
+    close_campaign(harness.campaign, actor)
+    for task in TaskRun.objects.filter(state="running"):
+        act(_status(task), "permanent_failure")
+    with campaign_clock(harness.campaign.active_configuration.ends_at):
+        command(harness.campaign, actor, Action.ARCHIVE)
+        return_to_testing(
+            campaign_id=harness.campaign.pk,
+            request_id=uuid4(),
+            expected_runtime_version=SystemConfiguration.objects.get().version,
+            actor_id=actor,
+            correlation_id=uuid4(),
+            admit=admit_test_work,
+        )
+    result, successor, _ = add_draft(
+        store,
+        store.active(),
+        uuid4(),
+        campaign_record(
+            name="Unassigned campaign",
+            modules=["ministry"],
+            ministry_duids=[4],
+        ),
+    )
+    assert result.state == "applied"
+    rule = address("leader@example.org", roles=("ministry_leader",))
+    assigned = assignment(ministry=9)
+    assert (
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [
+                {"operation": "add", "section": "login_rules", **record}
+                for record in (rule, assigned)
+            ],
+        ).state
+        == "applied"
+    )
+    google[0]["email"] = "leader@example.org"
+    browser, _ = signed_in()
+    owned = f"/admin/reports/{harness.campaign.pk}/ministries/"
+    unowned = f"/admin/reports/{successor['id']}/ministries/"
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response = browser.get("/admin/ministry-reports/")
+        assert response.status_code == 302 and response["Location"] == owned
+        response, body = read(browser, "/admin/ministry-reports/campaigns/")
+        assert response.status_code == 200 and owned.encode() in body
+        assert unowned.encode() not in body and b"Unassigned campaign" not in body
+        response, body = read(browser, unowned)
+        assert response.status_code == 403 and b"Unassigned campaign" not in body
+        assert read(browser, owned)[0].status_code == 200
+    google[0]["email"] = "admin@example.org"
+    google[0]["sub"] = "synthetic-admin-subject"
+    admin, _ = signed_in()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read(admin, "/admin/ministry-reports/campaigns/")
+        assert (
+            response.status_code == 200
+            and owned.encode() in body
+            and unowned.encode() in body
+        )
+    assert (
+        change(
+            store,
+            store.active(),
+            uuid4(),
+            [
+                {
+                    "operation": "update",
+                    "section": "campaigns",
+                    "id": successor["id"],
+                    "values": {"modules": ["census"], "ministry_duids": []},
+                }
+            ],
+        ).state
+        == "applied"
+    )
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert admin.get("/admin/ministry-reports/")["Location"] == owned
+        response, body = read(admin, unowned)
+        assert response.status_code == 403 and "Retry-After" not in response
+        assert b"Unassigned campaign" not in body
