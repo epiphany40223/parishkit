@@ -1,0 +1,35 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% if postal %}{% translate "Families without deliverable email" %}{% else %}{% translate "Family-code directory" %}{% endif %}{% endblock %}
+{% block content %}
+<h1>{% if postal %}{% translate "Families without deliverable email" %}{% else %}{% translate "Family-code directory" %}{% endif %}</h1>
+<p>{{ metadata.name }} — {% translate "Active registered Families from source generation" %} {{ metadata.source_generation|number }}; {% translate "source as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time>.</p>
+<p>{% translate "A Family can receive campaign email when at least one active Family head has a valid email address that has not been permanently refused. This is different from simply having an email address." %}</p>
+<p>{% translate "Across all active Families, those without deliverable email:" %} {{ postal_proportion }}.</p>
+<p>{% translate "Manual codes are specific to this campaign and are available to Admin and Staff. No email-link token is shown. Protect this page and share a code only with the appropriate Family." %}</p>
+<p><a href="{% url 'admin:participation' campaign_id %}">{% translate "Campaign reports and selection" %}</a> · {% if postal %}<a href="{% url 'admin:family_directory' campaign_id %}">{% translate "All active Families" %}</a>{% else %}<a href="{% url 'admin:postal_directory' campaign_id %}">{% translate "Families without deliverable email" %}</a>{% endif %}</p>
+<form method="post" action="{{ report_url }}">{% csrf_token %}
+<label for="directory-search">{% translate "Search Family name, DUID or address" %}</label><input id="directory-search" name="search" maxlength="200" value="{{ query.search }}">
+<label for="exact-code">{% translate "Exact Family code" %}</label><input id="exact-code" name="exact_code" maxlength="128" value="{{ query.exact_code }}" autocomplete="off" autocapitalize="characters" spellcheck="false">
+<label for="directory-reason">{% translate "Email availability" %}</label><select id="directory-reason" name="reason"><option value="any">{% translate "Any" %}</option>{% for key,label in reasons.items %}<option value="{{ key }}"{% if query.reason == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+<label for="directory-phone">{% translate "Phone available" %}</label><select id="directory-phone" name="phone"><option value="any">{% translate "Any" %}</option><option value="yes"{% if query.phone == 'yes' %} selected{% endif %}>{% translate "Yes" %}</option><option value="no"{% if query.phone == 'no' %} selected{% endif %}>{% translate "No" %}</option></select>
+<label for="directory-response">{% translate "Campaign response" %}</label><select id="directory-response" name="response"><option value="any">{% translate "Any" %}</option><option value="yes"{% if query.response == 'yes' %} selected{% endif %}>{% translate "Responded" %}</option><option value="no"{% if query.response == 'no' %} selected{% endif %}>{% translate "Not yet responded" %}</option></select>
+<label for="directory-sort">{% translate "Sort order" %}</label><select id="directory-sort" name="sort"><option value="name"{% if query.sort == 'name' %} selected{% endif %}>{% translate "Family name A–Z" %}</option><option value="name_desc"{% if query.sort == 'name_desc' %} selected{% endif %}>{% translate "Family name Z–A" %}</option><option value="duid"{% if query.sort == 'duid' %} selected{% endif %}>{% translate "Family DUID" %}</option></select>
+<button type="submit">{% translate "Apply filters" %}</button></form>
+<p>{% translate "Matching Families:" %} {{ total|number }}. {% translate "Page" %} {{ query.page|number }}.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Family directory results' %}"><table>
+<caption>{% translate "Family codes, email availability and current campaign response" %}</caption>
+<thead><tr><th scope="col">{% translate "Family" %}</th><th scope="col">{% translate "Manual code" %}</th><th scope="col">{% translate "Email" %}</th><th scope="col">{% translate "Campaign response" %}</th><th scope="col">{% translate "Contact details" %}</th></tr></thead>
+<tbody>{% for row in rows %}<tr>
+<td>{{ row.family_name }}<br>{% translate "DUID" %} {{ row.family_duid|number }}</td>
+<td>{% if row.code %}<code>{{ row.code }}</code>{% else %}{% translate "Unavailable for this campaign" %}{% endif %}</td>
+<td>{{ row.reason_label }}<br>{% translate "Eligible email:" %} {% if row.email_eligible %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}</td>
+<td>{% if row.responded %}{% translate "Responded" %}{% else %}{% translate "Not yet responded" %}{% endif %}</td>
+<td><details><summary>{% translate "Contact details for" %} {{ row.family_name }}</summary>
+<dl><dt>{% translate "Envelope number" %}</dt><dd>{{ row.envelope|default_if_none:'Unavailable' }}</dd>
+<dt>{% translate "Active Family heads" %}</dt><dd>{% for head in row.heads %}{{ head.name }}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "No active head" %}{% endfor %}</dd>
+<dt>{% translate "Family and active Member phones" %}</dt><dd>{% for phone in row.phones %}{{ phone.owner }} — {{ phone.kind }}: {{ phone.value }}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "No phone available" %}{% endfor %}</dd>
+<dt>{% translate "Known primary address" %}</dt><dd>{% for line in row.address_lines %}{{ line }}{% if not forloop.last %}<br>{% endif %}{% empty %}{% if row.address %}{% translate "No address supplied" %}{% else %}{% translate "Unavailable" %}{% endif %}{% endfor %}</dd>
+<dt>{% translate "Separate home and mailing addresses" %}</dt><dd>{% translate "Not distinguished by the current source data. Do not assume that the primary address serves both purposes." %}</dd></dl></details></td></tr>
+{% empty %}<tr><td colspan="5">{% translate "No matching Families." %}</td></tr>{% endfor %}</tbody></table></div>
+<nav aria-label="{% translate 'Family directory pages' %}"><form method="post" action="{{ report_url }}">{% csrf_token %}{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}{% if previous_page %}<button name="page" value="{{ previous_page }}">{% translate "Previous page" %}</button>{% endif %} {% if next_page %}<button name="page" value="{{ next_page }}">{% translate "Next page" %}</button>{% endif %}</form></nav>
+{% endblock %}

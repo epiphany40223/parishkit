@@ -71,3 +71,27 @@ Only that existing column, the report/input constraint and three export guards
 change. No unrelated object or policy changes. The candidate has 206 relations,
 2,311 columns, 3,201 constraints, 949 indexes, 550 functions, 527 triggers and
 28 policies. Update the strict fixture only after this inspected comparison.
+
+## Protected delivery
+
+PR #67 merged as `75a20c0ae62ebe44518338407d56eb0556537112` at
+2026-09-19 17:03:54 UTC, verified on refreshed `origin/main`. Candidate
+`6a582ebbfb586574f6b3c8fd8894df1b55e2f443` has tree
+`23535f60c74f0be7ebc30a2e5e7e2ca26f999b4c`, identical to retained unsquashed
+checkpoint `e2653d07bfb2fe9286ce2cb84221c04420cf1d95` on
+`pr/stewardship-information-exports-reviewed`.
+
+[Full CI run 35456019660](https://github.com/epiphany40223/parishkit/actions/runs/35456019660)
+passed all 24 jobs, including twelve database shards, combined coverage, three
+browser engines and all container scenarios; DCO also passed. The run took
+17 minutes 19 seconds, from 16:46:27 to 17:03:46 UTC. Earlier push/ready events
+raced and left a draft-state run; a fresh ready-state event corrected that
+without modifying the candidate. Those skipped/cancelled runs are not test
+failures or merge evidence. Future final pushes should have their workflow
+event registered before the ready transition to avoid that race.
+
+The completed review rounds and protected checks satisfy this increment's
+standing merge authority. RPT-04 is delivered; full catalog, M5 and Gate 3 stay
+open. The next branch starts from this verified merge for RPT-05 directory and
+postal-outreach screens, with asynchronous exports following that shared query
+and presentation foundation.

@@ -47,6 +47,7 @@ from parishkit.stewardship.web.security import CSP
 from ..campaign_factory import campaign, schedule
 from .delivery_components import components as delivery_components
 from .digest_components import components as digest_components
+from .directory_components import components as directory_components
 from .go_live_components import components as go_live_components
 from .information_components import components as information_components
 from .pause_components import components as pause_components
@@ -1029,6 +1030,7 @@ def component_origin():
     responses.update(digest_components(context, admin))
     responses.update(report_components(context, admin))
     responses.update(information_components(context, admin))
+    responses.update(directory_components(context, admin))
     responses.update(weekly_components(context, admin))
     responses.update(go_live_components(context, admin))
     responses.update(pause_components(context, admin))

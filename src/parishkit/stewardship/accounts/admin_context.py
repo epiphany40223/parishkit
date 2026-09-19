@@ -55,8 +55,17 @@ def portal_chrome(request):
             ]
         )
     if campaign and allows(actor, Capability.FAMILY_CODES):
-        navigation.append(
-            (reverse("admin:family_codes", args=[campaign.pk]), _("Family codes"))
+        navigation.extend(
+            [
+                (
+                    reverse("admin:family_directory", args=[campaign.pk]),
+                    _("Family codes"),
+                ),
+                (
+                    reverse("admin:postal_directory", args=[campaign.pk]),
+                    _("Postal outreach"),
+                ),
+            ]
         )
     if admin:
         navigation.append(

@@ -18,6 +18,14 @@ def add_export_grants(tables, columns, *, role):
         )
     if role == "web":
         tables[information].add("INSERT")
+        # Staff directories expose only the selected source's known address.
+        # No address mutation, source pin, token or private-key grant is added.
+        columns.setdefault("stewardship_snapshot_address", {}).setdefault(
+            "SELECT", set()
+        ).update({"snapshot_id", "payload_id", "source_key"})
+        columns.setdefault("stewardship_source_address", {}).setdefault(
+            "SELECT", set()
+        ).update({"id", "canonical"})
     if role != "download":
         for name in ("request", "cancel", "resolution"):
             tables.setdefault("stewardship_exact_export_" + name, set()).add("SELECT")

@@ -139,13 +139,19 @@ delivery before starting RPT-05 on fresh main. No integrated gate is released.
 
 Scope and dependencies: [RPT-05 work package](../../plans/stewardship/reports.md#rpt-05-family-code-and-postal-outreach-reports).
 
-- [ ] RPT-05.01 — Build the authorized Family-code directory and search.
-- [ ] RPT-05.02 — Build the no-deliverable-email complement report.
+- [x] RPT-05.01 — Build the authorized Family-code directory and search.
+- [x] RPT-05.02 — Build the no-deliverable-email complement report.
 - [ ] RPT-05.03 — Export code and postal data for mail merge.
-- [ ] RPT-05.04 — Enforce code privacy and limiter-outage availability.
+- [x] RPT-05.04 — Enforce code privacy and limiter-outage availability.
 - [ ] RPT-05.05 — Test delivery reasons, search, columns, and access.
 
-Evidence: Not started.
+Implementation evidence: the [interactive directory increment](../../guides/stewardship-family-directories.md)
+starts at verified main `75a20c0a`. It owns .01/.02/.04 and interactive .05;
+.03 and export-specific .05 follow as the next coherent consumer. Three
+[dual-source review/fix rounds](../../guides/stewardship-family-directory-reviews.md)
+are complete with all accepted Medium findings fixed and focused tests passing.
+PR #68 still requires full exact-head CI/DCO and protected merge; this does not
+close RPT-05, M5 or Gate 3 early.
 
 ## RPT-06: Ministry summary and detail
 
