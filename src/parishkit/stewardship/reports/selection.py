@@ -59,13 +59,15 @@ def current_inputs(campaign_id, population_scope):
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT c.active_configuration_id, p.end_date, p.timezone, "
-            "s.snapshot_id, COALESCE((SELECT max(r.campaign_sequence) "
+            "CASE WHEN c.state='archived' THEN pc.source_snapshot_id "
+            "ELSE s.snapshot_id END, COALESCE((SELECT max(r.campaign_sequence) "
             "FROM stewardship_submission r WHERE r.campaign_id=c.id "
             "AND r.mode='live'),0), stewardship_campaign_now_v1() "
             "FROM stewardship_campaign c "
             "JOIN stewardship_campaign_configuration p "
             "ON p.id=c.active_configuration_id "
             "LEFT JOIN stewardship_source_current s ON s.singleton "
+            "LEFT JOIN stewardship_campaign_credentials pc ON pc.campaign_id=c.id "
             "WHERE c.id=%s",
             (campaign_id,),
         )
@@ -143,6 +145,35 @@ def participation_report(
         authorize(store, user_id)
         admit_campaign(campaign_id, mutating=False)
 
+    with (
+        CampaignReadGuard([campaign_id], authorize=fresh, abort=abort) as guard,
+        guarded_participation(
+            guard,
+            campaign_id=campaign_id,
+            population_scope=population_scope,
+            browser_timezone=browser_timezone,
+        ) as result,
+    ):
+        fresh(guard)
+        yield result
+
+
+@contextmanager
+def guarded_participation(guard, *, campaign_id, population_scope, browser_timezone):
+    """Compose with a response-owned guard without starting a nested transaction.
+
+    The caller owns fresh authorization. Generation protection stays alive until
+    its content iterator closes, including after HTML rendering has finished.
+    """
+    if not isinstance(guard, CampaignReadGuard) or campaign_id not in guard.campaigns:
+        raise ValueError("Selection requires the matching response guard.")
+    if (
+        population_scope not in POPULATION_SCOPES
+        or browser_timezone not in timezone_names()
+    ):
+        raise ValueError("Invalid report selection.")
+    guard.check()
+
     def admit(action, inputs):
         """A candidate must belong to this exact authorized campaign and scope."""
         return (
@@ -151,10 +182,7 @@ def participation_report(
             and inputs.population_scope == population_scope
         )
 
-    with (
-        CampaignReadGuard([campaign_id], authorize=fresh, abort=abort) as guard,
-        ExitStack() as selected_guard,
-    ):
+    with ExitStack() as selected_guard:
         expected, instant = current_inputs(campaign_id, population_scope)
         facts = None
         for identifier in _candidates(campaign_id, population_scope, expected):
@@ -176,7 +204,6 @@ def participation_report(
                 browser_timezone=browser_timezone,
                 requested_at=instant,
             )
-        fresh(guard)
         guard.check()
         yield ParticipationSelection(
             instant,

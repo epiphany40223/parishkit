@@ -102,19 +102,41 @@ def _report_url(document, public_origin):
 
 def statistics_cards(statistics):
     """Reuse statistics proportions and exact money formatting without new math."""
-    active = statistics.active
+    return population_cards(
+        statistics.active, financial_enabled=statistics.financial_enabled
+    )
+
+
+def population_cards(active, *, financial_enabled, inactive=False):
+    """Format either labeled subtotal; an absent observation is never zero."""
+    label = "Inactive" if inactive else "Active"
     rows = [
-        ("Active Families", f"{active.families:,}"),
-        ("Active Members", f"{active.active_members:,}"),
-        ("Families with eligible email", active.proportion("eligible_email")),
-        ("Families with deliverable email", active.proportion("deliverable_email")),
-        ("Families that have responded", active.proportion("responses")),
+        (f"{label} Families", f"{active.families:,}" if active else "Unavailable"),
+        ("Active Members", f"{active.active_members:,}" if active else "Unavailable"),
+        (
+            "Families with eligible email",
+            active.proportion("eligible_email") if active else "Unavailable",
+        ),
+        (
+            "Families with deliverable email",
+            active.proportion("deliverable_email") if active else "Unavailable",
+        ),
+        (
+            "Families that have responded",
+            active.proportion("responses") if active else "Unavailable",
+        ),
     ]
-    if statistics.financial_enabled:
+    if financial_enabled:
         rows.extend(
             [
-                ("Current annual pledges", active.annual_pledge.display),
-                ("Configured comparison pledges", active.comparison_pledge.display),
+                (
+                    "Current annual pledges",
+                    active.annual_pledge.display if active else "Unavailable",
+                ),
+                (
+                    "Configured comparison pledges",
+                    active.comparison_pledge.display if active else "Unavailable",
+                ),
             ]
         )
     return tuple(rows)

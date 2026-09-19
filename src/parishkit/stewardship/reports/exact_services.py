@@ -52,7 +52,7 @@ def create_exact_export(
         raise ValueError("Export identities must be canonical UUIDs.")
     if type(population_scope) is not str or population_scope not in POPULATION_SCOPES:
         raise ValueError("Unknown report population scope.")
-    if type(format) is not str or format not in {"csv", "png", "pdf"}:
+    if type(format) is not str or format not in {"csv", "png", "pdf", "xlsx"}:
         raise ValueError("Unsupported participation export format.")
     if type(browser_timezone) is not str or browser_timezone not in timezone_names():
         raise ValueError("Export timezone must be an IANA name.")

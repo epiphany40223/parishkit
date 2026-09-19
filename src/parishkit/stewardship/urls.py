@@ -43,11 +43,14 @@ from .accounts import (
 from .jobs import delivery_views
 from .jobs import views as job_views
 from .reports import (
+    campaign_picker,
     digest_views,
     exact_views,
+    export_ui,
     export_views,
     weekly_manual_views,
     weekly_views,
+    workspace_views,
 )
 from .responses import views as response_views
 
@@ -69,6 +72,42 @@ family_patterns = [
     path("logout", family_authentication.logout, name="logout"),
 ]
 admin_patterns = [
+    path(
+        "reports/<uuid:campaign_id>/participation/export",
+        export_ui.create,
+        name="report_export_create",
+    ),
+    path("reports/exports/<uuid:request_id>/", export_ui.detail, name="report_export"),
+    path(
+        "reports/exports/<uuid:request_id>/cancel",
+        export_ui.command,
+        {"action": "cancel"},
+        name="report_export_cancel",
+    ),
+    path(
+        "reports/exports/<uuid:request_id>/retry",
+        export_ui.command,
+        {"action": "retry"},
+        name="report_export_retry",
+    ),
+    path(
+        "reports/exports/<uuid:request_id>/download",
+        export_ui.command,
+        {"action": "download"},
+        name="report_export_download",
+    ),
+    path("reports/", workspace_views.index, name="reports"),
+    path("reports/campaigns/", campaign_picker.picker, name="report_campaigns"),
+    path(
+        "reports/<uuid:campaign_id>/participation/",
+        workspace_views.participation,
+        name="participation",
+    ),
+    path(
+        "reports/<uuid:campaign_id>/participation/<uuid:fact_set_id>.png",
+        workspace_views.participation,
+        name="participation_chart",
+    ),
     path(
         "campaign/<uuid:campaign_id>/exports/participation",
         export_views.create,

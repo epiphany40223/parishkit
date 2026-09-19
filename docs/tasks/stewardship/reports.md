@@ -18,7 +18,11 @@ Scope and dependencies: [RPT-01 work package](../../plans/stewardship/reports.md
 - [ ] RPT-01.05 — Audit report use without sensitive-value duplication.
 - [ ] RPT-01.06 — Test historical selection, direct access, and revocation.
 
-Evidence: Not started.
+In-progress evidence: the [report workspace increment](../../guides/stewardship-report-workspace.md)
+implements the Admin/Staff participation consumer, campaign-selected navigation,
+closed query state, guarded HTML/PNG and native requester export controls.
+Full consumer coverage, Ministry assignments and the remaining catalog retain
+their owning tasks; no whole RPT-01 task is claimed complete yet.
 
 ## RPT-02: Population and calculation library
 
@@ -57,11 +61,11 @@ work.
 
 Scope and dependencies: [RPT-03 work package](../../plans/stewardship/reports.md#rpt-03-participation-graph-and-campaign-statistics).
 
-- [ ] RPT-03.01 — Build the interactive participation and pledge chart.
+- [x] RPT-03.01 — Build the interactive participation and pledge chart.
 - [ ] RPT-03.02 — Implement immutable facts, debounce, pinned priority, and retention guards.
-- [ ] RPT-03.03 — Keep historical/current scope and source metadata coherent.
-- [ ] RPT-03.04 — Build campaign statistics cards.
-- [ ] RPT-03.05 — Share facts with tables, images, and digests.
+- [x] RPT-03.03 — Keep historical/current scope and source metadata coherent.
+- [x] RPT-03.04 — Build campaign statistics cards.
+- [x] RPT-03.05 — Share facts with tables, images, and digests.
 - [ ] RPT-03.06 — Test rebuild races, cutoffs, parity, and accessible fallback.
 
 In-progress evidence: the [ordinary report-fact increment](../../guides/stewardship-report-facts.md)
@@ -86,7 +90,14 @@ on `pr/stewardship-fact-verification`, with complete sharded coverage evidence
 and passing final focused validation. PR #44 merged as `80754a49` after all
 24 exact-head jobs plus DCO and all 24 protected merge-group jobs passed.
 It does not complete the later statistics, digest or interactive UI owners.
-All package checkboxes remain open.
+Interactive consumer evidence: the [report workspace increment](../../guides/stewardship-report-workspace.md)
+and [three-round correction ledger](../../guides/stewardship-report-workspace-reviews.md)
+complete .01/.03/.04/.05: mobile/desktop/keyboard/no-script chart/table,
+historical/current and inactive separation, shared statistics and exact-generation
+HTML/PNG/export/digest presentation. Focused real-role and three-engine tests are
+recorded in those guides. Full package acceptance, native queued-exact waiting
+controls and integrated Gate 3 remain open; protected final-head delivery is
+tracked in the increment handoff.
 
 ## RPT-04: Additional-information workflow report
 

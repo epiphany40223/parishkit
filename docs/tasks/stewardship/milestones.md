@@ -1744,11 +1744,11 @@ under standing human authority. Full FAM-08 and Gate 5 obligations remain open.
 
 Scope: [Phase 4](../../plans/stewardship/overall.md#phase-4-production-scheduling-delivery-and-notifications).
 
-- [ ] M4.01 — Demonstrate Testing routing and operational-alert classification.
-- [ ] M4.02 — Prove resumable Testing cleanup and atomic Production activation.
-- [ ] M4.03 — Exercise scheduled mail, receipts, and digests through outages and retries.
-- [ ] M4.04 — Verify unknown delivery, pause/resume, and close-during-pause behavior.
-- [ ] M4.05 — Recheck real service queue/mount needs using fake-backed integrations.
+- [x] M4.01 — Demonstrate Testing routing and operational-alert classification.
+- [x] M4.02 — Prove resumable Testing cleanup and atomic Production activation.
+- [x] M4.03 — Exercise scheduled mail, receipts, and digests through outages and retries.
+- [x] M4.04 — Verify unknown delivery, pause/resume, and close-during-pause behavior.
+- [x] M4.05 — Recheck real service queue/mount needs using fake-backed integrations.
 
 Keep live dispatch and final Production activation within the environments
 permitted by the master plan until Gate 3 is complete.
@@ -1756,9 +1756,10 @@ permitted by the master plan until Gate 3 is complete.
 Evidence: the [Phase 4 acceptance and service map](../../guides/stewardship-delivery-pause.md#phase-4-service-and-milestone-handoff)
 links the delivered scheduling, communication, notification and go-live evidence
 to current restricted-role and real-container checks. The final pause/resolution
-increment is implemented and undergoing correction reviews. Leave these milestone
-boxes open until its review loop, exact-head CI/DCO and protected delivery pass;
-Phase 5 has not started and integrated Gate 3 is not waived.
+increment completed its three review/fix rounds and all final-head CI/DCO checks.
+Its [protected delivery receipt](../../guides/stewardship-delivery-pause.md#protected-delivery)
+records the verified main merge and M4 release. Phase 5 is authorized under the
+standing delivery cycle; integrated Gate 3 is not waived.
 
 ## Phase 5: Reporting and staff workflows
 

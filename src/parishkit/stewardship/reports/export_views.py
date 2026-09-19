@@ -43,7 +43,12 @@ from .export_services import (
 )
 from .facts import FactUnavailable
 
-CONTENT_TYPES = {"csv": "text/csv", "pdf": "application/pdf", "png": "image/png"}
+CONTENT_TYPES = {
+    "csv": "text/csv",
+    "pdf": "application/pdf",
+    "png": "image/png",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
 SAFE_FAILURES = (
     ConfigError,
     DatabaseError,
@@ -203,14 +208,22 @@ def _cleanup_error(request, task_id, *, status):
 @require_POST
 def download(request):
     """Serve bytes in-app with bounded download admission through response close."""
-    finish, handed_off = None, False
     try:
         service = runtime()
         principal = _principal(request, service.store)
         values = _body(request, {"grant"})
-        publication = consume_download(
-            service.store, principal.identity, UUID(values["grant"])
-        )
+        return download_with_grant(request, service, principal, UUID(values["grant"]))
+    except SAFE_FAILURES:
+        return denial()
+    except ValueError:
+        return _json({"error": "Invalid download grant."}, status=400)
+
+
+def download_with_grant(request, service, principal, grant_id):
+    """Both native and JSON workflows consume the same guarded one-use grant."""
+    finish, handed_off = None, False
+    try:
+        publication = consume_download(service.store, principal.identity, grant_id)
         job = publication.request
         finalized = False
 
@@ -265,10 +278,6 @@ def download(request):
         )
         handed_off = response.status_code == 200 and response.streaming
         return response
-    except SAFE_FAILURES:
-        return denial()
-    except ValueError:
-        return _json({"error": "Invalid download grant."}, status=400)
     finally:
         if finish is not None and not handed_off:
             finish(False)

@@ -290,3 +290,19 @@ Standing human merge/continue authority applies once those checks pass; verify
 the merge on refreshed `origin/main` before creating the next reporting branch.
 Record the merge receipt and M4 release in that successor handoff. Integrated
 Gate 3 follows the complete Phase 5 report/RBAC work, not this Phase 4 boundary.
+
+## Protected delivery
+
+[PR #62](https://github.com/epiphany40223/parishkit/pull/62) merged through the
+normal protected path at 10:27:25 UTC on September 19, 2026, as
+`2c3151e62ee74dad644657d21065ab32a0171346`, verified on refreshed `origin/main`.
+Final implementation `101fb6d7b065c21fe525807c18af72e038ed6368` passed all
+24 CI jobs in run `35436664988` plus DCO. The aggregate accounted for all
+3,936 database tests across 12 shards; stewardship line coverage was 93.88%
+and branch coverage was 84.74%. The three-round review exit above is complete.
+
+M4.01–.05 are complete for their admitted fake-backed environment scope.
+Phase 5 begins on fresh-main branch `pr/stewardship-report-workspace`; its
+[handoff](stewardship-report-workspace.md) retains later report, integration,
+production-readiness and deployment boundaries. No live provider, deployment,
+release, or integrated Gate 3 approval is implied.

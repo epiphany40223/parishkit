@@ -49,6 +49,7 @@ from .delivery_components import components as delivery_components
 from .digest_components import components as digest_components
 from .go_live_components import components as go_live_components
 from .pause_components import components as pause_components
+from .report_components import components as report_components
 from .weekly_components import components as weekly_components
 
 NOW = datetime(2026, 9, 10, 12, tzinfo=UTC)
@@ -1025,6 +1026,7 @@ def component_origin():
             ),
         )
     responses.update(digest_components(context, admin))
+    responses.update(report_components(context, admin))
     responses.update(weekly_components(context, admin))
     responses.update(go_live_components(context, admin))
     responses.update(pause_components(context, admin))
@@ -1033,6 +1035,7 @@ def component_origin():
         ("ui-v1.js", "application/javascript"),
         ("family-v1.js", "application/javascript"),
         ("digest-v1.js", "application/javascript"),
+        ("report-v1.js", "application/javascript"),
         ("digest-v1.css", "text/css"),
     ):
         asset = f"stewardship/{filename}"

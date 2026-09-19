@@ -13,7 +13,7 @@ CREATE TABLE stewardship_exact_export_request (
     through_date date NOT NULL, format varchar(4) NOT NULL, browser_timezone varchar(254) NOT NULL,
     CONSTRAINT exact_export_replay UNIQUE(requester_id,request_key),
     CONSTRAINT exact_export_scope CHECK(population_scope::text = ANY(ARRAY['historical'::varchar::text,'current'::varchar::text])),
-    CONSTRAINT exact_export_format CHECK(format::text = ANY(ARRAY['csv'::varchar::text,'png'::varchar::text,'pdf'::varchar::text]))
+    CONSTRAINT exact_export_format CHECK(format::text = ANY(ARRAY['csv'::varchar::text,'png'::varchar::text,'pdf'::varchar::text,'xlsx'::varchar::text]))
 );
 CREATE INDEX exact_export_correlation ON stewardship_exact_export_request(correlation_id);
 CREATE INDEX exact_export_campaign ON stewardship_exact_export_request(campaign_id);

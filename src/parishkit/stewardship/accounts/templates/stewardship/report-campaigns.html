@@ -1,0 +1,7 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Choose a retained campaign" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Choose a retained campaign" %}</h1>
+<p>{% translate "This selection changes only your report, not the parish's current campaign." %}</p>
+<ul>{% for item in campaigns %}<li><a href="{{ item.url }}">{{ item.name }}</a></li>{% endfor %}</ul>
+{% endblock %}
