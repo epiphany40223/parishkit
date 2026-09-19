@@ -129,6 +129,16 @@ def _abort_render_worker():
 
 def load_document(request, *, general=None):
     """Load exactly one pinned ready generation inside the caller's campaign guard."""
+    if request.report == "ministry":
+        from .ministry_documents import ministry_document
+
+        return ministry_document(
+            request.ministry_snapshot.document,
+            request.parameters,
+            parish_name=request.configuration.parish.name,
+            requested_at=request.created_at,
+            timezone=request.browser_timezone,
+        )
     if request.report in {"family_directory", "postal_outreach"}:
         from .directories import add_codes
         from .directory_documents import directory_document
@@ -216,6 +226,7 @@ def _execute(execution, *, store, root, general=None):
                 "additional_information",
                 "family_directory",
                 "postal_outreach",
+                "ministry",
             }:
                 from .information_rendering import render_information
 

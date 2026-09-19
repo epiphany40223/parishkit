@@ -35,7 +35,12 @@ class ExportConflict(ValueError):
 def authorize(store, user_id, *, request=None):
     """Reload current coherent policy; possession of an opaque UUID is not access."""
     principal = current_principal(store, user_id)
-    if not allows(principal, Capability.CAMPAIGN_REPORT) or (
+    permitted = allows(principal, Capability.CAMPAIGN_REPORT)
+    if request is not None and request.report == "ministry":
+        from .ministry_exports import scope_authorized
+
+        permitted = scope_authorized(principal, request.authorization_scope)
+    if not permitted or (
         request is not None
         and principal.identity != request.requester_id
         and "administrator" not in principal.roles
@@ -59,15 +64,22 @@ def audit(action, request, actor_id, *, outcome, count=None):
     context = {"outcome": outcome}
     if count is not None:
         context["count"] = count
-    record_action(
-        action,
-        actor_kind=ActorKind.PORTAL_USER,
-        actor_id=actor_id,
-        subject_id=request.pk,
-        parish_id=request.configuration.parish.pk,
-        campaign_id=request.campaign_id,
-        context=context,
+    scope = (
+        request.authorization_scope.get("ministries", ())
+        if request.report == "ministry"
+        else ()
     )
+    for ministry in scope or (None,):
+        record_action(
+            action,
+            actor_kind=ActorKind.PORTAL_USER,
+            actor_id=actor_id,
+            subject_id=request.pk,
+            parish_id=request.configuration.parish.pk,
+            campaign_id=request.campaign_id,
+            context=context
+            | ({"ministry_duid": ministry} if ministry is not None else {}),
+        )
 
 
 def create_export(
@@ -189,8 +201,10 @@ def regenerate_export(store, user_id, request_id, *, request_key):
     """
     with work_transaction():
         original = (
-            ExportRequest.objects.select_related("directory_snapshot")
-            .defer("directory_snapshot__document")
+            ExportRequest.objects.select_related(
+                "directory_snapshot", "ministry_snapshot"
+            )
+            .defer("directory_snapshot__document", "ministry_snapshot__document")
             .get(pk=request_id)
         )
         authorize(store, user_id, request=original)
@@ -198,6 +212,18 @@ def regenerate_export(store, user_id, request_id, *, request_key):
         publication = ExportPublication.objects.filter(request=original).first()
         if publication is None or publication.expires_at > database_now():
             raise ExportConflict("Only expired exports can be regenerated.")
+        if original.report == "ministry":
+            from .ministry_exports import create_ministry_export
+
+            return create_ministry_export(
+                store,
+                user_id,
+                campaign_id=original.campaign_id,
+                format=original.format,
+                browser_timezone=original.browser_timezone,
+                request_key=request_key,
+                snapshot=original.ministry_snapshot,
+            )
         if original.report in {"family_directory", "postal_outreach"}:
             from .directory_exports import create_directory_export
 

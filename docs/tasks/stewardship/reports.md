@@ -189,6 +189,10 @@ and their dedicated privacy/scope/lifecycle tests open; ADM-08 keeps follow-up
 editing. Full exact-head CI/DCO and protected merge remain pending. This does
 not close all RPT-06 work, M5 or Gate 3.
 
+PR #70 subsequently passed all 24 exact-head CI jobs and DCO and merged as
+`5b0d3051`, verified on refreshed main. The [complete-result export increment](../../guides/stewardship-ministry-exports.md)
+now owns .03 and export-specific scope/privacy/lifecycle acceptance.
+
 ## RPT-07: Multi-Ministry follow-up packet
 
 Scope and dependencies: [RPT-07 work package](../../plans/stewardship/reports.md#rpt-07-multi-ministry-follow-up-packet).

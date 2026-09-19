@@ -738,10 +738,10 @@ follow-up owners still follow; no integrated gate is released.
 
 PR #70 completes RPT-06.01/.02/.04 and interactive .05 acceptance, with three
 [completed independent review/fix rounds](../../guides/stewardship-ministry-report-reviews.md).
-Full exact-head CI/DCO and protected delivery remain pending. After its verified
-merge, finish complete-result Ministry exports under RPT-06.03 on a fresh main
-branch, then proceed to the remaining packet/follow-up/report owners. M5 and
-Gate 3 remain open.
+PR #70 passed all 24 exact-head CI jobs and DCO, then merged as `5b0d3051`,
+verified on refreshed main. The [complete-result Ministry export increment](../../guides/stewardship-ministry-exports.md)
+is now implementing RPT-06.03 on a fresh main branch. Packet/follow-up/report
+owners follow after its protected delivery. M5 and Gate 3 remain open.
 
 1. Finish [BG-08](background-processing.md#bg-08-export-and-graph-workers); implement [RPT-01](reports.md#rpt-01-shared-report-framework-and-campaign-selection) and finish [RPT-02](reports.md#rpt-02-population-and-calculation-library).
 2. Complete [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics), [RPT-04](reports.md#rpt-04-additional-information-workflow-report), [RPT-05](reports.md#rpt-05-family-code-and-postal-outreach-reports), [RPT-06](reports.md#rpt-06-ministry-summary-and-detail), [RPT-07](reports.md#rpt-07-multi-ministry-follow-up-packet), and the reporting slice of [RPT-08](reports.md#rpt-08-census-and-financial-reports).

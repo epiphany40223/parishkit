@@ -9,7 +9,7 @@ def add_export_grants(tables, columns, *, role):
         tables.setdefault("stewardship_export_" + name, set()).add("SELECT")
     # Request guards and publication metadata read the retained input header;
     # only the render owner and web report owner can read captured private rows.
-    for kind in ("information", "directory"):
+    for kind in ("information", "directory", "ministry"):
         snapshot = f"stewardship_{kind}_export_snapshot"
         if role in {"web", "worker"}:
             tables.setdefault(snapshot, set()).add("SELECT")

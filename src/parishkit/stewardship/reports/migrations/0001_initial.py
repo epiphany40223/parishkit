@@ -24,6 +24,76 @@ class Migration(migrations.Migration):
         migrations.SeparateDatabaseAndState(
             state_operations=[
                 migrations.CreateModel(
+                    name="MinistryExportSnapshot",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        ("actor_id", models.UUIDField(editable=False)),
+                        ("correlation_id", models.UUIDField(editable=False)),
+                        (
+                            "campaign",
+                            models.ForeignKey(
+                                to="stewardship_campaigns.campaign",
+                                on_delete=django.db.models.deletion.PROTECT,
+                                db_index=False,
+                            ),
+                        ),
+                        (
+                            "source",
+                            models.ForeignKey(
+                                to="stewardship_source.sourcesnapshot",
+                                on_delete=django.db.models.deletion.PROTECT,
+                                db_index=False,
+                            ),
+                        ),
+                        (
+                            "configuration",
+                            models.ForeignKey(
+                                to="stewardship_accounts.appliedconfigurationversion",
+                                on_delete=django.db.models.deletion.PROTECT,
+                                db_index=False,
+                            ),
+                        ),
+                        ("authorization_scope", models.JSONField()),
+                        ("parameters", models.JSONField()),
+                        ("document", models.JSONField(default=dict)),
+                        ("row_count", models.PositiveIntegerField(default=0)),
+                    ],
+                    options={
+                        "db_table": "stewardship_ministry_export_snapshot",
+                        "indexes": [
+                            models.Index(
+                                fields=["correlation_id"],
+                                name="ministry_export_correlation",
+                            ),
+                            models.Index(
+                                fields=["campaign"], name="ministry_export_campaign"
+                            ),
+                            models.Index(
+                                fields=["source"], name="ministry_export_source"
+                            ),
+                            models.Index(
+                                fields=["configuration"],
+                                name="ministry_export_config",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
                     name="DirectoryExportSnapshot",
                     fields=[
                         (
@@ -1485,6 +1555,15 @@ class Migration(migrations.Migration):
                         ("parameters", models.JSONField()),
                         ("authorization_scope", models.JSONField()),
                         (
+                            "ministry_snapshot",
+                            models.ForeignKey(
+                                to="stewardship_reports.ministryexportsnapshot",
+                                on_delete=django.db.models.deletion.PROTECT,
+                                null=True,
+                                db_index=False,
+                            ),
+                        ),
+                        (
                             "directory_snapshot",
                             models.ForeignKey(
                                 to="stewardship_reports.directoryexportsnapshot",
@@ -1654,6 +1733,12 @@ class Migration(migrations.Migration):
                 migrations.AddIndex(
                     model_name="exportrequest",
                     index=models.Index(
+                        fields=["ministry_snapshot"], name="export_ministry_snapshot"
+                    ),
+                ),
+                migrations.AddIndex(
+                    model_name="exportrequest",
+                    index=models.Index(
                         fields=["directory_snapshot"], name="export_directory_snapshot"
                     ),
                 ),
@@ -1678,12 +1763,14 @@ class Migration(migrations.Migration):
                             report="participation",
                             fact_set__isnull=False,
                             information_snapshot__isnull=True,
+                            ministry_snapshot__isnull=True,
                             directory_snapshot__isnull=True,
                         )
                         | models.Q(
                             report="additional_information",
                             fact_set__isnull=True,
                             information_snapshot__isnull=False,
+                            ministry_snapshot__isnull=True,
                             directory_snapshot__isnull=True,
                             format__in=("csv", "xlsx", "pdf"),
                         )
@@ -1691,7 +1778,16 @@ class Migration(migrations.Migration):
                             report__in=("family_directory", "postal_outreach"),
                             fact_set__isnull=True,
                             information_snapshot__isnull=True,
+                            ministry_snapshot__isnull=True,
                             directory_snapshot__isnull=False,
+                            format__in=("csv", "xlsx", "pdf"),
+                        )
+                        | models.Q(
+                            report="ministry",
+                            fact_set__isnull=True,
+                            information_snapshot__isnull=True,
+                            directory_snapshot__isnull=True,
+                            ministry_snapshot__isnull=False,
                             format__in=("csv", "xlsx", "pdf"),
                         ),
                         name="export_report_known",

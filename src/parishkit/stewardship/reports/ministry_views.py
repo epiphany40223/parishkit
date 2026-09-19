@@ -1,5 +1,7 @@
 """Assigned-leader reporting without granting parish-wide campaign access."""
 
+from uuid import uuid4
+
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError
 from django.shortcuts import redirect, render
@@ -15,10 +17,12 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import Event, emit_failure
+from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
 
+from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .ministries import (
     PAGE_SIZE,
@@ -232,7 +236,16 @@ def report(request, campaign_id, *, action=None):
                 if ministry_id is not None
                 else tuple(row["duid"] for row in result["summaries"])
             )
+            mutable = True
+            try:
+                admit_campaign(campaign_id, mutating=True)
+            except PermissionError:
+                mutable = False
             context = result | {
+                "mutable": mutable,
+                "export_key": uuid4(),
+                "export_fields": query.form_values(),
+                "export_timezones": sorted(timezone_names()),
                 "campaign_id": campaign_id,
                 "ministry_id": ministry_id,
                 "action": action,

@@ -86,3 +86,15 @@ The reviewed commits and recorded corrections will be retained on a backup
 branch and consolidated into a single logical feature commit with an identical
 tree. Final-head full CI/DCO and protected merge are still required. M5/Gate 3
 and production-readiness boundaries are unchanged.
+
+## Protected delivery
+
+PR #70 delivered candidate `db0665ff26ef6c295e3e4bb83fc73bb63b97f860`, with
+the same tree as retained review/correction checkpoint `6f2ae4ee`. All 24 jobs
+in exact-head ready-candidate CI `35467478243` and DCO passed. That CI ran from
+20:28:16 to 20:45:03 UTC on September 19, 2026 (16 minutes 47 seconds), without
+a correction rerun. Protected auto-merge landed as `5b0d30513dcc642319f04de9ea8f880310e4eabf`
+and was verified on refreshed `origin/main` before starting the
+[complete-result export increment](stewardship-ministry-exports.md).
+This supersedes the pending delivery checkpoint; RPT-06.03 and M5/Gate 3 remain
+open until their own acceptance is complete.

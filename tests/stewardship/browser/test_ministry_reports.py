@@ -18,6 +18,7 @@ def test_ministry_reports_mobile_keyboard_and_accessibility(
         "/ministry-summary",
         "/ministry-history",
         "/ministry-empty",
+        "/ministry-gated",
     ):
         page.goto(component_origin + path)
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
@@ -53,5 +54,32 @@ def test_ministry_search_without_scripts(browser_engine, component_origin):
         assert "history=all" in sent.value.post_data
         assert "ministry=9" in sent.value.post_data
         assert "Private" not in sent.value.url and "?" not in sent.value.url
+    finally:
+        context.close()
+
+
+def test_ministry_complete_export_without_scripts(browser_engine, component_origin):
+    """Applied filters and private selection survive native export without URL leaks."""
+    context = browser_engine.new_context(java_script_enabled=False)
+    try:
+        page = context.new_page()
+        page.goto(component_origin + "/ministry-detail")
+        page.get_by_label("Export format").select_option("xlsx")
+        page.get_by_label("Export timezone").select_option("America/Detroit")
+        page.route("**/ministries/export/", lambda route: route.fulfill(body="Queued"))
+        with page.expect_request(lambda request: request.method == "POST") as sent:
+            page.get_by_role("button", name="Queue complete export").click()
+        assert "search=Example" in sent.value.post_data
+        assert (
+            "ministry=9" in sent.value.post_data
+            and "action=join" in sent.value.post_data
+        )
+        assert (
+            "format=xlsx" in sent.value.post_data
+            and "page=" not in sent.value.post_data
+        )
+        assert "?" not in sent.value.url and "/9/" not in sent.value.url
+        page.goto(component_origin + "/ministry-gated")
+        assert page.get_by_role("button", name="Queue complete export").is_disabled()
     finally:
         context.close()

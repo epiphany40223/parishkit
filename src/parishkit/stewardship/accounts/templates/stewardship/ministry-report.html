@@ -37,4 +37,14 @@
 {% endif %}
 <p>{% translate "Matching results:" %} {{ total|number }}. {% translate "Page" %} {{ query.page|number }}.</p>
 <nav aria-label="{% translate 'Ministry report pages' %}"><form method="post" action="{{ report_url }}">{% csrf_token %}{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}{% if previous_page %}<button name="page" value="{{ previous_page }}">{% translate "Previous page" %}</button>{% endif %} {% if next_page %}<button name="page" value="{{ next_page }}">{% translate "Next page" %}</button>{% endif %}</form></nav>
+<section aria-labelledby="ministry-export-heading"><h2 id="ministry-export-heading">{% translate "Export complete results" %}</h2>
+<p>{% translate "All matching results, not just this page:" %} {{ total|number }}. {% if ministry_id %}{% if action == 'join' %}{% translate "Prospective joiners" %}{% else %}{% translate "Requested leavers" %}{% endif %} — {% translate "Ministry DUID" %} {{ ministry_id|number }}.{% else %}{% translate "Authorized Ministry summary." %}{% endif %}</p>
+<p class="notice">{% translate "Sensitive parish information. Download only to a trusted device and share only with authorized recipients. Contacts and publication flags are captured from the source snapshot; current access is checked again at download." %}</p>
+{% if not mutable %}<p class="notice">{% translate "Campaign work is gated; new exports are unavailable. Existing authorized read-only reports remain available." %}</p>{% endif %}
+<form method="post" action="{% url 'admin:ministry_export' campaign_id %}">{% csrf_token %}
+{% for key,value in export_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+<input type="hidden" name="ministry" value="{{ ministry_id|default_if_none:'' }}"><input type="hidden" name="action" value="{{ action|default:'summary' }}"><input type="hidden" name="request_key" value="{{ export_key }}">
+<label for="ministry-export-format">{% translate "Export format" %}</label><select id="ministry-export-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="pdf">PDF</option></select>
+<label for="ministry-export-timezone">{% translate "Export timezone" %}</label><select id="ministry-export-timezone" name="browser_timezone" data-browser-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
+<button type="submit"{% if not mutable %} disabled{% endif %}>{% translate "Queue complete export" %}</button></form></section>
 {% endblock %}
