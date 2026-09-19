@@ -165,3 +165,41 @@ links, then promotes changed source and requires disposal before a fresh revisio
 It passes in 12.94 seconds. All 17 fresh-schema fingerprint/model-contract cases
 pass against the independently audited candidate. Ruff/format and changed
 Markdown checks pass. Peer review and exact-head CI are still required.
+
+## Review ledger
+
+### Round 1
+
+Session `20260918-222342-7f2d8b` reviewed the complete change from merged
+`47ec359982151ef1cc28f24f391c2f6d97faef8b` to
+`98a296ea7230ea62236bdc75e665649a3b067f7a` (tree
+`bf716bba111a0ea06999841ce4bc012092343c6b`). Exact Claude permission preflight,
+both source completions and finalization passed without degradation or failed
+agents. Raw severity: four Medium, ten Low, no High/Critical. Four validated
+Medium findings represented three distinct issues:
+
+- Claude concurrent-control errors: fixed by mapping changed cancellation
+  intent and retry conflicts to stale responses; independent-tab HTTP controls
+  now return 409 while exact replay remains idempotent.
+- Claude/Codex competing retries: one duplicate finding, both resolved. A retry
+  must exclude other preparations' nonterminal tasks and undisposed staging,
+  in both current-Admin admission and the SQL retry guard.
+- Codex exact SQL fencing: fixed by carrying transaction-scoped run/fence/worker
+  evidence into each preparation/disposal effect. The setting grants no
+  privilege: SQL compares it to the current durable owner and live lease.
+  Direct restricted SQL rejects absent, previous-run, wrong-fence and wrong-worker
+  evidence, including disposal after a replacement claim. Savepoint rollback
+  restores claim context without masking the original SQL error.
+
+All 29 focused preparation, real HTTP/retry/race and complete schema-contract
+tests pass in 77.18 seconds. No accepted Medium-or-higher finding remains from
+this round. Low findings were below the configured validation cutoff, not
+represented as a finding-free review. The reviewed head's full CI run
+`35415468088` also passed; corrections require their own exact-head CI.
+
+The correction audit independently installed immutable `98a296e` and the candidate
+in `stewardship_mail_health_before_20260918n` and
+`stewardship_mail_health_after_20260918n`. One read-only invoker availability
+predicate is added; only intake, task-pin and worker-effect function bodies
+change. The predecessor matched its fingerprint. All other object categories
+are unchanged; the new function count is 526. No retained database was altered.

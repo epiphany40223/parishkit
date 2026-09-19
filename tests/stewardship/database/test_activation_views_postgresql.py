@@ -122,8 +122,12 @@ def test_admin_prepares_retries_and_discards_without_activating(ready_links):
     with web_login():
         page = browser.get(path)
         retry = {"control": page.context["records"][0]["controls"]["retry"]}
+        other_retry = {
+            "control": browser.get(path).context["records"][0]["controls"]["retry"]
+        }
         assert post(browser, path, retry).status_code == 302
         assert post(browser, path, retry).status_code == 302
+        assert post(browser, path, other_retry).status_code == 409
         task = TaskRun.objects.filter(root_id=preparation.task_id).latest(
             "retry_sequence"
         )
@@ -140,8 +144,12 @@ def test_admin_prepares_retries_and_discards_without_activating(ready_links):
         assert b"Inactive links are prepared" in page.content
         assert page.context["records"][0]["task"].state == "succeeded"
         cancel = {"control": page.context["records"][0]["controls"]["cancel"]}
+        other_cancel = {
+            "control": browser.get(path).context["records"][0]["controls"]["cancel"]
+        }
         assert post(browser, path, cancel).status_code == 302
         assert post(browser, path, cancel).status_code == 302
+        assert post(browser, path, other_cancel).status_code == 409
         cancellation = ProductionTokenCancellation.objects.get()
     act(
         act(_status(TaskRun.objects.get(pk=cancellation.task_id)), "claim"),
@@ -176,3 +184,45 @@ def test_admin_prepares_retries_and_discards_without_activating(ready_links):
         assert browser.get(path).status_code == 403
         assert post(browser, path, values).status_code == 403
     assert ProductionTokenPreparation.objects.count() == 1
+
+
+def test_new_preparation_fences_old_failed_retry_in_http_and_sql(ready_links):
+    """A new root and a retained old retry control cannot create competing work."""
+    from django.db import IntegrityError
+
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+    from parishkit.stewardship.jobs.storage import retry_failed
+
+    browser, path, _, login = ready_links
+    with web_login():
+        page = browser.get(path)
+        assert (
+            post(browser, path, {"control": page.context["prepare"]}).status_code == 302
+        )
+        preparation = ProductionTokenPreparation.objects.get()
+    failed = act(
+        act(_status(TaskRun.objects.get(pk=preparation.task_id)), "claim"),
+        "permanent_failure",
+    )
+    with web_login():
+        page = browser.get(path)
+        retry = page.context["records"][0]["controls"]["retry"]
+        assert (
+            post(browser, path, {"control": page.context["prepare"]}).status_code == 302
+        )
+        assert post(browser, path, {"control": retry}).status_code == 409
+        rows = browser.get(path).context["records"]
+        old = next(row for row in rows if row["preparation"].pk == preparation.pk)
+        assert "retry" not in old["controls"]
+        with (
+            pytest.raises(IntegrityError, match="retry inputs changed"),
+            work_transaction(),
+        ):
+            retry_failed(
+                run_id=failed.run_id,
+                command_id=uuid4(),
+                actor_id=login.portal_session.principal_id,
+                correlation_id=uuid4(),
+                admit=lambda *args: True,
+            )
+    assert TaskRun.objects.filter(root_id=preparation.task_id).count() == 1

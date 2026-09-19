@@ -5,8 +5,9 @@ from uuid import UUID, uuid4
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.jobs.storage import TaskStatus, enqueue
-from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
+from parishkit.stewardship.storage import StaleRecordError
 
+from .activation_claims import token_claim
 from .activation_models import ProductionTokenCancellation, ProductionTokenPreparation
 from .activation_tokens import (
     CLEANUP_TASK_TYPE,
@@ -39,9 +40,7 @@ def request_cancellation(
             raise PermissionError("Preparation cancellation is not admitted.")
         if previous is not None:
             if (previous.request_key, previous.actor_id) != (request_key, actor_id):
-                raise StorageInvariantError(
-                    "Preparation cancellation already has intent."
-                )
+                raise StaleRecordError("Preparation cancellation already has intent.")
             return previous
         generation = prepared_generation(preparation)
         if generation is not None and (
@@ -49,7 +48,7 @@ def request_cancellation(
             or preparation.transition.campaign.active_token_generation_id
             == generation.pk
         ):
-            raise StorageInvariantError("Selected live links cannot be cancelled.")
+            raise StaleRecordError("Selected live links cannot be cancelled.")
         identifier = uuid4()
         task = enqueue(
             task_type=CLEANUP_TASK_TYPE,
@@ -151,7 +150,8 @@ def scrub_batch(preparation, claim, *, maximum=500):
             and campaign.active_token_generation_id != row.pk
         )
 
-    cancel_generation(generation_id=generation.pk, admit=admit)
-    count = scrub_generation(generation.pk, batch_size=maximum)
+    with token_claim(claim):
+        cancel_generation(generation_id=generation.pk, admit=admit)
+        count = scrub_generation(generation.pk, batch_size=maximum)
     lock_task_claim(claim)
     return count

@@ -15,6 +15,7 @@ from parishkit.stewardship.jobs.storage import TaskStatus, enqueue
 from parishkit.stewardship.source.models import SourceCurrent
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
+from .activation_claims import token_claim
 from .activation_inputs import TokenPreparationInputs
 from .activation_models import ProductionTokenCancellation, ProductionTokenPreparation
 from .credential_keys import inventory_digest
@@ -38,12 +39,13 @@ TASK_TYPE = "production_tokens"
 CLEANUP_TASK_TYPE = "production_token_cleanup"
 
 
-def preparation_available(transition):
+def preparation_available(transition, *, excluding=None):
     """Dispose prior staging before preparing a replacement revision."""
     require_work_order()
-    identifiers = ProductionTokenPreparation.objects.filter(
-        transition=transition
-    ).values("id")
+    identifiers = ProductionTokenPreparation.objects.filter(transition=transition)
+    if excluding is not None:
+        identifiers = identifiers.exclude(pk=excluding)
+    identifiers = identifiers.values("id")
     return not (
         TaskRun.objects.filter(
             task_type=TASK_TYPE,
@@ -241,19 +243,20 @@ def prepare_batch(preparation_id, claim, *, public, maximum=500):
             )
         )
 
-    generation = begin_generation(
-        campaign_id=preparation.transition.campaign_id,
-        operation_id=preparation.pk,
-        source_snapshot_id=preparation.source_snapshot_id,
-        source_generation=preparation.source_generation,
-        public=public,
-        actor_id=preparation.actor_id,
-        task_id=preparation.task_id,
-        admit=admit,
-    )
-    generation = prepare_generation_batch(
-        generation_id=generation.pk, public=public, admit=admit, batch_size=maximum
-    )
+    with token_claim(claim):
+        generation = begin_generation(
+            campaign_id=preparation.transition.campaign_id,
+            operation_id=preparation.pk,
+            source_snapshot_id=preparation.source_snapshot_id,
+            source_generation=preparation.source_generation,
+            public=public,
+            actor_id=preparation.actor_id,
+            task_id=preparation.task_id,
+            admit=admit,
+        )
+        generation = prepare_generation_batch(
+            generation_id=generation.pk, public=public, admit=admit, batch_size=maximum
+        )
     lock_task_claim(claim)
     if generation.state == "ready" and not TokenPreparationInputs.retained(
         preparation

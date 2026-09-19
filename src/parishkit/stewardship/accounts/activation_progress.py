@@ -24,7 +24,7 @@ from parishkit.stewardship.campaigns.activation_tokens import (
 from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
-from parishkit.stewardship.jobs.storage import retry_failed
+from parishkit.stewardship.jobs.storage import TaskRetryConflict, retry_failed
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.storage import StaleRecordError
 
@@ -95,7 +95,11 @@ def progress(request, service, campaign_id, request_id, *, window):
                 controls["cancel"] = _sign(
                     actor, row, "cancel", preparation=preparation
                 )
-            if current and task.state == "failed":
+            if (
+                current
+                and task.state == "failed"
+                and preparation_available(row, excluding=preparation.pk)
+            ):
                 controls["retry"] = _sign(
                     actor, row, "retry", preparation=preparation, task=task
                 )
@@ -206,6 +210,10 @@ def control(request, service, campaign_id, request_id, *, token):
             )
         if binding["action"] == "retry":
             require_current(preparation)
+            if not preparation_available(row, excluding=preparation.pk):
+                raise StaleRecordError(
+                    "Another preparation must finish disposal first."
+                )
             root_id = preparation.task_id
         else:
             cancellation = ProductionTokenCancellation.objects.get(
@@ -215,4 +223,11 @@ def control(request, service, campaign_id, request_id, *, token):
         task = TaskRun.objects.get(pk=UUID(binding["task"]), root_id=root_id)
         if task.version != binding["version"]:
             raise StaleRecordError("The task changed; refresh before retrying.")
-        return retry_failed(run_id=task.pk, command_id=UUID(binding["key"]), **common)
+        try:
+            return retry_failed(
+                run_id=task.pk, command_id=UUID(binding["key"]), **common
+            )
+        except TaskRetryConflict:
+            raise StaleRecordError(
+                "The task changed; refresh before retrying."
+            ) from None

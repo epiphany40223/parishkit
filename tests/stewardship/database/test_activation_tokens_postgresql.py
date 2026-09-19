@@ -1,14 +1,16 @@
 """Pinned inactive links use the actual cleanup, source and token storage owners."""
 
+import json
 from contextlib import nullcontext
 from dataclasses import asdict
 from uuid import uuid4
 
 import pytest
-from django.db import IntegrityError, connection, transaction
+from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.db.models import F
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+from parishkit.stewardship.campaigns.activation_claims import SETTING, token_claim
 from parishkit.stewardship.campaigns.activation_cleanup import (
     disposed,
     request_cancellation,
@@ -49,6 +51,162 @@ from .test_source_families_postgresql import prepare, promote
 from .test_taskrun_postgresql import act, expire
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+
+def test_sql_writes_reject_an_old_run_even_while_retry_has_a_live_claim(
+    response_service,
+):
+    """Direct restricted SQL must repeat exact fencing, not just find a live root."""
+    cleanup = queued(response_service)
+    assert run(cleanup)
+    preparation = request_preparation(
+        transition_id=cleanup.request_id,
+        request_key=uuid4(),
+        actor_id=uuid4(),
+        correlation_id=uuid4(),
+        admit=lambda *args: True,
+    )
+    first = act(_status(TaskRun.objects.get(pk=preparation.task_id)), "claim")
+    with work_transaction():
+        generation = prepare_batch(
+            preparation.pk,
+            TaskClaim(first.run_id, first.fence, first.worker_id),
+            public=response_service.rings.public,
+        )
+    failed = act(first, "permanent_failure")
+    with work_transaction():
+        retry = retry_failed(
+            run_id=failed.run_id,
+            command_id=uuid4(),
+            actor_id=uuid4(),
+            correlation_id=uuid4(),
+            admit=lambda *args: True,
+        )
+    current = act(retry, "claim")
+    for evidence in (
+        None,
+        {
+            "run": str(first.run_id),
+            "fence": first.fence,
+            "worker": str(first.worker_id),
+        },
+        {
+            "run": str(current.run_id),
+            "fence": current.fence + 1,
+            "worker": str(current.worker_id),
+        },
+        {"run": str(current.run_id), "fence": current.fence, "worker": str(uuid4())},
+    ):
+        with (
+            task_login(ServiceRole.WORKER, exact=True, reconnect=True),
+            pytest.raises(DatabaseError),
+            work_transaction(),
+            connection.cursor() as cursor,
+        ):
+            if evidence is not None:
+                cursor.execute(
+                    "SELECT set_config(%s,%s,true)", [SETTING, json.dumps(evidence)]
+                )
+            cursor.execute(
+                "UPDATE stewardship_family_token_generation "
+                "SET version=version+1 WHERE id=%s",
+                [generation.pk],
+            )
+    with task_login(ServiceRole.WORKER, exact=True, reconnect=True), work_transaction():
+        with (
+            pytest.raises(DatabaseError) as failure,
+            token_claim(TaskClaim(current.run_id, current.fence, current.worker_id)),
+            connection.cursor() as cursor,
+        ):
+            cursor.execute(
+                "UPDATE stewardship_family_token_generation "
+                "SET version=version WHERE id=%s",
+                [generation.pk],
+            )
+        assert failure.value.__cause__.sqlstate == "23514"
+        with (
+            token_claim(TaskClaim(current.run_id, current.fence, current.worker_id)),
+            connection.cursor() as cursor,
+        ):
+            cursor.execute(
+                "UPDATE stewardship_family_token_generation "
+                "SET version=version+1 WHERE id=%s",
+                [generation.pk],
+            )
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT current_setting(%s,true)", [SETTING])
+            assert cursor.fetchone()[0] in (None, "")
+
+    act(current, "complete")
+    cancellation = request_cancellation(
+        preparation_id=preparation.pk,
+        request_key=uuid4(),
+        actor_id=uuid4(),
+        correlation_id=uuid4(),
+        admit=lambda *args: True,
+    )
+    first_disposal = act(_status(TaskRun.objects.get(pk=cancellation.task_id)), "claim")
+    from parishkit.stewardship.campaigns.link_tokens import cancel_generation
+
+    with (
+        task_login(ServiceRole.WORKER, exact=True, reconnect=True),
+        work_transaction(),
+        token_claim(
+            TaskClaim(
+                first_disposal.run_id, first_disposal.fence, first_disposal.worker_id
+            )
+        ),
+    ):
+        cancel_generation(generation_id=generation.pk, admit=lambda *args: True)
+    failed = act(first_disposal, "permanent_failure")
+    with work_transaction():
+        retry = retry_failed(
+            run_id=failed.run_id,
+            command_id=uuid4(),
+            actor_id=uuid4(),
+            correlation_id=uuid4(),
+            admit=lambda *args: True,
+        )
+    current_disposal = act(retry, "claim")
+    with (
+        task_login(ServiceRole.WORKER, exact=True, reconnect=True),
+        pytest.raises(DatabaseError),
+        work_transaction(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(
+            "SELECT set_config(%s,%s,true)",
+            [
+                SETTING,
+                json.dumps(
+                    {
+                        "run": str(first_disposal.run_id),
+                        "fence": first_disposal.fence,
+                        "worker": str(first_disposal.worker_id),
+                    }
+                ),
+            ],
+        )
+        cursor.execute(
+            "UPDATE stewardship_family_token SET ciphertext=NULL,digest=NULL,"
+            "destroyed_at=stewardship_campaign_now_v1(),version=version+1 "
+            "WHERE generation_id=%s",
+            [generation.pk],
+        )
+    from parishkit.stewardship.campaigns.activation_cleanup import scrub_batch
+
+    with task_login(ServiceRole.WORKER, exact=True, reconnect=True), work_transaction():
+        assert (
+            scrub_batch(
+                preparation,
+                TaskClaim(
+                    current_disposal.run_id,
+                    current_disposal.fence,
+                    current_disposal.worker_id,
+                ),
+            )
+            == 1
+        )
 
 
 def test_retry_resumes_committed_batch_and_source_change_requires_disposal(

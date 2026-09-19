@@ -47,6 +47,23 @@ $$;
 -- This read-only invoker predicate uses only the caller's existing metadata
 -- grants. Unlike the trigger-only definers below, it confers no extra authority.
 
+CREATE FUNCTION public.stewardship_production_tokens_available_v1(transition_uuid uuid, excluded_uuid uuid)
+RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
+    SELECT NOT EXISTS (
+        SELECT 1 FROM stewardship_production_tokens preparation
+        WHERE preparation.transition_id=transition_uuid
+          AND preparation.id IS DISTINCT FROM excluded_uuid
+          AND (EXISTS(SELECT 1 FROM stewardship_task_run task
+                WHERE task.domain_request_id=preparation.id AND task.task_type='production_tokens'
+                    AND task.state IN ('queued','running','retry_wait','abandoned'))
+            OR EXISTS(SELECT 1 FROM stewardship_family_token_generation generation
+                WHERE generation.operation_id=preparation.id AND (
+                    generation.state IN ('building','ready','active') OR EXISTS(
+                        SELECT 1 FROM stewardship_family_token token
+                        WHERE token.generation_id=generation.id AND token.destroyed_at IS NULL))))
+    );
+$$;
+
 CREATE FUNCTION public.stewardship_production_tokens_intake_v1() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE kind text; preparation public.stewardship_production_tokens%ROWTYPE;
@@ -69,19 +86,8 @@ BEGIN
         IF NOT public.stewardship_production_tokens_current_v1(preparation) THEN
             RAISE EXCEPTION 'Production link preparation has stale scope' USING ERRCODE='23514';
         END IF;
-        IF EXISTS(SELECT 1 FROM stewardship_production_tokens prior
-            JOIN stewardship_task_run task ON task.domain_request_id=prior.id
-            WHERE prior.transition_id=NEW.transition_id AND task.task_type=kind
-                AND task.state IN ('queued','running','retry_wait','abandoned')) THEN
-            RAISE EXCEPTION 'Production link preparation is already running' USING ERRCODE='23514';
-        END IF;
-        IF EXISTS(SELECT 1 FROM stewardship_production_tokens prior
-            JOIN stewardship_family_token_generation generation ON generation.operation_id=prior.id
-            WHERE prior.transition_id=NEW.transition_id AND (
-                generation.state IN ('building','ready','active') OR EXISTS(
-                    SELECT 1 FROM stewardship_family_token token
-                    WHERE token.generation_id=generation.id AND token.destroyed_at IS NULL))) THEN
-            RAISE EXCEPTION 'Prior inactive links require disposal' USING ERRCODE='23514';
+        IF NOT public.stewardship_production_tokens_available_v1(NEW.transition_id,NEW.id) THEN
+            RAISE EXCEPTION 'Prior link preparation requires completion or disposal' USING ERRCODE='23514';
         END IF;
     ELSE
         kind:='production_token_cleanup';
@@ -122,7 +128,8 @@ BEGIN
         END IF;
         IF NEW.task_type='production_tokens' AND NOT EXISTS(
             SELECT 1 FROM stewardship_production_tokens p WHERE p.id=NEW.domain_request_id
-                AND p.task_id=NEW.root_id AND public.stewardship_production_tokens_current_v1(p)) THEN
+                AND p.task_id=NEW.root_id AND public.stewardship_production_tokens_current_v1(p)
+                AND public.stewardship_production_tokens_available_v1(p.transition_id,p.id)) THEN
             RAISE EXCEPTION 'Production link retry inputs changed' USING ERRCODE='23514';
         END IF;
     END IF;
@@ -144,6 +151,7 @@ RETURNS boolean LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS
 DECLARE preparation public.stewardship_production_tokens%ROWTYPE;
         generation public.stewardship_family_token_generation%ROWTYPE;
         can_prepare boolean; can_dispose boolean; preparation_claim boolean;
+        claim jsonb;
 BEGIN
     IF current_user<>'pk_stewardship_worker'
        OR relation_name NOT IN ('stewardship_family_token_generation','stewardship_family_token')
@@ -151,6 +159,9 @@ BEGIN
             AND classid=736220 AND objid=1 AND objsubid=2 AND mode='ExclusiveLock' AND granted) THEN
         RETURN false;
     END IF;
+    claim:=NULLIF(current_setting('parishkit.production_token_claim',true),'')::jsonb;
+    IF claim IS NULL OR jsonb_typeof(claim)<>'object'
+       OR NOT claim ?& ARRAY['run','fence','worker'] THEN RETURN false; END IF;
     IF relation_name='stewardship_family_token_generation' THEN
         SELECT * INTO generation FROM jsonb_populate_record(NULL::public.stewardship_family_token_generation,proposed);
     ELSE
@@ -168,14 +179,18 @@ BEGIN
     preparation_claim:=EXISTS(SELECT 1 FROM stewardship_task_run task
         WHERE task.root_id=preparation.task_id AND task.domain_request_id=preparation.id
             AND task.task_type='production_tokens' AND task.state='running'
-            AND task.worker_id IS NOT NULL AND task.lease_expires_at>clock_timestamp());
+            AND task.id=(claim->>'run')::uuid AND task.fence=(claim->>'fence')::bigint
+            AND task.worker_id=(claim->>'worker')::uuid
+            AND task.lease_expires_at>clock_timestamp());
     can_prepare:=public.stewardship_production_tokens_current_v1(preparation);
     can_dispose:=NOT can_prepare AND (preparation_claim OR EXISTS(
         SELECT 1 FROM stewardship_production_token_cancel cancellation
         JOIN stewardship_task_run task ON task.root_id=cancellation.task_id
             AND task.domain_request_id=cancellation.id AND task.task_type='production_token_cleanup'
         WHERE cancellation.preparation_id=preparation.id AND task.state='running'
-            AND task.worker_id IS NOT NULL AND task.lease_expires_at>clock_timestamp()
+            AND task.id=(claim->>'run')::uuid AND task.fence=(claim->>'fence')::bigint
+            AND task.worker_id=(claim->>'worker')::uuid
+            AND task.lease_expires_at>clock_timestamp()
     )) AND generation.state<>'active' AND NOT EXISTS(SELECT 1 FROM stewardship_campaign
         WHERE active_token_generation_id=generation.id);
     IF relation_name='stewardship_family_token_generation' THEN
