@@ -629,6 +629,11 @@ After final-head CI/DCO and protected merge, verify refreshed `origin/main`,
 then begin the ADM-06 delivery-pause slice. Phase 4's remaining service/queue
 handoff and M4 evidence still follow; this does not release integrated Gate 3.
 
+PR #61 merged as `4be1ce09`, verified on refreshed `origin/main` after all
+25 final-head CI/DCO checks passed. Continue the
+[delivery-pause increment](../../guides/stewardship-delivery-pause.md) from that
+tip on `pr/stewardship-delivery-pause`; retain the full Phase 4 and gate boundaries.
+
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).
 3. Complete required [RPT-02](reports.md#rpt-02-population-and-calculation-library) calculations and the [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics) fact-materialization service before [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests); report UI remains in Phase 5.

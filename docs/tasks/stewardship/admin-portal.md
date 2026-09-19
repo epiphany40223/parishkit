@@ -170,7 +170,10 @@ Scope and dependencies: [ADM-06 work package](../../plans/stewardship/admin-port
 - [ ] ADM-06.04 — Build archive, unarchive, Return, and obligation resolution.
 - [ ] ADM-06.05 — Test lifecycle races and durable post-close coverage.
 
-Evidence: Not started.
+Evidence: The [delivery-pause increment](../../guides/stewardship-delivery-pause.md)
+starts ADM-06.02 from verified PR #61 merge `4be1ce09`. Pause/resume, held-message
+visibility and close-during-pause acceptance are in scope. No ADM-06 task is
+complete at this checkpoint; restore/reopen/archive/Return remain later owners.
 
 ## ADM-07: User rules and Ministry assignments
 
