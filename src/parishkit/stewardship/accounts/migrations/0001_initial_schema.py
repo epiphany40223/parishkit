@@ -50,6 +50,7 @@ def schema_sql():
                 "operational_render",
                 "operational_dispatch",
                 "operational_slack",
+                "activation_impact",
             )
         ]
     )

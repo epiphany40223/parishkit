@@ -407,6 +407,7 @@ def runtime_grants(role, *, target=None):
 
         add_cleanup_web_reads(tables, columns)
         add_cleanup_web_commands(tables, columns)
+        tables["stewardship_activation_impact"] = {"SELECT"}
         for table in (
             "stewardship_production_tokens",
             "stewardship_production_token_cancel",

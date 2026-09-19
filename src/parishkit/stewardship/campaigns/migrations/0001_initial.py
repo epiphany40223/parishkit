@@ -25,6 +25,37 @@ class Migration(migrations.Migration):
         migrations.SeparateDatabaseAndState(
             state_operations=[
                 migrations.CreateModel(
+                    name="ActivationImpactRevision",
+                    fields=[
+                        (
+                            "singleton",
+                            models.BooleanField(
+                                default=True,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "version",
+                            models.PositiveBigIntegerField(default=1, db_default=1),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_activation_impact",
+                        "constraints": [
+                            models.CheckConstraint(
+                                condition=models.Q(singleton=True),
+                                name="activation_impact_singleton",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(version__gte=1),
+                                name="activation_impact_positive",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
                     name="ScheduleRecoveryReplacement",
                     fields=[
                         (
