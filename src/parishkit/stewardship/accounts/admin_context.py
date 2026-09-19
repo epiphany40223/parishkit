@@ -89,6 +89,27 @@ def portal_chrome(request):
             campaign=campaign, go_live_gate=True
         ).exists()
     )
+    delivery_pause = None
+    if admin and campaign and configuration.mode == "production":
+        from .delivery_control_commands import inventory
+        from .policy_models import PortalUser
+
+        navigation.append(
+            (
+                reverse("admin:delivery_control", args=[campaign.pk]),
+                _("Delivery controls"),
+            )
+        )
+        if campaign.delivery_paused:
+            delivery_pause = {
+                "inventory": inventory(campaign.pk),
+                "reason": campaign.pause_reason,
+                "since": campaign.paused_at,
+                "actor": PortalUser.objects.filter(pk=campaign.pause_actor_id)
+                .values_list("email", flat=True)
+                .first(),
+                "url": reverse("admin:delivery_control", args=[campaign.pk]),
+            }
     return {
         "admin_chrome": {
             "admin": admin,
@@ -98,6 +119,7 @@ def portal_chrome(request):
             "testing_recipient": configuration.testing_recipient if admin else None,
             "restored": configuration.restore_review_required,
             "paused": bool(campaign and campaign.delivery_paused),
+            "delivery_pause": delivery_pause,
             "go_live": go_live,
             "critical_count": critical_count,
             "background": counts,

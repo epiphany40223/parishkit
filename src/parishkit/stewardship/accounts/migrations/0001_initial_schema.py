@@ -53,6 +53,7 @@ def schema_sql():
                 "activation_impact",
                 "production_confirmation",
                 "production_withdrawal",
+                "delivery_control",
             )
         ]
     )

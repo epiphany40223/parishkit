@@ -42,3 +42,29 @@ complete that entire package or release Gate 3.
    dispatch, deployment or release is authorized by this increment.
 
 Implementation and acceptance are not complete at this initial checkpoint.
+
+## Initial pause checkpoint
+
+The signed, five-minute current-Admin preview binds campaign/runtime versions,
+reason and the exact live-message inventory. A private SQL effect independently
+checks the fresh session, scope, clocks, ordered locks and inventory, then
+records the control and attaches all unsent live-message holds atomically.
+Already-submitting/unknown delivery remains separate; message bodies, encrypted
+substitutions and routing do not change. The native page and Admin banner show
+the held counts, uncertainty, actor, reason and elapsed pause duration.
+
+The first actual restricted-Web test passed in 25.02 seconds. The expanded
+HTTP/CSRF/stray-input/banner scenario passed alongside the strict fingerprint
+and 15 other schema checks; model equivalence identified a literal-array cast
+difference, corrected in the fresh SQL rather than normalized in the test.
+Independent catalogs `/tmp/parishkit-delivery-pause-before-a.json` (verified
+merged `4be1ce09`) and `/tmp/parishkit-delivery-pause-after-b.json` add only the
+command table/count view, 18 columns, 22 constraints, four indexes, two functions
+and two triggers. No existing object/ACL/policy changes or database upgrades are
+in this checkpoint. Model state agrees under `makemigrations --check --dry-run`.
+The corrected strict fingerprint and model equivalence both passed in 14.77
+seconds. Repository lint/formatting and the guide's Markdown check passed.
+
+Resume, exact recovery/coalescing, post-close resolution, next-due projections,
+the remaining negative/race/browser coverage and all review rounds remain open.
+This checkpoint is not ready for protected delivery.

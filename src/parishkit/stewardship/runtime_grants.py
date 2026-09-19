@@ -411,6 +411,8 @@ def runtime_grants(role, *, target=None):
         tables["stewardship_production_confirmation"] = {"SELECT", "INSERT"}
         tables["stewardship_production_withdrawal"] = {"SELECT", "INSERT"}
         tables["stewardship_withdrawal_inventory"] = {"SELECT"}
+        tables["stewardship_delivery_control"] = {"SELECT", "INSERT"}
+        tables["stewardship_delivery_control_inventory"] = {"SELECT"}
         for table in (
             "stewardship_production_tokens",
             "stewardship_production_token_cancel",

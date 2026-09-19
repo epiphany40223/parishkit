@@ -1,0 +1,29 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Campaign delivery controls" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Campaign delivery controls" %}</h1>
+<p>{{ campaign.active_configuration.name }}</p>
+<p>{% translate "Pausing live mail does not close the campaign or stop Families from submitting. Their confirmations are held. Nothing is redirected to the Testing recipient. Operational alerts and explicitly requested test emails remain available." %}</p>
+<p class="notice">{% translate "Messages already being submitted may reach the provider. Unknown deliveries require their own reconciliation; pausing cannot recall them." %}</p>
+<section class="panel"><h2>{% translate "Current live-mail inventory" %}</h2>
+<dl><dt>{% translate "Queued messages" %}</dt><dd>{{ inventory.queued|number }}</dd>
+<dt>{% translate "Held messages" %}</dt><dd>{{ inventory.held|number }}</dd>
+<dt>{% translate "Already submitting" %}</dt><dd>{{ inventory.submitting|number }}</dd>
+<dt>{% translate "Delivery unknown" %}</dt><dd>{{ inventory.unknown|number }}</dd></dl>
+{% if inventory.types %}<table><caption>{% translate "Live mail by type" %}</caption><thead><tr><th scope="col">{% translate "Type" %}</th><th scope="col">{% translate "Queued" %}</th><th scope="col">{% translate "Held" %}</th><th scope="col">{% translate "Submitting" %}</th><th scope="col">{% translate "Unknown" %}</th></tr></thead><tbody>
+{% for kind, counts in inventory.types.items %}<tr><th scope="row">{{ kind }}</th><td>{{ counts.queued|number }}</td><td>{{ counts.held|number }}</td><td>{{ counts.submitting|number }}</td><td>{{ counts.unknown|number }}</td></tr>{% endfor %}
+</tbody></table>{% endif %}</section>
+{% if available %}
+{% if campaign.delivery_paused %}<section class="panel" role="status"><h2>{% translate "Live delivery is paused" %}</h2><p>{% translate "Reason" %}: {{ campaign.pause_reason }}</p>
+<p>{% translate "Paused at" %}: <time data-local-instant datetime="{{ campaign.paused_at|instant }}">{{ campaign.paused_at|instant }}</time> ({{ campaign.paused_at|timesince }}).</p></section>
+{% else %}
+{% if not fresh %}<p>{% translate "Confirmation requires Google authentication within the last five minutes." %} <a href="{% url 'admin:login' %}">{% translate "Sign in again with Google" %}</a></p>{% endif %}
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="preview_pause"><label for="pause-reason">{% translate "Reason for pausing live delivery" %}</label><textarea id="pause-reason" name="reason" required maxlength="1024">{{ preview.reason }}</textarea><button type="submit">{% translate "Preview pause" %}</button></form>
+{% if preview %}<section class="panel"><h2>{% translate "Exact pause preview" %}</h2><p>{{ preview.reason }}</p>
+<p>{% translate "Unsent messages to hold" %}: {{ preview.inventory.queued|number }}. {% translate "Already submitting" %}: {{ preview.inventory.submitting|number }}. {% translate "Delivery unknown" %}: {{ preview.inventory.unknown|number }}.</p>
+<p>{% translate "Any intervening change invalidates this preview. Confirming records this reason and holds unsent live mail atomically." %}</p>
+{% if control_token and fresh %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ control_token }}"><button type="submit">{% translate "Confirm pause of live delivery" %}</button></form>{% endif %}</section>{% endif %}
+{% endif %}
+{% else %}<p role="alert">{% translate "Live delivery controls require the current Production campaign." %}</p>{% endif %}
+<p><a href="{% url 'admin:deliveries' %}">{% translate "Review outgoing mail and uncertain deliveries" %}</a></p>
+{% endblock %}

@@ -31,6 +31,7 @@
 !src/parishkit/stewardship/schema/activation_impact.sql
 !src/parishkit/stewardship/schema/production_confirmation.sql
 !src/parishkit/stewardship/schema/production_withdrawal.sql
+!src/parishkit/stewardship/schema/delivery_control.sql
 !src/parishkit/stewardship/schema/schedule_reconciliation.sql
 !src/parishkit/stewardship/schema/exports.sql
 !src/parishkit/stewardship/schema/delivery_resolution.sql
