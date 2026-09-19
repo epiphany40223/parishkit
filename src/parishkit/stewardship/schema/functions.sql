@@ -982,7 +982,7 @@ CREATE FUNCTION public.stewardship_campaign_mail_live_v1(configuration_id uuid, 
     SELECT EXISTS (
         SELECT 1 FROM public.stewardship_system_configuration runtime
         JOIN public.stewardship_campaign campaign
-            ON campaign.id=runtime.current_campaign_id AND campaign.state='draft'
+            ON campaign.id=runtime.current_campaign_id
         JOIN public.stewardship_content_version template
             ON template.configuration_id=runtime.active_configuration_id
             AND template.campaign_id=campaign.id AND template.kind='email'
@@ -995,7 +995,10 @@ CREATE FUNCTION public.stewardship_campaign_mail_live_v1(configuration_id uuid, 
             AND rule.email=owner.email AND rule.roles @> '["administrator"]'::jsonb
         WHERE runtime.active_configuration_id=$1 AND campaign.id=$2
             AND template.id=$3 AND workspace.credential_fingerprint=$4
-            AND runtime.mode='testing' AND NOT runtime.restore_review_required
+            AND ((runtime.mode='testing' AND campaign.state='draft')
+                OR (runtime.mode='production' AND campaign.delivery_paused
+                    AND campaign.state IN ('scheduled','active','closed')))
+            AND NOT runtime.restore_review_required
             AND NOT EXISTS (SELECT 1 FROM public.stewardship_campaign_work_gate gate
                 WHERE gate.state IN ('preparing','running'))
             AND NOT EXISTS (SELECT 1 FROM public.stewardship_campaign_credentials c

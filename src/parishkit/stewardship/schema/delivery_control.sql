@@ -26,6 +26,48 @@ CREATE VIEW public.stewardship_delivery_control_inventory AS
     ) AS inventory FROM scope;
 REVOKE ALL ON public.stewardship_delivery_control_inventory FROM PUBLIC;
 
+-- A successful explicit test after this pause proves the exact current sender
+-- and credential, without asking the web process to contact a provider. Failed
+-- or unresolved later tests and typed live-provider failures veto that proof.
+-- Bound freshness to five minutes; durable acceptance alone is not perpetual
+-- permission to release mail. Only this current-campaign projection is public
+-- to the restricted web role, never provider evidence or message bodies.
+CREATE VIEW public.stewardship_delivery_control_health AS
+    WITH scope AS (
+        SELECT c.id AS campaign_id,r.active_configuration_id AS configuration_id,
+            c.delivery_paused,w.credential_fingerprint,
+            public.stewardship_mail_provider_identity_v1(r.active_configuration_id) AS identity,
+            (SELECT max(created_at) FROM public.stewardship_campaign_control
+                WHERE campaign_id=c.id AND action='pause') AS paused_at
+        FROM public.stewardship_system_configuration r
+        JOIN public.stewardship_campaign c ON c.id=r.current_campaign_id
+        JOIN public.stewardship_applied_integration w
+            ON w.configuration_id=r.active_configuration_id AND w.kind='google_workspace'
+        WHERE r.mode='production'
+    ), proof AS (
+        SELECT t.id,t.submitted_at,t.finished_at FROM public.stewardship_campaign_mail_test t,scope s
+        WHERE s.delivery_paused AND t.campaign_id=s.campaign_id
+            AND t.configuration_id=s.configuration_id AND t.fingerprint=s.credential_fingerprint
+            AND t.state='accepted' AND t.submitted_at>=s.paused_at
+            AND t.submitted_at>clock_timestamp()-interval '5 minutes'
+        ORDER BY t.finished_at DESC,t.id DESC LIMIT 1
+    ) SELECT s.campaign_id,jsonb_build_object(
+        'ready',p.id IS NOT NULL AND NOT EXISTS(
+            SELECT 1 FROM public.stewardship_campaign_mail_test t
+            WHERE t.campaign_id=s.campaign_id AND t.configuration_id=s.configuration_id
+                AND t.created_at>=p.submitted_at
+                AND t.state IN ('queued','submitting','not_sent','delivery_unknown'))
+            AND NOT EXISTS(SELECT 1 FROM public.stewardship_outbox_event e
+                WHERE e.provider_identity=s.identity AND e.created_at>=p.submitted_at
+                    AND e.previous_state='submitting' AND e.submitted_at IS NOT NULL
+                    AND e.reason IN ('smtp_unavailable','smtp_systemic')
+                    AND (e.evidence_note LIKE '{"health":"unavailable",%'
+                        OR e.evidence_note LIKE '{"health":"systemic",%')),
+        'proof',p.id,'checked_at',p.finished_at,
+        'expires_at',p.submitted_at+interval '5 minutes'
+    ) AS health FROM scope s LEFT JOIN proof p ON true;
+REVOKE ALL ON public.stewardship_delivery_control_health FROM PUBLIC;
+
 CREATE TABLE public.stewardship_delivery_control (
     id uuid NOT NULL PRIMARY KEY,
     created_at timestamptz DEFAULT statement_timestamp() NOT NULL,

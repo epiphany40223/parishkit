@@ -8,6 +8,7 @@ dates are cursor/coverage identities; only resolved UTC instants decide timing.
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from .configuration import campaign_values, schedule_values
 from .intervals import local_day, resolve_local
@@ -117,6 +118,43 @@ class SchedulePlan:
         """A daily reporting obligation requires a nonempty campaign-local day."""
         interval = local_day(day, self.timezone).interval
         return interval.start < interval.end
+
+    def next_slot(self, *, after, include_final_weekly=False):
+        """Find the next configured slot without enumerating prior campaign days.
+
+        Daily slots name yesterday, whereas weekly slots name their delivery
+        day. Start near the campaign-local clock, preserving the same DST and
+        skipped-civil-day rules as ordinary page evaluation. This is a schedule
+        forecast, not an assertion about eligible recipients or fulfillment.
+        """
+        if (
+            type(after) is not datetime
+            or after.utcoffset() != timedelta(0)
+            or type(include_final_weekly) is not bool
+        ):
+            raise ValueError("Next schedule slot requires a UTC cutoff.")
+        if self.kind in {"initial", "reminder"}:
+            if self.one_time_due <= after:
+                return None
+            return ScheduleSlot("once", self.one_time_date, self.one_time_due)
+        local = after.astimezone(ZoneInfo(self.timezone)).date()
+        offset = 2 if self.kind == "daily_digest" else 1
+        cursor = local - min((local - date.min).days, offset) * DAY
+        candidate = self._first_date(cursor if cursor < local else None)
+        last = self._last_date(include_final_weekly)
+        while candidate is not None and candidate <= last:
+            due = self._due(candidate)
+            if due > after and (
+                self.kind != "daily_digest" or self._active_day(candidate)
+            ):
+                return ScheduleSlot(
+                    candidate.isoformat(),
+                    candidate,
+                    due,
+                    self.kind == "weekly_digest" and candidate > self.end,
+                )
+            candidate = self._advance(candidate)
+        return None
 
     def _one_time(self, through, after):
         """Time/template revisions retain the same one-time semantic slot."""

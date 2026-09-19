@@ -68,3 +68,32 @@ seconds. Repository lint/formatting and the guide's Markdown check passed.
 Resume, exact recovery/coalescing, post-close resolution, next-due projections,
 the remaining negative/race/browser coverage and all review rounds remain open.
 This checkpoint is not ready for protected delivery.
+
+## Forecast and provider-check checkpoint
+
+The control page now forecasts the earliest configured due instant and counts
+the tied schedule slots, explicitly distinguishing those from future recipient
+counts. It uses the ordinary civil-time resolver, including DST gaps/folds,
+skipped civil days and the final daily report after close. The focused schedule,
+forecast and runtime-grant checks passed: 69 tests in 0.27 seconds.
+
+Paused Production campaigns can use the existing explicit fictional test-mail
+workflow. The provider check requires accepted mail under the current applied
+configuration and credential, submitted after this pause and within five
+minutes. A later unsuccessful/unresolved test or current-provider failure
+invalidates the proof. Passive pages perform no provider request, and neither
+testing nor acceptance releases a live message. The actual restricted-Web and
+mail-worker scenario exercised not-sent, accepted and uncertain outcomes while
+retaining the live pause and unchanged held payload; it passed in 27.69 seconds.
+
+The independent `after-c` catalog adds only the two-column health projection and
+changes the explicit test-mail admission function. Existing object permissions,
+constraints, indexes, triggers and policies are unchanged. This remains a fresh
+installation baseline; no retained database was upgraded or deleted.
+All 17 strict baseline/model-equivalence checks passed in 19.80 seconds.
+
+Initial draft CI found the newly added count view missing from the SQL-only
+grant-test inventory; the registry assertion is corrected. Its reference-load
+scenario also exceeded the two-minute diagnostic threshold; the focused local
+run passed in 52.59 seconds. Final-head CI and all review rounds remain required,
+and resume/post-close recovery remain in progress.

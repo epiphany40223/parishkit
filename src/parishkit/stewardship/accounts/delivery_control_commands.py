@@ -17,6 +17,8 @@ from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.storage import StaleRecordError
 
 from .admin_editing import editable_configuration, principal
+from .content_models import ContentVersion
+from .delivery_forecast import next_due
 from .sessions import require_fresh
 
 SALT = "stewardship-delivery-control-v1"
@@ -57,6 +59,20 @@ def _available(campaign, runtime):
     }
 
 
+def health(campaign_id):
+    """Expose only current proof metadata, never provider responses or recipients."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT health FROM stewardship_delivery_control_health "
+            "WHERE campaign_id=%s",
+            [campaign_id],
+        )
+        row = cursor.fetchone()
+    if row is None:
+        return {"ready": False, "proof": None, "checked_at": None, "expires_at": None}
+    return json.loads(row[0]) if isinstance(row[0], str) else row[0]
+
+
 def page(request, service, campaign_id):
     """Passive status does not refresh idle expiry or perform provider requests."""
     with work_transaction():
@@ -71,6 +87,17 @@ def page(request, service, campaign_id):
             "available": _available(campaign, runtime),
             "fresh": fresh,
             "inventory": inventory(campaign_id),
+            "next_due": next_due(campaign, _now()),
+            "health": health(campaign_id),
+            "test_template": ContentVersion.objects.filter(
+                configuration_id=runtime.active_configuration_id,
+                campaign_id=campaign_id,
+                kind="email",
+                slot="initial",
+            )
+            .order_by("record_id")
+            .values_list("record_id", flat=True)
+            .first(),
         }
 
 
