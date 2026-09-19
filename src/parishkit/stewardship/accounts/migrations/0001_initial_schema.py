@@ -58,6 +58,7 @@ def schema_sql():
                 "delivery_closed",
                 "information_followup",
                 "information_reports",
+                "directory_reports",
             )
         ]
     )

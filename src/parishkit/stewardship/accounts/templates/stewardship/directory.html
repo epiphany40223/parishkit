@@ -1,4 +1,4 @@
-{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% extends 'stewardship/base.html' %}{% load i18n static stewardship %}
 {% block title %}{% if postal %}{% translate "Families without deliverable email" %}{% else %}{% translate "Family-code directory" %}{% endif %}{% endblock %}
 {% block content %}
 <h1>{% if postal %}{% translate "Families without deliverable email" %}{% else %}{% translate "Family-code directory" %}{% endif %}</h1>
@@ -16,6 +16,21 @@
 <label for="directory-sort">{% translate "Sort order" %}</label><select id="directory-sort" name="sort"><option value="name"{% if query.sort == 'name' %} selected{% endif %}>{% translate "Family name A–Z" %}</option><option value="name_desc"{% if query.sort == 'name_desc' %} selected{% endif %}>{% translate "Family name Z–A" %}</option><option value="duid"{% if query.sort == 'duid' %} selected{% endif %}>{% translate "Family DUID" %}</option></select>
 <button type="submit">{% translate "Apply filters" %}</button></form>
 <p>{% translate "Matching Families:" %} {{ total|number }}. {% translate "Page" %} {{ query.page|number }}.</p>
+<section aria-labelledby="directory-export-heading">
+<h2 id="directory-export-heading">{% translate "Export complete results" %}</h2>
+<p>{{ total|number }} {% translate "estimated matching Families, using the applied filters and sort above—not just this page. Source and response values are captured when queued; later changes do not alter that capture." %}</p>
+<p class="notice">{% translate "Sensitive parish information and campaign manual codes: download only to a trusted device and share only with authorized recipients. No email-link tokens are included." %}</p>
+{% if not mutable %}<p class="notice">{% translate "Campaign work is gated. New exports are unavailable; the read-only directory remains available while read access stays open." %}</p>{% endif %}
+<form method="post" action="{% if postal %}{% url 'admin:postal_directory_export' campaign_id %}{% else %}{% url 'admin:family_directory_export' campaign_id %}{% endif %}">{% csrf_token %}
+{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+<input type="hidden" name="request_key" value="{{ request_key }}">
+<fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Complete-result export options" %}</legend>
+<label for="directory-format">{% translate "Export format" %}</label><select id="directory-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="pdf">PDF</option></select>
+<label for="directory-export-timezone">{% translate "Export timezone" %}</label><select id="directory-export-timezone" name="browser_timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
+<p>{% translate "Your browser timezone is selected when available; without scripts, UTC is selected. You can change this selection before exporting." %}</p>
+<p>{% translate "For CSV mail merge, select rows whose Record column is Family. The separate Report metadata row is not a mailing recipient." %}</p>
+<button type="submit">{% translate "Queue complete export" %}</button></fieldset></form></section>
+<script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Family directory results' %}"><table>
 <caption>{% translate "Family codes, email availability and current campaign response" %}</caption>
 <thead><tr><th scope="col">{% translate "Family" %}</th><th scope="col">{% translate "Manual code" %}</th><th scope="col">{% translate "Email" %}</th><th scope="col">{% translate "Campaign response" %}</th><th scope="col">{% translate "Contact details" %}</th></tr></thead>

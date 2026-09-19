@@ -330,7 +330,9 @@ def configure_background(configuration, *, stop, heartbeat):
             VERIFY_FACTS: verification_handler(),
             EXACT_EXPORT: exact_handler(store=store),
             REPORT_EXPORT: export_handler(
-                store=store, root=configuration.paths["reports"]
+                store=store,
+                root=configuration.paths["reports"],
+                general=rings["general_encryption"],
             ),
             CAMPAIGN_BOUNDARY: boundary_handler(),
             ACTIVATION_CATCHUP: catchup_handler(),
