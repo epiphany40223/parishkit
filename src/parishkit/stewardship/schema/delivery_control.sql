@@ -4,7 +4,12 @@ CREATE VIEW public.stewardship_delivery_control_inventory AS
     WITH scope AS (
         SELECT current_campaign_id AS campaign_id FROM public.stewardship_system_configuration
     ), messages AS (
-        SELECT id,version,purpose,state,pause_hold_id FROM public.stewardship_outbox_message
+        SELECT id,version,purpose,state,pause_hold_id,
+            state='delivery_unknown' OR (state='retry_wait' AND (
+                SELECT action FROM public.stewardship_outbox_event e WHERE e.message_id=m.id
+                    AND e.action IN ('retry_idempotent','retry_unaccepted','fail_unaccepted','accept','authorize_resend')
+                ORDER BY e.version DESC LIMIT 1)='retry_idempotent') AS uncertain
+        FROM public.stewardship_outbox_message m
         WHERE campaign_id=(SELECT campaign_id FROM scope)
           AND mode='production' AND routing='production'
           AND purpose IN ('initial','reminder','receipt','daily_digest','weekly_digest')
@@ -13,13 +18,13 @@ CREATE VIEW public.stewardship_delivery_control_inventory AS
         SELECT purpose,count(*) FILTER(WHERE state IN ('pending','retry_wait')) AS queued,
             count(*) FILTER(WHERE pause_hold_id IS NOT NULL) AS held,
             count(*) FILTER(WHERE state='submitting') AS submitting,
-            count(*) FILTER(WHERE state='delivery_unknown') AS unknown
+            count(*) FILTER(WHERE uncertain) AS unknown
         FROM messages GROUP BY purpose
     ) SELECT scope.campaign_id,jsonb_build_object(
         'queued',(SELECT count(*) FROM messages WHERE state IN ('pending','retry_wait')),
         'held',(SELECT count(*) FROM messages WHERE pause_hold_id IS NOT NULL),
         'submitting',(SELECT count(*) FROM messages WHERE state='submitting'),
-        'unknown',(SELECT count(*) FROM messages WHERE state='delivery_unknown'),
+        'unknown',(SELECT count(*) FROM messages WHERE uncertain),
         'types',(SELECT coalesce(jsonb_object_agg(purpose,to_jsonb(types)-'purpose'),'{}') FROM types),
         'fingerprint',encode(sha256(convert_to((SELECT coalesce(
             jsonb_agg(jsonb_build_array(id,version) ORDER BY id),'[]') FROM messages)::text,'UTF8')),'hex')
@@ -293,6 +298,10 @@ DECLARE campaign public.stewardship_campaign%ROWTYPE; hold uuid;
 BEGIN
     IF NEW.mode<>'production' OR NEW.routing<>'production'
        OR NEW.purpose NOT IN ('initial','reminder','receipt','daily_digest','weekly_digest') THEN RETURN NEW; END IF;
+    IF TG_OP='UPDATE' THEN
+        IF NEW.state NOT IN ('pending','retry_wait') OR NEW.state=OLD.state
+           OR public.stewardship_delivery_message_released_v1(NEW.id) THEN RETURN NEW; END IF;
+    END IF;
     PERFORM pg_advisory_xact_lock(736220,1);
     SELECT * INTO campaign FROM public.stewardship_campaign WHERE id=NEW.campaign_id;
     IF NOT campaign.delivery_paused THEN RETURN NEW; END IF;
@@ -309,5 +318,5 @@ BEGIN
     RETURN NEW;
 END $$;
 REVOKE ALL ON FUNCTION public.stewardship_delivery_new_hold_v1() FROM PUBLIC;
-CREATE TRIGGER aa_delivery_new_hold BEFORE INSERT ON public.stewardship_outbox_message
+CREATE TRIGGER aa_delivery_new_hold BEFORE INSERT OR UPDATE ON public.stewardship_outbox_message
     FOR EACH ROW EXECUTE FUNCTION public.stewardship_delivery_new_hold_v1();

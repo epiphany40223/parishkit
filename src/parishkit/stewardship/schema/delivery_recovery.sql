@@ -71,7 +71,8 @@ WITH scope AS (
     FROM groups
 ) SELECT reasons.*,CASE
     WHEN state NOT IN ('pending','running','delivery_unknown') THEN 'unchanged'
-    WHEN reason IN ('delivery_unresolved','initial_unfulfilled') THEN 'blocked'
+    WHEN reason='delivery_unresolved' THEN 'blocked'
+    WHEN reason='initial_unfulfilled' THEN 'deferred'
     WHEN reason<>'' THEN 'skipped'
     WHEN definition_id=selected_definition THEN 'selected'
     ELSE 'coalesced' END AS disposition
@@ -86,6 +87,7 @@ SELECT c.id AS campaign_id,jsonb_build_object(
     'coalesced',count(*) FILTER(WHERE disposition='coalesced'),
     'skipped',count(*) FILTER(WHERE disposition='skipped'),
     'blocked',count(DISTINCT family_id) FILTER(WHERE disposition='blocked'),
+    'deferred',count(DISTINCT family_id) FILTER(WHERE disposition='deferred'),
     'unmaterialized',count(*) FILTER(WHERE definition_id IS NOT NULL AND occurrence_id IS NULL),
     -- Aggregate fixed-width row hashes, not a potentially huge JSON document
     -- for every Family/definition pair. The ordered framing remains exact.

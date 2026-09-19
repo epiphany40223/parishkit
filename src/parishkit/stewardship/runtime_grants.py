@@ -219,6 +219,7 @@ def runtime_grants(role, *, target=None):
 
         tables, columns = mail_runtime_grants()
         tables["stewardship_delivery_message_release"] = {"SELECT"}
+        tables["stewardship_postclose_current"] = {"SELECT"}
         columns.setdefault("stewardship_postclose_resolution", {}).setdefault(
             "SELECT", set()
         ).update({"id", "campaign_id", "mode", "obligation_key", "occurrence_id"})
@@ -228,6 +229,7 @@ def runtime_grants(role, *, target=None):
 
         tables, columns = task_runtime_grants(role)
         tables["stewardship_delivery_message_release"] = {"SELECT"}
+        tables["stewardship_postclose_current"] = {"SELECT"}
         columns.setdefault("stewardship_postclose_resolution", {}).setdefault(
             "SELECT", set()
         ).update({"id", "campaign_id", "mode", "obligation_key", "occurrence_id"})
@@ -445,6 +447,7 @@ def runtime_grants(role, *, target=None):
         add_digest_download_grants(columns)
     if role is ServiceRole.WEB:
         tables["stewardship_delivery_message_release"] = {"SELECT"}
+        tables["stewardship_postclose_current"] = {"SELECT"}
     return tables, columns
 
 

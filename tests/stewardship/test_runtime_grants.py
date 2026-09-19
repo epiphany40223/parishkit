@@ -37,6 +37,7 @@ def test_grant_registry_names_existing_models_and_excludes_unrelated_download_da
         "stewardship_delivery_digest_recovery_summary",  # Counts, no report inputs.
         "stewardship_delivery_message_release",  # Exact opaque dispatch decisions.
         "stewardship_delivery_closed_coverage_summary",  # Exact skip coverage counts.
+        "stewardship_postclose_current",  # Opaque exact-current semantic proofs.
         "stewardship_daily_digest_completion_ready",  # Opaque completed cohort IDs.
         "stewardship_weekly_digest_completion_ready",  # Opaque resolved interval IDs.
     }

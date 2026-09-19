@@ -383,10 +383,15 @@ def confirm(request, service, campaign_id, *, token):
         key = UUID(binding["key"])
         previous = DeliveryControlCommand.objects.filter(pk=key).first()
         if previous:
+            if binding["action"] == "pause":
+                # Pause captures the live inventory at commit, not the earlier
+                # informational counts. All other signed intent stays exact.
+                values["inventory"] = previous.inventory
             if any(getattr(previous, name) != value for name, value in values.items()):
                 raise PermissionError("Delivery command belongs to another intent.")
             return previous
         _binding(token, max_age=300)
+        current_inventory = inventory(campaign_id)
         if (
             not _action_available(campaign, binding["action"])
             or not _available(campaign, runtime)
@@ -397,7 +402,10 @@ def confirm(request, service, campaign_id, *, token):
                 values[name].utcoffset() != timedelta(0)
                 for name in ("preview_at", "expires_at")
             )
-            or inventory(campaign_id) != binding["inventory"]
+            or (
+                binding["action"] != "pause"
+                and current_inventory != binding["inventory"]
+            )
             or (
                 binding["action"] == "resume"
                 and (
@@ -417,6 +425,8 @@ def confirm(request, service, campaign_id, *, token):
             )
         ):
             raise StaleRecordError("Delivery inputs changed; review a new preview.")
+        if binding["action"] == "pause":
+            values["inventory"] = current_inventory
         return DeliveryControlCommand.objects.create(
             id=key,
             **values,

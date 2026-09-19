@@ -48,7 +48,7 @@ from .test_withdrawal_postgresql import (  # noqa: F401
     scheduled,
     setup_service,
 )
-from .test_withdrawal_work_postgresql import future_message
+from .test_withdrawal_work_postgresql import fail_retained, future_message
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -197,7 +197,7 @@ def assert_unmaterialized_backlog(item):
 def test_pause_is_atomic_exact_and_keeps_delivery_payload(
     delivery_scheduled, monkeypatch, tmp_path
 ):
-    """A changed preview cannot hold new work; a current one preserves its bytes."""
+    """Pause holds current work despite live inventory churn, preserving its bytes."""
     item = delivery_scheduled
     path = f"/admin/campaign/{item.campaign.pk}/delivery"
     with web_login():
@@ -227,11 +227,9 @@ def test_pause_is_atomic_exact_and_keeps_delivery_payload(
     _, message = future_message(item)
     original = OutboxMessage.objects.get(pk=message.message_id)
     with web_login():
-        with pytest.raises(StaleRecordError, match="inputs changed"):
-            commands.confirm(*item.arguments, token=stale)
-        preview, token = commands.preview_pause(*item.arguments, reason="Check sender")
-        assert preview["inventory"]["queued"] == 1
+        token = stale
         receipt = commands.confirm(*item.arguments, token=token)
+        assert receipt.inventory["queued"] == 1
         assert commands.confirm(*item.arguments, token=token).pk == receipt.pk
         status = commands.page(*item.arguments)
         # The successful go-live test predates this pause and cannot release it.
@@ -420,6 +418,48 @@ def assert_family_resume(item, monkeypatch, tmp_path):
     assert TaskRun.objects.get(pk=cancelled.task_id).state == "cancelled"
     assert OutboxMessage.objects.get(pk=running_mail.message_id).state == "cancelled"
     assert TaskRun.objects.get(pk=running_task.run_id).state == "running"
+
+
+def test_failed_initial_defers_only_its_family_not_campaign_resume(
+    delivery_scheduled, monkeypatch, tmp_path
+):
+    """Resume preserves ordinary per-Family recovery without a campaign deadlock."""
+    item = delivery_scheduled
+    occurrence, message = future_message(item)
+    fail_retained(occurrence, message)
+    reminder = ScheduleDefinition.objects.filter(kind="reminder").order_by("id").first()
+    _, waiting = future_message(item, definition=reminder)
+    due = item.campaign.active_configuration.starts_at + timedelta(days=1)
+    with campaign_clock(due):
+        with web_login():
+            _, token = commands.preview_pause(
+                *item.arguments, reason="Review failed initial"
+            )
+            commands.confirm(*item.arguments, token=token)
+            impact = commands.family_recovery_impact(item.campaign.pk)
+            assert impact["blocked"] == 0 and impact["deferred"] == 1
+        accepted_sender_check(item, monkeypatch, tmp_path)
+        with web_login():
+            _, token = commands.preview_resume(
+                *item.arguments, reason="Resume other work"
+            )
+            commands.confirm(*item.arguments, token=token)
+        item.campaign.refresh_from_db()
+        occurrence.refresh_from_db()
+        assert not item.campaign.delivery_paused and occurrence.state == "failed"
+        assert not ScheduleFulfillment.objects.filter(occurrence=occurrence).exists()
+        from parishkit.stewardship.deployment import ServiceRole
+        from parishkit.stewardship.jobs.family_mail_dispatch import FamilyDeliveryHeld
+
+        from .test_background_grants_postgresql import task_login
+        from .test_daily_digest_dispatch_postgresql import begin
+        from .test_family_mail_dispatch_postgresql import claim as claim_delivery
+
+        held_reminder = OutboxMessage.objects.get(pk=waiting.message_id)
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            execution = claim_delivery(held_reminder)
+            with pytest.raises(FamilyDeliveryHeld, match="recovery is held"):
+                begin(held_reminder, execution)
 
 
 def accepted_sender_check(item, monkeypatch, tmp_path):

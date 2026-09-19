@@ -29,9 +29,11 @@ from parishkit.stewardship.campaigns.schedule_models import (
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.family_delivery import FamilyDeliveryResult
 from parishkit.stewardship.family_delivery import FamilyDeliveryStatus as Status
+from parishkit.stewardship.jobs.delivery_states import DeliveryAction
 from parishkit.stewardship.jobs.family_mail_dispatch import finish_submission
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage
 from parishkit.stewardship.jobs.scheduler import scheduler_session
+from parishkit.stewardship.reports.digest_models import DailyDigestRecipient
 from parishkit.stewardship.reports.digest_tasks import daily_handler
 from parishkit.stewardship.responses.models import (
     AdditionalInformationItem,
@@ -47,6 +49,8 @@ from .test_daily_digest_tasks_postgresql import execute
 from .test_delivery_control_postgresql import accepted_sender_check
 from .test_family_auth_postgresql import login as family_login
 from .test_family_mail_dispatch_postgresql import claim
+from .test_outbox_postgresql import change as change_delivery
+from .test_outbox_postgresql import provider_evidence
 from .test_response_http_postgresql import answers_for
 from .test_response_http_postgresql import post as family_post
 from .test_schedule_reconciliation_postgresql import replace_schedule
@@ -67,7 +71,74 @@ from .test_withdrawal_work_postgresql import future_message
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def submit_while_paused(item, settings):
+def test_inflight_retries_acquire_hold_atomically_and_keep_uncertainty(scheduled):
+    """A provider result after pause cannot slip through a closed empty-clear."""
+    item = scheduled
+    harness = SimpleNamespace(campaign=item.campaign, service=item.arguments[1])
+    with campaign_clock(
+        item.campaign.active_configuration.starts_at + timedelta(days=2)
+    ):
+        allocated(harness)
+        messages = list(
+            OutboxMessage.objects.filter(purpose="daily_digest").order_by("id")
+        )
+        assert len(messages) == 2
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            executions = [claim(message) for message in messages]
+            for message, execution in zip(messages, executions, strict=True):
+                assert begin(message, execution) is not None
+        with web_login():
+            _, token = commands.preview_pause(
+                *item.arguments, reason="Stop in-flight retries"
+            )
+            commands.confirm(*item.arguments, token=token)
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            finish_submission(
+                messages[0].pk,
+                executions[0].claim,
+                FamilyDeliveryResult(Status.TRANSIENT, 1),
+            )
+            unknown = finish_submission(
+                messages[1].pk,
+                executions[1].claim,
+                FamilyDeliveryResult(Status.UNKNOWN, 1),
+            )
+        # SMTP deliberately never claims provider idempotency. Exercise this
+        # storage-only reconciliation branch through the journal's test owner,
+        # without widening the actual MAIL role's authority to invent it.
+        change_delivery(
+            unknown,
+            DeliveryAction.RETRY_IDEMPOTENT,
+            retry_seconds=30,
+            evidence=provider_evidence(),
+        )
+        for message in messages:
+            message.refresh_from_db()
+            assert message.state == "retry_wait" and message.pause_hold_id is not None
+        close_campaign(item.campaign, uuid4())
+    with (
+        campaign_clock(item.campaign.active_configuration.ends_at + timedelta(hours=1)),
+        web_login(),
+    ):
+        inventory = commands.inventory(item.campaign.pk)
+        assert inventory["held"] == 2 and inventory["unknown"] == 1
+        with pytest.raises(StaleRecordError):
+            commands.preview_resolution(
+                *item.arguments,
+                reason="No implicit release",
+                decision="clear",
+                types=[],
+            )
+        with pytest.raises(StaleRecordError, match="uncertain"):
+            commands.preview_resolution(
+                *item.arguments,
+                reason="Not safely cancellable",
+                decision="cancel",
+                types=["daily_digest"],
+            )
+
+
+def submit_while_paused(item, settings, *, text="Please contact us"):
     """Use real restricted Family HTTP admission, forms and final submission."""
     service = item.arguments[1]
     settings.STEWARDSHIP_FAMILY_RUNTIME = FamilyRuntime(
@@ -87,7 +158,7 @@ def submit_while_paused(item, settings):
         response = family_post(browser, "/family/form", {"testing_acknowledged": False})
         assert response.status_code == 200, response.content
         form = response.json()["form"]
-        answers = answers_for(form) | {"additional_information": "Please contact us"}
+        answers = answers_for(form) | {"additional_information": text}
         # Setup's deliberately sparse source requires these ordinary answers;
         # the paused flow must retain validation, not silently invent defaults.
         for member in answers["members"].values():
@@ -104,11 +175,104 @@ def submit_while_paused(item, settings):
         )
         assert response.status_code == 200, response.content
         assert response.json() == {"accepted": True}
-    return SubmissionReceiptOccurrence.objects.get(submission__family=family)
+    return (
+        SubmissionReceiptOccurrence.objects.filter(submission__family=family)
+        .order_by("-submission__campaign_sequence")
+        .first()
+    )
 
 
+def test_selective_receipt_and_weekly_release_loses_permission_on_new_pause(
+    scheduled, settings, monkeypatch, tmp_path
+):
+    """Real MAIL admission honors only the exact message and pause revision."""
+    item = scheduled
+    with campaign_clock(
+        item.campaign.active_configuration.starts_at + timedelta(hours=1)
+    ):
+        with web_login():
+            _, token = commands.preview_pause(
+                *item.arguments, reason="Review outbound mail"
+            )
+            commands.confirm(*item.arguments, token=token)
+        receipt = submit_while_paused(item, settings)
+    with campaign_clock(
+        item.campaign.active_configuration.starts_at + timedelta(days=9)
+    ):
+        harness = SimpleNamespace(campaign=item.campaign, service=item.arguments[1])
+        status = queue_weekly(harness)
+        with task_login(ServiceRole.WORKER, exact=True):
+            execute_weekly(status)
+        weekly = list(
+            OutboxMessage.objects.filter(purpose="weekly_digest").order_by("id")
+        )
+        assert len(weekly) == 2
+        close_campaign(item.campaign, uuid4())
+    with campaign_clock(
+        item.campaign.active_configuration.ends_at + timedelta(hours=1)
+    ):
+        accepted_sender_check(item, monkeypatch, tmp_path)
+        with web_login():
+            _, token = commands.preview_resolution(
+                *item.arguments,
+                reason="Release only weekly reports",
+                decision="release",
+                types=["weekly_digest"],
+            )
+            assert commands.confirm(*item.arguments, token=token).control_id is None
+        receipt.outbox.refresh_from_db()
+        assert receipt.outbox.pause_hold_id
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            execution = claim(weekly[0])
+            assert begin(weekly[0], execution) is not None
+            finish_submission(
+                weekly[0].pk, execution.claim, FamilyDeliveryResult(Status.ACCEPTED, 1)
+            )
+        with web_login():
+            _, token = commands.preview_resolution(
+                *item.arguments,
+                reason="Release receipts too",
+                decision="release",
+                types=["receipt"],
+            )
+            assert commands.confirm(*item.arguments, token=token).control_id is not None
+            _, token = commands.preview_pause(
+                *item.arguments, reason="Pause again before remaining sends"
+            )
+            commands.confirm(*item.arguments, token=token)
+        with (
+            task_login(ServiceRole.MAIL_DISPATCH, exact=True),
+            connection.cursor() as cursor,
+        ):
+            cursor.execute(
+                "SELECT stewardship_delivery_message_released_v1(%s)", [weekly[1].pk]
+            )
+            assert cursor.fetchone()[0] is False
+            execution = claim(receipt.outbox)
+            assert begin(receipt.outbox, execution) is None
+        accepted_sender_check(item, monkeypatch, tmp_path)
+        with web_login():
+            _, token = commands.preview_resolution(
+                *item.arguments,
+                reason="Release the held receipt",
+                decision="release",
+                types=["receipt"],
+            )
+            assert commands.confirm(*item.arguments, token=token).control_id is None
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            assert begin(receipt.outbox, execution) is not None
+            finish_submission(
+                receipt.outbox_id,
+                execution.claim,
+                FamilyDeliveryResult(Status.ACCEPTED, 1),
+            )
+        weekly[1].refresh_from_db()
+        assert weekly[1].pause_hold_id and weekly[1].state == "pending"
+
+
+@pytest.mark.parametrize("later_response", [False, True])
 def test_closed_receipt_and_weekly_skips_are_durable_not_provider_acceptance(
-    scheduled, settings
+    scheduled, settings, later_response
 ):
     """One real paused response retains distinct receipt and report obligations."""
     item = scheduled
@@ -119,6 +283,8 @@ def test_closed_receipt_and_weekly_skips_are_durable_not_provider_acceptance(
             _, token = commands.preview_pause(*item.arguments, reason="Review delivery")
             commands.confirm(*item.arguments, token=token)
         receipt = submit_while_paused(item, settings)
+        original_item = AdditionalInformationItem.objects.get()
+        frozen_version = original_item.version
         assert receipt.outbox.pause_hold_id and receipt.outbox.attempt == 0
     with campaign_clock(
         item.campaign.active_configuration.starts_at + timedelta(days=9)
@@ -129,6 +295,10 @@ def test_closed_receipt_and_weekly_skips_are_durable_not_provider_acceptance(
             execute_weekly(status)
         weekly = list(OutboxMessage.objects.filter(purpose="weekly_digest"))
         assert weekly and all(message.pause_hold_id for message in weekly)
+        if later_response:
+            submit_while_paused(
+                item, settings, text="A new request after report capture"
+            )
         close_campaign(item.campaign, uuid4())
     with campaign_clock(
         item.campaign.active_configuration.ends_at + timedelta(hours=1)
@@ -167,13 +337,12 @@ def test_closed_receipt_and_weekly_skips_are_durable_not_provider_acceptance(
         item.campaign.refresh_from_db()
         assert item.campaign.state == "closed" and not item.campaign.delivery_paused
         resolved = PostCloseMailResolution.objects.get(occurrence__isnull=False)
-        information = AdditionalInformationItem.objects.get()
         assert resolved.coverage == {
             "items": [
                 {
                     "kind": "item",
-                    "id": str(information.pk),
-                    "version": information.version,
+                    "id": str(original_item.pk),
+                    "version": frozen_version,
                 }
             ],
             "daily_range": None,
@@ -187,7 +356,8 @@ def test_closed_receipt_and_weekly_skips_are_durable_not_provider_acceptance(
                 [item.campaign.pk],
             )
             history = json.loads(cursor.fetchone()[0])
-        assert history["watermark"] == 1 and history["reported"] == []
+        assert history["watermark"] == (0 if later_response else 1)
+        assert history["reported"] == []
         assert history["corrected"] == []
         definition = ScheduleDefinition.objects.get(kind="weekly_digest")
         assert (
@@ -200,9 +370,13 @@ def test_closed_receipt_and_weekly_skips_are_durable_not_provider_acceptance(
             scheduler_session() as guard,
         ):
             DigestScheduleProducer(uuid4(), limit=100)(guard)
-        assert not ScheduleOccurrence.objects.filter(
-            revision_id=definition.current_revision_id, slot=resolved.occurrence.slot
-        ).exists()
+        assert (
+            ScheduleOccurrence.objects.filter(
+                revision_id=definition.current_revision_id,
+                slot=resolved.occurrence.slot,
+            ).exists()
+            is later_response
+        )
         assert PostCloseMailResolution.objects.filter(pk=resolved.pk).exists()
 
 
@@ -287,6 +461,11 @@ def test_closed_resolution_releases_only_selected_mail_and_can_cancel_without_he
             finish_submission(
                 daily.pk, execution.claim, FamilyDeliveryResult(Status.ACCEPTED, 1)
             )
+        daily.refresh_from_db()
+        delivered_version = daily.version
+        delivered_occurrence = DailyDigestRecipient.objects.get(
+            outbox=daily
+        ).ready.snapshot.preparation.occurrence_id
         # Ordinary closed-Family admission cancels its message without a key,
         # provider call, or release exception. Resolving reports cannot reopen it.
         family_message = OutboxMessage.objects.get(pk=family.message_id)
@@ -350,3 +529,11 @@ def test_closed_resolution_releases_only_selected_mail_and_can_cancel_without_he
         assert resolutions.exists()
         assert all(row.occurrence.state == "skipped" for row in resolutions)
         assert all(row.coverage["daily_range"] for row in resolutions)
+        assert resolutions.filter(occurrence_id=delivered_occurrence).exists()
+        daily.refresh_from_db()
+        assert daily.state == "delivered" and daily.version == delivered_version
+        # The remaining cohort is explicitly skipped; the accepted child's
+        # outbox remains the provider-success record, not whole-slot fulfillment.
+        assert not ScheduleFulfillment.objects.filter(
+            occurrence_id=delivered_occurrence, disposition="delivered"
+        ).exists()

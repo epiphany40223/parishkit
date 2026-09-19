@@ -1793,6 +1793,7 @@ SET search_path TO pg_catalog,public,pg_temp AS $$
         WHERE h.definition_id=$1 AND h.mode=$2 AND h.target=$3 AND h.slot=$4
             AND h.state IN ('unreviewed','assumed_delivered'))
     OR ($3='admins' AND EXISTS(SELECT 1 FROM public.stewardship_postclose_resolution p
+        JOIN public.stewardship_postclose_current covered ON covered.id=p.id
         WHERE p.mode=$2 AND p.obligation_key='schedule:'||$1::text||':'||$4))
 $$;
 
@@ -3588,6 +3589,7 @@ BEGIN
                AND NOT public.stewardship_catchup_materializing_v1(c.id,NEW.actor_id,NEW.correlation_id))
            OR EXISTS (SELECT 1 FROM stewardship_schedule_fulfillment WHERE definition_id=d.id AND mode=NEW.mode AND target=NEW.target AND slot=NEW.slot)
            OR EXISTS (SELECT 1 FROM stewardship_postclose_resolution resolved
+               JOIN public.stewardship_postclose_current covered ON covered.id=resolved.id
                WHERE resolved.campaign_id=c.id AND resolved.mode=NEW.mode
                    AND resolved.obligation_key='schedule:'||d.id::text||':'||NEW.slot) THEN
             RAISE EXCEPTION 'Occurrence creation is not admitted' USING ERRCODE='23514'; END IF;

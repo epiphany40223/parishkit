@@ -31,7 +31,9 @@
 <dt>{% translate "Redundant schedule slots" %}</dt><dd>{{ family_recovery.coalesced|number }}</dd>
 <dt>{% translate "Inapplicable schedule slots" %}</dt><dd>{{ family_recovery.skipped|number }}</dd>
 <dt>{% translate "Blocked Family groups" %}</dt><dd>{{ family_recovery.blocked|number }}</dd>
-<dt>{% translate "Unmaterialized schedule slots" %}</dt><dd>{{ family_recovery.unmaterialized|number }}</dd></dl></section>{% endif %}
+<dt>{% translate "Families awaiting initial-mail recovery" %}</dt><dd>{{ family_recovery.deferred|number }}</dd>
+<dt>{% translate "Unmaterialized schedule slots" %}</dt><dd>{{ family_recovery.unmaterialized|number }}</dd></dl>
+{% if family_recovery.deferred %}<p>{% translate "These Families remain under the ordinary initial-invitation recovery checks; they do not block other Families from resuming. Review the original failed delivery or restore hold before retrying their reminders." %}</p>{% endif %}</section>{% endif %}
 {% if digest_recovery %}<section class="panel"><h2>{% translate "Overdue Admin-digest planning" %}</h2>
 <p>{% translate "Each daily or weekly group becomes one report obligation. Original dates and previously accepted recipient coverage are retained. These are report obligations, not a prediction of recipient message counts." %}</p>
 <dl><dt>{% translate "Selected report obligations" %}</dt><dd>{{ digest_recovery.selected|number }}</dd>
@@ -70,7 +72,7 @@
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="preview_pause"><label for="pause-reason">{% translate "Reason for pausing live delivery" %}</label><textarea id="pause-reason" name="reason" required maxlength="1024">{{ preview.reason }}</textarea><button type="submit">{% translate "Preview pause" %}</button></form>
 {% if preview %}<section class="panel"><h2>{% translate "Exact pause preview" %}</h2><p>{{ preview.reason }}</p>
 <p>{% translate "Unsent messages to hold" %}: {{ preview.inventory.queued|number }}. {% translate "Already submitting" %}: {{ preview.inventory.submitting|number }}. {% translate "Delivery unknown" %}: {{ preview.inventory.unknown|number }}.</p>
-<p>{% translate "Any intervening change invalidates this preview. Confirming records this reason and holds unsent live mail atomically." %}</p>
+<p>{% translate "Mail may progress after this preview. Confirming records the current counts and holds all currently unsent live mail atomically. Changes to campaign configuration or your authority still require a new preview." %}</p>
 {% if control_token and fresh %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ control_token }}"><button type="submit">{% translate "Confirm pause of live delivery" %}</button></form>{% endif %}</section>{% endif %}
 {% endif %}
 {% else %}<p role="alert">{% translate "Live delivery controls require the current Production campaign." %}</p>{% endif %}

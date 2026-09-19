@@ -1,5 +1,7 @@
 # Stewardship live delivery pause
 
+[Review ledger](stewardship-delivery-pause-reviews.md)
+
 Continue [ADM-06.02](../tasks/stewardship/admin-portal.md#adm-06-restore-release-delivery-pause-reopen-and-archive)
 after [PR #61's protected delivery](stewardship-production-withdrawal.md#protected-delivery).
 Branch `pr/stewardship-delivery-pause` starts at verified `origin/main`

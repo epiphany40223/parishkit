@@ -622,6 +622,16 @@ BEGIN
             END IF;
         END IF;
     END IF;
+    -- A provider outcome/reconciliation can return an in-flight message to
+    -- unsent work after the pause began. The earlier hold trigger attaches
+    -- the current hold in that same update, never after a clearable gap.
+    IF NEW.state IN ('pending','retry_wait') AND NEW.state<>OLD.state
+       AND NEW.pause_hold_id IS NOT NULL AND EXISTS(
+        SELECT 1 FROM public.stewardship_campaign c
+        WHERE c.id=NEW.campaign_id AND c.delivery_paused
+            AND c.pause_version=NEW.pause_version AND NEW.routing='production') THEN
+        allowed:=allowed||ARRAY['pause_hold_id','pause_version'];
+    END IF;
     IF (to_jsonb(NEW) - allowed) IS DISTINCT FROM (to_jsonb(OLD) - allowed) THEN
         RAISE EXCEPTION 'Delivery command changed unrelated fields' USING ERRCODE='23514';
     END IF;

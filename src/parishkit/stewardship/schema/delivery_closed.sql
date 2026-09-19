@@ -66,8 +66,8 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
 $$;
 
 -- Keep exact semantic cancellation separate from the per-message permission
--- journal. Item text is immutable; current item versions are preview-bound,
--- while information versus correction identity remains the frozen report's.
+-- journal. Freeze item versions during capture, and retain each recipient's
+-- actual selected subset rather than claiming another recipient's content.
 CREATE VIEW public.stewardship_delivery_closed_coverage AS
     SELECT receipt.outbox_id AS message_id,s.campaign_id,'receipt'::text AS purpose,
         'receipt:'||s.id::text AS obligation_key,NULL::uuid AS occurrence_id,
@@ -89,11 +89,11 @@ CREATE VIEW public.stewardship_delivery_closed_coverage AS
     UNION ALL
     SELECT recipient.outbox_id,p.campaign_id,'weekly_digest','schedule:'||p.definition_id::text||':'||o.slot,
         o.id,jsonb_build_object('items',(
-            SELECT jsonb_agg(jsonb_build_object('kind',selected.kind,'id',i.id,'version',i.version)
-                ORDER BY selected.kind,i.id::text,i.version)
-            FROM (SELECT 'item' AS kind,value AS item_id FROM jsonb_array_elements_text(s.information)
-                UNION ALL SELECT 'correction',value->>0 FROM jsonb_array_elements(s.corrections)) selected
-            JOIN public.stewardship_additional_information i ON i.id=selected.item_id::uuid
+            SELECT jsonb_agg(jsonb_build_object('kind',selected.kind,'id',selected.item_id,
+                    'version',s.item_versions->selected.item_id)
+                ORDER BY selected.kind,selected.item_id)
+            FROM (SELECT 'item' AS kind,value AS item_id FROM jsonb_array_elements_text(recipient.information)
+                UNION ALL SELECT 'correction',value->>0 FROM jsonb_array_elements(recipient.corrections)) selected
         ),'daily_range',NULL)
     FROM public.stewardship_weekly_digest_preparation p
     JOIN public.stewardship_schedule_occurrence o ON o.id=p.occurrence_id
@@ -101,6 +101,35 @@ CREATE VIEW public.stewardship_delivery_closed_coverage AS
     JOIN public.stewardship_weekly_digest_recipient recipient ON recipient.snapshot_id=s.id
     WHERE p.mode='production' AND recipient.outbox_id IS NOT NULL;
 REVOKE ALL ON public.stewardship_delivery_closed_coverage FROM PUBLIC;
+
+-- A semantic skip covers only its frozen inputs. Expose opaque current proof
+-- IDs, not the snapshot, item text or versions, to scheduling/dispatch roles.
+-- A later version or new live item must remain an obligation, even for the
+-- same logical schedule slot after a revision or a future reopen.
+CREATE VIEW public.stewardship_postclose_current AS
+    SELECT resolved.id FROM public.stewardship_postclose_resolution resolved
+    JOIN public.stewardship_schedule_occurrence o ON o.id=resolved.occurrence_id
+    JOIN public.stewardship_schedule_definition d ON d.id=o.definition_id
+    WHERE NOT EXISTS(
+        SELECT 1 FROM jsonb_array_elements(resolved.coverage->'items') item
+        LEFT JOIN public.stewardship_additional_information i ON i.id=(item->>'id')::uuid
+        WHERE item->>'kind' IN ('item','correction')
+            AND to_jsonb(i.version) IS DISTINCT FROM item->'version')
+    AND (d.kind='daily_digest' OR (d.kind='weekly_digest' AND EXISTS(
+        SELECT 1 FROM public.stewardship_weekly_digest_preparation p
+        JOIN public.stewardship_weekly_digest_snapshot s ON s.preparation_id=p.id
+        WHERE p.occurrence_id=o.id
+            AND NOT EXISTS(
+                SELECT 1 FROM jsonb_each(s.item_versions) version
+                LEFT JOIN public.stewardship_additional_information i ON i.id=version.key::uuid
+                WHERE to_jsonb(i.version) IS DISTINCT FROM version.value)
+            AND NOT EXISTS(
+                SELECT 1 FROM public.stewardship_additional_information i
+                JOIN public.stewardship_submission submission ON submission.id=i.submission_id
+                WHERE submission.campaign_id=resolved.campaign_id AND submission.mode='live'
+                    AND submission.campaign_sequence>s.submission_watermark)
+    )));
+REVOKE ALL ON public.stewardship_postclose_current FROM PUBLIC;
 
 CREATE VIEW public.stewardship_delivery_closed_coverage_summary AS
 WITH per_type AS (
@@ -244,10 +273,11 @@ BEGIN
     END IF;
     -- Clear only when every held/submitting/unknown row is gone. Releasing a
     -- selected type does not grant any other held type permission to dispatch.
-    IF NOT EXISTS(SELECT 1 FROM public.stewardship_outbox_message m
-        WHERE m.campaign_id=campaign.id AND m.mode='production' AND m.routing='production'
-            AND m.purpose IN ('initial','reminder','receipt','daily_digest','weekly_digest')
-            AND (m.pause_hold_id IS NOT NULL OR m.state IN ('submitting','delivery_unknown'))) THEN
+    IF EXISTS(SELECT 1 FROM public.stewardship_delivery_control_inventory current
+        WHERE current.campaign_id=campaign.id
+            AND (inventory->>'held')::bigint=0
+            AND (inventory->>'submitting')::bigint=0
+            AND (inventory->>'unknown')::bigint=0) THEN
         INSERT INTO public.stewardship_campaign_control(id,campaign_id,request_id,action,
             expected_version,expected_runtime_version,reason,occurred_at,actor_id,correlation_id)
         VALUES(intent.control_id,campaign.id,intent.id,'resume',intent.expected_campaign_version,

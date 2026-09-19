@@ -45,6 +45,7 @@ def add_weekly_grants(tables, columns, *, worker):
     for table, fields in {
         "stewardship_additional_information": {
             "id",
+            "version",
             "submission_id",
             "disposition",
             "text",
