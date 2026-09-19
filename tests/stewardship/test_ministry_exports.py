@@ -84,9 +84,11 @@ def test_complete_columns_and_csv_privacy(action):
     assert "Birth date" not in report.headings
     assert dict(report.metadata)["Requested at"] == "2026-09-19T11:00:00-04:00"
     if action == "join":
+        assert report.sheet_name == "Ministry requests"
         assert rows[-1][0] == "'=Example Member"
         assert "Not published" in report.rows[0]
     elif action == "leave":
+        assert report.sheet_name == "Ministry requests"
         assert "Email" not in report.headings and "Phones" not in report.headings
         assert report.rows[0][-1] == "Volunteer"
     else:

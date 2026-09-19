@@ -225,6 +225,12 @@ def test_complete_capture_stays_stable_after_source_promotion(response_service):
         ).count()
         == 1
     )
+    event = AuditEvent.objects.get(event_type="export_requested", subject_id=summary.pk)
+    assert ExportRequest.objects.get(pk=event.subject_id).authorization_scope == {
+        "capability": "ministry_report",
+        "operational": True,
+        "ministries": [4, 9],
+    }
     assert (
         MinistryExportSnapshot.objects.get(pk=summary.ministry_snapshot_id).document[
             "rows"

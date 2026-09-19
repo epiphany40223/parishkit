@@ -329,6 +329,13 @@ age suffices.
 
 Lists are searchable/filterable/sortable and exportable as CSV, XLSX, or PDF.
 Every leader view/export is audited with Ministry scope.
+An export audit event records this scope by reference to its immutable export
+request, whose retained authorization scope contains the exact Ministry set and
+privacy projection. One event per action is sufficient; per-Ministry audit
+fan-out is not required. Ministry-scoped audit queries resolve that reference
+while the request remains retained, rather than relying only on the scalar
+Ministry identifier used by interactive view events. This representation does
+not change current-policy checks or authorized report columns.
 
 ## Multi-Ministry follow-up packet
 

@@ -48,3 +48,36 @@ seconds and five real-role PostgreSQL/report cases in 28.49 seconds, including
 the new leave, audit-count and gate assertions. Their shared bootstrap was reused
 within that PostgreSQL run. The correction delta and surrounding authorization
 owners will receive round 2; no package or gate is closed by this first round.
+
+## Round 2
+
+Session `20260919-173304-7ce5b8` independently reviewed the correction delta
+`66083413775c2e9dbf7e0e0b4fe578157e6e5665` to
+`804bc1a9444c13de60fd8b507407e12c0e2c4cce` (tree
+`aaec2bebc6daf95a78202c7d082e60051d90f7ae`) with surrounding lifecycle context.
+Exact permission preflight and both reviewers completed. Codex exited zero in
+202 seconds without timeout/stall and returned no findings. Finalization had no
+failed agent, degradation, verdict mismatch or salvage requirement.
+
+Raw findings: no High/Critical, one Medium and seven Low; the Medium was
+Claude-only. It requested normative clarification of the constant-cost scope
+reference adopted in round 1. The specification now explicitly describes that
+representation and requires Ministry-scoped audit queries to resolve the
+retained request reference. A strengthened database assertion follows the audit
+subject to the exact operational `[4, 9]` scope. The change documents audit
+representation, not permission expansion or weaker contact privacy.
+
+Low corrections reconcile the stale fast-CI paragraph, explain its focused
+selection trade-off, and assert literal join/leave worksheet labels. Deferred
+Low suggestions are named SQL notation in the capture caller, document-label
+refactoring, extra per-action audit count assertions, and full real purge-owner
+state setup. The latter remains Phase 6/Gate 4 work; this phase's explicitly
+synthetic disposable sentinel checks service/SQL admission without claiming a
+completed purge workflow. No accepted Medium-or-higher issue is deferred.
+
+Fast draft CI `35470734473` passed validation after round-one corrections,
+including packaging and migration state. Full candidate CI remains deferred
+until round 3 and its corrections pass. Round-two correction validation passed
+the strengthened PostgreSQL capture/audit case in 15.06 seconds and three
+literal worksheet/column cases in 0.25 seconds. Ruff lint/format and changed
+Markdown checks passed. No production code changed in this correction round.
