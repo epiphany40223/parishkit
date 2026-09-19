@@ -150,8 +150,12 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
             and b"Choir" not in body
         )
         assert b"Ministry reports" in body and b"Family codes" not in body
+        assert b"/ministries/9/" not in body
+        assert b'name="ministry" value="9"' in body
         response, body = search(browser, route, {"ministry": "9"})
         assert response.status_code == 200 and response["Cache-Control"] == "no-store"
+        assert b"/ministries/9/" not in body
+        assert b'name="ministry" value="9"' in body
         assert b"Not published" in body and b"valid@example.org" not in body
         assert b"202-555-0123" in body and b"1960-01-01" not in body
         assert search(browser, root + "leave/", {"ministry": "4"})[0].status_code == 403
@@ -162,7 +166,6 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
         response, body = read(browser, route + "?search=Private")
         assert response.status_code == 400 and b"Private" not in body
         assert read(browser, route)[0].status_code == 400
-        assert b"/ministries/9/" not in body
         for value in ("0", "09", "2147483648", "private@example.org"):
             assert search(browser, route, {"ministry": value})[0].status_code == 400
     contexts = list(
@@ -364,7 +367,7 @@ def test_campaign_choices_intersect_enabled_modules_and_assignments(
         campaign_record(
             name="Unassigned campaign",
             modules=["ministry"],
-            ministry_duids=[4],
+            ministry_duids=[4, 2**31, 2**63 - 1],
         ),
     )
     assert result.state == "applied"
@@ -405,6 +408,9 @@ def test_campaign_choices_intersect_enabled_modules_and_assignments(
             and owned.encode() in body
             and unowned.encode() in body
         )
+        response, body = read(admin, unowned)
+        assert response.status_code == 200 and b"Choir" in body
+        assert b"2,147,483,648" not in body and b"9,223,372,036,854,775,807" not in body
     assert (
         change(
             store,

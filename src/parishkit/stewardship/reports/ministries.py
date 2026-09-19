@@ -129,9 +129,10 @@ def campaign_ids(principal):
             WHERE c.state IN ('draft','scheduled','active','closed','archived')
                 AND cc.values->'modules' ? 'ministry'
                 AND ss.state='promoted' AND ss.compacted_at IS NULL
-                AND (%s OR EXISTS(SELECT 1
+                AND EXISTS(SELECT 1
                     FROM jsonb_array_elements_text(cc.values->'ministry_duids') n
-                    WHERE n::integer=ANY(%s::integer[])))
+                    WHERE n::bigint BETWEEN 1 AND 2147483647
+                        AND (%s OR n::bigint=ANY(%s::bigint[])))
             ORDER BY c.created_at DESC,c.id""",
             [
                 allows(principal, Capability.MINISTRY_REPORT),

@@ -26,7 +26,10 @@ WITH selected AS MATERIALIZED (
     WHERE s.state='promoted' AND s.compacted_at IS NULL
         AND x.values->'modules' ? 'ministry'
 ), ministries AS MATERIALIZED (
-    SELECT n.duid::integer AS duid,
+    -- Configuration permits signed-64-bit IDs; source/requests accept only
+    -- positive signed-32-bit DUIDs. Widen casts before filtering so planner
+    -- predicate reordering cannot turn an unsupported draft ID into an outage.
+    SELECT n.duid::bigint AS duid,
         coalesce(nullif(btrim(p.canonical::jsonb->>'name'),''),
             'Unavailable Ministry') AS name,
         CASE WHEN p.canonical::jsonb->'catalog_present'='true'::jsonb
@@ -38,9 +41,10 @@ WITH selected AS MATERIALIZED (
     LEFT JOIN stewardship_source_ministry p ON p.id=m.payload_id
     LEFT JOIN stewardship_ministry_activity a
         ON a.configuration_id=x.configuration_id
-        AND a.organization_id=x.organization_id AND a.ministry_duid=n.duid::integer
-    WHERE (%(operational)s OR n.duid::integer=ANY(%(scope)s::integer[]))
-      AND (%(ministry)s::integer IS NULL OR n.duid::integer=%(ministry)s)
+        AND a.organization_id=x.organization_id AND a.ministry_duid=n.duid::bigint
+    WHERE n.duid::bigint BETWEEN 1 AND 2147483647
+      AND (%(operational)s OR n.duid::bigint=ANY(%(scope)s::bigint[]))
+      AND (%(ministry)s::integer IS NULL OR n.duid::bigint=%(ministry)s)
 ), requests AS MATERIALIZED (
     SELECT r.id,r.entity_kind,r.entity_key,r.ministry_duid,r.action,r.state,
         r.outcome,s.submitted_at,s.family_version,f.family_duid,s.id AS submission_id,

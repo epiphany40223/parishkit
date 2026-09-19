@@ -40,3 +40,25 @@ validated findings are resolved, and this completes round 1.
 Draft CI run `35466019822` at the reviewed head passed `validate`, including
 327 fast application/CI tests in 39.97 seconds. The skipped full suites and
 blocking aggregates are expected draft behavior, not final acceptance evidence.
+
+## Round 2: campaign-scope and native-navigation corrections
+
+Pika session `20260919-161426-0f7a31` reviewed
+`3099b6ef333200c20696f56ca5604f42c2c51e6a` through
+`573775235ae139e04eff7ea65f84fd05ecafa461`, tree
+`490daac698a7b824db3f33fb85779077cc8cbb9c`. The fresh exact permission preflight
+passed. Both reviewers completed, Codex in 231 seconds; no agent failure,
+degradation, timeout or verdict mismatch occurred.
+
+Raw findings: two Medium and six Low, no High/Critical. The two Medium findings
+were validated and accepted; six Low findings were below the configured cutoff.
+
+| Finding | Disposition and evidence |
+| --- | --- |
+| Claude: URL-privacy assertion inspects an earlier 400 body rather than a rendered report | Fixed: successful summary and detail responses each assert that old DUID-bearing URL paths are absent and the native hidden Ministry selection is present. |
+| Codex: 32-bit query casts can reject otherwise valid 64-bit draft configuration IDs | Fixed in discovery and row selection: cast configuration values to bigint before filtering to the source/MinistryRequest positive signed-32-bit domain. SQL predicate reordering cannot cause overflow. A real successor configuration includes both boundary-overflow and maximum signed-64-bit values alongside a valid selected Ministry; leader discovery and Admin report rendering remain functional. No source, request or audit domain was widened. |
+
+Both corrected PostgreSQL scenarios passed together in 18.15 seconds; Ruff,
+formatting and whitespace checks passed. This completes round 2 with no
+unresolved accepted Medium-or-higher finding. Draft CI `35466737240` at its
+reviewed head passed fast validation; full candidate acceptance remains pending.
