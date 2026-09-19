@@ -35,7 +35,7 @@ def browser_partition(cases, engine):
     return sorted(node for node, owner in cases if owner == engine)
 
 
-# Scheduling hints, rounded from CI run 35309435892. These never select or
+# Scheduling hints, updated from CI run 35438716036. These never select or
 # exclude tests: unknown/new cases receive the default weight. Keep full-duration
 # lease/drain checks; distribute their waiting time instead of shortening it.
 SLOW_TEST_SECONDS = {
@@ -59,6 +59,35 @@ SLOW_TEST_SECONDS = {
     "test_crash_after_ack_decision_completes_even_after_deadline": 20,
     "test_metrics_expiry_restores_prior_without_persisting_its_hash": 20,
     "test_all_entity_kinds_stage_in_bounded_batches_at_reference_scale": 15,
+    "test_reference_confirmation_and_family_submit_during_incomplete_catchup": 121,
+}
+
+# Per-test fixture construction is often more expensive than the assertion.
+# Rounded module means include setup/call/teardown, excluding each runner's
+# first case (which pays session-wide schema creation). Expensive exact cases
+# above take precedence. New modules still get the conservative default; these
+# hints affect distribution only, never which tests must execute.
+MODULE_SECONDS = {
+    "test_delivery_closed_postgresql.py": 25,
+    "test_go_live_cleanup_postgresql.py": 17,
+    "test_mail_health_postgresql.py": 7,
+    "test_withdrawal_postgresql.py": 23,
+    "test_withdrawal_work_postgresql.py": 21,
+    "test_activation_sql_races_postgresql.py": 16,
+    "test_activation_views_postgresql.py": 20,
+    "test_delivery_control_postgresql.py": 26,
+    "test_delivery_digest_recovery_postgresql.py": 23,
+    "test_confirmation_readiness_postgresql.py": 23,
+    "test_confirmation_guards_postgresql.py": 20,
+    "test_confirmation_sql_postgresql.py": 20,
+    "test_setup_final_loading_postgresql.py": 7,
+    "test_setup_completion_postgresql.py": 14,
+    "test_setup_final_execution_postgresql.py": 14,
+    "test_daily_digest_resolution_postgresql.py": 5,
+    "test_daily_digest_dispatch_postgresql.py": 5,
+    "test_daily_digest_schedule_postgresql.py": 6,
+    "test_daily_digest_cleanup_postgresql.py": 6,
+    "test_setup_credential_installation_postgresql.py": 5,
 }
 
 # Only the loaded case retains a real source lease. Do not assign the unloaded
@@ -71,7 +100,11 @@ CASE_SECONDS = {
 def estimated_seconds(nodeid):
     """Estimate execution only; parameter changes remain independently assigned."""
     case = nodeid.rsplit("::", 1)[-1]
-    return CASE_SECONDS.get(case, SLOW_TEST_SECONDS.get(case.split("[", 1)[0], 1))
+    module = nodeid.split("::", 1)[0].rsplit("/", 1)[-1]
+    return CASE_SECONDS.get(
+        case,
+        SLOW_TEST_SECONDS.get(case.split("[", 1)[0], MODULE_SECONDS.get(module, 1)),
+    )
 
 
 def partition(nodeids: list[str], index: int, count: int) -> list[str]:

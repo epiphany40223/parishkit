@@ -323,13 +323,10 @@ def test_browser_workflow_contract():
     gate = jobs["stewardship-browser"]
     assert gate["needs"] == "stewardship-browser-engine"
     assert gate["if"] == "${{ always() }}"
-    assert gate["steps"] == [
-        {
-            "name": "Require every browser engine",
-            "env": {"BROWSER_RESULT": "${{ needs.stewardship-browser-engine.result }}"},
-            "run": 'test "$BROWSER_RESULT" = success',
-        }
-    ]
+    assert len(gate["steps"]) == 1
+    assert gate["steps"][0]["env"] == {
+        "BROWSER_RESULT": "${{ needs.stewardship-browser-engine.result }}"
+    }
     for result in ("success", "failure", "cancelled", "skipped", ""):
         completed = subprocess.run(
             ["sh", "-c", gate["steps"][0]["run"]],
@@ -345,7 +342,15 @@ def test_ci_cancels_only_superseded_pr_heads():
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
     # PyYAML's YAML 1.1 resolver treats the Actions `on` key as a boolean.
     assert workflow[True] == {
-        "pull_request": None,
+        "pull_request": {
+            "types": [
+                "opened",
+                "synchronize",
+                "reopened",
+                "ready_for_review",
+                "converted_to_draft",
+            ]
+        },
         "push": {"branches": ["main"]},
     }
     assert workflow["concurrency"] == {

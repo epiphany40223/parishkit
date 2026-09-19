@@ -108,32 +108,32 @@ def test_write_only_form_real_csrf_staging_and_cancellation(setup_http, google):
     assert row.ciphertext is None and row.scrubbed_at is not None
 
 
-@pytest.mark.parametrize(
-    "extra",
-    [
-        {"target": "slack"},
-        {"settings": "private-extra"},
-        {"organization_id": ["1", "2"]},
-        {"version": "0001"},
-    ],
-)
 def test_credential_post_rejects_undeclared_duplicate_and_stale_fields(
     setup_http,
     google,
-    extra,
 ):
     """Bad request shapes do not echo a submitted secret or persist a candidate."""
     with web_login():
         browser = started()
-        response = post(
-            browser,
-            URL,
-            {"candidate": CANDIDATE.decode(), "organization_id": "1", "version": "1"}
-            | extra,
-        )
-        assert response.status_code == 400
-        assert CANDIDATE not in response.content
-        assert not SetupSealedCredential.objects.exists()
+        for extra in (
+            {"target": "slack"},
+            {"settings": "private-extra"},
+            {"organization_id": ["1", "2"]},
+            {"version": "0001"},
+        ):
+            response = post(
+                browser,
+                URL,
+                {
+                    "candidate": CANDIDATE.decode(),
+                    "organization_id": "1",
+                    "version": "1",
+                }
+                | extra,
+            )
+            assert response.status_code == 400, extra
+            assert CANDIDATE not in response.content
+            assert not SetupSealedCredential.objects.exists()
 
 
 def test_other_login_and_missing_handoff_fail_without_persisting(setup_http, google):

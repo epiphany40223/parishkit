@@ -185,6 +185,7 @@ class Progress:
         """Validate explicit partition inputs before collecting any tests."""
         self.config = config
         self.started = {}
+        self.durations = {}
         self.completed = []
         self.universe = []
         self.selected = []
@@ -237,6 +238,7 @@ class Progress:
 
     def pytest_runtest_logreport(self, report):
         """A test is complete only after teardown, not just its assertion body."""
+        self.durations.setdefault(report.nodeid, {})[report.when] = report.duration
         if report.when == "teardown":
             self.completed.append(report.nodeid)
             elapsed = time.monotonic() - self.started.pop(report.nodeid)
@@ -258,3 +260,9 @@ class Progress:
                 },
                 stream,
             )
+        # Keep optional scheduling diagnostics outside the strictly validated
+        # execution receipt consumed by quality_ci.combine.
+        with self.evidence.with_suffix(".timings.json").open(
+            "x", encoding="utf-8"
+        ) as stream:
+            json.dump(self.durations, stream)
