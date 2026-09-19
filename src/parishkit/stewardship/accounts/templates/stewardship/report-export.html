@@ -10,6 +10,10 @@
 <dt>{% translate "Workflow history" %}</dt><dd>{% if job.parameters.history %}{% translate "Included" %}{% else %}{% translate "Not included" %}{% endif %}</dd>
 <dt>{% translate "Source generation" %}</dt><dd>{{ job.information_source_generation|number }}</dd>
 <dt>{% translate "Captured at" %}</dt><dd><time datetime="{{ job.information_snapshot.created_at|date:'c' }}" data-local-instant>{{ job.information_snapshot.created_at|date:'c' }}</time></dd>
+{% elif job.directory_snapshot_id %}
+<dt>{% translate "Matching Families" %}</dt><dd>{{ job.directory_snapshot.row_count|number }}</dd>
+<dt>{% translate "Source generation" %}</dt><dd>{{ job.directory_source_generation|number }}</dd>
+<dt>{% translate "Captured at" %}</dt><dd><time datetime="{{ job.directory_snapshot.created_at|date:'c' }}" data-local-instant>{{ job.directory_snapshot.created_at|date:'c' }}</time></dd>
 {% else %}
 <dt>{% translate "Population" %}</dt><dd>{% if job.parameters.population_scope == 'historical' %}{% translate "Historical as of day" %}{% else %}{% translate "Current population" %}{% endif %}</dd>
 <dt>{% translate "Source generation" %}</dt><dd>{{ job.fact_set.source_generation|number }}</dd>

@@ -9,13 +9,16 @@ CREATE TABLE stewardship_export_request (
     fact_set_id uuid NULL, configuration_id uuid NOT NULL, report varchar(32) NOT NULL,
     format varchar(4) NOT NULL, browser_timezone varchar(254) NOT NULL,
     parameters jsonb NOT NULL, authorization_scope jsonb NOT NULL,
-    information_snapshot_id uuid NULL,
+    information_snapshot_id uuid NULL, directory_snapshot_id uuid NULL,
     CONSTRAINT export_request_replay UNIQUE(requester_id,request_key),
     CONSTRAINT export_report_known CHECK (
-        (fact_set_id IS NOT NULL AND information_snapshot_id IS NULL AND report::text='participation'::text)
-        OR (fact_set_id IS NULL
+        (directory_snapshot_id IS NULL AND fact_set_id IS NOT NULL AND information_snapshot_id IS NULL AND report::text='participation'::text)
+        OR (directory_snapshot_id IS NULL AND fact_set_id IS NULL
             AND format::text=ANY(ARRAY[('csv'::varchar)::text,('xlsx'::varchar)::text,('pdf'::varchar)::text])
-            AND information_snapshot_id IS NOT NULL AND report::text='additional_information'::text)),
+            AND information_snapshot_id IS NOT NULL AND report::text='additional_information'::text)
+        OR (directory_snapshot_id IS NOT NULL AND fact_set_id IS NULL
+            AND format::text=ANY(ARRAY[('csv'::varchar)::text,('xlsx'::varchar)::text,('pdf'::varchar)::text])
+            AND information_snapshot_id IS NULL AND report::text=ANY(ARRAY[('family_directory'::varchar)::text,('postal_outreach'::varchar)::text]))),
     CONSTRAINT export_format_known CHECK ((format)::text = ANY ((ARRAY['csv'::character varying, 'png'::character varying, 'pdf'::character varying, 'xlsx'::character varying])::text[]))
 );
 CREATE TABLE "stewardship_export_attempt" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "request_id" uuid NOT NULL, "run_id" uuid NOT NULL, "fence" bigint NOT NULL CHECK ("fence" >= 0), "claim_event_id" uuid NOT NULL, CONSTRAINT "export_attempt_claim" UNIQUE ("request_id", "run_id", "fence"), CONSTRAINT "export_attempt_positive_fence" CHECK ("fence" > 0));
@@ -89,6 +92,7 @@ CREATE FUNCTION public.stewardship_export_request_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE facts stewardship_daily_fact_set%ROWTYPE;
         snapshot stewardship_information_export_snapshot%ROWTYPE;
+        directory stewardship_directory_export_snapshot%ROWTYPE;
         handoff boolean; inputs_valid boolean:=false;
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
@@ -112,6 +116,16 @@ BEGIN
                 OR stewardship_export_authorized_v1(NEW.requester_id,true)
                 OR EXISTS(SELECT 1 FROM stewardship_export_request prior
                     WHERE prior.information_snapshot_id=snapshot.id
+                      AND prior.requester_id=NEW.requester_id));
+    ELSIF NEW.report IN ('family_directory','postal_outreach') THEN
+        SELECT * INTO directory FROM stewardship_directory_export_snapshot WHERE id=NEW.directory_snapshot_id;
+        inputs_valid:=directory.id IS NOT NULL AND directory.campaign_id=NEW.campaign_id
+            AND NEW.parameters=directory.parameters
+            AND (NEW.report='postal_outreach')=(directory.parameters->>'postal')::boolean
+            AND (directory.actor_id=NEW.requester_id
+                OR stewardship_export_authorized_v1(NEW.requester_id,true)
+                OR EXISTS(SELECT 1 FROM stewardship_export_request prior
+                    WHERE prior.directory_snapshot_id=directory.id
                       AND prior.requester_id=NEW.requester_id));
     END IF;
     IF inputs_valid IS DISTINCT FROM true OR NEW.actor_id IS DISTINCT FROM NEW.requester_id
@@ -176,7 +190,10 @@ BEGIN
                WHERE f.id=request.fact_set_id AND f.state='ready' AND f.expected_count=NEW.row_count))
            OR (request.report='additional_information' AND EXISTS(
                SELECT 1 FROM stewardship_information_export_snapshot s
-               WHERE s.id=request.information_snapshot_id AND s.row_count=NEW.row_count)))
+               WHERE s.id=request.information_snapshot_id AND s.row_count=NEW.row_count))
+           OR (request.report IN ('family_directory','postal_outreach') AND EXISTS(
+               SELECT 1 FROM stewardship_directory_export_snapshot s
+               WHERE s.id=request.directory_snapshot_id AND s.row_count=NEW.row_count)))
        OR NOT EXISTS(SELECT 1 FROM stewardship_export_attempt a JOIN stewardship_task_run t ON t.id=a.run_id
            WHERE a.id=NEW.attempt_id AND a.request_id=request.id AND a.actor_id=NEW.actor_id
              AND t.state='running' AND t.fence=a.fence AND t.worker_id=a.actor_id

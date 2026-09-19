@@ -49,8 +49,17 @@ def components(context, admin):
         "total": 51,
         "next_page": 2,
         "postal_proportion": "51 out of 1,000 (5.1%)",
+        "mutable": True,
+        "request_key": UUID(int=81),
+        "export_timezones": ("UTC", "America/Detroit"),
     }
     pages = {
+        "/directory-gated": values
+        | {
+            "mutable": False,
+            "postal": False,
+            "report_url": f"/admin/reports/{campaign}/families/",
+        },
         "/family-directory": values
         | {
             "postal": False,

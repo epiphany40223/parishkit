@@ -57,7 +57,7 @@ jobs:
           tests/stewardship/test_database_gate.py
           tests/stewardship/test_report_workspace.py
           tests/stewardship/test_exact_export_ui.py
-          tests/stewardship/test_information_followup.py
+          tests/stewardship/test_directory_rendering.py
           tests/stewardship/test_information_rendering.py
           tests/stewardship/test_directories.py
           --require-no-skips -q

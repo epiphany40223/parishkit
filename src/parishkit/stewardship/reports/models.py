@@ -346,6 +346,7 @@ from .exact_models import (  # noqa: E402,F401
     ExactExportResolution,
 )
 from .export_models import (  # noqa: E402,F401
+    DirectoryExportSnapshot,
     ExportArtifactCleanup,
     ExportAttempt,
     ExportCancellation,

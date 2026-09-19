@@ -1040,6 +1040,7 @@ def component_origin():
         ("family-v1.js", "application/javascript"),
         ("digest-v1.js", "application/javascript"),
         ("report-v1.js", "application/javascript"),
+        ("information-export-v1.js", "application/javascript"),
         ("digest-v1.css", "text/css"),
     ):
         asset = f"stewardship/{filename}"

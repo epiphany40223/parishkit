@@ -123,13 +123,19 @@ def detail(request, request_id):
             """Safe job state and inputs come from the existing requester owner."""
             job = (
                 ExportRequest.objects.select_related(
-                    "fact_set", "configuration__parish", "information_snapshot"
+                    "fact_set",
+                    "configuration__parish",
+                    "information_snapshot",
+                    "directory_snapshot",
                 )
-                .defer("information_snapshot__document")
+                .defer("information_snapshot__document", "directory_snapshot__document")
                 .annotate(
                     information_source_generation=F(
                         "information_snapshot__source__generation"
-                    )
+                    ),
+                    directory_source_generation=F(
+                        "directory_snapshot__source__generation"
+                    ),
                 )
                 .get(pk=request_id)
             )
@@ -139,20 +145,34 @@ def detail(request, request_id):
                 admit_campaign(campaign_id, mutating=True)
             except PermissionError:
                 mutable = False
+            if job.report == "additional_information":
+                title = "Additional-information export"
+                report_url = reverse("admin:information_queue", args=(campaign_id,))
+            elif job.report in {"family_directory", "postal_outreach"}:
+                title = (
+                    "Postal-outreach export"
+                    if job.parameters["postal"]
+                    else "Family-directory export"
+                )
+                report_url = reverse(
+                    "admin:postal_directory"
+                    if job.parameters["postal"]
+                    else "admin:family_directory",
+                    args=(campaign_id,),
+                )
+            else:
+                title = "Participation export"
+                report_url = ReportQuery(
+                    scope=job.parameters["population_scope"],
+                    timezone=job.browser_timezone,
+                ).url(campaign_id)
             context = {
                 "job": job,
                 "status": state,
                 "mutable": mutable,
                 "retry_key": uuid4(),
-                "report_title": "Additional-information export"
-                if job.report == "additional_information"
-                else "Participation export",
-                "report_url": reverse("admin:information_queue", args=(campaign_id,))
-                if job.report == "additional_information"
-                else ReportQuery(
-                    scope=job.parameters["population_scope"],
-                    timezone=job.browser_timezone,
-                ).url(campaign_id),
+                "report_title": title,
+                "report_url": report_url,
                 "can_cancel": state["state"] in {"queued", "running", "retry_wait"},
             }
             return iter(

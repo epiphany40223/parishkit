@@ -36,6 +36,7 @@
 !src/parishkit/stewardship/schema/delivery_closed.sql
 !src/parishkit/stewardship/schema/information_followup.sql
 !src/parishkit/stewardship/schema/information_reports.sql
+!src/parishkit/stewardship/schema/directory_reports.sql
 !src/parishkit/stewardship/schema/schedule_reconciliation.sql
 !src/parishkit/stewardship/schema/exports.sql
 !src/parishkit/stewardship/schema/delivery_resolution.sql
