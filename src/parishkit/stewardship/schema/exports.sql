@@ -1,7 +1,23 @@
 -- The request table's export_format_known check intentionally retains the
 -- PostgreSQL-deparsed ANY/ARRAY form required by model/schema comparison.
 -- Replacing it with equivalent IN syntax changes the fresh-baseline contract.
-CREATE TABLE "stewardship_export_request" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "campaign_id" uuid NOT NULL, "requester_id" uuid NOT NULL, "request_key" uuid NOT NULL, "task_id" uuid NOT NULL UNIQUE, "fact_set_id" uuid NOT NULL, "configuration_id" uuid NOT NULL, "report" varchar(32) NOT NULL, "format" varchar(4) NOT NULL, "browser_timezone" varchar(254) NOT NULL, "parameters" jsonb NOT NULL, "authorization_scope" jsonb NOT NULL, CONSTRAINT "export_request_replay" UNIQUE ("requester_id", "request_key"), CONSTRAINT "export_report_known" CHECK ("report" = 'participation'), CONSTRAINT "export_format_known" CHECK ((format)::text = ANY ((ARRAY['csv'::character varying, 'png'::character varying, 'pdf'::character varying, 'xlsx'::character varying])::text[])));
+CREATE TABLE stewardship_export_request (
+    id uuid NOT NULL PRIMARY KEY,
+    created_at timestamptz DEFAULT statement_timestamp() NOT NULL,
+    actor_id uuid NULL, correlation_id uuid NOT NULL, campaign_id uuid NOT NULL,
+    requester_id uuid NOT NULL, request_key uuid NOT NULL, task_id uuid NOT NULL UNIQUE,
+    fact_set_id uuid NULL, configuration_id uuid NOT NULL, report varchar(32) NOT NULL,
+    format varchar(4) NOT NULL, browser_timezone varchar(254) NOT NULL,
+    parameters jsonb NOT NULL, authorization_scope jsonb NOT NULL,
+    information_snapshot_id uuid NULL,
+    CONSTRAINT export_request_replay UNIQUE(requester_id,request_key),
+    CONSTRAINT export_report_known CHECK (
+        (fact_set_id IS NOT NULL AND information_snapshot_id IS NULL AND report::text='participation'::text)
+        OR (fact_set_id IS NULL
+            AND format::text=ANY(ARRAY[('csv'::varchar)::text,('xlsx'::varchar)::text,('pdf'::varchar)::text])
+            AND information_snapshot_id IS NOT NULL AND report::text='additional_information'::text)),
+    CONSTRAINT export_format_known CHECK ((format)::text = ANY ((ARRAY['csv'::character varying, 'png'::character varying, 'pdf'::character varying, 'xlsx'::character varying])::text[]))
+);
 CREATE TABLE "stewardship_export_attempt" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "request_id" uuid NOT NULL, "run_id" uuid NOT NULL, "fence" bigint NOT NULL CHECK ("fence" >= 0), "claim_event_id" uuid NOT NULL, CONSTRAINT "export_attempt_claim" UNIQUE ("request_id", "run_id", "fence"), CONSTRAINT "export_attempt_positive_fence" CHECK ("fence" > 0));
 CREATE TABLE "stewardship_export_publication" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "request_id" uuid NOT NULL UNIQUE, "attempt_id" uuid NOT NULL UNIQUE, "size" bigint NOT NULL CHECK ("size" >= 0), "sha256" varchar(64) NOT NULL, "row_count" integer NOT NULL CHECK ("row_count" >= 0), "expires_at" timestamp with time zone NOT NULL, CONSTRAINT "export_publication_size" CHECK (("size" > 0 AND "size" <= 536870912)), CONSTRAINT "export_publication_digest" CHECK ("sha256"::text ~ '^[0-9a-f]{64}$'), CONSTRAINT "export_publication_expiry" CHECK ("expires_at" > ("created_at")));
 CREATE TABLE "stewardship_export_cancellation" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "request_id" uuid NOT NULL UNIQUE);
@@ -72,7 +88,8 @@ END $$;
 CREATE FUNCTION public.stewardship_export_request_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE facts stewardship_daily_fact_set%ROWTYPE;
-        handoff boolean;
+        snapshot stewardship_information_export_snapshot%ROWTYPE;
+        handoff boolean; inputs_valid boolean:=false;
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
     SELECT EXISTS(SELECT 1 FROM stewardship_exact_export_resolution x
@@ -81,17 +98,29 @@ BEGIN
           AND ROW(NEW.campaign_id,NEW.requester_id,NEW.request_key,NEW.configuration_id,NEW.format,NEW.browser_timezone)=
               ROW(r.campaign_id,r.requester_id,NEW.id,r.configuration_id,r.format,r.browser_timezone)
           AND stewardship_fact_live(x.run_id,x.fence,x.worker_id)) INTO handoff;
-    SELECT * INTO facts FROM stewardship_daily_fact_set WHERE id=NEW.fact_set_id FOR SHARE;
-    IF facts.id IS NULL OR facts.state<>'ready' OR facts.campaign_id<>NEW.campaign_id
-       OR NEW.actor_id IS DISTINCT FROM NEW.requester_id
+    IF NEW.report='participation' THEN
+        SELECT * INTO facts FROM stewardship_daily_fact_set WHERE id=NEW.fact_set_id FOR SHARE;
+        inputs_valid:=facts.id IS NOT NULL AND facts.state='ready'
+            AND facts.campaign_id=NEW.campaign_id
+            AND NEW.parameters=jsonb_build_object('population_scope',facts.population_scope,
+                'sort','date_asc','selected_ids','[]'::jsonb,'filters','{}'::jsonb);
+    ELSIF NEW.report='additional_information' THEN
+        SELECT * INTO snapshot FROM stewardship_information_export_snapshot WHERE id=NEW.information_snapshot_id;
+        inputs_valid:=snapshot.id IS NOT NULL AND snapshot.campaign_id=NEW.campaign_id
+            AND NEW.parameters=snapshot.parameters
+            AND (snapshot.actor_id=NEW.requester_id
+                OR stewardship_export_authorized_v1(NEW.requester_id,true)
+                OR EXISTS(SELECT 1 FROM stewardship_export_request prior
+                    WHERE prior.information_snapshot_id=snapshot.id
+                      AND prior.requester_id=NEW.requester_id));
+    END IF;
+    IF inputs_valid IS DISTINCT FROM true OR NEW.actor_id IS DISTINCT FROM NEW.requester_id
        OR NOT stewardship_export_authorized_v1(NEW.requester_id)
        OR NOT stewardship_export_admitted_v1(NEW.campaign_id,true)
        OR (NOT handoff AND NOT EXISTS(SELECT 1 FROM stewardship_system_configuration
            WHERE active_configuration_id=NEW.configuration_id))
        OR (current_user='pk_stewardship_worker' AND NOT handoff)
        OR NEW.authorization_scope<>'{"capability":"campaign_report"}'::jsonb
-       OR NEW.parameters<>jsonb_build_object('population_scope',facts.population_scope,
-           'sort','date_asc','selected_ids','[]'::jsonb,'filters','{}'::jsonb)
        OR NOT EXISTS(SELECT 1 FROM pg_timezone_names
            WHERE name=public.stewardship_timezone_name_v1(NEW.browser_timezone))
        OR NOT EXISTS(SELECT 1 FROM stewardship_task_run t WHERE t.id=NEW.task_id
@@ -106,7 +135,7 @@ END $$;
 CREATE FUNCTION public.stewardship_export_pin_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
-    IF NOT EXISTS(SELECT 1 FROM stewardship_fact_pin WHERE fact_set_id=NEW.fact_set_id
+    IF NEW.report='participation' AND NOT EXISTS(SELECT 1 FROM stewardship_fact_pin WHERE fact_set_id=NEW.fact_set_id
         AND parent_kind='export' AND parent_id=NEW.id)
     THEN RAISE EXCEPTION 'Export requires its retained fact pin' USING ERRCODE='23514'; END IF;
     RETURN NULL;
@@ -142,8 +171,12 @@ BEGIN
        OR NOT stewardship_export_authorized_v1(request.requester_id)
        OR EXISTS(SELECT 1 FROM stewardship_export_cancellation WHERE request_id=request.id)
        OR NEW.expires_at > NEW.created_at + interval '7 days 1 minute'
-       OR NOT EXISTS(SELECT 1 FROM stewardship_daily_fact_set f WHERE f.id=request.fact_set_id
-           AND f.state='ready' AND f.expected_count=NEW.row_count)
+       OR NOT (
+           (request.report='participation' AND EXISTS(SELECT 1 FROM stewardship_daily_fact_set f
+               WHERE f.id=request.fact_set_id AND f.state='ready' AND f.expected_count=NEW.row_count))
+           OR (request.report='additional_information' AND EXISTS(
+               SELECT 1 FROM stewardship_information_export_snapshot s
+               WHERE s.id=request.information_snapshot_id AND s.row_count=NEW.row_count)))
        OR NOT EXISTS(SELECT 1 FROM stewardship_export_attempt a JOIN stewardship_task_run t ON t.id=a.run_id
            WHERE a.id=NEW.attempt_id AND a.request_id=request.id AND a.actor_id=NEW.actor_id
              AND t.state='running' AND t.fence=a.fence AND t.worker_id=a.actor_id

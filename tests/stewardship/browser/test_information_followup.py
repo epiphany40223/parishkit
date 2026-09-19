@@ -69,6 +69,29 @@ def test_staff_queue_detail_history_and_accessibility(
     ).is_visible()
     page.goto(component_origin + "/information-gated")
     assert page.get_by_role("button", name="Save follow-up").is_disabled()
+    page.goto(component_origin + "/information-queue-gated")
+    assert page.get_by_role("button", name="Queue complete export").is_disabled()
+
+
+def export_post(page, component_origin):
+    """The same complete-result form works with or without browser scripting."""
+    page.goto(component_origin + "/information")
+    page.get_by_label("Export format", exact=True).select_option("xlsx")
+    page.get_by_label("Export timezone", exact=True).select_option("UTC")
+    page.get_by_label("Include complete Staff workflow history").check()
+    page.route("**/information/export", lambda route: route.fulfill(body="Queued"))
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Queue complete export").click()
+    assert "search=Sample" in sent.value.post_data
+    assert "format=xlsx" in sent.value.post_data
+    assert "history=yes" in sent.value.post_data
+    assert "browser_timezone=UTC" in sent.value.post_data
+    assert "Sample" not in sent.value.url and "?" not in sent.value.url
+
+
+def test_staff_complete_export_native_post(page, component_origin):
+    """Private filters are submitted as a body, never serialized into an export URL."""
+    export_post(page, component_origin)
 
 
 def test_staff_native_workflow_without_scripts(browser_engine, component_origin):
@@ -76,6 +99,7 @@ def test_staff_native_workflow_without_scripts(browser_engine, component_origin)
     context = browser_engine.new_context(java_script_enabled=False)
     try:
         page = context.new_page()
+        export_post(page, component_origin)
         page.goto(component_origin + "/information")
         assert page.get_by_role("button", name="Apply filters").is_visible()
         page.goto(component_origin + "/information-item")

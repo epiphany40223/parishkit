@@ -83,3 +83,16 @@ not an application deadlock. Creating the restricted role once and sharing its
 connection hook lets the two independent application transactions race safely.
 History reads are capped at the displayed version so a newly committed edit
 cannot appear beside an older item projection.
+
+## Protected delivery
+
+PR #66 merged as `6a6366802a7eb1f5a70621022e01e2b8878a8c41`, verified on
+freshly fetched `origin/main`. Candidate `a2211e1387b38eda8c1a89d6ea2618892ffef649`
+passed all 24 full-CI jobs in run `35451868456`, plus DCO. The corrected run
+took 16 minutes 19 seconds; its test-only correction is recorded in the
+[review ledger](stewardship-additional-followup-reviews.md#candidate-ci-correction).
+Its tree `f6df82f6a078b10a98b123529d160c02c0a32424` matches preserved history
+`513db34d99713cddcbc0ea215bc4c3250a2c88b1`. This supersedes pending-delivery
+notes, without claiming the remaining export task or integrated Gate 3.
+
+The next fresh-main increment implements [complete-text/history exports](stewardship-information-exports.md).

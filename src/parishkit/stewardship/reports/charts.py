@@ -21,13 +21,10 @@ def participation_limits(day_count):
 
 
 @contextmanager
-def participation_figure(document):
-    """Own plotting state until consumption ends; callers cannot leak a figure."""
-    if not isinstance(document, ParticipationDocument):
-        raise TypeError("Rendering requires an immutable participation document.")
+def rendering_style():
+    """Serialize global plotting state for both charts and paginated text PDFs."""
     with _RENDER_LOCK:
         import matplotlib as mpl
-        from matplotlib.figure import Figure
 
         # Ignore host matplotlibrc (including external TeX and custom fonts).
         # Keep the backend selection local; there is no GUI/pyplot dependency.
@@ -41,12 +38,23 @@ def participation_figure(document):
             }
         )
         with mpl.rc_context(style):
-            figure = Figure(figsize=(12, 7), dpi=120, facecolor="white")
-            try:
-                _draw(figure, document)
-                yield figure
-            finally:
-                figure.clear()
+            yield
+
+
+@contextmanager
+def participation_figure(document):
+    """Own plotting state until consumption ends; callers cannot leak a figure."""
+    if not isinstance(document, ParticipationDocument):
+        raise TypeError("Rendering requires an immutable participation document.")
+    from matplotlib.figure import Figure
+
+    with rendering_style():
+        figure = Figure(figsize=(12, 7), dpi=120, facecolor="white")
+        try:
+            _draw(figure, document)
+            yield figure
+        finally:
+            figure.clear()
 
 
 def _draw(figure, document):
