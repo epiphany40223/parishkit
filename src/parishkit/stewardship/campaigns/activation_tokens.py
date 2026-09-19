@@ -22,6 +22,7 @@ from .credential_models import (
     CampaignCredentialState,
     CredentialKeyState,
     DeploymentCredentialState,
+    FamilyAccessToken,
     FamilyAccessTokenGeneration,
 )
 from .link_tokens import begin_generation, prepare_generation_batch
@@ -35,6 +36,27 @@ from .work_locks import require_work_order, work_transaction
 
 TASK_TYPE = "production_tokens"
 CLEANUP_TASK_TYPE = "production_token_cleanup"
+
+
+def preparation_available(transition):
+    """Dispose prior staging before preparing a replacement revision."""
+    require_work_order()
+    identifiers = ProductionTokenPreparation.objects.filter(
+        transition=transition
+    ).values("id")
+    return not (
+        TaskRun.objects.filter(
+            task_type=TASK_TYPE,
+            domain_request_id__in=identifiers,
+            state__in=NONTERMINAL_STATES,
+        ).exists()
+        or FamilyAccessTokenGeneration.objects.filter(
+            operation_id__in=identifiers, state__in=("building", "ready", "active")
+        ).exists()
+        or FamilyAccessToken.objects.filter(
+            generation__operation_id__in=identifiers, destroyed_at__isnull=True
+        ).exists()
+    )
 
 
 def current_inputs(transition):
@@ -110,15 +132,10 @@ def request_preparation(*, transition_id, request_key, actor_id, correlation_id,
             ):
                 raise StaleRecordError("Preparation intent is no longer current.")
             return previous
-        previous_ids = ProductionTokenPreparation.objects.filter(
-            transition=transition
-        ).values("pk")
-        if TaskRun.objects.filter(
-            task_type=TASK_TYPE,
-            domain_request_id__in=previous_ids,
-            state__in=NONTERMINAL_STATES,
-        ).exists():
-            raise StaleRecordError("A link preparation is already in progress.")
+        if not preparation_available(transition):
+            raise StaleRecordError(
+                "A link preparation is already in progress or needs disposal."
+            )
         identifier = uuid4()
         task = enqueue(
             task_type=TASK_TYPE,

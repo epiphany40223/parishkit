@@ -1,0 +1,26 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Prepare Family links" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Prepare Family links" %}</h1>
+<p>{{ campaign.active_configuration.name }}</p>
+<p class="notice">{% translate "These links remain inactive until final Production confirmation. Preparation sends no email and does not change Family codes. Completed Testing deletions cannot be undone." %}</p>
+{% if inputs_unavailable %}<p role="status">{% translate "Current preparation inputs are unavailable. Complete cleanup and wait for current source processing before trying again." %}</p>{% endif %}
+{% if prepare %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ prepare }}"><button type="submit">{% translate "Prepare inactive Family links" %}</button></form>{% endif %}
+{% for record in records %}
+<section class="panel" aria-labelledby="preparation-{{ record.preparation.pk }}">
+<h2 id="preparation-{{ record.preparation.pk }}">{% translate "Preparation" %} <time data-local-instant datetime="{{ record.preparation.created_at|instant }}">{{ record.preparation.created_at|instant }}</time></h2>
+<dl><dt>{% translate "Worker state" %}</dt><dd>{{ record.task.state }}</dd>
+<dt>{% translate "Eligible Families" %}</dt><dd>{{ record.preparation.eligible_count|number }}</dd>
+<dt>{% translate "Prepared links" %}</dt><dd>{{ record.completion|out_of }}</dd>
+<dt>{% translate "Last worker update" %}</dt><dd><time data-local-instant datetime="{{ record.task.updated_at|instant }}">{{ record.task.updated_at|instant }}</time></dd></dl>
+{% if not record.current %}<p role="status">{% translate "This preparation is cancelled or its inputs are no longer current. It cannot activate the campaign." %}</p>{% endif %}
+{% if record.generation.state == 'ready' and record.current %}<p role="status">{% translate "Inactive links are prepared. The campaign remains in Testing." %}</p>{% endif %}
+{% if record.cleanup %}<p>{% translate "Disposal worker state:" %} {{ record.cleanup.state }}</p>{% endif %}
+{% if record.controls.cancel %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ record.controls.cancel }}"><button type="submit">{% translate "Cancel and discard these inactive links" %}</button></form>{% endif %}
+{% if record.controls.retry %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ record.controls.retry }}"><button type="submit">{% translate "Retry failed preparation" %}</button></form>{% endif %}
+{% if record.controls.retry_cleanup %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ record.controls.retry_cleanup }}"><button type="submit">{% translate "Retry failed disposal" %}</button></form>{% endif %}
+</section>
+{% empty %}<p>{% translate "No link preparation has been requested." %}</p>{% endfor %}
+<nav aria-label="{% translate 'Preparation history pages' %}">{% if page > 1 %}<a href="?page={{ previous_page }}">{% translate "Previous" %}</a>{% endif %} {% if has_next %}<a href="?page={{ next_page }}">{% translate "Next" %}</a>{% endif %}</nav>
+<p><a href="">{% translate "Refresh preparation progress" %}</a> · <a href="{% url 'admin:go_live_cleanup' campaign.pk transition.pk %}">{% translate "Return to cleanup" %}</a></p>
+{% endblock %}

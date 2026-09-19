@@ -75,6 +75,7 @@ def test_staff_and_ministry_leaders_cannot_read_readiness(campaign_test, google,
     with web_login():
         assert browser.get(path).status_code == 403
         assert browser.get(path + "/families").status_code == 403
+        assert browser.get(path + f"/cleanup/{uuid4()}/links").status_code == 403
         assert Client().get(path).status_code in {302, 403}
 
 

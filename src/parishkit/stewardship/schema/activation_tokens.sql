@@ -75,6 +75,14 @@ BEGIN
                 AND task.state IN ('queued','running','retry_wait','abandoned')) THEN
             RAISE EXCEPTION 'Production link preparation is already running' USING ERRCODE='23514';
         END IF;
+        IF EXISTS(SELECT 1 FROM stewardship_production_tokens prior
+            JOIN stewardship_family_token_generation generation ON generation.operation_id=prior.id
+            WHERE prior.transition_id=NEW.transition_id AND (
+                generation.state IN ('building','ready','active') OR EXISTS(
+                    SELECT 1 FROM stewardship_family_token token
+                    WHERE token.generation_id=generation.id AND token.destroyed_at IS NULL))) THEN
+            RAISE EXCEPTION 'Prior inactive links require disposal' USING ERRCODE='23514';
+        END IF;
     ELSE
         kind:='production_token_cleanup';
         SELECT * INTO preparation FROM stewardship_production_tokens WHERE id=NEW.preparation_id;
@@ -106,6 +114,18 @@ CREATE FUNCTION public.stewardship_production_tokens_task_pin_v1() RETURNS trigg
 LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
     IF NEW.task_type NOT IN ('production_tokens','production_token_cleanup') THEN RETURN NULL; END IF;
+    IF NEW.parent_id IS NOT NULL
+       AND NOT pg_has_role(session_user,(SELECT nspowner FROM pg_namespace WHERE nspname='public'),'USAGE') THEN
+        IF session_user<>'pk_stewardship_web'
+           OR public.stewardship_export_authorized_v1(NEW.initiated_by_id,true) IS NOT TRUE THEN
+            RAISE EXCEPTION 'Production link retry requires a current Admin' USING ERRCODE='42501';
+        END IF;
+        IF NEW.task_type='production_tokens' AND NOT EXISTS(
+            SELECT 1 FROM stewardship_production_tokens p WHERE p.id=NEW.domain_request_id
+                AND p.task_id=NEW.root_id AND public.stewardship_production_tokens_current_v1(p)) THEN
+            RAISE EXCEPTION 'Production link retry inputs changed' USING ERRCODE='23514';
+        END IF;
+    END IF;
     IF NEW.task_type='production_tokens' THEN
         IF EXISTS(SELECT 1 FROM stewardship_production_tokens
             WHERE id=NEW.domain_request_id AND task_id=NEW.root_id) THEN RETURN NULL; END IF;

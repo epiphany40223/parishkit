@@ -39,14 +39,106 @@ from parishkit.stewardship.jobs.dispatch import execute_hint, recover_hint
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.ownership import TaskClaim, TaskOwnershipLost
 from parishkit.stewardship.jobs.queues import WorkQueue
-from parishkit.stewardship.jobs.storage import _status, enqueue
+from parishkit.stewardship.jobs.storage import _status, enqueue, retry_failed
 from parishkit.stewardship.storage import StaleRecordError
 
+from .response_builders import response_source
 from .test_background_grants_postgresql import task_login
 from .test_cleanup_tasks_postgresql import queued, run
+from .test_source_families_postgresql import prepare, promote
 from .test_taskrun_postgresql import act, expire
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+
+def test_retry_resumes_committed_batch_and_source_change_requires_disposal(
+    response_service, monkeypatch
+):
+    """Real source promotion and durable retry preserve sealed earlier batches."""
+    from parishkit.stewardship.campaigns import activation_tasks
+
+    cleanup = queued(response_service)
+    assert run(cleanup)
+    data = response_source()
+    for identifier in (4, 5):
+        data.families[identifier] = data.families[1] | {"familyDUID": identifier}
+        data.members[identifier * 10] = data.members[3] | {
+            "memberDUID": identifier * 10,
+            "familyDUID": identifier,
+        }
+    snapshot, source_claim = prepare(data)
+    promote(snapshot, source_claim, response_service.campaign, response_service.rings)
+    arguments = dict(
+        transition_id=cleanup.request_id,
+        request_key=uuid4(),
+        actor_id=uuid4(),
+        correlation_id=uuid4(),
+        admit=lambda *args: True,
+    )
+    preparation = request_preparation(**arguments)
+    assert preparation.eligible_count == 3
+    task = act(_status(TaskRun.objects.get(pk=preparation.task_id)), "claim")
+    with work_transaction():
+        generation = prepare_batch(
+            preparation.pk,
+            TaskClaim(task.run_id, task.fence, task.worker_id),
+            public=response_service.rings.public,
+            maximum=1,
+        )
+    assert generation.state == "building"
+    original = FamilyAccessToken.objects.get(generation=generation)
+    sealed = original.ciphertext
+    failed = act(task, "permanent_failure")
+    with work_transaction():
+        retry = retry_failed(
+            run_id=failed.run_id,
+            command_id=uuid4(),
+            actor_id=uuid4(),
+            correlation_id=uuid4(),
+            admit=lambda *args: True,
+        )
+    batches = []
+
+    def bounded(*args, **kwargs):
+        """Keep the actual owner, forcing two further committed batches."""
+        result = prepare_batch(*args, **kwargs, maximum=1)
+        batches.append(result.state)
+        return result
+
+    monkeypatch.setattr(activation_tasks, "prepare_batch", bounded)
+    with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
+        assert execute_hint(
+            retry.run_id,
+            queue=WorkQueue.GENERAL,
+            worker_id=uuid4(),
+            handlers={TASK_TYPE: token_handler(public=response_service.rings.public)},
+        )
+    original.refresh_from_db()
+    assert original.ciphertext == sealed
+    assert batches == ["building", "ready"]
+    assert FamilyAccessToken.objects.filter(generation=generation).count() == 3
+    snapshot, source_claim = prepare(response_source())
+    promote(snapshot, source_claim, response_service.campaign, response_service.rings)
+    with pytest.raises(StaleRecordError, match="no longer current"):
+        request_preparation(**arguments)
+    with pytest.raises(StaleRecordError, match="needs disposal"):
+        request_preparation(**(arguments | {"request_key": uuid4()}))
+    cancellation = request_cancellation(
+        preparation_id=preparation.pk,
+        request_key=uuid4(),
+        actor_id=uuid4(),
+        correlation_id=uuid4(),
+        admit=lambda *args: True,
+    )
+    with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
+        assert execute_hint(
+            cancellation.task_id,
+            queue=WorkQueue.GENERAL,
+            worker_id=uuid4(),
+            handlers={CLEANUP_TASK_TYPE: token_handler(cleanup=True)},
+        )
+    fresh = request_preparation(**(arguments | {"request_key": uuid4()}))
+    assert fresh.pk != preparation.pk and fresh.eligible_count == 1
 
 
 def test_prepare_after_cleanup_is_pinned_inactive_and_fenced(response_service):

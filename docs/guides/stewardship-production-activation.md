@@ -1,4 +1,4 @@
-# Stewardship Production activation and withdrawal
+# Stewardship Production link preparation and activation handoff
 
 Continue [ADM-05.03/.04/.05](../tasks/stewardship/admin-portal.md#adm-05-production-transition-and-pre-start-withdrawal)
 from [PR #58's protected delivery](stewardship-go-live-readiness.md#protected-delivery)
@@ -7,7 +7,23 @@ The [Production-transition specification](../specs/stewardship/admin-portal/spec
 owns behavior; the [Phase 4 implementation plan](../plans/stewardship/overall.md#phase-4-production-scheduling-delivery-and-notifications)
 owns dependencies, review gates and the synthetic/disposable-only restriction.
 
-## Intended coherent outcome
+## Delivery boundary
+
+PR #59 delivers checkpoint 1 below as an independently usable Admin workflow:
+prepare inactive links after cleanup, inspect bounded progress, retry failures,
+cancel/dispose staging, and reject stale inputs without activating the campaign.
+It includes the applicable SQL-role, source-change, crash/retry, HTTP and browser
+acceptance. This is a vertical workflow, not a helper-only PR. Its scope was
+split at this boundary to keep reviews smaller before introducing final
+readiness guards, activation and withdrawal owners.
+
+After three completed dual-source rounds and exact-head CI/DCO, merge through
+the protected workflow, verify main, and begin the remaining checkpoints on a
+fresh branch. ADM-05.03/.04/.05 remain unchecked until their full original
+acceptance passes. This split does not waive final-transaction load measurement,
+catch-up handoff, boundary races or integrated Gate 3 review.
+
+## Following activation and withdrawal outcome
 
 An Admin can finish a cleaned-up campaign's go-live process with fresh Google
 authentication and explicit typed confirmation. Prepare inactive Family links
@@ -46,14 +62,15 @@ irreversible; a later go-live attempt needs fresh evidence and cleanup.
    recovery plus responsive submissions. Include no-JavaScript and three-engine
    mobile/keyboard/accessibility acceptance.
 6. Complete three dual-source review/fix rounds, final-head CI/DCO and protected
-   delivery before the delivery-pause slice. Audit any fresh-schema change
-   independently against the immutable predecessor. Gate 3 remains separate.
+   delivery for each coherent increment before the delivery-pause slice. Audit
+   any fresh-schema change independently against the immutable predecessor.
+   Gate 3 remains separate.
 
 ## Current status
 
 Investigation and implementation are in progress; none of ADM-05.03/.04/.05 is
-complete. Existing token-generation storage has no runtime preparation caller,
-so that dependency is included before opening activation authority. No real
+complete. The previously missing runtime preparation caller and Admin controls
+are implemented; final confirmation and withdrawal remain closed. No real
 provider calls, retained-database deletion, deployment, release or historical
 upgrade compatibility is authorized by this work.
 
@@ -115,3 +132,36 @@ the current-input predicate becomes a read-only SECURITY INVOKER function usable
 with existing caller metadata grants. It gains no elevated execution authority.
 All table, column, constraint, index, policy and ownership fingerprints remain
 unchanged. Totals are 525 functions and 501 triggers; other totals remain above.
+
+## Admin preparation checkpoint
+
+The cleanup page links to a paginated, current-Admin preparation workflow.
+GET/HEAD do not create tasks, renew idle sessions or disclose credentials. Signed,
+CSRF-protected controls bind the original actor, transition and inputs, then
+recheck current authority under work ordering. Failed preparation/disposal retries
+create immutable retry children; cancellation queues bounded worker disposal.
+A new revision cannot strand prior inactive ciphertext: unfinished staging must
+be disposed first. Neither this page nor a ready generation activates Production.
+
+One real initial-setup/cleanup fixture exercises the full HTTP-to-worker path,
+including missing CSRF, unknown fields, stale signed input, idempotent request,
+both retry paths, disposal and session revocation. Two additional cases deny
+Staff/Ministry access before looking up a preparation. These three cases pass
+in 28.43 seconds. Nine browser cases pass in 15.81 seconds across all three
+engines, mobile/desktop, accessibility and native no-JavaScript forms. A real-clock
+disposal regression exposed a preexisting earlier-SELECT timestamp; disposal now
+uses the UPDATE's domain-clock expression, matching its SQL ownership guard.
+
+The next independent schema comparison uses immutable `2ce181f` and fresh
+databases `stewardship_mail_health_before_20260918m` and
+`stewardship_mail_health_after_20260918m`. Only the preparation-intake and task-pin
+function bodies change: prior staging must be disposed before replacement, and
+runtime retry allocation requires current Admin authority/current preparation
+inputs. All object counts and every other fingerprint category are unchanged.
+
+A source-backed multi-batch regression additionally commits one partial batch,
+fails its execution, resumes through a retry child without changing prior sealed
+links, then promotes changed source and requires disposal before a fresh revision.
+It passes in 12.94 seconds. All 17 fresh-schema fingerprint/model-contract cases
+pass against the independently audited candidate. Ruff/format and changed
+Markdown checks pass. Peer review and exact-head CI are still required.

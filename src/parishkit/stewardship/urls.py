@@ -5,6 +5,7 @@ from django.urls import include, path
 from . import views
 from .accounts import (
     access_gate,
+    activation_views,
     authentication,
     branding_views,
     campaign_mail_views,
@@ -210,6 +211,11 @@ admin_patterns = [
         "campaign/<uuid:campaign_id>/go-live/cleanup/<uuid:request_id>",
         go_live_views.cleanup_status,
         name="go_live_cleanup",
+    ),
+    path(
+        "campaign/<uuid:campaign_id>/go-live/cleanup/<uuid:request_id>/links",
+        activation_views.links,
+        name="go_live_links",
     ),
     path(
         "campaign/<uuid:campaign_id>/settings",

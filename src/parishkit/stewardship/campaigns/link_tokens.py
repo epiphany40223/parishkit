@@ -11,7 +11,7 @@ their owning authorization locks; None or a false value does not authorize work.
 from uuid import UUID, uuid4
 
 from django.db import connection, transaction
-from django.db.models import Exists, F, OuterRef
+from django.db.models import DateTimeField, Exists, F, Func, OuterRef
 
 from parishkit.stewardship.accounts.cryptography import (
     CryptographicError,
@@ -400,7 +400,13 @@ def scrub_generation(generation_id, *, batch_size=500):
             .values_list("pk", flat=True)[:batch_size]
         )
         FamilyAccessToken.objects.filter(pk__in=ids).update(
-            ciphertext=None, digest=None, destroyed_at=_now(), version=F("version") + 1
+            ciphertext=None,
+            digest=None,
+            # The SQL owner validates the UPDATE's clock, not an earlier SELECT.
+            destroyed_at=Func(
+                function="stewardship_campaign_now_v1", output_field=DateTimeField()
+            ),
+            version=F("version") + 1,
         )
         return len(ids)
 
