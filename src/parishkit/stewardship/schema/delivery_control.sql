@@ -96,7 +96,7 @@ CREATE FUNCTION public.stewardship_delivery_control_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE campaign public.stewardship_campaign%ROWTYPE;
     runtime public.stewardship_system_configuration%ROWTYPE;
-    instant timestamptz; current_inventory jsonb;
+    instant timestamptz; current_inventory jsonb; current_health jsonb; family_impact jsonb;
 BEGIN
     IF TG_OP<>'INSERT' THEN
         RAISE EXCEPTION 'Delivery control intent is immutable' USING ERRCODE='23514';
@@ -140,9 +140,52 @@ BEGIN
     IF NEW.inventory IS DISTINCT FROM current_inventory THEN
         RAISE EXCEPTION 'Delivery work changed; review a new preview' USING ERRCODE='23514';
     END IF;
-    IF NEW.action<>'pause' OR campaign.delivery_paused OR NEW.control_id IS NULL
-       OR NEW.selection<>'{}'::jsonb THEN
+    IF NEW.control_id IS NULL OR NEW.action NOT IN ('pause','resume') THEN
         RAISE EXCEPTION 'Delivery control action is not admitted' USING ERRCODE='23514';
+    END IF;
+    IF NEW.action='pause' THEN
+        IF campaign.delivery_paused OR NEW.selection<>'{}'::jsonb THEN
+            RAISE EXCEPTION 'Delivery pause is not admitted' USING ERRCODE='23514';
+        END IF;
+    ELSE
+        SELECT health INTO current_health FROM public.stewardship_delivery_control_health
+            WHERE campaign_id=campaign.id;
+        IF NOT campaign.delivery_paused
+           OR (current_health->>'ready')::boolean IS DISTINCT FROM true
+           OR (current_inventory->>'submitting')::bigint<>0
+           OR (current_inventory->>'unknown')::bigint<>0 THEN
+            RAISE EXCEPTION 'Resume requires current health and resolved uncertainty' USING ERRCODE='23514';
+        END IF;
+        IF NEW.selection->>'plan'='before_start' THEN
+            IF campaign.state<>'scheduled'
+               OR NOT EXISTS(SELECT 1 FROM public.stewardship_campaign_configuration p
+                    WHERE p.id=campaign.active_configuration_id AND instant<p.starts_at)
+               OR NEW.selection IS DISTINCT FROM jsonb_build_object('plan','before_start','health',current_health)
+               OR EXISTS(SELECT 1 FROM public.stewardship_schedule_occurrence o
+                JOIN public.stewardship_schedule_definition d ON d.id=o.definition_id
+                WHERE d.campaign_id=campaign.id AND o.mode='production'
+                    AND o.state IN ('pending','running','delivery_unknown') AND o.due_at<=instant) THEN
+                RAISE EXCEPTION 'Pre-start resume cannot consume due work' USING ERRCODE='23514';
+            END IF;
+        ELSIF NEW.selection->>'plan'='family' THEN
+            SELECT impact INTO family_impact FROM public.stewardship_delivery_family_recovery_summary
+                WHERE campaign_id=campaign.id;
+            IF campaign.state NOT IN ('scheduled','active')
+               OR NOT EXISTS(SELECT 1 FROM public.stewardship_campaign_configuration p
+                    WHERE p.id=campaign.active_configuration_id AND instant>=p.starts_at AND instant<p.ends_at)
+               OR (family_impact->>'blocked')::bigint IS DISTINCT FROM 0
+               OR NEW.selection IS DISTINCT FROM jsonb_build_object('plan','family',
+                    'health',current_health,'family',family_impact)
+               OR EXISTS(SELECT 1 FROM public.stewardship_activation_catchup
+                    WHERE campaign_id=campaign.id AND completed_at IS NULL)
+               OR EXISTS(SELECT 1 FROM public.stewardship_schedule_definition
+                    WHERE campaign_id=campaign.id AND current_revision_id IS NOT NULL
+                        AND kind IN ('daily_digest','weekly_digest')) THEN
+                RAISE EXCEPTION 'Resume requires the complete current recovery plan' USING ERRCODE='23514';
+            END IF;
+        ELSE
+            RAISE EXCEPTION 'Unknown delivery recovery plan' USING ERRCODE='23514';
+        END IF;
     END IF;
     RETURN NEW;
 END $$;
@@ -155,14 +198,28 @@ CREATE FUNCTION public.stewardship_delivery_control_effect_v1() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE hold uuid; pause bigint;
 BEGIN
+    IF NEW.action='resume' AND NEW.selection->>'plan'='family' THEN
+        PERFORM public.stewardship_delivery_recover_families_v1(NEW.id);
+    END IF;
     -- Both control and all unsent holds commit together. Already-submitting or
     -- unknown outcomes keep their independent reconciliation and immutable data.
     INSERT INTO public.stewardship_campaign_control(id,campaign_id,request_id,action,
         expected_version,expected_runtime_version,reason,occurred_at,actor_id,correlation_id)
-    VALUES(NEW.control_id,NEW.campaign_id,NEW.id,'pause',NEW.expected_campaign_version,
+    VALUES(NEW.control_id,NEW.campaign_id,NEW.id,NEW.action,NEW.expected_campaign_version,
         NEW.expected_runtime_version,NEW.reason,public.stewardship_campaign_now_v1(),
         NEW.actor_id,NEW.correlation_id);
     SELECT pause_version INTO pause FROM public.stewardship_campaign WHERE id=NEW.campaign_id;
+    IF NEW.action='resume' THEN
+        UPDATE public.stewardship_outbox_message m SET
+            action='release_hold',version=m.version+1,pause_hold_id=NULL,
+            actor_id=NEW.actor_id,correlation_id=NEW.correlation_id,command_id=gen_random_uuid(),
+            command_digest=encode(sha256(convert_to(jsonb_build_array(
+                'delivery_resume',NEW.id,m.id,m.version)::text,'UTF8')),'hex')
+        WHERE m.campaign_id=NEW.campaign_id AND m.mode='production' AND m.routing='production'
+            AND m.purpose IN ('initial','reminder','receipt','daily_digest','weekly_digest')
+            AND m.state IN ('pending','retry_wait') AND m.pause_hold_id IS NOT NULL;
+        RETURN NEW;
+    END IF;
     INSERT INTO public.stewardship_delivery_pause_hold(id,campaign_id,pause_version,actor_id,correlation_id)
     VALUES(gen_random_uuid(),NEW.campaign_id,pause,NEW.actor_id,NEW.correlation_id) RETURNING id INTO hold;
     UPDATE public.stewardship_outbox_message m SET

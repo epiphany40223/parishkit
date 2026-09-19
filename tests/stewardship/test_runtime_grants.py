@@ -33,6 +33,7 @@ def test_grant_registry_names_existing_models_and_excludes_unrelated_download_da
         "stewardship_withdrawal_inventory",  # Counts-only withdrawal projection.
         "stewardship_delivery_control_inventory",  # Counts-only pause projection.
         "stewardship_delivery_control_health",  # No-body current sender proof.
+        "stewardship_delivery_family_recovery_summary",  # Counts, no planning rows.
         "stewardship_daily_digest_completion_ready",  # Opaque completed cohort IDs.
         "stewardship_weekly_digest_completion_ready",  # Opaque resolved interval IDs.
     }

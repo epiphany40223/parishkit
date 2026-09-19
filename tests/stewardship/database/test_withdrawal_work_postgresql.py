@@ -39,16 +39,17 @@ from .test_withdrawal_postgresql import (  # noqa: F401
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def future_message(item):
+def future_message(item, *, definition=None):
     """Stage guarded future work using only a domain clock, not disabled guards.
 
     Ordinary pre-start production creates no occurrences. Move the domain clock
     temporarily into the interval to exercise the defensive retained-work path;
     session and provider lease clocks remain real throughout.
     """
-    definition = ScheduleDefinition.objects.select_related("current_revision").get(
-        kind="initial"
-    )
+    if definition is None:
+        definition = ScheduleDefinition.objects.select_related("current_revision").get(
+            kind="initial"
+        )
     family = FamilyCampaign.objects.filter(campaign=item.campaign).first()
     actor = item.arguments[0].portal_session.principal_id
     with campaign_clock(item.campaign.active_configuration.starts_at):
@@ -70,7 +71,7 @@ def future_message(item):
             semantic_key=row.pk,
             mode="production",
             routing="production",
-            purpose="initial",
+            purpose=definition.kind,
             credential_namespace="production",
         )
         render = rendering(

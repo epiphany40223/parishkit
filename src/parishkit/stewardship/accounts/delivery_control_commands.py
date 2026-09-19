@@ -10,8 +10,9 @@ from django.db import connection
 from parishkit.stewardship.campaigns.delivery_control_models import (
     DeliveryControlCommand,
 )
-from parishkit.stewardship.campaigns.models import Campaign
+from parishkit.stewardship.campaigns.models import ActivationCatchUpDemand, Campaign
 from parishkit.stewardship.campaigns.runtime import _now, campaign_transaction
+from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.storage import StaleRecordError
@@ -73,6 +74,60 @@ def health(campaign_id):
     return json.loads(row[0]) if isinstance(row[0], str) else row[0]
 
 
+def _prestart_resume(campaign):
+    """Distinguish an empty pre-start plan from ordinary overdue recovery."""
+    return (
+        campaign.delivery_paused
+        and campaign.state == "scheduled"
+        and _now() < campaign.active_configuration.starts_at
+    )
+
+
+def _family_resume(campaign):
+    """Keep digest and post-close cases out until their complete owners exist."""
+    return (
+        campaign.delivery_paused
+        and campaign.state in {"scheduled", "active"}
+        and campaign.active_configuration.starts_at
+        <= _now()
+        < campaign.active_configuration.ends_at
+        and not ActivationCatchUpDemand.objects.filter(
+            campaign=campaign, completed_at__isnull=True
+        ).exists()
+        and not ScheduleDefinition.objects.filter(
+            campaign=campaign,
+            current_revision__isnull=False,
+            kind__in=("daily_digest", "weekly_digest"),
+        ).exists()
+    )
+
+
+def _resume_selection(campaign):
+    """Bind the same complete count-only plan which the SQL effect will recheck."""
+    proof = health(campaign.pk)
+    if _prestart_resume(campaign):
+        return {"plan": "before_start", "health": proof}
+    return {
+        "plan": "family",
+        "health": proof,
+        "family": family_recovery_impact(campaign.pk),
+    }
+
+
+def family_recovery_impact(campaign_id):
+    """Count complete due groups, including obligations not yet in the outbox."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT impact FROM stewardship_delivery_family_recovery_summary "
+            "WHERE campaign_id=%s",
+            [campaign_id],
+        )
+        row = cursor.fetchone()
+    if row is None:
+        raise PermissionError("Delivery recovery is unavailable.")
+    return json.loads(row[0]) if isinstance(row[0], str) else row[0]
+
+
 def page(request, service, campaign_id):
     """Passive status does not refresh idle expiry or perform provider requests."""
     with work_transaction():
@@ -86,9 +141,15 @@ def page(request, service, campaign_id):
             "campaign": campaign,
             "available": _available(campaign, runtime),
             "fresh": fresh,
+            "resume_available": _prestart_resume(campaign) or _family_resume(campaign),
             "inventory": inventory(campaign_id),
             "next_due": next_due(campaign, _now()),
             "health": health(campaign_id),
+            "family_recovery": (
+                family_recovery_impact(campaign_id)
+                if campaign.delivery_paused
+                else None
+            ),
             "test_template": ContentVersion.objects.filter(
                 configuration_id=runtime.active_configuration_id,
                 campaign_id=campaign_id,
@@ -103,29 +164,54 @@ def page(request, service, campaign_id):
 
 def preview_pause(request, service, campaign_id, *, reason):
     """Sign the exact affected work, not permission to change a later inventory."""
+    return _preview(request, service, campaign_id, reason=reason, action="pause")
+
+
+def preview_resume(request, service, campaign_id, *, reason):
+    """Select the complete supported recovery plan without changing any work."""
+    return _preview(request, service, campaign_id, reason=reason, action="resume")
+
+
+def _preview(request, service, campaign_id, *, reason, action):
+    """Bind current health when release is requested; pause never requires it."""
     if (
         type(reason) is not str
         or not reason.strip()
         or len(reason) > 1024
         or "\x00" in reason
     ):
-        raise ValueError("Enter a pause reason of at most 1,024 characters.")
+        raise ValueError("Enter a delivery-control reason of at most 1,024 characters.")
     with work_transaction():
         actor, runtime, campaign = _current(request, service, campaign_id)
-        if not _available(campaign, runtime) or campaign.delivery_paused:
-            raise StaleRecordError("Delivery pause is not currently available.")
+        if not _available(campaign, runtime) or (
+            campaign.delivery_paused
+            if action == "pause"
+            else not (_prestart_resume(campaign) or _family_resume(campaign))
+        ):
+            raise StaleRecordError("This delivery control is not currently available.")
+        selected = {}
+        current = inventory(campaign_id)
+        if action == "resume":
+            proof = health(campaign_id)
+            if not proof["ready"] or current["submitting"] or current["unknown"]:
+                raise StaleRecordError(
+                    "A current sender check and resolved delivery are required."
+                )
+            selected = _resume_selection(campaign)
+            if selected.get("family", {}).get("blocked"):
+                raise StaleRecordError("Resolve blocked Family groups before resuming.")
         now = _now()
         binding = {
             "key": str(uuid4()),
             "actor": str(actor.identity),
             "campaign": str(campaign_id),
-            "action": "pause",
+            "action": action,
             "campaign_version": campaign.version,
             "runtime_version": runtime.version,
             "observed": now.isoformat(),
             "expires": (now + timedelta(minutes=5)).isoformat(),
-            "inventory": inventory(campaign_id),
-            "selection": {},
+            "inventory": current,
+            "selection": selected,
             "reason": reason.strip(),
         }
         return binding, signing.dumps(binding, salt=SALT)
@@ -197,8 +283,12 @@ def confirm(request, service, campaign_id, *, token):
             return previous
         _binding(token, max_age=300)
         if (
-            binding["action"] != "pause"
-            or campaign.delivery_paused
+            binding["action"] not in {"pause", "resume"}
+            or (
+                campaign.delivery_paused
+                if binding["action"] == "pause"
+                else not (_prestart_resume(campaign) or _family_resume(campaign))
+            )
             or not _available(campaign, runtime)
             or campaign.version != binding["campaign_version"]
             or runtime.version != binding["runtime_version"]
@@ -208,6 +298,13 @@ def confirm(request, service, campaign_id, *, token):
                 for name in ("preview_at", "expires_at")
             )
             or inventory(campaign_id) != binding["inventory"]
+            or (
+                binding["action"] == "resume"
+                and (
+                    binding["selection"] != _resume_selection(campaign)
+                    or not binding["selection"].get("health", {}).get("ready")
+                )
+            )
         ):
             raise StaleRecordError("Delivery inputs changed; review a new preview.")
         return DeliveryControlCommand.objects.create(

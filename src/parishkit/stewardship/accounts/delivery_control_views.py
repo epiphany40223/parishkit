@@ -37,8 +37,13 @@ def control(request, campaign_id):
                 ),
             )
         context = commands.page(request, service, campaign_id)
-        if action == "preview_pause":
-            context["preview"], context["control_token"] = commands.preview_pause(
+        if action in {"preview_pause", "preview_resume"}:
+            preview = (
+                commands.preview_pause
+                if action == "preview_pause"
+                else commands.preview_resume
+            )
+            context["preview"], context["control_token"] = preview(
                 request, service, campaign_id, reason=request.POST.get("reason", "")
             )
         elif request.method == "POST":

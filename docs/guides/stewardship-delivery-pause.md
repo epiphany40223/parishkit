@@ -97,3 +97,66 @@ grant-test inventory; the registry assertion is corrected. Its reference-load
 scenario also exceeded the two-minute diagnostic threshold; the focused local
 run passed in 52.59 seconds. Final-head CI and all review rounds remain required,
 and resume/post-close recovery remain in progress.
+
+## Pre-start resume checkpoint
+
+The native preview/confirmation path can now resume a paused Scheduled campaign
+before its start, where the overdue plan is empty. It binds current sender proof
+and the exact inventory, rechecks both under the ordered locks, and atomically
+records resume with release of every held unsent message. Payload, due time,
+routing and attempt history remain unchanged. SQL independently rejects due
+work, uncertainty, stale health and any Active/Closed use of this narrow path.
+This is not yet the complete overdue or post-close recovery implementation.
+
+The combined actual-role scenario passed in 27.90 seconds: unordered/forged
+SQL commands, wrong session/actor/authentication, stale versions/counts,
+invalid deadlines/selections, changed health, explicit resume and exact replay.
+Thirteen negative SQL variations share one genuine setup. Independent catalog
+`after-d` changes only the delivery-command guard/effect bodies from `after-c`.
+The reference-load test also passed with coverage enabled in 77.10 seconds;
+its production confirmation and concurrent Family-submit latency assertions
+remain unchanged.
+
+Complete Family planning now includes current due definitions with no occurrence
+or outbox, alongside retained work and semantic/restore coverage. Its public
+projection exposes counts and a fingerprint only; the restricted Web role cannot
+read private planning rows. The real setup scenario now includes two later
+reminders. A transactionally rolled-back pause proves that the initial wins and
+both unmaterialized reminders are counted for coalescing, with no durable pause
+or release. The expanded test passed in 27.79 seconds. Applying that complete
+plan, digest recovery and post-close resolution are still pending.
+
+The independent `after-e` delta adds only the private Family planning view and
+its public aggregate view (29 columns total). The current CI run also identified
+the delivery command's nonstandard immutable-guard name missing from the guard
+registry test; it is now registered with its exact trigger/function, not exempted
+from immutability checks.
+
+## Family recovery checkpoint
+
+Resume now applies complete Family recovery for an in-interval campaign without
+digest schedules or unfinished activation catch-up. Its exact plan fingerprint
+includes due unmaterialized work, current Family/source/response state, semantic
+coverage and retained work versions. The private effect freezes identities,
+creates missing original occurrences, cancels redundant unsent messages,
+coalesces/skips originals and records fulfillment before releasing the pause.
+Waiting redundant tasks are cancelled; running tasks keep their real lease and
+drain at their next safe point. Distinct receipts are not coalesced.
+
+The expanded single-setup scenario uses three later reminders: a queued held
+message, a running-but-not-submitting held message, and an unmaterialized slot.
+All three coalesce into the original invitation, both redundant outboxes cancel,
+the running task remains running, and original coverage is retained. It passed
+in 28.91 seconds. The earlier two-reminder effect scenario passed in 28.58
+seconds. Full digest/post-close recovery, failure/race/receipt/browser acceptance
+and all three review rounds remain required before protected delivery.
+
+Catalog `after-f` changes only the aggregate fingerprint expression to aggregate
+fixed-width row hashes rather than a large JSON array. `after-g` adds the private
+13-column transaction-bound effect table, its primary key and the private Family
+effect function; it changes only the command guard/effect and the narrow,
+proof-backed running-occurrence coalescing branch. No existing object is removed
+and no existing ACL or policy changes. All catalogs remain separately retained.
+All 18 schema/model/immutable-guard checks passed in 19.32 seconds; the 123
+focused forecast, policy and grant tests passed in 0.27 seconds. Repository
+lint/formatting, guide Markdown and whitespace checks also passed.
