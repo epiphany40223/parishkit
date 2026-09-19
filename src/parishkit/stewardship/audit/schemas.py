@@ -48,6 +48,7 @@ class Action(StrEnum):
     FAMILY_CODES_VIEWED = "family_codes_viewed"
     FAMILY_DIRECTORY_VIEWED = "family_directory_viewed"
     POSTAL_OUTREACH_VIEWED = "postal_outreach_viewed"
+    MINISTRY_REPORT_VIEWED = "ministry_report_viewed"
     PRIVILEGED_REAUTH = "privileged_reauthentication"
     DESTRUCTIVE_CONFIRMATION = "destructive_confirmation"
     INVALID_LINK = "family_link_invalid"
@@ -145,6 +146,7 @@ FIELDS = {
         "directory_sort",
         "search_used",
         "exact_code_used",
+        "ministry_duid",
     },
 }
 
@@ -184,7 +186,7 @@ def sanitize(kind, values):
         elif key == "field":
             valid = type(value) is str and value in MEMBER_SOURCE_FIELDS
             safe[key] = value
-        elif key in {"family_duid", "member_duid"}:
+        elif key in {"family_duid", "member_duid", "ministry_duid"}:
             valid = type(value) is int and 0 < value < 2**31
             safe[key] = value
         elif key == "method":

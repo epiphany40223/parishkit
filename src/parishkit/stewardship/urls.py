@@ -57,6 +57,7 @@ from .reports import (
     weekly_views,
     workspace_views,
 )
+from .reports import ministry_views as ministry_report_views
 from .responses import views as response_views
 
 public_patterns = [
@@ -77,6 +78,23 @@ family_patterns = [
     path("logout", family_authentication.logout, name="logout"),
 ]
 admin_patterns = [
+    path("ministry-reports/", ministry_report_views.index, name="ministry_reports"),
+    path(
+        "reports/<uuid:campaign_id>/ministries/",
+        ministry_report_views.report,
+        name="ministry_report",
+    ),
+    path(
+        "reports/<uuid:campaign_id>/ministries/<int:ministry_id>/join/",
+        ministry_report_views.report,
+        name="ministry_joiners",
+    ),
+    path(
+        "reports/<uuid:campaign_id>/ministries/<int:ministry_id>/leave/",
+        ministry_report_views.report,
+        {"action": "leave"},
+        name="ministry_leavers",
+    ),
     path(
         "reports/<uuid:campaign_id>/families/export",
         directory_export_views.create,

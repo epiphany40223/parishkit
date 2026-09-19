@@ -162,6 +162,10 @@ No accepted Medium-or-higher finding remains. Full exact-head CI/DCO and
 protected delivery remain pending; do not start RPT-06 on an unmerged branch
 or infer M5/Gate 3 acceptance from this package alone.
 
+Subsequently delivered through PR #69: all 24 exact-head CI jobs and DCO passed,
+and merge `c64a9662` was verified on refreshed `origin/main` before RPT-06 began.
+See the linked guide's protected-delivery receipt.
+
 ## RPT-06: Ministry summary and detail
 
 Scope and dependencies: [RPT-06 work package](../../plans/stewardship/reports.md#rpt-06-ministry-summary-and-detail).
@@ -172,7 +176,11 @@ Scope and dependencies: [RPT-06 work package](../../plans/stewardship/reports.md
 - [ ] RPT-06.04 — Apply request supersession to counts.
 - [ ] RPT-06.05 — Test assignment boundaries, privacy, and inactive controls.
 
-Evidence: Not started.
+In-progress evidence: the [scoped interactive Ministry increment](../../guides/stewardship-ministry-reports.md)
+starts from verified PR #69 merge `c64a9662`. It owns summary/detail, current
+assignment/contact privacy and live request-history queries. Complete exports
+and follow-up editing retain their subsequent owning slices; no whole RPT-06
+task is yet claimed complete.
 
 ## RPT-07: Multi-Ministry follow-up packet
 

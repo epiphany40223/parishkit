@@ -43,6 +43,11 @@ def portal_chrome(request):
     navigation = [(reverse("admin:index"), _("Home"))]
     if allows(actor, Capability.CAMPAIGN_REPORT):
         navigation.append((reverse("admin:reports"), _("Campaign reports")))
+    if allows(actor, Capability.MINISTRY_REPORT) or any(
+        allows(actor, Capability.MINISTRY_REPORT, ministry_id=duid)
+        for duid in actor.ministries
+    ):
+        navigation.append((reverse("admin:ministry_reports"), _("Ministry reports")))
     if admin:
         navigation.extend(
             [
