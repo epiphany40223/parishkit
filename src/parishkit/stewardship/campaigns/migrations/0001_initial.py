@@ -3986,6 +3986,138 @@ class Migration(migrations.Migration):
                         name="production_activation_shape",
                     ),
                 ),
+                migrations.CreateModel(
+                    name="ProductionTokenPreparation",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        ("request_key", models.UUIDField()),
+                        ("source_snapshot_id", models.UUIDField()),
+                        ("source_generation", models.PositiveBigIntegerField()),
+                        ("credential_epoch", models.UUIDField()),
+                        ("key_inventory_digest", models.CharField(max_length=64)),
+                        ("eligibility_digest", models.CharField(max_length=64)),
+                        ("eligible_count", models.PositiveBigIntegerField()),
+                        (
+                            "configuration",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_campaigns.campaignconfiguration",
+                            ),
+                        ),
+                        (
+                            "task",
+                            models.OneToOneField(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_jobs.taskrun",
+                            ),
+                        ),
+                        (
+                            "transition",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_campaigns.productiontransitionrequest",
+                            ),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_production_tokens",
+                        "constraints": [
+                            models.UniqueConstraint(
+                                fields=("transition", "request_key"),
+                                name="production_tokens_request_key",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(source_generation__gte=1),
+                                name="production_tokens_source_generation",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    key_inventory_digest__regex="^[0-9a-f]{64}$",
+                                )
+                                & models.Q(
+                                    eligibility_digest__regex="^[0-9a-f]{64}$",
+                                ),
+                                name="production_tokens_digests",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
+                    name="ProductionTokenCancellation",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        ("request_key", models.UUIDField(unique=True)),
+                        (
+                            "task",
+                            models.OneToOneField(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_jobs.taskrun",
+                            ),
+                        ),
+                        (
+                            "preparation",
+                            models.OneToOneField(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_campaigns.productiontokenpreparation",
+                            ),
+                        ),
+                    ],
+                    options={"db_table": "stewardship_production_token_cancel"},
+                ),
             ],
         ),
     ]

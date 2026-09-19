@@ -407,6 +407,11 @@ def runtime_grants(role, *, target=None):
 
         add_cleanup_web_reads(tables, columns)
         add_cleanup_web_commands(tables, columns)
+        for table in (
+            "stewardship_production_tokens",
+            "stewardship_production_token_cancel",
+        ):
+            tables[table] = {"SELECT", "INSERT"}
     from .reports.export_grants import add_export_grants
 
     add_export_grants(

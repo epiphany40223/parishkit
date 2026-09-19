@@ -16,5 +16,6 @@
 {% if controls.retry %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ controls.retry }}"><button type="submit">{% translate "Retry failed cleanup from its checkpoints" %}</button></form>{% endif %}
 {% if controls.cancel %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ controls.cancel }}"><button type="submit">{% translate "Cancel cleanup without restoring deleted data" %}</button></form>{% endif %}
 </section>
+{% if status.state == 'cleanup_complete' %}<p><a href="{% url 'admin:go_live_links' campaign.pk status.request_id %}">{% translate "Prepare inactive Family links" %}</a></p>{% endif %}
 <p><a href="">{% translate "Refresh cleanup progress" %}</a> · <a href="{% url 'admin:go_live' campaign.pk %}">{% translate "Return to readiness" %}</a></p>
 {% endblock %}

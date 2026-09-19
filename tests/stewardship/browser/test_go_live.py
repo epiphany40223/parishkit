@@ -28,7 +28,7 @@ def test_go_live_acknowledgement_and_status_are_accessible(
         "element => element.checkValidity()"
     )
     assert "1,000 out of 1,500" in page.locator("main").inner_text()
-    for path in ("/go-live", "/go-live-cleanup"):
+    for path in ("/go-live", "/go-live-links", "/go-live-cleanup"):
         page.goto(component_origin + path)
         assert page.evaluate(
             "document.documentElement.scrollWidth <= window.innerWidth"
@@ -58,6 +58,15 @@ def test_cleanup_controls_work_without_javascript(browser_engine, component_orig
         assert page.get_by_role("link", name="Refresh cleanup progress").is_visible()
         assert page.get_by_role(
             "button", name="Cancel cleanup without restoring deleted data"
+        ).is_visible()
+        page.goto(component_origin + "/go-live-links")
+        assert "2,500 out of 5,000 (50%)" in page.locator("main").inner_text()
+        assert page.get_by_role("button", name="Retry failed preparation").is_visible()
+        assert page.get_by_role(
+            "button", name="Cancel and discard these inactive links"
+        ).is_visible()
+        assert page.get_by_role(
+            "link", name="Refresh preparation progress"
         ).is_visible()
     finally:
         context.close()

@@ -54,6 +54,24 @@ def components(context, admin):
         "task": Value(state="failed", updated_at=context["server_now"]),
         "controls": {"cancel": "synthetic-cancel", "retry": "synthetic-retry"},
     }
+    links = {
+        "campaign": campaign,
+        "transition": Value(pk=UUID(int=59)),
+        "records": [
+            {
+                "preparation": Value(
+                    pk=UUID(int=60),
+                    created_at=context["server_now"],
+                    eligible_count=5000,
+                ),
+                "task": Value(state="failed", updated_at=context["server_now"]),
+                "current": True,
+                "completion": Percentage(2500, 5000),
+                "controls": {"retry": "synthetic-retry", "cancel": "synthetic-cancel"},
+            }
+        ],
+        "page": 1,
+    }
     return {
         path: (
             "text/html",
@@ -62,5 +80,6 @@ def components(context, admin):
         for path, template, values in (
             ("/go-live", "stewardship/go-live-readiness.html", ready),
             ("/go-live-cleanup", "stewardship/go-live-cleanup.html", progress),
+            ("/go-live-links", "stewardship/go-live-links.html", links),
         )
     }

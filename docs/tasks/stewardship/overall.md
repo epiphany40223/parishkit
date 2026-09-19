@@ -597,6 +597,15 @@ records the readiness and guarded cleanup evidence. Final-head CI/DCO and
 protected PR #58 delivery precede a fresh-main activation/withdrawal increment.
 ADM-05.03/.04/.05, delivery-pause and integrated Gate 3 acceptance remain open.
 
+PR #58 subsequently passed corrected-head CI/DCO and merged as `47ec3599`,
+verified on refreshed `origin/main`. Its [protected delivery receipt](../../guides/stewardship-go-live-readiness.md#protected-delivery)
+supersedes pending delivery. The [activation/withdrawal increment](../../guides/stewardship-production-activation.md)
+now starts from that tip; ADM-05.03/.04/.05 remain in progress, not complete.
+PR #59 first delivers the [inactive-link Admin workflow](../../guides/stewardship-production-activation.md#delivery-boundary)
+as a smaller reviewable slice. After its reviewed protected merge, resume the
+remaining final-readiness/activation/withdrawal checkpoints from fresh main;
+do not advance to delivery pause or claim the ADM-05 package complete yet.
+
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).
 3. Complete required [RPT-02](reports.md#rpt-02-population-and-calculation-library) calculations and the [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics) fact-materialization service before [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests); report UI remains in Phase 5.

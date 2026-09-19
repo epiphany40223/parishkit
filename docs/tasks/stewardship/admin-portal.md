@@ -124,6 +124,17 @@ browser and fresh-schema evidence. Final-head CI/DCO and protected PR #58 delive
 remain required. Activation, withdrawal, full handoff/load acceptance and Gate 3
 remain later checkpoints; the whole ADM-05 package is not complete.
 
+PR #58 has now merged as `47ec3599` after exact-head CI/DCO passed; see its
+[protected receipt](../../guides/stewardship-go-live-readiness.md#protected-delivery).
+ADM-05.03/.04/.05 continue on the fresh-main
+[activation/withdrawal branch](../../guides/stewardship-production-activation.md),
+including the missing runtime owner for inactive token preparation.
+PR #59's [delivery boundary](../../guides/stewardship-production-activation.md#delivery-boundary)
+is the complete inactive-link preparation/progress/retry/disposal workflow.
+Final readiness, activation, withdrawal, full load/handoff and boundary-race
+acceptance follow on fresh main after that PR's protected delivery. The above
+tasks remain unchecked; this review-size split does not reduce their acceptance.
+
 ## ADM-06: Restore release, delivery pause, reopen, and archive
 
 Scope and dependencies: [ADM-06 work package](../../plans/stewardship/admin-portal.md#adm-06-restore-release-delivery-pause-reopen-and-archive).

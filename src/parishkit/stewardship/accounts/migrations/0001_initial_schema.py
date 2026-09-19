@@ -28,6 +28,7 @@ def schema_sql():
                 "production",
                 "cleanup",
                 "go_live",
+                "activation_tokens",
                 "daily_digests",
                 "daily_dispatch",
                 "weekly_digests",

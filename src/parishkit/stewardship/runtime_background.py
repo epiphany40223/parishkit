@@ -91,6 +91,9 @@ def scheduler_handlers():
     from .accounts.branding_cleanup import cleanup_handler
     from .accounts.setup_mail import TASK_TYPE as SETUP_MAIL
     from .accounts.setup_mail_tasks import setup_mail_handler
+    from .campaigns.activation_tasks import token_handler
+    from .campaigns.activation_tokens import CLEANUP_TASK_TYPE as TOKEN_CLEANUP
+    from .campaigns.activation_tokens import TASK_TYPE as TOKEN_PREPARATION
     from .campaigns.boundary_production import TASK_TYPE as CAMPAIGN_BOUNDARY
     from .campaigns.boundary_tasks import boundary_handler
     from .campaigns.catchup_allocation import TASK_TYPE as ACTIVATION_CATCHUP
@@ -145,6 +148,8 @@ def scheduler_handlers():
         CAMPAIGN_BOUNDARY: boundary_handler(scheduler=True),
         ACTIVATION_CATCHUP: catchup_handler(scheduler=True),
         PRODUCTION_CLEANUP: production_cleanup_handler(scheduler=True),
+        TOKEN_PREPARATION: token_handler(scheduler=True),
+        TOKEN_CLEANUP: token_handler(cleanup=True, scheduler=True),
         BRANDING_CLEANUP: cleanup_handler(),
         SETUP_CLEANUP: setup_cleanup_handler(scheduler=True),
         SETUP_MAIL: setup_mail_handler(scheduler=True),
@@ -271,6 +276,9 @@ def configure_background(configuration, *, stop, heartbeat):
     else:
         from .accounts.branding_cleanup import TASK_TYPE as BRANDING_CLEANUP
         from .accounts.branding_cleanup import cleanup_handler
+        from .campaigns.activation_tasks import token_handler
+        from .campaigns.activation_tokens import CLEANUP_TASK_TYPE as TOKEN_CLEANUP
+        from .campaigns.activation_tokens import TASK_TYPE as TOKEN_PREPARATION
         from .campaigns.boundary_production import TASK_TYPE as CAMPAIGN_BOUNDARY
         from .campaigns.boundary_tasks import boundary_handler
         from .campaigns.catchup_allocation import TASK_TYPE as ACTIVATION_CATCHUP
@@ -327,6 +335,8 @@ def configure_background(configuration, *, stop, heartbeat):
             CAMPAIGN_BOUNDARY: boundary_handler(),
             ACTIVATION_CATCHUP: catchup_handler(),
             PRODUCTION_CLEANUP: production_cleanup_handler(),
+            TOKEN_PREPARATION: token_handler(public=rings["token_public"]),
+            TOKEN_CLEANUP: token_handler(cleanup=True),
             BRANDING_CLEANUP: cleanup_handler(configuration.paths["media"]),
             SETUP_CLEANUP: setup_cleanup_handler(),
             SETUP_LOAD: setup_source_handler(),

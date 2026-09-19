@@ -11,7 +11,7 @@ their owning authorization locks; None or a false value does not authorize work.
 from uuid import UUID, uuid4
 
 from django.db import connection, transaction
-from django.db.models import Exists, F, OuterRef
+from django.db.models import DateTimeField, Exists, F, Func, OuterRef
 
 from parishkit.stewardship.accounts.cryptography import (
     CryptographicError,
@@ -325,7 +325,16 @@ def prepare_generation_batch(*, generation_id, public, admit, batch_size=500):
                 actor_id=generation.actor_id,
                 subject_id=generation.pk,
             )
-        generation.save()
+        generation.save(
+            update_fields=(
+                "checkpoint",
+                "version",
+                "state",
+                "coverage_digest",
+                "coverage_count",
+                "completed_at",
+            )
+        )
         return generation
 
 
@@ -364,7 +373,7 @@ def cancel_generation(*, generation_id, admit):
                 "An active token generation cannot be cancelled."
             )
         row.state, row.version = "cancelled", row.version + 1
-        row.save()
+        row.save(update_fields=("state", "version"))
         AuditEvent.objects.create(
             event_type="family_tokens_cancelled",
             subject_id=row.pk,
@@ -391,7 +400,13 @@ def scrub_generation(generation_id, *, batch_size=500):
             .values_list("pk", flat=True)[:batch_size]
         )
         FamilyAccessToken.objects.filter(pk__in=ids).update(
-            ciphertext=None, digest=None, destroyed_at=_now(), version=F("version") + 1
+            ciphertext=None,
+            digest=None,
+            # The SQL owner validates the UPDATE's clock, not an earlier SELECT.
+            destroyed_at=Func(
+                function="stewardship_campaign_now_v1", output_field=DateTimeField()
+            ),
+            version=F("version") + 1,
         )
         return len(ids)
 
