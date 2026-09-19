@@ -76,3 +76,13 @@ the final delivery check; reviews and protected delivery are still pending.
 
 The [review/correction ledger](stewardship-directory-export-reviews.md) records
 completed rounds and dispositions; pending delivery is not a gate release.
+
+## Acceptance and delivery boundary
+
+RPT-05.03 and the remaining export-specific .05 acceptance are implemented and
+validated. Combined with PR #68's interactive evidence, all RPT-05 tasks now
+have implementation/test coverage. The three completed dual-source review/fix
+rounds satisfy the review exit rule; no accepted Medium-or-higher remains.
+PR #69 still requires full exact-head CI/DCO and protected merge before the next
+Ministry-report increment can start from refreshed main. M5 and Gate 3 remain
+open; there is no production-readiness, deployment or release authorization.

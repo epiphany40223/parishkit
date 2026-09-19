@@ -44,3 +44,20 @@ Docker allowlist regression passes in 0.05 seconds; draft CI run `35462198196`
 passes validation. Draft-only aggregate failures reflect intentionally skipped
 full suites and are not merge evidence. Two rounds are complete; the third
 review and full candidate CI/DCO remain required.
+
+## Round 3 and review exit
+
+Pika session `20260919-144947-94ef00` reviewed `8b2633f` to `502c350`.
+The scope intentionally retained round two's Docker correction alongside the
+new evidence delta, with surrounding schema/runtime context, rather than
+reviewing only the new ledger paragraph. Exact permission preflight passed;
+both sources completed cleanly, Codex in 206 seconds. Finalization returned
+APPROVE: four raw Low findings below cutoff, zero Medium/High/Critical, no
+failed agents, degradation or verdict mismatch. No additional correction was
+required. Rounds two and three checked round one's policy disposition; there
+are no unresolved accepted Medium-or-higher findings.
+
+Three review/fix rounds and applicable focused validation are complete. The
+review exit criterion is satisfied, but the ready candidate still needs full
+exact-head CI/DCO and protected delivery. Subsequent documentation merely
+records these results; the candidate's source tree remains the reviewed code.

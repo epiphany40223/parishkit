@@ -141,9 +141,9 @@ Scope and dependencies: [RPT-05 work package](../../plans/stewardship/reports.md
 
 - [x] RPT-05.01 — Build the authorized Family-code directory and search.
 - [x] RPT-05.02 — Build the no-deliverable-email complement report.
-- [ ] RPT-05.03 — Export code and postal data for mail merge.
+- [x] RPT-05.03 — Export code and postal data for mail merge.
 - [x] RPT-05.04 — Enforce code privacy and limiter-outage availability.
-- [ ] RPT-05.05 — Test delivery reasons, search, columns, and access.
+- [x] RPT-05.05 — Test delivery reasons, search, columns, and access.
 
 Implementation evidence: the [interactive directory increment](../../guides/stewardship-family-directories.md)
 starts at verified main `75a20c0a`. It owns .01/.02/.04 and interactive .05;
@@ -155,6 +155,12 @@ close RPT-05, M5 or Gate 3 early.
 PR #68 subsequently passed full CI/DCO and merged as `8dc00e9c`; the next
 [complete-result export increment](../../guides/stewardship-directory-exports.md)
 owns the remaining .03/.05 work from that verified main tip.
+
+PR #69 now completes .03 and export-specific .05 implementation and focused
+acceptance, with [three completed dual-source review/fix rounds](../../guides/stewardship-directory-export-reviews.md).
+No accepted Medium-or-higher finding remains. Full exact-head CI/DCO and
+protected delivery remain pending; do not start RPT-06 on an unmerged branch
+or infer M5/Gate 3 acceptance from this package alone.
 
 ## RPT-06: Ministry summary and detail
 
