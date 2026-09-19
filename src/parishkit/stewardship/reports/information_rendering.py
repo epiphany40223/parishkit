@@ -2,11 +2,56 @@
 
 import csv
 import io
+from functools import cache
+from itertools import chain, islice
+from pathlib import Path
 from textwrap import wrap
 
 from parishkit.stewardship.web.exports import csv_cell
 
 from .information_documents import HEADINGS
+
+FORMAT_NOTE = (
+    "Unsupported characters use Unicode escapes (\\uXXXX or \\UXXXXXXXX); "
+    "literal backslashes are doubled. CSV retains the original Unicode text."
+)
+
+
+def visible_text(value, *, supported=None):
+    """Reversibly represent format/font exclusions; never drop a private character.
+
+    XLSX permits XML 1.0 characters. PDF uses the exact bundled font's character
+    map and escapes controls as well, avoiding missing glyphs and invisible
+    terminal controls. Escaping backslashes makes the notation unambiguous.
+    """
+    result = []
+    for character in value:
+        code = ord(character)
+        allowed = (
+            code in {9, 10, 13}
+            or 0x20 <= code <= 0xD7FF
+            or 0xE000 <= code <= 0xFFFD
+            or 0x10000 <= code <= 0x10FFFF
+        )
+        if supported is not None:
+            allowed = code == 10 or (code >= 32 and code in supported)
+        if character == "\\":
+            result.append("\\\\")
+        elif allowed:
+            result.append(character)
+        else:
+            result.append(f"\\u{code:04x}" if code <= 0xFFFF else f"\\U{code:08x}")
+    return "".join(result)
+
+
+@cache
+def pdf_font():
+    """Use the same pinned bundled font for glyph validation and actual drawing."""
+    from matplotlib import get_data_path
+    from matplotlib.ft2font import FT2Font
+
+    path = Path(get_data_path()) / "fonts/ttf/DejaVuSansMono.ttf"
+    return str(path), frozenset(FT2Font(str(path)).get_charmap())
 
 
 def information_csv(document, output):
@@ -34,9 +79,9 @@ def information_xlsx(document, output):
     try:
         sheet = book.active
         sheet.title = "Information"
-        for row_index, values in enumerate((HEADINGS, *document.rows), 1):
+        for row_index, values in enumerate(chain((HEADINGS,), document.rows), 1):
             for column, value in enumerate(values, 1):
-                cell = sheet.cell(row_index, column, value)
+                cell = sheet.cell(row_index, column, visible_text(value))
                 cell.data_type = "s"
                 cell.alignment = Alignment(wrap_text=True, vertical="top")
                 if row_index == 1:
@@ -53,9 +98,11 @@ def information_xlsx(document, output):
         sheet.sheet_properties.pageSetUpPr.fitToPage = True
         sheet.oddFooter.center.text = "Page &P of &N"
         metadata = book.create_sheet("Report information")
-        for index, (key, value) in enumerate(document.metadata, 1):
+        for index, (key, value) in enumerate(
+            chain(document.metadata, (("Text representation", FORMAT_NOTE),)), 1
+        ):
             metadata.cell(index, 1, key).font = Font(bold=True)
-            cell = metadata.cell(index, 2, value)
+            cell = metadata.cell(index, 2, visible_text(value))
             cell.data_type = "s"
             cell.alignment = Alignment(wrap_text=True, vertical="top")
         metadata.column_dimensions["A"].width = 32
@@ -71,13 +118,16 @@ def information_lines(document, *, width=108):
     A two-column field/value layout avoids compressing seventeen columns into
     unreadable widths. The PDF owner repeats its column headings on every page.
     """
-    for record in (
-        document.metadata,
-        *(tuple(zip(HEADINGS, row, strict=True)) for row in document.rows),
+    supported = pdf_font()[1]
+    for record in chain(
+        (document.metadata, (("Text representation", FORMAT_NOTE),)),
+        (zip(HEADINGS, row, strict=True) for row in document.rows),
     ):
         for label, value in record:
             prefix = label + ": "
-            for index, paragraph in enumerate(value.split("\n")):
+            for index, paragraph in enumerate(
+                visible_text(value, supported=supported).split("\n")
+            ):
                 lines = wrap(
                     paragraph,
                     width=width - len(prefix),
@@ -98,11 +148,15 @@ def information_pdf(document, output):
     """Paginate before drawing so no complete-text cell is clipped at a page end."""
     from matplotlib.backends.backend_pdf import PdfPages
     from matplotlib.figure import Figure
+    from matplotlib.font_manager import FontProperties
 
     from .charts import rendering_style
 
-    lines = tuple(information_lines(document))
-    pages = tuple(lines[index : index + 34] for index in range(0, len(lines), 34))
+    # Count without retaining wrapped strings, then stream one bounded page at
+    # a time. Both passes use the same detached document and bundled font.
+    page_count = (sum(1 for _ in information_lines(document)) + 33) // 34
+    lines = iter(information_lines(document))
+    font = FontProperties(fname=pdf_font()[0])
     with (
         rendering_style(),
         PdfPages(
@@ -114,7 +168,8 @@ def information_pdf(document, output):
             },
         ) as pdf,
     ):
-        for number, page in enumerate(pages, 1):
+        for number in range(1, page_count + 1):
+            page = tuple(islice(lines, 34))
             figure = Figure(figsize=(11, 8.5), facecolor="white")
             try:
                 figure.text(
@@ -127,20 +182,20 @@ def information_pdf(document, output):
                         0.865 - index * 0.022,
                         line,
                         fontsize=9,
-                        fontfamily="DejaVu Sans Mono",
+                        fontproperties=font,
                         va="top",
                     )
                 figure.text(
                     0.95,
                     0.04,
-                    f"Page {number:,} of {len(pages):,}",
+                    f"Page {number:,} of {page_count:,}",
                     ha="right",
                     fontsize=9,
                 )
                 pdf.savefig(figure)
             finally:
                 figure.clear()
-    return len(pages)
+    return page_count
 
 
 def render_information(document, output, *, format):

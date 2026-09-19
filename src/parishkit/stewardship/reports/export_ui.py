@@ -3,6 +3,7 @@
 from uuid import UUID, uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
+from django.db.models import F
 from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.template.loader import render_to_string
@@ -120,9 +121,18 @@ def detail(request, request_id):
 
         def content():
             """Safe job state and inputs come from the existing requester owner."""
-            job = ExportRequest.objects.select_related(
-                "fact_set", "configuration__parish", "information_snapshot"
-            ).get(pk=request_id)
+            job = (
+                ExportRequest.objects.select_related(
+                    "fact_set", "configuration__parish", "information_snapshot"
+                )
+                .defer("information_snapshot__document")
+                .annotate(
+                    information_source_generation=F(
+                        "information_snapshot__source__generation"
+                    )
+                )
+                .get(pk=request_id)
+            )
             state = export_status(service.store, principal.identity, request_id)
             mutable = True
             try:

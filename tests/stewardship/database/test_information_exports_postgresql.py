@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection
+from django.test.utils import CaptureQueriesContext
 
 from parishkit.stewardship.campaigns.read_guards import DownloadPool, ReadLimits
 from parishkit.stewardship.campaigns.work_locks import work_transaction
@@ -224,7 +225,13 @@ def test_native_information_exports_use_real_worker_and_guarded_downloads(
                 == response["Location"]
             )
             job_route = response["Location"]
-            response, body = read(browser, job_route)
+            with CaptureQueriesContext(connection) as queries:
+                response, body = read(browser, job_route)
+            assert queries.captured_queries
+            assert all(
+                '"stewardship_information_export_snapshot"."document"' not in q["sql"]
+                for q in queries.captured_queries
+            )
             assert (
                 response.status_code == 200 and b"Additional-information export" in body
             )

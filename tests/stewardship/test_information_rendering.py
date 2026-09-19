@@ -2,6 +2,8 @@
 
 import csv
 import io
+import warnings
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -16,6 +18,7 @@ from parishkit.stewardship.reports.information_rendering import (
     information_lines,
     information_pdf,
     information_xlsx,
+    visible_text,
 )
 
 
@@ -130,3 +133,61 @@ def test_empty_reports_still_include_source_and_request_provenance():
     assert rows[0]["Source reference"] == "source"
     assert rows[0]["Requested at"] == "2026-10-02T09:00:00-04:00"
     assert report.item_count == 0 and not report.rows
+
+
+def test_format_exclusions_have_lossless_visible_notation():
+    """XML controls and unavailable glyphs cannot poison an immutable export."""
+    value = "Éλληνικά 中文 🙂\x0b\x1b\ufffe literal \\u000b"
+    report = document()
+    row = list(report.rows[0])
+    row[8] = value
+    report = replace(report, rows=(tuple(row),))
+    expected = "Éλληνικά 中文 🙂\\u000b\\u001b\\ufffe literal \\\\u000b"
+    assert visible_text(value) == expected
+    stream = io.BytesIO()
+    information_xlsx(report, stream)
+    book = load_workbook(io.BytesIO(stream.getvalue()))
+    try:
+        assert book["Information"]["I2"].value == expected
+        assert "Unsupported characters" in book["Report information"]["B17"].value
+    finally:
+        book.close()
+    lines = "\n".join(information_lines(report))
+    assert "Éλληνικά" in lines
+    assert "\\u4e2d\\u6587" in lines and "\\U0001f642" in lines
+    assert "\\u000b\\u001b\\ufffe" in lines and "\\\\u000b" in lines
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        information_pdf(report, io.BytesIO())
+    assert not any("Glyph" in str(w.message) for w in caught)
+
+
+def test_pdf_draws_pages_without_accumulating_wrapped_report(monkeypatch):
+    """After the counting pass, drawing consumes at most one page ahead."""
+    from matplotlib.backends.backend_pdf import PdfPages
+
+    from parishkit.stewardship.reports import information_rendering
+
+    passes, consumed, saved = 0, 0, 0
+    savefig = PdfPages.savefig
+
+    def lines(document):
+        """Expose line consumption without relying on platform memory accounting."""
+        nonlocal passes, consumed
+        passes += 1
+        for index in range(80):
+            if passes == 2:
+                consumed += 1
+            yield f"Line {index}"
+
+    def save_page(pdf, figure):
+        """A whole-report list would consume all 80 before the first save."""
+        nonlocal saved
+        saved += 1
+        assert consumed == min(saved * 34, 80)
+        return savefig(pdf, figure)
+
+    monkeypatch.setattr(information_rendering, "information_lines", lines)
+    monkeypatch.setattr(PdfPages, "savefig", save_page)
+    assert information_pdf(document(), io.BytesIO()) == saved == 3
+    assert passes == 2

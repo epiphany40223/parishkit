@@ -5,6 +5,8 @@ This coherent Phase 5 increment starts at verified main `6a636680`, after
 It owns [RPT-04.04](../tasks/stewardship/reports.md#rpt-04-additional-information-workflow-report)
 under the [report specification](../specs/stewardship/reports/spec.md#additional-information)
 and [shared export contract](../specs/stewardship/background-processing/spec.md#exports-and-graph-rendering).
+The [review ledger](stewardship-information-export-reviews.md) records findings,
+corrections and delivery evidence for PR #67.
 
 ## Scope
 
@@ -18,6 +20,12 @@ downloads, cleanup and regeneration. Retries and regeneration retain the capture
 data; later Family/Staff edits or source promotion cannot replace it. Existing
 participation generation/pin protection stays intact. No Ministry authorization,
 generic query language, new delivery framework or Phase 6 workflow is added.
+
+XLSX represents XML-illegal characters with visible Unicode escapes. PDF uses
+the exact bundled font and the same notation for unavailable glyphs or control
+characters. Both formats double literal backslashes and include a notation
+legend, preserving every code point without silently dropping text. CSV retains
+original Unicode text (with spreadsheet-formula neutralization where needed).
 
 ## Acceptance and status
 
