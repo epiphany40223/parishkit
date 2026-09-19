@@ -400,9 +400,13 @@ def runtime_grants(role, *, target=None):
                 "run_id",
             }
         }
-        from .campaigns.cleanup_grants import add_cleanup_web_reads
+        from .campaigns.cleanup_grants import (
+            add_cleanup_web_commands,
+            add_cleanup_web_reads,
+        )
 
         add_cleanup_web_reads(tables, columns)
+        add_cleanup_web_commands(tables, columns)
     from .reports.export_grants import add_export_grants
 
     add_export_grants(

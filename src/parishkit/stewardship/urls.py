@@ -207,6 +207,11 @@ admin_patterns = [
         name="go_live_families",
     ),
     path(
+        "campaign/<uuid:campaign_id>/go-live/cleanup/<uuid:request_id>",
+        go_live_views.cleanup_status,
+        name="go_live_cleanup",
+    ),
+    path(
         "campaign/<uuid:campaign_id>/settings",
         campaign_views.campaign_settings,
         name="campaign_settings",

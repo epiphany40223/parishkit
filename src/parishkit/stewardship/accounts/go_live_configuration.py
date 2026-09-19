@@ -76,7 +76,9 @@ def configuration_readiness(document, campaign_id, *, ministries, funds):
         any(
             kind not in records
             or records[kind]["values"]["credential_fingerprint"] is None
-            for kind in ("parishsoft", "google_oauth", "google_workspace")
+            # Google login is deployment-owned and was already authenticated;
+            # initial setup need not duplicate it in campaign integrations.
+            for kind in ("parishsoft", "google_workspace")
         )
         or "email" not in records
     ):

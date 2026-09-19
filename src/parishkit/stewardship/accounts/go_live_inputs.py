@@ -106,7 +106,7 @@ def collect_inputs(request, service, campaign_id):
             problems.append("family_population_unavailable")
         if credentials is not None and credentials.go_live_gate:
             problems.append("cleanup_already_started")
-        if CampaignWorkGate.objects.exclude(state="released").exists():
+        if CampaignWorkGate.objects.filter(state__in=("preparing", "running")).exists():
             problems.append("campaign_work_held")
         if (
             Campaign.objects.exclude(pk=campaign_id)

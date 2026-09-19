@@ -63,6 +63,17 @@ def test_complete_configuration_resolves_selected_family_template():
     assert result.family_templates == (document["sections"]["content"][0]["id"],)
 
 
+def test_deployment_owned_google_login_need_not_be_duplicated_in_campaign():
+    """Real first setup installs provider integrations, not another OAuth setting."""
+    document, owner = configured()
+    document["sections"]["integrations"] = [
+        row
+        for row in document["sections"]["integrations"]
+        if row["values"]["kind"] != "google_oauth"
+    ]
+    assert check(document, owner).ready
+
+
 def test_opaque_template_and_page_ids_remain_blockers_not_empty_content():
     document, owner = configured()
     sections = document["sections"]

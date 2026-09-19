@@ -1,12 +1,17 @@
 """Admin-only, passive readiness evidence before any irreversible cleanup."""
 
 from django.core.exceptions import ObjectDoesNotExist
+from django.http import HttpResponseRedirect
 from django.shortcuts import render
+from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.campaigns.cleanup_preview import cleanup_families
 from parishkit.stewardship.campaigns.domain import Percentage
+from parishkit.stewardship.campaigns.production_models import (
+    ProductionTransitionRequest,
+)
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.admission import _scope
 from parishkit.stewardship.source.readiness import source_readiness
@@ -14,8 +19,9 @@ from parishkit.stewardship.web.contracts import PageWindow, expected_version, fi
 
 from .admin_editing import editable_configuration, principal
 from .authentication import runtime
-from .go_live_commands import verify_preview
+from .go_live_commands import start_cleanup, verify_preview
 from .go_live_inputs import collect_inputs
+from .go_live_progress import control, progress
 from .integration_views import ERRORS, _checked
 from .setup_views import _closed, error_response
 
@@ -81,14 +87,39 @@ def readiness(request, campaign_id):
     """GET does not send mail, create cleanup intent or extend login idle time."""
     try:
         filters(request.GET, allowed=set())
-        _closed(request, {"action"})
         service = runtime()
         verified, token = None, None
         if request.method == "POST":
-            if request.POST.get("action") != "verify":
+            action = request.POST.get("action")
+            _closed(
+                request,
+                {"action", "preview_token", "acknowledge"}
+                if action == "cleanup"
+                else {"action"},
+            )
+            if action == "cleanup":
+                status = start_cleanup(
+                    request,
+                    service,
+                    campaign_id,
+                    preview_token=request.POST.get("preview_token", ""),
+                    acknowledge=request.POST.get("acknowledge") == "yes",
+                )
+                return _checked(
+                    request,
+                    service,
+                    HttpResponseRedirect(
+                        reverse(
+                            "admin:go_live_cleanup",
+                            args=[campaign_id, status.request_id],
+                        )
+                    ),
+                )
+            if action != "verify":
                 raise ValueError("Invalid readiness action.")
             preview, verified, token = verify_preview(request, service, campaign_id)
         else:
+            _closed(request, set())
             preview = collect_inputs(request, service, campaign_id)
         counts = preview.families.counts
         response = render(
@@ -104,11 +135,51 @@ def readiness(request, campaign_id):
                 "inventory": sorted(preview.cleanup.inventory.counts.items()),
                 "origin_verified": verified,
                 "cleanup_token": token,
+                "cleanup_requests": list(
+                    ProductionTransitionRequest.objects.filter(campaign_id=campaign_id)
+                    .order_by("-created_at", "-id")
+                    .only("id", "state", "created_at")[:10]
+                ),
             },
         )
         return _checked(request, service, response)
     except ObjectDoesNotExist:
         return error_response(LookupError("Readiness configuration is unavailable."))
+    except ERRORS as error:
+        return error_response(error)
+
+
+@require_http_methods(["GET", "HEAD", "POST"])
+def cleanup_status(request, campaign_id, request_id):
+    """Passive progress and exact signed controls never expose direct deletion."""
+    try:
+        filters(request.GET, allowed=set())
+        _closed(request, {"control"})
+        service = runtime()
+        if request.method == "POST":
+            control(
+                request,
+                service,
+                campaign_id,
+                request_id,
+                token=request.POST.get("control", ""),
+            )
+            return _checked(
+                request,
+                service,
+                HttpResponseRedirect(
+                    reverse("admin:go_live_cleanup", args=[campaign_id, request_id])
+                ),
+            )
+        context = progress(request, service, campaign_id, request_id)
+        status = context["status"]
+        context["completion"] = Percentage(
+            status.processed_count, status.inventory_total
+        )
+        response = render(request, "stewardship/go-live-cleanup.html", context)
+        return _checked(request, service, response)
+    except ObjectDoesNotExist:
+        return error_response(LookupError("Cleanup request is unavailable."))
     except ERRORS as error:
         return error_response(error)
 
@@ -127,6 +198,7 @@ def testing_families(request, campaign_id):
             if (
                 configuration.current_campaign_id != campaign_id
                 or configuration.mode != "testing"
+                or scope.campaign.state != "draft"
             ):
                 raise PermissionError("Testing inventory belongs to the current draft.")
             source = source_readiness(scope)

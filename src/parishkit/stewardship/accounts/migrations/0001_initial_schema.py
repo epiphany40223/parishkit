@@ -27,6 +27,7 @@ def schema_sql():
                 "family_dispatch",
                 "production",
                 "cleanup",
+                "go_live",
                 "daily_digests",
                 "daily_dispatch",
                 "weekly_digests",

@@ -83,3 +83,46 @@ alongside implementation. Its first checkpoint `9ff513d` passed all 25 reported
 CI/DCO checks ([run 35406113971](https://github.com/epiphany40223/parishkit/actions/runs/35406113971)).
 These are internal checkpoints, not completed workflow, review-gate or PR
 acceptance. No review round has been counted for this PR yet.
+
+The guarded cleanup checkpoint now exposes explicit irreversible acknowledgement,
+durable progress, cancellation and failed-task retry. Every command rechecks the
+current Admin and Testing draft; passive status does not renew login activity.
+The web role can insert only guarded intent/inventory and update control columns,
+not delete target data or manufacture worker checkpoints. Deferred database
+guards require a sealed manifest for the new request and its gate/epoch changes.
+Worker cancellation retains the original Admin intent across a safe batch boundary.
+
+Focused validation passes: 30 PostgreSQL cases across cleanup admission/control,
+readiness HTTP and the strict fresh-schema suite in 109.24 seconds; 34 pure
+configuration, impact and origin cases in 0.19 seconds. Cleanup integration starts
+with the real setup/final source load, installed consumer acknowledgements and
+accepted synthetic-provider test mail, then creates disposable rehearsal detail.
+It covers idempotent admission, unjournaled gate/direct-delete denial, queued and
+completed cancellation, actual HTTP acknowledgement/CSRF/passive status, and
+exhausted-worker retry through completion. Completed deletion is not restored.
+No provider receives a real message. Full branch lint and format checks pass.
+
+The preceding pushed checkpoint `2a48a0f` also passed all 25 CI/DCO checks
+([run 35407390223](https://github.com/epiphany40223/parishkit/actions/runs/35407390223)).
+Remaining acceptance includes complete Admin-digest impact, stale-input/race and
+browser coverage, and the three peer-review rounds; this is not a ready-to-merge
+claim or completion of ADM-05.
+
+## Fresh-install schema audit
+
+Independently installed immutable `2a48a0f` and the cleanup-authority candidate
+into separate new databases `stewardship_mail_health_before_20260918j` and
+`stewardship_mail_health_after_20260918j`; both are retained. The predecessor
+matched its checked-in fingerprint before comparison. No table, column, index,
+policy, existing constraint or trigger changed or disappeared.
+
+The precise delta adds three private trigger functions (current Admin scope,
+manifest commitment, and gate/epoch binding), five triggers including three
+deferred constraints, and modifies three existing functions. The runtime-command
+guard admits only web cancel/retry commands alongside the existing worker path;
+target and manifest verification become trigger-only security-definer functions
+so web needs neither private helper execution nor private payload reads. Catalog
+inspection verifies pinned search paths and schema-owner-only execution ACLs.
+Counts are 183 relations, 2,107 columns, 2,994 constraints, 901 indexes,
+519 functions, 495 triggers and 28 policies. Only the three affected fingerprint
+categories were updated after this comparison; strict baseline tests pass.

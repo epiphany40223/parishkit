@@ -5,6 +5,7 @@
 <p>{{ campaign.active_configuration.name }}</p>
 <p>{% translate "As of" %} <time data-local-instant datetime="{{ preview.observed_at|instant }}">{{ preview.observed_at|instant }}</time></p>
 <p class="notice">{% translate "This preview has not changed the campaign or deleted any Testing data. Production activation requires completed cleanup and a separate final confirmation." %}</p>
+{% if cleanup_requests %}<section class="panel"><h2>{% translate "Recent cleanup requests" %}</h2><ul>{% for item in cleanup_requests %}<li><a href="{% url 'admin:go_live_cleanup' campaign.pk item.pk %}">{{ item.state }} — <time data-local-instant datetime="{{ item.created_at|instant }}">{{ item.created_at|instant }}</time></a></li>{% endfor %}</ul></section>{% endif %}
 <p>{% if preview.target_state == 'scheduled' %}{% translate "If confirmed before the start, the campaign would be scheduled for Production." %}{% elif preview.target_state == 'active' %}{% translate "If confirmed now, the campaign would become active immediately." %}{% else %}{% translate "The campaign has closed and cannot go live with these dates." %}{% endif %}</p>
 <section class="panel"><h2>{% translate "Configuration and data checks" %}</h2>
 {% if problems %}<ul>{% for problem in problems %}<li>{{ problem }}</li>{% endfor %}</ul>{% else %}<p>{% translate "Current database checks passed. Public-origin verification and irreversible cleanup acknowledgement are still required." %}</p>{% endif %}
@@ -29,12 +30,20 @@
 <dt>{% translate "Unresolved Testing deliveries" %}</dt><dd>{{ preview.cleanup.unresolved|number }}</dd>
 <dt>{% translate "Total inventoried records" %}</dt><dd>{{ preview.cleanup.inventory.total|number }}</dd></dl>
 <p><a href="{% url 'admin:go_live_families' campaign.pk %}">{% translate "View Families with Testing submissions" %}</a></p>
-<details><summary>{% translate "Inventory by record category" %}</summary><dl>{% for category,count in inventory %}<dt>{{ category }}</dt><dd>{{ count|number }}</dd>{% empty %}<dt>{% translate "No Testing records are currently inventoried." %}</dt>{% endfor %}</dl></details>
+<details><summary>{% translate "Inventory by record category" %}</summary>{% if inventory %}<dl>{% for category,count in inventory %}<dt>{{ category }}</dt><dd>{{ count|number }}</dd>{% endfor %}</dl>{% else %}<p>{% translate "No Testing records are currently inventoried." %}</p>{% endif %}</details>
 </section>
 <section class="panel"><h2>{% translate "Public-origin verification" %}</h2>
 <p>{% translate "Check the configured public URL and DNS without sending email or starting cleanup. No database transaction is held during this bounded check." %}</p>
 {% if origin_verified is True %}<p role="status">{% translate "The configured public origin passed URL and DNS checks. This does not replace the external TLS and deployment smoke tests." %}</p>{% elif origin_verified is False %}<p role="alert">{% translate "Public-origin verification failed or timed out. Check deployment URL and DNS settings, then retry." %}</p>{% endif %}
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="verify"><button type="submit">{% translate "Verify readiness and public origin" %}</button></form>
 </section>
+{% if cleanup_token %}
+<section class="panel"><h2>{% translate "Start irreversible Testing cleanup" %}</h2>
+<p>{% translate "Starting cleanup invalidates rehearsal access and prevents new Testing work. Completed deletions cannot be undone. Cancelling later releases the hold but does not restore deleted data. This does not activate Production." %}</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="cleanup"><input type="hidden" name="preview_token" value="{{ cleanup_token }}">
+<label><input type="checkbox" name="acknowledge" value="yes" required> {% translate "I acknowledge that deleting the inventoried Testing data is irreversible." %}</label>
+<button type="submit">{% translate "Start Testing cleanup" %}</button></form>
+</section>
+{% endif %}
 <p><a href="">{% translate "Refresh readiness preview" %}</a></p>
 {% endblock %}
