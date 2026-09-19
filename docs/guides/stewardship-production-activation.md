@@ -229,3 +229,35 @@ correction. The predecessor fingerprint matches. Only the availability and
 task-pin functions change; all object counts, owners, ACLs and other fingerprint
 categories remain unchanged. The strict fresh-schema contract is revalidated
 before committing this checkpoint.
+
+### Round 3
+
+Session `20260918-224913-575bda` reviewed the correction from `6d4ccd3` to
+`d60bc2989c4829ff731465da9046e18c08ea8de9` (tree
+`94b4f0e1aa21f472d1819efae44f56ad2f1b67ac`). Exact permission preflight and
+both source completions/finalization passed without degradation or failed
+agents. Raw severity: two Medium, six Low, no High/Critical. Both validated
+Medium findings received corrections:
+
+- Claude fixed-snapshot intake/retry: enforce READ COMMITTED before admission;
+  advisory serialization cannot refresh a REPEATABLE READ snapshot. Real
+  restricted intake must reject the unsupported isolation before waiting, and
+  an otherwise ordered retry must also fail without creating a child.
+- Codex post-wait current scope: make the read-only scope predicate explicitly
+  VOLATILE as well. The new two-connection epoch-invalidation regression already
+  rejected stale intake on PostgreSQL 18.6 before this correction; that specific
+  failure was not reproduced. Keep the explicit fresh-read contract and the
+  regression rather than depending on the enclosing trigger's snapshot behavior.
+
+Independent retained databases `stewardship_mail_health_before_20260918p` and
+`stewardship_mail_health_after_20260918p` compare immutable `d60bc29` with this
+correction. The predecessor fingerprint matches. Only current-scope volatility
+and the intake/task-pin function bodies change; all object counts, owners, ACLs
+and other fingerprint categories are unchanged. No existing database was altered.
+
+All seven real-connection concurrency and HTTP workflow cases pass in 108.96
+seconds after correction, including ordered fixed-snapshot retry rejection.
+All 17 fresh-schema/model-contract cases pass in 18.84 seconds. Ruff, formatting,
+changed Markdown and diff checks pass. All three dual-source
+review/fix rounds are complete with no unresolved accepted Medium-or-higher
+findings; exact-head CI/DCO and protected delivery are still required.

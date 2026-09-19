@@ -13,7 +13,7 @@ ALTER TABLE "stewardship_production_token_cancel" ADD CONSTRAINT "stewardship_pr
 CREATE INDEX "stewardship_production_token_cancel_correlation_id_df34f04b" ON "stewardship_production_token_cancel" ("correlation_id");
 
 CREATE FUNCTION public.stewardship_production_tokens_current_v1(value public.stewardship_production_tokens)
-RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
+RETURNS boolean LANGUAGE sql VOLATILE SET search_path TO pg_catalog,public,pg_temp AS $$
     SELECT EXISTS (
         SELECT 1 FROM stewardship_production_request request
         JOIN stewardship_production_manifest manifest ON manifest.request_id=request.id
@@ -71,6 +71,11 @@ BEGIN
     IF TG_OP<>'INSERT' THEN
         RAISE EXCEPTION 'Production link preparation history is immutable' USING ERRCODE='23514';
     END IF;
+    -- Waiting for work order must expose the preceding owner's committed state.
+    -- A fixed transaction snapshot cannot satisfy that admission contract.
+    IF current_setting('transaction_isolation')<>'read committed' THEN
+        RAISE EXCEPTION 'Production link intent requires READ COMMITTED' USING ERRCODE='42501';
+    END IF;
     PERFORM pg_advisory_xact_lock(736220,1);
     IF NOT pg_has_role(session_user,(SELECT nspowner FROM pg_namespace WHERE nspname='public'),'USAGE')
        AND (session_user<>'pk_stewardship_web'
@@ -120,6 +125,9 @@ CREATE FUNCTION public.stewardship_production_tokens_task_pin_v1() RETURNS trigg
 LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
     IF NEW.task_type NOT IN ('production_tokens','production_token_cleanup') THEN RETURN NULL; END IF;
+    IF current_setting('transaction_isolation')<>'read committed' THEN
+        RAISE EXCEPTION 'Production link task requires READ COMMITTED' USING ERRCODE='42501';
+    END IF;
     IF NEW.parent_id IS NOT NULL
        AND NOT pg_has_role(session_user,(SELECT nspowner FROM pg_namespace WHERE nspname='public'),'USAGE') THEN
         -- A retry has already locked its root. Acquiring work order here would

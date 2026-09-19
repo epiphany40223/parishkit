@@ -11,9 +11,11 @@ from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection, transaction
+from django.db.models import F
 
 from parishkit.stewardship.campaigns.activation_models import ProductionTokenPreparation
 from parishkit.stewardship.campaigns.activation_tokens import current_inputs
+from parishkit.stewardship.campaigns.credential_models import DeploymentCredentialState
 from parishkit.stewardship.campaigns.production_models import (
     ProductionTransitionRequest,
 )
@@ -58,7 +60,7 @@ def raw_preparation(transition, inputs, actor):
     )
 
 
-def competing(operation, started):
+def competing(operation, started, *, repeatable=False):
     """Use a distinct real web login connection and close it before dropping roles."""
     connection.close()
     try:
@@ -68,12 +70,33 @@ def competing(operation, started):
             cursor.execute("SELECT pg_backend_pid()")
             started.put(cursor.fetchone()[0])
         with transaction.atomic():
+            if repeatable:
+                with connection.cursor() as cursor:
+                    cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+                    cursor.execute("SELECT count(*) FROM stewardship_production_tokens")
             operation()
         return "committed"
     except DatabaseError as error:
         return error.__cause__.sqlstate
     finally:
         connection.close()
+
+
+def raw_retry(prior, actor):
+    """Allocate a child without the Python retry owner's admission checks."""
+    TaskRun.objects.create(
+        root_id=prior.task_id,
+        parent_id=prior.task_id,
+        retry_sequence=1,
+        retry_command_id=uuid4(),
+        task_type="production_tokens",
+        domain_request_id=prior.pk,
+        initiated_by_id=actor,
+        actor_id=actor,
+        correlation_id=uuid4(),
+        action="explicit_retry",
+        idempotency_key=f"retry:{prior.task_id}:1",
+    )
 
 
 def wait_for_work_lock(pid):
@@ -93,9 +116,11 @@ def wait_for_work_lock(pid):
     pytest.fail("Competing intake never reached the serialized SQL guard")
 
 
-@pytest.mark.parametrize("retry", [False, True])
+@pytest.mark.parametrize(
+    "retry,repeatable", [(False, False), (True, False), (False, True)]
+)
 def test_direct_intake_and_retry_cannot_commit_competing_preparations(
-    ready_links, retry
+    ready_links, retry, repeatable
 ):
     """Intake waits for fresh committed truth; un-ordered retry fails before waiting."""
     _, _, _, login = ready_links
@@ -113,19 +138,7 @@ def test_direct_intake_and_retry_cannot_commit_competing_preparations(
 
         def operation():
             """A raw child insert has no Python retry owner's lock-order protection."""
-            TaskRun.objects.create(
-                root_id=prior.task_id,
-                parent_id=prior.task_id,
-                retry_sequence=1,
-                retry_command_id=uuid4(),
-                task_type="production_tokens",
-                domain_request_id=prior.pk,
-                initiated_by_id=actor,
-                actor_id=actor,
-                correlation_id=uuid4(),
-                action="explicit_retry",
-                idempotency_key=f"retry:{prior.task_id}:1",
-            )
+            raw_retry(prior, actor)
     else:
 
         def operation():
@@ -136,18 +149,65 @@ def test_direct_intake_and_retry_cannot_commit_competing_preparations(
     with web_login(), ThreadPoolExecutor(max_workers=1) as pool:
         with work_transaction():
             winner = raw_preparation(transition, inputs, actor)
-            future = pool.submit(competing, operation, started)
+            future = pool.submit(competing, operation, started, repeatable=repeatable)
             pid = started.get(timeout=3)
-            if retry:
-                # A late lock acquisition here would invert work/root order.
-                # Reject the missing pre-held work lock without waiting on us.
+            if retry or repeatable:
+                # Reject missing work ordering or a fixed transaction snapshot
+                # before waiting on the current lifecycle owner.
                 assert future.result(timeout=3) == "42501"
             else:
                 wait_for_work_lock(pid)
-        if not retry:
+        if not retry and not repeatable:
             assert future.result(timeout=5) == "23514"
     assert ProductionTokenPreparation.objects.count() == (2 if retry else 1)
     assert (
         TaskRun.objects.filter(task_type="production_tokens", state="queued").get().pk
         == winner.task_id
     )
+
+
+def test_waiting_intake_rechecks_invalidated_scope(ready_links):
+    """A real epoch change committed by the lock holder invalidates waiting intake."""
+    _, _, _, login = ready_links
+    transition = ProductionTransitionRequest.objects.get(state="cleanup_complete")
+    actor = login.portal_session.principal_id
+    with work_transaction():
+        inputs = current_inputs(transition)
+    started = Queue()
+    with web_login(), ThreadPoolExecutor(max_workers=1) as pool:
+        # Only the fixture's lifecycle actor is privileged; the competing intake
+        # remains an actual restricted web connection throughout its operation.
+        with connection.cursor() as cursor:
+            cursor.execute("RESET SESSION AUTHORIZATION")
+        with work_transaction():
+            DeploymentCredentialState.objects.update(
+                family_link_epoch=uuid4(), version=F("version") + 1
+            )
+            future = pool.submit(
+                competing, lambda: raw_preparation(transition, inputs, actor), started
+            )
+            wait_for_work_lock(started.get(timeout=3))
+        assert future.result(timeout=5) == "23514"
+    assert not ProductionTokenPreparation.objects.exists()
+
+
+def test_ordered_retry_rejects_fixed_transaction_snapshot(ready_links):
+    """Holding the right lock does not make an unsupported snapshot fresh."""
+    _, _, _, login = ready_links
+    transition = ProductionTransitionRequest.objects.get(state="cleanup_complete")
+    actor = login.portal_session.principal_id
+    with work_transaction():
+        inputs = current_inputs(transition)
+    with web_login(), work_transaction():
+        prior = raw_preparation(transition, inputs, actor)
+    act(
+        act(_status(TaskRun.objects.get(pk=prior.task_id)), "claim"),
+        "permanent_failure",
+    )
+    with web_login(), pytest.raises(DatabaseError) as error, transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+        with work_transaction():
+            raw_retry(prior, actor)
+    assert error.value.__cause__.sqlstate == "42501"
+    assert not TaskRun.objects.filter(parent_id=prior.task_id).exists()
