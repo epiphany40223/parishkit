@@ -64,3 +64,21 @@ of any retained database.
 All 17 strict fresh-schema/model-contract cases pass in 19.07 seconds. Final
 preview, confirmation and catch-up UI remain in progress; no ADM task is marked
 complete by this internal checkpoint.
+
+## Readiness and time-boundary checkpoint
+
+Post-cleanup collection now independently rechecks current configuration,
+source/full-load freshness, integration acknowledgements, source-bound ready
+links and their succeeded task, current Admin authority and pending work. Only
+the deleted Testing proof is represented by the immutable sealed cleanup
+aggregate. The cheap readiness digest includes the impact revision; it does not
+enumerate Family rows or schedule occurrences.
+
+The separate preview enumerates exact Family/digest impact, checks the revision
+again afterward, and expires at the earliest source, five-minute, start/close
+or newly due schedule boundary. The canonical civil-time planner is reused,
+including long paginated history and DST folds. Twelve pure cases pass in
+0.06 seconds. A real setup/cleanup/restricted-worker/restricted-web scenario
+passes in 24.14 seconds, demonstrating post-cleanup readiness, no Family or
+occurrence enumeration in its short recheck, unchanged mode, and invalidation
+after changed mail eligibility. No final-confirmation command is exposed yet.
