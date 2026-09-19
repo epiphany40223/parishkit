@@ -1,0 +1,8 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Family directory unavailable" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Family directory unavailable" %}</h1>
+{% if status == 503 %}<p role="alert">{% translate "The report is temporarily unavailable. Your saved data has not changed; please try again shortly." %}</p>
+{% else %}<p role="alert">{% translate "Invalid report filters. Return to the directory and check the values." %}</p>{% endif %}
+<p><a href="{% url report_route campaign_id %}">{% translate "Return to this campaign directory" %}</a></p>
+{% endblock %}

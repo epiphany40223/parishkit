@@ -46,6 +46,7 @@ class Action(StrEnum):
     ROLES_APPLIED = "roles_applied"
     SECRET_REPLACEMENT = "secret_replacement_requested"
     FAMILY_CODES_VIEWED = "family_codes_viewed"
+    POSTAL_OUTREACH_VIEWED = "postal_outreach_viewed"
     PRIVILEGED_REAUTH = "privileged_reauthentication"
     DESTRUCTIVE_CONFIRMATION = "destructive_confirmation"
     INVALID_LINK = "family_link_invalid"

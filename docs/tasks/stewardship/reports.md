@@ -145,7 +145,10 @@ Scope and dependencies: [RPT-05 work package](../../plans/stewardship/reports.md
 - [ ] RPT-05.04 — Enforce code privacy and limiter-outage availability.
 - [ ] RPT-05.05 — Test delivery reasons, search, columns, and access.
 
-Evidence: Not started.
+In-progress evidence: the [interactive directory increment](../../guides/stewardship-family-directories.md)
+starts at verified main `75a20c0a`. It owns .01/.02/.04 and interactive .05;
+.03 and export-specific .05 follow as the next coherent consumer. Checkboxes
+remain open pending implementation, validation and review.
 
 ## RPT-06: Ministry summary and detail
 

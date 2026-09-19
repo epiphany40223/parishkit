@@ -45,6 +45,7 @@ from .jobs import views as job_views
 from .reports import (
     campaign_picker,
     digest_views,
+    directory_views,
     exact_ui,
     exact_views,
     export_ui,
@@ -75,6 +76,17 @@ family_patterns = [
     path("logout", family_authentication.logout, name="logout"),
 ]
 admin_patterns = [
+    path(
+        "reports/<uuid:campaign_id>/families/",
+        directory_views.directory,
+        name="family_directory",
+    ),
+    path(
+        "reports/<uuid:campaign_id>/postal/",
+        directory_views.directory,
+        {"postal": True},
+        name="postal_directory",
+    ),
     path(
         "reports/<uuid:campaign_id>/information/export",
         information_export_views.create,
