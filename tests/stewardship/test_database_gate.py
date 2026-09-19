@@ -1,6 +1,7 @@
 """Regression probes for a database CI gate that cannot pass by skipping work."""
 
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -88,7 +89,12 @@ def test_ci_explicitly_requires_postgresql_verification():
     assert shards["strategy"]["fail-fast"] is False
     assert gate["needs"] == "stewardship-postgresql-shard"
     assert gate["if"] == "${{ always() }}"
-    assert gate["steps"][0]["run"] == 'test "$SHARD_RESULT" = success'
+    assert gate["steps"][0]["env"] == {
+        "SHARD_RESULT": "${{ needs.stewardship-postgresql-shard.result }}"
+    }
+    # The behavioral gate test also executes failure/cancelled/skipped results;
+    # explanatory output is not part of the protection contract.
+    assert gate["steps"][0]["run"].strip().endswith('test "$SHARD_RESULT" = success')
     assert shards["timeout-minutes"] == 25
     assert gate["timeout-minutes"] == 10
     assert any(
@@ -104,12 +110,24 @@ def test_ci_explicitly_requires_postgresql_verification():
 
 
 def test_ci_does_not_duplicate_the_coverage_baseline_in_lint_job():
-    """Host coverage and image parity own full runs; lint must not add a third."""
+    """Preflight runs explicit fast modules, never a third complete baseline."""
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
-    assert all(
-        "pytest" not in step.get("run", "")
+    commands = [
+        shlex.split(step["run"])
         for step in workflow["jobs"]["validate"]["steps"]
+        if "pytest" in step.get("run", "")
+    ]
+    assert len(commands) == 1
+    command = commands[0]
+    assert command[:3] == ["python", "-m", "pytest"]
+    assert command[-2:] == ["--require-no-skips", "-q"]
+    paths = command[3:-2]
+    assert 1 <= len(paths) <= 10
+    assert all(
+        path.startswith("tests/stewardship/test_") and path.endswith(".py")
+        for path in paths
     )
+    assert "tests/stewardship/test_database_gate.py" in paths
 
 
 @pytest.mark.parametrize(
@@ -211,6 +229,8 @@ def test_compose_matrix_and_required_gate_cover_all_scenarios():
             },
             "run": "\n".join(
                 [
+                    "echo 'Full validation requires a ready PR, successful preflight, "
+                    "and all container scenarios.'",
                     'test "$CORE_RESULT" = success',
                     'test "$OPERATIONAL_RESULT" = success',
                     "",

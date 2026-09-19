@@ -1,9 +1,10 @@
 name: CI
 
-# Validate the exact PR head and landed main. The repository uses protected
-# auto-merge, not a merge queue, so there is no duplicate queue validation run.
+# Drafts get fast feedback; ready candidates and landed main get the full suite.
+# Never let skipped draft jobs satisfy the always-running aggregate merge gates.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   push:
     branches: [main]
 
@@ -19,6 +20,7 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -43,9 +45,17 @@ jobs:
       - name: Markdown lint
         run: python -m pymarkdown --config .pymarkdown.json scan $(git ls-files '*.md')
 
-      # The required PostgreSQL coverage gate already runs the complete host
-      # baseline once, on shard 1. Compose independently checks image parity.
-      # Do not run a third, unmeasured copy in this lint/drift job.
+      # Catch packaging/registry/workflow failures before allocating 20 runners.
+      # This is deliberately a small smoke subset, never complete-suite evidence.
+      - name: Fast application and CI contracts
+        run: >-
+          python -m pytest
+          tests/stewardship/test_build.py
+          tests/stewardship/test_runtime_grants.py
+          tests/stewardship/test_quality_ci.py
+          tests/stewardship/test_browser_ci.py
+          tests/stewardship/test_database_gate.py
+          --require-no-skips -q
 
       - name: Migration drift
         env:
@@ -53,6 +63,8 @@ jobs:
         run: python -m django makemigrations --check --dry-run
 
   stewardship-compose-core:
+    needs: validate
+    if: ${{ github.event_name == 'push' || github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -90,6 +102,8 @@ jobs:
         run: python -m pytest tests/stewardship/test_database_provisioning_container.py tests/stewardship/test_runtime_provisioning_container.py tests/stewardship/test_runtime_ingress_container.py tests/stewardship/test_broker_valkey_container.py --require-no-skips --durations=10 -q
 
   stewardship-operational:
+    needs: validate
+    if: ${{ github.event_name == 'push' || github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -132,10 +146,13 @@ jobs:
           CORE_RESULT: ${{ needs.stewardship-compose-core.result }}
           OPERATIONAL_RESULT: ${{ needs.stewardship-operational.result }}
         run: |
+          echo 'Full validation requires a ready PR, successful preflight, and all container scenarios.'
           test "$CORE_RESULT" = success
           test "$OPERATIONAL_RESULT" = success
 
   stewardship-browser-engine:
+    needs: validate
+    if: ${{ github.event_name == 'push' || github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -176,9 +193,13 @@ jobs:
       - name: Require every browser engine
         env:
           BROWSER_RESULT: ${{ needs.stewardship-browser-engine.result }}
-        run: test "$BROWSER_RESULT" = success
+        run: |
+          echo 'Full validation requires a ready PR, successful preflight, and every browser engine.'
+          test "$BROWSER_RESULT" = success
 
   stewardship-postgresql-shard:
+    needs: validate
+    if: ${{ github.event_name == 'push' || github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -238,7 +259,9 @@ jobs:
       - name: Require all database shards
         env:
           SHARD_RESULT: ${{ needs.stewardship-postgresql-shard.result }}
-        run: test "$SHARD_RESULT" = success
+        run: |
+          echo 'Full validation requires a ready PR, successful preflight, and all database shards.'
+          test "$SHARD_RESULT" = success
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:

@@ -77,24 +77,32 @@ def test_missing_readiness_disables_ui_and_server_refuses_forced_confirmation(
         assert SetupAttempt.objects.get().state == "collecting"
 
 
-@pytest.mark.parametrize("invalid", ["acknowledgement", "signature", "unexpected"])
 def test_confirmation_requires_explicit_exact_closed_input(
-    setup_http, monkeypatch, tmp_path, invalid
+    setup_http, monkeypatch, tmp_path
 ):
-    """Missing consent, changed binding and client-selected fields never freeze."""
+    """One unchanged setup proves every rejected input leaves confirmation open."""
     request, _, token = prepared(setup_http, monkeypatch, tmp_path)
     browser = client_for(request)
     with web_login():
         assert browser.get(PATH).status_code == 200
-        values = {"preview_token": token, "confirmed": "on"}
-        if invalid == "acknowledgement":
-            values.pop("confirmed")
-        elif invalid == "signature":
-            values["preview_token"] += "changed"
-        else:
-            values["target"] = "another-target"
-        assert post(browser, PATH, values).status_code == 400
-        assert SetupAttempt.objects.get().state == "collecting"
+        # All three requests must reject before any setup effect. Keep the real
+        # owner, SQL and HTTP checks; only avoid bootstrapping them three times.
+        for invalid in ("acknowledgement", "signature", "unexpected"):
+            values = {"preview_token": token, "confirmed": "on"}
+            if invalid == "acknowledgement":
+                values.pop("confirmed")
+            elif invalid == "signature":
+                values["preview_token"] += "changed"
+            else:
+                values["target"] = "another-target"
+            assert post(browser, PATH, values).status_code == 400, invalid
+            assert SetupAttempt.objects.get().state == "collecting", invalid
+        # Rejections must not poison the shared fixture or invalidate its token.
+        assert (
+            post(browser, PATH, {"preview_token": token, "confirmed": "on"}).status_code
+            == 302
+        )
+        assert SetupAttempt.objects.get().state == "frozen"
 
 
 def test_invalid_confirmation_renders_fresh_binding_then_accepts_explicit_retry(

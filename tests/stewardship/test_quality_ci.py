@@ -36,6 +36,53 @@ def test_workflow_partition_count_matches_required_combiner():
         assert f"--count {len(indexes)} " in command
 
 
+def test_fast_feedback_precedes_full_candidate_suites():
+    """Draft skips cannot become full-suite evidence when readiness changes."""
+    import itertools
+
+    import yaml
+
+    jobs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"]
+    fast = jobs["validate"]
+    assert "if" not in fast and "needs" not in fast
+    smoke = next(
+        step
+        for step in fast["steps"]
+        if step.get("name") == "Fast application and CI contracts"
+    )
+    assert "test_build.py" in smoke["run"]
+    assert "test_runtime_grants.py" in smoke["run"]
+    assert "--require-no-skips" in smoke["run"]
+    for name in (
+        "stewardship-compose-core",
+        "stewardship-operational",
+        "stewardship-browser-engine",
+        "stewardship-postgresql-shard",
+    ):
+        assert jobs[name]["needs"] == "validate"
+        assert jobs[name]["if"] == (
+            "${{ github.event_name == 'push' || "
+            "github.event.pull_request.draft == false }}"
+        )
+    for name in ("stewardship-compose", "stewardship-postgresql"):
+        gate = jobs[name]
+        assert gate["if"] == "${{ always() }}"
+        check = gate["steps"][0]
+        for results in itertools.product(
+            ("success", "failure", "cancelled", "skipped"), repeat=len(check["env"])
+        ):
+            completed = subprocess.run(
+                ["sh", "-e", "-c", check["run"]],
+                env=dict(zip(check["env"], results, strict=True)),
+                capture_output=True,
+                check=False,
+                timeout=5,
+            )
+            assert (completed.returncode == 0) is all(
+                result == "success" for result in results
+            )
+
+
 @pytest.mark.parametrize("count", [1, 2, 8, 12, 32])
 def test_complete_disjoint_stable_partition(count):
     """Every newly collected test is assigned exactly once, without a file list."""
@@ -88,6 +135,21 @@ def test_parameter_cost_override_preserves_all_cases(monkeypatch):
     assert groups == [partition(nodes[::-1], index, 2) for index in (1, 2)]
 
 
+def test_module_fixture_cost_is_used_unless_exact_case_is_known(monkeypatch):
+    """Setup-heavy new cases inherit measured module cost, not one second."""
+    monkeypatch.setattr(sharding, "MODULE_SECONDS", {"test_slow.py": 20})
+    monkeypatch.setattr(sharding, "SLOW_TEST_SECONDS", {"long": 100})
+    monkeypatch.setattr(sharding, "CASE_SECONDS", {"long[short]": 5})
+    nodes = [
+        "a/test_slow.py::new",
+        "a/test_slow.py::long[normal]",
+        "a/test_slow.py::long[short]",
+        "a/test_unknown.py::new",
+    ]
+    assert [sharding.estimated_seconds(node) for node in nodes] == [20, 100, 5, 1]
+    assert sorted(partition(nodes, 1, 2) + partition(nodes, 2, 2)) == sorted(nodes)
+
+
 @pytest.fixture
 def repository(tmp_path):
     """Build two branch-bearing source files and the actual coverage manifest."""
@@ -104,10 +166,11 @@ def repository(tmp_path):
     return root
 
 
-def artifacts(root, tmp_path, monkeypatch):
+def artifacts(root, tmp_path, monkeypatch, *, nodes=None):
     """Produce genuine raw coverage for opposite branches in two separate jobs."""
     directory = tmp_path / "artifacts"
-    nodes = [f"tests/stewardship/database/test_a.py::test_{n}" for n in range(20)]
+    if nodes is None:
+        nodes = [f"tests/stewardship/database/test_a.py::test_{n}" for n in range(20)]
     monkeypatch.setattr(ci, "database_collection", lambda root: sorted(nodes))
     for index in (1, 2):
         output = directory / str(index)
@@ -377,7 +440,7 @@ def test_collection_error_is_visible(repository, monkeypatch, capsys):
         ('pytest.skip("synthetic")', 1),
     ],
 )
-def test_actual_plugin_execution_receipt(tmp_path, body, code):
+def test_actual_plugin_execution_receipt(repository, tmp_path, monkeypatch, body, code):
     """Run real pytest hooks without needing database fixtures or credentials."""
     root = tmp_path / "probe"
     directory = root / "tests/stewardship/database"
@@ -419,6 +482,23 @@ def test_actual_plugin_execution_receipt(tmp_path, body, code):
         assert (
             data["completed"] == data["selected"] == partition(data["universe"], 1, 2)
         )
+        timings = json.loads(evidence.with_suffix(".timings.json").read_text())
+        assert set(timings) == set(data["selected"])
+        for phases in timings.values():
+            assert set(phases) == {"setup", "call", "teardown"}
+            assert all(
+                isinstance(value, float) and value >= 0 for value in phases.values()
+            )
+        # Feed the real producer's bytes into the unchanged strict combiner,
+        # rather than testing two separately invented compatible fixtures.
+        directory = artifacts(repository, tmp_path, monkeypatch, nodes=data["universe"])
+        delivered = directory / "1/tests.json"
+        shutil.copyfile(evidence, delivered)
+        receipt_path = directory / "1/receipt.json"
+        receipt = json.loads(receipt_path.read_text())
+        receipt["tests_sha256"] = hashlib.sha256(delivered.read_bytes()).hexdigest()
+        receipt_path.write_text(json.dumps(receipt))
+        assert ci.combine(repository, directory, tmp_path / "combined.json", 2) == 0
 
 
 @pytest.mark.parametrize("collect_only", [False, True])

@@ -116,14 +116,26 @@ human merge-approval stops, including historical checkpoint wording below.
    explicitly approved evidence-reuse procedure stated at that gate. Create each
    subsequent branch from refreshed `origin/main` after its predecessor merges.
 7. Push coherent checkpoints and create a draft PR against `origin/main` early
-   so complete CI can run alongside peer review. Use focused local validation;
-   do not routinely repeat the full CI suite locally. Keep the PR draft until
-   the review loop passes. Watch CI for the current head,
+   for fast lint, packaging and workflow feedback alongside peer review. Run
+   focused tests for changed behavior during corrections; do not repeatedly
+   execute the complete suite locally or on every intermediate push. Keep the
+   PR draft until the review loop passes, then mark it ready to trigger the
+   complete exact-head CI suite. Draft skipped suites are not merge evidence:
+   required aggregate checks remain blocking until every full-suite job passes.
+   Return to draft before a multi-commit correction effort; ready-PR pushes
+   still run the complete suite. Watch CI for the current head,
    fix failures, rerun affected checks, and push corrections until required CI
    passes. Material CI fixes return to independent review without resetting the
    already completed round count. Record phase/task scope, reviewed SHA, round
    evidence, findings/dispositions, validation, and any permitted Low deferrals
    in the PR handoff and owning task evidence.
+
+   Select the fast test set for each PR's changed behavior: add or remove focused
+   cases as appropriate without turning it into another full suite. Short local
+   tests are encouraged when they avoid CI startup or give comparable/faster
+   feedback. Record what ran and where; do not duplicate passing checks merely
+   to move their execution to GitHub. Only the complete candidate suite supplies
+   final-head merge evidence.
 8. The human has granted standing authority to merge these implementation PRs
    through the normal protected workflow once the review loop, final-head CI
    and all applicable gate evidence pass. Record that authority and evidence;
@@ -137,6 +149,12 @@ Human clarification, September 17, 2026: auto-merge is enabled and the merge
 queue is disabled to avoid repeating the same suite on a temporary queue head.
 Exact-head PR CI, DCO, review rounds and applicable gates remain mandatory. Do
 not request a second merge-queue CI run. Main-branch validation remains enabled.
+
+Human clarification, September 19, 2026: fast draft feedback and targeted
+correction tests replace complete CI on every intermediate push. Ready
+candidates still require the full suite, with no reduced coverage floor or
+missing browser/container/database scenarios. Optimize test setup and scheduling
+before resuming feature development; no live or retained database may be deleted.
 
 Human clarification, September 18, 2026: Pika's `--force-round` is authorized
 when its default round cap would prevent the required review rounds. Preserve
