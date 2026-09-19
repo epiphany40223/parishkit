@@ -24,8 +24,8 @@ each review bounded; it does not claim the whole package is finished early.
 
 ## Acceptance and status
 
-Implementation is complete; independent review and protected delivery remain
-pending. Tests cover the exact deliverability-card complement,
+Implementation and three independent review/fix rounds are complete; protected
+delivery remains pending full exact-head CI/DCO. Tests cover the exact deliverability-card complement,
 each reason, active/non-parishioner boundaries, name/DUID/address/phone and
 canonical exact-code filters, current source/response changes, deterministic
 pagination, Admin/Staff versus leader access, revocation, purge read admission,

@@ -712,6 +712,11 @@ PR #67 subsequently merged as `75a20c0a` after full exact-head CI/DCO passed;
 its [protected receipt](../../guides/stewardship-information-exports.md#protected-delivery)
 supersedes the pending checkpoint. Branch `pr/stewardship-family-directories`
 starts from that verified main tip for the [RPT-05 interactive directories](../../guides/stewardship-family-directories.md).
+PR #68 implements .01/.02/.04 and interactive .05 with three completed
+[review/fix rounds](../../guides/stewardship-family-directory-reviews.md).
+Full exact-head CI/DCO and protected merge remain pending. After verifying
+that merge on refreshed main, continue with RPT-05.03 complete-result directory
+exports and remaining .05 export tests; RPT-05/M5/Gate 3 are not yet complete.
 Complete-result exports follow separately; neither this branch nor its
 predecessor releases the incomplete report catalog or Gate 3.
 

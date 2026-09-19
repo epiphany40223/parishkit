@@ -61,3 +61,27 @@ failed probe; Claude launch was held until the exact-command retry passed
 all permission/result/byte checks under the human's standing retry authority.
 No permission was widened and the failed probe is not counted as a review.
 The final round repeats the proper preflight-before-review sequence.
+
+The corrected source-loss navigation regression passes in 13.75 seconds;
+Ruff lint/format and Markdown validation pass before the next round.
+
+## Round 3
+
+Session `20260919-134832-ae6485` reviewed `f6cd8c0..71ef82f`, with the earlier
+corrections and report/read-guard contracts as context. Exact permission
+preflight passed before launch. Both vendors completed without degradation,
+failed agents or mismatch; Codex took 132 seconds. Raw findings: zero
+Critical/High/Medium and one Low below cutoff. Finalize returned APPROVE.
+
+All three review/fix rounds are complete. The five distinct accepted Medium
+issues across Rounds 1/2 are fixed and validated; none remain unresolved.
+
+## Candidate handoff
+
+Preserve the unsquashed reviewed tree on
+`pr/stewardship-family-directories-reviewed`, squash to one signed-off logical
+feature commit and verify identical trees before the lease-protected push.
+Record exact candidate/full CI/DCO on PR #68. Fast draft CI passed at each
+reviewed checkpoint, but its skipped suites are not merge evidence. Protected
+merge and the next increment require full candidate success and refreshed-main
+confirmation. Full RPT-05 awaits complete-result exports; M5/Gate 3 remains open.
