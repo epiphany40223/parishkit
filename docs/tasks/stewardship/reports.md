@@ -152,6 +152,9 @@ starts at verified main `75a20c0a`. It owns .01/.02/.04 and interactive .05;
 are complete with all accepted Medium findings fixed and focused tests passing.
 PR #68 still requires full exact-head CI/DCO and protected merge; this does not
 close RPT-05, M5 or Gate 3 early.
+PR #68 subsequently passed full CI/DCO and merged as `8dc00e9c`; the next
+[complete-result export increment](../../guides/stewardship-directory-exports.md)
+owns the remaining .03/.05 work from that verified main tip.
 
 ## RPT-06: Ministry summary and detail
 

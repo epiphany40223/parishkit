@@ -52,3 +52,20 @@ the small directory-parser module; complete candidate CI remains required.
 audit-context validator in Python and the fresh-install SQL baseline. They add
 no tables or model changes. The main menu now links both complete directories;
 the old source-independent code route remains a documented recovery fallback.
+
+## Protected delivery
+
+[PR #68](https://github.com/epiphany40223/parishkit/pull/68) merged on September
+19, 2026 at 18:10:27 UTC as `8dc00e9cea61fe2361c561b8f65ec44ad853ba37`.
+The signed-off candidate `aed2362f2b171ecd88aa28945e8f14551efa6c19` has the same
+tree `3ccd5d2cb1d0cddddeb3b2c78c753f1117ed070a` as retained review history
+`420cf4350ba8367d2ea385032a09aae7f42ed043` on
+`pr/stewardship-family-directories-reviewed`. All three dual-source rounds and
+accepted corrections are recorded in the [review ledger](stewardship-family-directory-reviews.md).
+
+[Full candidate CI](https://github.com/epiphany40223/parishkit/actions/runs/35459440145)
+passed all 24 jobs plus DCO, with no skipped full-suite jobs. It ran from
+17:52:53 to 18:10:24 UTC: 17 minutes 31 seconds. Protected auto-merge used that
+exact head; freshly fetched `origin/main` was verified at the merge commit
+before creating `pr/stewardship-directory-exports`. No deployment or release
+occurred. RPT-05 still needs complete-result exports and their acceptance tests.

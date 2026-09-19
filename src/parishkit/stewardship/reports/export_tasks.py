@@ -7,6 +7,7 @@ from pathlib import Path
 
 from django.db import connection
 
+from parishkit.stewardship.campaigns.credential_keys import key_set_lock
 from parishkit.stewardship.campaigns.read_guards import CampaignReadGuard
 from parishkit.stewardship.campaigns.work_locks import (
     require_work_order,
@@ -126,8 +127,26 @@ def _abort_render_worker():
     os._exit(70)
 
 
-def load_document(request):
+def load_document(request, *, general=None):
     """Load exactly one pinned ready generation inside the caller's campaign guard."""
+    if request.report in {"family_directory", "postal_outreach"}:
+        from .directories import add_codes
+        from .directory_documents import directory_document
+
+        if general is None:
+            raise StorageInvariantError("Directory render keys are unavailable.")
+        snapshot = request.directory_snapshot
+        payload = snapshot.document
+        with key_set_lock(general):
+            add_codes(request.campaign_id, payload["rows"], general=general)
+        return directory_document(
+            payload,
+            request.parameters,
+            parish_name=request.configuration.parish.name,
+            captured_at=snapshot.created_at,
+            requested_at=request.created_at,
+            timezone=request.browser_timezone,
+        )
     if request.report == "additional_information":
         from .information_documents import information_document
 
@@ -158,7 +177,7 @@ def load_document(request):
     )
 
 
-def _execute(execution, *, store, root):
+def _execute(execution, *, store, root, general=None):
     """Record attempt, render under a read guard, then freshly authorize publish."""
     if connection.in_atomic_block or not execution.control.active:
         raise StorageInvariantError("Exports require maintained worker lifetime.")
@@ -187,13 +206,17 @@ def _execute(execution, *, store, root):
     with CampaignReadGuard(
         [request.campaign_id], authorize=authorize_render, abort=_abort_render_worker
     ) as guard:
-        document = load_document(request)
+        document = load_document(request, general=general)
 
         def render(stream):
             """Closed report dispatch consumes only the retained typed document."""
             guard.check()
             execution.check()
-            if request.report == "additional_information":
+            if request.report in {
+                "additional_information",
+                "family_directory",
+                "postal_outreach",
+            }:
                 from .information_rendering import render_information
 
                 render_information(document, stream, format=request.format)
@@ -224,7 +247,7 @@ def _execute(execution, *, store, root):
             sha256=receipt.sha256,
             row_count=(
                 document.item_count
-                if request.report == "additional_information"
+                if request.report != "participation"
                 else len(document.days)
             ),
             expires_at=database_now() + timedelta(days=7),
@@ -234,7 +257,7 @@ def _execute(execution, *, store, root):
         execution.transition("complete")
 
 
-def export_handler(*, store=None, root=None, scheduler=False):
+def export_handler(*, store=None, root=None, general=None, scheduler=False):
     """The registry, not broker payloads, supplies the render and filesystem owner."""
     if type(scheduler) is not bool or (
         not scheduler and (store is None or not isinstance(root, Path))
@@ -248,7 +271,9 @@ def export_handler(*, store=None, root=None, scheduler=False):
     return Handler(
         WorkQueue.GENERAL,
         partial(admit_export, store=store),
-        unavailable if scheduler else partial(_execute, store=store, root=root),
+        unavailable
+        if scheduler
+        else partial(_execute, store=store, root=root, general=general),
         recover=recover_export,
         scope=work_transaction,
     )

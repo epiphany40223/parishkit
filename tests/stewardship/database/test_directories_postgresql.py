@@ -191,22 +191,42 @@ def test_directory_pages_are_bounded_and_exclude_nonparishioners(response_servic
     assert page(harness, search="Repeated")["total"] == 51
     # This tests our bounded contact projection, not PostgreSQL's aggregate
     # correctness: inspect actual work for this same 52-Family source/50-row page.
-    from parishkit.stewardship.reports.directory_query import DIRECTORY
-
     with (
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
         connection.cursor() as cursor,
     ):
+        # Explain the installed selection body itself: PL/pgSQL's outer call
+        # hides its inner plan. Do not maintain a second copy of the query.
         cursor.execute(
-            "EXPLAIN (ANALYZE, VERBOSE, FORMAT JSON) " + DIRECTORY,
+            "SELECT prosrc FROM pg_proc WHERE "
+            "oid='stewardship_directory_report_v1(uuid,jsonb,integer)'::regprocedure"
+        )
+        statement = (
+            cursor.fetchone()[0]
+            .split("-- BEGIN DIRECTORY SELECTION")[1]
+            .split("-- END DIRECTORY SELECTION")[0]
+        )
+        statement = (
+            statement.replace("INTO answer", "")
+            .replace("campaign_uuid", "%(campaign)s")
+            .replace("SELECT f AS f", "SELECT %(filters)s::jsonb AS f")
+            .replace("page_number", "%(page)s")
+        )
+        for expression, parameter in (
+            ("(parameters->>'postal')::boolean", "%(postal)s"),
+            ("(parameters->>'exact')::boolean", "%(exact)s"),
+            ("(parameters->>'family_id')::uuid", "%(family)s::uuid"),
+        ):
+            statement = statement.replace(expression, parameter)
+        cursor.execute(
+            "EXPLAIN (ANALYZE, VERBOSE, FORMAT JSON) " + statement,
             {
                 "campaign": harness.campaign.pk,
                 "filters": json.dumps(DirectoryQuery().form_values()),
                 "exact": False,
-                "candidates": "{}",
+                "family": None,
                 "postal": False,
-                "size": 50,
-                "offset": 0,
+                "page": 1,
             },
         )
         plan = cursor.fetchone()[0][0]["Plan"]

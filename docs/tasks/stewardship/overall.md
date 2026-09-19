@@ -717,6 +717,10 @@ PR #68 implements .01/.02/.04 and interactive .05 with three completed
 Full exact-head CI/DCO and protected merge remain pending. After verifying
 that merge on refreshed main, continue with RPT-05.03 complete-result directory
 exports and remaining .05 export tests; RPT-05/M5/Gate 3 are not yet complete.
+PR #68 subsequently merged as `8dc00e9c` after all 24 full exact-head CI jobs
+and DCO passed; see its [protected receipt](../../guides/stewardship-family-directories.md#protected-delivery).
+Fresh branch `pr/stewardship-directory-exports` starts from that verified main
+tip for [complete-result directory exports](../../guides/stewardship-directory-exports.md).
 Complete-result exports follow separately; neither this branch nor its
 predecessor releases the incomplete report catalog or Gate 3.
 

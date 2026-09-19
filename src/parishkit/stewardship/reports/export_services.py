@@ -188,12 +188,28 @@ def regenerate_export(store, user_id, request_id, *, request_key):
     the current configuration; the old publication and audit remain immutable.
     """
     with work_transaction():
-        original = ExportRequest.objects.get(pk=request_id)
+        original = (
+            ExportRequest.objects.select_related("directory_snapshot")
+            .defer("directory_snapshot__document")
+            .get(pk=request_id)
+        )
         authorize(store, user_id, request=original)
         admit_campaign(original.campaign_id, mutating=True)
         publication = ExportPublication.objects.filter(request=original).first()
         if publication is None or publication.expires_at > database_now():
             raise ExportConflict("Only expired exports can be regenerated.")
+        if original.report in {"family_directory", "postal_outreach"}:
+            from .directory_exports import create_directory_export
+
+            return create_directory_export(
+                store,
+                user_id,
+                campaign_id=original.campaign_id,
+                format=original.format,
+                browser_timezone=original.browser_timezone,
+                request_key=request_key,
+                snapshot=original.directory_snapshot,
+            )
         if original.report == "additional_information":
             from .information import InformationQuery
             from .information_exports import create_information_export
