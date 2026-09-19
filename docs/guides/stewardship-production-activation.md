@@ -56,3 +56,35 @@ complete. Existing token-generation storage has no runtime preparation caller,
 so that dependency is included before opening activation authority. No real
 provider calls, retained-database deletion, deployment, release or historical
 upgrade compatibility is authorized by this work.
+
+## Internal preparation checkpoint
+
+Immutable preparation intent now binds completed cleanup, source snapshot and
+generation, campaign configuration, credential epoch, key inventory and exact
+eligibility coverage. Its opaque task root is committed with the request;
+unbound task insertion and forged input bindings fail in PostgreSQL. Internal
+batch effects require a live exact claim and use the existing public-key sealing
+and ready-manifest owners. A ready generation does not select a campaign pointer,
+change mode, send mail or change stable manual codes.
+
+The 25 pure input cases and two initial PostgreSQL integration cases pass; the
+latter run actual cleanup, request replay, stale-input/claim denial and inactive
+token creation. Runtime-role grants, maintained handlers, cancellation/disposal,
+Admin UI and final activation remain in progress. These initial tests explicitly
+use the internal owning admission seam, not a completed web/worker integration.
+
+The schema checkpoint was independently installed from immutable `47ec3599` and
+the current candidate into separate retained databases
+`stewardship_mail_health_before_20260918k` and
+`stewardship_mail_health_after_20260918k`. The predecessor matched its recorded
+fingerprint. No existing object changed or disappeared: the delta adds two
+tables, 21 columns, 36 constraints, 11 indexes, three private functions and three
+triggers, with all policies unchanged. Totals are 185 relations, 2,128 columns,
+3,030 constraints, 912 indexes, 522 functions, 498 triggers and 28 policies.
+Fingerprint changes are limited to those inspected additive categories; further
+SQL-owner changes require a new comparison before acceptance.
+
+Combined focused validation passes 44 input, PostgreSQL preparation and complete
+schema-contract cases in 22.83 seconds. Full Ruff/format, migration-state drift,
+changed-Markdown and diff checks pass. This is an internal checkpoint, not a
+completed ADM-05 task or a reviewed release candidate.
