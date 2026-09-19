@@ -40,6 +40,7 @@ def components(context, admin):
                     "primaryState": "KY",
                     "primaryPostalCode": "40000",
                 },
+                "address_lines": ("1 Example Street", "Apt 2", "Town KY 40000"),
             }
         ],
         "query": query,

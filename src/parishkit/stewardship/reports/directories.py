@@ -70,6 +70,43 @@ class DirectoryQuery:
             if key != "page"
         }
 
+    def audit_values(self):
+        """Only closed filter dimensions/presence flags may enter durable audit."""
+        return {
+            "directory_reason": self.reason,
+            "directory_phone": self.phone,
+            "directory_response": self.response,
+            "directory_sort": self.sort,
+            "page": self.page,
+            "search_used": bool(self.search),
+            "exact_code_used": bool(self.exact_code),
+        }
+
+
+def address_lines(address):
+    """Render known nonblank components without displaying Python null values."""
+
+    def value(key):
+        """A missing and a known-blank component both contribute no printed text."""
+        return str(address.get(key) or "").strip()
+
+    lines = [value(f"primaryAddress{index}") for index in (1, 2, 3)]
+    postal = value("primaryPostalCode")
+    plus = value("primaryZipPlus")
+    lines.append(
+        " ".join(
+            filter(
+                None,
+                (
+                    value("primaryCity"),
+                    value("primaryState"),
+                    "-".join(filter(None, (postal, plus))),
+                ),
+            )
+        )
+    )
+    return tuple(filter(None, lines))
+
 
 def directory_page(campaign_id, query, *, postal, general, mac):
     """Read one SQL page, then decrypt only its codes under the caller's read guard.
@@ -123,6 +160,7 @@ def directory_page(campaign_id, query, *, postal, general, mac):
                 else None
             )
             row["reason_label"] = REASONS[row["reason"]]
+            row["address_lines"] = address_lines(row["address"])
         report["metadata"]["source_as_of"] = datetime.fromisoformat(
             report["metadata"]["source_as_of"]
         )

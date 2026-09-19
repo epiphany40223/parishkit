@@ -46,6 +46,7 @@ class Action(StrEnum):
     ROLES_APPLIED = "roles_applied"
     SECRET_REPLACEMENT = "secret_replacement_requested"
     FAMILY_CODES_VIEWED = "family_codes_viewed"
+    FAMILY_DIRECTORY_VIEWED = "family_directory_viewed"
     POSTAL_OUTREACH_VIEWED = "postal_outreach_viewed"
     PRIVILEGED_REAUTH = "privileged_reauthentication"
     DESTRUCTIVE_CONFIRMATION = "destructive_confirmation"
@@ -136,6 +137,14 @@ FIELDS = {
         "source_fingerprint",
         "candidate_fingerprint",
         "count",
+        "matching_count",
+        "page",
+        "directory_reason",
+        "directory_phone",
+        "directory_response",
+        "directory_sort",
+        "search_used",
+        "exact_code_used",
     },
 }
 
@@ -187,8 +196,24 @@ def sanitize(kind, values):
         elif key.endswith("_fingerprint"):
             valid = type(value) is str and re.fullmatch(r"[0-9a-f]{64}", value)
             safe[key] = value
-        elif key == "retryable":
+        elif key in {"retryable", "search_used", "exact_code_used"}:
             valid = type(value) is bool
+            safe[key] = value
+        elif key.startswith("directory_"):
+            choices = {
+                "directory_reason": {
+                    "any",
+                    "no_head",
+                    "no_address",
+                    "invalid_address",
+                    "provider_refused",
+                    "deliverable",
+                },
+                "directory_phone": {"any", "yes", "no"},
+                "directory_response": {"any", "yes", "no"},
+                "directory_sort": {"name", "name_desc", "duid"},
+            }
+            valid = type(value) is str and value in choices[key]
             safe[key] = value
         else:
             valid = type(value) is int and 0 <= value <= 2**63 - 1

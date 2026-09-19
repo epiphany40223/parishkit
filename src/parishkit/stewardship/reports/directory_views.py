@@ -39,20 +39,21 @@ def _principal(request, store, *, read_only=False):
     return principal
 
 
-def _audit(principal, campaign_id, *, postal, outcome, count):
+def _audit(principal, campaign_id, *, postal, outcome, count, total, query):
     """Record scope/count, never names, codes, search strings or viewed contacts."""
     with work_transaction():
         system = SystemConfiguration.objects.select_related(
             "active_configuration__parish"
         ).get()
         record_action(
-            Action.POSTAL_OUTREACH_VIEWED if postal else Action.FAMILY_CODES_VIEWED,
+            Action.POSTAL_OUTREACH_VIEWED if postal else Action.FAMILY_DIRECTORY_VIEWED,
             actor_kind=ActorKind.PORTAL_USER,
             actor_id=principal.identity,
             subject_id=campaign_id,
             parish_id=system.active_configuration.parish.pk,
             campaign_id=campaign_id,
-            context={"outcome": outcome, "count": count},
+            context=query.audit_values()
+            | {"outcome": outcome, "count": count, "matching_count": total},
         )
 
 
@@ -91,8 +92,16 @@ def directory(request, campaign_id, *, postal=False):
         parameters.pop("csrfmiddlewaretoken", None)
         query = DirectoryQuery.parse(parameters)
         admit_report_read(campaign_id)
-        _audit(principal, campaign_id, postal=postal, outcome=Outcome.STARTED, count=0)
-        finalized, count = False, 0
+        _audit(
+            principal,
+            campaign_id,
+            postal=postal,
+            outcome=Outcome.STARTED,
+            count=0,
+            total=0,
+            query=query,
+        )
+        finalized, count, total = False, 0, 0
 
         def finish(completed):
             """Access audit stays parish-owned and cannot mutate purge inventory."""
@@ -107,6 +116,8 @@ def directory(request, campaign_id, *, postal=False):
                     postal=postal,
                     outcome=Outcome.SUCCEEDED if completed else Outcome.FAILED,
                     count=count,
+                    total=total,
+                    query=query,
                 )
             except (DatabaseError, StorageInvariantError) as error:
                 emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
@@ -120,12 +131,13 @@ def directory(request, campaign_id, *, postal=False):
 
         def content():
             """No source query, key operation or rendering escapes the read guard."""
-            nonlocal count
+            nonlocal count, total
             rings = family_runtime()
             report = directory_page(
                 campaign_id, query, postal=postal, general=rings.general, mac=rings.mac
             )
             count = len(report["rows"])
+            total = report["total"]
             route = "admin:postal_directory" if postal else "admin:family_directory"
             context = report | {
                 "postal_proportion": out_of(

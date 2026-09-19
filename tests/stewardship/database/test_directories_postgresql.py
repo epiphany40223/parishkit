@@ -83,6 +83,8 @@ def test_native_directory_code_filters_contacts_and_response(
         assert response.status_code == 200 and harness.code.encode() in body
         assert b"Household Example" in body and b"Do not show this private" not in body
         assert response["Cache-Control"] == "no-store"
+        assert f'href="{route}"'.encode() in body
+        assert f'href="/admin/reports/{harness.campaign.pk}/postal/"'.encode() in body
         assert browser.post(route, {"exact_code": harness.code}).status_code == 403
         response, body = search(browser, route, {"exact_code": harness.code.lower()})
         assert response.status_code == 200 and harness.code.encode() in body
@@ -93,11 +95,30 @@ def test_native_directory_code_filters_contacts_and_response(
     assert result["postal_total"] == statistics.active.no_deliverable_email
     contexts = list(
         AuditContext.objects.filter(
-            event__event_type="family_codes_viewed"
+            event__event_type="family_directory_viewed"
         ).values_list("context", flat=True)
     )
     assert contexts and harness.code not in json.dumps(contexts)
     assert "Example" not in json.dumps(contexts)
+    assert any(context["exact_code_used"] for context in contexts)
+    assert all(context["directory_sort"] == "name" for context in contexts)
+    assert any(
+        context["matching_count"] == context["count"] == 1 for context in contexts
+    )
+    with connection.cursor() as cursor:
+        for key in (
+            "directory_reason",
+            "directory_phone",
+            "directory_response",
+            "directory_sort",
+            "search_used",
+            "exact_code_used",
+        ):
+            cursor.execute(
+                "SELECT stewardship_safe_context_v1('action',%s::jsonb)",
+                [json.dumps({key: "private@example.org"})],
+            )
+            assert cursor.fetchone()[0] is False
 
 
 def test_postal_reasons_and_exact_statistics_complement(live_response_service):
@@ -168,6 +189,38 @@ def test_directory_pages_are_bounded_and_exclude_nonparishioners(response_servic
     assert postal["total"] == 51 and len(postal["rows"]) == 50
     assert all(row["reason"] == "no_head" and row["code"] for row in postal["rows"])
     assert page(harness, search="Repeated")["total"] == 51
+    # This tests our bounded contact projection, not PostgreSQL's aggregate
+    # correctness: inspect actual work for this same 52-Family source/50-row page.
+    from parishkit.stewardship.reports.directory_query import DIRECTORY
+
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(
+            "EXPLAIN (ANALYZE, VERBOSE, FORMAT JSON) " + DIRECTORY,
+            {
+                "campaign": harness.campaign.pk,
+                "filters": json.dumps(DirectoryQuery().form_values()),
+                "exact": False,
+                "candidates": "{}",
+                "postal": False,
+                "size": 50,
+                "offset": 0,
+            },
+        )
+        plan = cursor.fetchone()[0][0]["Plan"]
+    nodes, detail_loops = [plan], []
+    while nodes:
+        node = nodes.pop()
+        nodes.extend(node.get("Plans", []))
+        if node["Node Type"] == "Aggregate" and any(
+            "jsonb_build_object('owner'" in output
+            or "jsonb_build_object('duid'" in output
+            for output in node.get("Output", [])
+        ):
+            detail_loops.append(node["Actual Loops"])
+    assert len(detail_loops) == 2 and all(loops == 50 for loops in detail_loops)
 
 
 def test_staff_directories_survive_limiter_outage_but_not_revocation(

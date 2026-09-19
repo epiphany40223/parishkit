@@ -45,5 +45,10 @@ Nine native browser cases pass in 15 seconds across Chromium, Firefox and
 WebKit, including 320-pixel layouts, keyboard accessibility and no-script POST
 navigation. The combined pure parser, CI-contract and role-grant check passes
 138 tests in 10.5 seconds. Full Ruff lint/format and migration-drift checks pass;
-this increment changes no models or schema baseline. Fast draft CI adds only
+the initial feature changes no models or schema baseline. Fast draft CI adds only
 the small directory-parser module; complete candidate CI remains required.
+
+[Review corrections](stewardship-family-directory-reviews.md) extend the closed
+audit-context validator in Python and the fresh-install SQL baseline. They add
+no tables or model changes. The main menu now links both complete directories;
+the old source-independent code route remains a documented recovery fallback.
