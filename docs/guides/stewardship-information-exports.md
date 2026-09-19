@@ -29,17 +29,17 @@ original Unicode text (with spreadsheet-formula neutralization where needed).
 
 ## Acceptance and status
 
-Implementation is in progress. Task completion requires full-result and history
-parity, safe complete-text formatting, actual-role allocation/worker/download
-tests, retained regeneration, denial/revocation/purge protection, and native
-three-engine coverage. Schema/model checks include the all-model immutable-guard
+Implementation and focused acceptance are complete: full-result and history
+parity, safe complete-text formatting, actual-role allocation/worker/download,
+retained regeneration, denial/revocation/purge gates, and native three-engine
+coverage. Schema/model checks pass, including the all-model immutable-guard
 inventory and independently inspected fresh-schema delta. No retained database
-is deleted and no historical upgrade compatibility is introduced.
+was deleted and no historical upgrade compatibility was introduced.
 
-Use shared test fixtures and focused local checks, bounded draft CI, three
-completed dual-source review/fix rounds, then full corrected-head CI/DCO and
-protected delivery. Full RPT-04 acceptance and Gate 3 remain open until their
-owning criteria are met; no deployment or release is authorized.
+Three dual-source review/fix rounds are complete with all five accepted Medium
+findings corrected and no High/Critical findings. Full corrected-head CI/DCO
+and protected delivery remain pending in PR #67. Full catalog/M5/Gate 3 remain
+open; no deployment or release is authorized.
 
 ## Initial validation
 

@@ -45,4 +45,24 @@ accepted: Unicode control/format characters can map to invisible font glyphs.
 The PDF boundary now escapes categories Cc/Cf (except structural newline)
 before consulting the font map. Regression coverage includes mapped U+FEFF,
 joiner U+200D and DEL; original CSV/XLSX Unicode remains unchanged. Focused
-rendering validation closes this round before the final correction review.
+rendering validation passes all eight tests in 1.08 seconds at `aa3b4b7`.
+
+## Round 3
+
+Pika session `20260919-123812-fe3ef9` reviewed `368c545..aa3b4b7` with the
+prior corrections and complete export contracts available as context. Exact
+permission preflight and both vendors completed without degradation, mismatch
+or failed agents; Codex took 196 seconds. Raw findings: no Critical, High or
+Medium; three Low below cutoff. Finalize returned APPROVE with no retained
+findings. All three rounds are complete and all five accepted Medium findings
+are fixed with passing focused validation.
+
+## Candidate handoff
+
+Preserve the final unsquashed tree on
+`pr/stewardship-information-exports-reviewed`, then squash the feature/fixup
+history and verify identical trees before the lease-protected push. Record the
+resulting exact candidate and full CI receipt on PR #67. Draft validation passed
+at all three reviewed checkpoints, but skipped suites are not merge evidence.
+Full exact-head CI/DCO and protected delivery remain pending. No integrated
+Phase 5/Gate 3, deployment or release approval is implied.
