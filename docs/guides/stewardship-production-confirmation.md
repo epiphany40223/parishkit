@@ -130,3 +130,29 @@ Nine browser cases pass in 10.98 seconds across Chromium, Firefox and WebKit,
 WCAG scans. The component test receives its synthetic POST locally rather than
 depending on browser-specific native error-page navigation. Reference-load,
 additional SQL/race acceptance and peer reviews remain open.
+
+## Reference load and competing confirmations
+
+Three additional acceptance scenarios pass in 82.30 seconds, sharing setup
+within each complete scenario rather than repeatedly bootstrapping every rejected
+field. Direct restricted SQL rejects missing lock order, wrong actor/session,
+old authentication, altered request/campaign/runtime/impact versions, mismatched
+preparation/generation, expiry, malformed counts and wrong target state. An
+observed real lock wait rechecks a committed eligibility change. A competing
+in-flight confirmation receives a retryable conflict; after the winner commits,
+the identical browser intent resolves to exactly one receipt.
+
+The reference test loads 5,000 real normalized Families through the provider-fake
+pipeline and stages 20 overdue schedule definitions through ordinary setup.
+Its exact preview predicts 5,000 messages and 95,000 coalesced semantic slots.
+Final confirmation takes 0.1605 seconds / 136 SQL statements, with no Family or
+occurrence enumeration and no materialized occurrence/outbox rows. A maintained
+restricted worker then commits bounded catch-up groups. Between groups, actual
+Family login, baseline and submission succeed on an independent restricted web
+connection while catch-up remains unfinished; baseline plus Submit takes 0.2479
+seconds. No full 100,000-slot drain is needed to prove this admission property.
+The test retains separate durable progress and does not manufacture completion.
+
+The first complete candidate is ready for the required three-round peer-review
+cycle. ADM-05.03 remains unchecked until that cycle and final validation pass;
+withdrawal and its repeated-go-live/start-race acceptance remain ADM-05.04/.05.
