@@ -1,7 +1,8 @@
 """Authorized stable Production-code access, independent of public guessing controls.
 
-Names/full-source filters are added by the report owner when DAT-03 is present.
-This bounded foundation lists existing campaign identities, never a shadow source.
+The main navigation uses the source-backed RPT-05 directory. This bounded
+foundation remains a recovery endpoint when no usable source snapshot exists:
+it lists retained campaign identities only, never claims source contact details.
 """
 
 from django.db import DatabaseError, transaction

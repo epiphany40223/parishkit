@@ -5193,7 +5193,8 @@ BEGIN
         WHEN 'member_source' THEN ARRAY['family_duid','member_duid','field']
         WHEN 'provider' THEN ARRAY['status','provider_fingerprint','outcome']
         WHEN 'exception' THEN ARRAY['outcome','retryable']
-        WHEN 'action' THEN ARRAY['version','before_version','after_version','outcome','source_fingerprint','candidate_fingerprint','count']
+        WHEN 'action' THEN ARRAY['version','before_version','after_version','outcome','source_fingerprint','candidate_fingerprint','count',
+            'matching_count','page','directory_reason','directory_phone','directory_response','directory_sort','search_used','exact_code_used']
         WHEN 'boundary' THEN ARRAY['occurrence_id','kind','intended_unix_microseconds','actual_unix_microseconds','lag_microseconds','before_state','after_state']
         WHEN 'schedule' THEN ARRAY['definition_id','previous_revision_id','selected_revision_id','cancelled_messages','skipped_occurrences','failed_occurrences','delivered_slots']
         ELSE NULL END;
@@ -5225,8 +5226,14 @@ BEGIN
             IF jsonb_typeof(value)<>'string' OR text_value!~'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN RETURN false; END IF;
         ELSIF key LIKE '%\_fingerprint' ESCAPE '\' THEN
             IF jsonb_typeof(value)<>'string' OR text_value!~'^[0-9a-f]{64}$' THEN RETURN false; END IF;
-        ELSIF key='retryable' THEN
+        ELSIF key IN ('retryable','search_used','exact_code_used') THEN
             IF jsonb_typeof(value)<>'boolean' THEN RETURN false; END IF;
+        ELSIF key='directory_reason' THEN
+            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('any','no_head','no_address','invalid_address','provider_refused','deliverable') THEN RETURN false; END IF;
+        ELSIF key IN ('directory_phone','directory_response') THEN
+            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('any','yes','no') THEN RETURN false; END IF;
+        ELSIF key='directory_sort' THEN
+            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('name','name_desc','duid') THEN RETURN false; END IF;
         ELSE
             IF jsonb_typeof(value)<>'number' OR text_value!~'^[0-9]{1,19}$' THEN RETURN false; END IF;
             IF text_value::numeric>9223372036854775807 THEN RETURN false; END IF;
