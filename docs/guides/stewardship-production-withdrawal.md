@@ -216,3 +216,38 @@ comparison; no existing database is upgraded or deleted.
 The final strict fingerprint and ordinary Testing manual-report worker passed
 in 12.66 seconds. Round 2 is complete; round 3 and corrected-head CI/DCO remain
 required before protected delivery.
+
+## Review round 3 and acceptance
+
+Correction review `b7008ad` → `dfc4568`, session
+`20260919-024832-1ca74b`, completed Claude and Codex without failures, degradation
+or verdict mismatch. Claude reported two Lows; Codex one Medium and one Low.
+No High/Critical findings were reported. The accepted Medium corrects a test
+fixture: the retained failed occurrence now uses the actual outbox-delivery
+task, worker and fence, and that same task reaches permanent failure. The
+regression invokes the public Admin `resolve_delivery` command, rejects the
+retired cycle with its earlier-scope error, and verifies no retry task or
+resolution receipt was created. Independent SQL rejection probes remain.
+
+Both reviewers' baseline-cleanup Low reports describe the same missing negative
+case. The existing cleanup acceptance now runs with either a submitted response
+or only a Testing form baseline, after credentials are removed. Each blocks
+activation until ordinary cleanup removes the remaining detail, then activates.
+This tests the rewritten predicate's true branch, not just its empty-table load.
+
+The remaining Low notes that the Testing-only predicate can scan retained
+Production baselines across historical campaigns. The actual 5,000-Family
+confirmation/load case passes without relaxed bounds. Broader historical scale
+and a potential partial index are assigned explicitly to
+[ARC-08's Phase 7 scale work](../tasks/stewardship/architecture.md#arc-08-performance-accessibility-and-compatibility-baseline),
+not treated as completed or as a reason to weaken cleanup checks.
+
+Post-fix validation: both cleanup-denial variants and the cancelled-work cycle
+passed in the focused four-case run; its failed-work case exposed a mismatched
+fixture worker identity. Correcting that identity and stabilizing the helper
+signature produced the passing failed-work regression in 29.80 seconds.
+`ruff check .`, repository formatting and changed-document Markdown checks pass.
+No runtime/schema change was needed in round 3. All three rounds now satisfy
+the review-loop exit criterion; ADM-05.04/.05 implementation is complete.
+Final-head CI/DCO and protected PR #61 delivery remain required. This is not
+Gate 3 approval, a deployment, or authorization for real-provider activity.

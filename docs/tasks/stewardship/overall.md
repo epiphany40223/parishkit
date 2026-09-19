@@ -623,6 +623,12 @@ PR #60 has merged as `6bc3238`, verified on refreshed `origin/main` after all
 25 final-head CI/DCO checks passed. The [pre-start withdrawal increment](../../guides/stewardship-production-withdrawal.md)
 starts from that tip and retains the outstanding ADM-05.04/.05 acceptance.
 
+PR #61 completes ADM-05.04/.05 implementation and its three-round dual-source
+review/fix exit; see [withdrawal acceptance](../../guides/stewardship-production-withdrawal.md#review-round-3-and-acceptance).
+After final-head CI/DCO and protected merge, verify refreshed `origin/main`,
+then begin the ADM-06 delivery-pause slice. Phase 4's remaining service/queue
+handoff and M4 evidence still follow; this does not release integrated Gate 3.
+
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).
 3. Complete required [RPT-02](reports.md#rpt-02-population-and-calculation-library) calculations and the [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics) fact-materialization service before [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests); report UI remains in Phase 5.

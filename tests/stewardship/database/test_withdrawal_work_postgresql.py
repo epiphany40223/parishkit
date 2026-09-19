@@ -24,8 +24,8 @@ from parishkit.stewardship.jobs.outbox_validation import (
 from parishkit.stewardship.storage import StaleRecordError
 
 from ..test_outbox_validation import rendering
-from .campaign_builders import admit_test_work, advance, campaign_clock, claimed_task
-from .test_outbox_postgresql import change, permit, provider_evidence, submit
+from .campaign_builders import admit_test_work, advance, campaign_clock
+from .test_outbox_postgresql import change, claim, permit, provider_evidence, submit
 from .test_setup_mail_views_postgresql import web_login
 from .test_withdrawal_postgresql import (  # noqa: F401
     bootstrapped,
@@ -99,18 +99,21 @@ def future_message(item):
     return row, message
 
 
-def fail_retained(item, row, message):
+def fail_retained(row, message):
     """Retain a genuinely failed task, occurrence and proven-unaccepted message."""
     from .test_taskrun_postgresql import act
 
-    actor = item.arguments[0].portal_session.principal_id
     with campaign_clock(row.due_at):
-        task = claimed_task("schedule_occurrence", row.pk, actor)
-        row = advance(row, actor, "running", task_id=task.run_id, fence=task.fence)
-        message = change(
-            submit(message), Action.FAIL_UNACCEPTED, evidence=provider_evidence()
+        task = claim(message)
+        row = advance(
+            row, task.worker_id, "running", task_id=task.run_id, fence=task.fence
         )
-        advance(row, actor, "failed", fence=task.fence)
+        message = change(
+            submit(message, task=task),
+            Action.FAIL_UNACCEPTED,
+            evidence=provider_evidence(),
+        )
+        advance(row, task.worker_id, "failed", fence=task.fence)
         act(task, "permanent_failure")
     return message
 

@@ -16,8 +16,10 @@ from parishkit.stewardship.campaigns.schedules import occurrence_key
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs import family_mail_tasks
-from parishkit.stewardship.jobs.delivery_resolution import _prepare
+from parishkit.stewardship.jobs.delivery_resolution import resolve_delivery
+from parishkit.stewardship.jobs.delivery_resolution_models import DeliveryResolution
 from parishkit.stewardship.jobs.family_mail_dispatch import disposition
+from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage
 
 from .campaign_builders import campaign_clock, command
@@ -103,22 +105,30 @@ def reject_retired_cycle(item, previous, message, *, failed):
         Campaign.objects.create(**clone)
     if failed:
         retained = OutboxMessage.objects.get(pk=message.message_id)
+        assert TaskRun.objects.get(pk=retained.task_id).state == "failed"
+        request, service, _ = item.arguments
+        retry_command = uuid4()
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             with connection.cursor() as cursor:
                 cursor.execute(
                     "SELECT stewardship_delivery_retry_admitted_v1(%s)", [retained.pk]
                 )
                 assert cursor.fetchone()[0] is False
-            with (
-                work_transaction(),
-                pytest.raises(PermissionError, match="earlier scope"),
-            ):
-                _prepare(
-                    retained,
+            with pytest.raises(PermissionError, match="earlier scope"):
+                resolve_delivery(
+                    service.store,
+                    request.portal_session.principal_id,
+                    message_id=retained.pk,
+                    command_id=retry_command,
+                    expected_version=retained.version,
+                    action="retry_failed",
+                    note="Retry the retained failed delivery.",
                     general=item.ring.general,
                     public=item.ring.public,
                     public_origin="https://parish.example",
                 )
+            assert not DeliveryResolution.objects.filter(pk=retry_command).exists()
+            assert TaskRun.objects.filter(root_id=retained.task_id).count() == 1
         with task_login(ServiceRole.MAIL_DISPATCH, exact=True, reconnect=True):
             with pytest.raises(
                 DatabaseError, match="Family dispatch requires work ownership"

@@ -222,3 +222,11 @@ sessions. Query/p95 budgets cover lookup, Family page and Admin shell.
 This is not simultaneous-request load or the complete task/report baseline. Full
 source/submission/outbox scale fixtures stay with their later phase owners;
 see [Phase 1B evidence](../../guides/stewardship-phase-1b.md).
+
+Phase 7 scale follow-up from PR #61's third review: measure token activation
+against retained Production form baselines from multiple campaigns. Its
+Testing-only cleanup predicate passes the current 5,000-Family acceptance,
+but may scan retained Production baselines when proving Testing detail absent.
+Evaluate a partial Testing-baseline index against that larger fixture; preserve
+the baseline-only cleanup-denial regression and fresh-install schema audit.
+See [withdrawal review evidence](../../guides/stewardship-production-withdrawal.md#review-round-3-and-acceptance).

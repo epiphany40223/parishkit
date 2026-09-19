@@ -311,7 +311,7 @@ def test_next_go_live_requires_new_test_cleanup_links_and_confirmation(
     weekly_content(harness)
     previous, old_message = future_message(item)
     if failed:
-        old_message = fail_retained(item, previous, old_message)
+        old_message = fail_retained(previous, old_message)
     cutoff = item.campaign.active_configuration.starts_at + timedelta(days=9)
     producer = DigestScheduleProducer(uuid4())
     with (
