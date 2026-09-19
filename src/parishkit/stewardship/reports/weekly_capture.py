@@ -9,6 +9,7 @@ from parishkit.stewardship.accounts.models import AddressRule
 from parishkit.stewardship.campaigns.work_locks import require_work_order
 from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.jobs.storage import _status
+from parishkit.stewardship.responses.models import AdditionalInformationItem
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .weekly_digest import WeeklyCorrection, WeeklyInformation
@@ -74,6 +75,15 @@ def capture_weekly_snapshot(claim):
         submission_watermark=observation.watermark,
         after_watermark=history.watermark,
         observation=observation_document(observation),
+        item_versions={
+            str(identifier): version
+            for identifier, version in AdditionalInformationItem.objects.filter(
+                pk__in=[
+                    item.item_id
+                    for item in (*selected.information, *selected.corrections)
+                ]
+            ).values_list("id", "version")
+        },
         information=[str(item.item_id) for item in selected.information],
         corrections=[
             [str(item.item_id), item.disposition] for item in selected.corrections

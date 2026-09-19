@@ -68,11 +68,11 @@ def live(row):
 
 
 def prepare(request, service, campaign_id, revision_id, *, request_key=None):
-    """Only applied email revisions of the sole Testing draft can create new tests.
+    """Preview explicit fictional mail for Testing or paused-delivery recovery.
 
-    This Phase 2 owner deliberately does not enable Production scheduling or
-    restore maintenance. Those owners must explicitly extend admission in their
-    later phase rather than inheriting an accidental provider-send capability.
+    The shared SQL admission owner also permits the current paused Production
+    campaign. Routing remains the configured test recipient, never a Family;
+    this does not release schedules, restore holds or the live delivery pause.
     """
     if any(not isinstance(value, UUID) for value in (campaign_id, revision_id)):
         raise ValueError("An exact campaign and email revision are required.")

@@ -94,7 +94,13 @@ def weekly_disposition(message, *, check_recipient=False):
             roles__contains=["administrator"],
         ).exists():
             return "recipient_revoked"
-    if message.mode == "production" and scope.campaign.delivery_paused:
+    from .delivery_pause import message_released
+
+    if (
+        message.mode == "production"
+        and scope.campaign.delivery_paused
+        and not message_released(message)
+    ):
         return "delivery_paused"
     if message.not_before > database_now():
         raise FamilyDeliveryHeld("Weekly delivery retry is not due.")

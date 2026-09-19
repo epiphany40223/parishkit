@@ -982,7 +982,7 @@ CREATE FUNCTION public.stewardship_campaign_mail_live_v1(configuration_id uuid, 
     SELECT EXISTS (
         SELECT 1 FROM public.stewardship_system_configuration runtime
         JOIN public.stewardship_campaign campaign
-            ON campaign.id=runtime.current_campaign_id AND campaign.state='draft'
+            ON campaign.id=runtime.current_campaign_id
         JOIN public.stewardship_content_version template
             ON template.configuration_id=runtime.active_configuration_id
             AND template.campaign_id=campaign.id AND template.kind='email'
@@ -995,7 +995,10 @@ CREATE FUNCTION public.stewardship_campaign_mail_live_v1(configuration_id uuid, 
             AND rule.email=owner.email AND rule.roles @> '["administrator"]'::jsonb
         WHERE runtime.active_configuration_id=$1 AND campaign.id=$2
             AND template.id=$3 AND workspace.credential_fingerprint=$4
-            AND runtime.mode='testing' AND NOT runtime.restore_review_required
+            AND ((runtime.mode='testing' AND campaign.state='draft')
+                OR (runtime.mode='production' AND campaign.delivery_paused
+                    AND campaign.state IN ('scheduled','active','closed')))
+            AND NOT runtime.restore_review_required
             AND NOT EXISTS (SELECT 1 FROM public.stewardship_campaign_work_gate gate
                 WHERE gate.state IN ('preparing','running'))
             AND NOT EXISTS (SELECT 1 FROM public.stewardship_campaign_credentials c
@@ -1789,6 +1792,9 @@ SET search_path TO pg_catalog,public,pg_temp AS $$
     OR EXISTS(SELECT 1 FROM public.stewardship_restore_delivery_hold h
         WHERE h.definition_id=$1 AND h.mode=$2 AND h.target=$3 AND h.slot=$4
             AND h.state IN ('unreviewed','assumed_delivered'))
+    OR ($3='admins' AND EXISTS(SELECT 1 FROM public.stewardship_postclose_resolution p
+        JOIN public.stewardship_postclose_current covered ON covered.id=p.id
+        WHERE p.mode=$2 AND p.obligation_key='schedule:'||$1::text||':'||$4))
 $$;
 
 -- FUNCTION: stewardship_checkpoint_guard_v1()
@@ -3581,7 +3587,11 @@ BEGIN
                            OR (NEW.due_at>=p.starts_at AND NEW.due_at<p.ends_at)))))
            OR (NEW.mode='production' AND EXISTS(SELECT 1 FROM stewardship_activation_catchup WHERE campaign_id=c.id AND completed_at IS NULL)
                AND NOT public.stewardship_catchup_materializing_v1(c.id,NEW.actor_id,NEW.correlation_id))
-           OR EXISTS (SELECT 1 FROM stewardship_schedule_fulfillment WHERE definition_id=d.id AND mode=NEW.mode AND target=NEW.target AND slot=NEW.slot) THEN
+           OR EXISTS (SELECT 1 FROM stewardship_schedule_fulfillment WHERE definition_id=d.id AND mode=NEW.mode AND target=NEW.target AND slot=NEW.slot)
+           OR EXISTS (SELECT 1 FROM stewardship_postclose_resolution resolved
+               JOIN public.stewardship_postclose_current covered ON covered.id=resolved.id
+               WHERE resolved.campaign_id=c.id AND resolved.mode=NEW.mode
+                   AND resolved.obligation_key='schedule:'||d.id::text||':'||NEW.slot) THEN
             RAISE EXCEPTION 'Occurrence creation is not admitted' USING ERRCODE='23514'; END IF;
     ELSE
         IF session_user='pk_stewardship_scheduler' AND (
@@ -3647,7 +3657,9 @@ BEGIN
         IF OLD.state='running' AND (NEW.task_id IS DISTINCT FROM OLD.task_id OR NEW.worker_id IS DISTINCT FROM OLD.worker_id OR NEW.fence<>OLD.fence) THEN
             RAISE EXCEPTION 'Occurrence worker identity changed' USING ERRCODE='23514'; END IF;
         IF OLD.state='running' AND NOT (
-            NEW.state='skipped' AND public.stewardship_schedule_effect_v1(
+            (NEW.state='skipped' OR (NEW.state='coalesced' AND NEW.reason IN (
+                'missed_family_recovery','missed_daily_recovery','missed_weekly_recovery')))
+            AND public.stewardship_schedule_effect_v1(
                 OLD.id,OLD.version,NEW.actor_id,NEW.correlation_id,NEW.reason)
         ) AND NOT EXISTS(SELECT 1 FROM stewardship_task_run owner_task WHERE owner_task.id=OLD.task_id
             AND ((owner_task.state='running' AND owner_task.worker_id=NEW.actor_id AND owner_task.fence=NEW.fence AND owner_task.lease_expires_at>clock_timestamp())
@@ -4109,6 +4121,30 @@ CREATE FUNCTION public.stewardship_postclose_guard_v1() RETURNS trigger
     AS $$
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
+    -- The closed-message owner may resolve actual receipt/fanout work. Its
+    -- private immutable decisions prove exact safe cancellation, including a
+    -- worker which retains a truthful running lease but can no longer submit.
+    IF NEW.mode='production' AND NEW.coverage_digest=encode(sha256(convert_to(NEW.coverage::text,'UTF8')),'hex')
+       AND public.stewardship_coverage_valid_v1(NEW.coverage) AND EXISTS(
+        SELECT 1 FROM public.stewardship_delivery_message_resolution decision
+        JOIN public.stewardship_delivery_control command ON command.id=decision.command_id
+        JOIN public.stewardship_delivery_closed_coverage covered ON covered.message_id=decision.message_id
+        JOIN public.stewardship_outbox_message m ON m.id=decision.message_id
+        JOIN public.stewardship_campaign c ON c.id=command.campaign_id
+        WHERE decision.decision='cancel' AND command.action='resolve'
+            AND command.actor_id=NEW.actor_id AND command.correlation_id=NEW.correlation_id
+            AND command.reason=NEW.reason AND c.id=NEW.campaign_id AND c.state='closed'
+            AND covered.obligation_key=NEW.obligation_key
+            AND m.state='cancelled' AND m.reason='admin_post_close_skip'
+            AND ((covered.purpose='receipt' AND covered.coverage=NEW.coverage AND NEW.occurrence_id IS NULL
+                AND NEW.outbox_id=m.id AND NEW.task_id=m.task_id)
+              OR (covered.occurrence_id=NEW.occurrence_id AND NEW.outbox_id IS NULL
+                AND NEW.coverage=public.stewardship_delivery_closed_slot_coverage_v1(NEW.occurrence_id)
+                AND public.stewardship_delivery_closed_digest_v1(NEW.occurrence_id)
+                AND EXISTS(SELECT 1 FROM public.stewardship_schedule_occurrence o
+                    WHERE o.id=NEW.occurrence_id AND o.state='skipped' AND o.reason='admin_post_close_skip'
+                        AND NEW.task_id IS NOT DISTINCT FROM o.task_id)))
+       ) THEN RETURN NEW; END IF;
     IF NEW.actor_id IS NULL OR NEW.mode NOT IN ('testing','production') OR NEW.obligation_key='' OR btrim(NEW.reason)=''
        OR stewardship_coverage_valid_v1(NEW.coverage) IS DISTINCT FROM true
        OR NEW.coverage_digest<>encode(sha256(convert_to(NEW.coverage::text,'UTF8')),'hex')

@@ -190,6 +190,33 @@ def test_partially_covered_corrections_do_not_suppress_new_items(live_response_s
         assert "REQUEST-C" in row.text
         assert "REQUEST-A" not in row.text and "REQUEST-B" not in row.text
         assert len(page.recipients[0].document.corrections) == 1
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT coverage::text FROM stewardship_delivery_closed_coverage "
+                "WHERE message_id=%s",
+                [row.outbox_id],
+            )
+            coverage = json.loads(cursor.fetchone()[0])
+        expected = sorted(
+            [("item", key) for key in row.information]
+            + [("correction", key) for key, _ in row.corrections]
+        )
+        assert coverage["items"] == [
+            {"kind": kind, "id": key, "version": third.item_versions[key]}
+            for kind, key in expected
+        ]
+        # A later Family response changes current versions, never the actual
+        # message subset or versions retained for a future cancellation.
+        harness, form, answers, _ = revisit(harness)
+        answers["additional_information"] = "REQUEST-D"
+        respond_form(harness, form, answers)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT coverage::text FROM stewardship_delivery_closed_coverage "
+                "WHERE message_id=%s",
+                [row.outbox_id],
+            )
+            assert json.loads(cursor.fetchone()[0]) == coverage
 
 
 @pytest.mark.parametrize("unknown", [False, True])

@@ -177,6 +177,10 @@ from .credential_models import (  # noqa: E402,F401
     RehearsalCredential,
     RehearsalEpoch,
 )
+from .delivery_control_models import (  # noqa: E402,F401
+    DeliveryControlCommand,
+    HeldMessageResolution,
+)
 from .production_models import (  # noqa: E402,F401
     ProductionCleanupCancellation,
     ProductionCleanupCheckpoint,

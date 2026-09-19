@@ -1,0 +1,80 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Campaign delivery controls" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Campaign delivery controls" %}</h1>
+<p>{{ campaign.active_configuration.name }}</p>
+<p>{% translate "Pausing live mail does not close the campaign or stop Families from submitting. Their confirmations are held. Nothing is redirected to the Testing recipient. Operational alerts and explicitly requested test emails remain available." %}</p>
+<p class="notice">{% translate "Messages already being submitted may reach the provider. Unknown deliveries require their own reconciliation; pausing cannot recall them." %}</p>
+<section class="panel"><h2>{% translate "Current live-mail inventory" %}</h2>
+<dl><dt>{% translate "Queued messages" %}</dt><dd>{{ inventory.queued|number }}</dd>
+<dt>{% translate "Held messages" %}</dt><dd>{{ inventory.held|number }}</dd>
+<dt>{% translate "Already submitting" %}</dt><dd>{{ inventory.submitting|number }}</dd>
+<dt>{% translate "Delivery unknown" %}</dt><dd>{{ inventory.unknown|number }}</dd></dl>
+{% if next_due.at %}<p>{% translate "Next configured due time" %}: <time data-local-instant datetime="{{ next_due.at }}">{{ next_due.at }}</time>. {% translate "Schedule slots at that time" %}: {{ next_due.count|number }}.</p>
+<p>{% translate "These are configured schedule slots, not predicted message counts; eligibility and report content are checked when the work runs." %}</p>
+{% else %}<p>{% translate "No future ordinary schedule slots remain." %}</p>{% endif %}
+{% if inventory.types %}<table><caption>{% translate "Live mail by type" %}</caption><thead><tr><th scope="col">{% translate "Type" %}</th><th scope="col">{% translate "Queued" %}</th><th scope="col">{% translate "Held" %}</th><th scope="col">{% translate "Submitting" %}</th><th scope="col">{% translate "Unknown" %}</th></tr></thead><tbody>
+{% for kind, counts in inventory.types.items %}<tr><th scope="row">{{ kind }}</th><td>{{ counts.queued|number }}</td><td>{{ counts.held|number }}</td><td>{{ counts.submitting|number }}</td><td>{{ counts.unknown|number }}</td></tr>{% endfor %}
+</tbody></table>{% endif %}</section>
+{% if available %}
+{% if not fresh %}<p>{% translate "Confirmation requires Google authentication within the last five minutes." %} <a href="{% url 'admin:login' %}">{% translate "Sign in again with Google" %}</a></p>{% endif %}
+{% if campaign.delivery_paused %}<section class="panel" role="status"><h2>{% translate "Live delivery is paused" %}</h2><p>{% translate "Reason" %}: {{ campaign.pause_reason }}</p>
+<p>{% translate "Paused at" %}: <time data-local-instant datetime="{{ campaign.paused_at|instant }}">{{ campaign.paused_at|instant }}</time> ({{ campaign.paused_at|timesince }}).</p></section>
+<section class="panel"><h2>{% translate "Provider and sender check" %}</h2>
+{% if health.ready %}<p role="status">{% translate "The current provider and sender accepted a test after this pause." %} {% translate "Valid until" %}: <time data-local-instant datetime="{{ health.expires_at }}">{{ health.expires_at }}</time>.</p>
+{% else %}<p>{% translate "Before releasing held mail, send a new explicit test and wait for acceptance. The check must use the current configuration, follow this pause, and be less than five minutes old. Later provider failures or unresolved tests invalidate it." %}</p>{% endif %}
+{% if test_template %}<p><a href="{% url 'admin:campaign_mail' campaign.pk test_template %}">{% translate "Preview and send a test to the configured Testing recipient" %}</a></p>{% endif %}
+<p>{% translate "A successful test does not itself resume or release any campaign message." %}</p></section>
+{% if family_recovery %}<section class="panel"><h2>{% translate "Overdue Family-mail planning" %}</h2>
+<p>{% translate "These counts include due invitations and reminders not yet allocated to the outbox. They do not include receipts or Admin digests and do not authorize any release." %}</p>
+<dl><dt>{% translate "Selected Family messages" %}</dt><dd>{{ family_recovery.selected|number }}</dd>
+<dt>{% translate "Redundant schedule slots" %}</dt><dd>{{ family_recovery.coalesced|number }}</dd>
+<dt>{% translate "Inapplicable schedule slots" %}</dt><dd>{{ family_recovery.skipped|number }}</dd>
+<dt>{% translate "Blocked Family groups" %}</dt><dd>{{ family_recovery.blocked|number }}</dd>
+<dt>{% translate "Families awaiting initial-mail recovery" %}</dt><dd>{{ family_recovery.deferred|number }}</dd>
+<dt>{% translate "Unmaterialized schedule slots" %}</dt><dd>{{ family_recovery.unmaterialized|number }}</dd></dl>
+{% if family_recovery.deferred %}<p>{% translate "These Families remain under the ordinary initial-invitation recovery checks; they do not block other Families from resuming. Review the original failed delivery or restore hold before retrying their reminders." %}</p>{% endif %}</section>{% endif %}
+{% if digest_recovery %}<section class="panel"><h2>{% translate "Overdue Admin-digest planning" %}</h2>
+<p>{% translate "Each daily or weekly group becomes one report obligation. Original dates and previously accepted recipient coverage are retained. These are report obligations, not a prediction of recipient message counts." %}</p>
+<dl><dt>{% translate "Selected report obligations" %}</dt><dd>{{ digest_recovery.selected|number }}</dd>
+<dt>{% translate "Due original dates and retained aggregates" %}</dt><dd>{{ digest_recovery.slots|number }}</dd>
+<dt>{% translate "Unmaterialized dates" %}</dt><dd>{{ digest_recovery.unmaterialized|number }}</dd>
+<dt>{% translate "Previously prepared reports" %}</dt><dd>{{ digest_recovery.prepared|number }}</dd>
+<dt>{% translate "Blocked report groups" %}</dt><dd>{{ digest_recovery.blocked|number }}</dd></dl>
+{% if digest_recovery.blocked %}<p>{% translate "Report preparation must reach its safe point, and uncertain deliveries must be reconciled, before resuming." %}</p>{% endif %}</section>{% endif %}
+{% if resume_available %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="preview_resume"><label for="resume-reason">{% translate "Reason for resuming live delivery" %}</label><textarea id="resume-reason" name="reason" required maxlength="1024">{{ preview.reason }}</textarea><button type="submit">{% translate "Preview resume" %}</button></form>
+{% if preview.action == 'resume' %}<section class="panel"><h2>{% translate "Exact resume preview" %}</h2><p>{{ preview.reason }}</p>
+{% if preview.selection.plan == 'before_start' %}<p>{% translate "The campaign has not started, so there is no overdue campaign work to coalesce. Released work retains its original due time." %}</p>
+<p>{% translate "Held messages to release" %}: {{ preview.inventory.held|number }}.</p>
+{% else %}<p>{% translate "Selected overdue Family messages" %}: {{ preview.selection.family.selected|number }}. {% translate "Redundant slots to coalesce" %}: {{ preview.selection.family.coalesced|number }}. {% translate "Inapplicable slots to skip" %}: {{ preview.selection.family.skipped|number }}.</p>
+<p>{% translate "Selected Admin report obligations" %}: {{ preview.selection.digests.selected|number }}. {% translate "Due original dates and retained aggregates covered" %}: {{ preview.selection.digests.slots|number }}.</p>
+<p>{% translate "Redundant unsent outboxes are cancelled before the pause is cleared. Receipts remain distinct and are all released; future work retains its original due time." %}</p>{% endif %}
+<p>{% translate "The current sender proof, live inventory, campaign dates and authentication will be checked again. A changed input cancels this confirmation without releasing mail." %}</p>
+{% if control_token and fresh %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ control_token }}"><button type="submit">{% translate "Confirm resume of live delivery" %}</button></form>{% endif %}</section>{% endif %}
+{% endif %}
+{% if resolve_available %}<section class="panel"><h2>{% translate "Resolve held messages" %}</h2>
+<p>{% translate "The campaign is closed. Invitations and reminders follow the ordinary close policy and cannot be released here. Select held receipts or Admin reports to release after a sender check, or cancel with a reason. This does not reopen Family access." %}</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="preview_resolve">
+<fieldset><legend>{% translate "Message types" %}</legend>
+<label><input type="checkbox" name="receipt" value="yes"> {% translate "Submission receipts" %} ({{ inventory.types.receipt.held|default:0|number }})</label>
+<label><input type="checkbox" name="daily_digest" value="yes"> {% translate "Daily Admin reports" %} ({{ inventory.types.daily_digest.held|default:0|number }})</label>
+<label><input type="checkbox" name="weekly_digest" value="yes"> {% translate "Weekly Admin reports" %} ({{ inventory.types.weekly_digest.held|default:0|number }})</label></fieldset>
+<label for="resolution-decision">{% translate "Resolution" %}</label><select id="resolution-decision" name="decision"><option value="release">{% translate "Release selected held messages" %}</option><option value="cancel">{% translate "Cancel selected held messages" %}</option><option value="clear">{% translate "Clear an empty, fully resolved pause (select no types)" %}</option></select>
+<label for="resolution-reason">{% translate "Reason" %}</label><textarea id="resolution-reason" name="reason" required maxlength="1024">{{ preview.reason }}</textarea>
+<button type="submit">{% translate "Preview held-message resolution" %}</button></form>
+{% if preview.action == 'resolve' %}<section class="panel"><h3>{% translate "Exact held-message resolution" %}</h3><p>{{ preview.reason }}</p>
+<p>{% translate "Decision" %}: {{ preview.selection.decision }}. {% translate "Selected types" %}: {{ preview.selection.types|join:", " }}.</p>
+<ul>{% for kind, counts in preview.inventory.types.items %}{% if kind in preview.selection.types %}<li>{{ kind }}: {{ counts.held|number }} {% translate "held messages" %}</li>{% endif %}{% endfor %}</ul>
+{% for kind, counts in preview.selection.coverage.items %}<p>{{ kind }}: {% translate "Covered item-version references across selected messages" %}: {{ counts.items|number }}; {% translate "Covered daily ranges across selected messages" %}: {{ counts.daily_ranges|number }}.</p>{% endfor %}
+<p>{% translate "These preview counts are checked again at confirmation. Other held types and uncertain deliveries stay unresolved. The pause clears only when no held or uncertain messages remain." %}</p>
+{% if control_token and fresh %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ control_token }}"><button type="submit">{% translate "Confirm held-message resolution" %}</button></form>{% endif %}</section>{% endif %}</section>{% endif %}
+{% else %}
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="preview_pause"><label for="pause-reason">{% translate "Reason for pausing live delivery" %}</label><textarea id="pause-reason" name="reason" required maxlength="1024">{{ preview.reason }}</textarea><button type="submit">{% translate "Preview pause" %}</button></form>
+{% if preview %}<section class="panel"><h2>{% translate "Exact pause preview" %}</h2><p>{{ preview.reason }}</p>
+<p>{% translate "Unsent messages to hold" %}: {{ preview.inventory.queued|number }}. {% translate "Already submitting" %}: {{ preview.inventory.submitting|number }}. {% translate "Delivery unknown" %}: {{ preview.inventory.unknown|number }}.</p>
+<p>{% translate "Mail may progress after this preview. Confirming records the current counts and holds all currently unsent live mail atomically. Changes to campaign configuration or your authority still require a new preview." %}</p>
+{% if control_token and fresh %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ control_token }}"><button type="submit">{% translate "Confirm pause of live delivery" %}</button></form>{% endif %}</section>{% endif %}
+{% endif %}
+{% else %}<p role="alert">{% translate "Live delivery controls require the current Production campaign." %}</p>{% endif %}
+<p><a href="{% url 'admin:deliveries' %}">{% translate "Review outgoing mail and uncertain deliveries" %}</a></p>
+{% endblock %}

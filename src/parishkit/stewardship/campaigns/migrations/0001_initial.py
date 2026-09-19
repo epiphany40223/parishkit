@@ -25,6 +25,168 @@ class Migration(migrations.Migration):
         migrations.SeparateDatabaseAndState(
             state_operations=[
                 migrations.CreateModel(
+                    name="HeldMessageResolution",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "command",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_campaigns.deliverycontrolcommand",
+                            ),
+                        ),
+                        (
+                            "message",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_jobs.outboxmessage",
+                            ),
+                        ),
+                        (
+                            "campaign",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_campaigns.campaign",
+                            ),
+                        ),
+                        ("previous_version", models.PositiveBigIntegerField()),
+                        ("pause_version", models.PositiveBigIntegerField()),
+                        ("decision", models.CharField(max_length=8)),
+                    ],
+                    options={
+                        "db_table": "stewardship_delivery_message_resolution",
+                        "constraints": [
+                            models.UniqueConstraint(
+                                fields=("command", "message"),
+                                name="held_resolution_command",
+                            ),
+                            models.UniqueConstraint(
+                                fields=("message", "pause_version"),
+                                name="held_resolution_pause",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(previous_version__gte=1)
+                                & models.Q(pause_version__gte=1),
+                                name="held_resolution_versions",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(decision__in=["release", "cancel"]),
+                                name="held_resolution_decision",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
+                    name="DeliveryControlCommand",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "campaign",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_campaigns.campaign",
+                            ),
+                        ),
+                        (
+                            "control",
+                            models.OneToOneField(
+                                null=True,
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_campaigns.campaigncontrolchange",
+                            ),
+                        ),
+                        ("action", models.CharField(max_length=24)),
+                        ("session_id", models.UUIDField()),
+                        (
+                            "authenticated_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(),
+                        ),
+                        (
+                            "preview_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(),
+                        ),
+                        (
+                            "expires_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(),
+                        ),
+                        ("expected_campaign_version", models.PositiveBigIntegerField()),
+                        ("expected_runtime_version", models.PositiveBigIntegerField()),
+                        ("inventory", models.JSONField()),
+                        ("selection", models.JSONField(default=dict)),
+                        ("reason", models.CharField(max_length=1024)),
+                    ],
+                    options={
+                        "db_table": "stewardship_delivery_control",
+                        "constraints": [
+                            models.CheckConstraint(
+                                condition=models.Q(expected_campaign_version__gte=1)
+                                & models.Q(expected_runtime_version__gte=1),
+                                name="delivery_control_versions",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    action__in=["pause", "resume", "resolve"]
+                                ),
+                                name="delivery_control_action",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
                     name="ProductionWithdrawal",
                     fields=[
                         (

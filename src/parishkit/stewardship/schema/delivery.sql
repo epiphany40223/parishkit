@@ -509,7 +509,9 @@ BEGIN
                 WHERE c.id=NEW.campaign_id AND NEW.routing='production'
                   AND ((NEW.action='hold' AND c.delivery_paused AND c.pause_version=NEW.pause_version)
                     OR (NEW.action='release_hold' AND NOT c.delivery_paused
-                        AND c.pause_version>OLD.pause_version))
+                        AND c.pause_version>OLD.pause_version)
+                    OR (NEW.action='release_hold'
+                        AND public.stewardship_delivery_message_released_v1(NEW.id)))
             ) THEN
                 RAISE EXCEPTION 'Delivery hold must match campaign pause state' USING ERRCODE='23514';
             END IF;
@@ -556,7 +558,8 @@ BEGIN
                 JOIN public.stewardship_campaign_credentials k ON k.campaign_id=c.id
                 WHERE c.id=NEW.campaign_id AND s.mode='production'
                   AND NOT s.restore_review_required AND NOT k.go_live_gate
-                  AND c.state IN ('scheduled','active','closed') AND NOT c.delivery_paused
+                  AND c.state IN ('scheduled','active','closed')
+                  AND (NOT c.delivery_paused OR public.stewardship_delivery_message_released_v1(NEW.id))
             ) THEN
                 RAISE EXCEPTION 'Production delivery is not currently admitted' USING ERRCODE='23514';
             END IF;
@@ -618,6 +621,16 @@ BEGIN
                     USING ERRCODE='23514';
             END IF;
         END IF;
+    END IF;
+    -- A provider outcome/reconciliation can return an in-flight message to
+    -- unsent work after the pause began. The earlier hold trigger attaches
+    -- the current hold in that same update, never after a clearable gap.
+    IF NEW.state IN ('pending','retry_wait') AND NEW.state<>OLD.state
+       AND NEW.pause_hold_id IS NOT NULL AND EXISTS(
+        SELECT 1 FROM public.stewardship_campaign c
+        WHERE c.id=NEW.campaign_id AND c.delivery_paused
+            AND c.pause_version=NEW.pause_version AND NEW.routing='production') THEN
+        allowed:=allowed||ARRAY['pause_hold_id','pause_version'];
     END IF;
     IF (to_jsonb(NEW) - allowed) IS DISTINCT FROM (to_jsonb(OLD) - allowed) THEN
         RAISE EXCEPTION 'Delivery command changed unrelated fields' USING ERRCODE='23514';

@@ -4,6 +4,8 @@ CREATE TABLE "stewardship_weekly_digest_snapshot" ("id" uuid NOT NULL PRIMARY KE
 CREATE TABLE "stewardship_weekly_digest_recipient" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "snapshot_id" uuid NOT NULL, "address" varchar(254) NOT NULL, "information" jsonb NOT NULL, "corrections" jsonb NOT NULL, "covered_messages" jsonb NOT NULL, "subject" varchar(254) NOT NULL, "html" text NOT NULL, "text" text NOT NULL, "outbox_id" uuid NULL UNIQUE, CONSTRAINT "weekly_digest_recipient_once" UNIQUE ("snapshot_id", "address"));
 CREATE INDEX "stewardship_weekly_digest_preparation_correlation_id_b800adb1" ON "stewardship_weekly_digest_preparation" ("correlation_id");
 CREATE INDEX "weekly_digest_definition" ON "stewardship_weekly_digest_preparation" ("definition_id", "mode");
+-- Part of the fresh empty baseline, not an upgrade of retained databases.
+ALTER TABLE "stewardship_weekly_digest_snapshot" ADD COLUMN "item_versions" jsonb NOT NULL;
 ALTER TABLE "stewardship_weekly_digest_snapshot" ADD CONSTRAINT "stewardship_weekly_d_preparation_id_f6c01e2c_fk_stewardsh" FOREIGN KEY ("preparation_id") REFERENCES "stewardship_weekly_digest_preparation" ("id") DEFERRABLE INITIALLY DEFERRED;
 ALTER TABLE "stewardship_weekly_digest_snapshot" ADD CONSTRAINT "stewardship_weekly_d_campaign_id_9b0800c9_fk_stewardsh" FOREIGN KEY ("campaign_id") REFERENCES "stewardship_campaign" ("id") DEFERRABLE INITIALLY DEFERRED;
 ALTER TABLE "stewardship_weekly_digest_snapshot" ADD CONSTRAINT "stewardship_weekly_d_configuration_id_70a81e50_fk_stewardsh" FOREIGN KEY ("configuration_id") REFERENCES "stewardship_configuration_version" ("id") DEFERRABLE INITIALLY DEFERRED;

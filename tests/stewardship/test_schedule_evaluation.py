@@ -92,6 +92,32 @@ def test_later_cutoff_resumes_after_only_previously_due_slots():
 
 
 @pytest.mark.parametrize(
+    "kind", ["initial", "reminder", "daily_digest", "weekly_digest"]
+)
+def test_next_slot_matches_complete_evaluation_at_each_due_boundary(kind):
+    """Preview forecasts share exact execution instants, including the last slot."""
+    rule = plan(kind)
+    slots = rule.page(through=FUTURE, include_final_weekly=True).slots
+    for index, slot in enumerate(slots):
+        assert (
+            rule.next_slot(
+                after=slot.due_at - timedelta(microseconds=1), include_final_weekly=True
+            )
+            == slot
+        )
+        expected = slots[index + 1] if index + 1 < len(slots) else None
+        assert rule.next_slot(after=slot.due_at, include_final_weekly=True) == expected
+    assert rule.next_slot(after=FUTURE) is None
+
+
+@pytest.mark.parametrize("clock", [None, date(2026, 10, 1), datetime(2026, 10, 1)])
+def test_next_slot_rejects_ambiguous_clock(clock):
+    """No browser timezone or naive clock may select a different next occurrence."""
+    with pytest.raises(ValueError, match="UTC cutoff"):
+        plan().next_slot(after=clock)
+
+
+@pytest.mark.parametrize(
     "campaign_options,clock,day,due",
     [
         (
@@ -122,9 +148,11 @@ def test_recurring_due_uses_first_valid_gap_instant_and_earlier_fold(
     campaign_options, clock, day, due
 ):
     """The same resolver covers one-hour and half-hour transitions exactly once."""
-    page = plan(campaign_options=campaign_options, time=clock).page(through=FUTURE)
+    rule = plan(campaign_options=campaign_options, time=clock)
+    page = rule.page(through=FUTURE)
     matches = [slot for slot in page.slots if slot.key == day]
     assert len(matches) == 1 and matches[0].due_at == due
+    assert rule.next_slot(after=due - timedelta(microseconds=1)) == matches[0]
 
 
 def test_skipped_civil_day_advances_bounded_cursor_without_a_daily_obligation():
@@ -144,6 +172,7 @@ def test_skipped_civil_day_advances_bounded_cursor_without_a_daily_obligation():
     assert not skipped.exhausted
     last = rule.page(through=FUTURE, after=skipped.cursor, limit=1)
     assert [slot.key for slot in last.slots] == ["2011-12-31"]
+    assert rule.next_slot(after=first.slots[0].due_at) == last.slots[0]
 
 
 def test_weekly_dates_and_optional_final_candidate_are_finite():

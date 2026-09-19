@@ -108,6 +108,7 @@ class WeeklyDigestSnapshot(ImmutableRecord):
     submission_watermark = models.PositiveBigIntegerField()
     after_watermark = models.PositiveBigIntegerField()
     observation = models.JSONField()
+    item_versions = models.JSONField()
     information = models.JSONField()
     corrections = models.JSONField()
     recipients = models.JSONField()

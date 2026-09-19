@@ -86,7 +86,13 @@ def receipt_disposition(message):
         .exists()
     ):
         raise FamilyDeliveryHeld("Receipt delivery awaits current campaign authority.")
-    if message.mode == "production" and campaign.delivery_paused:
+    from .delivery_pause import message_released
+
+    if (
+        message.mode == "production"
+        and campaign.delivery_paused
+        and not message_released(message)
+    ):
         return "delivery_paused"
     if (
         population.population_dirty

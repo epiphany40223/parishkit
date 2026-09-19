@@ -130,8 +130,10 @@ def reject_retired_cycle(item, previous, message, *, failed):
             assert not DeliveryResolution.objects.filter(pk=retry_command).exists()
             assert TaskRun.objects.filter(root_id=retained.task_id).count() == 1
         with task_login(ServiceRole.MAIL_DISPATCH, exact=True, reconnect=True):
+            # The immediate-hold trigger now takes the work lock before the
+            # owner guard. A raw retry still lacks its required live claim.
             with pytest.raises(
-                DatabaseError, match="Family dispatch requires work ownership"
+                DatabaseError, match="Family dispatch requires a live exact claim"
             ):
                 OutboxMessage.objects.filter(pk=message.message_id).update(
                     action="retry_failed",
@@ -141,6 +143,9 @@ def reject_retired_cycle(item, previous, message, *, failed):
                 )
             with work_transaction():
                 assert disposition(retained) == "scope_replaced"
+        unchanged = OutboxMessage.objects.get(pk=retained.pk)
+        assert unchanged.state == retained.state == "permanent_failure"
+        assert unchanged.version == retained.version
         with pytest.raises(
             DatabaseError, match="Delivery schedule is no longer current"
         ):

@@ -50,10 +50,13 @@ RETURNS jsonb LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp A
     ), completed AS MATERIALIZED (
         SELECT s.* FROM snapshots s
         WHERE NOT EXISTS(SELECT 1 FROM stewardship_weekly_manual_request WHERE id=s.preparation_id)
-          AND EXISTS(
+          AND (EXISTS(
             SELECT 1 FROM stewardship_schedule_fulfillment f
             WHERE f.occurrence_id=s.occurrence_id AND f.mode=$2 AND f.target='admins'
               AND f.disposition IN ('delivered','empty'))
+            OR EXISTS(SELECT 1 FROM stewardship_postclose_resolution resolved
+                JOIN public.stewardship_postclose_current covered ON covered.id=resolved.id
+                WHERE resolved.occurrence_id=s.occurrence_id AND resolved.mode=$2))
     ), reported AS (
         SELECT DISTINCT item FROM snapshots s
         JOIN stewardship_weekly_digest_recipient r ON r.snapshot_id=s.id
@@ -104,6 +107,12 @@ BEGIN
       OR NEW.after_watermark IS DISTINCT FROM (history->>'watermark')::bigint
       OR NEW.information IS DISTINCT FROM selected->'information'
       OR NEW.corrections IS DISTINCT FROM selected->'corrections'
+      OR NEW.item_versions IS DISTINCT FROM (
+          SELECT coalesce(jsonb_object_agg(i.id::text,i.version),'{}'::jsonb)
+          FROM public.stewardship_additional_information i
+          WHERE selected->'information' ? i.id::text OR EXISTS(
+              SELECT 1 FROM jsonb_array_elements(selected->'corrections') correction
+              WHERE correction->>0=i.id::text))
       OR NEW.recipients IS DISTINCT FROM cohort
       OR (NEW.observation->>'observed_at')::timestamptz IS DISTINCT FROM NEW.observed_at
       OR NEW.observed_at>stewardship_campaign_now_v1()

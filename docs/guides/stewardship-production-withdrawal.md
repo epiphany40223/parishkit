@@ -251,3 +251,17 @@ No runtime/schema change was needed in round 3. All three rounds now satisfy
 the review-loop exit criterion; ADM-05.04/.05 implementation is complete.
 Final-head CI/DCO and protected PR #61 delivery remain required. This is not
 Gate 3 approval, a deployment, or authorization for real-provider activity.
+
+## Protected delivery
+
+PR #61 merged through the normal protected workflow on September 19, 2026,
+as `4be1ce09a2716c300746ca31792d8c21aaba6b7c`. All 25 final-head CI/DCO checks
+passed at `c2c099a068ddb7e7a2270720cad3ba780e18c948`; CI run `35428114477`
+includes all twelve PostgreSQL partitions and the combined coverage gate,
+all three browser engines and every container scenario. Refreshed `origin/main`
+was verified at that merge commit. Standing merge/continue authority applies;
+no deployment, release or real-provider operation was performed.
+
+Continue the [delivery-pause increment](stewardship-delivery-pause.md) on its
+fresh-main branch. ADM-05 is implemented; the remaining Phase 4 handoff and
+integrated Gate 3 acceptance are not inferred from this individual delivery.

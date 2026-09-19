@@ -15,6 +15,7 @@ from .accounts import (
     confirmation_views,
     content_history,
     content_views,
+    delivery_control_views,
     family_authentication,
     go_live_views,
     integration_selection_views,
@@ -233,6 +234,11 @@ admin_patterns = [
         "campaign/<uuid:campaign_id>/production/withdraw",
         withdrawal_views.withdrawal,
         name="production_withdrawal",
+    ),
+    path(
+        "campaign/<uuid:campaign_id>/delivery",
+        delivery_control_views.control,
+        name="delivery_control",
     ),
     path(
         "campaign/<uuid:campaign_id>/settings",

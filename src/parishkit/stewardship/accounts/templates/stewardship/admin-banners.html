@@ -6,7 +6,11 @@
 </aside>
 {% endif %}
 {% if admin_chrome.restored %}<aside class="notice notice-error">{% translate "Restore review is required. Normal campaign activity is unavailable." %}</aside>{% endif %}
-{% if admin_chrome.paused %}<aside class="notice">{% translate "Family email delivery is paused." %}</aside>{% endif %}
+{% if admin_chrome.paused %}<aside class="notice">{% translate "Live campaign email delivery is paused." %}
+{% if admin_chrome.delivery_pause %}<p>{% translate "Paused by" %}: {{ admin_chrome.delivery_pause.actor|default:"—" }}. {% translate "Reason" %}: {{ admin_chrome.delivery_pause.reason }}</p>
+<p>{% translate "Since" %} <time data-local-instant datetime="{{ admin_chrome.delivery_pause.since|instant }}">{{ admin_chrome.delivery_pause.since|instant }}</time> ({{ admin_chrome.delivery_pause.since|timesince }}).</p>
+<p>{% translate "Held messages" %}: {{ admin_chrome.delivery_pause.inventory.held|number }}. {% translate "Already submitting" %}: {{ admin_chrome.delivery_pause.inventory.submitting|number }}. {% translate "Delivery unknown" %}: {{ admin_chrome.delivery_pause.inventory.unknown|number }}.</p>
+<a href="{{ admin_chrome.delivery_pause.url }}">{% translate "Review held message types and delivery controls" %}</a>{% endif %}</aside>{% endif %}
 {% if admin_chrome.go_live %}<aside class="notice">{% translate "Production preparation is in progress. Rehearsal access is unavailable while cleanup completes." %}</aside>{% endif %}
 {% if admin_chrome.admin and admin_chrome.critical_count %}<aside class="notice notice-error" role="alert">{% translate "Critical events recorded in the past 24 hours:" %} {{ admin_chrome.critical_count|number }}. {% translate "Review the operator logs and urgent notifications." %}</aside>{% endif %}
 {% if not suppress_admin_session_chrome %}

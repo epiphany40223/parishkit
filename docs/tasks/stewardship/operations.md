@@ -45,6 +45,12 @@ ARC-06, background, and OPS-02/04 packages. Production remains fail-closed.
 OPS-02 still owns CLI/YAML-to-Compose path integration, full provisioning, and
 mount/queue isolation. No review gate, deployment, or release is claimed.
 
+The Phase 4 [service/queue handoff](../../guides/stewardship-delivery-pause.md#phase-4-service-and-milestone-handoff)
+supersedes the historical reserved-worker status: worker, scheduler and mail
+commands now have actual registry, SQL and container integration evidence.
+OPS-01.02 stays open for remaining later-phase/offline commands. Existing OPS-02
+isolation is rechecked without broadening mounts or sharing provider credentials.
+
 ## OPS-02: Durable runtime paths and least-privilege secrets
 
 Scope and dependencies: [OPS-02 work package](../../plans/stewardship/operations.md#ops-02-durable-runtime-paths-and-least-privilege-secrets).

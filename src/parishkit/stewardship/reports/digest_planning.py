@@ -5,6 +5,7 @@ from django.db.models import Q
 
 from parishkit.stewardship.campaigns.catchup_ownership import claim_event
 from parishkit.stewardship.campaigns.models import RestoreDeliveryHold
+from parishkit.stewardship.campaigns.postclose_coverage import resolved_slots
 from parishkit.stewardship.campaigns.schedule_evaluation import SchedulePlan
 from parishkit.stewardship.campaigns.schedule_models import (
     ScheduleDefinition,
@@ -49,7 +50,11 @@ def _excluded(row):
         target="admins",
         state__in=("unreviewed", "assumed_delivered"),
     ).values("slot")
-    return Q(slot__in=covered) | Q(slot__in=held)
+    return (
+        Q(slot__in=covered)
+        | Q(slot__in=held)
+        | Q(slot__in=resolved_slots(row.definition_id, row.mode))
+    )
 
 
 def discover_dates(claim):
@@ -81,6 +86,9 @@ def discover_dates(claim):
             slot__in=keys,
             state__in=("unreviewed", "assumed_delivered"),
         ).values_list("slot", flat=True)
+    )
+    excluded.update(
+        item["slot"] for item in resolved_slots(definition.pk, row.mode, slots=keys)
     )
     excluded.update(
         ScheduleOccurrence.objects.filter(
