@@ -52,6 +52,7 @@ def schema_sql():
                 "operational_slack",
                 "activation_impact",
                 "production_confirmation",
+                "production_withdrawal",
             )
         ]
     )

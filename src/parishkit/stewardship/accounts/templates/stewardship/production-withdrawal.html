@@ -1,0 +1,32 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Withdraw from Production" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Withdraw from Production" %}</h1>
+<p>{{ campaign.active_configuration.name }}</p>
+{% if withdrawal %}<section class="panel" role="status"><h2>{% translate "Withdrawal completed" %}</h2>
+<p>{% translate "The campaign was returned to draft in Testing mode. Structural settings were unlocked and readiness was invalidated. Going live again requires a complete new readiness, test, cleanup and confirmation cycle." %}</p>
+<p>{% translate "Withdrawn at" %}: <time data-local-instant datetime="{{ withdrawal.created_at|instant }}">{{ withdrawal.created_at|instant }}</time></p>
+<p>{% translate "Reason" %}: {{ withdrawal.reason }}</p></section>{% endif %}
+<p class="notice">{% translate "Testing data deleted during the previous Production transition cannot be restored. Withdrawal does not undo cleanup or erase prior activation and delivery history." %}</p>
+{% if available %}
+<p>{% translate "Withdrawal is available only before" %} <time data-local-instant datetime="{{ campaign.active_configuration.starts_at|instant }}">{{ campaign.active_configuration.starts_at|instant }}</time>.</p>
+{% if not fresh %}<p>{% translate "Confirmation requires Google authentication within the last five minutes. Sign in again, then return here and prepare a new preview." %} <a href="{% url 'admin:login' %}">{% translate "Sign in again with Google" %}</a></p>{% endif %}
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="preview">
+<label for="withdrawal-reason">{% translate "Reason for withdrawal" %}</label><textarea id="withdrawal-reason" name="reason" required maxlength="2000">{{ preview.reason }}</textarea>
+<label><input type="checkbox" name="acknowledged" value="yes" required> {% translate "I understand that deleted Testing data cannot be restored." %}</label>
+<button type="submit">{% translate "Preview withdrawal" %}</button></form>
+{% if preview %}<section class="panel"><h2>{% translate "Exact withdrawal preview" %}</h2>
+<p>{% translate "Reason" %}: {{ preview.reason }}</p>
+<dl><dt>{% translate "Recorded live occurrences" %}</dt><dd>{{ preview.inventory.occurrences|number }}</dd>
+<dt>{% translate "Occurrences to cancel" %}</dt><dd>{{ preview.inventory.cancellable|number }}</dd>
+<dt>{% translate "Unsent messages to cancel" %}</dt><dd>{{ preview.inventory.messages|number }}</dd>
+<dt>{% translate "Failed occurrences retained" %}</dt><dd>{{ preview.inventory.failed|number }}</dd>
+<dt>{% translate "Delivered messages retained" %}</dt><dd>{{ preview.inventory.delivered|number }}</dd>
+<dt>{% translate "Blocking work checks" %}</dt><dd>{{ preview.inventory.blocking|number }}</dd></dl>
+{% if preview.inventory.blocking %}<p role="alert">{% translate "Work is in flight, uncertain, or requires separate recovery. Resolve it before preparing a new withdrawal preview. Nothing has been cancelled." %}</p>{% else %}
+<p>{% translate "Confirmation cancels safely unsent work and returns this campaign to draft in Testing. Any intervening change or the campaign start invalidates this preview." %}</p>
+{% if withdrawal_token and fresh %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ withdrawal_token }}"><button type="submit">{% translate "Confirm withdrawal from Production" %}</button></form>{% endif %}
+{% endif %}</section>{% endif %}
+{% elif not withdrawal %}<p role="alert">{% translate "This campaign is not eligible for pre-start withdrawal. An active campaign cannot be withdrawn, even if this page was opened earlier." %}</p>{% endif %}
+<p><a href="{% url 'admin:campaign_settings' campaign.pk %}">{% translate "Review campaign settings" %}</a></p>
+{% endblock %}

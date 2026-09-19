@@ -28,6 +28,7 @@ from parishkit.stewardship.campaigns.readiness_families import (
     FamilyImpactEvidence,
     family_impact,
 )
+from parishkit.stewardship.campaigns.withdrawal_models import ProductionWithdrawal
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.admission import _scope
 from parishkit.stewardship.source.models import SourceCurrent
@@ -232,15 +233,20 @@ def _mail_test(configuration, campaign_id, config, records):
         .get("values", {})
         .get("credential_fingerprint")
     )
-    return (
-        CampaignMailTest.objects.filter(
-            campaign_id=campaign_id,
-            configuration_id=configuration.active_configuration_id,
-            template__record_id__in=config.family_templates,
-            fingerprint=fingerprint,
-            state="accepted",
+    rows = CampaignMailTest.objects.filter(
+        campaign_id=campaign_id,
+        configuration_id=configuration.active_configuration_id,
+        template__record_id__in=config.family_templates,
+        fingerprint=fingerprint,
+        state="accepted",
+    )
+    withdrawal = (
+        ProductionWithdrawal.objects.filter(
+            confirmation__request__campaign_id=campaign_id
         )
-        .order_by("-finished_at", "-id")
-        .values_list("id", flat=True)
+        .order_by("-created_at")
         .first()
     )
+    if withdrawal:
+        rows = rows.filter(created_at__gt=withdrawal.created_at)
+    return rows.order_by("-finished_at", "-id").values_list("id", flat=True).first()

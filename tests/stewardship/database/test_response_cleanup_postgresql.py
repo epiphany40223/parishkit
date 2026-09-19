@@ -139,13 +139,19 @@ def test_bounded_cleanup_removes_chains_metadata_and_pins_but_keeps_reservations
     )
 
 
+@pytest.mark.parametrize("submitted", [False, True])
 def test_activation_rejects_unremoved_test_detail_even_after_credentials_are_gone(
     no_receipt_response,
     monkeypatch,
+    submitted,
 ):
+    """Either a baseline alone or a submitted response independently blocks live."""
     harness = no_receipt_response
     form, answers = form_and_answers(harness)
-    row = submit(harness, form, answers).submission
+    if submitted:
+        submit(harness, form, answers)
+    assert Submission.objects.exists() is submitted
+    assert FamilyFormBaseline.objects.filter(pk=form.baseline.pk, mode="test").exists()
     epoch = invalidate_rehearsal(
         campaign_id=harness.campaign.pk, admit=lambda *args: True
     )
@@ -164,7 +170,8 @@ def test_activation_rejects_unremoved_test_detail_even_after_credentials_are_gon
         command(
             harness.campaign, actor, Action.ACTIVATE, token_generation_id=generation
         )
-    assert Submission.objects.filter(pk=row.pk).exists()
+    assert Submission.objects.exists() is submitted
+    assert FamilyFormBaseline.objects.filter(pk=form.baseline.pk).exists()
     while cleanup_rehearsal(epoch, batch_size=1):
         pass
     command(harness.campaign, actor, Action.ACTIVATE, token_generation_id=generation)

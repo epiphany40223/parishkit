@@ -266,8 +266,7 @@ SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE
     d public.stewardship_schedule_definition%ROWTYPE;
     r public.stewardship_system_configuration%ROWTYPE;
-    v_reason text; cancelled_messages bigint; skipped_occurrences bigint;
-    failed_occurrences bigint; delivered_slots bigint; evidence jsonb;
+    v_reason text;
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
     SELECT * INTO r FROM public.stewardship_system_configuration;
@@ -287,6 +286,26 @@ BEGIN
             USING ERRCODE='23514';
     END IF;
     v_reason:=CASE WHEN d.current_revision_id IS NULL THEN 'schedule_removed' ELSE 'schedule_replaced' END;
+    RETURN public.stewardship_schedule_cancel_v1(definition,prior,actor,correlation,v_reason);
+END $$;
+
+-- Private cancellation mechanics shared by exact configuration selection and
+-- pre-start withdrawal. Neither runtime role may call this function directly;
+-- its two compiled owners perform their distinct intent/scope checks first.
+CREATE FUNCTION public.stewardship_schedule_cancel_v1(
+    definition uuid,prior uuid,actor uuid,correlation uuid,v_reason text
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER
+SET search_path TO pg_catalog,public,pg_temp AS $$
+DECLARE
+    d public.stewardship_schedule_definition%ROWTYPE;
+    cancelled_messages bigint; skipped_occurrences bigint;
+    failed_occurrences bigint; delivered_slots bigint; evidence jsonb;
+BEGIN
+    PERFORM pg_advisory_xact_lock(736220,1);
+    SELECT * INTO STRICT d FROM public.stewardship_schedule_definition WHERE id=definition FOR UPDATE;
+    IF v_reason NOT IN ('schedule_removed','schedule_replaced','production_withdrawn') THEN
+        RAISE EXCEPTION 'Invalid private schedule cancellation reason' USING ERRCODE='23514';
+    END IF;
     -- Every producer/claim joins work order first. Lock concrete execution and
     -- message rows too, so an already allocated pre-provider hint cannot race.
     PERFORM 1 FROM public.stewardship_schedule_occurrence
@@ -350,6 +369,7 @@ REVOKE ALL ON public.stewardship_schedule_work_summary FROM PUBLIC;
 REVOKE ALL ON public.stewardship_schedule_effect FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.stewardship_schedule_effect_v1(uuid,bigint,uuid,uuid,text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.stewardship_schedule_reconcile_v1(uuid,uuid,uuid,uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.stewardship_schedule_cancel_v1(uuid,uuid,uuid,uuid,text) FROM PUBLIC;
 
 -- These compiled trigger owners can inspect the private journal/proofs, without
 -- granting their callers direct delivery writes or arbitrary function execution.

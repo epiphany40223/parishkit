@@ -72,6 +72,7 @@ class Campaign(MutableRecord):
     resumed_at = UTCDateTimeField(null=True)
     active_token_generation_id = models.UUIDField(null=True)
     readiness_revision = models.PositiveBigIntegerField(default=0, db_default=0)
+    production_cycle = models.PositiveBigIntegerField(default=0, db_default=0)
 
     class Meta(MutableRecord.Meta):
         db_table = "stewardship_campaign"
@@ -208,3 +209,4 @@ from .schedule_models import (  # noqa: E402,F401
     ScheduleRecoveryReplacement,
     ScheduleSelection,
 )
+from .withdrawal_models import ProductionWithdrawal  # noqa: E402,F401

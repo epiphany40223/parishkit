@@ -91,7 +91,8 @@ class DigestScheduleProducer:
                 definitions[0],
             )
             revision, mode = definition.current_revision, scope.runtime.mode
-            key = (revision.pk, mode)
+            cycle = scope.campaign.production_cycle if mode == "production" else 0
+            key = (revision.pk, mode, cycle)
             plan = SchedulePlan.from_values(
                 revision.values, scope.campaign.active_configuration.values
             )
@@ -129,7 +130,9 @@ class DigestScheduleProducer:
             )
             occurrences, created = [], 0
             identities = {
-                slot.key: occurrence_key(revision.pk, mode, "admins", slot.key)
+                slot.key: occurrence_key(
+                    revision.pk, mode, "admins", slot.key, production_cycle=cycle
+                )
                 for slot in page.slots
             }
             existing = {
@@ -157,6 +160,7 @@ class DigestScheduleProducer:
                         slot=slot.key,
                         due_at=slot.due_at,
                         occurrence_key=identity,
+                        production_cycle=cycle,
                         pause_version=scope.campaign.pause_version
                         if scope.campaign.delivery_paused and mode == "production"
                         else None,
@@ -169,7 +173,7 @@ class DigestScheduleProducer:
             result = DigestPlanningResult(definition.pk, created, tuple(occurrences))
         # Only committed materialization advances traversal. Losing this cursor
         # is safe because immutable keys/fulfillment remain in PostgreSQL.
-        current = {(row.current_revision_id, mode) for row in definitions}
+        current = {(row.current_revision_id, mode, cycle) for row in definitions}
         self.cursors = {
             key: value for key, value in self.cursors.items() if key in current
         }

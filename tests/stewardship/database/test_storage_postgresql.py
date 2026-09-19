@@ -474,6 +474,10 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
     # Shared guards must still prove their actual enabled row-level contracts;
     # nonstandard names are not exceptions to SQL immutability.
     shared_immutable_guards = {
+        "stewardship_production_withdrawal": (
+            "production_withdrawal_guard",
+            "stewardship_production_withdrawal_guard_v1",
+        ),
         "stewardship_production_confirmation": (
             "production_confirmation_guard",
             "stewardship_production_confirmation_guard_v1",
@@ -671,6 +675,7 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             row = cursor.fetchone()
             assert row is not None, table
             conditional_insert_guards = {
+                "stewardship_production_withdrawal",
                 "stewardship_production_confirmation",
                 "stewardship_production_tokens",
                 "stewardship_production_token_cancel",

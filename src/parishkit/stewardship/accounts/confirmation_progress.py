@@ -13,6 +13,7 @@ from parishkit.stewardship.campaigns.catchup_tasks import (
 )
 from parishkit.stewardship.campaigns.confirmation_models import ProductionConfirmation
 from parishkit.stewardship.campaigns.models import ActivationCatchUpDemand
+from parishkit.stewardship.campaigns.runtime import _now
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.storage import TaskRetryConflict, retry_failed
@@ -21,6 +22,7 @@ from parishkit.stewardship.storage import StaleRecordError
 
 from .admin_editing import editable_configuration, principal
 from .confirmation_digest_outcomes import digest_outcomes
+from .withdrawal_commands import available
 
 SALT = "stewardship-production-progress-v1"
 
@@ -107,6 +109,9 @@ def progress(request, service, campaign_id):
             "complete": ready,
             "control": control,
             "outcomes": outcomes,
+            "withdrawal_available": available(
+                receipt.request.campaign, editable_configuration(service), _now()
+            ),
         }
 
 

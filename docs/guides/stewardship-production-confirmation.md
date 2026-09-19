@@ -331,3 +331,13 @@ remaining repeated-go-live/start-race ADM-05.05 acceptance remain open. Delivery
 pause, integrated Gate 3, later reports/post-campaign work and explicit Gate 5
 human approval are not waived. Standing authority permits protected merge and
 continuation, not deployment, release, real-provider writes or database deletion.
+
+## Protected delivery
+
+PR #60 merged on September 19, 2026 at 05:33:33 UTC as `6bc3238`, verified as the
+tip of refreshed `origin/main`. Exact head `d0de976` passed all 24 jobs in CI run
+`35423524559` and DCO; GitHub reported `CLEAN` before the normal protected merge.
+The merge commit includes human sign-off. No protections were bypassed and no
+deployment or release occurred. This supersedes the pending-delivery notes above.
+The [pre-start withdrawal increment](stewardship-production-withdrawal.md)
+continues from that main tip on `pr/stewardship-production-withdrawal`.

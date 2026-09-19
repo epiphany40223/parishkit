@@ -37,6 +37,7 @@ from .accounts import (
     setup_share_views,
     setup_views,
     share_views,
+    withdrawal_views,
 )
 from .jobs import delivery_views
 from .jobs import views as job_views
@@ -227,6 +228,11 @@ admin_patterns = [
         "campaign/<uuid:campaign_id>/production",
         confirmation_views.progress,
         name="production_progress",
+    ),
+    path(
+        "campaign/<uuid:campaign_id>/production/withdraw",
+        withdrawal_views.withdrawal,
+        name="production_withdrawal",
     ),
     path(
         "campaign/<uuid:campaign_id>/settings",

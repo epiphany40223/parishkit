@@ -11,6 +11,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 from uuid import uuid5
 
+from django.db.models import F
+
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .credential_models import FamilyCampaign
@@ -180,6 +182,7 @@ def _page_evidence(definitions, targets, digest):
         ScheduleOccurrence.objects.filter(
             **filters,
             revision_id__in=[row.current_revision_id for row in definitions],
+            production_cycle=F("definition__campaign__production_cycle"),
         )
         .order_by("target", "revision_id", "-recovery_generation")
         .distinct("target", "revision_id")

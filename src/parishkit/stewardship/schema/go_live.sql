@@ -68,6 +68,12 @@ BEGIN
                 AND workspace.credential_fingerprint=mail.fingerprint
             WHERE runtime.active_configuration_id=NEW.configuration_id
                 AND runtime.current_campaign_id=campaign_uuid
+                AND NOT EXISTS (
+                    SELECT 1 FROM public.stewardship_production_withdrawal withdrawal
+                    JOIN public.stewardship_production_confirmation confirmation ON confirmation.id=withdrawal.confirmation_id
+                    JOIN public.stewardship_production_request prior ON prior.id=confirmation.request_id
+                    WHERE prior.campaign_id=campaign_uuid AND withdrawal.created_at>=mail.created_at
+                )
         ) THEN
             RAISE EXCEPTION 'Go-live requires authenticated current Family-test evidence' USING ERRCODE='23514';
         END IF;

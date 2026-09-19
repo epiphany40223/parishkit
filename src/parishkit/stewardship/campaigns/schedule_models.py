@@ -98,6 +98,7 @@ class ScheduleOccurrence(MutableRecord):
         "due_at",
         "occurrence_key",
         "recovery_generation",
+        "production_cycle",
     )
     definition = models.ForeignKey(ScheduleDefinition, on_delete=models.PROTECT)
     revision = models.ForeignKey(
@@ -110,6 +111,7 @@ class ScheduleOccurrence(MutableRecord):
     due_at = UTCDateTimeField()
     occurrence_key = models.CharField(max_length=64, unique=True)
     recovery_generation = models.PositiveBigIntegerField(default=0, db_default=0)
+    production_cycle = models.PositiveBigIntegerField(default=0, db_default=0)
     state = models.CharField(max_length=24, default="pending")
     task = models.ForeignKey(
         "stewardship_jobs.TaskRun", null=True, on_delete=models.PROTECT
@@ -129,7 +131,14 @@ class ScheduleOccurrence(MutableRecord):
         db_table = "stewardship_schedule_occurrence"
         constraints = MutableRecord.Meta.constraints + [
             models.UniqueConstraint(
-                fields=["revision", "mode", "target", "slot", "recovery_generation"],
+                fields=[
+                    "revision",
+                    "mode",
+                    "target",
+                    "slot",
+                    "recovery_generation",
+                    "production_cycle",
+                ],
                 name="schedule_occurrence_semantic_revision",
             ),
             models.CheckConstraint(

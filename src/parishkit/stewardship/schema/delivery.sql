@@ -466,8 +466,10 @@ BEGIN
         'retry_unaccepted','retry_idempotent') AND EXISTS (
         SELECT 1 FROM public.stewardship_schedule_occurrence o
         JOIN public.stewardship_schedule_definition d ON d.id=o.definition_id
+        JOIN public.stewardship_campaign c ON c.id=d.campaign_id
         WHERE o.outbox_id=NEW.id AND (
             o.revision_id IS DISTINCT FROM d.current_revision_id
+            OR (o.mode='production' AND o.production_cycle<>c.production_cycle)
             OR o.state IN ('skipped','coalesced','succeeded')
         )
     ) THEN

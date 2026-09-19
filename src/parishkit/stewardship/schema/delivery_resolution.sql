@@ -63,7 +63,7 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
           AND f.active AND f.email_eligible AND f.email_deliverable AND f.source_generation=cur.generation
           AND p.starts_at<=public.stewardship_campaign_now_v1() AND p.ends_at>public.stewardship_campaign_now_v1()
           AND public.stewardship_export_admitted_v1(c.id,true)
-          AND ((m.mode='production' AND c.state IN ('scheduled','active') AND NOT c.delivery_paused AND f.effective_submission_id IS NULL)
+          AND ((m.mode='production' AND o.production_cycle=c.production_cycle AND c.state IN ('scheduled','active') AND NOT c.delivery_paused AND f.effective_submission_id IS NULL)
             OR (m.mode='testing' AND c.state='draft' AND k.rehearsal_epoch_id=m.rehearsal_epoch_id
               AND EXISTS(SELECT 1 FROM public.stewardship_rehearsal_epoch e WHERE e.id=k.rehearsal_epoch_id AND e.state='active')
               AND NOT EXISTS(SELECT 1 FROM public.stewardship_submission s WHERE s.family_id=f.id AND s.mode='test' AND s.rehearsal_epoch_id=k.rehearsal_epoch_id)))

@@ -47,6 +47,8 @@ def enqueue_preparation(guard, occurrence_id):
         if (
             row.mode != scope.runtime.mode
             or row.revision_id != row.definition.current_revision_id
+            or row.production_cycle
+            != (scope.campaign.production_cycle if row.mode == "production" else 0)
         ):
             return None
         epoch_id = None if epoch is None else epoch.pk
@@ -144,6 +146,11 @@ def disposition(ticket, *, source_check=False):
     ):
         return "safe_cancel"
     scope, _ = _planning_scope(row.definition.campaign_id)
+    if (
+        ticket.mode == "production"
+        and row.production_cycle != scope.campaign.production_cycle
+    ):
+        return "safe_cancel"
     if ticket.mode == "production" and scope.campaign.delivery_paused:
         raise PermissionError("Family preparation is paused.")
     if not source_check:

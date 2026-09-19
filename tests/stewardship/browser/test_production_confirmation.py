@@ -40,7 +40,12 @@ def test_confirmation_and_progress_are_accessible(
     with page.expect_navigation(wait_until="load") as submitted:
         page.keyboard.press("Enter")
     assert submitted.value.status == 200
-    for path in ("/production-confirmation", "/production-progress"):
+    for path in (
+        "/production-withdrawal",
+        "/production-confirmation",
+        "/production-progress",
+        "/production-scheduled",
+    ):
         page.goto(component_origin + path)
         assert page.evaluate(
             "document.documentElement.scrollWidth <= window.innerWidth"
@@ -52,6 +57,9 @@ def test_confirmation_and_progress_are_accessible(
         })).violations.map(({id,impact}) => ({id,impact}))""")
             == []
         )
+    assert page.get_by_role("link", name="Withdraw from Production").is_visible()
+    page.goto(component_origin + "/production-progress")
+    assert page.get_by_role("link", name="Withdraw from Production").count() == 0
     assert page.get_by_role("heading", name="Campaign active", exact=True).is_visible()
     assert page.get_by_role(
         "heading", name="Preparing initial campaign mail"
@@ -84,5 +92,14 @@ def test_production_forms_do_not_require_javascript(browser_engine, component_or
         ).is_visible()
         assert page.get_by_role("link", name="Refresh Production progress").is_visible()
         assert page.locator('form input[name="control"]').get_attribute("value")
+        page.goto(component_origin + "/production-withdrawal")
+        page.get_by_label("Reason for withdrawal").fill("Correct campaign settings")
+        page.get_by_label(
+            "I understand that deleted Testing data cannot be restored."
+        ).check()
+        assert page.get_by_role("button", name="Preview withdrawal").is_visible()
+        assert page.get_by_role(
+            "button", name="Confirm withdrawal from Production"
+        ).is_visible()
     finally:
         context.close()

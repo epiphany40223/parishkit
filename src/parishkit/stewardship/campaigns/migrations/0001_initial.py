@@ -25,6 +25,86 @@ class Migration(migrations.Migration):
         migrations.SeparateDatabaseAndState(
             state_operations=[
                 migrations.CreateModel(
+                    name="ProductionWithdrawal",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        ("request_key", models.UUIDField(unique=True)),
+                        ("session_id", models.UUIDField()),
+                        (
+                            "authenticated_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(),
+                        ),
+                        (
+                            "preview_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(),
+                        ),
+                        (
+                            "expires_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(),
+                        ),
+                        ("expected_campaign_version", models.PositiveBigIntegerField()),
+                        ("expected_runtime_version", models.PositiveBigIntegerField()),
+                        ("inventory", models.JSONField()),
+                        ("reason", models.CharField(max_length=2000)),
+                        ("cleanup_acknowledged", models.BooleanField()),
+                        (
+                            "confirmation",
+                            models.OneToOneField(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_campaigns.productionconfirmation",
+                            ),
+                        ),
+                        (
+                            "transition",
+                            models.OneToOneField(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_campaigns.campaigntransition",
+                            ),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_production_withdrawal",
+                        "constraints": [
+                            models.CheckConstraint(
+                                condition=models.Q(expected_campaign_version__gte=1)
+                                & models.Q(expected_runtime_version__gte=1),
+                                name="production_withdrawal_versions",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(cleanup_acknowledged=True),
+                                name="production_withdrawal_acknowledged",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
                     name="ProductionConfirmation",
                     fields=[
                         (
@@ -363,6 +443,10 @@ class Migration(migrations.Migration):
                         ),
                         (
                             "readiness_revision",
+                            models.PositiveBigIntegerField(db_default=0, default=0),
+                        ),
+                        (
+                            "production_cycle",
                             models.PositiveBigIntegerField(db_default=0, default=0),
                         ),
                         (
@@ -2080,6 +2164,10 @@ class Migration(migrations.Migration):
                             "recovery_generation",
                             models.PositiveBigIntegerField(default=0, db_default=0),
                         ),
+                        (
+                            "production_cycle",
+                            models.PositiveBigIntegerField(db_default=0, default=0),
+                        ),
                         ("outbox_id", models.UUIDField(null=True)),
                         ("worker_id", models.UUIDField(null=True)),
                         ("fence", models.PositiveBigIntegerField(default=0)),
@@ -3251,6 +3339,7 @@ class Migration(migrations.Migration):
                             "target",
                             "slot",
                             "recovery_generation",
+                            "production_cycle",
                         ),
                         name="schedule_occurrence_semantic_revision",
                     ),

@@ -127,7 +127,11 @@ def prepare(request, service, campaign_id, revision_id, *, request_key=None):
             ),
         )
         row.mail = sample.payload()
-        return MailPreview(row, sample, version.digest)
+        # Structural configuration may be unchanged after withdrawal, but that
+        # must not revive an earlier signed test preview for a new go-live cycle.
+        return MailPreview(
+            row, sample, f"{version.digest}:{campaign.readiness_revision}"
+        )
 
 
 def request_sample(

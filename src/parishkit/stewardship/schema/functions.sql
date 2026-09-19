@@ -1210,6 +1210,15 @@ CREATE FUNCTION public.stewardship_campaign_runtime_v1() RETURNS trigger
     AS $$
 BEGIN
     IF TG_OP='DELETE' THEN RAISE EXCEPTION 'Campaign deletion requires exceptional purge' USING ERRCODE='23514'; END IF;
+    IF (TG_OP='INSERT' AND NEW.production_cycle<>0) OR (TG_OP='UPDATE' AND
+        NEW.production_cycle<>OLD.production_cycle+(CASE WHEN EXISTS (
+            SELECT 1 FROM stewardship_campaign_transition t WHERE t.campaign_id=NEW.id
+                AND t.expected_version=OLD.version AND t.action='withdraw'
+                AND t.before_state=OLD.state AND t.after_state=NEW.state
+                AND t.actor_id IS NOT DISTINCT FROM NEW.actor_id AND t.correlation_id=NEW.correlation_id
+        ) THEN 1 ELSE 0 END)) THEN
+        RAISE EXCEPTION 'Production cycle requires withdrawal evidence' USING ERRCODE='23514';
+    END IF;
     IF TG_OP='UPDATE' AND NEW.active_configuration_id=OLD.active_configuration_id THEN
         IF NOT EXISTS (SELECT 1 FROM stewardship_campaign_transition t
             WHERE t.campaign_id=NEW.id AND t.expected_version=OLD.version
@@ -1246,6 +1255,7 @@ BEGIN
         active_token_generation_id=CASE WHEN NEW.action IN ('activate','reopen') THEN NEW.token_generation_id
             WHEN NEW.action IN ('close','withdraw') THEN NULL ELSE active_token_generation_id END,
         readiness_revision=readiness_revision+CASE WHEN NEW.action IN ('activate','withdraw','reopen') THEN 1 ELSE 0 END,
+        production_cycle=production_cycle+CASE WHEN NEW.action='withdraw' THEN 1 ELSE 0 END,
         actor_id=NEW.actor_id, correlation_id=NEW.correlation_id WHERE id=NEW.campaign_id;
     INSERT INTO stewardship_runtime_transition(id,request_id,expected_version,action,before_mode,after_mode,
         before_campaign_id,after_campaign_id,campaign_transition_id,reason,actor_id,correlation_id)
@@ -3374,7 +3384,7 @@ BEGIN
         SELECT max(o.due_at) INTO expected FROM public.stewardship_schedule_occurrence o
         WHERE o.definition_id=d.id AND o.mode='production' AND o.target='admins'
             AND o.id<>(proposed->>'id')::uuid AND o.due_at<=demand.cutoff
-            AND ((o.revision_id=d.current_revision_id AND o.state='pending'
+            AND ((o.revision_id=d.current_revision_id AND o.state='pending' AND o.production_cycle=c.production_cycle
                     AND o.task_id IS NULL AND o.outbox_id IS NULL
                     AND NOT starts_with(o.slot,'recovery:')
                     AND NOT public.stewardship_schedule_slot_excluded_v1(o.definition_id,o.mode,o.target,o.slot))
@@ -3391,6 +3401,8 @@ BEGIN
             ||'","'||(proposed->>'slot')||'"'
             ||CASE WHEN coalesce((proposed->>'recovery_generation')::bigint,0)>0
                 THEN ','||(proposed->>'recovery_generation') ELSE '' END
+            ||CASE WHEN coalesce((proposed->>'production_cycle')::bigint,0)>0
+                THEN ',["production_cycle",'||(proposed->>'production_cycle')||']' ELSE '' END
             ||']','UTF8')),'hex') THEN RETURN false; END IF;
     IF proposed->>'state'='pending' THEN
         RETURN proposed->>'reason'='' AND proposed->>'replacement_id' IS NULL;
@@ -3502,6 +3514,7 @@ BEGIN
       AND o.revision_id=(proposed->>'revision_id')::uuid
       AND o.mode=proposed->>'mode' AND o.target=proposed->>'target'
       AND o.slot=proposed->>'slot'
+      AND o.production_cycle=(proposed->>'production_cycle')::bigint
     ORDER BY o.recovery_generation DESC LIMIT 1;
     IF predecessor.id IS NULL OR predecessor.state NOT IN ('failed','skipped')
        OR (predecessor.state='skipped' AND predecessor.reason NOT IN ('no_deliverable_recipient','family_ineligible'))
@@ -3515,7 +3528,9 @@ BEGIN
        ) THEN RETURN false; END IF;
     RETURN proposed->>'occurrence_key'=encode(sha256(convert_to(
         '["'||(proposed->>'revision_id')||'","'||(proposed->>'mode')||'","'
-        ||(proposed->>'target')||'","'||(proposed->>'slot')||'",'||generation::text||']',
+        ||(proposed->>'target')||'","'||(proposed->>'slot')||'",'||generation::text
+        ||CASE WHEN coalesce((proposed->>'production_cycle')::bigint,0)>0
+            THEN ',["production_cycle",'||(proposed->>'production_cycle')||']' ELSE '' END||']',
         'UTF8')),'hex');
 END $$;
 
@@ -3540,6 +3555,10 @@ BEGIN
     IF NOT EXISTS(SELECT 1 FROM stewardship_schedule_revision WHERE id=NEW.revision_id AND record_id=d.id AND campaign_id=d.campaign_id)
        OR NEW.target='' OR NEW.slot='' OR NEW.occurrence_key !~ '^[0-9a-f]{64}$' THEN
         RAISE EXCEPTION 'Invalid occurrence identity' USING ERRCODE='23514'; END IF;
+    IF (TG_OP='INSERT' OR NEW.state IN ('pending','running'))
+       AND NEW.production_cycle IS DISTINCT FROM (CASE WHEN NEW.mode='production' THEN c.production_cycle ELSE 0 END) THEN
+        RAISE EXCEPTION 'Occurrence belongs to a retired Production cycle' USING ERRCODE='23514';
+    END IF;
     IF NEW.state IN ('succeeded','failed','skipped','coalesced') AND EXISTS (
         SELECT 1 FROM stewardship_outbox_message m WHERE m.id=NEW.outbox_id
           AND public.stewardship_occurrence_delivery_conflict_v1(NEW.state,m.state)
@@ -5242,7 +5261,7 @@ CREATE FUNCTION public.stewardship_schedule_occurrence_mutable_v1() RETURNS trig
     LANGUAGE plpgsql
     AS $$
             BEGIN
-                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."definition_id" IS DISTINCT FROM OLD."definition_id" OR NEW."revision_id" IS DISTINCT FROM OLD."revision_id" OR NEW."mode" IS DISTINCT FROM OLD."mode" OR NEW."routing" IS DISTINCT FROM OLD."routing" OR NEW."target" IS DISTINCT FROM OLD."target" OR NEW."slot" IS DISTINCT FROM OLD."slot" OR NEW."due_at" IS DISTINCT FROM OLD."due_at" OR NEW."occurrence_key" IS DISTINCT FROM OLD."occurrence_key" OR NEW."recovery_generation" IS DISTINCT FROM OLD."recovery_generation" THEN
+                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."definition_id" IS DISTINCT FROM OLD."definition_id" OR NEW."revision_id" IS DISTINCT FROM OLD."revision_id" OR NEW."mode" IS DISTINCT FROM OLD."mode" OR NEW."routing" IS DISTINCT FROM OLD."routing" OR NEW."target" IS DISTINCT FROM OLD."target" OR NEW."slot" IS DISTINCT FROM OLD."slot" OR NEW."due_at" IS DISTINCT FROM OLD."due_at" OR NEW."occurrence_key" IS DISTINCT FROM OLD."occurrence_key" OR NEW."recovery_generation" IS DISTINCT FROM OLD."recovery_generation" OR NEW."production_cycle" IS DISTINCT FROM OLD."production_cycle" THEN
                     RAISE EXCEPTION 'Record identity and bindings are immutable'
                         USING ERRCODE = '23514';
                 END IF;
@@ -9730,9 +9749,11 @@ BEGIN
        OR EXISTS(SELECT 1 FROM stewardship_rehearsal_credential c
                  JOIN stewardship_rehearsal_epoch e ON e.id=c.epoch_id WHERE e.campaign_id=NEW.id)
        OR EXISTS(SELECT 1 FROM stewardship_submission WHERE campaign_id=NEW.id AND mode='test')
+       -- A scalar PK lookup keeps this a baseline-driven existence probe. A
+       -- join may instead scan every Family when cleanup left stale statistics.
        OR EXISTS(SELECT 1 FROM stewardship_family_form_baseline baseline
-                 JOIN stewardship_family_campaign family ON family.id=baseline.family_id
-                 WHERE family.campaign_id=NEW.id AND baseline.mode='test')
+                 WHERE baseline.mode='test' AND (SELECT family.campaign_id
+                     FROM stewardship_family_campaign family WHERE family.id=baseline.family_id)=NEW.id)
        OR EXISTS(SELECT 1 FROM stewardship_daily_digest_snapshot snapshot
                  JOIN stewardship_daily_digest_preparation p ON p.id=snapshot.preparation_id
                  WHERE snapshot.campaign_id=NEW.id AND p.mode='testing')

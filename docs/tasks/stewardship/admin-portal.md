@@ -113,8 +113,8 @@ Scope and dependencies: [ADM-05 work package](../../plans/stewardship/admin-port
 - [x] ADM-05.01 — Build go-live readiness and exact impact preview.
 - [x] ADM-05.02 — Build transition requests, rehearsal invalidation, and cleanup controls.
 - [x] ADM-05.03 — Build atomic Production confirmation with asynchronous catch-up progress.
-- [ ] ADM-05.04 — Build guarded pre-start withdrawal.
-- [ ] ADM-05.05 — Test cleanup, readiness, and campaign-boundary races.
+- [x] ADM-05.04 — Build guarded pre-start withdrawal.
+- [x] ADM-05.05 — Test cleanup, readiness, and campaign-boundary races.
 
 Evidence: ADM-05.01/.02 pass implementation and three completed dual-source
 review/fix rounds on `pr/stewardship-go-live-readiness`, based on verified PR #57
@@ -145,6 +145,20 @@ rounds; its [delivery boundary and acceptance ledger](../../guides/stewardship-p
 record exact-role, replay/race/rollback, bounded-load, outcome-comparison and
 browser evidence. Corrected-head CI/DCO and protected merge remain required.
 ADM-05.04 and withdrawal/repeated-go-live portions of ADM-05.05 remain open.
+
+PR #60 merged as `6bc3238` after all final-head CI/DCO checks passed; see its
+[protected receipt](../../guides/stewardship-production-confirmation.md#protected-delivery).
+ADM-05.04/.05 now continue on the fresh-main
+[pre-start withdrawal branch](../../guides/stewardship-production-withdrawal.md).
+
+PR #61 completes ADM-05.04/.05 implementation and three completed dual-source
+review/fix rounds. Its [acceptance ledger](../../guides/stewardship-production-withdrawal.md#review-round-3-and-acceptance)
+records withdrawal/start races, rollback, current authority, cleanup denial,
+new go-live evidence, cancelled/failed mail across execution cycles, SQL guards,
+browser checks and the retained 5,000-Family performance bounds. All accepted
+Medium findings are fixed; the final round has no High/Critical findings.
+Exact-head CI/DCO and protected delivery remain required before the fresh-main
+ADM-06 delivery-pause increment. Integrated Gate 3 remains after Phase 5.
 
 ## ADM-06: Restore release, delivery pause, reopen, and archive
 
