@@ -6,6 +6,7 @@ from functools import cache
 from itertools import chain, islice
 from pathlib import Path
 from textwrap import wrap
+from unicodedata import category
 
 from parishkit.stewardship.web.exports import csv_cell
 
@@ -34,7 +35,9 @@ def visible_text(value, *, supported=None):
             or 0x10000 <= code <= 0x10FFFF
         )
         if supported is not None:
-            allowed = code == 10 or (code >= 32 and code in supported)
+            allowed = code == 10 or (
+                category(character) not in {"Cc", "Cf"} and code in supported
+            )
         if character == "\\":
             result.append("\\\\")
         elif allowed:

@@ -18,6 +18,7 @@ from parishkit.stewardship.reports.information_rendering import (
     information_lines,
     information_pdf,
     information_xlsx,
+    pdf_font,
     visible_text,
 )
 
@@ -191,3 +192,15 @@ def test_pdf_draws_pages_without_accumulating_wrapped_report(monkeypatch):
     monkeypatch.setattr(PdfPages, "savefig", save_page)
     assert information_pdf(document(), io.BytesIO()) == saved == 3
     assert passes == 2
+
+
+def test_pdf_escapes_mapped_invisible_format_characters():
+    """A cmap entry is not proof that a Unicode format/control glyph is visible."""
+    supported = pdf_font()[1]
+    assert 0xFEFF in supported
+    assert (
+        visible_text("before\ufeffafter", supported=supported) == "before\\ufeffafter"
+    )
+    assert (
+        visible_text("a\u200db\x7fc\nd", supported=supported) == "a\\u200db\\u007fc\nd"
+    )

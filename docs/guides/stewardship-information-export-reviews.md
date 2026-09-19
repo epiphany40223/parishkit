@@ -33,3 +33,16 @@ Nineteen focused rendering/native-control tests pass in 1.2 seconds. Actual-role
 status/all-format worker/download/regeneration validation passes in 17 seconds.
 No schema changes are required by
 these corrections. No accepted Medium-or-higher finding is deferred.
+
+## Round 2
+
+Pika session `20260919-123002-3b3a27` reviewed correction delta
+`7c9dae1..368c545` with the surrounding export implementation and Round 1
+dispositions. Exact permission preflight and both vendors completed without
+degradation, mismatch or failed agents; Codex took 395 seconds. Raw findings:
+no Critical/High, one Medium and six Low below cutoff. The retained Medium is
+accepted: Unicode control/format characters can map to invisible font glyphs.
+The PDF boundary now escapes categories Cc/Cf (except structural newline)
+before consulting the font map. Regression coverage includes mapped U+FEFF,
+joiner U+200D and DEL; original CSV/XLSX Unicode remains unchanged. Focused
+rendering validation closes this round before the final correction review.
