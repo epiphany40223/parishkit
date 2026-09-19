@@ -24,13 +24,18 @@ def test_report_chart_scope_export_controls_and_accessibility(
     page.get_by_label("Export format", exact=True).select_option("xlsx")
     button = page.get_by_role("button", name="Generate export")
     button.focus()
-    assert page.locator("input[name=request_key]").count() == 1
-    assert (
-        page.locator("input[name=browser_timezone]").input_value()
-        == "America/Los_Angeles"
-    )
+    assert page.locator("input[name=request_key]").count() == 2
+    assert page.locator("input[name=browser_timezone]").evaluate_all(
+        "nodes => nodes.map(node => node.value)"
+    ) == ["America/Los_Angeles", "America/Los_Angeles"]
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-    for path in ("/participation", "/report-export", "/report-export-busy"):
+    for path in (
+        "/participation",
+        "/report-export",
+        "/report-export-busy",
+        "/report-exact",
+        "/report-export-expired",
+    ):
         page.goto(component_origin + path)
         page.evaluate(axe_source)
         assert (
@@ -50,9 +55,17 @@ def test_report_and_exports_work_without_scripts(browser_engine, component_origi
         assert "$3,234.56" in page.locator("table").inner_text()
         assert page.get_by_role("button", name="Apply report options").is_visible()
         assert page.get_by_role("button", name="Generate export").is_visible()
+        assert page.get_by_role(
+            "button", name="Queue current-input export"
+        ).is_visible()
         assert page.locator("[data-digest-controls]").is_hidden()
         page.goto(component_origin + "/report-export")
         assert page.get_by_role("button", name="Download export").is_visible()
+        page.goto(component_origin + "/report-exact")
+        assert page.get_by_role("button", name="Cancel export").is_visible()
+        assert page.get_by_role("link", name="Refresh status").is_visible()
+        page.goto(component_origin + "/report-export-expired")
+        assert page.get_by_role("button", name="Regenerate expired file").is_visible()
     finally:
         context.close()
 
@@ -68,9 +81,8 @@ def test_default_timezone_is_resolved_once_but_explicit_utc_is_kept(
         component_origin
         + "/participation-auto?scope=historical&timezone=America%2FLos_Angeles"
     )
-    expect(page.locator("input[name=browser_timezone]")).to_have_value(
-        "America/Los_Angeles"
-    )
+    for field in page.locator("input[name=browser_timezone]").all():
+        expect(field).to_have_value("America/Los_Angeles")
     page.goto(component_origin + "/participation-auto?timezone=UTC")
     expect(page.locator("select[name=timezone]")).to_have_value("UTC")
     assert page.url.endswith("?timezone=UTC")

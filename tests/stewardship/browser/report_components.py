@@ -29,11 +29,13 @@ def components(context, admin):
             {"id": campaign.pk, "name": chart.campaign_name, "url": "/participation"}
         ],
         "query": ReportQuery(timezone="America/Los_Angeles"),
-        "selection": SimpleNamespace(updating=True),
+        "selection": SimpleNamespace(updating=True, expected=True),
         "statistics": value.statistics,
         "cards": statistics_cards(value.statistics),
         "timezones": ["UTC", "America/Los_Angeles"],
         "export_key": UUID(int=10),
+        "exact_key": UUID(int=11),
+        "exact_row_count": len(chart.days),
         "export_allowed": True,
         "row_count": len(chart.days),
         "chart_url": "/digest-chart.png",
@@ -63,6 +65,38 @@ def components(context, admin):
             {"request_id": job.pk, "busy": True},
         ),
     }
+    pages["/report-export-expired"] = (
+        "report-export",
+        {
+            "job": job,
+            "status": {"state": "expired"},
+            "mutable": True,
+            "retry_key": UUID(int=30),
+            "report_url": "/participation",
+        },
+    )
+    pages["/report-exact"] = (
+        "report-exact",
+        {
+            "job": SimpleNamespace(
+                pk=UUID(int=40),
+                format="xlsx",
+                population_scope="historical",
+                submission_watermark=4,
+                through_date=chart.days[-1].local_date,
+                timezone_configuration=SimpleNamespace(
+                    timezone=chart.campaign_timezone
+                ),
+                browser_timezone="America/Los_Angeles",
+                created_at=chart.requested_at,
+            ),
+            "status": {"state": "queued"},
+            "source": {"generation": 3, "promoted_at": chart.source_as_of},
+            "can_cancel": True,
+            "mutable": True,
+            "report_url": "/participation",
+        },
+    )
     pages["/participation-auto?scope=historical"] = (
         "participation",
         page | {"query": ReportQuery()},

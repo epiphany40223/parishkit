@@ -22,6 +22,7 @@ from .export_services import (
     create_export,
     export_status,
     issue_download,
+    regenerate_export,
     retry_export,
 )
 from .export_views import SAFE_FAILURES, _body, _principal, download_with_grant
@@ -36,7 +37,9 @@ def _redirect(identifier):
     return response
 
 
-def _error(request, *, campaign_id=None, request_id=None, status=409, busy=False):
+def _error(
+    request, *, campaign_id=None, request_id=None, exact_id=None, status=409, busy=False
+):
     """Fixed-text recovery never reflects a submitted value or internal failure."""
     # No request context processors: a database outage must not trigger another
     # database query while rendering its recovery response.
@@ -46,6 +49,7 @@ def _error(request, *, campaign_id=None, request_id=None, status=409, busy=False
             {
                 "campaign_id": campaign_id,
                 "request_id": request_id,
+                "exact_id": exact_id,
                 "busy": busy,
                 "temporary": status == 503,
             },
@@ -160,7 +164,9 @@ def command(request, request_id, *, action):
     try:
         service = runtime()
         principal = _principal(request, service.store)
-        values = _body(request, {"request_key"} if action == "retry" else set())
+        values = _body(
+            request, {"request_key"} if action in {"retry", "regenerate"} else set()
+        )
         if action == "cancel":
             cancel_export(service.store, principal.identity, request_id)
         elif action == "retry":
@@ -177,6 +183,14 @@ def command(request, request_id, *, action):
                 response.close()
                 return _error(request, request_id=request_id, status=503, busy=True)
             return response
+        elif action == "regenerate":
+            result = regenerate_export(
+                service.store,
+                principal.identity,
+                request_id,
+                request_key=UUID(values["request_key"]),
+            )
+            return _redirect(result.pk)
         else:
             raise ValueError("Unknown report action.")
         return _redirect(request_id)

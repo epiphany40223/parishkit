@@ -178,6 +178,32 @@ def cancel_export(store, user_id, request_id):
         return receipt
 
 
+def regenerate_export(store, user_id, request_id, *, request_key):
+    """Create a new request for expired retained facts, never recapture current data.
+
+    Regeneration has a new request time and current parish presentation policy.
+    The retained fact set (including its source, cutoff and campaign timezone
+    configuration), format and browser timezone stay fixed. Presentation uses
+    the current configuration; the old publication and audit remain immutable.
+    """
+    with work_transaction():
+        original = ExportRequest.objects.get(pk=request_id)
+        authorize(store, user_id, request=original)
+        admit_campaign(original.campaign_id, mutating=True)
+        publication = ExportPublication.objects.filter(request=original).first()
+        if publication is None or publication.expires_at > database_now():
+            raise ExportConflict("Only expired exports can be regenerated.")
+        return create_export(
+            store,
+            user_id,
+            campaign_id=original.campaign_id,
+            fact_set_id=original.fact_set_id,
+            format=original.format,
+            browser_timezone=original.browser_timezone,
+            request_key=request_key,
+        )
+
+
 def retry_export(store, user_id, request_id, *, request_key):
     """Retry the latest failed run without changing the original report owner.
 

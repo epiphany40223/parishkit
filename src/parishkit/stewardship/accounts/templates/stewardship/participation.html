@@ -64,7 +64,19 @@
 <label for="export-format">{% translate "Export format" %}</label><select id="export-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="png">PNG</option><option value="pdf">PDF</option></select>
 <button type="submit"{% if not export_allowed %} disabled{% endif %}>{% translate "Generate export" %}</button></form>
 {% else %}<p>{% translate "Exports of the displayed chart become available when a complete generation is ready." %}</p>{% endif %}
-<h3>{% translate "Your recent exports for this campaign" %}</h3>
+<h3>{% translate "Export current inputs" %}</h3>
+{% if selection.expected %}
+<p>{% translate "Request a separate export using inputs frozen when you submit this form. This may differ from the older chart displayed above. It waits for its exact calculation and never follows later submissions." %}</p>
+<p>{% if query.scope == 'historical' %}{% translate "Historical as of day" %}{% else %}{% translate "Current population" %}{% endif %}; {{ exact_row_count|number }} {% translate "estimated daily rows; all rows, dates ascending; timezone:" %} {{ query.timezone }}.</p>
+<p class="notice">{% translate "Sensitive parish report: download only to a trusted device and share only with authorized recipients." %}</p>
+<form method="post" action="{% url 'admin:report_exact_create' campaign.pk %}">{% csrf_token %}
+<input type="hidden" name="population_scope" value="{{ query.scope }}"><input type="hidden" name="browser_timezone" value="{{ query.timezone }}"><input type="hidden" name="request_key" value="{{ exact_key }}">
+<label for="exact-format">{% translate "Current-input export format" %}</label><select id="exact-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="png">PNG</option><option value="pdf">PDF</option></select>
+<button type="submit"{% if not export_allowed %} disabled{% endif %}>{% translate "Queue current-input export" %}</button></form>
+{% else %}<p>{% translate "Current report inputs are unavailable; no export can be queued yet." %}</p>{% endif %}
+<h3>{% translate "Your recent current-input requests" %}</h3>
+<ul>{% for job in recent_exact_exports %}<li><a href="{% url 'admin:report_exact' job.pk %}">{{ job.format|upper }} — <time datetime="{{ job.created_at|date:'c' }}" data-local-instant>{{ job.created_at|date:'c' }}</time></a></li>{% empty %}<li>{% translate "No current-input requests yet." %}</li>{% endfor %}</ul>
+<h3>{% translate "Your recent generated-file requests" %}</h3>
 <ul>{% for job in recent_exports %}<li><a href="{% url 'admin:report_export' job.pk %}">{{ job.format|upper }} — <time datetime="{{ job.created_at|date:'c' }}" data-local-instant>{{ job.created_at|date:'c' }}</time></a></li>{% empty %}<li>{% translate "No exports requested yet." %}</li>{% endfor %}</ul>
 </section>
 {% endblock %}

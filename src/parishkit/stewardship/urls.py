@@ -45,6 +45,7 @@ from .jobs import views as job_views
 from .reports import (
     campaign_picker,
     digest_views,
+    exact_ui,
     exact_views,
     export_ui,
     export_views,
@@ -72,6 +73,32 @@ family_patterns = [
     path("logout", family_authentication.logout, name="logout"),
 ]
 admin_patterns = [
+    path(
+        "reports/<uuid:campaign_id>/participation/exact-export",
+        exact_ui.create,
+        name="report_exact_create",
+    ),
+    path(
+        "reports/exact-exports/<uuid:request_id>/", exact_ui.detail, name="report_exact"
+    ),
+    path(
+        "reports/exact-exports/<uuid:request_id>/cancel",
+        exact_ui.command,
+        {"action": "cancel"},
+        name="report_exact_cancel",
+    ),
+    path(
+        "reports/exact-exports/<uuid:request_id>/retry",
+        exact_ui.command,
+        {"action": "retry"},
+        name="report_exact_retry",
+    ),
+    path(
+        "reports/exports/<uuid:request_id>/regenerate",
+        export_ui.command,
+        {"action": "regenerate"},
+        name="report_export_regenerate",
+    ),
     path(
         "reports/<uuid:campaign_id>/participation/export",
         export_ui.create,

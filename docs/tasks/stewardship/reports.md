@@ -24,6 +24,13 @@ closed query state, guarded HTML/PNG and native requester export controls.
 Full consumer coverage, Ministry assignments and the remaining catalog retain
 their owning tasks; no whole RPT-01 task is claimed complete yet.
 
+The [native exact-export increment](../../guides/stewardship-exact-export-ui.md)
+adds participation's current-input queue/status/cancel/retry forms and explicit
+expired-file regeneration from retained facts. Focused real-role PostgreSQL and
+three-engine browser tests and three dual-source review rounds pass; protected
+delivery remains open in PR #65.
+This extends .04/.06 evidence without claiming full-catalog acceptance.
+
 ## RPT-02: Population and calculation library
 
 Scope and dependencies: [RPT-02 work package](../../plans/stewardship/reports.md#rpt-02-population-and-calculation-library).
