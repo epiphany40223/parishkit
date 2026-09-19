@@ -58,6 +58,7 @@ def test_snapshot_retains_all_values_without_scripts(browser_engine, component_o
 
 def test_missing_controls_keeps_static_report_usable(page, component_origin):
     """A partial template must not turn optional chart enhancement into an error."""
+    from playwright.sync_api import expect
 
     def omit_controls(route):
         """Keep the real response and CSP, omitting only the enhancement marker."""
@@ -75,12 +76,19 @@ def test_missing_controls_keeps_static_report_usable(page, component_origin):
     page.on(
         "console",
         lambda message: (
-            errors.append(message.text) if message.type == "error" else None
+            errors.append(f"{message.text} ({message.location.get('url', '')})")
+            if message.type == "error"
+            else None
         ),
     )
-    with page.expect_response("**/digest-v1.js") as script:
+    with (
+        page.expect_response("**/digest-v1.js") as script,
+        page.expect_response("**/admin/presence?format=count") as presence,
+    ):
         page.goto(component_origin + "/daily-digest")
     assert script.value.status == 200
+    assert presence.value.status == 200
+    expect(page.locator("[data-presence-count]")).to_have_text("0")
     assert not errors
     assert page.locator("[data-omitted-controls]").count() == 1
     assert page.locator("[data-omitted-controls]").is_hidden()

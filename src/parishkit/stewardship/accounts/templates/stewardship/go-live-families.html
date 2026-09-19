@@ -1,0 +1,11 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Families with Testing submissions" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Families with Testing submissions" %}</h1><p>{{ campaign.active_configuration.name }}</p>
+<p>{% translate "This is the current remaining Testing inventory. Completed cleanup removes entries; it does not remove stable Production Family identities or codes." %}</p>
+<div class="panel"><table><caption>{% translate "Distinct Families on this page" %}</caption><thead><tr><th scope="col">{% translate "Family name" %}</th><th scope="col">{% translate "Family DUID" %}</th></tr></thead><tbody>
+{% for row in rows %}<tr><td>{{ row.name|default:_("Name unavailable in the current source") }}</td><td>{{ row.duid|number }}</td></tr>{% empty %}<tr><td colspan="2">{% translate "No Testing Families on this page." %}</td></tr>{% endfor %}
+</tbody></table></div>
+<nav aria-label="{% translate 'Testing Families pages' %}">{% if page > 1 %}<a href="?page={{ previous_page }}">{% translate "Previous page" %}</a>{% endif %} {% if has_next %}<a href="?page={{ next_page }}">{% translate "Next page" %}</a>{% endif %}</nav>
+<p><a href="{% url 'admin:go_live' campaign.pk %}">{% translate "Return to readiness preview" %}</a></p>
+{% endblock %}

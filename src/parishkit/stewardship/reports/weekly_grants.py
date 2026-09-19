@@ -85,7 +85,11 @@ def add_weekly_web_grants(tables, columns):
         {"SELECT", "INSERT"}
     )
     add_weekly_dispatch_grants(tables, columns, private=False)
-    columns["stewardship_weekly_digest_recipient"]["SELECT"].add("address")
+    # Readiness needs only accepted item/disposition identities to count mail;
+    # rendered recipient text and the complete historical cohort stay private.
+    columns["stewardship_weekly_digest_recipient"]["SELECT"].update(
+        {"address", "information", "corrections"}
+    )
     # Protected report views read selected retained inputs, not the immutable
     # recipient cohort or private compiled per-Admin delivery payloads.
     columns["stewardship_weekly_digest_snapshot"]["SELECT"].update(REPORT_FIELDS)

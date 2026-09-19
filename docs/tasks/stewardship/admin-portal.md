@@ -110,13 +110,19 @@ phase owners, not this preparation package.
 
 Scope and dependencies: [ADM-05 work package](../../plans/stewardship/admin-portal.md#adm-05-production-transition-and-pre-start-withdrawal).
 
-- [ ] ADM-05.01 — Build go-live readiness and exact impact preview.
-- [ ] ADM-05.02 — Build transition requests, rehearsal invalidation, and cleanup controls.
+- [x] ADM-05.01 — Build go-live readiness and exact impact preview.
+- [x] ADM-05.02 — Build transition requests, rehearsal invalidation, and cleanup controls.
 - [ ] ADM-05.03 — Build atomic Production confirmation with asynchronous catch-up progress.
 - [ ] ADM-05.04 — Build guarded pre-start withdrawal.
 - [ ] ADM-05.05 — Test cleanup, readiness, and campaign-boundary races.
 
-Evidence: Not started.
+Evidence: ADM-05.01/.02 pass implementation and three completed dual-source
+review/fix rounds on `pr/stewardship-go-live-readiness`, based on verified PR #57
+merge `17f5f2fc`. The [acceptance map](../../guides/stewardship-go-live-readiness.md#acceptance-and-delivery-boundary)
+and review ledger record exact-role, concurrency, cancellation, restore-hold,
+browser and fresh-schema evidence. Final-head CI/DCO and protected PR #58 delivery
+remain required. Activation, withdrawal, full handoff/load acceptance and Gate 3
+remain later checkpoints; the whole ADM-05 package is not complete.
 
 ## ADM-06: Restore release, delivery pause, reopen, and archive
 

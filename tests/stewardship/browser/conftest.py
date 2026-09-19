@@ -47,6 +47,7 @@ from parishkit.stewardship.web.security import CSP
 from ..campaign_factory import campaign, schedule
 from .delivery_components import components as delivery_components
 from .digest_components import components as digest_components
+from .go_live_components import components as go_live_components
 from .weekly_components import components as weekly_components
 
 NOW = datetime(2026, 9, 10, 12, tzinfo=UTC)
@@ -133,6 +134,9 @@ def component_origin():
         "watchdog_at": None,
     }
     responses = {
+        # Admin chrome immediately polls this endpoint, including on report pages.
+        # Failure-specific tests can still replace it with an explicit route.
+        "/admin/presence?format=count": ("application/json", '{"count":0}'),
         "/login": ("text/html", render_to_string("stewardship/login.html", context)),
         "/family-login": (
             "text/html",
@@ -1021,6 +1025,7 @@ def component_origin():
         )
     responses.update(digest_components(context, admin))
     responses.update(weekly_components(context, admin))
+    responses.update(go_live_components(context, admin))
     for filename, kind in (
         ("ui-v1.css", "text/css"),
         ("ui-v1.js", "application/javascript"),

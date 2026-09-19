@@ -592,7 +592,13 @@ BEGIN
             RAISE EXCEPTION 'Cleanup runtime requires a sealed manifest' USING ERRCODE='42501';
         END IF;
         IF TG_TABLE_NAME='stewardship_production_request' THEN
-            IF NEW.action NOT IN ('start','recover','retry_later','fail','complete') THEN
+            IF current_user='pk_stewardship_web' THEN
+                -- The separate Admin trigger rechecks current authorization;
+                -- web cannot claim or execute any cleanup batch.
+                IF NEW.action NOT IN ('cancel','retry_failed') THEN
+                    RAISE EXCEPTION 'Web cannot execute cleanup batches' USING ERRCODE='42501';
+                END IF;
+            ELSIF NEW.action NOT IN ('start','recover','retry_later','fail','complete') THEN
                 RAISE EXCEPTION 'Cleanup worker cannot perform Admin commands' USING ERRCODE='42501';
             END IF;
         END IF;

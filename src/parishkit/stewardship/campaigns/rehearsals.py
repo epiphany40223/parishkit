@@ -219,7 +219,7 @@ def invalidate_rehearsal(*, campaign_id, admit):
         epoch_id = scope.rehearsal_epoch_id
         scope.go_live_gate, scope.rehearsal_epoch_id = True, None
         scope.version += 1
-        scope.save()
+        scope.save(update_fields=("go_live_gate", "rehearsal_epoch", "version"))
         if epoch_id:
             changed = RehearsalEpoch.objects.filter(pk=epoch_id, state="active").update(
                 state="invalidated", invalidated_at=_now(), version=F("version") + 1
@@ -249,7 +249,7 @@ def release_rehearsal_gate(*, campaign_id, admit):
             )
         if scope.go_live_gate:
             scope.go_live_gate, scope.version = False, scope.version + 1
-            scope.save()
+            scope.save(update_fields=("go_live_gate", "version"))
             AuditEvent.objects.create(
                 event_type="rehearsal_gate_released", subject_id=scope.pk
             )
