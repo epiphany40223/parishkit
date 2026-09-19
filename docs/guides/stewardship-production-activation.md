@@ -203,3 +203,29 @@ in `stewardship_mail_health_before_20260918n` and
 predicate is added; only intake, task-pin and worker-effect function bodies
 change. The predecessor matched its fingerprint. All other object categories
 are unchanged; the new function count is 526. No retained database was altered.
+
+### Round 2
+
+Session `20260918-223751-e0dc97` reviewed the correction from `98a296e` to
+`6d4ccd32c31a87db57629a086d721fc38f441c7d` (tree
+`134eb13d6bef78d06a941542459df96f066a3891`), with surrounding ownership/grant
+context. Exact permission preflight and both source completions/finalization
+passed with no degradation. Raw severity: two Medium, six Low, no High/Critical.
+The two validated Medium findings concern the same direct-SQL exclusion race.
+
+Accepted and fixed: a runtime retry must already hold work ordering before its
+root is locked; the deferred trigger rejects an un-ordered retry rather than
+acquiring that lock late and inverting lifecycle order. Availability is explicitly
+VOLATILE so its read does not depend on a caller's statement snapshot. Real
+restricted connections reproduce the old retry defect: a retry committed while
+competing intake was uncommitted. The intake-versus-intake test already rejected
+the loser on PostgreSQL 18.6; it remains regression coverage for post-wait
+visibility. Both races and the normal HTTP retry/disposal cases pass after the
+fix: four cases in 66.07 seconds. No accepted Medium-or-higher issue remains.
+
+Independent databases `stewardship_mail_health_before_20260918o` and
+`stewardship_mail_health_after_20260918o` compare immutable `6d4ccd3` with this
+correction. The predecessor fingerprint matches. Only the availability and
+task-pin functions change; all object counts, owners, ACLs and other fingerprint
+categories remain unchanged. The strict fresh-schema contract is revalidated
+before committing this checkpoint.

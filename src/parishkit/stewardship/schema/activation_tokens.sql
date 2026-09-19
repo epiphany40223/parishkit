@@ -48,7 +48,7 @@ $$;
 -- grants. Unlike the trigger-only definers below, it confers no extra authority.
 
 CREATE FUNCTION public.stewardship_production_tokens_available_v1(transition_uuid uuid, excluded_uuid uuid)
-RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
+RETURNS boolean LANGUAGE sql VOLATILE SET search_path TO pg_catalog,public,pg_temp AS $$
     SELECT NOT EXISTS (
         SELECT 1 FROM stewardship_production_tokens preparation
         WHERE preparation.transition_id=transition_uuid
@@ -122,6 +122,13 @@ BEGIN
     IF NEW.task_type NOT IN ('production_tokens','production_token_cleanup') THEN RETURN NULL; END IF;
     IF NEW.parent_id IS NOT NULL
        AND NOT pg_has_role(session_user,(SELECT nspowner FROM pg_namespace WHERE nspname='public'),'USAGE') THEN
+        -- A retry has already locked its root. Acquiring work order here would
+        -- invert lifecycle ordering; the caller must have acquired it first.
+        IF NOT EXISTS(SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+            AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
+            AND mode='ExclusiveLock' AND granted) THEN
+            RAISE EXCEPTION 'Production link retry requires prior work ordering' USING ERRCODE='42501';
+        END IF;
         IF session_user<>'pk_stewardship_web'
            OR public.stewardship_export_authorized_v1(NEW.initiated_by_id,true) IS NOT TRUE THEN
             RAISE EXCEPTION 'Production link retry requires a current Admin' USING ERRCODE='42501';
