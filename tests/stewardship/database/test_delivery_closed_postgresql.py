@@ -12,6 +12,7 @@ from django.db import DatabaseError, connection
 
 from parishkit.stewardship.accounts import delivery_control_commands as commands
 from parishkit.stewardship.accounts.family_authentication import FamilyRuntime
+from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.delivery_control_models import (
     HeldMessageResolution,
@@ -35,6 +36,7 @@ from parishkit.stewardship.jobs.outbox_models import OutboxMessage
 from parishkit.stewardship.jobs.scheduler import scheduler_session
 from parishkit.stewardship.reports.digest_models import DailyDigestRecipient
 from parishkit.stewardship.reports.digest_tasks import daily_handler
+from parishkit.stewardship.reports.weekly_manual import request_manual_report
 from parishkit.stewardship.reports.weekly_models import WeeklyDigestRecipient
 from parishkit.stewardship.responses.models import (
     AdditionalInformationItem,
@@ -72,6 +74,49 @@ from .test_withdrawal_postgresql import (  # noqa: F401
 from .test_withdrawal_work_postgresql import future_message
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+
+def assert_current_resolution(resolved, *, current):
+    """Observe only the opaque scheduling proof under its actual read-only role."""
+    with task_login(ServiceRole.SCHEDULER, exact=True), connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT id FROM stewardship_postclose_current WHERE id=%s", [resolved.pk]
+        )
+        assert cursor.fetchone() == ((resolved.pk,) if current else None)
+
+
+def assert_manual_does_not_resolve(item, resolved):
+    """A genuinely completed manual cohort never discharges an automatic skip."""
+    with web_login():
+        status = request_manual_report(
+            item.arguments[1].store,
+            item.arguments[0].portal_session.principal_id,
+            item.campaign.pk,
+            command_id=uuid4(),
+            configuration_id=SystemConfiguration.objects.get().active_configuration_id,
+        )
+    with task_login(ServiceRole.WORKER, exact=True):
+        execute_weekly(status)
+    recipients = list(
+        WeeklyDigestRecipient.objects.filter(
+            snapshot__preparation__task_id=status.run_id
+        ).select_related("outbox", "snapshot__preparation")
+    )
+    assert len(recipients) == 2
+    for recipient in recipients:
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            execution = claim(recipient.outbox)
+            assert begin(recipient.outbox, execution) is not None
+            finish_submission(
+                recipient.outbox_id,
+                execution.claim,
+                FamilyDeliveryResult(Status.ACCEPTED, 1),
+            )
+    assert ScheduleFulfillment.objects.filter(
+        occurrence_id=recipients[0].snapshot.preparation.occurrence_id,
+        disposition="delivered",
+    ).exists()
+    assert_current_resolution(resolved, current=False)
 
 
 def test_inflight_retries_acquire_hold_atomically_and_keep_uncertainty(scheduled):
@@ -372,6 +417,8 @@ def test_closed_receipt_and_weekly_skips_are_durable_not_provider_acceptance(
         assert history["watermark"] == (0 if later_response else 1)
         assert history["reported"] == []
         assert history["corrected"] == []
+        if later_response:
+            assert_manual_does_not_resolve(item, resolved)
         definition = ScheduleDefinition.objects.get(kind="weekly_digest")
         assert (
             replace_schedule(item.arguments[1].store, definition, uuid4()).state
@@ -402,7 +449,8 @@ def test_closed_receipt_and_weekly_skips_are_durable_not_provider_acceptance(
                 snapshot__preparation__task_id=status.run_id
             ).select_related("outbox", "snapshot__preparation")
             assert recipients.count() == 2
-            for recipient in recipients:
+            assert_current_resolution(resolved, current=False)
+            for index, recipient in enumerate(recipients):
                 with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
                     execution = claim(recipient.outbox)
                     assert begin(recipient.outbox, execution) is not None
@@ -411,19 +459,43 @@ def test_closed_receipt_and_weekly_skips_are_durable_not_provider_acceptance(
                         execution.claim,
                         FamilyDeliveryResult(Status.ACCEPTED, 1),
                     )
+                if index == 0:
+                    assert_current_resolution(resolved, current=False)
             assert ScheduleFulfillment.objects.filter(
                 occurrence_id=recipients.first().snapshot.preparation.occurrence_id,
                 disposition="delivered",
             ).exists()
+            assert_current_resolution(resolved, current=True)
+            previous_revision = definition.current_revision_id
+            store = item.arguments[1].store
+            assert (
+                configure(
+                    store,
+                    store.active(),
+                    uuid4(),
+                    [
+                        {
+                            "operation": "update",
+                            "section": "schedules",
+                            "id": str(definition.pk),
+                            "values": {"time": "11:00:00"},
+                        }
+                    ],
+                ).state
+                == "applied"
+            )
+            definition.refresh_from_db()
+            assert definition.current_revision_id != previous_revision
             with (
                 task_login(ServiceRole.SCHEDULER, exact=True),
-                connection.cursor() as cursor,
+                scheduler_session() as guard,
             ):
-                cursor.execute(
-                    "SELECT id FROM stewardship_postclose_current WHERE id=%s",
-                    [resolved.pk],
-                )
-                assert cursor.fetchone() == (resolved.pk,)
+                DigestScheduleProducer(uuid4(), limit=100)(guard)
+            assert not ScheduleOccurrence.objects.filter(
+                revision_id=definition.current_revision_id,
+                slot=resolved.occurrence.slot,
+            ).exists()
+            assert_current_resolution(resolved, current=True)
 
 
 @pytest.mark.parametrize("accept_first", [False, True])

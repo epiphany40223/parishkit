@@ -165,15 +165,16 @@ ADM-06 delivery-pause increment. Integrated Gate 3 remains after Phase 5.
 Scope and dependencies: [ADM-06 work package](../../plans/stewardship/admin-portal.md#adm-06-restore-release-delivery-pause-reopen-and-archive).
 
 - [ ] ADM-06.01 — Build state-aware restore inventory, fresh-token preparation, and release.
-- [ ] ADM-06.02 — Build delivery pause, resume, and post-close resolution.
+- [x] ADM-06.02 — Build delivery pause, resume, and post-close resolution.
 - [ ] ADM-06.03 — Build staged token preparation and guarded campaign reopen.
 - [ ] ADM-06.04 — Build archive, unarchive, Return, and obligation resolution.
 - [ ] ADM-06.05 — Test lifecycle races and durable post-close coverage.
 
-Evidence: The [delivery-pause increment](../../guides/stewardship-delivery-pause.md)
-starts ADM-06.02 from verified PR #61 merge `4be1ce09`. Pause/resume, held-message
-visibility and close-during-pause acceptance are in scope. No ADM-06 task is
-complete at this checkpoint; restore/reopen/archive/Return remain later owners.
+Evidence: The [delivery-pause acceptance](../../guides/stewardship-delivery-pause.md#acceptance-and-delivery-boundary)
+completes ADM-06.02 implementation, focused actual-role/browser/schema validation
+and three dual-source review/fix rounds. Final-head CI/DCO and protected PR #62
+delivery remain required. Restore/reopen/archive/Return and their broader race/
+unmaterialized-obligation matrix keep .01/.03/.04/.05 open for later owners.
 
 ## ADM-07: User rules and Ministry assignments
 

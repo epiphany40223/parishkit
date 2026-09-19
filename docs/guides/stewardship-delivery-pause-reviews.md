@@ -82,3 +82,31 @@ assert unchanged state/version; no authorization check is relaxed. The focused
 CI regression passed in 30.48 seconds; repository Ruff/formatting, changed-doc
 Markdown and whitespace checks passed. Round 2 is complete. Round 3 and
 corrected-head CI/DCO remain required.
+
+## Round 3 and review exit
+
+Pika session `20260919-055740-8a9b35` reviewed `bdfb2a6` to `38f2c86`,
+including Round 2 dispositions, surrounding coverage consumers and the Phase 4
+service/milestone handoff. Both sources completed, with no degradation, failed
+agents, mismatch or salvage. The exact permission preflight passed. Finalization
+returned COMMENT: two validated Medium test-coverage findings from eleven raw
+(zero High/Critical, two Medium, nine filtered Low).
+
+Both findings are accepted and fixed using the existing actual-role scenario:
+
+- A completed manual weekly report must not discharge the new automatic
+  obligation. Neither may a captured but unfinished report or a cohort with
+  only one of two Admin deliveries accepted. The opaque scheduler proof is
+  asserted absent at each boundary, and present only after full automatic
+  completion.
+- A second real configuration revision, followed by the restricted scheduler,
+  must not recreate the old skipped slot. The test verifies the changed revision,
+  no matching new occurrence, and retained current semantic proof.
+
+The extended scenario passed in 33.77 seconds, sharing its real setup rather
+than adding separate bootstrap-heavy cases. Production code/schema are unchanged
+from Round 2. All accepted Medium+ findings are resolved; three successful
+dual-source review/fix rounds and the no-High final-round criterion are satisfied.
+These regression additions complete the final round under the controlling
+procedure; a fourth round is not required solely because the third had fixes.
+Final-head CI/DCO and ordinary protected delivery still precede Phase 5.

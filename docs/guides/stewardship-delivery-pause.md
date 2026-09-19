@@ -275,3 +275,18 @@ or shared credential was introduced for routing convenience. Full BG-07.04/.05
 archive inventory/report parity and ADM-06 restore/reopen/archive/Return still
 belong to their documented later owners. Gate 3, Gate 5, real-provider smoke
 tests, deployment and release remain separate boundaries.
+
+## Acceptance and delivery boundary
+
+ADM-06.02 and the current-phase M4 demonstrations are implemented and locally
+validated. The [review ledger](stewardship-delivery-pause-reviews.md#round-3-and-review-exit)
+records all three completed dual-source rounds, accepted fixes, rejections and
+regression evidence. No accepted Medium+ finding remains and the final round
+contains no High/Critical finding. Earlier incomplete checkpoint notes above
+are historical, not the current implementation status.
+
+PR #62 remains subject to final-head CI/DCO and the normal protected merge path.
+Standing human merge/continue authority applies once those checks pass; verify
+the merge on refreshed `origin/main` before creating the next reporting branch.
+Record the merge receipt and M4 release in that successor handoff. Integrated
+Gate 3 follows the complete Phase 5 report/RBAC work, not this Phase 4 boundary.
