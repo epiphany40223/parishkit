@@ -10,6 +10,38 @@ from django.db import models
 from parishkit.stewardship.storage import ImmutableRecord, UTCDateTimeField
 
 
+class InformationExportSnapshot(ImmutableRecord):
+    """Database-captured complete text/history, reusable after file expiration."""
+
+    campaign = models.ForeignKey(
+        "stewardship_campaigns.Campaign", on_delete=models.PROTECT, db_index=False
+    )
+    source = models.ForeignKey(
+        "stewardship_source.SourceSnapshot", on_delete=models.PROTECT, db_index=False
+    )
+    configuration = models.ForeignKey(
+        "stewardship_accounts.AppliedConfigurationVersion",
+        on_delete=models.PROTECT,
+        db_index=False,
+    )
+    actor_id = models.UUIDField(editable=False)
+    correlation_id = models.UUIDField(editable=False)
+    parameters = models.JSONField()
+    document = models.JSONField(default=dict)
+    row_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = "stewardship_information_export_snapshot"
+        indexes = [
+            models.Index(
+                fields=("correlation_id",), name="information_export_correlation"
+            ),
+            models.Index(fields=("campaign",), name="information_export_campaign"),
+            models.Index(fields=("source",), name="information_export_source"),
+            models.Index(fields=("configuration",), name="information_export_config"),
+        ]
+
+
 class ExportRequest(ImmutableRecord):
     """One canonical report request and its exact retained calculation generation."""
 
@@ -19,7 +51,12 @@ class ExportRequest(ImmutableRecord):
     requester_id = models.UUIDField()
     request_key = models.UUIDField()
     task = models.OneToOneField("stewardship_jobs.TaskRun", on_delete=models.PROTECT)
-    fact_set = models.ForeignKey("CampaignDailyFactSet", on_delete=models.PROTECT)
+    fact_set = models.ForeignKey(
+        "CampaignDailyFactSet", on_delete=models.PROTECT, null=True
+    )
+    information_snapshot = models.ForeignKey(
+        InformationExportSnapshot, on_delete=models.PROTECT, null=True, db_index=False
+    )
     configuration = models.ForeignKey(
         "stewardship_accounts.AppliedConfigurationVersion", on_delete=models.PROTECT
     )
@@ -36,7 +73,18 @@ class ExportRequest(ImmutableRecord):
                 fields=("requester_id", "request_key"), name="export_request_replay"
             ),
             models.CheckConstraint(
-                condition=models.Q(report="participation"), name="export_report_known"
+                condition=models.Q(
+                    report="participation",
+                    fact_set__isnull=False,
+                    information_snapshot__isnull=True,
+                )
+                | models.Q(
+                    report="additional_information",
+                    fact_set__isnull=True,
+                    information_snapshot__isnull=False,
+                    format__in=("csv", "xlsx", "pdf"),
+                ),
+                name="export_report_known",
             ),
             models.CheckConstraint(
                 condition=models.Q(format__in=("csv", "png", "pdf", "xlsx")),
@@ -46,7 +94,10 @@ class ExportRequest(ImmutableRecord):
         indexes = [
             models.Index(
                 fields=("requester_id", "created_at"), name="export_requester_history"
-            )
+            ),
+            models.Index(
+                fields=("information_snapshot",), name="export_information_snapshot"
+            ),
         ]
 
 

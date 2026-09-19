@@ -124,6 +124,11 @@ delivery remains open in PR #66. Complete-text and
 optional-history exports remain .04's next coherent increment; full package
 acceptance is not claimed.
 
+PR #66's [protected delivery](../../guides/stewardship-additional-followup.md#protected-delivery)
+now supersedes the pending note. The [complete-text/history export increment](../../guides/stewardship-information-exports.md)
+starts on refreshed main `6a636680`; .04 remains unchecked while implementation,
+validation and review are in progress.
+
 ## RPT-05: Family code and postal-outreach reports
 
 Scope and dependencies: [RPT-05 work package](../../plans/stewardship/reports.md#rpt-05-family-code-and-postal-outreach-reports).

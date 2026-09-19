@@ -44,6 +44,7 @@ def components(context, admin):
         total=51,
         rows=[item],
         mutable=True,
+        export_timezones=("UTC", "America/Detroit"),
         next_page=2,
         request_key=UUID(int=83),
         history_page=1,
@@ -62,6 +63,7 @@ def components(context, admin):
     )
     pages = {
         "/information": ("information", values),
+        "/information-queue-gated": ("information", values | {"mutable": False}),
         "/information-item": ("information", values | {"item": item}),
         "/information-unresolved": (
             "information",

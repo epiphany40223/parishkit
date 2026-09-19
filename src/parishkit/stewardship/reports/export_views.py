@@ -272,7 +272,7 @@ def download_with_grant(request, service, principal, grant_id):
             [job.campaign_id],
             authorize=fresh,
             open_content=content,
-            filename=f"participation.{job.format}",
+            filename=f"{job.report}.{job.format}",
             content_type=CONTENT_TYPES[job.format],
             on_close=finish,
         )
