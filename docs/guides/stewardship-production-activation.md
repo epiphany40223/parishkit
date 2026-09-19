@@ -261,3 +261,18 @@ All 17 fresh-schema/model-contract cases pass in 18.84 seconds. Ruff, formatting
 changed Markdown and diff checks pass. All three dual-source
 review/fix rounds are complete with no unresolved accepted Medium-or-higher
 findings; exact-head CI/DCO and protected delivery are still required.
+
+## Protected delivery
+
+PR [#59](https://github.com/epiphany40223/parishkit/pull/59) merged through normal
+protected auto-merge on September 19, 2026 at 03:19:55 UTC as
+`880507fc573f3018d4bbf1e3073e59b83ab5849b`. Final reviewed-and-corrected head
+`004b7791121e9e9e06e61fb60348fd5cf04f36c4` passed full CI run `35417533423`
+and DCO. The three-round ledger above remains the review evidence; no accepted
+Medium-or-higher finding remains. No protection was bypassed or deployment made.
+
+The merge was fetched and verified on `origin/main` before creating
+`pr/stewardship-production-confirmation` from that exact tip. Continue final
+readiness, confirmation and catch-up acceptance there; pre-start withdrawal
+follows as its own coherent increment. ADM-05.03/.04/.05 remain open until their
+respective full acceptance passes, and integrated Gate 3 remains later work.

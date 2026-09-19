@@ -135,6 +135,11 @@ Final readiness, activation, withdrawal, full load/handoff and boundary-race
 acceptance follow on fresh main after that PR's protected delivery. The above
 tasks remain unchecked; this review-size split does not reduce their acceptance.
 
+PR #59 merged as `880507fc` after final-head CI/DCO and three dual-source rounds;
+see its [protected receipt](../../guides/stewardship-production-activation.md#protected-delivery).
+Final confirmation and catch-up acceptance now continue from that verified main
+tip on `pr/stewardship-production-confirmation`; withdrawal follows separately.
+
 ## ADM-06: Restore release, delivery pause, reopen, and archive
 
 Scope and dependencies: [ADM-06 work package](../../plans/stewardship/admin-portal.md#adm-06-restore-release-delivery-pause-reopen-and-archive).

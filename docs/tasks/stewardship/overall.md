@@ -606,6 +606,13 @@ as a smaller reviewable slice. After its reviewed protected merge, resume the
 remaining final-readiness/activation/withdrawal checkpoints from fresh main;
 do not advance to delivery pause or claim the ADM-05 package complete yet.
 
+PR #59 passed all three dual-source rounds and final-head CI/DCO, then merged
+as `880507fc`; its [protected receipt](../../guides/stewardship-production-activation.md#protected-delivery)
+records verification on `origin/main`. Continue the
+[final-confirmation increment](../../guides/stewardship-production-confirmation.md)
+from that tip on `pr/stewardship-production-confirmation`. Withdrawal remains the
+following coherent increment, with all original load/race and gate criteria.
+
 1. Finish [DAT-07](data.md#dat-07-follow-up-content-templates-jobs-and-audit) job/outbox records; implement [BG-02](background-processing.md#bg-02-campaign-boundary-occurrences) → [BG-03](background-processing.md#bg-03-production-transition-cleanup-worker) → [BG-04](background-processing.md#bg-04-schedule-revision-fulfillment-and-mode-routing).
 2. Begin [BG-08](background-processing.md#bg-08-export-and-graph-workers) chart/export substrate, then implement [BG-06](background-processing.md#bg-06-family-invitations-and-reminders).
 3. Complete required [RPT-02](reports.md#rpt-02-population-and-calculation-library) calculations and the [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics) fact-materialization service before [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests); report UI remains in Phase 5.
