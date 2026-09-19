@@ -8,9 +8,6 @@ configuration's completed groups. Partial digest pages never contribute twice.
 from django.db.models import BigIntegerField, Sum
 from django.db.models.functions import Cast, Coalesce
 
-from parishkit.stewardship.accounts.models import AddressRule
-from parishkit.stewardship.reports.readiness_weekly import weekly_message_count
-
 from .credential_models import FamilyCampaign
 from .models import CatchUpCheckpoint
 from .schedule_models import ScheduleFulfillment
@@ -54,30 +51,10 @@ def _coalesced(demand, **scope):
     ).count()
 
 
-def digest_counts(demand, scope, definition, selected):
-    """Freeze recipient-level candidates only after the entire digest is covered.
-
-    These are selection outcomes, not rendered/sent messages. The existing
-    delivery owners still recheck content, recipients and acceptance afterward.
-    """
-    require_work_order()
+def digest_page_counts(coalesced):
+    """Record this bounded page's new or previously covered semantic slots once."""
     counts = dict.fromkeys(COUNT_KEYS, 0)
-    counts["coalesced_slots"] = _coalesced(
-        demand, target="admins", definition=definition
-    )
-    if selected is not None:
-        recipients = tuple(
-            AddressRule.objects.filter(
-                configuration_id=scope.runtime.active_configuration_id,
-                roles__contains=["administrator"],
-            ).values_list("email", flat=True)
-        )
-        if definition.kind == "daily_digest":
-            counts["daily_messages"] = len(recipients)
-        else:
-            counts["weekly_messages"] = weekly_message_count(
-                demand.campaign_id, recipients, bind=lambda value: None
-            )
+    counts["coalesced_slots"] = coalesced
     return counts
 
 

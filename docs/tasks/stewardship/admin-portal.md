@@ -112,7 +112,7 @@ Scope and dependencies: [ADM-05 work package](../../plans/stewardship/admin-port
 
 - [x] ADM-05.01 — Build go-live readiness and exact impact preview.
 - [x] ADM-05.02 — Build transition requests, rehearsal invalidation, and cleanup controls.
-- [ ] ADM-05.03 — Build atomic Production confirmation with asynchronous catch-up progress.
+- [x] ADM-05.03 — Build atomic Production confirmation with asynchronous catch-up progress.
 - [ ] ADM-05.04 — Build guarded pre-start withdrawal.
 - [ ] ADM-05.05 — Test cleanup, readiness, and campaign-boundary races.
 
@@ -139,6 +139,12 @@ PR #59 merged as `880507fc` after final-head CI/DCO and three dual-source rounds
 see its [protected receipt](../../guides/stewardship-production-activation.md#protected-delivery).
 Final confirmation and catch-up acceptance now continue from that verified main
 tip on `pr/stewardship-production-confirmation`; withdrawal follows separately.
+
+PR #60 now completes ADM-05.03 implementation and three dual-source review/fix
+rounds; its [delivery boundary and acceptance ledger](../../guides/stewardship-production-confirmation.md#delivery-boundary)
+record exact-role, replay/race/rollback, bounded-load, outcome-comparison and
+browser evidence. Corrected-head CI/DCO and protected merge remain required.
+ADM-05.04 and withdrawal/repeated-go-live portions of ADM-05.05 remain open.
 
 ## ADM-06: Restore release, delivery pause, reopen, and archive
 

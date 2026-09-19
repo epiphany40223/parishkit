@@ -20,14 +20,21 @@ from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.storage import StaleRecordError
 
 from .admin_editing import editable_configuration, principal
+from .confirmation_digest_outcomes import digest_outcomes
 
 SALT = "stewardship-production-progress-v1"
 
 COUNT_LABELS = (
     ("family_messages", _("Family message candidates")),
-    ("daily_messages", _("Daily Admin message candidates")),
-    ("weekly_messages", _("Weekly Admin message candidates")),
+    ("daily_messages", _("Daily Admin messages created")),
+    ("weekly_messages", _("Weekly Admin messages created")),
     ("coalesced_slots", _("Coalesced semantic slots")),
+    ("active_families", _("Active Families when their groups were prepared")),
+    ("eligible_families", _("Email-eligible Families when their groups were prepared")),
+    (
+        "no_email_families",
+        _("Families without eligible email when their groups were prepared"),
+    ),
 )
 
 
@@ -67,12 +74,15 @@ def progress(request, service, campaign_id):
             actual = prepared_counts(
                 demand, receipt.request.campaign.active_configuration_id
             )
+            digests = digest_outcomes(demand)
+            actual.update({key: value["actual"] for key, value in digests.items()})
             outcomes = [
                 {
                     "label": label,
                     "preview": receipt.preview_counts[key],
                     "actual": actual[key],
                     "difference": actual[key] - receipt.preview_counts[key],
+                    "complete": digests[key]["complete"] if key in digests else ready,
                 }
                 for key, label in COUNT_LABELS
             ]

@@ -437,6 +437,15 @@ def test_revision_change_after_partial_coverage_retains_all_original_dates(tmp_p
                 ],
             )
             assert result.state == "applied"
+            campaign.refresh_from_db()
+            demand.refresh_from_db()
+            with work_transaction():
+                assert (
+                    prepared_counts(demand, campaign.active_configuration_id)[
+                        "coalesced_slots"
+                    ]
+                    == 0
+                )
             previous.refresh_from_db()
             assert (
                 previous.state == "skipped" and previous.reason == "schedule_replaced"

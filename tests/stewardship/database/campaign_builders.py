@@ -238,6 +238,8 @@ def complete_empty_catchup(campaign, actor):
     if demand is None:
         assert campaign.state == "scheduled"
         return
+    if demand.completed_at is not None:
+        return
     run = claimed_task("activation_catchup", demand.pk, actor)
     checkpoint_catchup(
         demand_id=demand.pk,

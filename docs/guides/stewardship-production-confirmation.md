@@ -272,3 +272,62 @@ Totals: 187 relations, 2,151 columns, 3,073 constraints, 920 indexes, 529 functi
 516 triggers and 28 policies. No retained database is changed or deleted.
 Full CI run `35422067466` passes for `ee8da05`; this correction needs its own
 final-head CI and the third dual-source review before delivery.
+
+### Round 3
+
+Pika session `20260919-010027-5bfd12` reviews `ee8da05..192505c`. Claude and
+Codex complete without degradation, failed agents, mismatch or salvage. Raw
+findings: two Medium and eight Low, no High/Critical. Both Medium findings are
+accepted and corrected:
+
+- Codex, unbounded digest counting: remove live weekly-history prediction and
+  full-range digest recounting from catch-up transactions. Each date page records
+  its bounded inherited coverage, and each cover page records its newly covered
+  slots. Current-configuration totals include each semantic slot once, including
+  forwarded history. Later daily/weekly message totals come from the existing
+  durable recipient/outbox preparation owners, not another scan of live private
+  report contents. The progress page marks each digest row partial until report
+  preparation finishes, separately from catch-up completion. It counts created
+  messages, including retained cancelled messages in the selected scope, not
+  provider attempts or delivered mail. This supersedes round 2's prediction of
+  digest candidates inside the last catch-up batch.
+- Claude, positive digest coverage: real Production activation/catch-up followed
+  by real daily and weekly preparation/fanout produces two individual messages
+  in each case. Assertions cover zero/unfinished before fanout, positive/complete
+  afterward, exclusion of the other digest kind, wrong campaigns, post-cutoff
+  work and observations predating activation. No real provider is contacted.
+
+Low dispositions: the duplicate weekly-cost/positive-coverage findings are fixed
+above. Add the three stored Family eligibility rows to the comparison, and
+assert that a still-incomplete configuration restart excludes old-prefix counts.
+The SQL count guard intentionally validates safe shape, not a second derivation
+of every trusted compiled worker observation; stricter per-group count proof is
+deferred Low and does not confer mail authority. The harness-helper refactor and
+running progress aggregates are deferred Low; measured confirmation still obeys
+its bound, and progress queries do not add a corpus scan to a worker batch.
+
+Twenty affected database cases pass in 70.96 seconds; the initially failing
+positive weekly case exposed a fixture attempting to reclaim already-completed
+catch-up. After that fixture recognizes completed work, both positive digest
+cases and the strengthened restart case pass together in 20.75 seconds. All
+nine browser cases pass in 14.72 seconds. Ruff passes. Round 3 changes no SQL or
+model declarations, so the strict round-2 independent schema audit remains
+applicable. Three dual-source review/fix rounds are complete, with no unresolved
+accepted Medium-or-higher findings and no High/Critical in the final round.
+Correction-head full CI/DCO and protected merge remain required.
+
+## Delivery boundary
+
+ADM-05.03 is implemented with the relevant ADM-05.05 acceptance: exact readiness,
+typed fresh-auth confirmation, atomic scheduled/direct-active outcomes, bounded
+catch-up admission, progress/outcome comparison and safe retry. Required
+authorization, stale-input, rollback, concurrency, reference-load and browser
+checks are recorded above. The task's implementation/review acceptance is not
+a claim that this branch has landed or that Gate 3 is released.
+
+After final-head CI/DCO and protected merge, verify the merge on `origin/main`
+and create the guarded pre-start-withdrawal branch from that tip. ADM-05.04 and
+remaining repeated-go-live/start-race ADM-05.05 acceptance remain open. Delivery
+pause, integrated Gate 3, later reports/post-campaign work and explicit Gate 5
+human approval are not waived. Standing authority permits protected merge and
+continuation, not deployment, release, real-provider writes or database deletion.
