@@ -160,3 +160,36 @@ and no existing ACL or policy changes. All catalogs remain separately retained.
 All 18 schema/model/immutable-guard checks passed in 19.32 seconds; the 123
 focused forecast, policy and grant tests passed in 0.27 seconds. Repository
 lint/formatting, guide Markdown and whitespace checks also passed.
+
+## Digest recovery checkpoint
+
+In-interval resume now includes complete daily and weekly groups, including
+original dates not yet materialized by the bounded scheduler. A count-only
+projection and fingerprint bind current work/preparation versions. Incomplete
+preparation or uncertain delivery blocks release. Manual weekly requests keep
+their separate intent and are not ordinary overdue coalescing candidates.
+
+The private effect creates missing dates, selects an unowned current occurrence
+or allocates a replacement aggregate, cancels redundant unsent fanout and
+waiting delivery/finalizer tasks, and records every original slot's coverage
+before clearing the pause. Previously accepted recipient evidence is unchanged.
+The ordinary digest worker consumes the selected durable obligation and reuses
+actual accepted coverage rather than treating cancellation as provider success.
+
+Three actual-role PostgreSQL scenarios passed in 66.17 seconds, sharing setup
+within each scenario. They cover complete unmaterialized daily/weekly ranges,
+prepared report replacement, blocked incomplete preparation, accepted-recipient
+deduplication, unknown-provider refusal, forged SQL impact, a newly due date
+invalidating an otherwise unexpired preview, and transaction rollback after
+the real recovery effects but before commit. The preceding prepared-recipient
+scenario passed in 29.86 seconds. Thirty-four focused unit tests and repository
+lint passed. Checkpoint `344ead3` CI `35431663969` completed successfully.
+
+The independent `after-i` catalog delta from `after-g` adds one private effect
+table, three projections, 30 columns, 11 constraints, one index and one private
+function. Only the control guard/effect and proof-bound occurrence coalescing
+branch change among existing objects; existing ACLs, policies and triggers are
+unchanged. All 17 strict schema/model-equivalence checks passed in 18.64 seconds.
+Catalogs remain separately retained, with no database upgrades or deletions.
+Post-close resolution, remaining integration/browser acceptance,
+three review rounds and final-head CI remain required; the PR stays draft.

@@ -22,7 +22,9 @@ from parishkit.stewardship.campaigns.models import (
     ScheduleFulfillment,
     ScheduleOccurrence,
 )
+from parishkit.stewardship.campaigns.recovery_coverage import covered_dates
 from parishkit.stewardship.campaigns.runtime import campaign_transaction
+from parishkit.stewardship.campaigns.schedule_evaluation import SchedulePlan
 from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage
@@ -34,6 +36,7 @@ from ..content_factory import content
 from . import test_setup_preview_postgresql as preview_inputs
 from .campaign_builders import advance, campaign_clock
 from .test_campaign_mail_postgresql import deliver
+from .test_digest_schedule_planning_postgresql import add_digest
 from .test_outbox_postgresql import claim
 from .test_setup_mail_views_postgresql import web_login
 from .test_setup_views_postgresql import post
@@ -417,3 +420,130 @@ def assert_family_resume(item, monkeypatch, tmp_path):
     assert TaskRun.objects.get(pk=cancelled.task_id).state == "cancelled"
     assert OutboxMessage.objects.get(pk=running_mail.message_id).state == "cancelled"
     assert TaskRun.objects.get(pk=running_task.run_id).state == "running"
+
+
+def accepted_sender_check(item, monkeypatch, tmp_path):
+    """Exercise the real explicit-test owner; only the provider result is fake."""
+    with web_login():
+        status = commands.page(*item.arguments)
+        path = reverse(
+            "admin:campaign_mail", args=[item.campaign.pk, status["test_template"]]
+        )
+        page = item.browser.get(path)
+        assert page.status_code == 200
+        token = page.context["form"]["preview_token"].value()
+        assert (
+            post(
+                item.browser,
+                path,
+                {"preview_token": token, "acknowledge_unknown": True},
+            ).status_code
+            == 302
+        )
+    monkeypatch.setattr(
+        "parishkit.stewardship.accounts.campaign_mail_tasks.submit_sample",
+        lambda *args, **kwargs: DeliveryOutcome.ACCEPTED,
+    )
+    assert (
+        deliver(
+            (
+                item.arguments[1],
+                None,
+                None,
+                tmp_path / "google_workspace" / "credential",
+            )
+        ).state
+        == "accepted"
+    )
+
+
+def test_resume_materializes_every_due_digest_day(scheduled, monkeypatch, tmp_path):
+    """Resume is independent of scheduler page size and retains original coverage."""
+    item = scheduled
+    identifiers = {
+        add_digest(item.arguments[1].store, item.campaign),
+        add_digest(item.arguments[1].store, item.campaign, weekly=True),
+    }
+    due = item.campaign.active_configuration.starts_at + timedelta(days=15, minutes=14)
+    definitions = list(
+        ScheduleDefinition.objects.select_related("current_revision").filter(
+            pk__in=identifiers
+        )
+    )
+    expected = {
+        d.pk: tuple(
+            slot.key
+            for slot in SchedulePlan.from_values(
+                d.current_revision.values, item.campaign.active_configuration.values
+            )
+            .page(through=due, limit=100)
+            .slots
+        )
+        for d in definitions
+    }
+    with campaign_clock(due):
+        with web_login():
+            _, token = commands.preview_pause(
+                *item.arguments, reason="Review overdue reports"
+            )
+            commands.confirm(*item.arguments, token=token)
+            impact = commands.digest_recovery_impact(item.campaign.pk)
+            assert impact["selected"] == 2 and impact["blocked"] == 0
+            assert (
+                impact["slots"]
+                == impact["unmaterialized"]
+                == sum(map(len, expected.values()))
+            )
+            for private in (
+                "stewardship_delivery_digest_recovery",
+                "stewardship_delivery_digest_effect",
+            ):
+                with (
+                    pytest.raises(DatabaseError) as failure,
+                    transaction.atomic(),
+                    connection.cursor() as cursor,
+                ):
+                    cursor.execute(f"SELECT * FROM {private}")
+                assert failure.value.__cause__.sqlstate == "42501"
+        accepted_sender_check(item, monkeypatch, tmp_path)
+        with web_login():
+            preview, token = commands.preview_resume(
+                *item.arguments, reason="Release combined reports"
+            )
+            assert preview["selection"]["digests"] == impact
+            forged = raw_values(item, preview) | {
+                "action": "resume",
+                "selection": preview["selection"]
+                | {"digests": impact | {"slots": impact["slots"] + 1}},
+            }
+            with (
+                pytest.raises(DatabaseError) as failure,
+                campaign_transaction(item.campaign.pk, correlation_id=uuid4()),
+            ):
+                DeliveryControlCommand.objects.create(**forged)
+            assert failure.value.__cause__.sqlstate == "23514"
+        with (
+            campaign_clock(due + timedelta(minutes=2)),
+            web_login(),
+            pytest.raises(StaleRecordError, match="inputs changed"),
+        ):
+            commands.confirm(*item.arguments, token=token)
+        with web_login():
+            commands.confirm(*item.arguments, token=token)
+    item.campaign.refresh_from_db()
+    assert not item.campaign.delivery_paused
+    for definition in definitions:
+        rows = ScheduleOccurrence.objects.filter(definition=definition).order_by(
+            "due_at"
+        )
+        assert tuple(rows.values_list("slot", flat=True)) == expected[definition.pk]
+        selected = rows.get(state="pending")
+        assert (
+            tuple(day.isoformat() for day in covered_dates(selected.pk))
+            == expected[definition.pk]
+        )
+        assert (
+            rows.filter(state="coalesced", replacement=selected).count()
+            == len(expected[definition.pk]) - 1
+        )
+        assert selected.task_id is None and selected.outbox_id is None

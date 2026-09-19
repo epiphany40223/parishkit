@@ -3650,7 +3650,8 @@ BEGIN
         IF OLD.state='running' AND (NEW.task_id IS DISTINCT FROM OLD.task_id OR NEW.worker_id IS DISTINCT FROM OLD.worker_id OR NEW.fence<>OLD.fence) THEN
             RAISE EXCEPTION 'Occurrence worker identity changed' USING ERRCODE='23514'; END IF;
         IF OLD.state='running' AND NOT (
-            (NEW.state='skipped' OR (NEW.state='coalesced' AND NEW.reason='missed_family_recovery'))
+            (NEW.state='skipped' OR (NEW.state='coalesced' AND NEW.reason IN (
+                'missed_family_recovery','missed_daily_recovery','missed_weekly_recovery')))
             AND public.stewardship_schedule_effect_v1(
                 OLD.id,OLD.version,NEW.actor_id,NEW.correlation_id,NEW.reason)
         ) AND NOT EXISTS(SELECT 1 FROM stewardship_task_run owner_task WHERE owner_task.id=OLD.task_id

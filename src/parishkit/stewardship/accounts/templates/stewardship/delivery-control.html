@@ -32,11 +32,20 @@
 <dt>{% translate "Inapplicable schedule slots" %}</dt><dd>{{ family_recovery.skipped|number }}</dd>
 <dt>{% translate "Blocked Family groups" %}</dt><dd>{{ family_recovery.blocked|number }}</dd>
 <dt>{% translate "Unmaterialized schedule slots" %}</dt><dd>{{ family_recovery.unmaterialized|number }}</dd></dl></section>{% endif %}
+{% if digest_recovery %}<section class="panel"><h2>{% translate "Overdue Admin-digest planning" %}</h2>
+<p>{% translate "Each daily or weekly group becomes one report obligation. Original dates and previously accepted recipient coverage are retained. These are report obligations, not a prediction of recipient message counts." %}</p>
+<dl><dt>{% translate "Selected report obligations" %}</dt><dd>{{ digest_recovery.selected|number }}</dd>
+<dt>{% translate "Due original dates and retained aggregates" %}</dt><dd>{{ digest_recovery.slots|number }}</dd>
+<dt>{% translate "Unmaterialized dates" %}</dt><dd>{{ digest_recovery.unmaterialized|number }}</dd>
+<dt>{% translate "Previously prepared reports" %}</dt><dd>{{ digest_recovery.prepared|number }}</dd>
+<dt>{% translate "Blocked report groups" %}</dt><dd>{{ digest_recovery.blocked|number }}</dd></dl>
+{% if digest_recovery.blocked %}<p>{% translate "Report preparation must reach its safe point, and uncertain deliveries must be reconciled, before resuming." %}</p>{% endif %}</section>{% endif %}
 {% if resume_available %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="preview_resume"><label for="resume-reason">{% translate "Reason for resuming live delivery" %}</label><textarea id="resume-reason" name="reason" required maxlength="1024">{{ preview.reason }}</textarea><button type="submit">{% translate "Preview resume" %}</button></form>
 {% if preview.action == 'resume' %}<section class="panel"><h2>{% translate "Exact resume preview" %}</h2><p>{{ preview.reason }}</p>
 {% if preview.selection.plan == 'before_start' %}<p>{% translate "The campaign has not started, so there is no overdue campaign work to coalesce. Released work retains its original due time." %}</p>
 <p>{% translate "Held messages to release" %}: {{ preview.inventory.held|number }}.</p>
 {% else %}<p>{% translate "Selected overdue Family messages" %}: {{ preview.selection.family.selected|number }}. {% translate "Redundant slots to coalesce" %}: {{ preview.selection.family.coalesced|number }}. {% translate "Inapplicable slots to skip" %}: {{ preview.selection.family.skipped|number }}.</p>
+<p>{% translate "Selected Admin report obligations" %}: {{ preview.selection.digests.selected|number }}. {% translate "Due original dates and retained aggregates covered" %}: {{ preview.selection.digests.slots|number }}.</p>
 <p>{% translate "Redundant unsent outboxes are cancelled before the pause is cleared. Receipts remain distinct and are all released; future work retains its original due time." %}</p>{% endif %}
 <p>{% translate "The current sender proof, live inventory, campaign dates and authentication will be checked again. A changed input cancels this confirmation without releasing mail." %}</p>
 {% if control_token and fresh %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ control_token }}"><button type="submit">{% translate "Confirm resume of live delivery" %}</button></form>{% endif %}</section>{% endif %}

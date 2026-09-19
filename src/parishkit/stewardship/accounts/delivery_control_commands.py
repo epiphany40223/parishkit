@@ -12,7 +12,6 @@ from parishkit.stewardship.campaigns.delivery_control_models import (
 )
 from parishkit.stewardship.campaigns.models import ActivationCatchUpDemand, Campaign
 from parishkit.stewardship.campaigns.runtime import _now, campaign_transaction
-from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.storage import StaleRecordError
@@ -84,7 +83,7 @@ def _prestart_resume(campaign):
 
 
 def _family_resume(campaign):
-    """Keep digest and post-close cases out until their complete owners exist."""
+    """Ordinary overdue recovery never substitutes for post-close resolution."""
     return (
         campaign.delivery_paused
         and campaign.state in {"scheduled", "active"}
@@ -93,11 +92,6 @@ def _family_resume(campaign):
         < campaign.active_configuration.ends_at
         and not ActivationCatchUpDemand.objects.filter(
             campaign=campaign, completed_at__isnull=True
-        ).exists()
-        and not ScheduleDefinition.objects.filter(
-            campaign=campaign,
-            current_revision__isnull=False,
-            kind__in=("daily_digest", "weekly_digest"),
         ).exists()
     )
 
@@ -111,6 +105,7 @@ def _resume_selection(campaign):
         "plan": "family",
         "health": proof,
         "family": family_recovery_impact(campaign.pk),
+        "digests": digest_recovery_impact(campaign.pk),
     }
 
 
@@ -125,6 +120,20 @@ def family_recovery_impact(campaign_id):
         row = cursor.fetchone()
     if row is None:
         raise PermissionError("Delivery recovery is unavailable.")
+    return json.loads(row[0]) if isinstance(row[0], str) else row[0]
+
+
+def digest_recovery_impact(campaign_id):
+    """Count complete original-day/aggregate groups without exposing reports."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT impact FROM stewardship_delivery_digest_recovery_summary "
+            "WHERE campaign_id=%s",
+            [campaign_id],
+        )
+        row = cursor.fetchone()
+    if row is None:
+        raise PermissionError("Digest recovery is unavailable.")
     return json.loads(row[0]) if isinstance(row[0], str) else row[0]
 
 
@@ -147,6 +156,11 @@ def page(request, service, campaign_id):
             "health": health(campaign_id),
             "family_recovery": (
                 family_recovery_impact(campaign_id)
+                if campaign.delivery_paused
+                else None
+            ),
+            "digest_recovery": (
+                digest_recovery_impact(campaign_id)
                 if campaign.delivery_paused
                 else None
             ),
@@ -200,6 +214,10 @@ def _preview(request, service, campaign_id, *, reason, action):
             selected = _resume_selection(campaign)
             if selected.get("family", {}).get("blocked"):
                 raise StaleRecordError("Resolve blocked Family groups before resuming.")
+            if selected.get("digests", {}).get("blocked"):
+                raise StaleRecordError(
+                    "Wait for report preparation and resolve uncertain digests first."
+                )
         now = _now()
         binding = {
             "key": str(uuid4()),

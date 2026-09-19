@@ -96,7 +96,7 @@ CREATE FUNCTION public.stewardship_delivery_control_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE campaign public.stewardship_campaign%ROWTYPE;
     runtime public.stewardship_system_configuration%ROWTYPE;
-    instant timestamptz; current_inventory jsonb; current_health jsonb; family_impact jsonb;
+    instant timestamptz; current_inventory jsonb; current_health jsonb; family_impact jsonb; digest_impact jsonb;
 BEGIN
     IF TG_OP<>'INSERT' THEN
         RAISE EXCEPTION 'Delivery control intent is immutable' USING ERRCODE='23514';
@@ -170,17 +170,17 @@ BEGIN
         ELSIF NEW.selection->>'plan'='family' THEN
             SELECT impact INTO family_impact FROM public.stewardship_delivery_family_recovery_summary
                 WHERE campaign_id=campaign.id;
+            SELECT impact INTO digest_impact FROM public.stewardship_delivery_digest_recovery_summary
+                WHERE campaign_id=campaign.id;
             IF campaign.state NOT IN ('scheduled','active')
                OR NOT EXISTS(SELECT 1 FROM public.stewardship_campaign_configuration p
                     WHERE p.id=campaign.active_configuration_id AND instant>=p.starts_at AND instant<p.ends_at)
                OR (family_impact->>'blocked')::bigint IS DISTINCT FROM 0
+               OR (digest_impact->>'blocked')::bigint IS DISTINCT FROM 0
                OR NEW.selection IS DISTINCT FROM jsonb_build_object('plan','family',
-                    'health',current_health,'family',family_impact)
+                    'health',current_health,'family',family_impact,'digests',digest_impact)
                OR EXISTS(SELECT 1 FROM public.stewardship_activation_catchup
-                    WHERE campaign_id=campaign.id AND completed_at IS NULL)
-               OR EXISTS(SELECT 1 FROM public.stewardship_schedule_definition
-                    WHERE campaign_id=campaign.id AND current_revision_id IS NOT NULL
-                        AND kind IN ('daily_digest','weekly_digest')) THEN
+                    WHERE campaign_id=campaign.id AND completed_at IS NULL) THEN
                 RAISE EXCEPTION 'Resume requires the complete current recovery plan' USING ERRCODE='23514';
             END IF;
         ELSE
@@ -200,6 +200,7 @@ DECLARE hold uuid; pause bigint;
 BEGIN
     IF NEW.action='resume' AND NEW.selection->>'plan'='family' THEN
         PERFORM public.stewardship_delivery_recover_families_v1(NEW.id);
+        PERFORM public.stewardship_delivery_recover_digests_v1(NEW.id);
     END IF;
     -- Both control and all unsent holds commit together. Already-submitting or
     -- unknown outcomes keep their independent reconciliation and immutable data.
