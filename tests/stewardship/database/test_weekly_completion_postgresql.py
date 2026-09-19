@@ -94,8 +94,10 @@ def test_only_the_last_accepted_admin_advances_the_successful_boundary(
         )[-2:] == ["running", "succeeded"]
 
 
+@pytest.mark.parametrize("revoke_correction", [False, True])
 def test_empty_success_advances_sequence_without_losing_later_corrections(
     live_response_service,
+    revoke_correction,
 ):
     harness = live_response_service
     respond(harness, "Retain this original request")
@@ -133,9 +135,55 @@ def test_empty_success_advances_sequence_without_losing_later_corrections(
         publish(claim)
         recipient = WeeklyDigestRecipient.objects.get(snapshot=correction)
         assert "Retain this original request" not in recipient.text
-        accepted(recipient)
+        if revoke_correction:
+            from ..policy_factory import address
+            from .campaign_builders import change as configure
+            from .test_daily_digest_dispatch_postgresql import begin
+            from .test_family_mail_dispatch_postgresql import claim as claim_mail
+            from .test_weekly_dispatch_postgresql import revoke_admin
+
+            store = harness.service.store
+            configure(
+                store,
+                store.active(),
+                uuid4(),
+                [
+                    {
+                        "operation": "add",
+                        "section": "login_rules",
+                        **address("new@example.org"),
+                    }
+                ],
+            )
+            revoke_admin(harness, recipient)
+            with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+                execution = claim_mail(recipient.outbox)
+                assert begin(recipient.outbox, execution) is None
+            recipient.outbox.refresh_from_db()
+            assert recipient.outbox.state == "cancelled"
+            assert recipient.outbox.reason == "recipient_revoked"
+            assert (
+                ScheduleFulfillment.objects.get(
+                    occurrence_id=correction.preparation.occurrence_id
+                ).disposition
+                == "empty"
+            )
+        else:
+            accepted(recipient)
         assert history(correction).watermark == 3
         assert len(history(correction).corrected) == 1
+        from parishkit.stewardship.reports.information import (
+            InformationQuery,
+            information_page,
+        )
+
+        with task_login(ServiceRole.WEB, exact=True):
+            report = information_page(
+                harness.campaign.pk, InformationQuery(disposition="all")
+            )
+        row = report["rows"][0]
+        assert row["previously_reported"] and row["correction_resolved"]
+        assert row["disposition"] == "withdrawn"
 
 
 @pytest.mark.parametrize("crash", [False, True])

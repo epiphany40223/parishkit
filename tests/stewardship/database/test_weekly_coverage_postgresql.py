@@ -158,6 +158,18 @@ def test_partially_covered_corrections_do_not_suppress_new_items(live_response_s
         )
         assert second_recipient.corrections == [[first.information[0], "superseded"]]
         accepted(second_recipient)
+        from parishkit.stewardship.reports.information import (
+            InformationQuery,
+            information_page,
+        )
+
+        with task_login(ServiceRole.WEB, exact=True):
+            report = information_page(
+                harness.campaign.pk, InformationQuery(disposition="superseded")
+            )
+        assert report["rows"][0]["previously_reported"]
+        # One delivered recipient is not a completed correction cohort.
+        assert not report["rows"][0]["correction_resolved"]
         store = harness.service.store
         assert (
             configure(

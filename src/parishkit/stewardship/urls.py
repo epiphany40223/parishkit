@@ -49,6 +49,7 @@ from .reports import (
     exact_views,
     export_ui,
     export_views,
+    information_views,
     weekly_manual_views,
     weekly_views,
     workspace_views,
@@ -73,6 +74,21 @@ family_patterns = [
     path("logout", family_authentication.logout, name="logout"),
 ]
 admin_patterns = [
+    path(
+        "reports/<uuid:campaign_id>/information/",
+        information_views.queue,
+        name="information_queue",
+    ),
+    path(
+        "reports/<uuid:campaign_id>/information/<uuid:item_id>/",
+        information_views.detail,
+        name="information_item",
+    ),
+    path(
+        "reports/<uuid:campaign_id>/information/<uuid:item_id>/update",
+        information_views.update,
+        name="information_update",
+    ),
     path(
         "reports/<uuid:campaign_id>/participation/exact-export",
         exact_ui.create,

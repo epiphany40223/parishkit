@@ -24,6 +24,90 @@ class Migration(migrations.Migration):
         migrations.SeparateDatabaseAndState(
             state_operations=[
                 migrations.CreateModel(
+                    name="AdditionalInformationRevision",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        ("expected_version", models.PositiveBigIntegerField()),
+                        ("request_key", models.UUIDField()),
+                        ("follow_up_needed", models.BooleanField()),
+                        ("followed_up", models.BooleanField()),
+                        ("confirm_clear", models.BooleanField(default=False)),
+                        ("notes", models.TextField(blank=True, default="")),
+                        (
+                            "followed_up_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(null=True),
+                        ),
+                        ("followed_up_by_id", models.UUIDField(null=True)),
+                        (
+                            "item",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                related_name="revisions",
+                                to="stewardship_responses.additionalinformationitem",
+                            ),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_information_revision",
+                        "constraints": [
+                            models.UniqueConstraint(
+                                fields=("item", "expected_version"),
+                                name="information_revision_version",
+                            ),
+                            models.UniqueConstraint(
+                                fields=("actor_id", "request_key"),
+                                name="information_revision_replay",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    actor_id__isnull=False, expected_version__gte=1
+                                ),
+                                name="information_revision_identity",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    followed_up=True,
+                                    followed_up_at__isnull=False,
+                                    followed_up_by_id__isnull=False,
+                                )
+                                | models.Q(
+                                    followed_up=False,
+                                    followed_up_at__isnull=True,
+                                    followed_up_by_id__isnull=True,
+                                ),
+                                name="information_revision_completion",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
                     name="FamilyFormBaseline",
                     fields=[
                         (

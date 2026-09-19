@@ -1,0 +1,10 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Additional-information request unavailable" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Additional-information request unavailable" %}</h1>
+{% if status == 409 %}<p role="alert">{% translate "This item changed. Your edit was not saved. Reload and review its latest text and workflow before trying again." %}</p>
+{% elif status == 503 %}<p role="alert">{% translate "This information is temporarily unavailable. Please retry later." %}</p>
+{% else %}<p role="alert">{% translate "Check the form fields. Clearing a completed follow-up requires confirmation. No edit was saved." %}</p>{% endif %}
+{% if item_id %}<p><a href="{% url 'admin:information_item' campaign_id item_id %}">{% translate "Reload this item" %}</a></p>{% endif %}
+<p><a href="{% url 'admin:information_queue' campaign_id %}">{% translate "Return to this campaign's queue" %}</a></p>
+{% endblock %}

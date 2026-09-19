@@ -417,6 +417,30 @@ def test_closed_receipt_and_weekly_skips_are_durable_not_provider_acceptance(
         assert history["watermark"] == (0 if later_response else 1)
         assert history["reported"] == []
         assert history["corrected"] == []
+        # Staff workflow edits must not resurrect a resolved digest obligation.
+        # Family replacement above still invalidates its frozen semantic token.
+        from parishkit.stewardship.responses.information import update_information
+
+        original_item.refresh_from_db()
+        with web_login():
+            update_information(
+                item.arguments[1].store,
+                item.arguments[0].portal_session.principal_id,
+                original_item.pk,
+                expected_version=original_item.version,
+                request_key=uuid4(),
+                follow_up_needed=True,
+                followed_up=True,
+                confirm_clear=False,
+                notes="Staff completed the contact after the digest was resolved.",
+            )
+        assert_current_resolution(resolved, current=not later_response)
+        with task_login(ServiceRole.WORKER, exact=True), connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT stewardship_weekly_history_v1(%s,'production',NULL)",
+                [item.campaign.pk],
+            )
+            assert json.loads(cursor.fetchone()[0]) == history
         if later_response:
             assert_manual_does_not_resolve(item, resolved)
         definition = ScheduleDefinition.objects.get(kind="weekly_digest")
@@ -626,6 +650,17 @@ def test_closed_weekly_resolution_unions_only_cancelled_recipient_subsets(
         "delivered" if accept_first else "cancelled"
     )
     assert OutboxMessage.objects.get(pk=recipients[1].outbox_id).state == "cancelled"
+    from parishkit.stewardship.reports.information import (
+        InformationQuery,
+        information_page,
+    )
+
+    with web_login():
+        report = information_page(
+            item.campaign.pk, InformationQuery(disposition="superseded")
+        )
+    assert report["total"] == 2
+    assert all(row["correction_resolved"] for row in report["rows"])
 
 
 def test_closed_resolution_releases_only_selected_mail_and_can_cancel_without_health(

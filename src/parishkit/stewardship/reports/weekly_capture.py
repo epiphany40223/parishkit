@@ -4,6 +4,7 @@ import json
 from uuid import UUID
 
 from django.db import connection
+from django.db.models import BigIntegerField, Func
 
 from parishkit.stewardship.accounts.models import AddressRule
 from parishkit.stewardship.campaigns.work_locks import require_work_order
@@ -75,6 +76,8 @@ def capture_weekly_snapshot(claim):
         submission_watermark=observation.watermark,
         after_watermark=history.watermark,
         observation=observation_document(observation),
+        # Retain digest-semantic state, not the optimistic Staff edit counter:
+        # notes/checkbox edits cannot reopen a discharged mail obligation.
         item_versions={
             str(identifier): version
             for identifier, version in AdditionalInformationItem.objects.filter(
@@ -82,7 +85,15 @@ def capture_weekly_snapshot(claim):
                     item.item_id
                     for item in (*selected.information, *selected.corrections)
                 ]
-            ).values_list("id", "version")
+            )
+            .annotate(
+                digest_version=Func(
+                    "disposition",
+                    function="stewardship_information_digest_version_v1",
+                    output_field=BigIntegerField(),
+                )
+            )
+            .values_list("id", "digest_version")
         },
         information=[str(item.item_id) for item in selected.information],
         corrections=[

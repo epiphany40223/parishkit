@@ -135,7 +135,8 @@ CREATE VIEW public.stewardship_postclose_current AS
         SELECT 1 FROM jsonb_array_elements(resolved.coverage->'items') item
         LEFT JOIN public.stewardship_additional_information i ON i.id=(item->>'id')::uuid
         WHERE item->>'kind' IN ('item','correction')
-            AND to_jsonb(i.version) IS DISTINCT FROM item->'version'))
+            AND to_jsonb(stewardship_information_digest_version_v1(i.disposition))
+                IS DISTINCT FROM item->'version'))
     OR (d.kind='weekly_digest' AND EXISTS(
         SELECT 1 FROM public.stewardship_weekly_digest_preparation p
         JOIN public.stewardship_weekly_digest_snapshot s ON s.preparation_id=p.id
@@ -153,7 +154,8 @@ CREATE VIEW public.stewardship_postclose_current AS
             AND NOT EXISTS(
                 SELECT 1 FROM jsonb_each(s.item_versions) version
                 LEFT JOIN public.stewardship_additional_information i ON i.id=version.key::uuid
-                WHERE to_jsonb(i.version) IS DISTINCT FROM version.value)
+                WHERE to_jsonb(stewardship_information_digest_version_v1(i.disposition))
+                    IS DISTINCT FROM version.value)
             AND NOT EXISTS(
                 SELECT 1 FROM public.stewardship_additional_information i
                 JOIN public.stewardship_submission submission ON submission.id=i.submission_id

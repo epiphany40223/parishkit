@@ -48,8 +48,15 @@ def add_response_web_grants(tables, columns):
         "UPDATE": {"state", "superseded_by_id", "version"}
     }
     columns["stewardship_additional_information"] = {
-        "UPDATE": {"disposition", "replacement_id", "version"}
+        "UPDATE": {
+            "disposition",
+            "replacement_id",
+            "version",
+            "follow_up_needed",
+            "followed_up_at",
+        }
     }
+    tables["stewardship_information_revision"] = {"SELECT", "INSERT"}
     columns["stewardship_family_campaign"]["UPDATE"].update(
         {"first_live_submission_id", "effective_submission_id"}
     )

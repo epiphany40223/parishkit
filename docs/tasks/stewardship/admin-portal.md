@@ -198,7 +198,11 @@ Scope and dependencies: [ADM-08 work package](../../plans/stewardship/admin-port
 - [ ] ADM-08.04 — Build searchable Admin logs and timezone-aware exports.
 - [ ] ADM-08.05 — Test workflow history, scope, and concurrency.
 
-Evidence: Not started.
+Partial evidence: the [Staff follow-up increment](../../guides/stewardship-additional-followup.md)
+implements the additional-information portion of .02/.05, with authorization,
+history, concurrency and accessible native forms. Three dual-source rounds
+pass; protected delivery and the other
+ADM-08 workflows remain open; these mixed-scope tasks are not complete.
 
 ## ADM-09: Census review and ParishSoft publication UI
 
