@@ -3,12 +3,15 @@
 # ruff: noqa: F811 -- imported fixture dependencies are injected by pytest name.
 
 from datetime import timedelta
+from time import time
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 from django.core import signing
 from django.db import connection
 from django.db.models import F
+from django.test import override_settings
 
 from parishkit.stewardship.accounts.confirmation_commands import (
     SALT,
@@ -41,7 +44,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 def test_stale_preview_scope_expiry_and_cancellation_never_activate(
-    ready_links, settings
+    ready_links, settings, monkeypatch
 ):
     """Share one genuine setup/preparation across independent rejected commands."""
     preparation, arguments = prepare(ready_links)
@@ -61,11 +64,15 @@ def test_stale_preview_scope_expiry_and_cancellation_never_activate(
                 confirm(*arguments, token=changed, typed="Production")
         with pytest.raises(signing.BadSignature):
             confirm(*arguments, token=token + "x", typed="Production")
-        original_origin = settings.STEWARDSHIP_PUBLIC_ORIGIN
-        settings.STEWARDSHIP_PUBLIC_ORIGIN = "http://localhost:8001"
-        with pytest.raises(StaleRecordError, match="origin changed"):
+        with monkeypatch.context() as patch:
+            patch.setattr(signing, "time", SimpleNamespace(time=lambda: time() + 301))
+            with pytest.raises(signing.SignatureExpired):
+                confirm(*arguments, token=token, typed="Production")
+        with (
+            override_settings(STEWARDSHIP_PUBLIC_ORIGIN="http://localhost:8001"),
+            pytest.raises(StaleRecordError, match="origin changed"),
+        ):
             confirm(*arguments, token=token, typed="Production")
-        settings.STEWARDSHIP_PUBLIC_ORIGIN = original_origin
     campaign = preparation.transition.campaign
     for instant in (
         preview.expires_at,

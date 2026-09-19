@@ -25,6 +25,9 @@ from .confirmation_readiness import (
     impact_revision,
 )
 
+# The campaign permits 100 Family schedules plus one daily and one weekly digest.
+MAX_CONFIRMATION_SCHEDULES = 102
+
 
 @dataclass(frozen=True)
 class ConfirmationPreview:
@@ -64,9 +67,9 @@ def collect_preview(request, service, campaign_id, transition_id, preparation_id
             definitions = list(
                 ScheduleDefinition.objects.filter(
                     campaign_id=campaign_id, current_revision__isnull=False
-                ).select_related("current_revision")[:103]
+                ).select_related("current_revision")[: MAX_CONFIRMATION_SCHEDULES + 1]
             )
-            if len(definitions) > 102:
+            if len(definitions) > MAX_CONFIRMATION_SCHEDULES:
                 raise StorageInvariantError(
                     "Confirmation schedules exceed their bound."
                 )

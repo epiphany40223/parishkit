@@ -67,11 +67,11 @@ def verify_preview(request, service, campaign_id, transition_id, preparation_id)
     return preview, verified, token
 
 
-def _binding(token):
+def _binding(token, *, max_age=None):
     """Parse only the server's closed preview shape; signatures do not authorize."""
     if type(token) is not str or len(token) > 8192:
         raise ValueError("Invalid Production confirmation preview.")
-    value = signing.loads(token, salt=SALT, max_age=300)
+    value = signing.loads(token, salt=SALT, max_age=max_age)
     if (
         type(value) is not dict
         or set(value)
@@ -104,6 +104,12 @@ def confirm(
     Current authority also gates replays. No external checks, impact enumeration,
     token creation or per-Family mail writes occur in this final transaction.
     The private confirmation effect owns all privileged database changes.
+
+    As with the existing privileged web command owners, this compiled adapter
+    is trusted to enforce browser intent, DNS verification and configuration
+    readiness. The SQL login identifies the web service, not a browser user;
+    its guard independently enforces durable scope/session/version invariants,
+    but is not a second verifier of Django signatures or external DNS evidence.
     """
     if type(typed) is not str or typed.strip() != "Production":
         raise ValueError("Type Production to confirm this transition.")
@@ -112,7 +118,8 @@ def confirm(
         campaign,
         runtime,
     ):
-        # A queued request must not retain an expired DNS proof while waiting.
+        # Signature integrity and current authority also gate historical replay.
+        # Only an uncommitted intent needs still-fresh DNS/preview evidence.
         _binding(token)
         actor = principal(request, service)
         configuration = editable_configuration(service)
@@ -147,6 +154,7 @@ def confirm(
             ):
                 raise PermissionError("Confirmation replay belongs to another intent.")
             return previous
+        _binding(token, max_age=300)
         state = collect_readiness(
             request, service, campaign_id, transition_id, preparation_id
         )

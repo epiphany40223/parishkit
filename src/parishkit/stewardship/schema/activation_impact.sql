@@ -10,6 +10,15 @@ CREATE TABLE public.stewardship_activation_impact (
 CREATE FUNCTION public.stewardship_activation_impact_tick_v1() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
+    -- No preview can activate an already-Production installation. Avoid a hot
+    -- revision row on ordinary live submissions/delivery. Lifecycle and every
+    -- relevant campaign writer already share the work order; returning to
+    -- Testing changes the separately bound runtime version before previews
+    -- can resume. Do not reset or reuse a previous revision at that boundary.
+    IF EXISTS(SELECT 1 FROM public.stewardship_system_configuration
+              WHERE mode='production') THEN
+        RETURN NULL;
+    END IF;
     INSERT INTO public.stewardship_activation_impact(singleton,version) VALUES(true,1)
     ON CONFLICT(singleton) DO UPDATE SET version=stewardship_activation_impact.version+1;
     RETURN NULL;

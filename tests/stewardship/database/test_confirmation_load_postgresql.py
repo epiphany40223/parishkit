@@ -3,6 +3,7 @@
 # ruff: noqa: F811 -- imported fixture dependencies are injected by pytest name.
 
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import timedelta
 from time import perf_counter
 from uuid import uuid4
@@ -11,12 +12,14 @@ import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
+from parishkit.stewardship.accounts import confirmation_commands
 from parishkit.stewardship.accounts.confirmation_commands import confirm
 from parishkit.stewardship.accounts.family_authentication import FamilyRuntime
 from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.accounts.setup_drafts import save_section
 from parishkit.stewardship.campaigns.catchup_preparation import prepare_batch
 from parishkit.stewardship.campaigns.catchup_tasks import TASK_TYPE, catchup_handler
+from parishkit.stewardship.campaigns.confirmation_models import ActivationImpactRevision
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.family_identity import code_context
 from parishkit.stewardship.campaigns.models import (
@@ -50,6 +53,47 @@ from .test_response_http_postgresql import answers_for, post
 from .test_setup_mail_views_postgresql import web_login
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+RELATIONS = (
+    "stewardship_family_campaign",
+    "stewardship_schedule_occurrence",
+    "stewardship_outbox_message",
+)
+
+
+def relation_access():
+    """Transaction-local server counters include reads inside private SQL triggers."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT relname,seq_tup_read,idx_tup_fetch,n_tup_ins,n_tup_upd,n_tup_del "
+            "FROM pg_stat_xact_user_tables WHERE relname=ANY(%s)",
+            [list(RELATIONS)],
+        )
+        return {row[0]: row[1:] for row in cursor.fetchall()}
+
+
+def observe_final_transaction(monkeypatch, observed):
+    """Instrument the actual owner, not a mock confirmation or SQL function."""
+    original = confirmation_commands.campaign_transaction
+
+    @contextmanager
+    def measured(*args, **kwargs):
+        """Record nested trigger activity before this real transaction commits."""
+        with original(*args, **kwargs) as scope:
+            before = relation_access()
+            yield scope
+            after = relation_access()
+            observed.update(
+                {
+                    name: tuple(
+                        new - old
+                        for old, new in zip(before[name], after[name], strict=True)
+                    )
+                    for name in RELATIONS
+                }
+            )
+
+    monkeypatch.setattr(confirmation_commands, "campaign_transaction", measured)
 
 
 def reference_inputs(monkeypatch):
@@ -171,6 +215,8 @@ def test_reference_confirmation_and_family_submit_during_incomplete_catchup(
     _, service, campaign_id = arguments[:3]
     ring = links[2]
     assert FamilyCampaign.objects.filter(campaign_id=campaign_id).count() == 5000
+    observed = {}
+    observe_final_transaction(monkeypatch, observed)
     with web_login():
         preview, verified, token = fresh(arguments)
         assert verified and token and preview.families.counts.active == 5000
@@ -182,15 +228,24 @@ def test_reference_confirmation_and_family_submit_during_incomplete_catchup(
             elapsed = perf_counter() - began
         assert elapsed < 2.0, elapsed
         assert not any(
-            'FROM "stewardship_family_campaign"' in row["sql"]
-            or 'FROM "stewardship_schedule_occurrence"' in row["sql"]
+            name in row["sql"].lower()
+            for name in RELATIONS
             for row in queries
+            if "pg_stat_xact_user_tables" not in row["sql"]
         )
+        assert set(observed) == set(RELATIONS)
+        # Permit only constant-size referential checks, not population scans.
+        assert all(
+            sum(counters[:2]) <= 4 and counters[2:] == (0, 0, 0)
+            for counters in observed.values()
+        ), observed
     assert not ScheduleOccurrence.objects.exists()
     assert not OutboxMessage.objects.exists()
     demand = ActivationCatchUpDemand.objects.get(activation_id=receipt.activation_id)
     record_property("final_confirmation_seconds", elapsed)
     record_property("final_confirmation_queries", len(queries))
+    record_property("final_confirmation_relation_activity", str(observed))
+    impact = ActivationImpactRevision.objects.get().version
     settings.STEWARDSHIP_FAMILY_RUNTIME = FamilyRuntime(
         service.store, service.limiter, ring.general, ring.mac, ring.public
     )
@@ -231,6 +286,7 @@ def test_reference_confirmation_and_family_submit_during_incomplete_catchup(
     assert Submission.objects.filter(campaign_id=campaign_id, mode="live").count() == 1
     demand.refresh_from_db()
     assert demand.completed_at is None and demand.groups_completed == 2
+    assert ActivationImpactRevision.objects.get().version == impact
 
 
 def _exercise_catchup(demand, pool, submit_family, record_property):

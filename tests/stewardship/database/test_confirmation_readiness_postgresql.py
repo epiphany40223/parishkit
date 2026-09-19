@@ -3,9 +3,12 @@
 # ruff: noqa: F811 -- imported fixture dependencies are injected by pytest name.
 
 from datetime import timedelta
+from time import time
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from django.core import signing
 from django.db import connection
 from django.db.models import F
 from django.test.utils import CaptureQueriesContext
@@ -163,6 +166,8 @@ def test_fresh_confirmation_atomically_activates_and_replays(
     campaign = preparation.transition.campaign
     path = f"{links_path}/{preparation.pk}/confirm"
     with web_login():
+        settings_path = f"/admin/campaign/{campaign.pk}/settings"
+        assert not browser.get(settings_path).context["production_progress_available"]
         activity = PortalSession.objects.get(
             pk=login.portal_session.pk
         ).last_activity_at
@@ -203,11 +208,16 @@ def test_fresh_confirmation_atomically_activates_and_replays(
         assert post(browser, path, values).status_code == 302
         receipt = ProductionConfirmation.objects.get()
         assert confirm(*arguments, token=token, typed="Production").pk == receipt.pk
+        with monkeypatch.context() as patch:
+            patch.setattr(signing, "time", SimpleNamespace(time=lambda: time() + 301))
+            assert post(browser, path, values).status_code == 302
+            assert ProductionConfirmation.objects.count() == 1
         progress_path = response["Location"]
         page = browser.get(progress_path)
         assert page.status_code == 200, page.content
         assert page["Cache-Control"] == "no-store"
         assert (b"Campaign active" if active else b"Campaign scheduled") in page.content
+        assert browser.get(settings_path).context["production_progress_available"]
     campaign.refresh_from_db()
     preparation.transition.refresh_from_db()
     assert campaign.state == ("active" if active else "scheduled")

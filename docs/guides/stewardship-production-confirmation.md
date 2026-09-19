@@ -156,3 +156,70 @@ The test retains separate durable progress and does not manufacture completion.
 The first complete candidate is ready for the required three-round peer-review
 cycle. ADM-05.03 remains unchecked until that cycle and final validation pass;
 withdrawal and its repeated-go-live/start-race acceptance remain ADM-05.04/.05.
+
+## Peer-review ledger
+
+### Round 1
+
+Pika session `20260919-002028-1559ad` reviews immutable `880507fc..0cba0b7`.
+Two manifest Claude shards and Pika's Codex reviewer complete without degradation,
+failed agents, mismatch or salvage. Raw findings: one High, three Medium and
+12 Low. Four findings clear the configured cutoff. This is not a finding-free
+review; the dispositions below preserve the original severities.
+
+- Claude Medium, nested-SQL measurement: fixed. The reference test now samples
+  PostgreSQL transaction-local relation counters inside the actual final owner,
+  including its private trigger effects; it also matches client SQL table names
+  independent of quoting or `FROM`/`JOIN` position. All three watched relations
+  report zero tuples read, inserted, updated or deleted. Instrumented confirmation
+  takes 0.1635 seconds / 138 statements, and Family baseline plus Submit takes
+  0.2603 seconds with incomplete maintained catch-up.
+- Claude Medium, global impact contention: fixed for live traffic. No tick or
+  singleton write occurs in Production, when new final confirmation is impossible.
+  Returning to Testing changes the independently bound runtime version; revisions
+  are never reset. Relevant campaign writers and lifecycle transitions already
+  share the work order. The reference test proves both real live submission and
+  catch-up effects leave the impact revision unchanged.
+- Claude Medium, expired committed replay: fixed. Signature integrity, current
+  authority, exact intent and current campaign still gate replay; the five-minute
+  limit applies only when creating a new confirmation. Both HTTP outcomes test
+  an expired completed replay; an expired uncommitted intent remains rejected.
+- Codex High, direct SQL versus browser authority: rejected as an additional
+  trust-boundary requirement, not represented as fixed. The assertion correctly
+  observes that SQL does not verify Django signatures, typed browser input or
+  external DNS. The existing architecture places these obligations in trusted
+  compiled web owners, not in an independent cryptographic database attestation
+  service. The internal database login identifies that service, not an end user;
+  ordinary browser endpoints never expose arbitrary command-table inserts.
+  See architecture's Identity and session security and operations' internal
+  PostgreSQL network, alongside the existing `go_live_commands.start_cleanup`,
+  `stewardship_go_live_admin_v1` and `sessions.issue_admin` boundaries. This PR
+  retains browser signature/CSRF/current-role/origin/readiness checks and adds
+  independently enforced SQL session/scope/version/generation invariants. Those
+  are tested separately; they are not claimed to resist a fully compromised web
+  SQL credential. Code comments now state this division explicitly. Replacing
+  the service-trust model with a new attestation process is not silently added
+  as a prerequisite of this increment; correction review must revisit this
+  disposition against the controlling architecture.
+
+Low dispositions: fixed the exact typed-value browser pattern, unavailable
+historical progress links, named/commented schedule bound, lifetime test naming
+and missing docstring, scoped settings override, and outdated SQL header. The
+duplicate expired-replay observation is covered above. Retain the specified
+timing acceptance rather than removing its bound. The SQL/Python catch-up
+protocol continues to have actual restricted-worker handoff, binding and retry
+tests; consolidating those internal allocation implementations is deferred.
+The two all-trigger mutation-matrix suggestions are one deferred Low test
+expansion: strict catalog fingerprints pin every current trigger, while actual
+Testing eligibility/rollback and Production submission/catch-up behavior are
+covered. Broad internal-helper renaming is deferred. A schema seed is not added:
+the first actual relevant write establishes revision evidence, and a missing
+clock deliberately fails closed rather than inventing evidence.
+
+All 26 affected PostgreSQL/schema cases pass in 138.59 seconds; 21 browser/time
+cases pass in 14.34 seconds. The independent `t` before/after audit matches
+`0cba0b7` and changes only `stewardship_activation_impact_tick_v1()`; counts,
+owners, ACLs and all other catalog objects remain identical. Both extra HTTP
+settings-link/replay cases pass in 41.47 seconds after moving the active settings
+visit outside the passive-page idle measurement. Candidate `0cba0b7` passes full
+CI run `35421010733`; correction-head CI and rounds 2 and 3 remain required.

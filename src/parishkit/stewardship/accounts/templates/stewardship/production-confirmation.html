@@ -29,7 +29,7 @@
 </section>{% endif %}
 {% if confirmation_token and fresh %}<section class="panel"><h2>{% translate "Confirm Production" %}</h2>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ confirmation_token }}">
-<label for="production-confirmation">{% translate "Type Production to confirm this exact transition" %}</label><input id="production-confirmation" name="typed" required autocomplete="off" spellcheck="false">
+<label for="production-confirmation">{% translate "Type Production to confirm this exact transition" %}</label><input id="production-confirmation" name="typed" required pattern="Production" title="{% translate 'Enter Production exactly as shown.' %}" autocomplete="off" spellcheck="false">
 <button type="submit">{% translate "Confirm Production" %}</button></form></section>{% endif %}
 <p><a href="{% url 'admin:go_live_links' campaign.pk transition.pk %}">{% translate "Return to link preparation" %}</a></p>
 {% endblock %}

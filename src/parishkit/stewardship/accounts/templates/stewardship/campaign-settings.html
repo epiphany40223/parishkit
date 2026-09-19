@@ -8,7 +8,7 @@
 {% if campaign %}{% if campaign.state != 'archived' %}<p><a href="{% url 'admin:content_catalog' campaign.pk %}">{% translate "Edit campaign pages and email templates" %}</a></p>{% endif %}<p><a href="{% url 'admin:content_history' campaign.pk %}">{% translate "View retained campaign content" %}</a></p>{% endif %}
 {% if campaign %}<p><a href="{% url 'admin:schedule_settings' campaign.pk %}">{% translate "Edit mail schedules and reconcile campaign dates" %}</a></p>{% endif %}
 {% if campaign.state == 'draft' %}<p><a href="{% url 'admin:go_live' campaign.pk %}">{% translate "Review go-live readiness and Testing cleanup impact" %}</a></p>{% endif %}
-{% if campaign.state == 'scheduled' or campaign.state == 'active' or campaign.state == 'closed' %}<p><a href="{% url 'admin:production_progress' campaign.pk %}">{% translate "View Production activation and initial mail progress" %}</a></p>{% endif %}
+{% if production_progress_available %}<p><a href="{% url 'admin:production_progress' campaign.pk %}">{% translate "View Production activation and initial mail progress" %}</a></p>{% endif %}
 <p class="notice">{% translate "These are structural settings. They lock when the campaign goes live or is scheduled for Production. Dates and mail schedules use this campaign's timezone, not your browser timezone." %}</p>
 {% if not campaign %}<p>{% translate "A new draft starts with the Parish timezone. Its timezone can be changed after the draft is created. Creating a successor ends the opportunity to purge earlier campaigns until the next Return to Testing." %}</p>{% endif %}
 {% if editable %}

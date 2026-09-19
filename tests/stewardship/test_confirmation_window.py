@@ -37,7 +37,7 @@ def test_next_due_slot_expires_preview_before_five_minutes(kind):
     assert deadline(due, [rule]) == due + 5 * MINUTE
 
 
-@pytest.mark.parametrize("boundary", ["source", "start", "close", "dns"])
+@pytest.mark.parametrize("boundary", ["source", "start", "close", "lifetime"])
 def test_nearest_non_schedule_boundary_expires_preview(boundary):
     """Crossing the start changes scheduled/active even without any due mail."""
     observed = datetime(2026, 10, 10, 12, tzinfo=UTC)
@@ -50,7 +50,7 @@ def test_nearest_non_schedule_boundary_expires_preview(boundary):
         interval = UTCInterval(INTERVAL.start, observed + MINUTE)
     assert (
         deadline(observed, source=source, interval=interval)
-        == observed + (5 if boundary == "dns" else 1) * MINUTE
+        == observed + (5 if boundary == "lifetime" else 1) * MINUTE
     )
 
 
@@ -74,6 +74,7 @@ def test_fold_uses_the_existing_earlier_instant():
 
 @pytest.mark.parametrize("source", [0, -1])
 def test_expired_source_cannot_create_a_confirmation_window(source):
+    """An expired full-source observation cannot authorize a new preview."""
     observed = datetime(2026, 10, 10, 12, tzinfo=UTC)
     with pytest.raises(ValueError, match="already expired"):
         deadline(observed, source=observed + source * MINUTE)
