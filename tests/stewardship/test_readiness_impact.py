@@ -143,6 +143,7 @@ def test_reader_failure_never_returns_partial_success():
     [
         {"family_id": "1"},
         {"active": 1},
+        {"initial_unreviewed": 1},
         {"slots": []},
         {"slots": (None,)},
         {"slots": family(1).slots * 34},
@@ -163,3 +164,27 @@ def test_nonproduction_or_invalid_family_scope_is_rejected(changes):
 def test_empty_population_does_not_bypass_clock_validation(options):
     with pytest.raises(ValueError):
         summarize_family_impact((), **({"cutoff": NOW} | options))
+
+
+@pytest.mark.parametrize(
+    "changes,closed,blocked,skipped",
+    [
+        ({}, False, 1, 0),
+        ({"initial_delivered": True}, False, 1, 0),
+        ({"responded": True}, False, 0, 2),
+        ({"active": False}, False, 0, 2),
+        ({"email_eligible": False}, False, 0, 2),
+        ({"deliverable": False}, False, 0, 2),
+        ({}, True, 0, 2),
+    ],
+)
+def test_unreviewed_initial_only_blocks_otherwise_sendable_reminder(
+    changes, closed, blocked, skipped
+):
+    """Dispatch holds must not erase the shared planner's skip dispositions."""
+    group = family(1)
+    group = replace(group, slots=group.slots[1:], initial_unreviewed=True, **changes)
+    result = summarize_family_impact((group,), cutoff=NOW, closed=closed)
+    assert result.messages == result.coalesced_slots == 0
+    assert result.blocked_families == blocked
+    assert result.skipped_slots == skipped

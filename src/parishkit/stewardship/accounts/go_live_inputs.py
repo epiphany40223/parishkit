@@ -20,6 +20,10 @@ from parishkit.stewardship.campaigns.cleanup_preview import (
 )
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
 from parishkit.stewardship.campaigns.models import Campaign, CampaignWorkGate
+from parishkit.stewardship.campaigns.readiness_digests import (
+    DigestImpact,
+    digest_impact,
+)
 from parishkit.stewardship.campaigns.readiness_families import (
     FamilyImpactEvidence,
     family_impact,
@@ -48,6 +52,7 @@ class GoLiveInputs:
     configuration: ConfigurationReadiness
     source: SourceReadiness
     families: FamilyImpactEvidence
+    digests: DigestImpact
     cleanup: CleanupPreview
     mail_test_id: UUID | None
     problems: tuple[str, ...]
@@ -84,6 +89,9 @@ def collect_inputs(request, service, campaign_id):
             document, campaign_id, ministries=ministries, funds=funds
         )
         impact = family_impact(campaign, cutoff=scope.instant)
+        digests = digest_impact(
+            campaign, cutoff=scope.instant, recipients=config.admin_recipients
+        )
         cleanup = cleanup_preview(campaign_id)
         records = integration_records(document)
         problems = list(config.problems)
@@ -91,7 +99,7 @@ def collect_inputs(request, service, campaign_id):
             problems.append(source.reason)
         if cleanup.unresolved:
             problems.append("testing_delivery_unresolved")
-        if impact.counts.blocked_families:
+        if impact.counts.blocked_families or digests.blocked_groups:
             problems.append("production_delivery_unresolved")
         credentials = CampaignCredentialState.objects.filter(campaign=campaign).first()
         current = SourceCurrent.objects.first()
@@ -142,6 +150,7 @@ def collect_inputs(request, service, campaign_id):
             else None,
             "source": asdict(source),
             "families": impact.digest,
+            "digests": asdict(digests),
             "inventory": cleanup.inventory.digest,
             "submissions": (cleanup.submissions, cleanup.families),
             "messages": cleanup.message_states,
@@ -160,6 +169,7 @@ def collect_inputs(request, service, campaign_id):
             config,
             source,
             impact,
+            digests,
             cleanup,
             mail,
             tuple(problems),

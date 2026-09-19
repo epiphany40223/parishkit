@@ -216,6 +216,24 @@ def test_admin_cancels_queued_or_completed_cleanup_without_activation(
             request, service, campaign.pk, status.request_id
         )["controls"]
     assert RehearsalCredential.objects.exists() is not complete
+    if not complete:
+        # A historical cancellation must neither reacquire the old gate nor
+        # authorize releasing a subsequent request's gate.
+        with web_login(), pytest.raises(DatabaseError), work_transaction():
+            CampaignCredentialState.objects.filter(campaign=campaign).update(
+                go_live_gate=True, version=F("version") + 1
+            )
+        with web_login():
+            _, _, token = go_live_commands.verify_preview(request, service, campaign.pk)
+            following = go_live_commands.start_cleanup(
+                request, service, campaign.pk, preview_token=token, acknowledge=True
+            )
+        assert following.request_id != status.request_id
+        with web_login(), pytest.raises(DatabaseError), work_transaction():
+            CampaignCredentialState.objects.filter(campaign=campaign).update(
+                go_live_gate=False, version=F("version") + 1
+            )
+        assert CampaignCredentialState.objects.get(campaign=campaign).go_live_gate
 
 
 def test_http_acknowledgement_progress_and_cancel_are_private_and_passive(
@@ -337,3 +355,239 @@ def test_admin_retry_resumes_failed_cleanup_without_recreating_inventory(
         == "cleanup_complete"
     )
     assert not RehearsalCredential.objects.exists()
+
+
+def test_readiness_confirmation_rechecks_actor_expiry_close_and_changed_configuration(
+    ready_cleanup, monkeypatch
+):
+    """Even a real ready preview is only intent, never cached authorization."""
+    from time import time
+    from uuid import uuid4
+
+    from django.db import transaction
+
+    from parishkit.stewardship.accounts.models import PortalUser
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+    from parishkit.stewardship.storage import StaleRecordError
+
+    from .campaign_builders import campaign_clock, change
+
+    request, service, campaign = ready_cleanup
+    with web_login():
+        _, _, token = go_live_commands.verify_preview(request, service, campaign.pk)
+    options = {"preview_token": token, "acknowledge": True}
+    binding = signing.loads(token, salt=go_live_commands.SALT)
+    other = signing.dumps(binding | {"actor": str(uuid4())}, salt=go_live_commands.SALT)
+    with web_login(), pytest.raises(PermissionError):
+        go_live_commands.start_cleanup(
+            request, service, campaign.pk, **(options | {"preview_token": other})
+        )
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            signing.TimestampSigner,
+            "timestamp",
+            lambda self: signing.b62_encode(int(time()) - 301),
+        )
+        expired = signing.dumps(binding, salt=go_live_commands.SALT)
+    with web_login(), pytest.raises(signing.SignatureExpired):
+        go_live_commands.start_cleanup(
+            request, service, campaign.pk, **(options | {"preview_token": expired})
+        )
+    with transaction.atomic():
+        PortalUser.objects.filter(pk=request.portal_session.principal_id).update(
+            disabled=True, version=F("version") + 1
+        )
+        with web_login(), pytest.raises(PermissionError):
+            go_live_commands.start_cleanup(request, service, campaign.pk, **options)
+        transaction.set_rollback(True)  # Isolate revocation; never bypass its guard.
+    with (
+        campaign_clock(campaign.active_configuration.ends_at),
+        web_login(),
+        pytest.raises(StaleRecordError),
+    ):
+        go_live_commands.start_cleanup(request, service, campaign.pk, **options)
+    configuration = SystemConfiguration.objects.select_related(
+        "active_configuration"
+    ).get()
+    parish = configuration.active_configuration.canonical_document["sections"][
+        "parish"
+    ][0]
+    assert (
+        change(
+            service.store,
+            service.store.active(),
+            request.portal_session.principal_id,
+            [
+                {
+                    "operation": "update",
+                    "section": "parish",
+                    "id": parish["id"],
+                    "values": parish["values"] | {"name": "Changed Parish"},
+                }
+            ],
+        ).state
+        == "applied"
+    )
+    with web_login(), pytest.raises(StaleRecordError):
+        go_live_commands.start_cleanup(request, service, campaign.pk, **options)
+    assert not ProductionTransitionRequest.objects.exists()
+    assert RehearsalCredential.objects.exists()
+    assert not CampaignCredentialState.objects.get(campaign=campaign).go_live_gate
+
+
+def test_concurrent_same_confirmation_creates_one_cleanup_request(ready_cleanup):
+    """Independent real web connections serialize one immutable acknowledgement."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    from django.contrib.sessions.backends.db import SessionStore
+    from django.db import connections
+    from django.test import RequestFactory
+
+    request, service, campaign = ready_cleanup
+    with web_login():
+        _, _, token = go_live_commands.verify_preview(request, service, campaign.pk)
+        barrier = Barrier(2)
+
+        def confirm():
+            """Each request gets its own session object and restricted connection."""
+            browser = RequestFactory().post("/admin/campaign/go-live")
+            browser.session = SessionStore(session_key=request.session.session_key)
+            try:
+                barrier.wait(timeout=10)
+                return go_live_commands.start_cleanup(
+                    browser, service, campaign.pk, preview_token=token, acknowledge=True
+                )
+            finally:
+                connections.close_all()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            first, second = [
+                future.result(timeout=30)
+                for future in (executor.submit(confirm), executor.submit(confirm))
+            ]
+        assert first == second
+        assert ProductionTransitionRequest.objects.count() == 1
+        assert ProductionCleanupManifest.objects.count() == 1
+
+
+def test_web_cancellation_waits_for_running_worker_safe_boundary(ready_cleanup):
+    """Admin intent does not cancel another service's active ownership claim."""
+    from uuid import uuid4
+
+    from parishkit.stewardship.campaigns.cleanup_tasks import TASK_TYPE, cleanup_handler
+    from parishkit.stewardship.deployment import ServiceRole
+    from parishkit.stewardship.jobs.dispatch import claim_hint
+    from parishkit.stewardship.jobs.lifetime import maintain_execution
+    from parishkit.stewardship.jobs.models import TaskRun
+    from parishkit.stewardship.jobs.queues import WorkQueue
+
+    from .test_background_grants_postgresql import task_login
+
+    request, service, campaign = ready_cleanup
+    with web_login():
+        _, _, token = go_live_commands.verify_preview(request, service, campaign.pk)
+        status = go_live_commands.start_cleanup(
+            request, service, campaign.pk, preview_token=token, acknowledge=True
+        )
+    with task_login(ServiceRole.WORKER, exact=True):
+        execution = claim_hint(
+            status.task_id,
+            queue=WorkQueue.GENERAL,
+            worker_id=uuid4(),
+            handlers={TASK_TYPE: cleanup_handler()},
+        )
+    assert execution is not None
+    with web_login():
+        page = go_live_progress.progress(
+            request, service, campaign.pk, status.request_id
+        )
+        pending = go_live_progress.control(
+            request,
+            service,
+            campaign.pk,
+            status.request_id,
+            token=page["controls"]["cancel"],
+        )
+        assert pending.state == "cleanup_queued"
+        assert TaskRun.objects.get(pk=status.task_id).state == "running"
+        assert CampaignCredentialState.objects.get(campaign=campaign).go_live_gate
+        assert go_live_progress.progress(
+            request, service, campaign.pk, status.request_id
+        )["cancelling"]
+    with (
+        task_login(ServiceRole.WORKER, exact=True, reconnect=True),
+        maintain_execution(execution),
+    ):
+        execution.handler.execute(execution)
+    with web_login():
+        page = go_live_progress.progress(
+            request, service, campaign.pk, status.request_id
+        )
+        assert page["status"].state == "cancelled"
+        assert not CampaignCredentialState.objects.get(campaign=campaign).go_live_gate
+    assert RehearsalCredential.objects.exists()  # No batch had committed.
+
+
+def test_cancel_control_survives_committed_worker_progress(ready_cleanup):
+    """A displayed stop intent still works after actual deletion advances versions."""
+    from uuid import uuid4
+
+    from parishkit.stewardship.campaigns import cleanup_tasks
+    from parishkit.stewardship.campaigns.cleanup_batches import apply_checkpoint
+    from parishkit.stewardship.campaigns.production_states import ProductionAction
+    from parishkit.stewardship.deployment import ServiceRole
+    from parishkit.stewardship.jobs.dispatch import claim_hint
+    from parishkit.stewardship.jobs.lifetime import maintain_execution
+    from parishkit.stewardship.jobs.queues import WorkQueue
+
+    from .test_background_grants_postgresql import task_login
+
+    request, service, campaign = ready_cleanup
+    with web_login():
+        _, _, token = go_live_commands.verify_preview(request, service, campaign.pk)
+        status = go_live_commands.start_cleanup(
+            request, service, campaign.pk, preview_token=token, acknowledge=True
+        )
+        page = go_live_progress.progress(
+            request, service, campaign.pk, status.request_id
+        )
+    with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
+        execution = claim_hint(
+            status.task_id,
+            queue=WorkQueue.GENERAL,
+            worker_id=uuid4(),
+            handlers={cleanup_tasks.TASK_TYPE: cleanup_tasks.cleanup_handler()},
+        )
+        with maintain_execution(execution):
+            with execution.effect():
+                row = ProductionTransitionRequest.objects.get(pk=status.request_id)
+                cleanup_tasks._change(execution, row, ProductionAction.START)
+            with execution.effect():
+                advanced = apply_checkpoint(status.request_id, execution.claim)
+        assert advanced.version > page["status"].version
+        assert advanced.processed_count > 0
+    with web_login():
+        pending = go_live_progress.control(
+            request,
+            service,
+            campaign.pk,
+            status.request_id,
+            token=page["controls"]["cancel"],
+        )
+        assert pending.state == "cleanup_running"
+        assert CampaignCredentialState.objects.get(campaign=campaign).go_live_gate
+        assert (
+            go_live_progress.control(
+                request,
+                service,
+                campaign.pk,
+                status.request_id,
+                token=page["controls"]["cancel"],
+            )
+            == pending
+        )
+    assert (
+        ProductionTransitionRequest.objects.get(pk=status.request_id).processed_count
+        == advanced.processed_count
+    )  # Cancellation cannot rewind the committed deletion checkpoint.

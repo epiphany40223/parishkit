@@ -167,13 +167,16 @@ def select_weekly(observation, history):
     information, corrections = [], []
     for item in observation.items:
         value = item.value
+        disposition = (
+            "current_actionable"
+            if type(value) is WeeklyInformation
+            else value.disposition
+        )
+        if not weekly_item_selected(value.item_id, item.sequence, disposition, history):
+            continue
         if type(value) is WeeklyInformation:
-            if item.sequence > history.watermark:
-                information.append(value)
-        elif (
-            value.item_id in history.reported
-            and (value.item_id, value.disposition) not in history.corrected
-        ):
+            information.append(value)
+        else:
             corrections.append(value)
 
     def order(value):
@@ -184,4 +187,21 @@ def select_weekly(observation, history):
         observation,
         tuple(sorted(information, key=order)),
         tuple(sorted(corrections, key=order)),
+    )
+
+
+def weekly_item_selected(item_id, sequence, disposition, history):
+    """Share exact inclusion with metadata-only readiness; never load private prose."""
+    if (
+        not isinstance(item_id, UUID)
+        or type(sequence) is not int
+        or sequence < 1
+        or type(history) is not WeeklyHistory
+        or disposition not in {"current_actionable", "superseded", "withdrawn"}
+    ):
+        raise ValueError("Weekly item selection requires canonical metadata.")
+    if disposition == "current_actionable":
+        return sequence > history.watermark
+    return (
+        item_id in history.reported and (item_id, disposition) not in history.corrected
     )

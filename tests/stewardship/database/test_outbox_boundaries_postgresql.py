@@ -374,9 +374,18 @@ def test_actual_runtime_grants_do_not_expose_generic_delivery_mutation(
                         and privilege == "INSERT"
                     )
                     request_update = (
-                        role is ServiceRole.WORKER
+                        role in {ServiceRole.WEB, ServiceRole.WORKER}
                         and table == "stewardship_production_request"
                         and privilege == "UPDATE"
+                    )
+                    cleanup_intent = (
+                        role is ServiceRole.WEB
+                        and table
+                        in {
+                            "stewardship_testing_aggregate",
+                            "stewardship_production_request",
+                        }
+                        and privilege == "INSERT"
                     )
                     preparation_insert = (
                         role is ServiceRole.WORKER
@@ -408,7 +417,10 @@ def test_actual_runtime_grants_do_not_expose_generic_delivery_mutation(
                         [name, table, privilege],
                     )
                     assert cursor.fetchone() == (
-                        checkpoint_insert or preparation_insert or dispatch_write,
+                        checkpoint_insert
+                        or preparation_insert
+                        or dispatch_write
+                        or cleanup_intent,
                     ), (
                         role,
                         table,
@@ -423,7 +435,8 @@ def test_actual_runtime_grants_do_not_expose_generic_delivery_mutation(
                             checkpoint_insert
                             or request_update
                             or preparation_insert
-                            or dispatch_write,
+                            or dispatch_write
+                            or cleanup_intent,
                         ), (role, table, privilege)
                     if request_update:
                         # Independently constrain the new command fields, not
@@ -435,7 +448,7 @@ def test_actual_runtime_grants_do_not_expose_generic_delivery_mutation(
                             "AND has_column_privilege(%s,%s,attname,'UPDATE')",
                             [table, name, table],
                         )
-                        assert {row[0] for row in cursor.fetchall()} == {
+                        expected = {
                             "id",
                             "state",
                             "action",
@@ -444,10 +457,10 @@ def test_actual_runtime_grants_do_not_expose_generic_delivery_mutation(
                             "actor_id",
                             "correlation_id",
                             "failure_reason",
-                            "run_id",
-                            "task_fence",
-                            "worker_id",
                         }
+                        if role is ServiceRole.WORKER:
+                            expected.update({"run_id", "task_fence", "worker_id"})
+                        assert {row[0] for row in cursor.fetchall()} == expected
             with (
                 pytest.raises((ProgrammingError, IntegrityError)) as denied,
                 transaction.atomic(),
@@ -455,7 +468,7 @@ def test_actual_runtime_grants_do_not_expose_generic_delivery_mutation(
             ):
                 cursor.execute(f'SET LOCAL ROLE "{name}"')
                 if (
-                    role is ServiceRole.WORKER
+                    role in {ServiceRole.WEB, ServiceRole.WORKER}
                     and table == "stewardship_production_request"
                 ):
                     cursor.execute(

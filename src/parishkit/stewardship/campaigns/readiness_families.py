@@ -128,11 +128,16 @@ def _groups(campaign_id, definitions, due, digest):
                 responded=family["effective_submission_id"] is not None,
                 initial_delivered=any(
                     coverage.get(row.pk) == "delivered"
-                    or holds.get(row.pk) == "assumed_delivered"
+                    or "assumed_delivered" in holds.get(row.pk, set())
                     for row in definitions
                     if row.kind == "initial"
                 ),
                 slots=tuple(slots),
+                initial_unreviewed=any(
+                    "unreviewed" in holds.get(row.pk, set())
+                    for row in definitions
+                    if row.kind == "initial"
+                ),
             )
         after = families[-1]["id"]
 
@@ -157,11 +162,19 @@ def _page_evidence(definitions, targets, digest):
     ):
         for row in (
             model.objects.filter(**filters, **extra)
-            .order_by("target", "definition_id")
+            .order_by("target", "definition_id", field, "id")
             .values("target", "definition_id", field)
+            .iterator(chunk_size=200)
         ):
             _bind(digest, (field, row))
-            result[row["target"]][row["definition_id"]] = row[field]
+            if model is RestoreDeliveryHold:
+                # More than one restore can hold the same semantic slot. Do
+                # not let an assumed-delivered receipt overwrite uncertainty.
+                result[row["target"]].setdefault(row["definition_id"], set()).add(
+                    row[field]
+                )
+            else:
+                result[row["target"]][row["definition_id"]] = row[field]
     existing = {}
     for row in (
         ScheduleOccurrence.objects.filter(

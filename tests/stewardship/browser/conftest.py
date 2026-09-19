@@ -47,6 +47,7 @@ from parishkit.stewardship.web.security import CSP
 from ..campaign_factory import campaign, schedule
 from .delivery_components import components as delivery_components
 from .digest_components import components as digest_components
+from .go_live_components import components as go_live_components
 from .weekly_components import components as weekly_components
 
 NOW = datetime(2026, 9, 10, 12, tzinfo=UTC)
@@ -1021,6 +1022,7 @@ def component_origin():
         )
     responses.update(digest_components(context, admin))
     responses.update(weekly_components(context, admin))
+    responses.update(go_live_components(context, admin))
     for filename, kind in (
         ("ui-v1.css", "text/css"),
         ("ui-v1.js", "application/javascript"),

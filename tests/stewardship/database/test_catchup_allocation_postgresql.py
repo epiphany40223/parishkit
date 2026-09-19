@@ -8,6 +8,7 @@ from django.db import IntegrityError, ProgrammingError, connection
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.catchup_allocation import allocate_activation
 from parishkit.stewardship.campaigns.credential_models import (
+    CampaignCredentialState,
     FamilyAccessTokenGeneration,
 )
 from parishkit.stewardship.campaigns.lifecycle import Action
@@ -138,12 +139,10 @@ def test_real_web_role_commits_activation_and_canonical_task(tmp_path):
     [
         "UPDATE stewardship_family_token_generation "
         "SET state='cancelled',version=version+1",
-        "UPDATE stewardship_campaign_credentials "
-        "SET go_live_gate=false,version=version+1",
     ],
 )
 def test_web_cannot_directly_mutate_activation_credential_effects(tmp_path, statement):
-    """Row-lock authority does not grant token cancellation or gate release."""
+    """Row-lock authority does not grant token cancellation."""
     _, campaign, actor = draft_campaign(tmp_path)
     prepared_tokens(campaign, actor)
     with (
@@ -152,3 +151,29 @@ def test_web_cannot_directly_mutate_activation_credential_effects(tmp_path, stat
         pytest.raises(ProgrammingError, match="permission denied"),
     ):
         cursor.execute(statement)
+
+
+def test_web_cannot_release_a_gate_without_cancelled_cleanup_intent(tmp_path):
+    """Guarded web cleanup grants cannot release another credential owner's gate."""
+    _, campaign, actor = draft_campaign(tmp_path)
+    prepared_tokens(campaign, actor)
+    # Schema-owner fixture represents an existing credential preparation hold;
+    # the actual web mutation below runs with all application guards enabled.
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE stewardship_campaign_credentials SET go_live_gate=true,"
+            "version=version+1 WHERE campaign_id=%s",
+            [campaign.pk],
+        )
+    with (
+        task_login(ServiceRole.WEB, exact=True),
+        pytest.raises(IntegrityError, match="sealed cleanup intent"),
+        work_transaction(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(
+            "UPDATE stewardship_campaign_credentials SET go_live_gate=false,"
+            "version=version+1 WHERE campaign_id=%s",
+            [campaign.pk],
+        )
+    assert CampaignCredentialState.objects.get(campaign=campaign).go_live_gate

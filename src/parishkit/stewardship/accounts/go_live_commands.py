@@ -116,12 +116,14 @@ def start_cleanup(request, service, campaign_id, *, preview_token, acknowledge):
         if inputs.problems or inputs.digest != binding["digest"]:
             raise StaleRecordError("Review current readiness and inventory again.")
         signing.loads(preview_token, salt=SALT, max_age=PREVIEW_SECONDS)
+        instant = database_now()
         if (
             inputs.source.expires_at is None
-            or database_now() >= inputs.source.expires_at
+            or instant >= inputs.source.expires_at
+            or instant >= inputs.campaign.active_configuration.ends_at
         ):
             raise StaleRecordError(
-                "The full source observation expired during preview."
+                "Source readiness or the campaign interval expired during preview."
             )
 
         def admit(action, campaign, status):

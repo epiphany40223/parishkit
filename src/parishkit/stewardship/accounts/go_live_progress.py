@@ -96,7 +96,7 @@ def control(request, service, campaign_id, request_id, *, token):
             )
         ):
             raise ValueError("Invalid cleanup control.")
-        actor, _ = _current(request, service, campaign_id, request_id, passive=False)
+        actor, row = _current(request, service, campaign_id, request_id, passive=False)
         if (binding["actor"], binding["campaign"], binding["request"]) != (
             str(actor.identity),
             str(campaign_id),
@@ -127,10 +127,18 @@ def control(request, service, campaign_id, request_id, *, token):
             )
 
         owner = request_cancellation if binding["action"] == "cancel" else retry_cleanup
+        version = binding["version"]
+        if binding["action"] == "cancel":
+            # Cancellation names an immutable request, not a progress snapshot.
+            # Worker checkpoints must not make its stop button unusable. Keep
+            # the first durable intent's version for exact retries; otherwise
+            # bind the new intent to the current row under the common work lock.
+            previous = ProductionCleanupCancellation.objects.filter(request=row).first()
+            version = previous.expected_version if previous else row.version
         return owner(
             request_id=request_id,
             command_id=UUID(binding["key"]),
-            expected_version=binding["version"],
+            expected_version=version,
             actor_id=actor.identity,
             correlation_id=current_correlation(),
             admit=admit,

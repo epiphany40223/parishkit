@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from .schedule_recovery import RecoverySlot, plan_recovery
+from .schedule_recovery import RecoveryPlan, RecoverySlot, plan_recovery
 
 
 @dataclass(frozen=True)
@@ -24,6 +24,7 @@ class FamilyImpactInput:
     responded: bool
     initial_delivered: bool
     slots: tuple[RecoverySlot, ...]
+    initial_unreviewed: bool = False
 
     def __post_init__(self):
         """Prevent a partial/cross-Family or Testing group from inflating readiness."""
@@ -37,6 +38,7 @@ class FamilyImpactInput:
                     self.deliverable,
                     self.responded,
                     self.initial_delivered,
+                    self.initial_unreviewed,
                 )
             )
             or type(self.slots) is not tuple
@@ -101,6 +103,13 @@ def summarize_family_impact(groups, *, cutoff, closed=False):
             deliverable=group.deliverable,
             initial_delivered=group.initial_delivered,
         )
+        if group.initial_unreviewed and any(
+            row.occurrence_id == decision.selected and row.kind == "reminder"
+            for row in group.slots
+        ):
+            # Match dispatch: an unresolved initial blocks a selected reminder,
+            # not ineligible/responded/closed skips or unrelated held reminders.
+            decision = RecoveryPlan(blocked=True, reason="restore_delivery_unresolved")
         totals["families"] += 1
         totals["active"] += group.active
         totals["email_eligible"] += group.active and group.email_eligible
