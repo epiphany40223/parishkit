@@ -1,4 +1,5 @@
--- ADM-05 Admin intake/control authority; Production activation stays disabled.
+-- ADM-05 Admin cleanup intake/control authority. Final Production activation
+-- belongs to the separate private production_confirmation.sql effect.
 -- Private schema-owner fixtures and worker-owned completion retain their ports.
 
 CREATE FUNCTION public.stewardship_go_live_admin_v1() RETURNS trigger
@@ -107,7 +108,10 @@ BEGIN
            AND EXISTS (
             SELECT 1 FROM public.stewardship_production_request request
             JOIN public.stewardship_production_manifest manifest ON manifest.request_id=request.id
-            WHERE request.campaign_id=NEW.campaign_id AND request.state='cancelled'
+            WHERE request.campaign_id=NEW.campaign_id AND (request.state='cancelled'
+                OR (request.state='activated' AND EXISTS(
+                    SELECT 1 FROM public.stewardship_production_confirmation confirmation
+                    WHERE confirmation.request_id=request.id)))
                 AND request.gate_version<=OLD.version
            ) AND NOT EXISTS (
             SELECT 1 FROM public.stewardship_production_request

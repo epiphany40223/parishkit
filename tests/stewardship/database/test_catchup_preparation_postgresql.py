@@ -8,6 +8,7 @@ from django.db import IntegrityError, OperationalError, transaction
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.boundaries import apply_due_boundaries
+from parishkit.stewardship.campaigns.catchup_counts import COUNT_KEYS, prepared_counts
 from parishkit.stewardship.campaigns.catchup_preparation import prepare_batch
 from parishkit.stewardship.campaigns.catchup_tasks import (
     TASK_TYPE,
@@ -67,6 +68,13 @@ def execution_arguments(demand):
     )
 
 
+def outcome_totals(demand):
+    """Completed reports retain their configuration even after later edits."""
+    demand.refresh_from_db()
+    with work_transaction():
+        return prepared_counts(demand, uuid4())
+
+
 def test_family_cutoff_group_is_prepared_and_not_dispatched(tmp_path):
     """Delayed worker startup cannot absorb schedules due after activation."""
     store, campaign, actor, _ = family_campaign(tmp_path)
@@ -90,6 +98,10 @@ def test_family_cutoff_group_is_prepared_and_not_dispatched(tmp_path):
     }
     assert TaskRun.objects.get(pk=demand.task_root_id).state == "succeeded"
     assert not OutboxMessage.objects.exists()
+
+    counts = outcome_totals(demand)
+    assert counts["family_messages"] == 1
+    assert counts["coalesced_slots"] == 2
 
 
 def test_transient_database_failure_records_sanitized_retry_and_retains_hold(
@@ -156,6 +168,7 @@ def test_digest_preparation_spans_pages_without_releasing_partial_coverage(tmp_p
     }
     assert max(CatchUpCheckpoint.objects.values_list("items", flat=True)) <= 100
     assert not OutboxMessage.objects.exists()
+    assert outcome_totals(demand)["coalesced_slots"] == 109
 
 
 def test_failed_family_effect_cannot_commit_its_checkpoint(tmp_path, monkeypatch):
@@ -191,6 +204,27 @@ def test_restricted_worker_cannot_forge_empty_completion(tmp_path):
             execution = claim_hint(**execution_arguments(demand))
             campaign.refresh_from_db()
             prefix = campaign.active_configuration_id.hex + ":"
+            for counts in (
+                {"private_text": "not allowed"},
+                dict.fromkeys(COUNT_KEYS, -1),
+                dict.fromkeys(COUNT_KEYS, "1"),
+                [],
+            ):
+                with transaction.atomic(), pytest.raises(IntegrityError, match="count"):
+                    CatchUpCheckpoint.objects.create(
+                        demand=demand,
+                        sequence=1,
+                        group_key=prefix + "complete",
+                        cursor=prefix + "complete:",
+                        items=0,
+                        phase="complete",
+                        complete=True,
+                        task_id=execution.claim.run_id,
+                        fence=execution.claim.fence,
+                        actor_id=execution.claim.worker_id,
+                        correlation_id=execution.claim.run_id,
+                        outcome_counts=counts,
+                    )
             with (
                 transaction.atomic(),
                 pytest.raises(IntegrityError, match="cohort and digest coverage"),
@@ -368,6 +402,8 @@ def test_live_source_recheck_skips_inactive_family_and_keeps_new_targets_out_of_
     skipped = ScheduleOccurrence.objects.get(state="skipped")
     assert skipped.target == f"family:{families[1].pk}"
     assert skipped.reason == "family_ineligible"
+    assert outcome_totals(demand)["family_messages"] == 1
+    assert outcome_totals(demand)["active_families"] == 1
 
 
 def test_revision_change_after_partial_coverage_retains_all_original_dates(tmp_path):
@@ -401,6 +437,15 @@ def test_revision_change_after_partial_coverage_retains_all_original_dates(tmp_p
                 ],
             )
             assert result.state == "applied"
+            campaign.refresh_from_db()
+            demand.refresh_from_db()
+            with work_transaction():
+                assert (
+                    prepared_counts(demand, campaign.active_configuration_id)[
+                        "coalesced_slots"
+                    ]
+                    == 0
+                )
             previous.refresh_from_db()
             assert (
                 previous.state == "skipped" and previous.reason == "schedule_replaced"
@@ -418,6 +463,7 @@ def test_revision_change_after_partial_coverage_retains_all_original_dates(tmp_p
     assert len(set(first + second)) == 109
     assert ScheduleFulfillment.objects.filter(occurrence=previous).count() == 99
     assert not OutboxMessage.objects.exists()
+    assert outcome_totals(demand)["coalesced_slots"] == 109
 
 
 def test_weekly_preparation_selects_latest_and_retains_exact_original_slots(tmp_path):
@@ -436,6 +482,8 @@ def test_weekly_preparation_selects_latest_and_retains_exact_original_slots(tmp_
     assert len(covered_dates(selected.pk)) == 3
     demand.refresh_from_db()
     assert demand.completed_at is not None and not OutboxMessage.objects.exists()
+    assert outcome_totals(demand)["weekly_messages"] == 0
+    assert outcome_totals(demand)["coalesced_slots"] == 2
 
 
 def test_preparation_completes_during_delivery_pause_without_releasing_it(tmp_path):
@@ -504,6 +552,8 @@ def test_removed_schedule_is_not_revived_when_preparation_restarts(tmp_path):
     assert original.state == "skipped" and original.reason == "schedule_removed"
     assert ScheduleOccurrence.objects.count() == 1
     assert not ScheduleFulfillment.objects.exists()
+
+    assert outcome_totals(demand)["family_messages"] == 0
 
 
 @pytest.mark.parametrize("remove", [False, True])

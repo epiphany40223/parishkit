@@ -13,6 +13,7 @@ from parishkit.stewardship.jobs.ownership import TaskClaim, lock_task_claim
 from parishkit.stewardship.jobs.storage import _status
 from parishkit.stewardship.storage import StorageInvariantError
 
+from .catchup_counts import family_counts
 from .catchup_errors import CatchUpPreparationHeld
 from .catchup_tasks import eligible, owned_demand
 from .credential_models import FamilyCampaign
@@ -22,7 +23,9 @@ from .schedule_models import ScheduleDefinition
 from .work_locks import require_work_order
 
 
-def _checkpoint(demand, claim, *, key, cursor, phase, items=0, complete=False):
+def _checkpoint(
+    demand, claim, *, key, cursor, phase, items=0, complete=False, outcome_counts=None
+):
     """Append only after outcomes; the SQL effect advances the durable demand."""
     lock_task_claim(claim)
     return CatchUpCheckpoint.objects.create(
@@ -33,6 +36,7 @@ def _checkpoint(demand, claim, *, key, cursor, phase, items=0, complete=False):
         items=items,
         phase=phase,
         complete=complete,
+        outcome_counts=outcome_counts or {},
         task_id=claim.run_id,
         fence=claim.fence,
         actor_id=claim.worker_id,
@@ -87,6 +91,7 @@ def prepare_batch(demand, claim):
                 cursor=prefix + f"families:{family.hex}",
                 phase="families",
                 items=result.examined,
+                outcome_counts=family_counts(current, family, result),
             )
         return _checkpoint(
             current,

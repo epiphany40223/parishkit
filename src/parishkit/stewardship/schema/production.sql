@@ -1,5 +1,4 @@
--- Go-live journal foundation. Final activation remains deliberately unavailable
--- until the compiled readiness/activation workflow owns every required effect.
+-- Go-live journal foundation and exact final-confirmation evidence.
 
 CREATE FUNCTION public.stewardship_production_task_actor_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog, public, pg_temp AS $$
@@ -71,8 +70,24 @@ BEGIN
         RAISE EXCEPTION 'Production requests require their retention owner' USING ERRCODE='23514';
     END IF;
     IF NEW.action='activate' OR NEW.state='activated' THEN
-        RAISE EXCEPTION 'Production activation requires its later owning workflow'
-            USING ERRCODE='23514';
+        IF TG_OP<>'UPDATE' OR OLD.state<>'cleanup_complete'
+           OR NEW.action<>'activate' OR NEW.state<>'activated'
+           OR NOT EXISTS(SELECT 1 FROM public.stewardship_production_confirmation confirmation
+                JOIN public.stewardship_campaign_transition activation ON activation.id=confirmation.activation_id
+                WHERE confirmation.request_id=OLD.id AND confirmation.expected_request_version=OLD.version
+                  AND confirmation.request_key=NEW.command_id AND confirmation.actor_id=NEW.actor_id
+                  AND confirmation.correlation_id=NEW.correlation_id
+                  AND confirmation.readiness_digest=NEW.activation_digest
+                  AND activation.action='activate' AND activation.campaign_id=OLD.campaign_id
+                  AND activation.request_id=NEW.command_id AND activation.actor_id=NEW.actor_id
+                  AND activation.token_generation_id=confirmation.generation_id)
+           OR (to_jsonb(NEW)-ARRAY['version','updated_at','actor_id','correlation_id','command_id',
+                'action','state','activated_at','activation_digest']) IS DISTINCT FROM
+              (to_jsonb(OLD)-ARRAY['version','updated_at','actor_id','correlation_id','command_id',
+                'action','state','activated_at','activation_digest']) THEN
+            RAISE EXCEPTION 'Production activation requires its exact confirmation effect' USING ERRCODE='23514';
+        END IF;
+        RETURN NEW;
     END IF;
     IF (NEW.failure_reason<>'') IS DISTINCT FROM (NEW.action IN ('fail','retry_later','recovery_fail')) THEN
         RAISE EXCEPTION 'Invalid cleanup failure reason for this action' USING ERRCODE='23514';

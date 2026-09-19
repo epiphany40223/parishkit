@@ -14,7 +14,7 @@
 <dt>{% translate "Prepared links" %}</dt><dd>{{ record.completion|out_of }}</dd>
 <dt>{% translate "Last worker update" %}</dt><dd><time data-local-instant datetime="{{ record.task.updated_at|instant }}">{{ record.task.updated_at|instant }}</time></dd></dl>
 {% if not record.current %}<p role="status">{% translate "This preparation is cancelled or its inputs are no longer current. It cannot activate the campaign." %}</p>{% endif %}
-{% if record.generation.state == 'ready' and record.current %}<p role="status">{% translate "Inactive links are prepared. The campaign remains in Testing." %}</p>{% endif %}
+{% if record.generation.state == 'ready' and record.current %}<p role="status">{% translate "Inactive links are prepared. The campaign remains in Testing." %}</p>{% if record.task.state == 'succeeded' %}<p><a href="{% url 'admin:production_confirmation' campaign.pk transition.pk record.preparation.pk %}">{% translate "Review final Production confirmation" %}</a></p>{% endif %}{% endif %}
 {% if record.cleanup %}<p>{% translate "Disposal worker state:" %} {{ record.cleanup.state }}</p>{% endif %}
 {% if record.controls.cancel %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ record.controls.cancel }}"><button type="submit">{% translate "Cancel and discard these inactive links" %}</button></form>{% endif %}
 {% if record.controls.retry %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ record.controls.retry }}"><button type="submit">{% translate "Retry failed preparation" %}</button></form>{% endif %}

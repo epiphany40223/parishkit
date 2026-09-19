@@ -1,0 +1,28 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Production activation progress" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Production activation progress" %}</h1>
+<p>{{ campaign.active_configuration.name }}</p>
+<h2>{% if campaign.state == 'active' %}{% translate "Campaign active" %}{% elif campaign.state == 'scheduled' %}{% translate "Campaign scheduled" %}{% elif campaign.state == 'closed' %}{% translate "Campaign closed" %}{% else %}{{ campaign.state }}{% endif %}</h2>
+<p>{% translate "Production confirmed" %}: <time data-local-instant datetime="{{ receipt.created_at|instant }}">{{ receipt.created_at|instant }}</time></p>
+{% if demand %}<section class="panel"><h2>{% if complete %}{% translate "Initial campaign mail preparation complete" %}{% else %}{% translate "Preparing initial campaign mail" %}{% endif %}</h2>
+{% if not complete %}<p class="notice">{% translate "Scheduled mail remains held until the final preparation checkpoint commits. A failed worker does not roll back Production or release this hold. Family submissions remain available while the campaign is active." %}</p>{% else %}<p>{% translate "Preparation completed; this does not mean that email has been delivered. Other delivery holds and current eligibility still apply." %}</p>{% endif %}
+<dl><dt>{% translate "Worker state" %}</dt><dd>{{ task.state }}</dd>
+<dt>{% translate "Preparation phase" %}</dt><dd>{{ demand.phase }}</dd>
+<dt>{% translate "Committed groups" %}</dt><dd>{{ demand.groups_completed|number }}</dd>
+<dt>{% translate "Processed items" %}</dt><dd>{{ demand.items_completed|number }}</dd>
+<dt>{% translate "Last worker update" %}</dt><dd><time data-local-instant datetime="{{ task.updated_at|instant }}">{{ task.updated_at|instant }}</time></dd></dl>
+<p>{% translate "The total may change while preparation runs; these are durable processed counts, not a percentage or a count of messages sent." %}</p>
+<h3>{% translate "Preview compared with preparation outcomes" %}</h3>
+<p>{% translate "Family candidates and coalesced slots are recorded during bounded preparation. Digest totals instead count actual message records created by the later report workers, including retained cancelled messages; they do not count delivery attempts. Digest differences remain partial until those workers finish. None of these counts proves delivery. Incomplete restarts count only their selected configuration; completed checkpoint totals retain their completion configuration." %}</p>
+{% if not complete %}<p>{% translate "Partial results: unfinished groups are not counted yet. Differences so far are not final reductions." %}</p>{% endif %}
+{% for row in outcomes %}<section><h4>{{ row.label }}</h4><dl>
+<dt>{% translate "Confirmed preview" %}</dt><dd>{{ row.preview|number }}</dd>
+<dt>{% if row.complete %}{% translate "Prepared" %}{% else %}{% translate "Prepared so far" %}{% endif %}</dt><dd>{{ row.actual|number }}</dd>
+<dt>{% if row.complete %}{% translate "Difference" %}{% else %}{% translate "Difference so far" %}{% endif %}</dt><dd>{{ row.difference|number }}</dd>
+</dl></section>{% endfor %}
+{% if demand.failure_code and not complete %}<p role="alert">{% translate "Preparation needs recovery. Review the worker state; automatic recovery may still be running. A terminal failure can be retried without repeating committed groups." %}</p>{% endif %}
+{% if control %}<form method="post">{% csrf_token %}<input type="hidden" name="control" value="{{ control }}"><button type="submit">{% translate "Retry failed mail preparation" %}</button></form>{% endif %}
+</section>{% else %}<p>{% translate "This campaign was confirmed before its start. Normal campaign boundaries and scheduling own its mail; no direct-activation catch-up was requested." %}</p>{% endif %}
+<p><a href="">{% translate "Refresh Production progress" %}</a> · <a href="{% url 'admin:campaign_settings' campaign.pk %}">{% translate "Review campaign settings" %}</a></p>
+{% endblock %}

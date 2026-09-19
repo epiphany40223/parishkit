@@ -12,6 +12,7 @@ from django.db.models import Q
 from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.storage import StorageInvariantError
 
+from .catchup_counts import digest_page_counts
 from .catchup_errors import CatchUpPreparationHeld
 from .catchup_ownership import claim_event
 from .catchup_preparation import _checkpoint, receipt_key
@@ -100,6 +101,15 @@ def prepare_digest(demand, claim, scope, definition, cursor):
                 state__in=("unreviewed", "assumed_delivered"),
             ).values_list("slot", flat=True)
         )
+        # Revisited configurations inherit old semantic coverage page by page,
+        # without scanning the complete date history in a final transaction.
+        prior_coalesced = ScheduleFulfillment.objects.filter(
+            definition=definition,
+            mode="production",
+            target="admins",
+            slot__in=slots,
+            disposition="coalesced",
+        ).count()
         existing = set(
             ScheduleOccurrence.objects.filter(
                 revision_id=definition.current_revision_id,
@@ -128,6 +138,7 @@ def prepare_digest(demand, claim, scope, definition, cursor):
             cursor=prefix + f"digests:{definition.pk.hex}:{stage}:{next_date}",
             phase="digests",
             items=created,
+            outcome_counts=digest_page_counts(prior_coalesced),
         )
     if stage != "cover":
         raise StorageInvariantError("Digest cursor has no compiled continuation.")
@@ -253,4 +264,5 @@ def prepare_digest(demand, claim, scope, definition, cursor):
         else prefix + "digests:",
         phase="digests",
         items=created + len(rows) + len(previous),
+        outcome_counts=digest_page_counts(len(rows)),
     )

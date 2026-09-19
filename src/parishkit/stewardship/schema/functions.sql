@@ -1789,6 +1789,21 @@ CREATE FUNCTION public.stewardship_checkpoint_guard_v1() RETURNS trigger
 DECLARE d stewardship_activation_catchup%ROWTYPE; t stewardship_task_run%ROWTYPE; r stewardship_system_configuration%ROWTYPE;
         projection uuid; prefix text; family uuid; pending_count integer;
 BEGIN
+    -- Count-only group observations are immutable with their existing fenced
+    -- checkpoint. Empty metadata belongs to intermediate traversal pages.
+    IF jsonb_typeof(NEW.outcome_counts)<>'object' THEN
+        RAISE EXCEPTION 'Catch-up outcomes require count-only metadata' USING ERRCODE='23514';
+    END IF;
+    IF NEW.outcome_counts<>'{}'::jsonb AND (
+        NOT NEW.outcome_counts ?& ARRAY['active_families','eligible_families','no_email_families',
+            'family_messages','daily_messages','weekly_messages','coalesced_slots']
+        OR NEW.outcome_counts - ARRAY['active_families','eligible_families','no_email_families',
+            'family_messages','daily_messages','weekly_messages','coalesced_slots']<>'{}'::jsonb
+        OR EXISTS(SELECT 1 FROM jsonb_each(NEW.outcome_counts) item
+            WHERE jsonb_typeof(item.value)<>'number' OR item.value::text !~ '^(0|[1-9][0-9]{0,14})$')
+    ) THEN
+        RAISE EXCEPTION 'Catch-up outcomes require exact nonnegative count fields' USING ERRCODE='23514';
+    END IF;
     PERFORM pg_advisory_xact_lock(736220,1);
     SELECT * INTO r FROM stewardship_system_configuration FOR UPDATE;
     SELECT * INTO d FROM stewardship_activation_catchup WHERE id=NEW.demand_id FOR UPDATE;

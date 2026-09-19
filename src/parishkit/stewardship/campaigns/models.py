@@ -157,6 +157,10 @@ from .activation_models import (  # noqa: E402,F401
     ProductionTokenCancellation,
     ProductionTokenPreparation,
 )
+from .confirmation_models import (  # noqa: E402,F401
+    ActivationImpactRevision,
+    ProductionConfirmation,
+)
 from .credential_models import (  # noqa: E402,F401
     CampaignCredentialState,
     CredentialKeyState,

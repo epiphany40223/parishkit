@@ -14,6 +14,7 @@ from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.campaigns.confirmation_models import ProductionConfirmation
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
 from parishkit.stewardship.campaigns.domain import CampaignState, SystemMode
 from parishkit.stewardship.campaigns.lifecycle import (
@@ -201,6 +202,12 @@ def _page(request, configuration, campaign, form, *, editable, status=200):
             "campaign": campaign,
             "form": form,
             "editable": editable,
+            "production_progress_available": campaign is not None
+            and configuration.current_campaign_id == campaign.pk
+            and configuration.mode == "production"
+            and ProductionConfirmation.objects.filter(
+                request__campaign=campaign
+            ).exists(),
             "clone_sources": list(
                 Campaign.objects.filter(state="archived")
                 .select_related("active_configuration")
