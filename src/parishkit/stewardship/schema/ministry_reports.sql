@@ -1,11 +1,13 @@
-"""One MVCC selection for scoped Ministry counts and bounded private detail.
-
-All values are bound parameters. Only authorized, paginated join rows reach
-contact projection; summary and leave rows never fetch contact payloads. Keep
-latest-intent selection before state filtering, including hidden Ministries.
-"""
-
-MINISTRY_REPORT = """
+-- One query owns interactive pages and complete immutable export captures.
+-- Only authorized join rows reach contact projection; summary and leave rows
+-- never fetch contact payloads. Select latest intent before filtering states,
+-- including hidden Ministries, so history cannot resurrect replaced requests.
+-- NULL page_limit selects every matching row for an immutable export capture.
+CREATE FUNCTION stewardship_ministry_report_v1(
+    campaign_uuid uuid, filters jsonb, operational boolean, ministry_scope bigint[],
+    ministry_id integer DEFAULT NULL, request_action text DEFAULT 'join',
+    page_limit integer DEFAULT NULL, page_offset integer DEFAULT 0
+) RETURNS jsonb LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
 WITH selected AS MATERIALIZED (
     SELECT c.id,cc.name,cc.timezone,cc.values,
         CASE WHEN c.state='archived' THEN cc.configuration_id
@@ -17,7 +19,7 @@ WITH selected AS MATERIALIZED (
     CROSS JOIN stewardship_system_configuration sys
     LEFT JOIN stewardship_campaign_credentials k ON k.campaign_id=c.id
     LEFT JOIN stewardship_source_current sc ON sc.singleton
-    WHERE c.id=%(campaign)s
+    WHERE c.id=campaign_uuid
 ), source AS MATERIALIZED (
     SELECT x.*,s.organization_id,s.generation AS source_generation,
         s.promoted_at AS source_as_of,statement_timestamp() AS observed_at,
@@ -43,8 +45,8 @@ WITH selected AS MATERIALIZED (
         ON a.configuration_id=x.configuration_id
         AND a.organization_id=x.organization_id AND a.ministry_duid=n.duid::bigint
     WHERE n.duid::bigint BETWEEN 1 AND 2147483647
-      AND (%(operational)s OR n.duid::bigint=ANY(%(scope)s::bigint[]))
-      AND (%(ministry)s::integer IS NULL OR n.duid::bigint=%(ministry)s)
+      AND (operational OR n.duid::bigint=ANY(ministry_scope::bigint[]))
+      AND (ministry_id::integer IS NULL OR n.duid::bigint=ministry_id)
 ), requests AS MATERIALIZED (
     SELECT r.id,r.entity_kind,r.entity_key,r.ministry_duid,r.action,r.state,
         r.outcome,s.submitted_at,s.family_version,f.family_duid,s.id AS submission_id,
@@ -69,12 +71,12 @@ WITH selected AS MATERIALIZED (
     GROUP BY m.duid,m.name,m.active
 ), summary_filtered AS MATERIALIZED (
     SELECT * FROM summary WHERE
-        (%(activity)s='any' OR (%(activity)s='active' AND active IS TRUE)
-            OR (%(activity)s='inactive' AND active IS FALSE)
-            OR (%(activity)s='unavailable' AND active IS NULL))
-        AND (%(ministry)s::integer IS NOT NULL OR %(search)s=''
-            OR position(lower(%(search)s) IN lower(name))>0
-            OR position(%(search)s IN duid::text)>0)
+        ((filters->>'activity')='any' OR ((filters->>'activity')='active' AND active IS TRUE)
+            OR ((filters->>'activity')='inactive' AND active IS FALSE)
+            OR ((filters->>'activity')='unavailable' AND active IS NULL))
+        AND (ministry_id::integer IS NOT NULL OR (filters->>'search')=''
+            OR position(lower((filters->>'search')) IN lower(name))>0
+            OR position((filters->>'search') IN duid::text)>0)
 ), named AS MATERIALIZED (
     SELECT r.*,m.name AS ministry_name,p.canonical::jsonb AS person,
         CASE WHEN r.entity_kind='proposed_member'
@@ -96,27 +98,27 @@ WITH selected AS MATERIALIZED (
         AND sm.source_key=r.entity_key
     LEFT JOIN stewardship_source_member p ON p.id=sm.payload_id
         AND p.family_key=r.family_duid::text
-    WHERE %(ministry)s::integer IS NOT NULL AND r.action=%(action)s
-        AND (%(history)s OR (r.revision=1
+    WHERE ministry_id::integer IS NOT NULL AND r.action=request_action
+        AND ((filters->>'history'='all') OR (r.revision=1
             AND r.state NOT IN ('cancelled','superseded')))
-        AND (%(state)s='any' OR r.state=%(state)s
-            OR (%(state)s='unresolved' AND r.state IN ('new','assigned','in_progress')))
-        AND (%(start)s='' OR (r.submitted_at AT TIME ZONE x.timezone)::date
-            >=nullif(%(start)s,'')::date)
-        AND (%(end)s='' OR (r.submitted_at AT TIME ZONE x.timezone)::date
-            <=nullif(%(end)s,'')::date)
+        AND ((filters->>'state')='any' OR r.state=(filters->>'state')
+            OR ((filters->>'state')='unresolved' AND r.state IN ('new','assigned','in_progress')))
+        AND ((filters->>'start')='' OR (r.submitted_at AT TIME ZONE x.timezone)::date
+            >=nullif((filters->>'start'),'')::date)
+        AND ((filters->>'end')='' OR (r.submitted_at AT TIME ZONE x.timezone)::date
+            <=nullif((filters->>'end'),'')::date)
 ), filtered AS MATERIALIZED (
-    SELECT * FROM named WHERE %(search)s=''
-        OR position(lower(%(search)s) IN lower(member_name))>0
-        OR (entity_kind='member' AND position(%(search)s IN entity_key)>0)
+    SELECT * FROM named WHERE (filters->>'search')=''
+        OR position(lower((filters->>'search')) IN lower(member_name))>0
+        OR (entity_kind='member' AND position((filters->>'search') IN entity_key)>0)
 ), page AS MATERIALIZED (
     SELECT *,row_number() OVER (ORDER BY
-        CASE WHEN %(sort)s='name' THEN lower(member_name) END,
-        CASE WHEN %(sort)s='name_desc' THEN lower(member_name) END DESC,
-        CASE WHEN %(sort)s='newest' THEN submitted_at END DESC,
-        CASE WHEN %(sort)s='oldest' THEN submitted_at END,id) AS ordinal
+        CASE WHEN (filters->>'sort')='name' THEN lower(member_name) END,
+        CASE WHEN (filters->>'sort')='name_desc' THEN lower(member_name) END DESC,
+        CASE WHEN (filters->>'sort')='newest' THEN submitted_at END DESC,
+        CASE WHEN (filters->>'sort')='oldest' THEN submitted_at END,id) AS ordinal
     FROM filtered ORDER BY ordinal
-    LIMIT %(limit)s OFFSET %(offset)s
+    LIMIT page_limit OFFSET page_offset
 ), detail AS (
     SELECT r.ordinal,r.id,r.ministry_duid,r.member_name,r.entity_kind,
         CASE WHEN r.entity_kind='member' THEN r.entity_key::bigint END AS member_duid,
@@ -143,19 +145,19 @@ WITH selected AS MATERIALIZED (
                     coalesce(r.person->>'birthdate',r.proposed->>'birth_date')::date))::integer
                 END END AS age,
         CASE WHEN r.action='join' THEN
-            CASE WHEN NOT %(operational)s AND coalesce(
+            CASE WHEN NOT operational AND coalesce(
                 c.value->'publish_email','false'::jsonb)<>'true'::jsonb
                 THEN 'not_published' ELSE 'available' END END AS email_visibility,
-        CASE WHEN r.action='join' AND (%(operational)s
+        CASE WHEN r.action='join' AND (operational
             OR c.value->'publish_email'='true'::jsonb)
             THEN CASE WHEN r.entity_kind='member' THEN c.value->'emails'
                 ELSE jsonb_build_array(jsonb_build_object(
                     'value',r.proposed->>'email')) END END AS emails,
         CASE WHEN r.action='join' THEN
-            CASE WHEN NOT %(operational)s AND coalesce(
+            CASE WHEN NOT operational AND coalesce(
                 c.value->'publish_phone','false'::jsonb)<>'true'::jsonb
                 THEN 'not_published' ELSE 'available' END END AS phone_visibility,
-        CASE WHEN r.action='join' AND (%(operational)s
+        CASE WHEN r.action='join' AND (operational
             OR c.value->'publish_phone'='true'::jsonb)
             THEN CASE WHEN r.entity_kind='member' THEN c.value->'phones'
                 ELSE jsonb_build_object('home',r.proposed->>'home_phone',
@@ -179,26 +181,29 @@ WITH selected AS MATERIALIZED (
     ) a ON true
 ), summary_page AS (
     SELECT * FROM summary_filtered ORDER BY
-        CASE WHEN %(sort)s='name_desc' THEN lower(name) END DESC,lower(name),duid
-    LIMIT %(limit)s OFFSET CASE WHEN %(ministry)s::integer IS NULL
-        THEN %(offset)s ELSE 0 END
+        CASE WHEN (filters->>'sort')='name_desc' THEN lower(name) END DESC,lower(name),duid
+    LIMIT page_limit OFFSET CASE WHEN ministry_id::integer IS NULL
+        THEN page_offset ELSE 0 END
 )
 SELECT CASE WHEN NOT z.values->'modules' ? 'ministry'
     THEN jsonb_build_object('disabled',true)
     WHEN x.id IS NULL THEN jsonb_build_object('unavailable',true)
     ELSE jsonb_build_object(
     'authorized',EXISTS(SELECT 1 FROM ministries),
+    'authorization_scope',jsonb_build_object('capability','ministry_report',
+        'operational',operational,'ministries',coalesce((SELECT jsonb_agg(duid ORDER BY duid)
+            FROM ministries),'[]'::jsonb)),
     'metadata',jsonb_build_object('id',x.id,'name',x.name,'timezone',x.timezone,
         'source_id',x.source_id,'source_generation',x.source_generation,
         'source_as_of',x.source_as_of,'observed_at',x.observed_at,
         'report_date',x.report_date),
-    'total',CASE WHEN %(ministry)s::integer IS NULL
+    'total',CASE WHEN ministry_id::integer IS NULL
         THEN (SELECT count(*) FROM summary_filtered)
         ELSE (SELECT count(*) FROM filtered) END,
     'summaries',coalesce((SELECT jsonb_agg(to_jsonb(p) ORDER BY
-        CASE WHEN %(sort)s='name_desc' THEN lower(name) END DESC,lower(name),duid)
+        CASE WHEN (filters->>'sort')='name_desc' THEN lower(name) END DESC,lower(name),duid)
         FROM summary_page p),'[]'::jsonb),
     'rows',coalesce((SELECT jsonb_agg(to_jsonb(d)-'ordinal' ORDER BY ordinal)
-        FROM detail d),'[]'::jsonb)) END::text
-FROM selected z LEFT JOIN source x ON true
-"""
+        FROM detail d),'[]'::jsonb)) END
+FROM selected z LEFT JOIN source x ON true;
+$$;

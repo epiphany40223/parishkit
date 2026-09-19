@@ -19,6 +19,10 @@ def components(context, admin):
         ministry_id=9,
         action="join",
         query=query,
+        mutable=True,
+        export_key=UUID(int=91),
+        export_fields=query.form_values(),
+        export_timezones=["UTC", "America/Detroit"],
         query_fields=query.form_values() | {"ministry": 9},
         states=STATES,
         report_url=root + "join/",
@@ -60,10 +64,18 @@ def components(context, admin):
     )
     pages = {
         "/ministry-detail": values,
-        "/ministry-summary": values | dict(ministry_id=None, rows=[], report_url=root),
+        "/ministry-summary": values
+        | dict(
+            ministry_id=None,
+            action=None,
+            rows=[],
+            query_fields=query.form_values(),
+            report_url=root,
+        ),
         "/ministry-history": values | dict(query=MinistryQuery(history="all")),
         "/ministry-empty": values
         | dict(rows=[], summaries=[], total=0, next_page=None),
+        "/ministry-gated": values | dict(mutable=False),
     }
     return {
         path: (

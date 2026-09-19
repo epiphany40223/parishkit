@@ -9,16 +9,19 @@ CREATE TABLE stewardship_export_request (
     fact_set_id uuid NULL, configuration_id uuid NOT NULL, report varchar(32) NOT NULL,
     format varchar(4) NOT NULL, browser_timezone varchar(254) NOT NULL,
     parameters jsonb NOT NULL, authorization_scope jsonb NOT NULL,
-    information_snapshot_id uuid NULL, directory_snapshot_id uuid NULL,
+    information_snapshot_id uuid NULL, directory_snapshot_id uuid NULL, ministry_snapshot_id uuid NULL,
     CONSTRAINT export_request_replay UNIQUE(requester_id,request_key),
     CONSTRAINT export_report_known CHECK (
-        (directory_snapshot_id IS NULL AND fact_set_id IS NOT NULL AND information_snapshot_id IS NULL AND report::text='participation'::text)
+        (directory_snapshot_id IS NULL AND fact_set_id IS NOT NULL AND information_snapshot_id IS NULL AND ministry_snapshot_id IS NULL AND report::text='participation'::text)
         OR (directory_snapshot_id IS NULL AND fact_set_id IS NULL
             AND format::text=ANY(ARRAY[('csv'::varchar)::text,('xlsx'::varchar)::text,('pdf'::varchar)::text])
-            AND information_snapshot_id IS NOT NULL AND report::text='additional_information'::text)
+            AND information_snapshot_id IS NOT NULL AND ministry_snapshot_id IS NULL AND report::text='additional_information'::text)
         OR (directory_snapshot_id IS NOT NULL AND fact_set_id IS NULL
             AND format::text=ANY(ARRAY[('csv'::varchar)::text,('xlsx'::varchar)::text,('pdf'::varchar)::text])
-            AND information_snapshot_id IS NULL AND report::text=ANY(ARRAY[('family_directory'::varchar)::text,('postal_outreach'::varchar)::text]))),
+            AND information_snapshot_id IS NULL AND ministry_snapshot_id IS NULL AND report::text=ANY(ARRAY[('family_directory'::varchar)::text,('postal_outreach'::varchar)::text]))
+        OR (directory_snapshot_id IS NULL AND fact_set_id IS NULL
+            AND format::text=ANY(ARRAY[('csv'::varchar)::text,('xlsx'::varchar)::text,('pdf'::varchar)::text])
+            AND information_snapshot_id IS NULL AND ministry_snapshot_id IS NOT NULL AND report::text='ministry'::text)),
     CONSTRAINT export_format_known CHECK ((format)::text = ANY ((ARRAY['csv'::character varying, 'png'::character varying, 'pdf'::character varying, 'xlsx'::character varying])::text[]))
 );
 CREATE TABLE "stewardship_export_attempt" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "request_id" uuid NOT NULL, "run_id" uuid NOT NULL, "fence" bigint NOT NULL CHECK ("fence" >= 0), "claim_event_id" uuid NOT NULL, CONSTRAINT "export_attempt_claim" UNIQUE ("request_id", "run_id", "fence"), CONSTRAINT "export_attempt_positive_fence" CHECK ("fence" > 0));
@@ -93,6 +96,7 @@ LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE facts stewardship_daily_fact_set%ROWTYPE;
         snapshot stewardship_information_export_snapshot%ROWTYPE;
         directory stewardship_directory_export_snapshot%ROWTYPE;
+        ministry stewardship_ministry_export_snapshot%ROWTYPE;
         handoff boolean; inputs_valid boolean:=false;
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
@@ -108,6 +112,14 @@ BEGIN
             AND facts.campaign_id=NEW.campaign_id
             AND NEW.parameters=jsonb_build_object('population_scope',facts.population_scope,
                 'sort','date_asc','selected_ids','[]'::jsonb,'filters','{}'::jsonb);
+    ELSIF NEW.report='ministry' THEN
+        SELECT * INTO ministry FROM stewardship_ministry_export_snapshot WHERE id=NEW.ministry_snapshot_id;
+        inputs_valid:=ministry.id IS NOT NULL AND ministry.campaign_id=NEW.campaign_id
+            AND NEW.parameters=ministry.parameters AND NEW.authorization_scope=ministry.authorization_scope
+            AND (ministry.actor_id=NEW.requester_id
+                OR stewardship_export_authorized_v1(NEW.requester_id,true)
+                OR EXISTS(SELECT 1 FROM stewardship_export_request prior
+                    WHERE prior.ministry_snapshot_id=ministry.id AND prior.requester_id=NEW.requester_id));
     ELSIF NEW.report='additional_information' THEN
         SELECT * INTO snapshot FROM stewardship_information_export_snapshot WHERE id=NEW.information_snapshot_id;
         inputs_valid:=snapshot.id IS NOT NULL AND snapshot.campaign_id=NEW.campaign_id
@@ -129,12 +141,12 @@ BEGIN
                       AND prior.requester_id=NEW.requester_id));
     END IF;
     IF inputs_valid IS DISTINCT FROM true OR NEW.actor_id IS DISTINCT FROM NEW.requester_id
-       OR NOT stewardship_export_authorized_v1(NEW.requester_id)
+       OR NOT stewardship_export_request_authorized_v1(NEW.requester_id,NEW)
        OR NOT stewardship_export_admitted_v1(NEW.campaign_id,true)
        OR (NOT handoff AND NOT EXISTS(SELECT 1 FROM stewardship_system_configuration
            WHERE active_configuration_id=NEW.configuration_id))
        OR (current_user='pk_stewardship_worker' AND NOT handoff)
-       OR NEW.authorization_scope<>'{"capability":"campaign_report"}'::jsonb
+       OR (NEW.report<>'ministry' AND NEW.authorization_scope<>'{"capability":"campaign_report"}'::jsonb)
        OR NOT EXISTS(SELECT 1 FROM pg_timezone_names
            WHERE name=public.stewardship_timezone_name_v1(NEW.browser_timezone))
        OR NOT EXISTS(SELECT 1 FROM stewardship_task_run t WHERE t.id=NEW.task_id
@@ -162,7 +174,7 @@ BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
     SELECT * INTO request FROM stewardship_export_request WHERE id=NEW.request_id;
     IF request.id IS NULL OR NOT stewardship_export_admitted_v1(request.campaign_id,true)
-       OR NOT stewardship_export_authorized_v1(request.requester_id)
+       OR NOT stewardship_export_request_authorized_v1(request.requester_id,request)
        OR EXISTS(SELECT 1 FROM stewardship_export_publication WHERE request_id=request.id)
        OR EXISTS(SELECT 1 FROM stewardship_export_cancellation WHERE request_id=request.id)
        OR NOT EXISTS(SELECT 1 FROM stewardship_task_run t JOIN stewardship_task_event e ON e.id=NEW.claim_event_id
@@ -182,7 +194,7 @@ BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
     SELECT * INTO request FROM stewardship_export_request WHERE id=NEW.request_id;
     IF request.id IS NULL OR NOT stewardship_export_admitted_v1(request.campaign_id,true)
-       OR NOT stewardship_export_authorized_v1(request.requester_id)
+       OR NOT stewardship_export_request_authorized_v1(request.requester_id,request)
        OR EXISTS(SELECT 1 FROM stewardship_export_cancellation WHERE request_id=request.id)
        OR NEW.expires_at > NEW.created_at + interval '7 days 1 minute'
        OR NOT (
@@ -193,7 +205,10 @@ BEGIN
                WHERE s.id=request.information_snapshot_id AND s.row_count=NEW.row_count))
            OR (request.report IN ('family_directory','postal_outreach') AND EXISTS(
                SELECT 1 FROM stewardship_directory_export_snapshot s
-               WHERE s.id=request.directory_snapshot_id AND s.row_count=NEW.row_count)))
+               WHERE s.id=request.directory_snapshot_id AND s.row_count=NEW.row_count))
+           OR (request.report='ministry' AND EXISTS(
+               SELECT 1 FROM stewardship_ministry_export_snapshot s
+               WHERE s.id=request.ministry_snapshot_id AND s.row_count=NEW.row_count)))
        OR NOT EXISTS(SELECT 1 FROM stewardship_export_attempt a JOIN stewardship_task_run t ON t.id=a.run_id
            WHERE a.id=NEW.attempt_id AND a.request_id=request.id AND a.actor_id=NEW.actor_id
              AND t.state='running' AND t.fence=a.fence AND t.worker_id=a.actor_id
@@ -209,7 +224,7 @@ BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
     SELECT * INTO request FROM stewardship_export_request WHERE id=NEW.request_id;
     IF request.id IS NULL OR NOT stewardship_export_admitted_v1(request.campaign_id,true)
-       OR NOT stewardship_export_authorized_v1(NEW.actor_id)
+       OR NOT stewardship_export_request_authorized_v1(NEW.actor_id,request)
        OR (NEW.actor_id<>request.requester_id AND NOT stewardship_export_authorized_v1(NEW.actor_id,true))
        OR EXISTS(SELECT 1 FROM stewardship_export_publication WHERE request_id=request.id)
     THEN RAISE EXCEPTION 'Export cancellation is not admitted' USING ERRCODE='23514'; END IF;
@@ -237,7 +252,7 @@ BEGIN
     SELECT * INTO request FROM stewardship_export_request WHERE id=receipt.request_id;
     IF receipt.id IS NULL OR receipt.expires_at<=clock_timestamp()
        OR NOT stewardship_export_admitted_v1(request.campaign_id,false)
-       OR NOT stewardship_export_authorized_v1(grant_row.requester_id)
+       OR NOT stewardship_export_request_authorized_v1(grant_row.requester_id,request)
        OR (grant_row.requester_id<>request.requester_id
            AND NOT stewardship_export_authorized_v1(grant_row.requester_id,true))
     THEN RAISE EXCEPTION 'Download is not authorized' USING ERRCODE='23514'; END IF;

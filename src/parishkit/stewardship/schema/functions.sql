@@ -5184,6 +5184,7 @@ CREATE FUNCTION public.stewardship_safe_context_v1(schema_name text, payload jso
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $_$
 DECLARE allowed text[]; key text; value jsonb; text_value text;
+        ministry jsonb; previous_ministry bigint;
 BEGIN
     allowed=CASE schema_name
         WHEN 'request' THEN ARRAY['method','status','outcome','source_fingerprint']
@@ -5194,7 +5195,7 @@ BEGIN
         WHEN 'provider' THEN ARRAY['status','provider_fingerprint','outcome']
         WHEN 'exception' THEN ARRAY['outcome','retryable']
         WHEN 'action' THEN ARRAY['version','before_version','after_version','outcome','source_fingerprint','candidate_fingerprint','count',
-            'matching_count','page','directory_reason','directory_phone','directory_response','directory_sort','search_used','exact_code_used','ministry_duid']
+            'matching_count','page','directory_reason','directory_phone','directory_response','directory_sort','search_used','exact_code_used','ministry_duid','ministry_duids','ministry_operational']
         WHEN 'boundary' THEN ARRAY['occurrence_id','kind','intended_unix_microseconds','actual_unix_microseconds','lag_microseconds','before_state','after_state']
         WHEN 'schedule' THEN ARRAY['definition_id','previous_revision_id','selected_revision_id','cancelled_messages','skipped_occurrences','failed_occurrences','delivered_slots']
         ELSE NULL END;
@@ -5220,13 +5221,23 @@ BEGIN
         ELSIF key IN ('family_duid','member_duid','ministry_duid') THEN
             IF jsonb_typeof(value)<>'number' OR text_value!~'^[0-9]{1,10}$' THEN RETURN false; END IF;
             IF text_value::numeric NOT BETWEEN 1 AND 2147483647 THEN RETURN false; END IF;
+        ELSIF key='ministry_duids' THEN
+            IF jsonb_typeof(value)<>'array' THEN RETURN false; END IF;
+            previous_ministry:=0;
+            FOR ministry IN SELECT * FROM jsonb_array_elements(value) LOOP
+                IF jsonb_typeof(ministry)<>'number' OR ministry#>>'{}'!~'^[0-9]{1,10}$'
+                THEN RETURN false; END IF;
+                IF (ministry#>>'{}')::bigint NOT BETWEEN previous_ministry+1 AND 2147483647
+                THEN RETURN false; END IF;
+                previous_ministry:=(ministry#>>'{}')::bigint;
+            END LOOP;
         ELSIF key='method' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('GET','HEAD','POST') THEN RETURN false; END IF;
         ELSIF key LIKE '%\_id' ESCAPE '\' THEN
             IF jsonb_typeof(value)<>'string' OR text_value!~'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN RETURN false; END IF;
         ELSIF key LIKE '%\_fingerprint' ESCAPE '\' THEN
             IF jsonb_typeof(value)<>'string' OR text_value!~'^[0-9a-f]{64}$' THEN RETURN false; END IF;
-        ELSIF key IN ('retryable','search_used','exact_code_used') THEN
+        ELSIF key IN ('retryable','search_used','exact_code_used','ministry_operational') THEN
             IF jsonb_typeof(value)<>'boolean' THEN RETURN false; END IF;
         ELSIF key='directory_reason' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('any','no_head','no_address','invalid_address','provider_refused','deliverable') THEN RETURN false; END IF;
