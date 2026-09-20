@@ -161,6 +161,18 @@ when its default round cap would prevent the required review rounds. Preserve
 the permission preflight, dual-source completion and all acceptance criteria;
 the override does not turn a failed review into a completed round.
 
+Human clarification, September 20, 2026: a temporary exemption applies while
+the Codex reviewer is unavailable. Its workspace ran out of credits, so every
+Codex review aborts before producing findings. Until the human reports Codex
+restored, a round with a completed Claude review counts as a completed round;
+no substitute second source is required. Record each such round as
+single-source under this exemption, with the observed Codex failure. Everything
+else is unchanged: at least three rounds per PR, evidence-based dispositions,
+fixes for accepted Medium-or-higher findings, post-fix validation, exact-head
+CI, DCO and applicable gates. A Claude review that itself fails or is degraded
+is still not a completed round. Resume dual-source rounds once Codex returns;
+this exemption does not reclassify earlier or later dual-source requirements.
+
 Autonomously investigate failures, implement specification-consistent fixes,
 commit with sign-off, push backups, run reviews, and correct CI. Ask during the
 cycle only when proceeding genuinely needs new authority or a product/security
