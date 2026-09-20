@@ -289,6 +289,7 @@ def change_values(parameters):
         key: parameters[key].replace("\r\n", "\n").replace("\r", "\n")
         for key in ("notes", "contact_notes")
     }
+    assignee = _assignee(parameters["assignee"])
     channel = parameters["contact_channel"] or None
     moment = None
     if channel is not None:
@@ -302,10 +303,9 @@ def change_values(parameters):
         expected_version=expected_version(parameters["expected_version"]),
         request_key=UUID(parameters["request_key"]),
         change=WorkflowChange(
-            assignee_id=_assignee(parameters["assignee"]),
-            state=assignment_state(
-                parameters["state"], _assignee(parameters["assignee"])
-            ),
+            assignee_id=assignee,
+            # New and Assigned follow the assignee, exactly as in bulk assignment.
+            state=assignment_state(parameters["state"], assignee),
             outcome=parameters["outcome"] or None,
             notes=text["notes"],
             contact_channel=channel,

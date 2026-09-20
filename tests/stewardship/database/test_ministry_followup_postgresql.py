@@ -168,16 +168,36 @@ def test_scoped_history_replay_stale_writers_and_sql_pairing(response_service, g
         # directly. The inner savepoint proves the BEFORE guard refuses them at
         # the statement, not the deferred pairing trigger at commit.
         moment = database_now()
-        for invalid in (
-            dict(assignee_id=outsider),
-            dict(state="resolved", outcome="leave_confirmed", assignee_id=None),
-            dict(contact_channel="phone", contact_at=moment + timedelta(days=1)),
-            dict(notes="n" * 5001),
-            dict(contact_channel="phone", contact_at=moment, contact_notes="c" * 2001),
+        # Positive control: the unmodified row passes the BEFORE guard, so each
+        # refusal below is caused by its one changed value and nothing else.
+        with work_transaction(), transaction.atomic():
+            MinistryWorkflowRevision.objects.create(actor_id=head, **orphan)
+            transaction.set_rollback(True)
+        invalid_for_request = "not valid for this request"
+        lacks_authority = "lacks current authority/version"
+        for invalid, refusal in (
+            (dict(assignee_id=outsider), invalid_for_request),
+            (
+                dict(state="resolved", outcome="leave_confirmed", assignee_id=None),
+                invalid_for_request,
+            ),
+            (
+                dict(contact_channel="phone", contact_at=moment + timedelta(days=1)),
+                invalid_for_request,
+            ),
+            (dict(notes="n" * 5001), lacks_authority),
+            (
+                dict(
+                    contact_channel="phone",
+                    contact_at=moment,
+                    contact_notes="c" * 2001,
+                ),
+                lacks_authority,
+            ),
         ):
             with (
                 work_transaction(),
-                pytest.raises(DatabaseError),
+                pytest.raises(DatabaseError, match=refusal),
                 transaction.atomic(),
             ):
                 MinistryWorkflowRevision.objects.create(
@@ -276,6 +296,15 @@ def test_bulk_assignment_is_exact_and_atomic(response_service, google):
     with pytest.raises(StaleRecordError):
         assign(admin, None, {join.pk: join.version, leave.pk: leave.version})
     assert MinistryWorkflowRevision.objects.count() == before
+    # One form key binds its exact request, version and assignee: it cannot be
+    # replayed to move the same rows to someone else or to another version.
+    for rebound in (
+        dict(assignee=None, versions=both | {join.pk: 2}),
+        dict(assignee=admin, versions=both | {join.pk: 3}),
+    ):
+        with pytest.raises(ValueError):
+            assign(admin, rebound["assignee"], rebound["versions"], key)
+    assert MinistryWorkflowRevision.objects.count() == before
     # Replaying the completed assignment is still a replay, not a stale form.
     assert [row.pk for row in assign(admin, admin, both | {join.pk: 2}, key)] == [
         row.pk for row in first
@@ -355,6 +384,8 @@ def test_scoped_queue_detail_and_chain_history(response_service, google):
     nobody = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset())
     page = read(harness, staff)
     assert page["total"] == 2
+    # JSON text would render as an empty instant; the page needs a real one.
+    assert page["metadata"]["source_as_of"].utcoffset() is not None
     # Both requests share one submission instant, so only membership is fixed.
     assert sorted(row["ministry_duid"] for row in page["rows"]) == [4, 9]
     row = read(harness, staff, ministry="9")["rows"][0]

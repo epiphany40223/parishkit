@@ -169,9 +169,10 @@ def followup_page(campaign_id, query, principal, *, request_id=None):
         ):
             row[field] = datetime.fromisoformat(row[field]) if row[field] else None
     # JSON carries instants as text, and Django's date filter renders text as
-    # nothing at all rather than failing.
-    for field in ("source_as_of", "observed_at"):
-        result["metadata"][field] = datetime.fromisoformat(result["metadata"][field])
+    # nothing at all rather than failing. Only this one is displayed.
+    result["metadata"]["source_as_of"] = datetime.fromisoformat(
+        result["metadata"]["source_as_of"]
+    )
     return result
 
 
