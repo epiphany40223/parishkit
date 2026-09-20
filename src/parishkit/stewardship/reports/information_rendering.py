@@ -10,6 +10,7 @@ from unicodedata import category
 
 from parishkit.stewardship.web.exports import csv_cell
 
+PAGE_LINES = 34
 FORMAT_NOTE = (
     "Unsupported characters use Unicode escapes (\\uXXXX or \\UXXXXXXXX); "
     "literal backslashes are doubled. CSV retains the original Unicode text."
@@ -117,17 +118,14 @@ def information_xlsx(document, output):
         book.close()
 
 
-def information_lines(document, *, width=108):
-    """Lay out every value without ellipsis, including blank lines/long words.
+def record_lines(records, *, width=108):
+    """Lay out label/value records without ellipsis, one blank line after each.
 
-    A two-column field/value layout avoids compressing seventeen columns into
-    unreadable widths. The PDF owner repeats its column headings on every page.
+    Blank lines and long words survive; nothing is truncated. Shared by every
+    field/value PDF so they wrap and escape identically.
     """
     supported = pdf_font()[1]
-    for record in chain(
-        (document.metadata, (("Text representation", FORMAT_NOTE),)),
-        (zip(document.headings, row, strict=True) for row in document.rows),
-    ):
+    for record in records:
         for label, value in record:
             prefix = label + ": "
             for index, paragraph in enumerate(
@@ -149,18 +147,44 @@ def information_lines(document, *, width=108):
         yield ""
 
 
+def information_lines(document, *, width=108):
+    """Lay out every value without ellipsis, including blank lines/long words.
+
+    A two-column field/value layout avoids compressing seventeen columns into
+    unreadable widths. The PDF owner repeats its column headings on every page.
+    """
+    return record_lines(
+        chain(
+            (document.metadata, (("Text representation", FORMAT_NOTE),)),
+            (zip(document.headings, row, strict=True) for row in document.rows),
+        ),
+        width=width,
+    )
+
+
 def information_pdf(document, output):
     """Paginate before drawing so no complete-text cell is clipped at a page end."""
+
+    # Count without retaining wrapped strings, then stream one bounded page at
+    # a time. Both passes use the same detached document and bundled font.
+    page_count = -(-sum(1 for _ in information_lines(document)) // PAGE_LINES)
+    lines = iter(information_lines(document))
+    return write_pages(
+        document,
+        output,
+        (tuple(islice(lines, PAGE_LINES)) for _ in range(page_count)),
+        page_count,
+    )
+
+
+def write_pages(document, output, pages, page_count):
+    """Draw already paginated lines, one bounded figure at a time."""
     from matplotlib.backends.backend_pdf import PdfPages
     from matplotlib.figure import Figure
     from matplotlib.font_manager import FontProperties
 
     from .charts import rendering_style
 
-    # Count without retaining wrapped strings, then stream one bounded page at
-    # a time. Both passes use the same detached document and bundled font.
-    page_count = (sum(1 for _ in information_lines(document)) + 33) // 34
-    lines = iter(information_lines(document))
     font = FontProperties(fname=pdf_font()[0])
     with (
         rendering_style(),
@@ -173,8 +197,7 @@ def information_pdf(document, output):
             },
         ) as pdf,
     ):
-        for number in range(1, page_count + 1):
-            page = tuple(islice(lines, 34))
+        for number, page in enumerate(pages, 1):
             figure = Figure(figsize=(11, 8.5), facecolor="white")
             try:
                 figure.text(0.05, 0.95, document.title, fontsize=13)
