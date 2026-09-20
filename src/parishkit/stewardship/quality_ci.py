@@ -9,6 +9,7 @@ The ordinary quality command remains the serial, all-in-one developer gate.
 import hashlib
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -24,6 +25,19 @@ from .quality_sharding import partition, tree_digest
 
 DATABASE_TESTS = "tests/stewardship/database"
 SHARD_TIMEOUT = 20 * 60
+# The per-test stack dump only diagnoses a hang; SHARD_TIMEOUT is what fails
+# one. Keep it well above the longest legitimate case and well below the shard
+# deadline, or it can never fire first. The contract test derives that lower
+# bound from the measured hints in quality_sharding, so a slower hint forces
+# this value to be reconsidered. The 5,000-Family reference-load test has
+# completed in 77 to 120.1 seconds depending on the hosted runner. Twice the
+# former 120-second dump fired during it: the traceback was cut off mid-line
+# and the child died from SIGSEGV with every test passing. Both were killed at
+# that mark, so "over 120 seconds" is only a lower bound on the slowest run.
+# Raising the threshold avoids that trigger; it does not make the dump safe, so
+# a slower runner or a genuinely hung threaded test may still end that way.
+# `child_status` names the signal when it does.
+STACK_DUMP_SECONDS = 5 * 60
 
 
 def environment():
@@ -93,6 +107,28 @@ def database_collection(root):
     return sorted(nodes)
 
 
+def child_status(result):
+    """Return a shell-safe status, naming a fatal signal instead of hiding it.
+
+    A negative return code passed to SystemExit surfaces as an unexplained
+    value such as 245. Say what killed the child, and that a traceback cut off
+    just above is the known stack-dump hazard rather than a test failure.
+    """
+    if result.returncode < 0:
+        try:
+            name = signal.Signals(-result.returncode).name
+        except ValueError:
+            name = f"signal {-result.returncode}"
+        print(
+            f"CI shard child was killed by {name}. A stack dump cut off above "
+            "this line means the hang diagnostic itself crashed the interpreter.",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 1
+    return result.returncode
+
+
 def run_shard(root, output, index, count):
     """Run one partition and, on shard one only, the baseline; require success."""
     partition([], index, count)
@@ -114,7 +150,7 @@ def run_shard(root, output, index, count):
         "no:cacheprovider",
         "--durations=20",
         "-o",
-        "faulthandler_timeout=120",
+        f"faulthandler_timeout={STACK_DUMP_SECONDS}",
     ]
     deadline = time.monotonic() + SHARD_TIMEOUT
     if index == 1:
@@ -126,7 +162,7 @@ def run_shard(root, output, index, count):
             timeout=SHARD_TIMEOUT,
         )
         if result.returncode:
-            return result.returncode
+            return child_status(result)
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         raise subprocess.TimeoutExpired(arguments, SHARD_TIMEOUT)
@@ -147,7 +183,7 @@ def run_shard(root, output, index, count):
         timeout=remaining,
     )
     if result.returncode:
-        return result.returncode
+        return child_status(result)
     if tree_digest(root) != digest:
         raise ValueError("Repository changed during CI measurement")
     evidence = json.loads((output / "tests.json").read_text())
