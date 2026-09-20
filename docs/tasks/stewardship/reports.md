@@ -199,6 +199,12 @@ All accepted Medium-or-higher findings are fixed. Full exact-head CI/DCO and
 protected delivery remain required before the next fresh-main increment.
 This closes the implementation checkbox, not M5/Gate 3 or later follow-up work.
 
+The [Ministry follow-up increment](../../guides/stewardship-ministry-followup.md)
+connects RPT-06 to ADM-08: the joiner and leaver lists and their complete
+exports now show the recorded assignee instead of a fixed placeholder, captured
+as of the export's data. Private notes and contact attempts never enter that
+report query. RPT-07 remains unchecked until its packet reads the workflow.
+
 ## RPT-07: Multi-Ministry follow-up packet
 
 Scope and dependencies: [RPT-07 work package](../../plans/stewardship/reports.md#rpt-07-multi-ministry-follow-up-packet).

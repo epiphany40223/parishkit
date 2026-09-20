@@ -194,7 +194,7 @@ Scope and dependencies: [ADM-08 work package](../../plans/stewardship/admin-port
 
 - [ ] ADM-08.01 — Build coalesced manual refresh controls.
 - [ ] ADM-08.02 — Build additional-information and manual-census queues.
-- [ ] ADM-08.03 — Build scoped Ministry follow-up controls.
+- [x] ADM-08.03 — Build scoped Ministry follow-up controls.
 - [ ] ADM-08.04 — Build searchable Admin logs and timezone-aware exports.
 - [ ] ADM-08.05 — Test workflow history, scope, and concurrency.
 
@@ -203,6 +203,15 @@ implements the additional-information portion of .02/.05, with authorization,
 history, concurrency and accessible native forms. Three dual-source rounds
 pass; protected delivery and the other
 ADM-08 workflows remain open; these mixed-scope tasks are not complete.
+
+The [Ministry follow-up increment](../../guides/stewardship-ministry-followup.md)
+implements .03 and the Ministry portion of .05: a row-scoped queue with
+assignee/status/outcome filters, contact-attempt entry, notes, bulk assignment,
+immutable history, optimistic concurrency and links to the Member's authorized
+report detail. It was sequenced before RPT-07 so packets read real contact
+dates and notes. Independent review rounds, full exact-head CI/DCO and protected
+delivery remain open. .01, .04 and the remaining scope of .02/.05 are not
+complete.
 
 ## ADM-09: Census review and ParishSoft publication UI
 

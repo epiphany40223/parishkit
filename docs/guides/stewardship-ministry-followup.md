@@ -97,28 +97,106 @@ This is simpler than a guarded current-revision pointer inherited across
 request generations: it adds one projected column instead of a second mutable
 provenance pointer, and the chain is bounded by a Family's resubmission count.
 
-## Validation plan
+### A sibling read model, not a wider report
 
-- Pure closed form grammar; state/outcome/action pairing; bounded notes and
-  contact times.
-- Grouped real-role PostgreSQL edits, reads, replay and stale writers;
-  cross-Ministry denial; changed assignment, disabled actor and unauthorized
-  assignee; the current work gate.
-- Same-intent Family supersession retains assignee and history and invalidates
-  old forms; changed intent, withdrawal, source catch-up and hidden Ministries.
-- No raw SQL state change, forged attribution, orphan revision, worker write or
-  unpaired projection/audit.
-- Bulk assignment of an exact UUID/version set with no silent partial update.
-- The shared native browser fixture on all three engines.
-- An independent fresh-schema comparison before changing the fingerprint.
+The queue needs names, workflow, the latest notes and the recorded email and
+phone contact dates in one coherent statement. It is a sibling of the Ministry
+report query rather than an extension of it. That query's rows flow verbatim
+into immutable [export captures](stewardship-ministry-exports.md), so adding
+private notes there would risk leaking them into exports. The follow-up query
+projects names and workflow only. Email, phone and address stay behind the
+Ministry report's publish-flag rules, and each page links to that authorized
+detail instead of repeating the privacy decision.
 
-Use the fresh-install baseline only, with no retained-database deletion or
-upgrade compatibility work. Use focused local tests and draft fast CI, three
-completed dual-source review/fix rounds, then full exact-head protected
-CI/merge. No production provider calls, deployment or release are authorized
-by this slice.
+SQL intersects the caller's current role scope with the campaign's Ministries
+before reading any request, so an out-of-scope or unknown request UUID is simply
+absent and produces the same denial. Latest intent is selected before state
+filtering, and notes and contact dates are read across the same-intent chain
+only for the returned page.
+
+The one value the Ministry report does gain is the assignee. The
+[reports specification](../specs/stewardship/reports/spec.md#ministry-change-summary)
+lists assignee with status and outcome on the joiner and leaver lists, and the
+report and its exports previously printed a fixed placeholder because nothing
+recorded one. The email is resolved inside that single statement, so an export
+captures who held the work as of its data. Captures taken earlier have no such
+key and render as unassigned.
+
+### Interface decisions
+
+Assignee choices are computed for exactly one Ministry, because authority is
+per Ministry. Bulk assignment is therefore offered only when the queue is
+filtered to one Ministry, and a crafted selection spanning another is rejected.
+It binds each selected request to the version the page displayed.
+
+Native date and time controls carry no zone, so a contact attempt is entered
+and labelled as UTC; displayed instants use the browser zone when scripts are
+available. A closed request shows its history without a form. A gated campaign
+disables every control but remains readable.
+
+## Fresh-install schema audit
+
+Fresh databases were installed separately from verified main `1faa4a88` and
+from the candidate on the disposable PostgreSQL 18.6 cluster, and their complete
+catalogs were compared object by object. The predecessor exactly matched its
+committed strict fingerprint. No preexisting object disappeared, and exactly one
+changed: the Ministry request guard, which now inherits the assignee and admits
+a paired Staff projection. Additions are one revision table, 15 columns, 20
+constraints, five indexes, five functions and two triggers; row policies are
+unchanged.
+
+The audit's model-parity check found a defect before it could land. The two new
+CHECKs using `IN` had been pasted as Django's raw SQL. PostgreSQL deparses that
+to a whole-array cast, while the model compile yields the per-element form the
+contract compares. They are now written in the deparsed form, as every such
+constraint in the baseline already is. A second fresh install differed from the
+first only in those two renderings, and a third, after the report gained its
+assignee, only in that one function body. Only after inspecting each exact delta
+was the fingerprint updated.
+
+The candidate has 209 relations, 2,349 columns, 3,256 constraints, 966 indexes,
+564 functions, 533 triggers and 28 policies. The strict fingerprint and full
+Django model/schema parity checks pass, and the revision guard is registered
+with the immutable-record check as one that also validates INSERT.
+
+No historical upgrade migration, retained-database deletion or compatibility
+path was introduced. The three audit databases remain on the disposable cluster.
+
+## Focused validation
+
+All runs below are local, on the disposable PostgreSQL 18.6 and Valkey services,
+and are focused selections rather than a complete acceptance pass.
+
+- 32 database-free cases of the closed change grammar, 0.07 seconds.
+- Six PostgreSQL cases under the real web and worker roles, about 37 seconds
+  with the grammar table: scope, replay, stale writers, raw-SQL forgery, orphan
+  and forged revisions, the work gate and a revoked actor; same-intent
+  inheritance, chain history and dead old forms; all-or-nothing bulk
+  assignment; the scoped read model and its filters; and the native HTTP flow
+  through a real leader session with CSRF, denial, 409, seven malformed forms
+  and proof that notes never reach an audit context.
+- 33 cases covering the strict fingerprint, model parity, the immutable-record
+  registry and the existing Ministry report and export suites against the
+  changed guard and report function, 68 seconds.
+- 31 existing Ministry response and authority cases against the changed request
+  guard, 87 seconds.
+- 24 browser cases on Chromium, Firefox and WebKit, 33 seconds: ten follow-up
+  states at 320 and 1280 pixels with no horizontal overflow and no WCAG 2.2 AA
+  violation, escaping of hostile names and notes, and script-disabled native
+  POST for filters, the edit with a contact attempt and bulk assignment, with
+  no identifying value in a URL. The existing Ministry report scenarios pass
+  with its new follow-up link and assignee.
+- The complete fast selection, Ruff lint and format, Markdown lint and
+  `makemigrations --check` are clean.
+
+Draft CI substitutes this increment's grammar module for the information
+renderer module, keeping the ten-module bound. The renderer module stays in the
+complete baseline run.
 
 ## Checkpoint
 
-Design recorded; implementation in progress. ADM-08.03, RPT-07 and M5/Gate 3
-remain open.
+Implementation and focused validation are complete. Independent review rounds,
+full exact-head CI, DCO and protected delivery remain open. ADM-08.03 is
+implemented; RPT-07 stays unchecked until its packet reads this workflow, and
+M5 and Gate 3 remain open. No deployment, release, live-provider write or
+database deletion is authorized by this increment.
