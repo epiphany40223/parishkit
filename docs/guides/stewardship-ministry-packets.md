@@ -10,8 +10,10 @@ the Ministry follow-up workflow, which is why that increment landed first.
 
 ## Scope and acceptance
 
-A requester chooses every Ministry they are authorized for, or an explicit
-selection, and whether to include resolved and withdrawn requests. The packet
+A requester ticks the Ministries to include, or none for every Ministry they
+are authorized for, and chooses whether to include resolved and withdrawn
+requests. One control has one meaning, so the native form cannot reach an
+ambiguous state without scripts. The packet
 has one section per Ministry with its name, active chair names and stewardship
 campaign and period, then one row for each latest effective join or leave
 request: Member name and DUID, authorized email and phone values, the recorded
@@ -73,7 +75,10 @@ page would read as "nothing to do" for the wrong reason.
 
 Chair names come from current roster evidence: a current ASCII `Chairperson`
 role held by an active Member, the same rule as chair suggestions. Listing a
-name needs no contact or login, and none is shown.
+name needs no contact or login, and none is shown. They are computed in one
+pass over the snapshot roster for every Ministry at once, because the capture
+runs while holding the shared work lock and a per-Ministry rescan would stall
+Staff follow-up during a parish-wide packet.
 
 No stewardship year is stored, and deriving one from dates would be wrong for an
 autumn campaign that funds the following year. The header therefore carries the
@@ -91,8 +96,11 @@ extracted from the existing complete-text renderer, so both wrap, escape and
 paginate identically; that renderer's behavior is unchanged. Every spreadsheet
 cell is a literal string and CSV cells are formula-safe. Worksheet titles are
 made valid and distinct within the 31-character limit despite duplicate, long or
-forbidden Ministry names. PDF overflow adds pages and never truncates or merges
-two Ministries. An empty packet is still a valid file carrying its provenance.
+forbidden Ministry names, including a reserved title and an apostrophe exposed
+by truncation. The spreadsheet library silently cuts a cell at 32,767
+characters, so rendering refuses such a value rather than publish an incomplete
+packet; CSV and PDF keep it. PDF overflow adds pages and never truncates or
+merges two Ministries. An empty packet is still a valid file carrying its provenance.
 
 ## Fresh-install schema audit
 
@@ -138,7 +146,8 @@ module, keeping the ten-module bound; that module stays in the complete baseline
 
 ## Checkpoint
 
-Implementation and focused validation are complete. Independent review rounds,
-full exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
+Implementation and focused validation are complete and the
+[review rounds](stewardship-ministry-packet-reviews.md) are in progress. Full
+exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
 open. No deployment, release, live-provider write or database deletion is
 authorized by this increment.

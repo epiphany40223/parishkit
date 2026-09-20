@@ -91,7 +91,10 @@ def test_ministry_packet_request_without_scripts(browser_engine, component_origi
     try:
         page = context.new_page()
         page.goto(component_origin + "/ministry-summary")
-        page.get_by_label("Only the Ministries ticked below", exact=False).check()
+        # Nothing ticked means every authorized Ministry: no selection is sent.
+        packet = page.locator("form", has_text="Ministries in the packet")
+        assert packet.locator("input[name=ministries]:checked").count() == 0
+        assert packet.locator("input[type=radio]").count() == 0
         page.get_by_label("Example <Ministry>", exact=False).check()
         page.get_by_label("Also include resolved and withdrawn requests").check()
         page.get_by_label("Packet format").select_option("xlsx")
@@ -100,7 +103,8 @@ def test_ministry_packet_request_without_scripts(browser_engine, component_origi
         with page.expect_request(lambda request: request.method == "POST") as sent:
             page.get_by_role("button", name="Queue follow-up packet").click()
         body = sent.value.post_data
-        assert "selection=chosen" in body and "ministries=9" in body
+        assert "selection=" not in body and body.count("ministries=") == 1
+        assert "ministries=9" in body
         assert "history=yes" in body and "format=xlsx" in body
         assert "request_key=00000000-0000-0000-0000-000000000060" in body
         assert "?" not in sent.value.url

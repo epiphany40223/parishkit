@@ -54,8 +54,7 @@
 <form method="post" action="{% url 'admin:ministry_packet' campaign_id %}">{% csrf_token %}
 <input type="hidden" name="request_key" value="{{ packet_key }}">
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Ministries in the packet" %}</legend>
-<label><input type="radio" name="selection" value="all" checked> {% translate "All Ministries I am authorized for" %}</label>
-<label><input type="radio" name="selection" value="chosen"> {% translate "Only the Ministries ticked below, from this page of results" %}</label>
+<p>{% translate "Tick the Ministries to include, from this page of results. Leave every box unticked to include all Ministries you are authorized for." %}</p>
 {% for ministry in summaries %}<label><input type="checkbox" name="ministries" value="{{ ministry.duid }}"> {{ ministry.name }} — {% translate "DUID" %} {{ ministry.duid|number }}</label>
 {% endfor %}</fieldset>
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Packet options" %}</legend>

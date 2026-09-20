@@ -25,7 +25,9 @@ from .test_export_views_postgresql import post
 from .test_ministry_exports_postgresql import create, leader
 from .test_ministry_followup_postgresql import edit, requests
 from .test_ministry_reports_postgresql import setup
+from .test_ministry_responses_postgresql import respond, revisit
 from .test_policy_postgresql import user
+from .test_response_http_postgresql import answers_for
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -120,6 +122,9 @@ def test_packet_scope_history_privacy_and_rendering(response_service, google):
     (row,) = found[9]["rows"]
     assert row["email_visibility"] == "not_published" and row["emails"] is None
     assert "valid@example.org" not in json.dumps(snapshot.document)
+    # The same leader does receive what the source publishes: this phone.
+    assert row["phone_visibility"] == "available"
+    assert "202-555-0123" in json.dumps(row["phones"])
     assert sorted(sections(packet(harness, head, (9,)))[1]) == [9]
     for outside in ((4,), (4, 9)):
         with pytest.raises(PermissionError):
@@ -213,29 +218,27 @@ def test_native_packet_request_form(response_service, google):
         """A complete valid request; each case changes only what it tests."""
         return {
             "request_key": str(uuid4()),
-            "selection": "all",
             "format": "pdf",
             "browser_timezone": "UTC",
         } | values
 
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert browser.post(route, form()).status_code == 403  # No CSRF token.
-        assert post(browser, route + "?selection=all", form()).status_code == 400
+        assert post(browser, route + "?format=pdf", form()).status_code == 400
         assert post(browser, route, form()).status_code == 302
-        chosen = form(selection="chosen", ministries=["9"], history="yes")
+        # No ticked Ministry means every authorized one; any tick is exact.
+        chosen = form(ministries=["9"], history="yes")
         assert post(browser, route, chosen).status_code == 302
         assert post(browser, route, chosen).status_code == 302  # Replay.
         # Another Ministry is denied exactly like any other unavailable report.
-        outside = form(selection="chosen", ministries=["4"])
+        outside = form(ministries=["4"])
         assert post(browser, route, outside).status_code == 403
         for invalid in (
-            form(selection="chosen"),
-            form(selection="all", ministries=["9"]),
-            form(selection="chosen", ministries=["09"]),
-            form(selection="chosen", ministries=["9", "9"]),
-            form(selection="chosen", ministries=["0"]),
-            form(selection="chosen", ministries=["9"], history="no"),
-            form(selection="some"),
+            form(ministries=["09"]),
+            form(ministries=["9", "9"]),
+            form(ministries=["0"]),
+            form(ministries=["9"], history="no"),
+            form(selection="all"),
             form(format="zip"),
             form(browser_timezone="Mars/Olympus"),
             form(unexpected="field"),
@@ -249,3 +252,32 @@ def test_native_packet_request_form(response_service, google):
         "current",
         "all",
     ]
+
+
+def test_packet_contact_dates_follow_a_same_intent_resubmission(response_service):
+    """A Family resubmission replaces the rows; recorded follow-up still prints."""
+    harness = setup(response_service)
+    admin = user("admin@example.org").pk
+    join, leave = requests()
+    emailed = database_now() - timedelta(days=3)
+    phoned = database_now() - timedelta(days=2)
+    edit(harness, admin, join, contact_channel="email", contact_at=emailed)
+    edit(harness, admin, leave, contact_channel="phone", contact_at=phoned)
+    form = revisit(harness)
+    answers = answers_for(form)
+    answers["ministries"]["members"]["3"] = {"join": [9], "leave": [4]}
+    respond(harness, form, answers)
+    successors = {row.ministry_duid: row for row in requests()}
+    assert {join.pk, leave.pk}.isdisjoint(row.pk for row in successors.values())
+
+    _, found = sections(packet(harness, admin))
+    (joined,), (left,) = found[9]["rows"], found[4]["rows"]
+    # The rows are the successors, carrying dates recorded on their predecessors.
+    assert joined["id"] == str(successors[9].pk) and left["id"] == str(successors[4].pk)
+    assert joined["email_contact_at"][:10] == emailed.date().isoformat()
+    assert joined["phone_contact_at"] is None
+    assert left["phone_contact_at"][:10] == phoned.date().isoformat()
+    assert left["email_contact_at"] is None
+    # History never resurrects the superseded predecessors as extra rows.
+    _, everything = sections(packet(harness, admin, history=True))
+    assert [len(everything[duid]["rows"]) for duid in (4, 9)] == [1, 1]

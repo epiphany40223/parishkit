@@ -41,32 +41,39 @@ WITH selected AS MATERIALIZED (
     CROSS JOIN LATERAL jsonb_array_elements_text(x.values->'ministry_duids') n(duid)
     WHERE n.duid::bigint BETWEEN 1 AND 2147483647
       AND (operational OR n.duid::bigint=ANY(ministry_scope::bigint[]))
+), chairs AS MATERIALIZED (
+    -- One pass over the snapshot roster for every Ministry at once. This runs
+    -- inside the capture trigger while it holds the shared work lock, so a
+    -- per-Ministry rescan would stall Staff follow-up for a parish-wide packet.
+    -- Names only, from current roster evidence: an ASCII Chairperson role held
+    -- by an active Member. Listing a name needs no contact or login.
+    SELECT role.ministry_key,
+        jsonb_agg(role.name ORDER BY lower(role.name),role.name) AS names
+    FROM (SELECT DISTINCT r.payload->>'ministry_key' AS ministry_key,
+            btrim(concat_ws(' ',mp.canonical::jsonb->>'firstName',
+                mp.canonical::jsonb->>'lastName')) AS name
+        FROM source x
+        JOIN stewardship_snapshot_roster rm ON rm.snapshot_id=x.source_id
+        JOIN stewardship_source_roster rp ON rp.id=rm.payload_id
+        CROSS JOIN LATERAL (SELECT rp.canonical::jsonb AS payload) r
+        JOIN stewardship_snapshot_member sm ON sm.snapshot_id=x.source_id
+            AND sm.source_key=r.payload->>'member_key'
+        JOIN stewardship_source_member mp ON mp.id=sm.payload_id
+        WHERE r.payload->'current'='true'::jsonb
+            AND mp.canonical::jsonb->'active'='true'::jsonb
+            AND (r.payload->>'ministryRoleName') ~ '^[ -~]+$'
+            AND lower(r.payload->>'ministryRoleName')='chairperson'
+    ) role WHERE role.name<>'' GROUP BY role.ministry_key
 ), ministries AS MATERIALIZED (
     SELECT d.duid,
         coalesce(nullif(btrim(p.canonical::jsonb->>'name'),''),
             'Unavailable Ministry') AS name,
-        -- Names only, from current roster evidence: an ASCII Chairperson role
-        -- held by an active Member. Listing a name needs no contact or login.
-        coalesce((SELECT jsonb_agg(chair.name ORDER BY lower(chair.name),chair.name)
-            FROM (SELECT DISTINCT btrim(concat_ws(' ',
-                    mp.canonical::jsonb->>'firstName',
-                    mp.canonical::jsonb->>'lastName')) AS name
-                FROM stewardship_snapshot_roster rm
-                JOIN stewardship_source_roster rp ON rp.id=rm.payload_id
-                JOIN stewardship_snapshot_member sm ON sm.snapshot_id=x.source_id
-                    AND sm.source_key=rp.canonical::jsonb->>'member_key'
-                JOIN stewardship_source_member mp ON mp.id=sm.payload_id
-                WHERE rm.snapshot_id=x.source_id
-                    AND rp.canonical::jsonb->>'ministry_key'=d.duid::text
-                    AND rp.canonical::jsonb->'current'='true'::jsonb
-                    AND mp.canonical::jsonb->'active'='true'::jsonb
-                    AND (rp.canonical::jsonb->>'ministryRoleName') ~ '^[ -~]+$'
-                    AND lower(rp.canonical::jsonb->>'ministryRoleName')='chairperson'
-            ) chair WHERE chair.name<>''),'[]'::jsonb) AS chairs
+        coalesce(c.names,'[]'::jsonb) AS chairs
     FROM scoped d CROSS JOIN source x
     LEFT JOIN stewardship_snapshot_ministry m
         ON m.snapshot_id=x.source_id AND m.source_key=d.duid::text
     LEFT JOIN stewardship_source_ministry p ON p.id=m.payload_id
+    LEFT JOIN chairs c ON c.ministry_key=d.duid::text
     WHERE selection IS NULL OR d.duid=ANY(selection::bigint[])
 ), requests AS MATERIALIZED (
     SELECT r.id,r.entity_kind,r.entity_key,r.ministry_duid,r.action,r.state,

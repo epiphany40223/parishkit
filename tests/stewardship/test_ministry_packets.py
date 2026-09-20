@@ -14,6 +14,7 @@ from parishkit.stewardship.reports.ministry_exports import (
 )
 from parishkit.stewardship.reports.ministry_packets import (
     HEADINGS,
+    MAX_CELL,
     packet_document,
     packet_pages,
     render_packet,
@@ -264,6 +265,11 @@ def test_xlsx_has_one_literal_sheet_per_ministry_with_safe_distinct_names():
     assert titles[:3] == ["Choir", "choir (2)", "A B   Youth"]
     assert titles[-2:] == ["Ministry", "Ministry (2)"]
     assert "Report information" not in sheet_names(["Report Information"])
+    # The application reserves History, and truncation can expose an apostrophe.
+    assert sheet_names(["History", "history"]) == ["History (2)", "history (3)"]
+    cut = sheet_names(["A" * 30 + "'tail", "'" * 40, "B" * 29 + "''"])
+    assert cut == ["A" * 30, "Ministry", "B" * 29]
+    assert all(not title.startswith("'") and not title.endswith("'") for title in cut)
 
     book = load_workbook(io.BytesIO(rendered(packet(three_ministries()), "xlsx")))
     assert book.sheetnames == [
@@ -307,3 +313,15 @@ def test_pdf_starts_each_ministry_on_a_new_page_and_keeps_all_text():
     assert rendered(document, "pdf").startswith(b"%PDF")
     with pytest.raises(ValueError):
         render_packet(document, io.BytesIO(), format="zip")
+
+
+def test_xlsx_refuses_a_value_beyond_the_cell_limit_instead_of_truncating():
+    """The library would cut it silently; an incomplete packet must not publish."""
+    fits = [dict(duid=9, name="Choir", chairs=["x" * MAX_CELL], rows=[])]
+    book = load_workbook(io.BytesIO(rendered(packet(fits), "xlsx")))
+    assert len(book["Choir"].cell(3, 2).value) == MAX_CELL
+    over = [dict(duid=9, name="Choir", chairs=["x" * (MAX_CELL + 1)], rows=[])]
+    with pytest.raises(ValueError):
+        rendered(packet(over), "xlsx")
+    # CSV and PDF have no such limit and keep the complete value.
+    assert ("x" * (MAX_CELL + 1)).encode() in rendered(packet(over), "csv")

@@ -25,6 +25,11 @@ from .information_rendering import (
 from .ministries import OUTCOMES, STATES
 
 TITLE = "Ministry follow-up packet"
+# The spreadsheet format's per-cell limit. The library truncates beyond it
+# silently, which would publish an incomplete packet that looks complete.
+MAX_CELL = 32767
+# Worksheet titles the spreadsheet application reserves, compared caselessly.
+RESERVED_TITLES = frozenset({"history", "report information"})
 HEADINGS = (
     "Member",
     "Member DUID",
@@ -191,16 +196,19 @@ def sheet_names(names):
     Ministry names may repeat, collide once truncated, or contain characters a
     worksheet title forbids. Suffix a counter, shortening further to fit it.
     """
-    used, result = {"report information"}, []
+
+    def fit(text, length):
+        """Truncate, then trim again: the cut itself can expose an apostrophe."""
+        return text[:length].strip(" '")
+
+    used, result = set(RESERVED_TITLES), []
     for name in names:
-        base = (
-            re.sub(r"[\[\]:*?/\\]", " ", visible_text(name)).strip(" '") or "Ministry"
-        )
-        title, counter = base[:31].rstrip(), 1
+        base = fit(re.sub(r"[\[\]:*?/\\]", " ", visible_text(name)), 31) or "Ministry"
+        title, counter = base, 1
         while title.lower() in used:
             counter += 1
             suffix = f" ({counter})"
-            title = base[: 31 - len(suffix)].rstrip() + suffix
+            title = (fit(base, 31 - len(suffix)) or "Ministry") + suffix
         used.add(title.lower())
         result.append(title)
     return result
@@ -214,7 +222,10 @@ def packet_xlsx(document, output):
 
     def write(sheet, row, column, value, *, bold=False):
         """Literal strings only, so no captured value can become a formula."""
-        cell = sheet.cell(row, column, visible_text(value))
+        text = visible_text(value)
+        if len(text) > MAX_CELL:
+            raise ValueError("A packet value exceeds the spreadsheet cell limit.")
+        cell = sheet.cell(row, column, text)
         cell.data_type = "s"
         cell.alignment = Alignment(wrap_text=True, vertical="top")
         cell.font = Font(bold=bold)

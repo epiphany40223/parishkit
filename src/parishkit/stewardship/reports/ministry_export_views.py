@@ -63,25 +63,24 @@ def create(request, campaign_id):
 
 
 def packet_selection(parameters):
-    """Closed form grammar: every authorized Ministry, or an explicit chosen set."""
-    fields = {"format", "browser_timezone", "request_key", "selection"}
+    """Closed form grammar: ticked Ministries, or none for every authorized one.
+
+    One control has one meaning, so a native form without scripts cannot reach
+    an ambiguous state such as "all" selected beside individually ticked boxes.
+    """
+    fields = {"format", "browser_timezone", "request_key"}
     keys = set(parameters)
     if (
         not fields <= keys
         or keys - fields - {"ministries", "history"}
         or any(len(parameters.getlist(key)) != 1 for key in keys - {"ministries"})
         or parameters.get("history", "yes") != "yes"
-        or parameters["selection"] not in {"all", "chosen"}
     ):
         raise ValueError("Invalid Ministry packet fields.")
     chosen = parameters.getlist("ministries")
-    if parameters["selection"] == "all":
-        # Ticked boxes are ignored only when the form says so explicitly; a
-        # mixed request is ambiguous, so refuse it rather than guess.
-        if chosen:
-            raise ValueError("Choose all Ministries or a selection, not both.")
+    if not chosen:
         return None
-    if not 1 <= len(chosen) <= MAX_PACKET_MINISTRIES or any(
+    if len(chosen) > MAX_PACKET_MINISTRIES or any(
         len(value) > 10
         or not value.isascii()
         or not value.isdecimal()
