@@ -5,23 +5,39 @@
 -- pages and a later immutable capture share one meaning. The summary covers the
 -- whole filtered result, never just the returned page.
 --
--- `giving` is the application's proof that the snapshot's last giving read is
--- complete for this campaign's window; that proof depends on a window digest
--- and stays in one place there. It only ever withholds source money: the
--- comparison window, its funds and the through-date are read here from the
--- campaign's own configuration and the snapshot cursor, never from the caller.
--- Without the proof, comparison totals are unavailable, never zero.
+-- `proof` is the application's evidence that one snapshot's last giving read is
+-- complete for one campaign configuration's window; that proof depends on a
+-- window digest and stays in one place there. It names exactly what it proved,
+-- and counts only when those are the snapshot and configuration selected here:
+-- the application's reads are separate READ COMMITTED statements, so a promotion
+-- or configuration change between them must withhold money, not misattribute it.
+-- It only ever withholds: the comparison window, its funds and the through-date
+-- are read here from the campaign's own configuration and the snapshot cursor,
+-- never from the caller. Without it, totals are unavailable, never zero.
 CREATE FUNCTION stewardship_financial_report_v1(
-    campaign_uuid uuid, parameters jsonb, page_number integer DEFAULT NULL
+    campaign_uuid uuid, parameters jsonb, page_number integer DEFAULT NULL,
+    -- The caller owns the page size, so its paging arithmetic cannot drift from
+    -- the rows returned here. It is ignored for a complete, unpaged result.
+    page_size integer DEFAULT 50
 ) RETURNS jsonb LANGUAGE plpgsql STABLE
 SET search_path TO pg_catalog,public,pg_temp AS $$
-DECLARE f jsonb:=parameters->'filters'; answer jsonb;
-    money constant text:='^(0|[1-9][0-9]{0,8})(\.[0-9]{2})?$';
+DECLARE f jsonb:=parameters->'filters'; proof jsonb:=parameters->'proof';
+    answer jsonb;
+    money_text constant text:='^(0|[1-9][0-9]{0,8})(\.[0-9]{2})?$';
+    -- Canonical lowercase text, so identities compare without a fallible cast.
+    uuid_text constant text:='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 BEGIN
     IF jsonb_typeof(parameters) IS DISTINCT FROM 'object'
-       OR NOT parameters ?& ARRAY['filters','giving']
-       OR parameters-ARRAY['filters','giving']<>'{}'::jsonb
-       OR jsonb_typeof(parameters->'giving') IS DISTINCT FROM 'boolean'
+       OR NOT parameters ?& ARRAY['filters','proof']
+       OR parameters-ARRAY['filters','proof']<>'{}'::jsonb
+       OR jsonb_typeof(proof) NOT IN ('null','object')
+       OR (jsonb_typeof(proof)='object' AND (
+           NOT proof ?& ARRAY['snapshot','configuration']
+           OR proof-ARRAY['snapshot','configuration']<>'{}'::jsonb
+           OR jsonb_typeof(proof->'snapshot') IS DISTINCT FROM 'string'
+           OR jsonb_typeof(proof->'configuration') IS DISTINCT FROM 'string'
+           OR NOT proof->>'snapshot' ~ uuid_text
+           OR NOT proof->>'configuration' ~ uuid_text))
        OR jsonb_typeof(f) IS DISTINCT FROM 'object'
        OR NOT f ?& ARRAY['search','active','first_start','first_end','latest_start',
            'latest_end','pledge_min','pledge_max','amount','frequency','share','sort']
@@ -29,7 +45,8 @@ BEGIN
            'latest_end','pledge_min','pledge_max','amount','frequency','share','sort']
           <>'{}'::jsonb
        OR EXISTS(SELECT 1 FROM jsonb_each(f) WHERE jsonb_typeof(value)<>'string')
-       OR length(f->>'search')>200 OR length(f->>'share')>64
+       OR length(f->>'search')>200
+       OR (f->>'share' NOT IN ('any','none') AND NOT f->>'share' ~ uuid_text)
        OR f->>'active' NOT IN ('any','active','inactive','unavailable')
        OR f->>'amount' NOT IN ('any','zero','nonzero')
        OR f->>'frequency' NOT IN ('any','none','weekly','monthly','quarterly','annual')
@@ -40,18 +57,23 @@ BEGIN
                  OR NOT pg_input_is_valid(d.value,'date')))
        OR EXISTS(SELECT 1 FROM jsonb_each_text(f) d
            WHERE d.key IN ('pledge_min','pledge_max') AND d.value<>''
-             AND NOT d.value ~ money)
-       OR (f->>'first_start'<>'' AND f->>'first_end'<>''
+             AND NOT d.value ~ money_text)
+       OR (page_number IS NOT NULL AND page_number NOT BETWEEN 1 AND 10000)
+       OR page_size IS NULL OR page_size NOT BETWEEN 1 AND 200
+    THEN RAISE EXCEPTION 'Invalid financial report parameters' USING ERRCODE='23514'; END IF;
+    -- Compare ranges only after the grammar above has passed. SQL does not
+    -- promise to evaluate one condition's terms in order, so a cast placed beside
+    -- its own guard could fail first and echo a filter value in its error.
+    IF (f->>'first_start'<>'' AND f->>'first_end'<>''
            AND f->>'first_start'>f->>'first_end')
        OR (f->>'latest_start'<>'' AND f->>'latest_end'<>''
            AND f->>'latest_start'>f->>'latest_end')
        OR (f->>'pledge_min'<>'' AND f->>'pledge_max'<>''
            AND (f->>'pledge_min')::numeric>(f->>'pledge_max')::numeric)
-       OR (page_number IS NOT NULL AND page_number NOT BETWEEN 1 AND 10000)
     THEN RAISE EXCEPTION 'Invalid financial report parameters' USING ERRCODE='23514'; END IF;
 
 WITH selected AS MATERIALIZED (
-    SELECT c.id,cc.name,cc.timezone,cc.values,
+    SELECT c.id,cc.id AS configuration_id,cc.name,cc.timezone,cc.values,
         CASE WHEN c.state='archived' THEN k.source_snapshot_id
              ELSE sc.snapshot_id END AS source_id
     FROM stewardship_campaign c
@@ -62,13 +84,16 @@ WITH selected AS MATERIALIZED (
 ), source AS MATERIALIZED (
     SELECT x.*,s.generation AS source_generation,s.promoted_at AS source_as_of,
         statement_timestamp() AS observed_at,
-        -- Source money is shown only with the application's completeness proof.
-        CASE WHEN parameters->'giving'='true'::jsonb
+        -- Source money is shown only with a completeness proof of exactly the
+        -- snapshot and configuration selected above; any other proof withholds.
+        CASE WHEN v.proven
             AND pg_input_is_valid(s.cursor->'load'->>'giving_as_of_date','date')
             THEN (s.cursor->'load'->>'giving_as_of_date')::date END AS giving_through,
-        CASE WHEN parameters->'giving'='true'::jsonb
-            THEN s.cursor->>'full_started_at' END AS giving_observed_at
+        CASE WHEN v.proven THEN s.cursor->>'full_started_at' END AS giving_observed_at
     FROM selected x JOIN stewardship_source_snapshot s ON s.id=x.source_id
+    CROSS JOIN LATERAL (SELECT coalesce(
+        proof->>'snapshot'=x.source_id::text
+        AND proof->>'configuration'=x.configuration_id::text,false) AS proven) v
     WHERE s.state='promoted' AND s.compacted_at IS NULL
         AND x.values->'modules' ? 'financial'
 ), responses AS MATERIALIZED (
@@ -126,8 +151,8 @@ WITH selected AS MATERIALIZED (
         CASE WHEN f->>'sort'='pledge_desc' THEN annual_pledge END DESC,
         lower(family_name),family_duid) AS ordinal
     FROM filtered ORDER BY ordinal
-    LIMIT CASE WHEN page_number IS NULL THEN NULL ELSE 50 END
-    OFFSET CASE WHEN page_number IS NULL THEN 0 ELSE (page_number-1)*50 END
+    LIMIT CASE WHEN page_number IS NULL THEN NULL ELSE page_size END
+    OFFSET CASE WHEN page_number IS NULL THEN 0 ELSE (page_number-1)*page_size END
 ), detail AS (
     SELECT r.ordinal,r.id,r.family_name,r.family_duid,r.active,r.submitted_at,
         r.first_submitted_at,r.family_version,
@@ -135,10 +160,9 @@ WITH selected AS MATERIALIZED (
         -- parsed as a binary float and lose exactness.
         r.annual_pledge::numeric(24,2)::text AS annual_pledge,r.frequency,
         r.financial->'shares' AS shares,
-        -- Option labels are versioned with the configuration the Family saw.
-        (SELECT cc.values->'share_options' FROM stewardship_campaign_configuration cc
-            WHERE cc.configuration_id=r.configuration_id AND cc.record_id=x.id)
-            AS share_options,
+        -- Option wording is versioned with the configuration the Family saw; the
+        -- application words it with the Family form's own rule.
+        r.configuration_id,
         g.pledge_total::numeric(24,2)::text AS pledge_total,
         g.contribution_total::numeric(24,2)::text AS contribution_total
     FROM page r CROSS JOIN source x
@@ -179,8 +203,7 @@ SELECT CASE WHEN NOT z.values->'modules' ? 'financial'
         'source_as_of',x.source_as_of,'observed_at',x.observed_at,
         'comparison_start',x.values->'financial'->>'comparison_start',
         'comparison_end',x.values->'financial'->>'comparison_end',
-        'giving_through',x.giving_through,'giving_observed_at',x.giving_observed_at,
-        'share_options',x.values->'share_options'),
+        'giving_through',x.giving_through,'giving_observed_at',x.giving_observed_at),
     'summary',(SELECT jsonb_build_object('families',count(*),
         'annual_total',coalesce(sum(annual_pledge),0)::numeric(24,2)::text,
         'frequencies',coalesce((SELECT jsonb_object_agg(k,n) FROM (

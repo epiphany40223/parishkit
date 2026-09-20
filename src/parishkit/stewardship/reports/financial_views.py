@@ -2,6 +2,7 @@
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError
+from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.views.decorators.http import require_http_methods
 
@@ -14,10 +15,8 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import Event, emit_failure
-from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.responses import campaign_response
-from parishkit.stewardship.web.security import private_response
 
 from .export_views import SAFE_FAILURES
 from .financial import (
@@ -25,7 +24,7 @@ from .financial import (
     PAGE_SIZE,
     FinancialQuery,
     financial_page,
-    giving_proven,
+    giving_proof,
 )
 from .read_admission import admit_report_read
 
@@ -38,6 +37,22 @@ def _principal(request, store, *, read_only=False):
     if not allows(principal, Capability.FINANCIAL_DETAIL):
         raise PermissionError("Financial stewardship detail is unavailable.")
     return principal
+
+
+def _error(campaign_id, *, status):
+    """No private filter or exception values, and a way back to the report."""
+    response = HttpResponse(
+        render_to_string(
+            "stewardship/financial-report-error.html",
+            {"campaign_id": campaign_id, "status": status},
+        ),
+        status=status,
+        headers={"Cache-Control": "no-store"},
+    )
+    response.stewardship_safe_error = True
+    if status == 503:
+        response["Retry-After"] = "5"
+    return response
 
 
 def _audit(principal, campaign_id, outcome, count=0, total=0):
@@ -67,11 +82,16 @@ def report(request, campaign_id):
     try:
         service = runtime()
         principal = _principal(request, service.store)
-        if request.GET:
-            raise ValueError("Financial filters require private POST state.")
-        parameters = request.POST.copy()
-        parameters.pop("csrfmiddlewaretoken", None)
-        query = FinancialQuery.parse(parameters)
+        try:
+            if request.GET:
+                raise ValueError("Financial filters require private POST state.")
+            parameters = request.POST.copy()
+            parameters.pop("csrfmiddlewaretoken", None)
+            query = FinancialQuery.parse(parameters)
+        except ValueError:
+            # Only the requester's own filters are a 400. A later ValueError is
+            # a data problem that no change of filters could fix.
+            return _error(campaign_id, status=400)
         admit_report_read(campaign_id)
         _audit(principal, campaign_id, Outcome.STARTED)
         finalized, count, total = False, 0, 0
@@ -112,27 +132,26 @@ def report(request, campaign_id):
             system = SystemConfiguration.objects.select_related(
                 "active_configuration__parish"
             ).get()
-            # The one completeness rule shared with the Family form. An archived
-            # campaign has no giving window, so its comparison is unavailable.
-            current = SourceCurrent.objects.filter(singleton=True).first()
-            giving = bool(current and current.snapshot_id) and giving_proven(
-                campaign_id, configuration, current.snapshot_id
-            )
             result = financial_page(
                 campaign_id,
                 query,
                 principal,
-                giving=giving,
+                # SQL honors this only for the snapshot and configuration it
+                # then selects itself, so a concurrent change withholds money.
+                proof=giving_proof(campaign),
                 parish_name=system.active_configuration.parish.name,
                 configuration=configuration,
             )
             count, total = len(result["rows"]), result["total"]
+            # A stale Next click after the result shrank lands past the end;
+            # Previous then returns to the real last page, not another empty one.
+            last = max(1, -(-total // PAGE_SIZE))
             context = result | {
                 "campaign_id": campaign_id,
                 "query": query,
                 "query_fields": query.form_values(),
                 "frequencies": FREQUENCY_LABELS,
-                "previous_page": query.page - 1 if query.page > 1 else None,
+                "previous_page": min(query.page - 1, last) if query.page > 1 else None,
                 "next_page": query.page + 1 if query.page * PAGE_SIZE < total else None,
             }
             return iter(
@@ -154,10 +173,8 @@ def report(request, campaign_id):
         return response
     except (PermissionError, ObjectDoesNotExist):
         return denial()
-    except (*SAFE_FAILURES, StorageInvariantError):
-        return denial(status=503, retry=5)
-    except ValueError:
-        return private_response("Invalid financial report filters.\n", status=400)
+    except (*SAFE_FAILURES, StorageInvariantError, ValueError):
+        return _error(campaign_id, status=503)
     finally:
         if finish is not None and not handed_off:
             finish(False)

@@ -43,7 +43,7 @@
 <td>{% for share in row.shares %}{{ share.label }}{% if share.text %}: {{ share.text }}{% endif %}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "None chosen" %}{% endfor %}</td>
 <td>{{ row.source_pledge.display }}</td><td>{{ row.source_contributions.display }}</td>
 <td>{% translate "Latest" %} <time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time><br>{% translate "First" %} <time datetime="{{ row.first_submitted_at|date:'c' }}" data-local-instant>{{ row.first_submitted_at|date:'c' }}</time><br>{% translate "Version" %} {{ row.family_version|number }}</td></tr>
-{% empty %}<tr><td colspan="7">{% translate "No matching pledges." %}</td></tr>{% endfor %}</tbody></table></div>
+{% empty %}<tr><td colspan="7">{% if total %}{% translate "This page is past the last matching pledge. Use Previous page to return to the results." %}{% else %}{% translate "No matching pledges." %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
 <nav aria-label="{% translate 'Financial result pages' %}"><form method="post" action="{% url 'admin:financial_report' campaign_id %}">{% csrf_token %}{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
 {% if previous_page %}<button name="page" value="{{ previous_page }}">{% translate "Previous page" %}</button>{% endif %} {% if next_page %}<button name="page" value="{{ next_page }}">{% translate "Next page" %}</button>{% endif %}</form></nav>
 {% endblock %}
