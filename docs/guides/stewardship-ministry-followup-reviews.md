@@ -14,6 +14,11 @@ The branch was rebased onto main after each unrelated CI correction landed.
 `git range-diff` showed every patch identical each time, so reviewed content is
 unchanged; the table maps each reviewed SHA to its current equivalent.
 
+The delivered branch squashes that history into logical commits. The complete
+commit-by-commit history, including each reviewed SHA below, is retained on
+`pr/stewardship-ministry-followup-reviewed`, whose tree is identical to the
+delivered head. That branch is review evidence only and is never merged.
+
 | Round | Reviewed SHA | After final rebase | Scope |
 | --- | --- | --- | --- |
 | 1 | `6374f65f` | `0d338a1` | Complete diff from main, 3,036 lines, two shards |
