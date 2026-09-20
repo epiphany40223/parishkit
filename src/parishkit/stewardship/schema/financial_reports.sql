@@ -15,10 +15,10 @@
 -- are read here from the campaign's own configuration and the snapshot cursor,
 -- never from the caller. Without it, totals are unavailable, never zero.
 CREATE FUNCTION stewardship_financial_report_v1(
-    campaign_uuid uuid, parameters jsonb, page_number integer DEFAULT NULL,
-    -- The caller owns the page size, so its paging arithmetic cannot drift from
-    -- the rows returned here. It is ignored for a complete, unpaged result.
-    page_size integer DEFAULT 50
+    -- A NULL page number returns the complete, unpaged result. The caller owns
+    -- the page size and must state it, so its paging arithmetic cannot drift
+    -- from the rows returned here; it is ignored for a complete result.
+    campaign_uuid uuid, parameters jsonb, page_number integer, page_size integer
 ) RETURNS jsonb LANGUAGE plpgsql STABLE
 SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE f jsonb:=parameters->'filters'; proof jsonb:=parameters->'proof';
@@ -59,17 +59,17 @@ BEGIN
            WHERE d.key IN ('pledge_min','pledge_max') AND d.value<>''
              AND NOT d.value ~ money_text)
        OR (page_number IS NOT NULL AND page_number NOT BETWEEN 1 AND 10000)
-       OR page_size IS NULL OR page_size NOT BETWEEN 1 AND 200
+       OR (page_number IS NOT NULL
+           AND (page_size IS NULL OR page_size NOT BETWEEN 1 AND 200))
     THEN RAISE EXCEPTION 'Invalid financial report parameters' USING ERRCODE='23514'; END IF;
     -- Compare ranges only after the grammar above has passed. SQL does not
     -- promise to evaluate one condition's terms in order, so a cast placed beside
-    -- its own guard could fail first and echo a filter value in its error.
-    IF (f->>'first_start'<>'' AND f->>'first_end'<>''
-           AND f->>'first_start'>f->>'first_end')
-       OR (f->>'latest_start'<>'' AND f->>'latest_end'<>''
-           AND f->>'latest_start'>f->>'latest_end')
-       OR (f->>'pledge_min'<>'' AND f->>'pledge_max'<>''
-           AND (f->>'pledge_min')::numeric>(f->>'pledge_max')::numeric)
+    -- its own guard could fail first and echo a filter value in its error. An
+    -- absent bound becomes NULL, so no term here depends on another to be safe.
+    IF coalesce(nullif(f->>'first_start','')>nullif(f->>'first_end',''),false)
+       OR coalesce(nullif(f->>'latest_start','')>nullif(f->>'latest_end',''),false)
+       OR coalesce(nullif(f->>'pledge_min','')::numeric
+           >nullif(f->>'pledge_max','')::numeric,false)
     THEN RAISE EXCEPTION 'Invalid financial report parameters' USING ERRCODE='23514'; END IF;
 
 WITH selected AS MATERIALIZED (

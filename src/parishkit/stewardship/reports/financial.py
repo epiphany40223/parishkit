@@ -142,6 +142,8 @@ def giving_proof(campaign):
         snapshot_id = SourceCurrent.objects.values_list(
             "snapshot_id", flat=True
         ).first()
+    if snapshot_id is None:
+        return None
     try:
         definition = financial_definition(configuration.values, campaign_id=campaign.pk)
     except InvalidFinancialSource:
@@ -151,7 +153,7 @@ def giving_proof(campaign):
         .values_list("cursor", flat=True)
         .first()
     )
-    if snapshot_id is None or giving_observation(cursor, definition) is None:
+    if giving_observation(cursor, definition) is None:
         return None
     return {"snapshot": str(snapshot_id), "configuration": str(configuration.pk)}
 
@@ -204,7 +206,7 @@ def financial_page(
     proof,
     parish_name,
     configuration,
-    page_size=PAGE_SIZE,
+    page_size,
 ):
     """Read one coherent page for Admin or Staff; leaders never reach this query."""
     if not allows(principal, Capability.FINANCIAL_DETAIL):
@@ -268,13 +270,20 @@ def financial_page(
         (FREQUENCY_LABELS[key], summary["frequencies"].get(key, 0))
         for key in (*FREQUENCIES, "none")
     ]
-    # The summary spans every page, so it can only use the current wording;
-    # options no longer offered are counted together rather than guessed.
-    shares = {}
-    for key, count in in_offered_order(summary["shares"], current):
-        label = current.get(key, "Unavailable share method")
-        shares[label] = shares.get(label, 0) + count
-    summary["shares"] = list(shares.items())
+    # The summary spans every page, so it can only use the current wording.
+    # Counts stay separate per offered identity, even when two options happen to
+    # be worded alike; only options no longer offered are counted together.
+    offered = [
+        (current[key], count)
+        for key, count in in_offered_order(summary["shares"], current)
+        if key in current
+    ]
+    retired = sum(
+        count for key, count in summary["shares"].items() if key not in current
+    )
+    summary["shares"] = offered + (
+        [("Unavailable share method", retired)] if retired else []
+    )
     metadata = result["metadata"]
     metadata["source_as_of"] = datetime.fromisoformat(metadata["source_as_of"])
     metadata["giving_through"] = (

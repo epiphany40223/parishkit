@@ -181,15 +181,16 @@ def substitute(monkeypatch, answer):
     return cursor
 
 
-def page(principal=STAFF, *, proof=PROOF, query=None):
-    """Read with the fixed current configuration."""
+def page(principal=STAFF, *, proof=PROOF, query=None, configuration=CONFIGURATION):
+    """Read with the fixed current configuration unless a case replaces it."""
     return financial_page(
         CAMPAIGN,
         query or FinancialQuery(),
         principal,
         proof=proof,
         parish_name="Sample Parish",
-        configuration=CONFIGURATION,
+        configuration=configuration,
+        page_size=financial.PAGE_SIZE,
     )
 
 
@@ -277,6 +278,17 @@ def test_rows_are_shaped_with_exact_installments_and_honest_absence(monkeypatch)
     assert [share["label"][:7] for share in page()["rows"][0]["shares"]] == [
         "This ho",
         "Another",
+    ]
+    # Two offered options worded alike stay separate counts: only identities no
+    # longer offered are merged, never distinct current options.
+    alike = CONFIGURATION | {
+        "share_options": [*OPTIONS, OPTIONS[1] | {"id": RETIRED}],
+    }
+    substitute(monkeypatch, (json.dumps(result()),))
+    assert page(configuration=alike)["summary"]["shares"] == [
+        (f"Another way in 2027, {PERIOD}", 1),
+        (f"Another way in 2027, {PERIOD}", 1),
+        ("Unavailable share method", 2),
     ]
     # A row whose configuration cannot be found words nothing, never current text.
     substitute(monkeypatch, (json.dumps(result(configuration_id=str(uuid4()))),))

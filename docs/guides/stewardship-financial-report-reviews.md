@@ -6,10 +6,12 @@ both completed. Severities are the raw reviewer values. Findings below the
 tool's Medium/confidence cutoff are counted but listed only where they were
 acted on or deliberately deferred.
 
-The delivered branch squashes the review corrections into logical commits. The
-complete commit-by-commit history, including every reviewed SHA below, is
-retained on `pr/stewardship-financial-report-reviewed`, whose tree is identical
-to the delivered head. That branch is review evidence only and is never merged.
+At delivery the review corrections are squashed into logical commits, and the
+complete commit-by-commit history, including every reviewed SHA below, is pushed
+to `pr/stewardship-financial-report-reviewed` with a tree identical to the
+delivered head. That branch is review evidence only and is never merged. The
+[protected delivery receipt](stewardship-financial-report.md#checkpoint) records
+it once it exists; until then the reviewed SHAs are on the PR branch itself.
 
 ## Round 1
 
@@ -52,7 +54,8 @@ fixed.
   configuration rather than once per row. A second copy of the substitution set
   is gone. The whole-result summary and the filter can only use current wording.
 
-Acted on from the 18 below-cutoff Claude findings, all Low:
+Claude's 18 findings were three Medium and 15 Low. Acted on from those 15
+below-cutoff findings:
 
 - The SQL share filter was only length-bounded while the application required a
   pattern. Share options are UUIDs, so both sides now require a canonical one.
@@ -87,3 +90,55 @@ added function, now with a page-size argument, with no existing definition
 changed, before the fingerprint was updated. Post-fix validation: five
 database-free, six PostgreSQL, 17 schema-contract and nine browser cases passed
 locally.
+
+## Round 2 attempt: not a completed round
+
+Reviewed `f92b5f5`, the 1,737-line round-1 correction delta from `7f92831`. The
+Claude reviewer completed with 12 findings, one Medium and 11 Low. The Codex
+reviewer exited with status 1 after 258 seconds and produced no structured
+output, so this is **not** a completed dual-source round and is not counted
+toward the required three. The
+[September 20, 2026 exemption](../plans/stewardship/overall.md#automated-phase-delivery-cycle)
+ended when Codex returned and was not reused. The Claude findings were acted on
+anyway, and the round was run again on the corrected head.
+
+- **Claude, Medium: the archived-campaign proof was untested.** Round 1's fix
+  for archived campaigns could have been deleted without failing a test. A new
+  case delivers the live response's confirmation through the real mail-dispatch
+  owner, closes and archives the campaign, promotes a successor snapshot, and
+  asserts under the restricted web role that the proof names the pinned
+  snapshot, that its money is shown, and that a proof of the successor withholds.
+
+Acted on from the 11 Low findings:
+
+- Substring scans for excluded amounts covered the whole serialized page,
+  including random identities and wall-clock microseconds, where a digit run
+  could match by chance about once in 150 runs. They now cover only the money
+  the page displays.
+- Well-formed but inverted date intervals were refused only by the
+  application's parser. Both are now refused at the statement too.
+- The pledge-range cast still sat beside its own emptiness guard, against the
+  rule the comment stated. An absent bound now becomes NULL, so no term depends
+  on another to be safe.
+- The versioned-wording lookup was proven only with a stub. A real year-label
+  change after a Family answered now proves the row keeps its wording while the
+  summary and filter use the new one.
+- Merging summary counts by rendered label could merge two offered options
+  worded alike. Counts now stay separate per offered identity, and only options
+  no longer offered are counted together.
+- The shared guard answers unavailable inputs itself, so the new 503 recovery
+  page was bypassed for the likeliest case. The view now substitutes it, as the
+  directory report does, with an HTTP-level case.
+- The proof issued a snapshot query before noticing it had no snapshot.
+- A second copy of the page size remained as an SQL default. Neither SQL
+  argument has a default now, the application requires the size, and the view
+  passes the same constant that drives its paging arithmetic.
+- The ledger miscounted Claude's below-cutoff findings and described the
+  retained evidence branch as already existing. Both are corrected.
+
+Deferred: share wording substitutes the parish name, which is always the current
+one rather than versioned with the row. The guide now says so.
+
+A fresh install again differed from main only by the one added function, now
+with two required paging arguments. Post-fix validation: five database-free,
+eight PostgreSQL and 17 schema-contract cases passed locally.

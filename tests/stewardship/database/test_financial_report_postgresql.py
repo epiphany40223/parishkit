@@ -12,29 +12,47 @@ from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.audit.models import AuditContext
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.family_identity import code_context
+from parishkit.stewardship.campaigns.lifecycle import Action
 from parishkit.stewardship.campaigns.models import Campaign
+from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
+from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.family_delivery import FamilyDeliveryResult
+from parishkit.stewardship.family_delivery import FamilyDeliveryStatus as Status
+from parishkit.stewardship.jobs.family_mail_dispatch import finish_submission
+from parishkit.stewardship.jobs.models import TaskRun
+from parishkit.stewardship.jobs.outbox_models import OutboxMessage
+from parishkit.stewardship.jobs.storage import _status
+from parishkit.stewardship.reports import financial_views
 from parishkit.stewardship.reports.financial import (
     PAGE_SIZE,
     FinancialQuery,
     financial_page,
     giving_proof,
 )
+from parishkit.stewardship.responses.models import SubmissionReceiptOccurrence
+from parishkit.stewardship.source.leases import release_source
+from parishkit.stewardship.source.snapshots import promote_snapshot
 
 from ..financial_factory import record
 from ..test_financial_answers import CHECK, OPTIONS, OTHER
 from .auth_builders import signed_in
-from .campaign_builders import campaign_clock
-from .response_builders import activate_response_service
+from .campaign_builders import campaign_clock, change, close_campaign, command
+from .response_builders import activate_response_service, response_source
 from .test_background_grants_postgresql import task_login
 from .test_family_auth_postgresql import login
+from .test_family_mail_dispatch_postgresql import claim
 from .test_financial_source_postgresql import financial_source
 from .test_information_followup_postgresql import search
 from .test_ministry_exports_postgresql import leader
 from .test_ministry_responses_postgresql import respond, revisit
+from .test_receipt_dispatch_postgresql import begin
 from .test_report_workspace_postgresql import read as get
 from .test_response_http_postgresql import answers_for, load_form
 from .test_runtime_auth_grants_postgresql import web_login
+from .test_source_families_postgresql import prepare
+from .test_source_snapshots_postgresql import permit
+from .test_taskrun_postgresql import act
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -70,6 +88,17 @@ def report(harness, *, principal=STAFF, proof=PROVE, page_size=PAGE_SIZE, **valu
         )
 
 
+def shown_money(page):
+    """Every amount the page displays, and nothing else.
+
+    A scan of the whole serialized page would also cover random identities and
+    wall-clock microseconds, where a digit run can match by chance.
+    """
+    fields = ("annual", "installment", "source_pledge", "source_contributions")
+    amounts = [row[field].display for row in page["rows"] for field in fields]
+    return " ".join([*amounts, page["summary"]["annual_total"].display])
+
+
 def family_session(harness, duid):
     """Sign another real household in with its own live campaign credential."""
     family = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=duid)
@@ -103,8 +132,7 @@ def test_effective_response_exact_money_filters_and_privacy(response_service):
     # Family's mapped comparison funds, beside decoys for others.
     assert row["source_pledge"].display == "$1,200.00"
     assert row["source_contributions"].display == "$100.00"
-    assert "9999" not in json.dumps(page, default=str)
-    assert "8888" not in json.dumps(page, default=str)
+    assert "9,999" not in shown_money(page) and "8,888" not in shown_money(page)
     summary = page["summary"]
     assert summary["families"] == 1
     assert summary["annual_total"].display == "$1,234.50"
@@ -216,6 +244,18 @@ def test_unproven_giving_and_closed_parameters(response_service):
             "filters": neutral["filters"]
             | {"first_start": "2026-13-01", "first_end": "2026-01-01"}
         },
+        # Well-formed but inverted intervals: SQL is the authority for a later
+        # capture that never passes through the application's parser.
+        neutral
+        | {
+            "filters": neutral["filters"]
+            | {"first_start": "2026-02-01", "first_end": "2026-01-31"}
+        },
+        neutral
+        | {
+            "filters": neutral["filters"]
+            | {"latest_start": "2026-02-01", "latest_end": "2026-01-31"}
+        },
         neutral | {"filters": {"search": ""}},
         neutral | {"filters": neutral["filters"] | {"unknown": ""}},
     )
@@ -227,19 +267,27 @@ def test_unproven_giving_and_closed_parameters(response_service):
                 connection.cursor() as cursor,
             ):
                 cursor.execute(
-                    "SELECT stewardship_financial_report_v1(%s,%s::jsonb,1)",
+                    "SELECT stewardship_financial_report_v1(%s,%s::jsonb,1,50)",
                     [harness.campaign.pk, json.dumps(parameters)],
                 )
         # Positive control: the neutral object is accepted, in paged and complete
         # modes, so each refusal above is about its one changed value.
         with connection.cursor() as cursor:
-            for page_number in (1, None):
+            # A complete result needs no page size; a page must state one.
+            for page_number, page_size in ((1, 50), (1, 1), (1, 200), (None, None)):
                 cursor.execute(
-                    "SELECT stewardship_financial_report_v1(%s,%s::jsonb,%s)->'total'",
-                    [harness.campaign.pk, json.dumps(neutral), page_number],
+                    "SELECT stewardship_financial_report_v1(%s,%s::jsonb,%s,%s)"
+                    "->'total'",
+                    [harness.campaign.pk, json.dumps(neutral), page_number, page_size],
                 )
                 assert cursor.fetchone()[0] in (1, "1")
-            for page_number, page_size in ((0, 50), (10001, 50), (1, 0), (1, 201)):
+            for page_number, page_size in (
+                (0, 50),
+                (10001, 50),
+                (1, 0),
+                (1, 201),
+                (1, None),
+            ):
                 with (
                     pytest.raises(DatabaseError, match="Invalid financial report"),
                     transaction.atomic(),
@@ -264,6 +312,88 @@ def test_unproven_giving_and_closed_parameters(response_service):
     ):
         with pytest.raises(ValueError):
             FinancialQuery.parse(values)
+
+
+def test_retained_wording_survives_a_later_year_label_edit(response_service):
+    """A row keeps the wording its Family saw; summary and filter use today's."""
+    harness = response_service
+    option = dict(id=CHECK, label="By check in {{ campaign_year }}", free_text=False)
+    financial_source(harness, options=[option])
+    harness = activate_response_service(harness)
+    with web_login():
+        pledge(harness, load_form(harness), shares={CHECK: ""})
+    seen = report(harness)["rows"][0]["shares"][0]["label"]
+    assert seen.startswith("By check in ") and "Jubilee" not in seen
+    receipt = change(
+        harness.service.store,
+        harness.service.store.active(),
+        uuid4(),
+        [
+            {
+                "operation": "update",
+                "section": "campaigns",
+                "id": str(harness.campaign.pk),
+                "values": {"year_label": "Jubilee"},
+            }
+        ],
+    )
+    assert receipt.state == "applied"
+    after = report(harness)
+    # The real lookup finds the immutable configuration that Family answered,
+    # not the campaign's newer active one.
+    assert after["rows"][0]["shares"] == [{"label": seen, "text": ""}]
+    assert after["share_choices"] == [(CHECK, "By check in Jubilee")]
+    assert after["summary"]["shares"] == [("By check in Jubilee", 1)]
+
+
+def test_archived_campaign_proves_its_own_pinned_source(response_service):
+    """An archived report follows its retained source, never a successor's."""
+    retained, _ = financial_source(response_service)
+    harness = activate_response_service(response_service)
+    with web_login():
+        submitted = pledge(harness, load_form(harness))
+    # Archive may not abandon a live response's confirmation, so deliver it
+    # through the real mail-dispatch owner first.
+    message = OutboxMessage.objects.get(
+        pk=SubmissionReceiptOccurrence.objects.get(submission=submitted).outbox_id
+    )
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        execution = claim(message)
+        assert begin(message, execution) is not None
+        finish_submission(
+            message.pk, execution.claim, FamilyDeliveryResult(Status.ACCEPTED, 1)
+        )
+    actor = uuid4()
+    close_campaign(harness.campaign, actor)
+    for row in TaskRun.objects.filter(state="running"):
+        act(_status(row), "permanent_failure")
+    with campaign_clock(harness.campaign.active_configuration.ends_at):
+        command(harness.campaign, actor, Action.ARCHIVE)
+        successor, lease = prepare(response_source())
+        try:
+            with work_transaction():
+                promote_snapshot(successor.pk, lease, admit=permit, reconcile=permit)
+        finally:
+            release_source(lease)
+        campaign = Campaign.objects.select_related("active_configuration").get(
+            pk=harness.campaign.pk
+        )
+        assert campaign.state == "archived"
+        # The pinned-source read must work under the restricted web role.
+        with (
+            task_login(ServiceRole.WEB, exact=True, reconnect=True),
+            transaction.atomic(),
+        ):
+            proof = giving_proof(campaign)
+        assert proof is not None
+        assert proof["snapshot"] == str(retained.pk) != str(successor.pk)
+        row = report(harness)["rows"][0]
+        assert row["source_pledge"].display == "$1,200.00"
+        assert row["source_contributions"].display == "$100.00"
+        # A proof of the newer current snapshot is not a proof of this report.
+        current = report(harness, proof=proof | {"snapshot": str(successor.pk)})
+        assert not current["rows"][0]["source_pledge"].available
+        assert current["metadata"]["giving_through"] is None
 
 
 def test_campaign_without_the_module_is_denied_and_unlinked(response_service, google):
@@ -334,9 +464,9 @@ def test_source_totals_respect_fund_window_and_giving_cutoff(response_service):
     assert row["source_pledge"].display == "$1,211.00"
     assert row["source_contributions"].display == "$105.00"
     assert page["metadata"]["giving_through"].isoformat() == "2026-03-01"
-    text = json.dumps(page, default=str)
-    for excluded in ("7654", "4321", "6543", "333.33", "444.44", "777.77", "9999"):
-        assert excluded not in text
+    # The exact totals above already exclude every decoy; this names them.
+    for excluded in ("7,654", "4,321", "6,543", "333.33", "444.44", "777.77", "9,999"):
+        assert excluded not in shown_money(page)
 
 
 def test_several_families_summary_order_and_pages(response_service):
@@ -454,7 +584,7 @@ def test_several_families_summary_order_and_pages(response_service):
         connection.cursor() as cursor,
     ):
         cursor.execute(
-            "SELECT stewardship_financial_report_v1(%s,%s::jsonb,NULL)::text",
+            "SELECT stewardship_financial_report_v1(%s,%s::jsonb,NULL,NULL)::text",
             [harness.campaign.pk, json.dumps(neutral)],
         )
         complete = json.loads(cursor.fetchone()[0])
@@ -462,7 +592,9 @@ def test_several_families_summary_order_and_pages(response_service):
     assert all(row["pledge_total"] is None for row in complete["rows"])
 
 
-def test_native_page_filters_privately_and_denies_leaders(response_service, google):
+def test_native_page_filters_privately_and_denies_leaders(
+    response_service, google, monkeypatch
+):
     """An Admin's real session filters by CSRF POST; a leader never reaches money."""
     harness = response_service
     financial_source(harness, modules=["financial"], options=map(asdict, OPTIONS))
@@ -504,6 +636,24 @@ def test_native_page_filters_privately_and_denies_leaders(response_service, goog
         # The campaign reports page offers the entry only with the module enabled.
         _, body = get(browser, route.replace("financial", "participation"))
         assert route.encode() in body
+
+    def unavailable(*args, **kwargs):
+        """Stand in for SQL reporting that the report's inputs are missing."""
+        raise ReadUnavailable("Financial report inputs are unavailable.")
+
+    # The shared guard answers unavailable inputs itself; this report still
+    # gives its own recovery page rather than that bare response. The patch is
+    # scoped so the Google fixture's own patch survives for the leader below.
+    with (
+        monkeypatch.context() as patch,
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+    ):
+        patch.setattr(financial_views, "financial_page", unavailable)
+        response, body = get(browser, route)
+        assert response.status_code == 503 and response["Retry-After"] == "5"
+        assert b"temporarily unavailable" in body and route.encode() in body
+        assert name not in body and response["Cache-Control"] == "no-store"
+    # Signing the leader in changes the login policy, so this comes last.
     other, *_ = leader(harness, google)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert get(other, route)[0].status_code == 403
@@ -513,5 +663,7 @@ def test_native_page_filters_privately_and_denies_leaders(response_service, goog
             event__event_type="financial_report_viewed"
         ).values_list("context", flat=True)
     )
-    assert {"succeeded", "started"} <= {context["outcome"] for context in contexts}
+    assert {"succeeded", "started", "failed"} <= {
+        context["outcome"] for context in contexts
+    }
     assert name.decode() not in str(contexts) and "1234" not in str(contexts)

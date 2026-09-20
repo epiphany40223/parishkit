@@ -141,6 +141,8 @@ def report(request, campaign_id):
                 proof=giving_proof(campaign),
                 parish_name=system.active_configuration.parish.name,
                 configuration=configuration,
+                # The same size drives the paging arithmetic just below.
+                page_size=PAGE_SIZE,
             )
             count, total = len(result["rows"]), result["total"]
             # A stale Next click after the result shrank lands past the end;
@@ -169,6 +171,11 @@ def report(request, campaign_id):
             open_content=content,
             on_close=finish,
         )
+        if response.status_code == 503 and not response.streaming:
+            # The shared guard has already released its read transaction and
+            # answered unavailable inputs itself. Give this report its safe
+            # recovery navigation, never private contents.
+            return _error(campaign_id, status=503)
         handed_off = response.status_code == 200 and response.streaming
         return response
     except (PermissionError, ObjectDoesNotExist):
