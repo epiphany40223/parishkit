@@ -8,6 +8,11 @@ no longer applies, by its own terms. Severities are the raw reviewer values.
 Findings below the tool's Medium/confidence cutoff are counted but listed only
 where they were acted on.
 
+The delivered branch squashes the review corrections into logical commits. The
+complete commit-by-commit history, including every reviewed SHA below, is
+retained on `pr/stewardship-ministry-packets-reviewed`, whose tree is identical
+to the delivered head. That branch is review evidence only and is never merged.
+
 ## Round 1
 
 Reviewed `c2ebbe39`, the complete 1,857-line diff from main `bd5522f6`. Both
