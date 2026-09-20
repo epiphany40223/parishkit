@@ -8,12 +8,19 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, connection, transaction
 from django.db.models import F
 
+from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.audit.models import AuditContext
 from parishkit.stewardship.campaigns.runtime_models import CampaignWorkGate
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.reports.ministry_followup import (
+    FollowupQuery,
+    assignable,
+    followup_history,
+    followup_page,
+)
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.workflows.followup import (
     WorkflowChange,
@@ -277,3 +284,99 @@ def test_work_gate_and_revoked_actor_close_mutation(response_service):
             state="in_progress",
         )
     assert MinistryWorkflowRevision.objects.count() == 0
+
+
+def read(harness, principal, *, request_id=None, **values):
+    """Query through actual restricted SQL grants, not the migration owner."""
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True), transaction.atomic():
+        return followup_page(
+            harness.campaign.pk,
+            FollowupQuery.parse(values),
+            principal,
+            request_id=request_id,
+        )
+
+
+def test_scoped_queue_detail_and_chain_history(response_service, google):
+    """Leaders see only their Ministry; history and dates follow the chain."""
+    harness = setup(response_service)
+    _, head, _, _ = leader(harness, google)
+    admin = user("admin@example.org").pk
+    join, leave = requests()
+    called = database_now() - timedelta(hours=2)
+    edit(
+        harness,
+        admin,
+        join,
+        assignee_id=head,
+        state="assigned",
+        notes="PRIVATE-NOTE first call",
+        contact_channel="phone",
+        contact_at=called,
+    )
+    staff = Principal(admin, frozenset({"staff"}), frozenset())
+    scoped = Principal(head, frozenset({"ministry_leader"}), frozenset({9}))
+    nobody = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset())
+    page = read(harness, staff)
+    assert page["total"] == 2
+    # Both requests share one submission instant, so only membership is fixed.
+    assert sorted(row["ministry_duid"] for row in page["rows"]) == [4, 9]
+    row = read(harness, staff, ministry="9")["rows"][0]
+    assert (row["state"], row["assignee_id"], row["version"]) == (
+        "assigned",
+        str(head),
+        2,
+    )
+    assert row["notes"] == "PRIVATE-NOTE first call"
+    assert row["phone_contact_at"] == called and row["email_contact_at"] is None
+    # No contact, address or financial payload is ever projected here.
+    assert not {"emails", "phones", "address"} & set(row)
+    # Closed filter vocabularies select on the current projection.
+    assert read(harness, staff, assignee="mine")["total"] == 0
+    assert read(harness, scoped, assignee="mine")["total"] == 1
+    assert read(harness, staff, assignee=str(head))["total"] == 1
+    assert read(harness, staff, assignee="unassigned")["total"] == 1
+    assert read(harness, staff, state="assigned", action="join")["total"] == 1
+    assert read(harness, staff, action="leave", state="assigned")["total"] == 0
+    assert read(harness, staff, search="no such member")["total"] == 0
+    # A leader's scope hides other Ministries from lists, options and detail.
+    limited = read(harness, scoped)
+    assert [item["duid"] for item in limited["ministries"]] == [9]
+    assert [item["ministry_duid"] for item in limited["rows"]] == [9]
+    assert read(harness, scoped, request_id=join.pk)["rows"][0]["id"] == str(join.pk)
+    with pytest.raises(ObjectDoesNotExist):
+        read(harness, scoped, request_id=leave.pk)
+    with pytest.raises(PermissionError):
+        read(harness, nobody)
+    for invalid in (
+        {"state": "invented"},
+        {"assignee": "everyone"},
+        {"ministry": "09"},
+        {"ministry": "0"},
+        {"sort": "random"},
+        {"unknown": "x"},
+    ):
+        with pytest.raises(ValueError):
+            FollowupQuery.parse(invalid)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert {row.pk for row in assignable(9)} >= {admin, head}
+        assert head not in {row.pk for row in assignable(4)}
+    # A same-intent resubmission keeps the queue row's work, read via the chain.
+    form = revisit(harness)
+    answers = answers_for(form)
+    answers["ministries"]["members"]["3"] = {"join": [9], "leave": [4]}
+    respond(harness, form, answers)
+    successor = MinistryRequest.objects.get(ministry_duid=9, state="assigned")
+    current = read(harness, staff, ministry="9")
+    assert [item["id"] for item in current["rows"]] == [str(successor.pk)]
+    assert current["rows"][0]["notes"] == "PRIVATE-NOTE first call"
+    assert current["rows"][0]["phone_contact_at"] == called
+    everything = read(harness, staff, ministry="9", history="all", state="any")
+    assert {item["id"] for item in everything["rows"]} == {
+        str(join.pk),
+        str(successor.pk),
+    }
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        rows, more = followup_history(successor.pk, 1)
+        assert [item.notes for item in rows] == ["PRIVATE-NOTE first call"]
+        assert not more and followup_history(successor.pk, 2) == ([], False)
