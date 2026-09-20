@@ -83,3 +83,31 @@ def test_ministry_complete_export_without_scripts(browser_engine, component_orig
         assert page.get_by_role("button", name="Queue complete export").is_disabled()
     finally:
         context.close()
+
+
+def test_ministry_packet_request_without_scripts(browser_engine, component_origin):
+    """The multi-Ministry selection posts natively; detail pages do not offer it."""
+    context = browser_engine.new_context(java_script_enabled=False)
+    try:
+        page = context.new_page()
+        page.goto(component_origin + "/ministry-summary")
+        page.get_by_label("Only the Ministries ticked below", exact=False).check()
+        page.get_by_label("Example <Ministry>", exact=False).check()
+        page.get_by_label("Also include resolved and withdrawn requests").check()
+        page.get_by_label("Packet format").select_option("xlsx")
+        page.get_by_label("Packet timezone").select_option("America/Detroit")
+        page.route("**/ministries/packet/", lambda route: route.fulfill(body="Queued"))
+        with page.expect_request(lambda request: request.method == "POST") as sent:
+            page.get_by_role("button", name="Queue follow-up packet").click()
+        body = sent.value.post_data
+        assert "selection=chosen" in body and "ministries=9" in body
+        assert "history=yes" in body and "format=xlsx" in body
+        assert "request_key=00000000-0000-0000-0000-000000000060" in body
+        assert "?" not in sent.value.url
+        # A single Ministry's detail page has no multi-Ministry packet to offer.
+        page.goto(component_origin + "/ministry-detail")
+        assert page.get_by_role("button", name="Queue follow-up packet").count() == 0
+        page.goto(component_origin + "/ministry-gated")
+        assert page.get_by_role("button", name="Queue follow-up packet").count() == 0
+    finally:
+        context.close()

@@ -244,6 +244,7 @@ def report(request, campaign_id, *, action=None):
             context = result | {
                 "mutable": mutable,
                 "export_key": uuid4(),
+                "packet_key": uuid4(),
                 "export_fields": query.form_values(),
                 "export_timezones": sorted(timezone_names()),
                 "campaign_id": campaign_id,

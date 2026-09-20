@@ -109,6 +109,11 @@ admin_patterns = [
         name="ministry_leavers",
     ),
     path(
+        "reports/<uuid:campaign_id>/ministries/packet/",
+        ministry_export_views.create_packet,
+        name="ministry_packet",
+    ),
+    path(
         "reports/<uuid:campaign_id>/ministries/follow-up/",
         ministry_followup_views.queue,
         name="ministry_followup",

@@ -48,4 +48,20 @@
 <label for="ministry-export-format">{% translate "Export format" %}</label><select id="ministry-export-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="pdf">PDF</option></select>
 <label for="ministry-export-timezone">{% translate "Export timezone" %}</label><select id="ministry-export-timezone" name="browser_timezone" data-browser-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
 <button type="submit"{% if not mutable %} disabled{% endif %}>{% translate "Queue complete export" %}</button></form></section>
+{% if not ministry_id %}<section aria-labelledby="ministry-packet-heading"><h2 id="ministry-packet-heading">{% translate "Follow-up packet" %}</h2>
+<p>{% translate "One printable packet with a section for each Ministry: its chairs, and one row for each latest join or leave request with recorded email and phone contact dates and the outcome. Blank cells are left for completion by hand." %}</p>
+<p class="notice">{% translate "Sensitive parish information. Download only to a trusted device and share only with authorized recipients. Ministry leaders receive only published email and phone values." %}</p>
+<form method="post" action="{% url 'admin:ministry_packet' campaign_id %}">{% csrf_token %}
+<input type="hidden" name="request_key" value="{{ packet_key }}">
+<fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Ministries in the packet" %}</legend>
+<label><input type="radio" name="selection" value="all" checked> {% translate "All Ministries I am authorized for" %}</label>
+<label><input type="radio" name="selection" value="chosen"> {% translate "Only the Ministries ticked below, from this page of results" %}</label>
+{% for ministry in summaries %}<label><input type="checkbox" name="ministries" value="{{ ministry.duid }}"> {{ ministry.name }} — {% translate "DUID" %} {{ ministry.duid|number }}</label>
+{% endfor %}</fieldset>
+<fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Packet options" %}</legend>
+<label><input type="checkbox" name="history" value="yes"> {% translate "Also include resolved and withdrawn requests" %}</label>
+<label for="ministry-packet-format">{% translate "Packet format" %}</label><select id="ministry-packet-format" name="format"><option value="pdf">PDF</option><option value="xlsx">XLSX</option><option value="csv">CSV</option></select>
+<label for="ministry-packet-timezone">{% translate "Packet timezone" %}</label><select id="ministry-packet-timezone" name="browser_timezone" data-browser-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
+</fieldset>
+<button type="submit"{% if not mutable %} disabled{% endif %}>{% translate "Queue follow-up packet" %}</button></form></section>{% endif %}
 {% endblock %}
