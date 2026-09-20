@@ -55,6 +55,7 @@ from .information_components import components as information_components
 from .ministry_components import components as ministry_components
 from .pause_components import components as pause_components
 from .report_components import components as report_components
+from .user_components import components as user_components
 from .weekly_components import components as weekly_components
 
 NOW = datetime(2026, 9, 10, 12, tzinfo=UTC)
@@ -1038,6 +1039,7 @@ def component_origin():
     responses.update(followup_components(context, admin))
     responses.update(financial_components(context, admin))
     responses.update(weekly_components(context, admin))
+    responses.update(user_components(context, admin))
     responses.update(go_live_components(context, admin))
     responses.update(pause_components(context, admin))
     for filename, kind in (
