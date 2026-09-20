@@ -112,3 +112,21 @@ criteria are met: three completed rounds, no validated High or Critical finding
 in the final round, no unresolved accepted Medium-or-higher finding, and
 passing post-fix validation. Full exact-head CI, DCO and protected delivery
 remain required.
+
+## Protected delivery
+
+PR #73 delivered candidate `1d0d0d67`, whose tree `deb06569` is identical to
+the landed tree. Exact-head ready-candidate CI `35518503726` and DCO passed all
+24 jobs. Protected auto-merge landed as
+`1faa4a881f6ae7d8989123548dfcd9cde44affa7` at 15:38:58 UTC on September 20,
+2026, verified on freshly fetched `origin/main`, which had no intervening
+commits. Post-merge main CI `35520244230` then passed, ending the red main.
+
+The first attempt (15:05:50–15:22:33 UTC) passed 23 jobs, including the
+corrected case in partitions 8 and 11 on the same weekday alignment that had
+failed main that morning (20.4 and 28.4 seconds). Partition 2 alone failed, from
+the unrelated [stack-dump hazard](stewardship-shard-watchdog.md). Attempt 2
+reran only the failed jobs on the same head (15:23:23–15:38:50 UTC) and passed;
+no code changed between attempts. Failed, cancelled and draft-skipped runs are
+not counted as acceptance. This used the standing delivery authority, without
+deployment or release.

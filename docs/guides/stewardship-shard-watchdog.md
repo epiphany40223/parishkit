@@ -88,3 +88,36 @@ stated in the guide.
 
 The exit criteria are met. Full exact-head CI, DCO and protected delivery
 remain required.
+
+## Protected delivery
+
+PR #74 delivered candidate `5ff99b2f`, whose tree `88c912e0` is identical to
+the landed tree. Its first ready run, `35519835974`, began eight minutes before
+PR #73 merged, so its merge ref still carried the calendar-dependent case and
+failed partitions 8 and 11 on exactly that case. Rerunning would have reused
+the stale merge ref, so the branch was rebased onto `1faa4a88`. `git range-diff`
+showed both patches identical and the reviewed files byte-for-byte unchanged, so
+the completed review rounds still applied.
+
+Exact-head CI `35520747681` (15:48:53–16:11:46 UTC, September 20, 2026) and DCO
+then passed all 24 jobs on the first attempt. Protected auto-merge landed as
+`321ba38211e36926c5c71694a95dedb045dd5a33` at 16:12:01 UTC, verified on freshly
+fetched `origin/main`. This used the standing delivery authority, without
+deployment or release.
+
+That run also confirmed the correction directly. Its reference-load case took
+122.95 seconds, beyond the former threshold, and the partition passed with no
+stack dump. Measured durations of that case now span both sides of 120 seconds:
+
+| Run | Duration | Result under the then-current threshold |
+| --- | --- | --- |
+| main `35468347156` | 77.2 s | passed |
+| PR #71 rerun | 77.5 s | passed |
+| PR #74 first run | 78.2 s | passed |
+| PR #70 | 120.1 s | passed; the dump fired and completed |
+| PR #73 rerun | 123.9 s | passed; the dump fired and completed |
+| PR #71 and PR #73 first attempts | killed at 120 s | interpreter died mid-dump |
+| PR #74, five-minute threshold | 122.95 s | passed; no dump |
+
+The slowest completed measurement is therefore 123.9 seconds, still well inside
+the contract's requirement of at least twice the largest hint.
