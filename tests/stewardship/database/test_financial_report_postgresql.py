@@ -8,6 +8,7 @@ import pytest
 from django.db import DatabaseError, connection, transaction
 
 from parishkit.stewardship.accounts.policy import Principal
+from parishkit.stewardship.audit.models import AuditContext
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.financial import (
@@ -17,10 +18,14 @@ from parishkit.stewardship.reports.financial import (
 )
 
 from ..test_financial_answers import CHECK, OPTIONS, OTHER
+from .auth_builders import signed_in
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_financial_source_postgresql import financial_source
+from .test_information_followup_postgresql import search
+from .test_ministry_exports_postgresql import leader
 from .test_ministry_responses_postgresql import respond, revisit
+from .test_report_workspace_postgresql import read as get
 from .test_response_http_postgresql import answers_for, load_form
 from .test_runtime_auth_grants_postgresql import web_login
 
@@ -134,9 +139,9 @@ def test_effective_response_exact_money_filters_and_privacy(response_service):
     assert replaced["summary"]["no_share"] == 1
     assert report(harness, amount="zero", frequency="none", share="none")["total"] == 1
 
-    leader = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({9}))
+    outsider = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({9}))
     with pytest.raises(PermissionError):
-        report(harness, principal=leader)
+        report(harness, principal=outsider)
 
 
 def test_unproven_giving_and_closed_parameters(response_service):
@@ -188,3 +193,49 @@ def test_unproven_giving_and_closed_parameters(response_service):
     ):
         with pytest.raises(ValueError):
             FinancialQuery.parse(values)
+
+
+def test_native_page_filters_privately_and_denies_leaders(response_service, google):
+    """An Admin's real session filters by CSRF POST; a leader never reaches money."""
+    harness = response_service
+    financial_source(harness, modules=["financial"], options=map(asdict, OPTIONS))
+    harness = activate_response_service(harness)
+    with web_login():
+        pledge(harness, load_form(harness), shares={CHECK: ""})
+    name = report(harness)["rows"][0]["family_name"].encode()
+    route = f"/admin/reports/{harness.campaign.pk}/financial/"
+    browser, login = signed_in()
+    assert login.status_code == 302
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = get(browser, route)
+        assert response.status_code == 200 and response["Cache-Control"] == "no-store"
+        assert name in body and b"$1,234.50" in body and b"$102.88" in body
+        assert b"$1,200.00" in body and b"$100.00" in body
+        assert b'datetime=""' not in body and b"?search=" not in body
+        # Identifying filters are private POST state, never a URL.
+        assert get(browser, route + "?search=Private")[0].status_code == 400
+        assert browser.post(route, {"amount": "zero"}).status_code == 403  # No CSRF.
+        response, body = search(browser, route, {"amount": "zero"})
+        assert response.status_code == 200 and name not in body
+        assert b"No matching pledges." in body and b"$1,234.50" not in body
+        _, body = search(browser, route, {"pledge_min": "1234.50", "share": CHECK})
+        assert name in body and b'value="1234.50"' in body
+        for invalid in ({"pledge_min": "1,234"}, {"sort": "random"}, {"extra": "x"}):
+            assert search(browser, route, invalid)[0].status_code == 400
+        # Another campaign is indistinguishable from none.
+        wrong = f"/admin/reports/{uuid4()}/financial/"
+        assert get(browser, wrong)[0].status_code == 403
+        # The campaign reports page offers the entry only with the module enabled.
+        _, body = get(browser, route.replace("financial", "participation"))
+        assert route.encode() in body
+    other, *_ = leader(harness, google)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert get(other, route)[0].status_code == 403
+        assert search(other, route, {"amount": "any"})[0].status_code == 403
+    contexts = list(
+        AuditContext.objects.filter(
+            event__event_type="financial_report_viewed"
+        ).values_list("context", flat=True)
+    )
+    assert {"succeeded", "started"} <= {context["outcome"] for context in contexts}
+    assert name.decode() not in str(contexts) and "1234" not in str(contexts)
