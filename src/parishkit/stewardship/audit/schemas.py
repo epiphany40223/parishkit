@@ -76,6 +76,7 @@ class Action(StrEnum):
     FINANCIAL_REPORT_VIEWED = "financial_report_viewed"
     DASHBOARD_VIEWED = "dashboard_viewed"
     PRESENCE_VIEWED = "family_presence_viewed"
+    USERS_VIEWED = "portal_users_viewed"
     SETUP_STARTED = "setup_started"
     SETUP_SOURCE_STARTED = "setup_source_started"
     SETUP_SOURCE_COMPLETED = "setup_source_completed"

@@ -38,6 +38,7 @@ from .accounts import (
     setup_share_views,
     setup_views,
     share_views,
+    user_views,
     withdrawal_views,
 )
 from .jobs import delivery_views
@@ -420,6 +421,7 @@ admin_patterns = [
         name="campaign_settings",
     ),
     path("configuration/parish", parish_views.parish_settings, name="parish_settings"),
+    path("users", user_views.users, name="users"),
     path(
         "configuration/ministries", ministry_views.ministry_activity, name="ministries"
     ),

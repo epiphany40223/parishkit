@@ -55,6 +55,7 @@ def portal_chrome(request):
                 (reverse("admin:branding_settings"), _("Parish logos")),
                 (reverse("admin:integrations"), _("Integrations")),
                 (reverse("admin:ministries"), _("Ministry activity")),
+                (reverse("admin:users"), _("Portal users")),
                 (reverse("admin:background"), _("Background work")),
                 (reverse("admin:deliveries"), _("Outgoing mail")),
             ]
