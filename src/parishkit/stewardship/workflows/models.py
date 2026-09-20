@@ -170,8 +170,8 @@ class MinistryWorkflowRevision(ImmutableRecord):
             ),
             models.CheckConstraint(
                 condition=(
-                    models.Q(state__in=OPEN_STATES, outcome__isnull=True)
-                    | models.Q(state="resolved", outcome__in=RESOLVED_OUTCOMES)
+                    models.Q(state__in=list(OPEN_STATES), outcome__isnull=True)
+                    | models.Q(state="resolved", outcome__in=list(RESOLVED_OUTCOMES))
                     | models.Q(state="closed_no_response", outcome="no_response")
                 )
                 # "Other" is meaningless in a packet without its explanation.
@@ -190,7 +190,7 @@ class MinistryWorkflowRevision(ImmutableRecord):
                     contact_notes="",
                 )
                 | models.Q(
-                    contact_channel__in=CONTACT_CHANNELS, contact_at__isnull=False
+                    contact_channel__in=list(CONTACT_CHANNELS), contact_at__isnull=False
                 ),
                 name="ministry_revision_contact",
             ),

@@ -315,19 +315,19 @@ class Migration(migrations.Migration):
                                             ("outcome__isnull", True),
                                             (
                                                 "state__in",
-                                                ("new", "assigned", "in_progress"),
+                                                ["new", "assigned", "in_progress"],
                                             ),
                                         ),
                                         models.Q(
                                             (
                                                 "outcome__in",
-                                                (
+                                                [
                                                     "joined",
                                                     "leave_confirmed",
                                                     "declined",
                                                     "duplicate",
                                                     "other",
-                                                ),
+                                                ],
                                             ),
                                             ("state", "resolved"),
                                         ),
@@ -371,7 +371,7 @@ class Migration(migrations.Migration):
                                         ("contact_at__isnull", False),
                                         (
                                             "contact_channel__in",
-                                            ("email", "phone", "in_person", "other"),
+                                            ["email", "phone", "in_person", "other"],
                                         ),
                                     ),
                                     _connector="OR",

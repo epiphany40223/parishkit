@@ -490,6 +490,10 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             "stewardship_information_revision_guard",
             "stewardship_information_revision_guard_v1",
         ),
+        "stewardship_ministry_revision": (
+            "stewardship_ministry_revision_guard",
+            "stewardship_ministry_revision_guard_v1",
+        ),
         "stewardship_delivery_control": (
             "delivery_control_guard",
             "stewardship_delivery_control_guard_v1",
@@ -703,6 +707,7 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                 "stewardship_ministry_export_snapshot",
                 "stewardship_information_export_snapshot",
                 "stewardship_information_revision",
+                "stewardship_ministry_revision",
                 "stewardship_delivery_control",
                 "stewardship_delivery_message_resolution",
                 "stewardship_production_withdrawal",
