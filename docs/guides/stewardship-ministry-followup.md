@@ -209,3 +209,25 @@ CI, DCO and protected delivery remain open. ADM-08.03 is
 implemented; RPT-07 stays unchecked until its packet reads this workflow, and
 M5 and Gate 3 remain open. No deployment, release, live-provider write or
 database deletion is authorized by this increment.
+
+## Protected delivery
+
+PR #72 delivered candidate `fd90a2e`, three logical commits whose tree
+`7ab382c854db0eade95df25b9177223f760276ce` is identical to the retained
+commit-by-commit review history on `pr/stewardship-ministry-followup-reviewed`
+and to the landed tree. Exact-head ready-candidate CI `35529896548` and DCO
+passed all 24 jobs on the first attempt, from 18:41:55 to 19:03:56 UTC on
+September 20, 2026 (22 minutes 1 second), without a correction rerun.
+`origin/main` had no intervening commits since the candidate's base `321ba382`.
+Protected auto-merge landed as `bd5522f663f21365861851380f8281867c0858a7` at
+19:04:01 UTC and was verified on freshly fetched `origin/main` before starting
+the multi-Ministry packet increment. This used the standing delivery authority,
+without deployment or release, and supersedes the pending delivery checkpoint
+above. Failed, cancelled and draft-skipped runs are not counted as acceptance.
+
+In that run the reference-load case took 120.2 seconds, again beyond the former
+stack-dump threshold that the [shard correction](stewardship-shard-watchdog.md#protected-delivery)
+raised; the partition passed with no dump.
+
+ADM-08.03 is delivered. RPT-07 stays unchecked until its packet reads this
+workflow, and M5 and Gate 3 remain open.
