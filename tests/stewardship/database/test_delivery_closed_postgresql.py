@@ -361,6 +361,8 @@ def test_closed_receipt_and_weekly_skips_are_durable_not_provider_acceptance(
     with campaign_clock(
         item.campaign.active_configuration.ends_at + timedelta(hours=1)
     ):
+        # Snapshot first: neither cancel below may add fulfillment bookkeeping.
+        before_cancel = set(ScheduleFulfillment.objects.values_list("pk", flat=True))
         with web_login():
             _, token = commands.preview_resolution(
                 *item.arguments,
@@ -405,9 +407,26 @@ def test_closed_receipt_and_weekly_skips_are_durable_not_provider_acceptance(
             ],
             "daily_range": None,
         }
-        assert not ScheduleFulfillment.objects.filter(
-            occurrence=resolved.occurrence
-        ).exists()
+        # Cancelling held mail records nothing as fulfilled, on any calendar.
+        # The fixture's campaign starts relative to the real date, so on some
+        # weekdays an earlier weekly slot has already elapsed by the capture
+        # above; planning then correctly coalesces that missed slot into this
+        # occurrence. Exactly that capture-time bookkeeping may exist: one
+        # coalesced record per predecessor occurrence, and none on calendars
+        # with a single elapsed slot.
+        assert set(ScheduleFulfillment.objects.values_list("pk", flat=True)) == (
+            before_cancel
+        )
+        assert sorted(
+            ScheduleFulfillment.objects.filter(
+                occurrence=resolved.occurrence
+            ).values_list("disposition", "slot")
+        ) == sorted(
+            ("coalesced", slot)
+            for slot in ScheduleOccurrence.objects.filter(
+                state="coalesced", replacement=resolved.occurrence
+            ).values_list("slot", flat=True)
+        )
         with task_login(ServiceRole.WORKER, exact=True), connection.cursor() as cursor:
             cursor.execute(
                 "SELECT stewardship_weekly_history_v1(%s,'production',NULL)",
