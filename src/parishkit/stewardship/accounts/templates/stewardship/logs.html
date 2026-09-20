@@ -1,0 +1,37 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "System logs" %}{% endblock %}
+{% block content %}
+<h1>{% translate "System logs" %}</h1>
+<p>{% translate "Operational diagnostics and the audit trail together, newest first. Entries hold reviewed identifiers and counts only, never names, addresses, amounts or credentials. Opening this page is itself recorded, so it appears here the next time." %}</p>
+<p>{% translate "Times are UTC, as stored; they use your browser timezone when available. Audit records have no severity level, so the level choices apply to operational entries and the source choice decides whether audit records are listed." %}</p>
+<form method="post" action="{% url 'admin:logs' %}">{% csrf_token %}
+<input type="hidden" name="applied" value="yes">
+<fieldset><legend>{% translate "Operational levels" %}</legend>
+{% for key,label,chosen in levels %}<label><input type="checkbox" name="{{ key }}" value="yes"{% if chosen %} checked{% endif %}> <span aria-hidden="true">{{ label.0 }}</span> {{ label.1 }}</label>
+{% endfor %}</fieldset>
+<label for="log-source">{% translate "Source" %}</label><select id="log-source" name="source">{% for key,label in sources.items %}<option value="{{ key }}"{% if query.source == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+<label for="log-event">{% translate "Event or action type, exactly as the Type column shows it" %}</label><input id="log-event" name="event" list="log-events" maxlength="64" pattern="[a-z][a-z0-9_]{0,63}" value="{{ query.event }}" autocomplete="off" spellcheck="false">
+<datalist id="log-events">{% for key in events %}<option value="{{ key }}">{% endfor %}</datalist>
+<label for="log-actor">{% translate "Actor identifier" %}</label><input id="log-actor" name="actor" maxlength="36" value="{{ query.actor }}" autocomplete="off" spellcheck="false">
+<label for="log-correlation">{% translate "Task or request correlation identifier" %}</label><input id="log-correlation" name="correlation" maxlength="36" value="{{ query.correlation }}" autocomplete="off" spellcheck="false">
+<label for="log-campaign">{% translate "Campaign identifier (audit records only)" %}</label><input id="log-campaign" name="campaign" maxlength="36" value="{{ query.campaign }}" autocomplete="off" spellcheck="false">
+<fieldset><legend>{% translate "Date range (UTC days)" %}</legend>
+<label for="log-start">{% translate "From" %}</label><input id="log-start" type="date" name="start" value="{{ query.start }}">
+<label for="log-end">{% translate "Through" %}</label><input id="log-end" type="date" name="end" value="{{ query.end }}"></fieldset>
+<button type="submit">{% translate "Apply filters" %}</button></form>
+<p>{% blocktranslate count counter=rows|length %}{{ counter }} entry on this page.{% plural %}{{ counter }} entries on this page.{% endblocktranslate %}</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Log entries' %}"><table>
+<caption>{% translate "Operational and audit entries, newest first" %}</caption><thead><tr><th scope="col">{% translate "Time" %}</th><th scope="col">{% translate "Source and level" %}</th><th scope="col">{% translate "Type" %}</th><th scope="col">{% translate "Actor" %}</th><th scope="col">{% translate "Identifiers" %}</th><th scope="col">{% translate "Recorded detail" %}</th></tr></thead><tbody>
+{% for row in rows %}<tr>
+<th scope="row"><time datetime="{{ row.created_at|date:'c' }}" data-local-instant>{{ row.created_at|date:'c' }}</time></th>
+<td>{{ row.source }}<br>{% if row.level %}<span class="log-level log-level-{{ row.level|lower }}"><span aria-hidden="true">{{ row.level_symbol }}</span> {{ row.level_label }}</span>{% else %}<span class="log-kind">{{ row.level_label }}</span>{% endif %}</td>
+<td>{{ row.event }}</td>
+<td>{% if row.actor %}{{ row.actor }}{% elif row.actor_id %}{% translate "Not a current portal user" %}<br>{{ row.actor_id }}{% else %}{% translate "System" %}{% endif %}</td>
+<td>{% translate "Correlation" %} {{ row.correlation_id }}{% if row.campaign_id %}<br>{% translate "Campaign" %} {{ row.campaign_id }}{% endif %}{% if row.subject_id %}<br>{% translate "Subject" %} {{ row.subject_id }}{% endif %}</td>
+<td>{% if row.details %}<dl>{% for key,value in row.details %}<dt>{{ key }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>{% else %}{% translate "None" %}{% endif %}</td></tr>
+{% empty %}<tr><td colspan="6">{% translate "No matching entries." %}</td></tr>{% endfor %}</tbody></table></div>
+<nav aria-label="{% translate 'Log pages' %}">
+{% if query.before %}<form method="post" action="{% url 'admin:logs' %}">{% csrf_token %}{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}<button type="submit">{% translate "Back to the newest entries" %}</button></form>{% endif %}
+{% if following %}<form method="post" action="{% url 'admin:logs' %}">{% csrf_token %}{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}<input type="hidden" name="before" value="{{ following.before }}"><input type="hidden" name="before_id" value="{{ following.before_id }}"><button type="submit">{% translate "Older entries" %}</button></form>{% endif %}
+</nav>
+{% endblock %}

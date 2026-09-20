@@ -59,9 +59,11 @@ def portal_chrome(request):
                 (reverse("admin:deliveries"), _("Outgoing mail")),
             ]
         )
-    # The same capability the page itself checks, so the two cannot disagree.
+    # The same capabilities the pages themselves check, so they cannot disagree.
     if allows(actor, Capability.MANAGE_USERS):
         navigation.append((reverse("admin:users"), _("Portal users")))
+    if allows(actor, Capability.SYSTEM_LOGS):
+        navigation.append((reverse("admin:logs"), _("System logs")))
     if campaign and allows(actor, Capability.FAMILY_CODES):
         navigation.extend(
             [

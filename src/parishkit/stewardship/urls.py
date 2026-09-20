@@ -41,6 +41,7 @@ from .accounts import (
     user_views,
     withdrawal_views,
 )
+from .audit import log_views
 from .jobs import delivery_views
 from .jobs import views as job_views
 from .reports import (
@@ -431,6 +432,7 @@ admin_patterns = [
         name="configuration_request",
     ),
     path("background", job_views.background_page, name="background"),
+    path("logs", log_views.logs, name="logs"),
     path("deliveries", delivery_views.delivery_list, name="deliveries"),
     path("deliveries/refusals", delivery_views.refusal_list, name="delivery_refusals"),
     path(

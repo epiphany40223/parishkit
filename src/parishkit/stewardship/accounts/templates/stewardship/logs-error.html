@@ -1,0 +1,9 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "System logs unavailable" %}{% endblock %}
+{% block content %}<section class="flow panel">
+  <h1>{% translate "System logs unavailable" %}</h1>
+  <p role="alert">{{ message }}</p>
+  <p>{% translate "Identifiers must be complete lowercase values exactly as the log shows them, and a From date cannot follow its Through date. Submitted filters are never included in this error page." %}</p>
+  <p><a href="{% url 'admin:logs' %}">{% translate "Return to the newest log entries" %}</a></p>
+  <p><a href="{% url 'admin:login' %}">{% translate "Sign in again" %}</a></p>
+</section>{% endblock %}
