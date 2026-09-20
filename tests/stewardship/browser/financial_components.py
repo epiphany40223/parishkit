@@ -43,13 +43,17 @@ def components(context, admin):
         source_pledge=MoneyAmount(None),
         source_contributions=MoneyAmount(None),
     )
-    query = FinancialQuery(search="Example", pledge_min="100.00", share="online")
+    # Share methods are stable option identities, as the closed grammar requires.
+    online, other = str(UUID(int=98)), str(UUID(int=99))
+    query = FinancialQuery.parse(
+        dict(search="Example", pledge_min="100.00", share=online)
+    )
     values = dict(
         campaign_id=campaign,
         query=query,
         query_fields=query.form_values(),
         frequencies=FREQUENCY_LABELS,
-        share_choices=[("other", "Another way"), ("online", "Online <giving>")],
+        share_choices=[(other, "Another way"), (online, "Online <giving>")],
         previous_page=None,
         next_page=2,
         total=51,
@@ -79,8 +83,10 @@ def components(context, admin):
         ),
         "/financial-empty": values | dict(rows=[], total=0, next_page=None),
         "/financial-last": values | dict(previous_page=1, next_page=None),
+        # A stale Next click: matches exist, but none on this page.
+        "/financial-beyond": values | dict(rows=[], previous_page=2, next_page=None),
     }
-    return {
+    result = {
         path: (
             "text/html",
             render_to_string(
@@ -90,3 +96,14 @@ def components(context, admin):
         )
         for path, data in pages.items()
     }
+    for status in (400, 503):
+        result[f"/financial-error-{status}"] = (
+            "text/html",
+            render_to_string(
+                "stewardship/financial-report-error.html",
+                context
+                | {"admin_chrome": admin}
+                | dict(campaign_id=campaign, status=status),
+            ),
+        )
+    return result
