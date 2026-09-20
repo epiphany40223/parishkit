@@ -271,11 +271,13 @@ def test_incomplete_evidence_fails(repository, tmp_path, monkeypatch, problem):
         ci.combine(repository, directory, report, 2)
 
 
-@pytest.mark.parametrize("baseline,database", [(1, 0), (0, 1), (0, 5)])
+@pytest.mark.parametrize(
+    "baseline,database", [(1, 0), (0, 1), (0, 5), (-11, 0), (0, -11)]
+)
 def test_failed_shard_never_publishes_receipt(
-    repository, tmp_path, monkeypatch, baseline, database
+    repository, tmp_path, monkeypatch, capsys, baseline, database
 ):
-    """A passing baseline cannot mask failed or empty database execution."""
+    """A passing baseline cannot mask failed, empty or crashed database execution."""
     run = Mock(
         side_effect=[
             subprocess.CompletedProcess([], baseline),
@@ -284,7 +286,10 @@ def test_failed_shard_never_publishes_receipt(
     )
     monkeypatch.setattr(ci.subprocess, "run", run)
     output = tmp_path / "shard"
-    assert ci.run_shard(repository, output, 1, 8) == (baseline or database)
+    failed = baseline or database
+    # A signalled child is a named, shell-safe failure at both call sites.
+    assert ci.run_shard(repository, output, 1, 8) == (1 if failed < 0 else failed)
+    assert ("SIGSEGV" in capsys.readouterr().err) is (failed < 0)
     assert not (output / "receipt.json").exists()
     assert run.call_count == (1 if baseline else 2)
     if not baseline:
@@ -292,9 +297,35 @@ def test_failed_shard_never_publishes_receipt(
         assert "--require-postgresql-tests" in command
         assert "--ci-shard=1/8" in command
         assert "--cov-append" in command
-        assert "faulthandler_timeout=120" in command
+        assert f"faulthandler_timeout={ci.STACK_DUMP_SECONDS}" in command
         assert 0 < run.call_args.kwargs["timeout"] <= ci.SHARD_TIMEOUT
         assert "--require-no-skips" in command
+
+
+def test_stack_dump_keeps_headroom_from_slow_tests_and_the_deadline():
+    """A dump near a slow legitimate test kills passing shards; one near the
+    deadline rarely fires before it. Every hint map counts, because an exact
+    case hint overrides its test's. Hints come from completed runs, so this is
+    a floor on real durations, not a measured ceiling."""
+    slowest = max(
+        *sharding.SLOW_TEST_SECONDS.values(),
+        *sharding.CASE_SECONDS.values(),
+        *sharding.MODULE_SECONDS.values(),
+    )
+    assert 2 * slowest <= ci.STACK_DUMP_SECONDS <= ci.SHARD_TIMEOUT // 2, (
+        f"slowest hint {slowest}s needs STACK_DUMP_SECONDS reconsidered"
+    )
+
+
+@pytest.mark.parametrize(
+    ("code", "status", "named"),
+    [(-11, 1, "SIGSEGV"), (-9, 1, "SIGKILL"), (-250, 1, "signal 250"), (2, 2, "")],
+)
+def test_fatal_child_signal_is_named_not_an_opaque_status(capsys, code, status, named):
+    """A crashed stack dump must read as a crash, not as unexplained exit 245."""
+    assert ci.child_status(subprocess.CompletedProcess([], code)) == status
+    message = capsys.readouterr().err
+    assert (named in message and "hang diagnostic" in message) if named else not message
 
 
 def test_hung_child_fails_without_receipt(repository, tmp_path, monkeypatch):

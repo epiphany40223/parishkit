@@ -41,8 +41,10 @@ Partitions are cost-balanced, not equal-count hash buckets. The scheduler assign
 known slow lease/drain and population tests first, then fills the least-loaded
 runner; shard one reserves time for baseline coverage. Rounded scheduling hints
 come from CI run `35309435892`. New tests always receive a default cost and are
-included. Hints change placement only, never deadlines, assertions or membership.
-Independent collection and exact execution receipts remain authoritative.
+included. Hints change placement only, never deadlines, test assertions or
+membership. The one coupling is that the hang stack dump described below must
+stay at least twice the largest hint. Independent collection and exact
+execution receipts remain authoritative.
 
 That run passed all checks: PostgreSQL including aggregation completed in
 11 minutes 32 seconds, whereas Compose took 18 minutes 52 seconds. The latter
@@ -57,11 +59,22 @@ No shared database, container name, network or test volume crosses those scenari
 
 Each database test emits UTC `CI_PROGRESS` START and END records, including
 elapsed time after teardown. The last START without an END identifies the active
-test, including a blocked fixture. A test exceeding 120 seconds prints a Python
-stack trace without local variables; this is a diagnostic, not a passing result.
-Each shard's test subprocesses share one 20-minute deadline; each job has a 25-minute
-limit, and aggregation has a 10-minute limit. Slowest-test summaries are retained
-in job logs. A deadline fails the gate rather than silently skipping work.
+test, including a blocked fixture. A database test exceeding five minutes prints
+a Python stack trace without local variables; this is a diagnostic, not a passing
+result. That threshold stays well above the longest legitimate case. The
+5,000-Family reference-load test completes in 77 to 120.1 seconds depending on
+the hosted runner. Twice the former 120-second dump fired during it while its
+worker thread was live, and the interpreter died with every test passing; both
+runs were killed at that mark, so its slowest duration is unmeasured. The higher
+threshold avoids that trigger but does not make the dump safe. If it recurs, the
+shard no longer exits 245: it fails with status 1 after the line `CI shard child
+was killed by SIGSEGV`, and a traceback cut off just above that line is this
+hazard, not a test failure. A hang that begins in a shard's last five minutes
+reaches the shard deadline first and produces no stack trace. Browser jobs keep
+their own 120-second diagnostic. Each shard's test subprocesses share one
+20-minute deadline; each job has a 25-minute limit, and aggregation has a
+10-minute limit. Slowest-test summaries are retained in job logs. A deadline
+fails the gate rather than silently skipping work.
 
 The serial command above remains the equivalent developer/release coverage
 gate. To see live progress on a focused local database run, add `--ci-progress`

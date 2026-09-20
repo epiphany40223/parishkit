@@ -38,6 +38,8 @@ def browser_partition(cases, engine):
 # Scheduling hints, updated from CI run 35438716036. These never select or
 # exclude tests: unknown/new cases receive the default weight. Keep full-duration
 # lease/drain checks; distribute their waiting time instead of shortening it.
+# One coupling: quality_ci keeps its hang stack dump at least twice the
+# largest hint in these maps, so a much slower hint asks for that review.
 SLOW_TEST_SECONDS = {
     "test_cancel_cleans_catalog_and_its_final_load_but_keeps_bound_receipts": 100,
     "test_real_finalization_producer_and_compiled_worker": 22,
