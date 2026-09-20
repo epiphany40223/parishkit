@@ -164,6 +164,25 @@ def test_scoped_history_replay_stale_writers_and_sql_pairing(response_service, g
             MinistryWorkflowRevision.objects.create(actor_id=outsider, **orphan)
         with pytest.raises(DatabaseError), work_transaction():
             MinistryWorkflowRevision.objects.create(actor_id=head, **orphan)
+        # The application rejects each of these first, so reach the guard
+        # directly. The inner savepoint proves the BEFORE guard refuses them at
+        # the statement, not the deferred pairing trigger at commit.
+        moment = database_now()
+        for invalid in (
+            dict(assignee_id=outsider),
+            dict(state="resolved", outcome="leave_confirmed", assignee_id=None),
+            dict(contact_channel="phone", contact_at=moment + timedelta(days=1)),
+            dict(notes="n" * 5001),
+            dict(contact_channel="phone", contact_at=moment, contact_notes="c" * 2001),
+        ):
+            with (
+                work_transaction(),
+                pytest.raises(DatabaseError),
+                transaction.atomic(),
+            ):
+                MinistryWorkflowRevision.objects.create(
+                    actor_id=head, **(orphan | invalid)
+                )
     with (
         task_login(ServiceRole.WORKER, exact=True, reconnect=True),
         pytest.raises(DatabaseError),
@@ -248,6 +267,19 @@ def test_bulk_assignment_is_exact_and_atomic(response_service, google):
     assign(admin, None, {leave.pk: leave.version})
     leave.refresh_from_db()
     assert (leave.state, leave.assignee_id) == ("new", None)
+    # A row closed since the page loaded reads as changed, not as a bad form,
+    # even at its current version, and still protects every other selected row.
+    edit(harness, admin, leave, state="resolved", outcome="leave_confirmed")
+    join.refresh_from_db()
+    leave.refresh_from_db()
+    before = MinistryWorkflowRevision.objects.count()
+    with pytest.raises(StaleRecordError):
+        assign(admin, None, {join.pk: join.version, leave.pk: leave.version})
+    assert MinistryWorkflowRevision.objects.count() == before
+    # Replaying the completed assignment is still a replay, not a stale form.
+    assert [row.pk for row in assign(admin, admin, both | {join.pk: 2}, key)] == [
+        row.pk for row in first
+    ]
 
 
 def test_work_gate_and_revoked_actor_close_mutation(response_service):
@@ -397,6 +429,7 @@ def test_native_queue_detail_edit_and_bulk_assignment(response_service, google):
     """A leader's real session edits only its Ministry through CSRF POST forms."""
     harness = setup(response_service)
     browser, head, _, _ = leader(harness, google)
+    admin = user("admin@example.org").pk
     join, leave = requests()
     route = f"/admin/reports/{harness.campaign.pk}/ministries/follow-up/"
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -409,9 +442,12 @@ def test_native_queue_detail_edit_and_bulk_assignment(response_service, google):
         response, body = search(browser, route, {"ministry": "9", "state": "any"})
         assert response.status_code == 200 and b'name="selected"' in body
         assert b"?search=" not in body and b"Assign selected" in body
-        assert (
-            search(browser, route, {"ministry": "4"})[1].count(b'name="selected"') == 0
-        )
+        assert b"admin@example.org" in body and b'datetime=""' not in body
+        # Filtering to a Ministry outside the leader's scope must not list who
+        # may follow it up: that would reveal other Ministries' leaders.
+        _, hidden = search(browser, route, {"ministry": "4"})
+        assert b'name="selected"' not in hidden and b"Assign selected" not in hidden
+        assert b"admin@example.org" not in hidden and b"@example.org" not in hidden
         detail = route + f"{join.pk}/"
         response, body = get(browser, detail)
         assert response.status_code == 200 and b"No follow-up edits yet." in body
@@ -422,7 +458,7 @@ def test_native_queue_detail_edit_and_bulk_assignment(response_service, google):
         form = {
             "expected_version": "1",
             "request_key": str(uuid4()),
-            "state": "assigned",
+            "state": "new",  # Left as loaded; the assignee decides new/assigned.
             "outcome": "",
             "assignee": str(head),
             "notes": "PRIVATE-NOTE left a message",
@@ -468,6 +504,30 @@ def test_native_queue_detail_edit_and_bulk_assignment(response_service, google):
     join.refresh_from_db()
     assert (join.state, join.assignee_id, join.version) == ("new", None, 3)
     assert latest_revision(join.pk).notes == "PRIVATE-NOTE left a message"
+    edit(harness, head, join, assignee_id=admin, state="assigned", notes="Handed over")
+    PortalUser.objects.filter(pk=admin).update(disabled=True, version=F("version") + 1)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        _, body = get(browser, detail)
+        assert b"can no longer follow up this Ministry" in body
+        assert b"Former portal user" not in body and b"admin@example.org" in body
+        keep = {
+            "expected_version": "4",
+            "request_key": str(uuid4()),
+            "state": "assigned",
+            "outcome": "",
+            "assignee": str(admin),
+            "notes": "Handed over",
+            "contact_channel": "",
+            "contact_date": "",
+            "contact_time": "",
+            "contact_notes": "",
+        }
+        # They cannot be kept, even unchanged; clearing them returns it to New.
+        assert post(browser, detail + "update", keep).status_code == 400
+        cleared = keep | {"assignee": "", "request_key": str(uuid4())}
+        assert post(browser, detail + "update", cleared).status_code == 302
+    join.refresh_from_db()
+    assert (join.state, join.assignee_id, join.version) == ("new", None, 5)
     contexts = str(
         list(
             AuditContext.objects.filter(

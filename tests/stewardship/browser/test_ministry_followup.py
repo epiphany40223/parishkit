@@ -13,6 +13,7 @@ PAGES = (
     "/followup-gated",
     "/followup-item",
     "/followup-closed",
+    "/followup-item-stale",
     "/followup-item-gated",
     "/followup-error-400",
     "/followup-error-409",
@@ -51,6 +52,11 @@ def test_followup_mobile_keyboard_and_accessibility(
     assert page.get_by_text("Left a <private> voicemail", exact=True).count() == 2
     assert page.get_by_text("No <answer>", exact=False).count() == 1
     assert page.get_by_label("Assigned to").input_value() != ""
+    # A revoked assignee is named, never silently dropped to "Unassigned".
+    page.goto(component_origin + "/followup-item-stale")
+    notice = page.get_by_text("can no longer follow up this Ministry", exact=False)
+    assert notice.is_visible() and "leader@example.org" in notice.inner_text()
+    assert page.get_by_text("New and Assigned follow the assignee", exact=False).count()
     # Closed outcomes are permanent: history remains, the form does not.
     page.goto(component_origin + "/followup-closed")
     assert page.get_by_role("button", name="Save follow-up").count() == 0

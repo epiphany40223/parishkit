@@ -77,6 +77,18 @@ class WorkflowChange:
         bounded_text(self.contact_notes)
 
 
+def assignment_state(state, assignee_id):
+    """`new` and `assigned` mean only "has an assignee"; derive them from it.
+
+    Choosing or clearing an assignee is one intent, so neither the single edit
+    nor bulk assignment makes the user change a second control to match. Other
+    states say something the assignee does not, and pass through unchanged.
+    """
+    if state in {"new", "assigned"}:
+        return "new" if assignee_id is None else "assigned"
+    return state
+
+
 def authorize_ministry(store, actor_id, ministry_duid):
     """Reload coherent policy; old sessions and a known request UUID are not grants."""
     principal = current_principal(store, actor_id)
@@ -221,25 +233,31 @@ def assign_requests(store, actor_id, *, request_key, assignee_id, versions):
     with work_transaction():
         system, revisions = _system(), []
         for target in _targets(store, actor_id, versions):
+            # One form key binds the whole set; each row replays alone.
+            key, version = uuid5(request_key, str(target.pk)), versions[target.pk]
+            previous = MinistryWorkflowRevision.objects.filter(
+                actor_id=actor_id, request_key=key
+            ).first()
+            if previous is not None:
+                bound = (previous.request_id, previous.expected_version)
+                if bound != (target.pk, version) or previous.assignee_id != assignee_id:
+                    raise ValueError("This request key is already bound.")
+                revisions.append(previous)
+                continue
+            # Decide staleness before building the change: a row that closed or
+            # was replaced since the page loaded has no valid Staff-owned state,
+            # and must read as "this changed", not as a malformed form.
+            check_version(target, version)
+            if target.state not in OPEN_STATES:
+                raise StaleRecordError("This Ministry request is no longer open.")
             latest = latest_revision(target.pk)
-            state = target.state
-            if state in {"new", "assigned"}:
-                state = "new" if assignee_id is None else "assigned"
+            change = WorkflowChange(
+                assignee_id=assignee_id,
+                state=assignment_state(target.state, assignee_id),
+                outcome=None,
+                notes=latest.notes if latest else "",
+            )
             revisions.append(
-                _revise(
-                    store,
-                    actor_id,
-                    target,
-                    versions[target.pk],
-                    # One form key binds the whole set; each row replays alone.
-                    uuid5(request_key, str(target.pk)),
-                    WorkflowChange(
-                        assignee_id=assignee_id,
-                        state=state,
-                        outcome=None,
-                        notes=latest.notes if latest else "",
-                    ),
-                    system,
-                )
+                _revise(store, actor_id, target, version, key, change, system)
             )
         return revisions

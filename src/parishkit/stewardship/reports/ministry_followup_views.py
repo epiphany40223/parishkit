@@ -25,6 +25,7 @@ from parishkit.stewardship.workflows.followup import (
     MAX_BULK,
     WorkflowChange,
     assign_requests,
+    assignment_state,
     update_request,
 )
 from parishkit.stewardship.workflows.models import STAFF_STATES, MinistryRequest
@@ -160,15 +161,29 @@ def _page_response(request, campaign_id, *, request_id=None):
                 followup_history(request_id, history_page) if item else ([], False)
             )
             # Assignee choices exist only for one Ministry: the open request's,
-            # or the queue's when it is filtered to a single Ministry for bulk use.
+            # or the queue's when it is filtered to a single Ministry for bulk
+            # use. The filter is caller input, so honour it only when SQL placed
+            # that Ministry in the caller's current scope; otherwise listing its
+            # assignees would reveal who leads a Ministry the caller cannot see.
+            scoped = {str(entry["duid"]) for entry in result["ministries"]}
             ministry = (
                 item["ministry_duid"]
                 if item
                 else int(query.ministry)
-                if query.ministry
+                if query.ministry in scoped
                 else None
             )
             assignees = assignable(ministry) if ministry and mutable else []
+            # Authority is rechecked on every edit, so an assignee who was
+            # disabled or left the Ministry cannot be kept. Say so, rather than
+            # letting the select fall back to "Unassigned" without explanation.
+            stale_assignee = bool(
+                item
+                and item["open"]
+                and mutable
+                and item["assignee_id"]
+                and item["assignee_id"] not in {str(row.pk) for row in assignees}
+            )
             labels = _labels(
                 [row["assignee_id"] for row in result["rows"]]
                 + [row.actor_id for row in history]
@@ -193,6 +208,7 @@ def _page_response(request, campaign_id, *, request_id=None):
                 query_fields=query.form_values(),
                 mutable=mutable,
                 item=item,
+                stale_assignee=stale_assignee,
                 history=history,
                 previous_history=history_page - 1 if history_page > 1 else None,
                 next_history=history_page + 1 if more_history else None,
@@ -287,7 +303,9 @@ def change_values(parameters):
         request_key=UUID(parameters["request_key"]),
         change=WorkflowChange(
             assignee_id=_assignee(parameters["assignee"]),
-            state=parameters["state"],
+            state=assignment_state(
+                parameters["state"], _assignee(parameters["assignee"])
+            ),
             outcome=parameters["outcome"] or None,
             notes=text["notes"],
             contact_channel=channel,

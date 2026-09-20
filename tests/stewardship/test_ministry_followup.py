@@ -9,6 +9,7 @@ from parishkit.stewardship.workflows.followup import (
     MAX_CONTACT_NOTES,
     MAX_NOTES,
     WorkflowChange,
+    assignment_state,
 )
 
 WHO, WHEN = uuid4(), datetime(2026, 9, 20, 12, tzinfo=UTC)
@@ -79,3 +80,21 @@ def test_incomplete_or_foreign_workflow_is_rejected(values):
     """A malformed form is a client error before any lock or query."""
     with pytest.raises(ValueError):
         WorkflowChange(**(BASE | values))
+
+
+@pytest.mark.parametrize(
+    ("state", "assignee", "expected"),
+    [
+        ("new", WHO, "assigned"),
+        ("assigned", None, "new"),
+        ("new", None, "new"),
+        ("assigned", WHO, "assigned"),
+        ("in_progress", None, "in_progress"),
+        ("in_progress", WHO, "in_progress"),
+        ("resolved", WHO, "resolved"),
+        ("cancelled", WHO, "cancelled"),
+    ],
+)
+def test_new_and_assigned_follow_the_assignee(state, assignee, expected):
+    """Only the two states that mean "has an assignee" are derived from it."""
+    assert assignment_state(state, assignee) == expected

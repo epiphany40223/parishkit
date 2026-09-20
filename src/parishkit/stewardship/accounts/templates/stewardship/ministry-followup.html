@@ -17,8 +17,10 @@
 <form method="post" action="{% url 'admin:ministry_followup_update' campaign_id item.id %}">{% csrf_token %}
 <input type="hidden" name="expected_version" value="{{ item.version }}"><input type="hidden" name="request_key" value="{{ request_key }}">
 <fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Follow-up" %}</legend>
+<p>{% translate "New and Assigned follow the assignee below: choosing someone makes a request Assigned, and clearing them makes it New." %}</p>
 <label for="followup-state">{% translate "Status" %}</label><select id="followup-state" name="state">{% for key,label in staff_states %}<option value="{{ key }}"{% if item.state == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
 <label for="followup-outcome">{% translate "Outcome, required when resolving or closing" %}</label><select id="followup-outcome" name="outcome"><option value="">{% translate "No outcome yet" %}</option>{% for key,label in outcomes.items %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select>
+{% if stale_assignee %}<p class="notice">{{ item.assignee_label }} {% translate "can no longer follow up this Ministry. Choose another assignee, or save with nobody assigned; the request cannot stay assigned to them." %}</p>{% endif %}
 <label for="followup-assignee">{% translate "Assigned to" %}</label><select id="followup-assignee" name="assignee"><option value="">{% translate "Unassigned" %}</option>{% for person in assignees %}<option value="{{ person.id }}"{% if item.assignee_id == person.id|stringformat:'s' %} selected{% endif %}>{{ person.email }}</option>{% endfor %}</select>
 <label for="followup-notes">{% translate "Notes. Required for the outcome Other." %}</label><textarea id="followup-notes" name="notes" maxlength="5000" rows="6">{{ item.notes }}</textarea>
 </fieldset>

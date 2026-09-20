@@ -101,6 +101,8 @@ def components(context, admin):
         | dict(item=row, history=[revision], next_history=2, bulk_ministry=None),
         "/followup-closed": values
         | dict(item=closed, rows=[closed], history=[revision], bulk_ministry=None),
+        "/followup-item-stale": values
+        | dict(item=row, stale_assignee=True, assignees=[], bulk_ministry=None),
         "/followup-item-gated": values
         | dict(item=row, mutable=False, assignees=[], bulk_ministry=None),
     }
