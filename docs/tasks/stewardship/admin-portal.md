@@ -186,7 +186,11 @@ Scope and dependencies: [ADM-07 work package](../../plans/stewardship/admin-port
 - [ ] ADM-07.04 — Build manual assignment and runtime-suspension review.
 - [ ] ADM-07.05 — Test rapid autosave, uncertain outcomes, precedence, and policy races.
 
-Evidence: Not started.
+Evidence: In progress. The
+[portal users review increment](../../guides/stewardship-portal-users.md) adds
+the read-only Administrator tables of .01 and the provenance and suspension
+display of .03 and .04, with address-over-domain precedence from .05. It changes
+no rule, so every task stays unchecked until its editing slices land.
 
 ## ADM-08: Manual refresh, follow-up queues, and logs
 
