@@ -103,8 +103,9 @@ def test_packet_scope_history_privacy_and_rendering(response_service, google):
     assert row["notes"] is None and "PRIVATE-JOIN-NOTE" not in json.dumps(
         snapshot.document
     )
-    # Member 3 is the current Chairperson of Ministry 4 in the harness source.
-    assert len(found[4]["chairs"]) == 1 and found[9]["chairs"] == []
+    # Member 3 is the current Chairperson of Ministry 4 in the harness source,
+    # and is also this packet's requester, so the two names must agree.
+    assert found[4]["chairs"] == [row["member_name"]] and found[9]["chairs"] == []
 
     # The history option adds the resolved request, and only Other shows notes.
     snapshot, found = sections(packet(harness, admin, history=True))

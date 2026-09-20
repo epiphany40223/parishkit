@@ -95,6 +95,12 @@ def test_ministry_packet_request_without_scripts(browser_engine, component_origi
         packet = page.locator("form", has_text="Ministries in the packet")
         assert packet.locator("input[name=ministries]:checked").count() == 0
         assert packet.locator("input[type=radio]").count() == 0
+        page.route("**/ministries/packet/", lambda route: route.fulfill(body="Queued"))
+        with page.expect_request(lambda request: request.method == "POST") as sent:
+            page.get_by_role("button", name="Queue follow-up packet").click()
+        assert "ministries=" not in sent.value.post_data
+        assert "format=pdf" in sent.value.post_data
+        page.goto(component_origin + "/ministry-summary")
         page.get_by_label("Example <Ministry>", exact=False).check()
         page.get_by_label("Also include resolved and withdrawn requests").check()
         page.get_by_label("Packet format").select_option("xlsx")

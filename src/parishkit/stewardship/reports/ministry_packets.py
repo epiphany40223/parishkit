@@ -25,10 +25,11 @@ from .information_rendering import (
 from .ministries import OUTCOMES, STATES
 
 TITLE = "Ministry follow-up packet"
-# The spreadsheet format's per-cell limit. The library truncates beyond it
-# silently, which would publish an incomplete packet that looks complete.
-MAX_CELL = 32767
-# Worksheet titles the spreadsheet application reserves, compared caselessly.
+# The spreadsheet format's per-cell character limit. The library truncates
+# beyond it silently, which would publish an incomplete packet that looks whole.
+MAX_CELL_CHARACTERS = 32767
+# Titles no Ministry sheet may take, compared caselessly: the spreadsheet
+# application reserves History, and this workbook adds its own provenance sheet.
 RESERVED_TITLES = frozenset({"history", "report information"})
 HEADINGS = (
     "Member",
@@ -198,8 +199,12 @@ def sheet_names(names):
     """
 
     def fit(text, length):
-        """Truncate, then trim again: the cut itself can expose an apostrophe."""
-        return text[:length].strip(" '")
+        """Trim, truncate, then trim again: the cut can expose an apostrophe.
+
+        Trimming first keeps leading spaces, such as those replacing forbidden
+        characters, from using up the title's 31 characters.
+        """
+        return text.strip(" '")[:length].strip(" '")
 
     used, result = set(RESERVED_TITLES), []
     for name in names:
@@ -208,7 +213,7 @@ def sheet_names(names):
         while title.lower() in used:
             counter += 1
             suffix = f" ({counter})"
-            title = (fit(base, 31 - len(suffix)) or "Ministry") + suffix
+            title = fit(base, 31 - len(suffix)) + suffix
         used.add(title.lower())
         result.append(title)
     return result
@@ -223,7 +228,7 @@ def packet_xlsx(document, output):
     def write(sheet, row, column, value, *, bold=False):
         """Literal strings only, so no captured value can become a formula."""
         text = visible_text(value)
-        if len(text) > MAX_CELL:
+        if len(text) > MAX_CELL_CHARACTERS:
             raise ValueError("A packet value exceeds the spreadsheet cell limit.")
         cell = sheet.cell(row, column, text)
         cell.data_type = "s"

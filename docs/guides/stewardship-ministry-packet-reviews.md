@@ -46,3 +46,45 @@ A fresh install after the corrections differed from the first audited candidate
 only in the packet function body, with nothing added or removed, before the
 fingerprint was updated again. Post-fix validation: 18 database-free, three
 PostgreSQL, 17 schema-contract and 15 browser cases passed locally.
+
+## Round 2
+
+Reviewed `8ce7d22b`, the 451-line correction delta from `c2ebbe39`. Both sources
+completed. 11 raw findings, all Low and below the cutoff; no validated finding
+and no High, Critical or Medium. The reviewer verified all five Round 1
+corrections: the grouped chairs pass is equivalent to the former subquery with
+no cross-Ministry leakage and an empty list for a chairless Ministry; the form
+grammar is closed and unambiguous; XLSX refuses an over-limit cell before any
+byte is written; titles are re-trimmed and `History` is reserved; and the new
+cases exercise chain depth one and the published-contact branch.
+
+Low notes adopted:
+
+- The roster has typed, indexed `member_key` and `ministry_key` columns, so the
+  chairs pass now joins and groups on them instead of re-parsing JSON.
+- Worksheet titles trim before truncating as well as after, so spaces replacing
+  leading forbidden characters no longer use the 31-character budget; an
+  unreachable fallback was removed.
+- The limit constant says what it measures, and the reserved-title comment
+  distinguishes the application's `History` from this workbook's own sheet.
+- Tests now assert that PDF keeps an over-limit value as one unbroken token,
+  that a chair's name matches rather than merely counting one, and that the
+  unticked native form posts no selection.
+
+Low notes deferred with rationale:
+
+- The spreadsheet refusal is deterministic, but the shared export worker
+  retries every render failure up to five times before failing. A permanent
+  failure class belongs to that shared job machinery, not this increment. The
+  outcome is still correct, only slower, and the input needs a single cell
+  beyond 32,767 characters, such as about 1,500 chairs in one Ministry.
+- The same silent truncation exists in the shared complete-text spreadsheet
+  renderer. Its inputs are bounded well below the limit today, so that guard
+  is left to a change of that renderer rather than widened here.
+- The limit is counted in code points, which is where the library cuts. The
+  application's own limit is in UTF-16 units, so a value made largely of
+  characters outside the Basic Multilingual Plane could still exceed it.
+
+A third fresh install differed from the second only in the packet function
+body. Post-fix validation: 18 database-free, three PostgreSQL and 15 browser
+cases passed locally.

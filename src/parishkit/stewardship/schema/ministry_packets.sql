@@ -49,7 +49,7 @@ WITH selected AS MATERIALIZED (
     -- by an active Member. Listing a name needs no contact or login.
     SELECT role.ministry_key,
         jsonb_agg(role.name ORDER BY lower(role.name),role.name) AS names
-    FROM (SELECT DISTINCT r.payload->>'ministry_key' AS ministry_key,
+    FROM (SELECT DISTINCT rp.ministry_key,
             btrim(concat_ws(' ',mp.canonical::jsonb->>'firstName',
                 mp.canonical::jsonb->>'lastName')) AS name
         FROM source x
@@ -57,7 +57,7 @@ WITH selected AS MATERIALIZED (
         JOIN stewardship_source_roster rp ON rp.id=rm.payload_id
         CROSS JOIN LATERAL (SELECT rp.canonical::jsonb AS payload) r
         JOIN stewardship_snapshot_member sm ON sm.snapshot_id=x.source_id
-            AND sm.source_key=r.payload->>'member_key'
+            AND sm.source_key=rp.member_key
         JOIN stewardship_source_member mp ON mp.id=sm.payload_id
         WHERE r.payload->'current'='true'::jsonb
             AND mp.canonical::jsonb->'active'='true'::jsonb
