@@ -61,7 +61,9 @@ cases exercise chain depth one and the published-contact branch.
 Low notes adopted:
 
 - The roster has typed, indexed `member_key` and `ministry_key` columns, so the
-  chairs pass now joins and groups on them instead of re-parsing JSON.
+  chairs pass now joins and groups on them instead of extracting those two keys
+  from JSON. The payload is still parsed once per roster row, because `current`
+  and the role name exist only there.
 - Worksheet titles trim before truncating as well as after, so spaces replacing
   leading forbidden characters no longer use the 31-character budget; an
   unreachable fallback was removed.
@@ -86,5 +88,40 @@ Low notes deferred with rationale:
   characters outside the Basic Multilingual Plane could still exceed it.
 
 A third fresh install differed from the second only in the packet function
-body. Post-fix validation: 18 database-free, three PostgreSQL and 15 browser
-cases passed locally.
+body. Post-fix validation: 18 database-free, three PostgreSQL, 17
+schema-contract and 15 browser cases passed locally. The schema-contract cases
+were run after Round 3 pointed out that this line had omitted them.
+
+## Round 3
+
+Reviewed `25602c3e`, the correction delta from `8ce7d22b`. Both sources
+completed. Six raw findings, all Low and below the cutoff; no validated finding
+and no High, Critical or Medium. The reviewer confirmed that the typed roster
+keys are guaranteed text-equal to the payload's keys by the roster's payload
+guard trigger, which refuses a row whose columns differ from its canonical
+payload and refuses updates, that the removed title fallback was unreachable,
+and that the rename left no stale reference.
+
+Two notes corrected this ledger, as recorded above: Round 2 had overstated how
+much JSON parsing the typed keys removed, and had omitted the schema-contract
+cases from its validation line, which were then run and passed.
+
+The remaining Low notes are deferred with rationale rather than changed after
+the final review:
+
+- The sibling Ministry report still filters the roster through payload keys.
+  Aligning it is a separate change to a reviewed query with its own audit.
+- The browser case registers the same route handler twice. It is harmless and
+  was left to avoid changing a test after its final review.
+- The over-limit PDF assertion exercises the paginator rather than the drawn
+  bytes; the page writer is shared with, and covered by, the complete-text
+  renderer's cases.
+- The chair-name assertion compares two values derived from the same source
+  name expression. It does prove that the typed Member join resolves to the
+  same Member as the request row, which was the point of that change.
+
+No correction to the implementation was needed, so `25602c3e` is the reviewed
+content. The exit criteria are met: three completed dual-source rounds, no
+validated High or Critical finding in any round, all five accepted Medium
+findings fixed, and passing post-fix validation. Full exact-head CI, DCO and
+protected delivery remain required.

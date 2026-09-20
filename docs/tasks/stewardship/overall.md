@@ -782,8 +782,9 @@ dates, notes and outcomes. M5 and Gate 3 remain open.
 
 That [packet increment](../../guides/stewardship-ministry-packets.md) now
 implements RPT-07 with focused acceptance, an independent fresh-schema audit and
-three-engine browser checks. Its review rounds, full exact-head CI/DCO and
-protected delivery remain pending. M5 and Gate 3 remain open.
+three-engine browser checks. Three dual-source
+[review/fix rounds](../../guides/stewardship-ministry-packet-reviews.md#round-3)
+are complete; full exact-head CI/DCO and protected delivery remain pending. M5 and Gate 3 remain open.
 
 1. Finish [BG-08](background-processing.md#bg-08-export-and-graph-workers); implement [RPT-01](reports.md#rpt-01-shared-report-framework-and-campaign-selection) and finish [RPT-02](reports.md#rpt-02-population-and-calculation-library).
 2. Complete [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics), [RPT-04](reports.md#rpt-04-additional-information-workflow-report), [RPT-05](reports.md#rpt-05-family-code-and-postal-outreach-reports), [RPT-06](reports.md#rpt-06-ministry-summary-and-detail), [RPT-07](reports.md#rpt-07-multi-ministry-follow-up-packet), and the reporting slice of [RPT-08](reports.md#rpt-08-census-and-financial-reports).

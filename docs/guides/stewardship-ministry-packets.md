@@ -146,8 +146,9 @@ module, keeping the ten-module bound; that module stays in the complete baseline
 
 ## Checkpoint
 
-Implementation and focused validation are complete and the
-[review rounds](stewardship-ministry-packet-reviews.md) are in progress. Full
+Implementation, focused validation and
+[three dual-source review/fix rounds](stewardship-ministry-packet-reviews.md#round-3)
+are complete, with no unresolved accepted Medium-or-higher finding. Full
 exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
 open. No deployment, release, live-provider write or database deletion is
 authorized by this increment.

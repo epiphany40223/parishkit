@@ -219,8 +219,9 @@ Evidence: the [multi-Ministry packet increment](../../guides/stewardship-ministr
 implements .01 through .05 on the existing Ministry export lifecycle, reading
 the recorded contact dates, notes and outcomes that the
 [Ministry follow-up increment](../../guides/stewardship-ministry-followup.md)
-delivered. Independent review rounds, full exact-head CI/DCO and protected
-delivery remain open.
+delivered. Three dual-source
+[review/fix rounds](../../guides/stewardship-ministry-packet-reviews.md#round-3)
+are complete; full exact-head CI/DCO and protected delivery remain open.
 
 ## RPT-08: Census and financial reports
 
