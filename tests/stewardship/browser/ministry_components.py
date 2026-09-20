@@ -21,6 +21,7 @@ def components(context, admin):
         query=query,
         mutable=True,
         export_key=UUID(int=91),
+        packet_key=UUID(int=96),
         export_fields=query.form_values(),
         export_timezones=["UTC", "America/Detroit"],
         query_fields=query.form_values() | {"ministry": 9},

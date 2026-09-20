@@ -48,6 +48,7 @@ CREATE INDEX ministry_export_config ON stewardship_ministry_export_snapshot(conf
 CREATE FUNCTION stewardship_ministry_export_capture_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE current_scope jsonb; filters jsonb; ministry_id integer; request_action text;
+        selection bigint[]; packet boolean;
 BEGIN
     IF TG_OP<>'INSERT' THEN
         RAISE EXCEPTION 'Ministry export snapshots are immutable' USING ERRCODE='23514';
@@ -63,9 +64,12 @@ BEGIN
     -- Closed parameters have identical meanings in HTML and immutable capture.
     filters:=NEW.parameters->'filters';
     request_action:=NEW.parameters->>'action';
+    packet:=coalesce(request_action='packet',false);
+    -- Only a packet carries a Ministry selection, and it always carries one.
     IF jsonb_typeof(NEW.parameters) IS DISTINCT FROM 'object'
        OR NOT NEW.parameters ?& ARRAY['filters','ministry','action']
-       OR NEW.parameters-ARRAY['filters','ministry','action']<>'{}'::jsonb
+       OR NEW.parameters-ARRAY['filters','ministry','action','ministries']<>'{}'::jsonb
+       OR (NEW.parameters ? 'ministries') IS DISTINCT FROM packet
        OR jsonb_typeof(filters) IS DISTINCT FROM 'object'
        OR NOT filters ?& ARRAY['search','activity','history','state','start','end','sort']
        OR filters-ARRAY['search','activity','history','state','start','end','sort']<>'{}'::jsonb
@@ -76,7 +80,8 @@ BEGIN
        OR filters->>'state' NOT IN ('any','unresolved','new','assigned','in_progress',
            'resolved','closed_no_response','cancelled','superseded')
        OR filters->>'sort' NOT IN ('name','name_desc','newest','oldest')
-       OR request_action IS NULL OR request_action NOT IN ('summary','join','leave')
+       OR request_action IS NULL
+       OR request_action NOT IN ('summary','join','leave','packet')
     THEN RAISE EXCEPTION 'Invalid Ministry export parameters' USING ERRCODE='23514'; END IF;
     IF NEW.parameters->'ministry'<>'null'::jsonb THEN
         IF jsonb_typeof(NEW.parameters->'ministry')<>'number'
@@ -85,7 +90,30 @@ BEGIN
         THEN RAISE EXCEPTION 'Invalid Ministry selection' USING ERRCODE='23514'; END IF;
         ministry_id:=(NEW.parameters->>'ministry')::integer;
     END IF;
-    IF (ministry_id IS NULL) IS DISTINCT FROM (request_action='summary')
+    IF packet THEN
+        -- A packet's only choices are its Ministries and the history option;
+        -- every other filter must hold its neutral value so one capture has
+        -- exactly one meaning. JSON null selects every authorized Ministry.
+        IF filters-'history'<>jsonb_build_object('search','','activity','any',
+               'state','any','start','','end','','sort','name')
+        THEN RAISE EXCEPTION 'Invalid Ministry selection' USING ERRCODE='23514'; END IF;
+        IF NEW.parameters->'ministries'<>'null'::jsonb THEN
+            IF jsonb_typeof(NEW.parameters->'ministries')<>'array'
+               OR jsonb_array_length(NEW.parameters->'ministries') NOT BETWEEN 1 AND 200
+               OR EXISTS(SELECT 1 FROM jsonb_array_elements(NEW.parameters->'ministries') e
+                   WHERE jsonb_typeof(e.value)<>'number'
+                      OR NOT (e.value#>>'{}') ~ '^[1-9][0-9]{0,9}$'
+                      OR (e.value#>>'{}')::bigint>2147483647)
+            THEN RAISE EXCEPTION 'Invalid Ministry selection' USING ERRCODE='23514'; END IF;
+            selection:=ARRAY(SELECT (e.value#>>'{}')::bigint
+                FROM jsonb_array_elements(NEW.parameters->'ministries')
+                    WITH ORDINALITY e(value,position) ORDER BY e.position);
+            -- Canonical means strictly ascending, which also forbids repeats.
+            IF selection<>ARRAY(SELECT DISTINCT v FROM unnest(selection) v ORDER BY v)
+            THEN RAISE EXCEPTION 'Invalid Ministry selection' USING ERRCODE='23514'; END IF;
+        END IF;
+    END IF;
+    IF (ministry_id IS NULL) IS DISTINCT FROM (request_action IN ('summary','packet'))
        OR (request_action='summary' AND (filters->>'history'<>'current'
            OR filters->>'state'<>'any' OR filters->>'start'<>'' OR filters->>'end'<>''
            OR filters->>'sort' NOT IN ('name','name_desc')))
@@ -97,10 +125,22 @@ BEGIN
            AND filters->>'start'>filters->>'end')
     THEN RAISE EXCEPTION 'Invalid Ministry selection' USING ERRCODE='23514'; END IF;
     NEW.created_at:=statement_timestamp();
-    NEW.document:=stewardship_ministry_report_v1(NEW.campaign_id,filters,
-        (current_scope->>'operational')::boolean,
-        ARRAY(SELECT value::bigint FROM jsonb_array_elements_text(current_scope->'ministries')),
-        ministry_id,request_action);
+    IF packet THEN
+        NEW.document:=stewardship_ministry_packet_v1(NEW.campaign_id,selection,
+            filters->>'history'='all',(current_scope->>'operational')::boolean,
+            ARRAY(SELECT value::bigint FROM jsonb_array_elements_text(current_scope->'ministries')));
+        -- Scope is intersected, never trusted. An explicit selection must
+        -- resolve to exactly the Ministries asked for: dropping one the caller
+        -- cannot see would capture a packet that misstates its own request.
+        IF selection IS NOT NULL AND NEW.document ? 'sections'
+           AND jsonb_array_length(NEW.document->'sections')<>cardinality(selection)
+        THEN RAISE EXCEPTION 'Ministry export inputs are unavailable' USING ERRCODE='23514'; END IF;
+    ELSE
+        NEW.document:=stewardship_ministry_report_v1(NEW.campaign_id,filters,
+            (current_scope->>'operational')::boolean,
+            ARRAY(SELECT value::bigint FROM jsonb_array_elements_text(current_scope->'ministries')),
+            ministry_id,request_action);
+    END IF;
     IF NEW.document IS NULL OR NEW.document ?| ARRAY['disabled','unavailable']
        OR (NEW.document->'authorized'<>'true'::jsonb AND
            (ministry_id IS NOT NULL OR current_scope->'operational'<>'true'::jsonb))
@@ -111,7 +151,8 @@ BEGIN
     NEW.authorization_scope:=NEW.document->'authorization_scope' || jsonb_build_object(
         'result_ministries',coalesce((SELECT jsonb_agg((value->>'duid')::bigint
             ORDER BY (value->>'duid')::bigint)
-            FROM jsonb_array_elements(NEW.document->'summaries')), '[]'::jsonb));
+            FROM jsonb_array_elements(NEW.document->
+                CASE WHEN packet THEN 'sections' ELSE 'summaries' END)), '[]'::jsonb));
     NEW.source_id:=(NEW.document->'metadata'->>'source_id')::uuid;
     NEW.row_count:=(NEW.document->>'total')::integer;
     RETURN NEW;

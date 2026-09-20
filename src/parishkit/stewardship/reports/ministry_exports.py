@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 from parishkit.stewardship.accounts.policy import Capability, allows, current_principal
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.schemas import Action, Outcome
+from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.schema_primitives import timezone_names
@@ -12,6 +13,34 @@ from parishkit.stewardship.schema_primitives import timezone_names
 from .export_models import ExportRequest, MinistryExportSnapshot
 from .export_services import TASK_TYPE, admit_campaign, audit, authorize
 from .ministries import MinistryQuery, can_report
+
+MAX_PACKET_MINISTRIES = 200
+
+
+def packet_parameters(ministries, *, history):
+    """The packet's only choices: its Ministries and the history option.
+
+    `None` means every Ministry the requester may see when SQL captures it.
+    An explicit selection is canonical: distinct, ascending, positive DUIDs.
+    Every other report filter holds its neutral value, as SQL also requires.
+    """
+    if type(history) is not bool or not (
+        ministries is None
+        or (
+            type(ministries) is tuple
+            and 1 <= len(ministries) <= MAX_PACKET_MINISTRIES
+            and all(type(value) is int and 0 < value < 2**31 for value in ministries)
+            and ministries == tuple(sorted(set(ministries)))
+        )
+    ):
+        raise ValueError("Ministry packet requires a canonical selection.")
+    query = MinistryQuery(history="all" if history else "current")
+    return {
+        "filters": query.form_values(),
+        "ministry": None,
+        "action": "packet",
+        "ministries": None if ministries is None else list(ministries),
+    }
 
 
 def scope_authorized(principal, scope):
@@ -38,6 +67,8 @@ def create_ministry_export(
     ministry_id=None,
     action="summary",
     snapshot=None,
+    ministries=None,
+    history=False,
 ):
     """Capture complete results atomically, or bind a trusted retained capture.
 
@@ -59,10 +90,18 @@ def create_ministry_export(
             or query is not None
             or ministry_id is not None
             or action != "summary"
+            or ministries is not None
+            or history
         ):
             raise ValueError("Regeneration cannot change retained selection.")
         parameters = snapshot.parameters
+    elif action == "packet":
+        if query is not None or ministry_id is not None:
+            raise ValueError("A Ministry packet has no report filters.")
+        parameters = packet_parameters(ministries, history=history)
     else:
+        if ministries is not None or history:
+            raise ValueError("Only a Ministry packet selects several Ministries.")
         if (
             not isinstance(query, MinistryQuery)
             or action not in {"summary", "join", "leave"}
@@ -89,15 +128,27 @@ def create_ministry_export(
                 snapshot is not None
                 and not scope_authorized(actor, snapshot.authorization_scope)
             )
-            or (
-                ministry_id is not None
-                and not allows(
-                    actor, Capability.MINISTRY_REPORT, ministry_id=ministry_id
+            or any(
+                not allows(actor, Capability.MINISTRY_REPORT, ministry_id=value)
+                for value in (
+                    *(() if ministry_id is None else (ministry_id,)),
+                    *(ministries or ()),
                 )
             )
         ):
             raise PermissionError("Ministry export is unavailable.")
         admit_campaign(campaign_id, mutating=True)
+        if ministries:
+            # SQL refuses a selection it cannot resolve exactly. Say so here as a
+            # bad selection, so a stale or crafted form is not reported as an
+            # outage to retry. The form offers only this campaign's Ministries.
+            offered = Campaign.objects.select_related("active_configuration").get(
+                pk=campaign_id
+            )
+            if not set(ministries) <= set(
+                offered.active_configuration.values.get("ministry_duids", ())
+            ):
+                raise ValueError("A selected Ministry is not in this campaign.")
         return True
 
     with work_transaction():

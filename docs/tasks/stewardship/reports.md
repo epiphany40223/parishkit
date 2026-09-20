@@ -209,13 +209,19 @@ report query. RPT-07 remains unchecked until its packet reads the workflow.
 
 Scope and dependencies: [RPT-07 work package](../../plans/stewardship/reports.md#rpt-07-multi-ministry-follow-up-packet).
 
-- [ ] RPT-07.01 — Build authorized multi-Ministry selection.
-- [ ] RPT-07.02 — Build Ministry packet sections and request rows.
-- [ ] RPT-07.03 — Apply specified follow-up outcome and date mappings.
-- [ ] RPT-07.04 — Implement PDF, XLSX, and CSV section boundaries.
-- [ ] RPT-07.05 — Test packet ordering, overflow, scope, and outcomes.
+- [x] RPT-07.01 — Build authorized multi-Ministry selection.
+- [x] RPT-07.02 — Build Ministry packet sections and request rows.
+- [x] RPT-07.03 — Apply specified follow-up outcome and date mappings.
+- [x] RPT-07.04 — Implement PDF, XLSX, and CSV section boundaries.
+- [x] RPT-07.05 — Test packet ordering, overflow, scope, and outcomes.
 
-Evidence: Not started.
+Evidence: the [multi-Ministry packet increment](../../guides/stewardship-ministry-packets.md)
+implements .01 through .05 on the existing Ministry export lifecycle, reading
+the recorded contact dates, notes and outcomes that the
+[Ministry follow-up increment](../../guides/stewardship-ministry-followup.md)
+delivered. Three dual-source
+[review/fix rounds](../../guides/stewardship-ministry-packet-reviews.md#round-3)
+are complete; full exact-head CI/DCO and protected delivery remain open.
 
 ## RPT-08: Census and financial reports
 

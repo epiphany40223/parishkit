@@ -127,8 +127,23 @@ def _abort_render_worker():
     os._exit(70)
 
 
+def is_packet(request):
+    """A Ministry export whose captured action is the multi-Ministry packet."""
+    return request.report == "ministry" and request.parameters["action"] == "packet"
+
+
 def load_document(request, *, general=None):
     """Load exactly one pinned ready generation inside the caller's campaign guard."""
+    if is_packet(request):
+        from .ministry_packets import packet_document
+
+        return packet_document(
+            request.ministry_snapshot.document,
+            request.parameters,
+            parish_name=request.configuration.parish.name,
+            requested_at=request.created_at,
+            timezone=request.browser_timezone,
+        )
     if request.report == "ministry":
         from .ministry_documents import ministry_document
 
@@ -222,7 +237,11 @@ def _execute(execution, *, store, root, general=None):
             """Closed report dispatch consumes only the retained typed document."""
             guard.check()
             execution.check()
-            if request.report in {
+            if is_packet(request):
+                from .ministry_packets import render_packet
+
+                render_packet(document, stream, format=request.format)
+            elif request.report in {
                 "additional_information",
                 "family_directory",
                 "postal_outreach",
