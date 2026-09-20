@@ -44,9 +44,11 @@ def add_response_web_grants(tables, columns):
     columns["stewardship_proposed_change"] = {
         "UPDATE": {"execution", "superseded_by_id", "version"}
     }
+    # The guard sets resolved_at itself; Staff never write roster evidence.
     columns["stewardship_ministry_request"] = {
-        "UPDATE": {"state", "superseded_by_id", "version"}
+        "UPDATE": {"state", "superseded_by_id", "version", "outcome", "assignee_id"}
     }
+    tables["stewardship_ministry_revision"] = {"SELECT", "INSERT"}
     columns["stewardship_additional_information"] = {
         "UPDATE": {
             "disposition",

@@ -2,7 +2,18 @@
 
 from django.db import models
 
-from parishkit.stewardship.storage import MutableRecord, UTCDateTimeField
+from parishkit.stewardship.storage import (
+    ImmutableRecord,
+    MutableRecord,
+    UTCDateTimeField,
+)
+
+# Families own cancellation/supersession and the source worker owns roster-
+# evidence resolution; Staff edits move a request only among these states.
+STAFF_STATES = ("new", "assigned", "in_progress", "resolved", "closed_no_response")
+OPEN_STATES = ("new", "assigned", "in_progress")
+RESOLVED_OUTCOMES = ("joined", "leave_confirmed", "declined", "duplicate", "other")
+CONTACT_CHANNELS = ("email", "phone", "in_person", "other")
 
 
 class MinistryRequest(MutableRecord):
@@ -10,7 +21,8 @@ class MinistryRequest(MutableRecord):
 
     Existing Members use canonical source DUIDs; proposed Members use the local
     UUID from their complete census answer. Neither identity is a provider write
-    instruction. Contact/assignment editing belongs to the later Staff owner.
+    instruction. Staff edits change only the current workflow projection here;
+    `MinistryWorkflowRevision` owns their notes, contact attempts and history.
     """
 
     submission = models.ForeignKey(
@@ -27,6 +39,9 @@ class MinistryRequest(MutableRecord):
         "stewardship_source.SourceSnapshot", on_delete=models.PROTECT, null=True
     )
     superseded_by = models.ForeignKey("self", on_delete=models.PROTECT, null=True)
+    # A plain UUID, like other retained actor references: history must outlive
+    # a portal user. A same-intent successor inherits it with the state.
+    assignee_id = models.UUIDField(null=True)
 
     immutable_fields = MutableRecord.immutable_fields + (
         "submission_id",
@@ -108,5 +123,75 @@ class MinistryRequest(MutableRecord):
             models.CheckConstraint(
                 condition=~models.Q(superseded_by_id=models.F("id")),
                 name="ministry_request_not_own_next",
+            ),
+            # Closed, cancelled and superseded rows retain who held the work.
+            models.CheckConstraint(
+                condition=(~models.Q(state="new") | models.Q(assignee_id__isnull=True))
+                & (~models.Q(state="assigned") | models.Q(assignee_id__isnull=False)),
+                name="ministry_request_assignment",
+            ),
+        ]
+
+
+class MinistryWorkflowRevision(ImmutableRecord):
+    """One authorized Staff edit: the complete resulting workflow, never a diff.
+
+    The request keeps the current assignee/state/outcome; this history owns the
+    notes and contact attempts. SQL stamps the time, validates current authority
+    and pairs each revision with its projection and audit. Notes and contact
+    details are private workflow data and never enter audit context or logs.
+    """
+
+    request = models.ForeignKey(
+        MinistryRequest, on_delete=models.PROTECT, related_name="revisions"
+    )
+    expected_version = models.PositiveBigIntegerField()
+    request_key = models.UUIDField()
+    assignee_id = models.UUIDField(null=True)
+    state = models.CharField(max_length=20)
+    outcome = models.CharField(max_length=20, null=True)
+    notes = models.TextField(default="", blank=True)
+    contact_channel = models.CharField(max_length=10, null=True)
+    contact_at = UTCDateTimeField(null=True)
+    contact_notes = models.TextField(default="", blank=True)
+
+    class Meta:
+        db_table = "stewardship_ministry_revision"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("request", "expected_version"), name="ministry_revision_version"
+            ),
+            models.UniqueConstraint(
+                fields=("actor_id", "request_key"), name="ministry_revision_replay"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(expected_version__gte=1, actor_id__isnull=False),
+                name="ministry_revision_identity",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(state__in=OPEN_STATES, outcome__isnull=True)
+                    | models.Q(state="resolved", outcome__in=RESOLVED_OUTCOMES)
+                    | models.Q(state="closed_no_response", outcome="no_response")
+                )
+                # "Other" is meaningless in a packet without its explanation.
+                & (~models.Q(outcome="other") | ~models.Q(notes="")),
+                name="ministry_revision_outcome",
+            ),
+            models.CheckConstraint(
+                condition=(~models.Q(state="new") | models.Q(assignee_id__isnull=True))
+                & (~models.Q(state="assigned") | models.Q(assignee_id__isnull=False)),
+                name="ministry_revision_assignment",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    contact_channel__isnull=True,
+                    contact_at__isnull=True,
+                    contact_notes="",
+                )
+                | models.Q(
+                    contact_channel__in=CONTACT_CHANNELS, contact_at__isnull=False
+                ),
+                name="ministry_revision_contact",
             ),
         ]

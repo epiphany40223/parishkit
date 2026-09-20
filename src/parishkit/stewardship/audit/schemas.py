@@ -71,6 +71,8 @@ class Action(StrEnum):
     PARTICIPATION_VIEWED = "participation_viewed"
     INFORMATION_VIEWED = "information_viewed"
     INFORMATION_UPDATED = "information_updated"
+    MINISTRY_FOLLOWUP_VIEWED = "ministry_followup_viewed"
+    MINISTRY_REQUEST_UPDATED = "ministry_request_updated"
     DASHBOARD_VIEWED = "dashboard_viewed"
     PRESENCE_VIEWED = "family_presence_viewed"
     SETUP_STARTED = "setup_started"

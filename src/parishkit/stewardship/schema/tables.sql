@@ -2464,6 +2464,7 @@ CREATE TABLE "stewardship_ministry_request" ("id" uuid NOT NULL PRIMARY KEY,
     "resolved_at" timestamp with time zone NULL,
     "resolution_source_id" uuid NULL,
     "superseded_by_id" uuid NULL,
+    "assignee_id" uuid NULL,
     CONSTRAINT "stewardship_workflows_ministryrequest_positive_version" CHECK ("version" >= 1),
     CONSTRAINT "ministry_request_identity" UNIQUE ("submission_id",
     "entity_kind",
@@ -2474,7 +2475,8 @@ CREATE TABLE "stewardship_ministry_request" ("id" uuid NOT NULL PRIMARY KEY,
     CONSTRAINT "ministry_request_state" CHECK (((state)::text = ANY ((ARRAY['new'::character varying, 'assigned'::character varying, 'in_progress'::character varying, 'resolved'::character varying, 'closed_no_response'::character varying, 'cancelled'::character varying, 'superseded'::character varying])::text[]))),
     CONSTRAINT "ministry_request_outcome" CHECK (((((state)::text = ANY ((ARRAY['resolved'::character varying, 'closed_no_response'::character varying])::text[])) AND (outcome IS NOT NULL) AND (resolved_at IS NOT NULL) AND ((outcome)::text = ANY ((ARRAY['joined'::character varying, 'leave_confirmed'::character varying, 'declined'::character varying, 'no_response'::character varying, 'duplicate'::character varying, 'other'::character varying])::text[]))) OR ((NOT ((state)::text = ANY ((ARRAY['resolved'::character varying, 'closed_no_response'::character varying])::text[]))) AND (outcome IS NULL) AND (resolution_source_id IS NULL) AND (resolved_at IS NULL)))),
     CONSTRAINT "ministry_request_successor" CHECK ((("state" = 'superseded' AND "superseded_by_id" IS NOT NULL) OR (NOT ("state" = 'superseded') AND "superseded_by_id" IS NULL))),
-    CONSTRAINT "ministry_request_not_own_next" CHECK (NOT ("superseded_by_id" = ("id") AND "superseded_by_id" IS NOT NULL)));
+    CONSTRAINT "ministry_request_not_own_next" CHECK (NOT ("superseded_by_id" = ("id") AND "superseded_by_id" IS NOT NULL)),
+    CONSTRAINT "ministry_request_assignment" CHECK (((NOT ("state" = 'new') OR "assignee_id" IS NULL) AND (NOT ("state" = 'assigned') OR "assignee_id" IS NOT NULL))));
 
 -- Exact cleanup membership is created with its request and never exposed as
 -- general deletion authority. Foreign keys are installed with the other guards.
