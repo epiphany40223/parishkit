@@ -83,10 +83,11 @@ Staff follow-up during a parish-wide packet.
 The header carries the campaign name, its stewardship year and its period
 dates. The year uses the application's single campaign-year rule, the one behind
 Admin previews, page blocks and share labels: the Admin-configured year label,
-otherwise the start year. An autumn campaign that funds the following year is
-labelled by that configuration, so the packet never derives a year of its own.
-SQL captures the raw label and the application applies the rule, keeping one
-copy of it.
+otherwise the start year. An autumn campaign that funds the following year
+should therefore have its label set: without one the packet prints the start
+year, exactly as every other place using that rule does, and adds no derivation
+of its own. SQL captures the raw label and the application applies the rule,
+keeping one copy of it.
 
 The specified row contents do not say whether a request is to join or leave, and
 with history a blank outcome cannot tell an unresolved request from a withdrawn

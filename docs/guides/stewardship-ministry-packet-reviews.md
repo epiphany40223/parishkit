@@ -150,3 +150,34 @@ fourth fresh install differed from the third only in the packet function body.
 19 database-free, three PostgreSQL and 17 schema-contract cases passed locally.
 This material correction returns to independent review as Round 4 without
 resetting the completed rounds.
+
+## Round 4
+
+Reviewed `1efd5ed`, the stewardship-year correction delta from the Round 3
+tree. Both sources completed. Five raw findings; one validated Medium from
+Claude, no High or Critical. The reviewer confirmed the correction is
+functionally correct and safe: the label is validated as bounded text or null at
+configuration, a missing key is tolerated, and the spreadsheet, CSV and PDF
+positions follow the header length.
+
+- **Medium, accepted and fixed: the capture test could not fail.** It asserted
+  only that the `year_label` key exists, which SQL always emits, and that the
+  rendered year is not blank, which the start-year fallback always satisfies. A
+  misread or lost label would have rendered the start year silently. The
+  harness campaign is labelled 2027 but starts in 2026, so the case now asserts
+  the exact captured label and the exact rendered line, and that the fallback
+  year is absent.
+- Low, adopted: pass the captured metadata straight to the shared rule, since it
+  carries exactly the two keys that rule reads; restore literal worksheet row
+  numbers, because deriving them from the renderer's own expression made the
+  case tautological and the literals are what had caught this row shift; cover
+  a blank label and a capture with no such key; and correct the guide, which
+  claimed the packet never derives a year although an unlabelled campaign falls
+  back to its start year like every other user of that rule.
+
+Post-fix validation: 19 database-free and three PostgreSQL cases passed
+locally. These are test and wording corrections plus one equivalent
+simplification, so no further round was required. The exit criteria remain met
+across four dual-source rounds: no validated High or Critical finding in any
+round, and all six accepted Medium findings fixed. Full exact-head CI, DCO and
+protected delivery remain required.

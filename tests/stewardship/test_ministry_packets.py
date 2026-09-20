@@ -292,14 +292,22 @@ def test_xlsx_has_one_literal_sheet_per_ministry_with_safe_distinct_names():
         "Report information",
     ]
     choir = book["Choir"]
-    # Headings follow the Ministry's header lines and one blank separator row.
-    head = len(packet(three_ministries()).sections[0].details) + 2
-    assert [cell.value for cell in choir[head]] == list(HEADINGS)
-    assert choir.cell(head + 1, 1).value == "=Example Member"
-    # A literal string, never a formula.
-    assert choir.cell(head + 1, 1).data_type == "s"
+    # Pinned independently of the renderer: six header lines, one blank row,
+    # then headings on row 8. A header line added or lost must fail here.
+    assert [choir.cell(row, 1).value for row in range(1, 8)] == [
+        "Ministry",
+        "Ministry DUID",
+        "Chairs",
+        "Stewardship campaign",
+        "Stewardship year",
+        "Stewardship period",
+        None,
+    ]
+    assert [cell.value for cell in choir[8]] == list(HEADINGS)
+    assert choir.cell(9, 1).value == "=Example Member"
+    assert choir.cell(9, 1).data_type == "s"  # A literal string, never a formula.
     # A selected but empty Ministry has its header and headings, no request rows.
-    assert book["Bereavement"].max_row == head
+    assert book["Bereavement"].max_row == 8
     # An empty packet is still a valid workbook carrying its provenance.
     assert load_workbook(io.BytesIO(rendered(packet([]), "xlsx"))).sheetnames == [
         "Report information"
@@ -354,5 +362,18 @@ def test_stewardship_year_is_the_configured_label_not_a_derived_date():
     assert dict(configured.metadata)["Stewardship year"] == "2027"
     assert dict(configured.sections[0].details)["Stewardship year"] == "2027"
     assert "Stewardship year,2027" in rendered(configured, "csv").decode()
-    # Without a label the shared campaign-year rule falls back to the start year.
+    # Without a label the shared campaign-year rule falls back to the start year,
+    # as it also must for a blank label or a capture that has no such key.
     assert dict(packet().metadata)["Stewardship year"] == "2026"
+    assert dict(packet(year_label="").metadata)["Stewardship year"] == "2026"
+    section = dict(duid=9, name="Choir", chairs=[], rows=[])
+    payload = dict(packet_payload(), total=0, sections=[section])
+    assert "year_label" not in payload["metadata"]
+    keyless = packet_document(
+        payload,
+        packet_parameters(None, history=False),
+        parish_name="P",
+        requested_at=MOMENT,
+        timezone="UTC",
+    )
+    assert dict(keyless.metadata)["Stewardship year"] == "2026"
