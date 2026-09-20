@@ -37,6 +37,7 @@ from .test_background_grants_postgresql import task_login
 from .test_export_views_postgresql import post
 from .test_information_followup_postgresql import search
 from .test_ministry_exports_postgresql import leader
+from .test_ministry_reports_postgresql import page as report_page
 from .test_ministry_reports_postgresql import setup
 from .test_ministry_responses_postgresql import respond, revisit
 from .test_policy_postgresql import user
@@ -332,6 +333,13 @@ def test_scoped_queue_detail_and_chain_history(response_service, google):
     )
     assert row["notes"] == "PRIVATE-NOTE first call"
     assert row["phone_contact_at"] == called and row["email_contact_at"] is None
+    # The Ministry report now shows who holds the work instead of a placeholder.
+    assert report_page(harness, ministry=9)["rows"][0]["assignee"] == (
+        "leader@example.org"
+    )
+    assert report_page(harness, ministry=4, action="leave")["rows"][0]["assignee"] is (
+        None
+    )
     # No contact, address or financial payload is ever projected here.
     assert not {"emails", "phones", "address"} & set(row)
     # Closed filter vocabularies select on the current projection.

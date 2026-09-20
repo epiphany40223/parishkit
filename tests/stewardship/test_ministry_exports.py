@@ -140,7 +140,7 @@ def test_retained_audit_scope_has_no_private_values(context, valid):
             sanitize(ContextKind.ACTION, context)
 
 
-def document(*, action="join", count=52):
+def document(*, action="join", count=52, **extra):
     """Closed payload mirrors SQL capture, with hostile values and hidden contacts."""
     moment = datetime(2026, 9, 19, 15, tzinfo=UTC)
     row = dict(
@@ -159,6 +159,7 @@ def document(*, action="join", count=52):
         emails=[{"value": "hidden@example.org"}],
         phones={"home": "hidden-phone"},
         address={"primaryAddress1": "1 Example Street"},
+        **extra,
     )
     summary = dict(
         name="Example Ministry",
@@ -217,6 +218,19 @@ def test_complete_columns_and_csv_privacy(action):
         assert report.rows[0][-1] == "Volunteer"
     else:
         assert report.rows[0][-1] == "3 out of 4 (75%)"
+
+
+@pytest.mark.parametrize("action", ["join", "leave"])
+def test_assignee_is_exported_and_legacy_captures_stay_readable(action):
+    """Captures taken before assignment existed have no key and must still render."""
+    column = document(action=action).headings.index("Assignee")
+    assert document(action=action, count=1).rows[0][column] == "Unassigned"
+    for captured, shown in (
+        ("=leader@example.org", "=leader@example.org"),
+        (None, "Unassigned"),
+    ):
+        report = document(action=action, count=1, assignee=captured)
+        assert report.rows[0][column] == shown
 
 
 @pytest.mark.parametrize("format", ["xlsx", "pdf"])
