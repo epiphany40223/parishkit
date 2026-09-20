@@ -6,6 +6,7 @@
 <p>{{ metadata.name }} — {% translate "Source generation" %} {{ metadata.source_generation|number }}; {% translate "source as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time>.</p>
 <p>{% translate "Ages as of" %} {{ metadata.report_date }} ({{ metadata.timezone }}). {% translate "Request date filters use the parish timezone. Displayed times use your browser timezone when scripts are available; otherwise UTC." %}</p>
 <p>{% translate "Current counts exclude cancelled and superseded requests. Inactive Ministries retain their requests. Follow-up progress counts resolved or closed requests; it is not a record of contact attempts." %}</p>
+<p><a href="{% url 'admin:ministry_followup' campaign_id %}">{% translate "Follow up these requests: assignment, contact attempts, notes and outcomes" %}</a></p>
 {% if ministry_id %}<p><a href="{{ summary_url }}">{% translate "All authorized Ministries" %}</a></p>{% endif %}
 <form method="post" action="{{ report_url }}">{% csrf_token %}
 {% if ministry_id %}<input type="hidden" name="ministry" value="{{ ministry_id }}">{% endif %}

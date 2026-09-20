@@ -1,0 +1,72 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Ministry follow-up" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Ministry follow-up" %}</h1>
+<p>{{ metadata.name }}</p>
+<p>{% translate "Live join and leave requests for the Ministries you may follow up. Follow-up never changes a Family's submitted answers or the parish roster." %}</p>
+<p>{% translate "Names use the source as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time>. {% translate "Timestamps use your browser timezone when available; UTC is the fallback." %}</p>
+<p><a href="{% url 'admin:ministry_report' campaign_id %}">{% translate "Ministry reports, including authorized Member contact details" %}</a></p>
+{% if not mutable %}<p class="notice">{% translate "Campaign work is gated. You may read admitted history, but follow-up edits are unavailable." %}</p>{% endif %}
+{% if item %}
+<h2>{{ item.member_name }} — {{ item.ministry_name }}</h2>
+<p>{% if item.action == 'join' %}{% translate "Asked to join" %}{% else %}{% translate "Asked to leave" %}{% endif %}; {% translate "submitted" %} <time datetime="{{ item.submitted_at|date:'c' }}" data-local-instant>{{ item.submitted_at|date:'c' }}</time></p>
+<p>{% translate "Status:" %} {{ item.state_label }}{% if item.outcome_label %} — {{ item.outcome_label }}{% endif %}{% if item.assignee_label %}; {% translate "assigned to" %} {{ item.assignee_label }}{% endif %}</p>
+{% if item.source_resolved %}<p>{% translate "Resolved automatically from current parish roster evidence." %}</p>{% endif %}
+{% if not item.latest %}<p class="notice">{% translate "The Family has since replaced or withdrawn this request. It is shown for history only." %}</p>{% endif %}
+{% if item.open %}
+<form method="post" action="{% url 'admin:ministry_followup_update' campaign_id item.id %}">{% csrf_token %}
+<input type="hidden" name="expected_version" value="{{ item.version }}"><input type="hidden" name="request_key" value="{{ request_key }}">
+<fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Follow-up" %}</legend>
+<label for="followup-state">{% translate "Status" %}</label><select id="followup-state" name="state">{% for key,label in staff_states %}<option value="{{ key }}"{% if item.state == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+<label for="followup-outcome">{% translate "Outcome, required when resolving or closing" %}</label><select id="followup-outcome" name="outcome"><option value="">{% translate "No outcome yet" %}</option>{% for key,label in outcomes.items %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select>
+<label for="followup-assignee">{% translate "Assigned to" %}</label><select id="followup-assignee" name="assignee"><option value="">{% translate "Unassigned" %}</option>{% for person in assignees %}<option value="{{ person.id }}"{% if item.assignee_id == person.id|stringformat:'s' %} selected{% endif %}>{{ person.email }}</option>{% endfor %}</select>
+<label for="followup-notes">{% translate "Notes. Required for the outcome Other." %}</label><textarea id="followup-notes" name="notes" maxlength="5000" rows="6">{{ item.notes }}</textarea>
+</fieldset>
+<fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Record a contact attempt (optional)" %}</legend>
+<label for="contact-channel">{% translate "How" %}</label><select id="contact-channel" name="contact_channel"><option value="">{% translate "No contact attempt to record" %}</option>{% for key,label in channels.items %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select>
+<label for="contact-date">{% translate "Date (UTC)" %}</label><input id="contact-date" type="date" name="contact_date">
+<label for="contact-time">{% translate "Time (UTC)" %}</label><input id="contact-time" type="time" name="contact_time">
+<label for="contact-notes">{% translate "What happened" %}</label><textarea id="contact-notes" name="contact_notes" maxlength="2000" rows="3"></textarea>
+</fieldset>
+<button type="submit"{% if not mutable %} disabled{% endif %}>{% translate "Save follow-up" %}</button></form>
+{% else %}<p>{% translate "This request is closed. Closed outcomes are permanent." %}</p>{% if item.notes %}<div>{{ item.notes|linebreaksbr }}</div>{% endif %}{% endif %}
+<h2>{% translate "Follow-up history" %}</h2>
+{% for revision in history %}<section aria-label="{% translate 'Follow-up edit' %} {{ forloop.counter }}">
+<h3>{{ revision.actor_label }} — <time datetime="{{ revision.created_at|date:'c' }}" data-local-instant>{{ revision.created_at|date:'c' }}</time></h3>
+<p>{{ revision.state_label }}{% if revision.outcome_label %} — {{ revision.outcome_label }}{% endif %}{% if revision.assignee_label %}; {% translate "assigned to" %} {{ revision.assignee_label }}{% endif %}</p>
+{% if revision.contact_at %}<p>{{ revision.channel_label }} {% translate "contact" %} <time datetime="{{ revision.contact_at|date:'c' }}" data-local-instant>{{ revision.contact_at|date:'c' }}</time>{% if revision.contact_notes %}: {{ revision.contact_notes|linebreaksbr }}{% endif %}</p>{% endif %}
+<div>{{ revision.notes|linebreaksbr }}</div></section>
+{% empty %}<p>{% translate "No follow-up edits yet." %}</p>{% endfor %}
+<nav aria-label="{% translate 'Follow-up history pages' %}">{% if previous_history %}<a href="?page={{ previous_history }}">{% translate "Newer history" %}</a>{% endif %} {% if next_history %}<a href="?page={{ next_history }}">{% translate "Older history" %}</a>{% endif %}</nav>
+<p><a href="{% url 'admin:ministry_followup' campaign_id %}">{% translate "Return to the queue" %}</a></p>
+{% else %}
+<form method="post" action="{% url 'admin:ministry_followup' campaign_id %}">{% csrf_token %}
+<label for="followup-search">{% translate "Search Member or Ministry name" %}</label><input id="followup-search" name="search" maxlength="200" value="{{ query.search }}">
+<label for="filter-ministry">{% translate "Ministry" %}</label><select id="filter-ministry" name="ministry"><option value="">{% translate "All my Ministries" %}</option>{% for ministry in ministries %}<option value="{{ ministry.duid }}"{% if query.ministry == ministry.duid|stringformat:'s' %} selected{% endif %}>{{ ministry.name }}</option>{% endfor %}</select>
+<label for="filter-action">{% translate "Request" %}</label><select id="filter-action" name="action"><option value="any">{% translate "Join or leave" %}</option><option value="join"{% if query.action == 'join' %} selected{% endif %}>{% translate "Join" %}</option><option value="leave"{% if query.action == 'leave' %} selected{% endif %}>{% translate "Leave" %}</option></select>
+<label for="filter-state">{% translate "Status" %}</label><select id="filter-state" name="state"><option value="unresolved"{% if query.state == 'unresolved' %} selected{% endif %}>{% translate "Unresolved" %}</option><option value="any"{% if query.state == 'any' %} selected{% endif %}>{% translate "Any status" %}</option>{% for key,label in states.items %}<option value="{{ key }}"{% if query.state == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+<label for="filter-outcome">{% translate "Outcome" %}</label><select id="filter-outcome" name="outcome"><option value="any">{% translate "Any outcome" %}</option>{% for key,label in outcomes.items %}<option value="{{ key }}"{% if query.outcome == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+<label for="filter-assignee">{% translate "Assigned to" %}</label><select id="filter-assignee" name="assignee"><option value="any">{% translate "Anyone" %}</option><option value="mine"{% if query.assignee == 'mine' %} selected{% endif %}>{% translate "Me" %}</option><option value="unassigned"{% if query.assignee == 'unassigned' %} selected{% endif %}>{% translate "Nobody" %}</option></select>
+<label for="filter-history">{% translate "Request history" %}</label><select id="filter-history" name="history"><option value="current">{% translate "Current requests" %}</option><option value="all"{% if query.history == 'all' %} selected{% endif %}>{% translate "Include replaced and withdrawn requests" %}</option></select>
+<label for="filter-sort">{% translate "Sort order" %}</label><select id="filter-sort" name="sort"><option value="newest"{% if query.sort == 'newest' %} selected{% endif %}>{% translate "Newest first" %}</option><option value="oldest"{% if query.sort == 'oldest' %} selected{% endif %}>{% translate "Oldest first" %}</option><option value="name"{% if query.sort == 'name' %} selected{% endif %}>{% translate "Member name A–Z" %}</option><option value="ministry"{% if query.sort == 'ministry' %} selected{% endif %}>{% translate "Ministry A–Z" %}</option></select>
+<button type="submit">{% translate "Apply filters" %}</button></form>
+<p>{% translate "Matching requests:" %} {{ total|number }}. {% translate "Page" %} {{ query.page|number }}.</p>
+<form method="post" action="{% url 'admin:ministry_followup_assign' campaign_id %}">{% csrf_token %}
+{% if bulk_ministry %}<input type="hidden" name="request_key" value="{{ request_key }}"><input type="hidden" name="ministry" value="{{ bulk_ministry }}">{% endif %}
+<div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Ministry follow-up results' %}"><table>
+<caption>{% translate "Ministry requests and current follow-up" %}</caption><thead><tr>{% if bulk_ministry %}<th scope="col">{% translate "Select" %}</th>{% endif %}<th scope="col">{% translate "Member" %}</th><th scope="col">{% translate "Ministry" %}</th><th scope="col">{% translate "Request" %}</th><th scope="col">{% translate "Status" %}</th><th scope="col">{% translate "Assigned to" %}</th><th scope="col">{% translate "Last contact" %}</th></tr></thead><tbody>
+{% for row in rows %}<tr>{% if bulk_ministry %}<td>{% if row.open %}<input type="checkbox" name="selected" value="{{ row.id }}:{{ row.version }}" aria-label="{% translate 'Select' %} {{ row.member_name }}"{% if not mutable %} disabled{% endif %}>{% endif %}</td>{% endif %}
+<td><a href="{% url 'admin:ministry_followup_item' campaign_id row.id %}">{{ row.member_name }}</a></td><td>{{ row.ministry_name }}</td>
+<td>{% if row.action == 'join' %}{% translate "Join" %}{% else %}{% translate "Leave" %}{% endif %}<br><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td>
+<td>{{ row.state_label }}{% if row.outcome_label %}<br>{{ row.outcome_label }}{% endif %}</td><td>{% if row.assignee_label %}{{ row.assignee_label }}{% else %}{% translate "Unassigned" %}{% endif %}</td>
+<td>{% if row.last_contact_at %}<time datetime="{{ row.last_contact_at|date:'c' }}" data-local-instant>{{ row.last_contact_at|date:'c' }}</time>{% else %}{% translate "None recorded" %}{% endif %}</td></tr>
+{% empty %}<tr><td colspan="{% if bulk_ministry %}7{% else %}6{% endif %}">{% translate "No matching requests." %}</td></tr>{% endfor %}</tbody></table></div>
+{% if bulk_ministry %}<fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Assign the selected requests" %}</legend>
+<label for="bulk-assignee">{% translate "Assign to" %}</label><select id="bulk-assignee" name="assignee"><option value="">{% translate "Unassigned" %}</option>{% for person in assignees %}<option value="{{ person.id }}">{{ person.email }}</option>{% endfor %}</select>
+<p>{% translate "Every selected request changes together. If any one of them changed since this page loaded, none is assigned." %}</p>
+<button type="submit">{% translate "Assign selected" %}</button></fieldset>
+{% else %}<p>{% translate "Choose one Ministry above to assign several requests at once." %}</p>{% endif %}</form>
+<nav aria-label="{% translate 'Follow-up result pages' %}"><form method="post" action="{% url 'admin:ministry_followup' campaign_id %}">{% csrf_token %}{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+{% if previous_page %}<button name="page" value="{{ previous_page }}">{% translate "Previous page" %}</button>{% endif %} {% if next_page %}<button name="page" value="{{ next_page }}">{% translate "Next page" %}</button>{% endif %}</form></nav>
+{% endif %}
+{% endblock %}

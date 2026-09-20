@@ -34,10 +34,13 @@ from parishkit.stewardship.workflows.models import (
 )
 
 from .test_background_grants_postgresql import task_login
+from .test_export_views_postgresql import post
+from .test_information_followup_postgresql import search
 from .test_ministry_exports_postgresql import leader
 from .test_ministry_reports_postgresql import setup
 from .test_ministry_responses_postgresql import respond, revisit
 from .test_policy_postgresql import user
+from .test_report_workspace_postgresql import read as get
 from .test_response_http_postgresql import answers_for
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -380,3 +383,91 @@ def test_scoped_queue_detail_and_chain_history(response_service, google):
         rows, more = followup_history(successor.pk, 1)
         assert [item.notes for item in rows] == ["PRIVATE-NOTE first call"]
         assert not more and followup_history(successor.pk, 2) == ([], False)
+
+
+def test_native_queue_detail_edit_and_bulk_assignment(response_service, google):
+    """A leader's real session edits only its Ministry through CSRF POST forms."""
+    harness = setup(response_service)
+    browser, head, _, _ = leader(harness, google)
+    join, leave = requests()
+    route = f"/admin/reports/{harness.campaign.pk}/ministries/follow-up/"
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = get(browser, route)
+        assert response.status_code == 200 and response["Cache-Control"] == "no-store"
+        assert body.count(b"ministries/follow-up/" + str(join.pk).encode()) == 1
+        assert str(leave.pk).encode() not in body
+        # Identifying filters are private POST state, never a URL.
+        assert get(browser, route + "?search=Private")[0].status_code == 400
+        response, body = search(browser, route, {"ministry": "9", "state": "any"})
+        assert response.status_code == 200 and b'name="selected"' in body
+        assert b"?search=" not in body and b"Assign selected" in body
+        assert (
+            search(browser, route, {"ministry": "4"})[1].count(b'name="selected"') == 0
+        )
+        detail = route + f"{join.pk}/"
+        response, body = get(browser, detail)
+        assert response.status_code == 200 and b"No follow-up edits yet." in body
+        # Another Ministry's or campaign's request is indistinguishable from none.
+        assert get(browser, route + f"{leave.pk}/")[0].status_code == 403
+        wrong = f"/admin/reports/{uuid4()}/ministries/follow-up/{join.pk}/"
+        assert get(browser, wrong)[0].status_code == 403
+        form = {
+            "expected_version": "1",
+            "request_key": str(uuid4()),
+            "state": "assigned",
+            "outcome": "",
+            "assignee": str(head),
+            "notes": "PRIVATE-NOTE left a message",
+            "contact_channel": "phone",
+            "contact_date": "2026-01-02",
+            "contact_time": "15:04",
+            "contact_notes": "No answer",
+        }
+        assert browser.post(detail + "update", form).status_code == 403  # No CSRF.
+        assert post(browser, wrong + "update", form).status_code == 403
+        assert post(browser, detail + "update", form).status_code == 302
+        assert post(browser, detail + "update", form).status_code == 302  # Replay.
+        stale = form | {"request_key": str(uuid4())}
+        assert post(browser, detail + "update", stale).status_code == 409
+        for invalid in (
+            form | {"request_key": str(uuid4()), "expected_version": "2", **change}
+            for change in (
+                {"state": "resolved"},
+                {"state": "resolved", "outcome": "leave_confirmed"},
+                {"state": "cancelled"},
+                {"contact_date": "2999-01-01"},
+                {"contact_channel": "", "contact_date": "2026-01-02"},
+                {"assignee": "not-a-uuid"},
+                {"unexpected": "field"},
+            )
+        ):
+            assert post(browser, detail + "update", invalid).status_code == 400
+        response, body = get(browser, detail)
+        assert b"PRIVATE-NOTE left a message" in body and b"No answer" in body
+        assert b"leader@example.org" in body and b"Phone" in body
+        bulk = {
+            "request_key": str(uuid4()),
+            "ministry": "9",
+            "assignee": "",
+            "selected": f"{join.pk}:2",
+        }
+        assert (
+            post(browser, route + "assign", bulk | {"ministry": "4"}).status_code == 400
+        )
+        other = bulk | {"selected": f"{leave.pk}:1", "ministry": "4"}
+        assert post(browser, route + "assign", other).status_code == 403
+        assert post(browser, route + "assign", bulk).status_code == 302
+    join.refresh_from_db()
+    assert (join.state, join.assignee_id, join.version) == ("new", None, 3)
+    assert latest_revision(join.pk).notes == "PRIVATE-NOTE left a message"
+    contexts = str(
+        list(
+            AuditContext.objects.filter(
+                event__event_type__in=[
+                    "ministry_request_updated",
+                    "ministry_followup_viewed",
+                ]
+            ).values_list("context", flat=True)
+        )
+    )
+    assert "PRIVATE-NOTE" not in contexts and "No answer" not in contexts
