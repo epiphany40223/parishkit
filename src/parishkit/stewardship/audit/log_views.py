@@ -20,14 +20,12 @@ from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.web.contracts import MESSAGES, ErrorCode
 
 from .log_rows import (
-    EVENTS,
-    LEVEL_LABELS,
     PAGE_SIZE,
-    SOURCES,
     LogQuery,
     audit_row,
     merge,
     operational_row,
+    page_context,
 )
 from .models import AuditEvent, OperationalLog
 from .schemas import Action, ActorKind, Outcome
@@ -43,7 +41,12 @@ def _error(code, status):
     context processor while the error itself is rendered.
     """
     response = HttpResponse(
-        render_to_string("stewardship/logs-error.html", {"message": MESSAGES[code]}),
+        render_to_string(
+            "stewardship/logs-error.html",
+            # Filter guidance only when a filter was the problem: a denied reader
+            # or an outage submitted nothing that could be corrected.
+            {"message": MESSAGES[code], "invalid": code is ErrorCode.INVALID},
+        ),
         status=status,
     )
     response.stewardship_safe_error = True
@@ -160,20 +163,7 @@ def logs(request):
                 return _error(ErrorCode.UNAVAILABLE, 503)
             rows, following = _load(query)
         response = render(
-            request,
-            "stewardship/logs.html",
-            {
-                "rows": rows,
-                "query": query,
-                "query_fields": query.form_values(),
-                "following": following,
-                "levels": [
-                    (level.lower(), LEVEL_LABELS[level], level in query.levels)
-                    for level in LEVEL_LABELS
-                ],
-                "sources": SOURCES,
-                "events": EVENTS,
-            },
+            request, "stewardship/logs.html", page_context(query, rows, following)
         )
         with transaction.atomic():
             current = _principal(request, service.store, final=True)

@@ -16,9 +16,17 @@ from django.utils.translation import gettext_lazy as _
 from parishkit.stewardship.observability import Event
 from parishkit.stewardship.web.contracts import filters
 
-from .schemas import Action
+from .schemas import FIELDS, Action
 
 PAGE_SIZE = 50
+# The only detail ever shown: fields some reviewed context schema names. A key
+# that merely looks like an identifier is not enough, because a future flat text
+# field or a trigger-written context would otherwise be rendered verbatim.
+DETAIL_FIELDS = frozenset().union(*FIELDS.values())
+DETAIL_LIMIT = 128
+# Entries cannot predate the application, and a far-future day cannot be advanced
+# to its exclusive upper bound without overflowing.
+EARLIEST, LATEST = date(2020, 1, 1), date(2999, 12, 31)
 LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 # A word and a symbol, never color alone, distinguish the five levels.
 LEVEL_LABELS = {
@@ -101,7 +109,10 @@ class LogQuery:
         for value in (query.actor, query.correlation, query.campaign, query.before_id):
             _identifier(value)
         for value in (query.start, query.end):
-            if value and date.fromisoformat(value).isoformat() != value:
+            if value and (
+                date.fromisoformat(value).isoformat() != value
+                or not EARLIEST <= date.fromisoformat(value) <= LATEST
+            ):
                 raise ValueError("Invalid log date filter.")
         if query.start and query.end and query.start > query.end:
             raise ValueError("Invalid log date interval.")
@@ -137,22 +148,40 @@ class LogQuery:
 
 
 def _details(context):
-    """Only recognized scalar evidence; nothing nested is ever rendered."""
+    """Only reviewed fields with short scalar values; nothing else is rendered."""
     if type(context) is not dict:
         return []
     # Filter before sorting, so an unexpected key can never break the page.
     known = {
         key: value
         for key, value in context.items()
-        if type(key) is str and re.fullmatch(r"[a-z][a-z0-9_]{0,63}", key)
+        if type(key) is str and key in DETAIL_FIELDS
     }
     shown = []
     for key, value in sorted(known.items()):
-        if value is None or type(value) in (str, int, bool):
+        if value is None or type(value) in (int, bool):
             shown.append((key, "" if value is None else str(value)))
-        elif type(value) is list and all(type(item) in (str, int) for item in value):
+        elif type(value) is str and len(value) <= DETAIL_LIMIT:
+            shown.append((key, value))
+        elif type(value) is list and all(type(item) is int for item in value):
             shown.append((key, ", ".join(str(item) for item in value)))
     return shown
+
+
+def page_context(query, rows, following):
+    """The one template context, shared by the view and its browser fixtures."""
+    return {
+        "rows": rows,
+        "query": query,
+        "query_fields": query.form_values(),
+        "following": following,
+        "levels": [
+            (level.lower(), LEVEL_LABELS[level], level in query.levels)
+            for level in LEVEL_LABELS
+        ],
+        "sources": SOURCES,
+        "events": EVENTS,
+    }
 
 
 def operational_row(record):

@@ -12,7 +12,11 @@ from django.utils import timezone
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit import log_views
-from parishkit.stewardship.audit.models import AuditContext, OperationalLog
+from parishkit.stewardship.audit.models import (
+    AuditContext,
+    AuditEvent,
+    OperationalLog,
+)
 from parishkit.stewardship.audit.schemas import Action, ActorKind, ContextKind, Outcome
 from parishkit.stewardship.audit.services import operational, record_action
 from parishkit.stewardship.deployment import ServiceRole
@@ -60,6 +64,16 @@ def audit_entries(response):
     would match on every page.
     """
     return response.content.decode().count('<span class="log-kind">Audit record</span>')
+
+
+def identifiers(response):
+    """Each listed entry's correlation identifier, top to bottom."""
+    return [
+        UUID(value)
+        for value in re.findall(
+            r"Correlation ([0-9a-f-]{36})", response.content.decode()
+        )
+    ]
 
 
 def levels(response):
@@ -123,10 +137,13 @@ def test_administrator_reads_both_sources_and_filters_privately(auth_service, go
             {"event": "drop table"},
             {"text": "anything"},
             {"start": "2026-02-30"},
+            # The last representable day: refused, never an unhandled overflow.
+            {"end": "9999-12-31"},
             {"before": "2026-09-20T12:00:00.123456+00:00"},
         ):
             refused = post(browser, invalid)
             assert refused.status_code == 400
+            assert b"Identifiers must be complete" in refused.content
             # The error explains itself and never echoes what was submitted.
             assert b"not-a-uuid" not in refused.content
             assert b"drop table" not in refused.content
@@ -174,14 +191,52 @@ def test_older_entries_are_reached_by_a_stable_cursor(
     assert older == stored[start : start + 3]
 
 
-def identifiers(response):
-    """Each listed entry's correlation identifier, top to bottom."""
-    return [
-        UUID(value)
-        for value in re.findall(
-            r"Correlation ([0-9a-f-]{36})", response.content.decode()
+def test_a_cursor_crosses_both_tables_through_entries_sharing_one_instant(
+    auth_service, google, monkeypatch
+):
+    """Ties are ordered by identifier, identically in PostgreSQL and in the merge."""
+    browser, _ = signed_in()
+    monkeypatch.setattr(log_views, "PAGE_SIZE", 7)
+    moment = timezone.now() - timedelta(hours=1)
+    # Random identifiers, each doubling as its correlation so the page shows it.
+    # Every entry in both tables shares one instant: only identifiers order them.
+    diagnostic, audited = [uuid4() for _ in range(15)], [uuid4() for _ in range(15)]
+    OperationalLog.objects.bulk_create(
+        OperationalLog(
+            id=key,
+            correlation_id=key,
+            created_at=moment,
+            level="INFO",
+            event="task_failed",
+            schema="task",
+            context={},
         )
-    ]
+        for key in diagnostic
+    )
+    AuditEvent.objects.bulk_create(
+        AuditEvent(
+            id=key, correlation_id=key, created_at=moment, event_type="task_failed"
+        )
+        for key in audited
+    )
+    wanted = {"applied": "yes", "info": "yes", "event": "task_failed"}
+    walked, cursor = [], {}
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        for _ in range(6):
+            response = post(browser, wanted | cursor)
+            assert response.status_code == 200
+            walked.extend(identifiers(response))
+            cursor = dict(
+                re.findall(
+                    r'name="(before(?:_id)?)" value="([^"]+)"',
+                    response.content.decode(),
+                )
+            )
+            if not cursor:
+                break
+    # Every entry exactly once, in one total order, across five page boundaries.
+    assert walked == sorted([*diagnostic, *audited], reverse=True)
+    assert len(walked) == len(set(walked)) == 30 and not cursor
 
 
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])
@@ -209,6 +264,8 @@ def test_logs_are_not_exposed_to_other_roles(auth_service, google, role):
         assert post(browser, {"source": "audit"}).status_code == 403
         home = browser.get("/admin/").content
     assert b"admin_login" not in response.content
+    # A denied reader submitted nothing that could be corrected.
+    assert b"Identifiers must be complete" not in response.content
     assert b'href="/admin/logs"' not in home
     assert views() == []
 
@@ -242,36 +299,84 @@ def test_restore_review_makes_the_logs_unavailable(auth_service, google, monkeyp
     # it the way the campaign admission tests do: on the row the view reads.
     runtime = SystemConfiguration.objects.get()
     runtime.restore_review_required = True
-    monkeypatch.setattr(SystemConfiguration.objects, "first", lambda: runtime)
-    response = browser.get(URL)
+    with (
+        monkeypatch.context() as patch,
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+    ):
+        patch.setattr(SystemConfiguration.objects, "first", lambda: runtime)
+        response = browser.get(URL)
+    assert response.status_code == 503 and response["Retry-After"] == "5"
+    assert b"admin_login" not in response.content and views() == []
+    # An outage is not a filter mistake, so no filter guidance is offered.
+    assert b"Identifiers must be complete" not in response.content
+
+
+def test_a_restore_review_beginning_during_the_request_audits_nothing(
+    auth_service, google, monkeypatch
+):
+    """The check after rendering refuses too, before anything is audited as viewed."""
+    browser, _ = signed_in()
+    genuine = SystemConfiguration.objects.filter
+
+    def restoring(*args, **kwargs):
+        """Report a review only to the post-render check, which asks for one."""
+        rows = genuine(*args, **kwargs)
+        if kwargs == {"restore_review_required": True}:
+            rows.exists = lambda: True
+        return rows
+
+    with (
+        monkeypatch.context() as patch,
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+    ):
+        patch.setattr(SystemConfiguration.objects, "filter", restoring)
+        response = browser.get(URL)
     assert response.status_code == 503 and response["Retry-After"] == "5"
     assert b"admin_login" not in response.content and views() == []
 
 
 def test_a_page_costs_a_bounded_number_of_queries(auth_service, google):
-    """Five hundred more entries add no query: each source is read once."""
+    """Five hundred more entries add no read: one per table, however many rows."""
     browser, _ = signed_in()
-    with CaptureQueriesContext(connection) as few:
+    tables = (
+        "stewardship_operational_log",
+        "stewardship_audit_event",
+        "stewardship_portal_user",
+    )
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        CaptureQueriesContext(connection) as few,
+    ):
         assert browser.get(URL).status_code == 200
     OperationalLog.objects.bulk_create(
         OperationalLog(level="INFO", event="task_failed", schema="task", context={})
         for _ in range(500)
     )
-    with CaptureQueriesContext(connection) as many:
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        CaptureQueriesContext(connection) as many,
+    ):
         response = browser.get(URL)
-    # Count only the reads of the two log tables. Total statements also include
-    # the session's throttled idle-activity update, which depends on timing.
+    # Count only reads the page itself makes of these tables. Total statements
+    # also include the session's throttled idle-activity update, which depends
+    # on timing, and sign-in's own reads of the portal user.
     reads = [
         Counter(
             table
             for query in captured
-            for table in ("stewardship_operational_log", "stewardship_audit_event")
-            if query["sql"].startswith("SELECT") and f'FROM "{table}"' in query["sql"]
+            for table in tables
+            if query["sql"].startswith("SELECT")
+            and f'FROM "{table}"' in query["sql"]
+            and ("ORDER BY" in query["sql"] or '"email"' in query["sql"])
         )
         for captured in (few, many)
     ]
-    assert response.status_code == 200 and reads[0] == reads[1]
-    assert reads[1]["stewardship_operational_log"] == 1
+    assert response.status_code == 200
+    # One bounded read of each log table, and the actor lookup never per row.
+    for captured in reads:
+        assert captured["stewardship_operational_log"] == 1
+        assert captured["stewardship_audit_event"] == 1
+    assert reads[1]["stewardship_portal_user"] <= reads[0]["stewardship_portal_user"]
     assert (
         response.content.count(b"<tr>") == 51 and b"Older entries" in response.content
     )

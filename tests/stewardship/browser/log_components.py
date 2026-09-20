@@ -6,13 +6,12 @@ from uuid import UUID
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.audit.log_rows import (
-    EVENTS,
     LEVEL_LABELS,
-    SOURCES,
     LogQuery,
     audit_row,
     merge,
     operational_row,
+    page_context,
 )
 from parishkit.stewardship.web.contracts import MESSAGES, ErrorCode
 
@@ -29,7 +28,8 @@ def components(context, admin):
                 event="task_failed",
                 actor_id=None,
                 correlation_id=UUID(int=200 + index),
-                context={"outcome": "failed", "count": index, "note": "<b>safe</b>"},
+                # A reviewed field whose text must still be shown as text.
+                context={"outcome": "failed", "count": index, "reason": "<b>safe</b>"},
             )
         )
         for index, level in enumerate(LEVEL_LABELS)
@@ -67,23 +67,10 @@ def components(context, admin):
         row["actor"] = None
 
     def page(query, rows, following):
-        """Render exactly the context the view builds."""
+        """Render the production context builder's output, as the view does."""
         return render_to_string(
             "stewardship/logs.html",
-            context
-            | {"admin_chrome": admin}
-            | {
-                "rows": rows,
-                "query": query,
-                "query_fields": query.form_values(),
-                "following": following,
-                "levels": [
-                    (level.lower(), LEVEL_LABELS[level], level in query.levels)
-                    for level in LEVEL_LABELS
-                ],
-                "sources": SOURCES,
-                "events": EVENTS,
-            },
+            context | {"admin_chrome": admin} | page_context(query, rows, following),
         )
 
     everything = LogQuery.parse(
@@ -114,7 +101,9 @@ def components(context, admin):
             "text/html",
             render_to_string(
                 "stewardship/logs-error.html",
-                context | {"admin_chrome": admin} | {"message": MESSAGES[code]},
+                context
+                | {"admin_chrome": admin}
+                | {"message": MESSAGES[code], "invalid": code is ErrorCode.INVALID},
             ),
         )
     return result

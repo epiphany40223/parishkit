@@ -41,7 +41,9 @@ def test_logs_mobile_keyboard_and_accessibility(
     assert page.get_by_text("<b>safe</b>", exact=True).count() == 4
     assert page.locator("td b").count() == 0
     entry = page.get_by_role("row", name="dashboard_viewed", exact=False)
-    assert entry.get_by_text("admin@example.org", exact=True).count() == 1
+    # A resolved actor still shows the identifier the Actor filter needs.
+    actor = entry.get_by_role("cell", name="admin@example.org", exact=False)
+    assert "00000000-0000-0000-0000-00000000012d" in actor.inner_text()
     assert entry.get_by_text("Audit record", exact=True).count() == 1
     # The chosen filters are kept, including a ticked DEBUG.
     assert page.get_by_label("Debug").is_checked()
@@ -65,7 +67,11 @@ def test_logs_mobile_keyboard_and_accessibility(
     assert page.get_by_text("No matching entries.", exact=True).is_visible()
     page.goto(component_origin + "/logs-error-400")
     assert page.get_by_role("alert").count() == 1
+    assert page.get_by_text("Identifiers must be complete", exact=False).count() == 1
     assert page.get_by_role("link", name="Return to the newest log entries").count()
+    # An outage or a denial submitted nothing that could be corrected.
+    page.goto(component_origin + "/logs-error-503")
+    assert page.get_by_text("Identifiers must be complete", exact=False).count() == 0
 
 
 def test_log_filters_and_paging_without_scripts(browser_engine, component_origin):

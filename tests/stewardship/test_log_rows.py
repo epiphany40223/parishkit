@@ -7,6 +7,7 @@ import pytest
 from django.utils.datastructures import MultiValueDict
 
 from parishkit.stewardship.audit.log_rows import (
+    DETAIL_FIELDS,
     EVENTS,
     LEVELS,
     LogQuery,
@@ -81,6 +82,10 @@ def test_query_accepts_only_the_closed_bounded_grammar():
         {"start": "2026-02-30"},
         {"start": "20260201"},
         {"start": "2026-09-02", "end": "2026-09-01"},
+        # The exclusive upper bound of the last representable day would overflow.
+        {"end": "9999-12-31"},
+        {"end": "3000-01-01"},
+        {"start": "2019-12-31"},
         {"applied": "no"},
         {"debug": "on", "applied": "yes"},
         # A tick without the submitted-form marker is not a real form.
@@ -130,31 +135,37 @@ def audit(moment, *, context=None, identifier=None):
     )
 
 
-def test_rows_show_only_recognized_scalar_detail():
-    """Nothing nested or oddly keyed is rendered, whatever a future schema stores."""
+def test_rows_show_only_reviewed_fields_with_short_scalar_values():
+    """A key that merely looks safe is not enough, whatever a future schema stores."""
     row = operational(
         NOW,
         level="CRITICAL",
         context={
             "outcome": "failed",
             "count": 3,
-            "retried": True,
+            "retryable": True,
             "reason": None,
-            "kinds": ["a", 2],
-            "nested": {"email": "person@example.org"},
-            "mixed": ["ok", {"email": "person@example.org"}],
+            "ministry_duids": [3, 9],
+            # Identifier-shaped, flat and textual, but in no reviewed schema.
+            "note": "person@example.org",
+            "family_name": "person@example.org",
+            # A reviewed field holding something it never should.
+            "status": "x" * 129,
+            "field": ["person@example.org"],
+            "kind": {"email": "person@example.org"},
             "Bad Key": "person@example.org",
             7: "person@example.org",
         },
     )
     assert row["details"] == [
         ("count", "3"),
-        ("kinds", "a, 2"),
+        ("ministry_duids", "3, 9"),
         ("outcome", "failed"),
         ("reason", ""),
-        ("retried", "True"),
+        ("retryable", "True"),
     ]
-    assert "example.org" not in str(row["details"])
+    assert "example.org" not in str(row["details"]) and "xxx" not in str(row)
+    assert "note" not in DETAIL_FIELDS and "outcome" in DETAIL_FIELDS
     # Severity is a word and a symbol, never color alone.
     assert (row["level_symbol"], str(row["level_label"])) == ("‼", "Critical")
     assert operational(NOW, context="text")["details"] == []

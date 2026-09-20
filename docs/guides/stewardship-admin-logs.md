@@ -25,6 +25,12 @@ scope, and an export time-zone choice are **not** in this increment. They follow
 with [RPT-09](../plans/stewardship/reports.md#rpt-09-logs-and-daily-email-parity)
 on the shared export pipeline, so ADM-08.04 stays unchecked.
 
+The specification's before/after detail for audit events is met only as far as
+the stored evidence goes: the recorded-detail column shows the reviewed
+`before_version`, `after_version`, `before_state` and `after_state` fields when
+an event carries them. No event stores before and after *values*, by design, so
+there is nothing richer to show.
+
 ## Design
 
 ### A closed grammar, without hiding real types
@@ -55,16 +61,23 @@ as new ones arrive, and would grow more expensive with depth. Each source reads
 at most one page plus a sentinel row, and the first page of their merge is the
 true next page of the union.
 
-### Only recognized detail is shown
+### Only reviewed detail is shown
 
 Stored context was already reduced to reviewed closed fields when it was
-written. The page still renders only keys shaped like identifiers with scalar
-values or lists of scalars, so a future schema that stores something richer
-cannot leak through it, and it renders them as text, never as markup.
+written. The page still renders only fields that some reviewed context schema
+names, with a number, a Boolean, a list of numbers or text of at most 128
+characters, and renders them as text, never as markup. A key that merely looks
+like an identifier is not enough: a future flat text field, or a context written
+directly by an SQL trigger, would otherwise be rendered verbatim.
 
 An actor is shown by address on screen, for the actors on that page only, and
-never enters the audit event or a log. An identifier that is not a current
-portal user, such as a Family or a former user, is shown as that.
+never enters the audit event or a log. Its identifier is shown beneath the
+address, because the Actor filter takes that identifier. One that is not a
+current portal user, such as a Family or a former user, is shown as that.
+
+Dates are whole UTC days between 2020 and 2999. The last representable day
+cannot be advanced to its exclusive upper bound, so it is refused as a filter
+rather than allowed to overflow.
 
 ### Authority, audit and cost
 
@@ -80,9 +93,21 @@ expected.
 The page is unavailable during a restore review, like the delivery pages beside
 it.
 
-Ordering by time across both tables is not served by their composite indexes.
-Pages are bounded and parish logs are small; an index on the time column is a
-candidate for the export increment if measurement shows a need.
+Ordering by time across both tables is not served by their composite indexes,
+and the audit table gains a row for each view of this page. Pages are bounded
+and parish logs are small; an index on time then identifier, with the cursor
+written as a row comparison so it can be one range scan, is a candidate for the
+export increment if measurement shows a need.
+
+Two known limits are accepted here. The two sources are read by separate
+statements, so an entry committed between them, or written by a transaction
+older than the cursor, can be missed by a reader already past that instant; the
+newest page shows it. With scripts enabled the shared local-time enhancement
+shows minutes, so entries within one minute read alike there, while the
+unscripted page shows the full UTC instant.
+
+An error page gives filter guidance only when a filter was the problem: a denied
+reader or an outage submitted nothing that could be corrected.
 
 ## Schema
 
@@ -96,19 +121,24 @@ All runs are local, on the disposable PostgreSQL 18.6 and Valkey services, and
 are focused selections rather than a complete acceptance pass.
 
 - Four database-free cases, under one second: DEBUG excluded until chosen and an
-  empty choice meaning none; the closed grammar with 23 refusals and a repeated
-  parameter, accepting a directly written type; the display whitelist dropping
-  nested, oddly keyed and non-text-keyed context; and the merge ordered across
+  empty choice meaning none; the closed grammar with 26 refusals, including the
+  last representable day, and a repeated parameter, accepting a directly written
+  type; the detail whitelist dropping unreviewed flat text fields, overlong
+  values, nested values and oddly keyed context; and the merge ordered across
   sources with a cursor that round-trips through the grammar.
-- Seven PostgreSQL cases under the real web role, 17 seconds: both sources on
-  the default page, eight filtered views including a directly written type, a
-  refused query string and unauthenticated POST, five refused filters with no
-  echoed value, and nine audit rows naming nothing; older entries reached by a
-  stable cursor while the log grows between requests; Staff and Ministry leaders
-  denied with no navigation entry and no audit row; access lost between
-  rendering and the recheck disclosing and auditing nothing; a restore review
-  making the page unavailable; and five hundred more entries adding no read of
-  either log table.
+- Nine PostgreSQL cases, every request under the real web role, 19 seconds. Both
+  sources on the default page, eight filtered views including a directly written
+  type, a refused query string and unauthenticated POST, six refused filters
+  with guidance and no echoed value, and nine audit rows naming nothing. Older
+  entries reached by a stable cursor while the log grows between requests. A
+  cursor walked across both tables through thirty entries sharing one instant,
+  each exactly once in one total order, which also proves PostgreSQL and Python
+  order identifiers alike. Staff and Ministry leaders denied with no filter
+  guidance, no navigation entry and no audit row. Access lost between rendering
+  and the recheck disclosing and auditing nothing. A restore review, whether
+  present before the read or beginning during the request, making the page
+  unavailable and auditing nothing. Five hundred more entries leaving one
+  bounded read of each log table and no per-row actor lookup.
 - The 16-case navigation suite pins the entry to Administrators.
 - Nine browser cases on Chromium, Firefox and WebKit, 14 seconds: accessibility
   scans of six states at 320 and 1280 pixels, severity words beside their
@@ -122,7 +152,9 @@ delivery order is known.
 
 ## Checkpoint
 
-Implementation and focused validation are complete. Three dual-source review/fix
-rounds, full exact-head CI, DCO and protected delivery remain open. M5 and
+Implementation and focused validation are complete. One
+[review attempt](stewardship-admin-logs-reviews.md) was single-source because
+the Codex reviewer failed, and is not counted; its findings were fixed. Three
+dual-source review/fix rounds, full exact-head CI, DCO and protected delivery remain open. M5 and
 Gate 3 remain open. No deployment, release, live-provider write or database
 deletion is authorized by this increment.
