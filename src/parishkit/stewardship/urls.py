@@ -54,6 +54,7 @@ from .reports import (
     information_export_views,
     information_views,
     ministry_export_views,
+    ministry_followup_views,
     weekly_manual_views,
     weekly_views,
     workspace_views,
@@ -106,6 +107,26 @@ admin_patterns = [
         ministry_report_views.report,
         {"action": "leave"},
         name="ministry_leavers",
+    ),
+    path(
+        "reports/<uuid:campaign_id>/ministries/follow-up/",
+        ministry_followup_views.queue,
+        name="ministry_followup",
+    ),
+    path(
+        "reports/<uuid:campaign_id>/ministries/follow-up/assign",
+        ministry_followup_views.assign,
+        name="ministry_followup_assign",
+    ),
+    path(
+        "reports/<uuid:campaign_id>/ministries/follow-up/<uuid:request_id>/",
+        ministry_followup_views.detail,
+        name="ministry_followup_item",
+    ),
+    path(
+        "reports/<uuid:campaign_id>/ministries/follow-up/<uuid:request_id>/update",
+        ministry_followup_views.update,
+        name="ministry_followup_update",
     ),
     path(
         "reports/<uuid:campaign_id>/families/export",

@@ -1,0 +1,10 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Ministry follow-up unavailable" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Ministry follow-up unavailable" %}</h1>
+{% if status == 409 %}<p role="alert">{% translate "This request changed. Nothing was saved. Reload and review its latest status before trying again." %}</p>
+{% elif status == 503 %}<p role="alert">{% translate "This information is temporarily unavailable. Please retry later." %}</p>
+{% else %}<p role="alert">{% translate "Check the form. Resolving or closing needs a matching outcome, the outcome Other needs notes, an assigned request needs an assignee, and a contact attempt needs its channel, date and time, not in the future. Nothing was saved." %}</p>{% endif %}
+{% if request_id %}<p><a href="{% url 'admin:ministry_followup_item' campaign_id request_id %}">{% translate "Reload this request" %}</a></p>{% endif %}
+<p><a href="{% url 'admin:ministry_followup' campaign_id %}">{% translate "Return to this campaign's queue" %}</a></p>
+{% endblock %}

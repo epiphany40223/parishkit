@@ -96,6 +96,7 @@ class Migration(migrations.Migration):
                                 to="stewardship_workflows.ministryrequest",
                             ),
                         ),
+                        ("assignee_id", models.UUIDField(null=True)),
                     ],
                     options={
                         "db_table": "stewardship_ministry_request",
@@ -215,6 +216,167 @@ class Migration(migrations.Migration):
                                     ("superseded_by_id", models.F("id")), _negated=True
                                 ),
                                 name="ministry_request_not_own_next",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    models.Q(
+                                        models.Q(("state", "new"), _negated=True),
+                                        ("assignee_id__isnull", True),
+                                        _connector="OR",
+                                    ),
+                                    models.Q(
+                                        models.Q(("state", "assigned"), _negated=True),
+                                        ("assignee_id__isnull", False),
+                                        _connector="OR",
+                                    ),
+                                ),
+                                name="ministry_request_assignment",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
+                    name="MinistryWorkflowRevision",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        ("expected_version", models.PositiveBigIntegerField()),
+                        ("request_key", models.UUIDField()),
+                        ("assignee_id", models.UUIDField(null=True)),
+                        ("state", models.CharField(max_length=20)),
+                        ("outcome", models.CharField(max_length=20, null=True)),
+                        ("notes", models.TextField(blank=True, default="")),
+                        (
+                            "contact_channel",
+                            models.CharField(max_length=10, null=True),
+                        ),
+                        (
+                            "contact_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(null=True),
+                        ),
+                        ("contact_notes", models.TextField(blank=True, default="")),
+                        (
+                            "request",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                related_name="revisions",
+                                to="stewardship_workflows.ministryrequest",
+                            ),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_ministry_revision",
+                        "constraints": [
+                            models.UniqueConstraint(
+                                fields=("request", "expected_version"),
+                                name="ministry_revision_version",
+                            ),
+                            models.UniqueConstraint(
+                                fields=("actor_id", "request_key"),
+                                name="ministry_revision_replay",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    ("actor_id__isnull", False),
+                                    ("expected_version__gte", 1),
+                                ),
+                                name="ministry_revision_identity",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    models.Q(
+                                        models.Q(
+                                            ("outcome__isnull", True),
+                                            (
+                                                "state__in",
+                                                ["new", "assigned", "in_progress"],
+                                            ),
+                                        ),
+                                        models.Q(
+                                            (
+                                                "outcome__in",
+                                                [
+                                                    "joined",
+                                                    "leave_confirmed",
+                                                    "declined",
+                                                    "duplicate",
+                                                    "other",
+                                                ],
+                                            ),
+                                            ("state", "resolved"),
+                                        ),
+                                        models.Q(
+                                            ("outcome", "no_response"),
+                                            ("state", "closed_no_response"),
+                                        ),
+                                        _connector="OR",
+                                    ),
+                                    models.Q(
+                                        models.Q(("outcome", "other"), _negated=True),
+                                        models.Q(("notes", ""), _negated=True),
+                                        _connector="OR",
+                                    ),
+                                ),
+                                name="ministry_revision_outcome",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    models.Q(
+                                        models.Q(("state", "new"), _negated=True),
+                                        ("assignee_id__isnull", True),
+                                        _connector="OR",
+                                    ),
+                                    models.Q(
+                                        models.Q(("state", "assigned"), _negated=True),
+                                        ("assignee_id__isnull", False),
+                                        _connector="OR",
+                                    ),
+                                ),
+                                name="ministry_revision_assignment",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    models.Q(
+                                        ("contact_at__isnull", True),
+                                        ("contact_channel__isnull", True),
+                                        ("contact_notes", ""),
+                                    ),
+                                    models.Q(
+                                        ("contact_at__isnull", False),
+                                        (
+                                            "contact_channel__in",
+                                            ["email", "phone", "in_person", "other"],
+                                        ),
+                                    ),
+                                    _connector="OR",
+                                ),
+                                name="ministry_revision_contact",
                             ),
                         ],
                     },

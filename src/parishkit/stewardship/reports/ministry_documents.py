@@ -139,7 +139,8 @@ def ministry_document(payload, parameters, *, parish_name, requested_at, timezon
                 instant(item["submitted_at"]),
                 STATES[item["state"]],
                 OUTCOMES.get(item["outcome"], "Not yet recorded"),
-                "Not recorded",
+                # Captures made before assignment existed carry no such key.
+                item.get("assignee") or "Unassigned",
             )
             if action == "leave":
                 rows.append(common + (item["current_role"] or "Unavailable",))

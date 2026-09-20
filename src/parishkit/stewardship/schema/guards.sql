@@ -5206,7 +5206,8 @@ DECLARE
     later public.stewardship_submission;
     prior public.stewardship_ministry_request;
     successor public.stewardship_ministry_request;
-    group_name text; expected_state text;
+    group_name text; expected_state text; same_intent boolean;
+    staff_at timestamp with time zone;
 BEGIN
     IF TG_OP='DELETE' THEN
         SELECT * INTO response FROM public.stewardship_submission WHERE id=OLD.submission_id;
@@ -5242,22 +5243,27 @@ BEGIN
         END IF;
         SELECT * INTO prior FROM public.stewardship_ministry_request WHERE id=
             public.stewardship_ministry_predecessor_v1(response,NEW.entity_kind,NEW.entity_key,NEW.ministry_duid);
-        expected_state := CASE WHEN prior.state IN ('new','assigned','in_progress')
-            AND prior.action=NEW.action THEN prior.state ELSE 'new' END;
-        IF NEW.state IS DISTINCT FROM expected_state THEN
+        -- A Family cannot assign Staff work, and resubmitting the same intent
+        -- must not discard it: the successor inherits state and assignee only.
+        same_intent := coalesce(prior.state IN ('new','assigned','in_progress')
+            AND prior.action=NEW.action,false);
+        expected_state := CASE WHEN same_intent THEN prior.state ELSE 'new' END;
+        IF NEW.state IS DISTINCT FROM expected_state OR NEW.assignee_id IS DISTINCT FROM
+            (CASE WHEN same_intent THEN prior.assignee_id END) THEN
             RAISE EXCEPTION 'Ministry request must preserve same-intent workflow state' USING ERRCODE='23514';
         END IF;
         RETURN NEW;
     END IF;
     IF OLD.state NOT IN ('new','assigned','in_progress') OR NEW.version<>OLD.version+1
-       OR (to_jsonb(NEW)-ARRAY['state','outcome','resolved_at','resolution_source_id','superseded_by_id','version','updated_at'])
+       OR (to_jsonb(NEW)-ARRAY['state','outcome','resolved_at','resolution_source_id','superseded_by_id','assignee_id','version','updated_at'])
           IS DISTINCT FROM
-          (to_jsonb(OLD)-ARRAY['state','outcome','resolved_at','resolution_source_id','superseded_by_id','version','updated_at']) THEN
+          (to_jsonb(OLD)-ARRAY['state','outcome','resolved_at','resolution_source_id','superseded_by_id','assignee_id','version','updated_at']) THEN
         RAISE EXCEPTION 'Ministry provenance and closed outcomes are immutable' USING ERRCODE='23514';
     END IF;
     IF current_user='pk_stewardship_worker' THEN
         IF NEW.state<>'resolved' OR NEW.outcome IS DISTINCT FROM
             (CASE WHEN NEW.action='join' THEN 'joined' ELSE 'leave_confirmed' END)
+           OR NEW.assignee_id IS DISTINCT FROM OLD.assignee_id
            OR NEW.resolution_source_id IS NULL
            OR NOT public.stewardship_response_source_owner_v1(NEW.resolution_source_id)
            OR NEW.entity_kind<>'member'
@@ -5270,6 +5276,18 @@ BEGIN
             RAISE EXCEPTION 'Ministry resolution requires fenced scoped roster evidence' USING ERRCODE='23514';
         END IF;
         NEW.resolved_at := clock_timestamp();
+    ELSIF current_user='pk_stewardship_web' AND NEW.state NOT IN ('superseded','cancelled') THEN
+        -- Staff follow-up. Its revision guard already proved current authority,
+        -- Ministry scope, the work gate and this exact version; accept only the
+        -- projection that history records. Roster evidence stays worker-owned.
+        SELECT r.created_at INTO staff_at FROM public.stewardship_ministry_revision r
+            WHERE r.request_id=NEW.id AND r.expected_version=OLD.version AND r.state=NEW.state
+              AND r.outcome IS NOT DISTINCT FROM NEW.outcome
+              AND r.assignee_id IS NOT DISTINCT FROM NEW.assignee_id;
+        IF NOT FOUND OR NEW.resolution_source_id IS NOT NULL OR NEW.superseded_by_id IS NOT NULL THEN
+            RAISE EXCEPTION 'Ministry follow-up projection requires its paired history' USING ERRCODE='23514';
+        END IF;
+        NEW.resolved_at := CASE WHEN NEW.outcome IS NOT NULL THEN staff_at END;
     ELSIF current_user='pk_stewardship_web' THEN
         SELECT candidate.* INTO later FROM public.stewardship_submission candidate
         JOIN public.stewardship_family_form_baseline baseline ON baseline.id=candidate.baseline_id
@@ -5279,7 +5297,7 @@ BEGIN
           AND candidate.family_version>response.family_version
           AND OLD.id=public.stewardship_ministry_predecessor_v1(
               candidate,OLD.entity_kind,OLD.entity_key,OLD.ministry_duid);
-        IF NOT FOUND OR NEW.state NOT IN ('superseded','cancelled')
+        IF NOT FOUND OR NEW.assignee_id IS DISTINCT FROM OLD.assignee_id
            OR NOT public.stewardship_response_ministry_visible_v1(
                later.validation_source_id,later.configuration_id,later.campaign_id,NEW.ministry_duid)
            OR (NEW.entity_kind='member' AND NOT ((later.answers->'members') ? NEW.entity_key))

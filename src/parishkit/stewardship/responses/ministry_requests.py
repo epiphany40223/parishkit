@@ -114,6 +114,9 @@ def derive_ministry_requests(submission, validated):
                         ministry_duid=ministry,
                         action=action,
                         state=old.state if same else "new",
+                        # Staff work survives a same-intent resubmission; its
+                        # notes and contacts stay with the superseded history.
+                        assignee_id=old.assignee_id if same else None,
                         actor_id=submission.family_id,
                     )
                     created.append(new)

@@ -49,7 +49,7 @@ WITH selected AS MATERIALIZED (
       AND (ministry_id::integer IS NULL OR n.duid::bigint=ministry_id)
 ), requests AS MATERIALIZED (
     SELECT r.id,r.entity_kind,r.entity_key,r.ministry_duid,r.action,r.state,
-        r.outcome,s.submitted_at,s.family_version,f.family_duid,s.id AS submission_id,
+        r.outcome,r.assignee_id,s.submitted_at,s.family_version,f.family_duid,s.id AS submission_id,
         row_number() OVER (PARTITION BY s.family_id,r.entity_kind,r.entity_key,
             r.ministry_duid ORDER BY s.family_version DESC,r.id) AS revision
     FROM source x
@@ -125,6 +125,10 @@ WITH selected AS MATERIALIZED (
         CASE WHEN r.entity_kind='proposed_member' THEN r.entity_key END AS proposed_id,
         r.action,r.state,r.outcome,r.submitted_at,
         r.revision=1 AS latest,
+        -- Resolved in this statement so an export captures who held the work
+        -- as of its data, not whoever holds that identity when it renders.
+        (SELECT u.email FROM stewardship_portal_user u
+            WHERE u.id=r.assignee_id) AS assignee,
         CASE WHEN r.action='leave' THEN (
             SELECT string_agg(DISTINCT p.canonical::jsonb->>'ministryRoleName',', '
                 ORDER BY p.canonical::jsonb->>'ministryRoleName')

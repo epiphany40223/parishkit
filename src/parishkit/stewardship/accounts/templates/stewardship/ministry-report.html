@@ -6,6 +6,7 @@
 <p>{{ metadata.name }} — {% translate "Source generation" %} {{ metadata.source_generation|number }}; {% translate "source as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time>.</p>
 <p>{% translate "Ages as of" %} {{ metadata.report_date }} ({{ metadata.timezone }}). {% translate "Request date filters use the parish timezone. Displayed times use your browser timezone when scripts are available; otherwise UTC." %}</p>
 <p>{% translate "Current counts exclude cancelled and superseded requests. Inactive Ministries retain their requests. Follow-up progress counts resolved or closed requests; it is not a record of contact attempts." %}</p>
+<p><a href="{% url 'admin:ministry_followup' campaign_id %}">{% translate "Follow up these requests: assignment, contact attempts, notes and outcomes" %}</a></p>
 {% if ministry_id %}<p><a href="{{ summary_url }}">{% translate "All authorized Ministries" %}</a></p>{% endif %}
 <form method="post" action="{{ report_url }}">{% csrf_token %}
 {% if ministry_id %}<input type="hidden" name="ministry" value="{{ ministry_id }}">{% endif %}
@@ -29,7 +30,7 @@
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Member request details' %}"><table><caption>{% translate "Authorized Member request details" %}</caption>
 <thead><tr><th scope="col">{% translate "Member" %}</th><th scope="col">{% translate "Submitted" %}</th><th scope="col">{% translate "Status and outcome" %}</th><th scope="col">{% if action == 'join' %}{% translate "Contact and demographics" %}{% else %}{% translate "Current Ministry role" %}{% endif %}</th></tr></thead>
 <tbody>{% for row in rows %}<tr><td>{{ row.member_name }}<br>{% if row.member_duid %}{% translate "DUID" %} {{ row.member_duid|number }}{% else %}{% translate "Proposed Member (local identity; no source DUID)" %} <code>{{ row.proposed_id }}</code>{% endif %}</td>
-<td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td><td>{{ row.state_label }}<br>{{ row.outcome_label }}<br>{% translate "Assignee: not recorded" %}</td>
+<td><time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time></td><td>{{ row.state_label }}<br>{{ row.outcome_label }}<br>{% translate "Assignee:" %} {% if row.assignee %}{{ row.assignee }}{% else %}{% translate "Unassigned" %}{% endif %}</td>
 <td>{% if action == 'join' %}<dl><dt>{% translate "Gender" %}</dt><dd>{{ row.gender|default:'Unavailable' }}</dd><dt>{% translate "Age" %}</dt><dd>{% if row.age is not None %}{{ row.age|number }}{% else %}{% translate "Unavailable" %}{% endif %}</dd>
 <dt>{% translate "Email" %}</dt><dd>{% if row.email_visibility == 'not_published' %}{% translate "Not published" %}{% else %}{% for email in row.emails %}{{ email }}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "Unavailable" %}{% endfor %}{% endif %}</dd>
 <dt>{% translate "Phones" %}</dt><dd>{% if row.phone_visibility == 'not_published' %}{% translate "Not published" %}{% else %}{% for kind,value in row.phones.items %}{{ kind }}: {{ value }}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "Unavailable" %}{% endfor %}{% endif %}</dd>
