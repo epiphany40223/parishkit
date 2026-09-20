@@ -1,10 +1,13 @@
 """Read-only Administrator review of who may sign in to the portal and why."""
 
 from django.db import DatabaseError
+from django.db.models import Max, Q
+from django.db.models.functions import Lower
 from django.shortcuts import render
 from django.views.decorators.http import require_safe
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.work_locks import work_transaction
@@ -14,10 +17,16 @@ from parishkit.stewardship.web.contracts import filters
 from .admin_editing import editable_configuration, error_response
 from .authentication import runtime
 from .limiting import LimiterUnavailable
-from .policy import Capability, allows
-from .policy_models import AssignmentOverlay, MinistryAssignment, PortalUser
+from .policy import Capability, allows, confirmed_seeded
+from .policy_models import PortalUser
 from .sessions import authenticated_admin
-from .user_rows import address_rows, domain_assignment_rows, domain_rows
+from .user_rows import (
+    Policy,
+    address_rows,
+    disclosed,
+    domain_assignment_rows,
+    domain_rows,
+)
 
 
 def _principal(request, service, *, read_only=False):
@@ -30,29 +39,53 @@ def _principal(request, service, *, read_only=False):
     return actor
 
 
-def _active_seeded(configuration):
-    """Seeded assignments the promoted source currently confirms.
+def _identities(records):
+    """Only the Google identities this policy names, with successful sign-ins.
 
-    A missing overlay is not proof of a current Chairperson, exactly as sign-in
-    itself decides, so this page never shows a scope a sign-in would not get.
+    Every verified Google attempt records an identity and refreshes its
+    verification time, including a stranger's attempt that policy then denies.
+    So the read is bounded by policy, not by attempts, and a sign-in means the
+    durable login event written only when a session was actually issued.
     """
-    seeded = MinistryAssignment.objects.filter(
-        configuration=configuration.active_configuration, source="chair-seed"
-    ).values_list("record_id", flat=True)
-    active = AssignmentOverlay.objects.filter(
-        assignment_record_id__in=seeded, active=True
-    ).values_list("assignment_record_id", flat=True)
-    return frozenset(str(identifier) for identifier in active)
+    emails = {
+        record["values"]["email"]
+        for record in records
+        if record["values"]["kind"] != "domain"
+    }
+    domains = {
+        record["values"]["domain"]
+        for record in records
+        if record["values"]["kind"] == "domain"
+    }
+    rows = list(
+        PortalUser.objects.annotate(address=Lower("email"))
+        .filter(Q(address__in=emails) | Q(hosted_domain__in=domains))
+        .values("id", "email", "hosted_domain", "disabled")
+    )
+    logins = dict(
+        AuditEvent.objects.filter(
+            event_type="admin_login", actor_id__in=[row["id"] for row in rows]
+        )
+        .values_list("actor_id")
+        .annotate(latest=Max("created_at"))
+    )
+    return [row | {"last_login": logins.get(row["id"])} for row in rows]
 
 
 @require_safe
 def users(request):
-    """List the applied login rules, their effective roles and provenance.
+    """List the applied login rules, what policy grants now, and provenance.
 
     The work lock keeps the applied policy, the source overlays and the Google
     identities one coherent observation; separate READ COMMITTED statements could
-    pair a newly activated rule with an older overlay. Editing arrives later and
-    will go through configuration requests, never through this page's reads.
+    pair a newly activated rule with an older overlay. That lock also serializes
+    the whole system's admissions, so only the observation, the access recheck
+    and the audit run inside it; shaping and rendering happen after release.
+    Editing arrives later through configuration requests, never these reads.
+
+    Like the Admin editors it sits beside, the page is unavailable before setup
+    completes and during a restore review, when the applied configuration is not
+    yet trusted as the parish's own.
     """
     try:
         service = runtime()
@@ -64,31 +97,30 @@ def users(request):
             records = configuration.active_configuration.canonical_document[
                 "sections"
             ].get("login_rules", [])
-            identities = list(
-                PortalUser.objects.values(
-                    "email", "hosted_domain", "verified_at", "disabled"
-                )
-            )
-            active = _active_seeded(configuration)
-            context = {
-                "domains": domain_rows(records, identities),
-                "addresses": address_rows(records, identities, active),
-                "domain_assignments": domain_assignment_rows(records, active),
-            }
-            # A demotion between admission and rendering must not disclose the
-            # list, so current access is rechecked before the response exists.
+            identities = _identities(records)
+            # The same definition of a confirmed Chairperson that sign-in uses.
+            active = confirmed_seeded(configuration.active_configuration)
+            # A demotion between admission and this observation must not
+            # disclose the list, so current access is rechecked before anything
+            # is audited as viewed or rendered.
             _principal(request, service, read_only=True)
-            response = render(request, "stewardship/users.html", context)
             record_action(
                 Action.USERS_VIEWED,
                 actor_kind=ActorKind.PORTAL_USER,
                 actor_id=actor.identity,
-                # Counts only: an audit row never carries an address or a role.
-                context={
-                    "outcome": Outcome.SUCCEEDED,
-                    "count": len(context["domains"]) + len(context["addresses"]),
-                },
+                # A count only: an audit row never carries an address or a role.
+                context={"outcome": Outcome.SUCCEEDED, "count": disclosed(records)},
             )
+        policy = Policy(records, identities, active)
+        response = render(
+            request,
+            "stewardship/users.html",
+            {
+                "domains": domain_rows(policy),
+                "addresses": address_rows(policy),
+                "domain_assignments": domain_assignment_rows(policy),
+            },
+        )
         response["Cache-Control"] = "no-store"
         return response
     except (

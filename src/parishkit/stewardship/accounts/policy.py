@@ -188,7 +188,7 @@ def report_columns(principal, requested, *, ministry_id=None):
 def current_principal(store, user_id):
     """Reload verified YAML-backed policy and source overlays on every request."""
     from .configuration_installation import coherent_configuration
-    from .policy_models import AssignmentOverlay, MinistryAssignment, PortalUser
+    from .policy_models import PortalUser
 
     if not isinstance(user_id, UUID):
         raise TypeError("An opaque user identity is required.")
@@ -207,21 +207,33 @@ def current_principal(store, user_id):
         if record["values"].get("email") == email
         or record["values"].get("domain") == email.rsplit("@", 1)[1]
     ]
-    seeded = MinistryAssignment.objects.filter(
-        configuration=runtime.active_configuration,
-        email=email,
-        source="chair-seed",
-    ).values_list("record_id", flat=True)
-    # A missing promoted-source overlay is not proof of a current Chairperson.
-    active = set(
-        AssignmentOverlay.objects.filter(
-            assignment_record_id__in=seeded, active=True
-        ).values_list("assignment_record_id", flat=True)
-    )
     roles, ministries = resolve_roles(
         email,
         user.hosted_domain,
         records,
-        frozenset(str(identifier) for identifier in active),
+        confirmed_seeded(runtime.active_configuration, email=email),
     )
     return Principal(user.pk, roles, ministries)
+
+
+def confirmed_seeded(configuration, *, email=None):
+    """Chairperson-seeded assignment identities the promoted source confirms now.
+
+    The one definition of "confirmed", shared by every sign-in and by the
+    Administrator's review of portal users, so that page can never show a
+    Ministry scope a sign-in would not receive. All addresses when `email` is
+    None. A missing promoted-source overlay is not proof of a current
+    Chairperson.
+    """
+    from .policy_models import AssignmentOverlay, MinistryAssignment
+
+    seeded = MinistryAssignment.objects.filter(
+        configuration=configuration, source="chair-seed"
+    )
+    if email is not None:
+        seeded = seeded.filter(email=email)
+    active = AssignmentOverlay.objects.filter(
+        assignment_record_id__in=seeded.values_list("record_id", flat=True),
+        active=True,
+    ).values_list("assignment_record_id", flat=True)
+    return frozenset(str(identifier) for identifier in active)

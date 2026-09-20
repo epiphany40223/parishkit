@@ -55,11 +55,13 @@ def portal_chrome(request):
                 (reverse("admin:branding_settings"), _("Parish logos")),
                 (reverse("admin:integrations"), _("Integrations")),
                 (reverse("admin:ministries"), _("Ministry activity")),
-                (reverse("admin:users"), _("Portal users")),
                 (reverse("admin:background"), _("Background work")),
                 (reverse("admin:deliveries"), _("Outgoing mail")),
             ]
         )
+    # The same capability the page itself checks, so the two cannot disagree.
+    if allows(actor, Capability.MANAGE_USERS):
+        navigation.append((reverse("admin:users"), _("Portal users")))
     if campaign and allows(actor, Capability.FAMILY_CODES):
         navigation.extend(
             [

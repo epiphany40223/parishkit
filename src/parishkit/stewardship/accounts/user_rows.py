@@ -1,11 +1,18 @@
 """Read-only review rows for the applied login rules and Ministry assignments.
 
 Pure shaping over the applied canonical policy records. It decides nothing:
-effective roles come from the one policy evaluator, so this page can never show
-an authority that a sign-in would not actually receive.
+every role and Ministry scope shown comes from the one policy evaluator, given
+the hosted-domain claim a recorded Google identity actually presented, so this
+page never reasons from an email suffix the way a sign-in itself refuses to.
+
+An identity here is a dict with `email`, `hosted_domain`, `disabled` and
+`last_login`. Google's stable subject owns identity, so one address can have
+several. `last_login` is the latest *successful* sign-in or None: a verified
+Google attempt that policy then denied is not a sign-in.
 """
 
 from django.utils.translation import gettext_lazy as _
+from django.utils.translation import ngettext_lazy
 
 from .policy import resolve_roles
 
@@ -14,9 +21,12 @@ ROLE_LABELS = {
     "staff": _("Staff"),
     "ministry_leader": _("Ministry leader"),
 }
+# Neutral nouns: the same origin names a rule's creation, a role grant and an
+# assignment's source, and a seeded rule was created by reconciling the parish
+# source, not by the Chairperson it names.
 ORIGIN_LABELS = {
-    "manual": _("Added by an Administrator"),
-    "chair-seed": _("Chairperson"),
+    "manual": _("Administrator entry"),
+    "chair-seed": _("Parish source Chairperson"),
 }
 
 
@@ -25,84 +35,171 @@ def _labels(roles):
     return [ROLE_LABELS[role] for role in ROLE_LABELS if role in roles]
 
 
-def _signins(users):
-    """Index the mutable Google identities by their normalized address."""
-    return {user["email"].lower(): user for user in users}
+def _latest(identities):
+    """The most recent successful sign-in among these identities, if any."""
+    return max(
+        (item["last_login"] for item in identities if item["last_login"]),
+        default=None,
+    )
 
 
-def domain_rows(records, users):
-    """Hosted-domain rules, with whether a matching signed claim was ever seen.
+class Policy:
+    """Index the applied records once, so no row rescans the whole policy."""
 
-    An email suffix alone never matches a domain rule, so the evidence that a
-    rule is usable is a sign-in that actually presented that hosted domain.
+    def __init__(self, records, identities, active_seeded=frozenset()):
+        """Group rules by address and domain, and identities by address."""
+        self.active_seeded = active_seeded
+        self.domains, self.addresses = {}, {}
+        self.assignments, self.identities = {}, {}
+        for record in records:
+            values = record["values"]
+            if values["kind"] == "domain":
+                self.domains[values["domain"]] = record
+            elif values["kind"] == "address":
+                self.addresses[values["email"]] = record
+            else:
+                self.assignments.setdefault(values["email"], []).append(record)
+        for identity in identities:
+            self.identities.setdefault(identity["email"].lower(), []).append(identity)
+        # Evidence that a domain rule works is an identity the evaluator really
+        # authorizes through it: the email suffix, the signed hosted-domain claim
+        # and the rule must all agree, no exact rule may replace it, and the
+        # identity must be usable. A Workspace alias domain presents the primary
+        # claim with another suffix, so a bare claim match would mislead.
+        self.authorized = {}
+        for identity in identities:
+            email = identity["email"].lower()
+            domain = email.rsplit("@", 1)[1]
+            if (
+                domain in self.domains
+                and email not in self.addresses
+                and not identity["disabled"]
+                and self.resolve(email, identity["hosted_domain"])[0]
+            ):
+                self.authorized.setdefault(domain, []).append(identity)
+
+    def relevant(self, email):
+        """Only the records the evaluator could use for this one address."""
+        rule = self.addresses.get(email)
+        domain = self.domains.get(email.rsplit("@", 1)[1])
+        return [
+            *([rule] if rule else []),
+            *([domain] if domain else []),
+            *self.assignments.get(email, []),
+        ]
+
+    def resolve(self, email, hosted_domain):
+        """What the real evaluator gives this address with this hosted claim."""
+        return resolve_roles(
+            email, hosted_domain, self.relevant(email), self.active_seeded
+        )
+
+    def held(self, email):
+        """This address's assignments, and whether each is currently in force."""
+        return sorted(
+            (
+                {
+                    "ministry_duid": record["values"]["ministry_duid"],
+                    "source": ORIGIN_LABELS[record["values"]["source"]],
+                    "active": record["values"]["source"] == "manual"
+                    or record["id"] in self.active_seeded,
+                }
+                for record in self.assignments.get(email, [])
+            ),
+            key=lambda item: item["ministry_duid"],
+        )
+
+    def disabled_warning(self, email):
+        """Disabling is per Google identity, so say how many, never just "is"."""
+        known = self.identities.get(email, [])
+        disabled = sum(item["disabled"] for item in known)
+        if not disabled:
+            return []
+        if disabled == len(known):
+            return [
+                ngettext_lazy(
+                    "The recorded Google identity for this address is disabled "
+                    "and cannot sign in, whatever policy grants the address.",
+                    "All %(count)d recorded Google identities for this address "
+                    "are disabled and cannot sign in, whatever policy grants the "
+                    "address.",
+                    disabled,
+                )
+                % {"count": disabled}
+            ]
+        return [
+            ngettext_lazy(
+                "%(count)d of %(total)d recorded Google identities for this "
+                "address is disabled.",
+                "%(count)d of %(total)d recorded Google identities for this "
+                "address are disabled.",
+                disabled,
+            )
+            % {"count": disabled, "total": len(known)}
+        ]
+
+
+def disclosed(records):
+    """How many rows the page shows, for an audit that names none of them."""
+    addressed = {
+        record["values"]["email"]
+        for record in records
+        if record["values"]["kind"] == "address"
+    }
+    relying = {
+        record["values"]["email"]
+        for record in records
+        if record["values"]["kind"] == "assignment"
+    } - addressed
+    return sum(record["values"]["kind"] != "assignment" for record in records) + len(
+        relying
+    )
+
+
+def domain_rows(policy):
+    """Hosted-domain rules, with the recorded accounts each really authorizes.
+
+    An email suffix alone never matches a domain rule. Applied policy never has
+    a domain rule without a role, so there is no such case to describe.
     """
     rows = []
-    for record in records:
-        values = record["values"]
-        if values["kind"] != "domain":
-            continue
-        claims = [user for user in users if user["hosted_domain"] == values["domain"]]
-        warnings = []
-        if not values["roles"]:
-            warnings.append(_("This rule grants no role."))
-        if not claims:
-            warnings.append(
-                _("No sign-in has presented this Google hosted-domain claim yet.")
-            )
+    for domain, record in sorted(policy.domains.items()):
+        authorized = policy.authorized.get(domain, [])
         rows.append(
             {
-                "id": record["id"],
-                "domain": values["domain"],
-                "roles": _labels(values["roles"]),
-                "claims": len(claims),
-                "last_login": max(
-                    (user["verified_at"] for user in claims), default=None
-                ),
-                "warnings": warnings,
+                "domain": domain,
+                "roles": _labels(record["values"]["roles"]),
+                "authorized": len(authorized),
+                "last_login": _latest(authorized),
+                "warnings": []
+                if authorized
+                else [
+                    _(
+                        "No recorded Google account is authorized through this "
+                        "rule yet. It needs a sign-in that presents this "
+                        "hosted-domain claim from an address in this domain."
+                    )
+                ],
             }
         )
-    return sorted(rows, key=lambda row: row["domain"])
+    return rows
 
 
-def address_rows(records, users, active_seeded=frozenset()):
-    """Exact-address rules with effective roles, provenance and assignments.
+def address_rows(policy):
+    """Exact-address rules with granted roles, provenance and assignments.
 
-    `active_seeded` holds the Chairperson-seeded assignment record identities the
-    promoted source currently confirms; any other seeded assignment is suspended.
+    An exact rule replaces any domain rule and ignores the hosted-domain claim,
+    so what policy grants the address does not depend on which identity asks.
+    Whether a particular identity may sign in at all is a separate fact, stated
+    by the disabled-identity warning rather than hidden inside the roles.
     """
-    signins = _signins(users)
-    domains = {
-        record["values"]["domain"]
-        for record in records
-        if record["values"]["kind"] == "domain"
-    }
-    assignments = {}
-    for record in records:
-        values = record["values"]
-        if values["kind"] == "assignment":
-            assignments.setdefault(values["email"], []).append(
-                {
-                    "ministry_duid": values["ministry_duid"],
-                    "source": ORIGIN_LABELS[values["source"]],
-                    "active": values["source"] == "manual"
-                    or record["id"] in active_seeded,
-                }
-            )
     rows = []
-    for record in records:
+    for email, record in sorted(policy.addresses.items()):
         values = record["values"]
-        if values["kind"] != "address":
-            continue
-        email = values["email"]
-        user = signins.get(email)
-        effective, ministries = resolve_roles(
-            email, user and user["hosted_domain"], records, active_seeded
-        )
-        held = sorted(
-            assignments.get(email, []), key=lambda item: item["ministry_duid"]
-        )
+        granted, ministries = policy.resolve(email, None)
+        held = policy.held(email)
         warnings = []
-        if "ministry_leader" in values["roles"] and "ministry_leader" not in effective:
+        if "ministry_leader" in values["roles"] and "ministry_leader" not in granted:
             warnings.append(
                 _(
                     "The Ministry leader role is suspended: no Chairperson "
@@ -110,33 +207,36 @@ def address_rows(records, users, active_seeded=frozenset()):
                 )
             )
         elif (
-            "ministry_leader" in effective
+            "ministry_leader" in granted
             and not ministries
             # An Administrator is a leader of everything and needs no assignment.
-            and "administrator" not in effective
+            and "administrator" not in granted
         ):
             warnings.append(_("Ministry leader with no active Ministry assignment."))
-        if held and "ministry_leader" not in effective:
+        # Only when the role is not configured at all: for a suspended seeded
+        # role the remedy is the parish source, not granting a role it has.
+        if (
+            held
+            and "ministry_leader" not in values["roles"]
+            and ("administrator" not in granted)
+        ):
             warnings.append(
                 _(
                     "Ministry assignments have no effect without the Ministry "
                     "leader role."
                 )
             )
-        if email.rsplit("@", 1)[1] in domains:
+        if email.rsplit("@", 1)[1] in policy.domains:
             warnings.append(
                 _("This exact address replaces its domain rule for this person.")
             )
-        if user and user["disabled"]:
-            warnings.append(_("This Google identity is disabled."))
+        warnings.extend(policy.disabled_warning(email))
         rows.append(
             {
-                "id": record["id"],
                 "email": email,
                 # An empty role set is a deliberate denial, never an accident.
                 "deny": not values["roles"],
-                "roles": _labels(values["roles"]),
-                "effective": _labels(effective),
+                "granted": _labels(granted),
                 "origin": ORIGIN_LABELS[values["creation_origin"]],
                 "grants": [
                     {
@@ -151,49 +251,61 @@ def address_rows(records, users, active_seeded=frozenset()):
                     if role in values["roles"]
                 ],
                 "assignments": held,
-                "last_login": user["verified_at"] if user else None,
+                "last_login": _latest(policy.identities.get(email, [])),
                 "warnings": warnings,
             }
         )
-    return sorted(rows, key=lambda row: row["email"])
+    return rows
 
 
-def domain_assignment_rows(records, active_seeded=frozenset()):
+def domain_assignment_rows(policy):
     """Assignments for people who have no exact rule and rely on a domain rule.
 
-    These are valid when the person's hosted-domain rule grants Ministry leader.
-    Otherwise nothing can give that person the role, so the assignment is inert.
+    A recorded identity is judged by the evaluator with the hosted-domain claim
+    it really presented: a consumer account on the same suffix receives nothing.
+    Only an address that has never been seen is described from policy alone, and
+    then as a condition, never as a fact about that person.
     """
-    addressed = {
-        record["values"]["email"]
-        for record in records
-        if record["values"]["kind"] == "address"
-    }
-    leading = {
-        record["values"]["domain"]
-        for record in records
-        if record["values"]["kind"] == "domain"
-        and "ministry_leader" in record["values"]["roles"]
-    }
-    grouped = {}
-    for record in records:
-        values = record["values"]
-        if values["kind"] == "assignment" and values["email"] not in addressed:
-            grouped.setdefault(values["email"], []).append(
-                {
-                    "ministry_duid": values["ministry_duid"],
-                    "source": ORIGIN_LABELS[values["source"]],
-                    "active": values["source"] == "manual"
-                    or record["id"] in active_seeded,
-                }
+    rows = []
+    for email in sorted(set(policy.assignments) - set(policy.addresses)):
+        known = policy.identities.get(email, [])
+        leading = any(
+            not item["disabled"]
+            and "ministry_leader" in policy.resolve(email, item["hosted_domain"])[0]
+            for item in known
+        )
+        domain = email.rsplit("@", 1)[1]
+        rule = policy.domains.get(domain)
+        warnings = []
+        if known and not leading:
+            warnings.append(
+                _(
+                    "No usable Google identity recorded for this address "
+                    "receives the Ministry leader role, so these assignments "
+                    "have no effect."
+                )
             )
-    return [
-        {
-            "email": email,
-            "assignments": sorted(held, key=lambda item: item["ministry_duid"]),
-            "warnings": []
-            if email.rsplit("@", 1)[1] in leading
-            else [_("No login rule gives this person the Ministry leader role.")],
-        }
-        for email, held in sorted(grouped.items())
-    ]
+        elif not known and rule and "ministry_leader" in rule["values"]["roles"]:
+            warnings.append(
+                _(
+                    "Not seen yet. These assignments take effect only if this "
+                    "person's Google account presents the %(domain)s "
+                    "hosted-domain claim."
+                )
+                % {"domain": domain}
+            )
+        elif not known:
+            warnings.append(
+                _("No login rule gives this person the Ministry leader role.")
+            )
+        warnings.extend(policy.disabled_warning(email))
+        rows.append(
+            {
+                "email": email,
+                "leading": leading,
+                "assignments": policy.held(email),
+                "last_login": _latest(known),
+                "warnings": warnings,
+            }
+        )
+    return rows
