@@ -54,6 +54,8 @@ def test_navigation_and_testing_banner_match_current_capabilities(
     # Who else holds access is offered to Administrators only.
     assert (b'href="/admin/users"' in body) == (role == "administrator")
     assert (b"Parish settings" in body) == (role == "administrator")
+    # The combined logs are offered to Administrators only.
+    assert (b'href="/admin/logs"' in body) == (role == "administrator")
     assert (b"Background work" in body) == (role == "administrator")
     assert (b"Family codes" in body) == (role != "ministry_leader")
     assert body.count(b'id="session-warning"') == 1
