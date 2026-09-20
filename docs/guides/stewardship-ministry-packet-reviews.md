@@ -130,3 +130,23 @@ content. The exit criteria are met: three completed dual-source rounds, no
 validated High or Critical finding in any round, all five accepted Medium
 findings fixed, and passing post-fix validation. Full exact-head CI, DCO and
 protected delivery remain required.
+
+## Post-review correction
+
+After Round 3, with the pull request ready and its complete CI running, the
+implementing agent found its own defect while reading the financial form for
+the next increment. The guide claimed that no stewardship year is stored and
+justified omitting it, but the application already has a single campaign-year
+rule, the Admin-configured year label or otherwise the start year, used by
+Admin previews, page blocks and share labels. The specification asks for the
+stewardship period and year, so the packet was incomplete and its recorded
+rationale was false. No reviewer had raised it.
+
+Auto-merge was disabled and the pull request returned to draft before it could
+land. SQL now captures the raw year label, and the application applies the one
+shared rule, so the rule is not duplicated in SQL. The header and the report
+information both show the year, and the guide's false statement is replaced. A
+fourth fresh install differed from the third only in the packet function body.
+19 database-free, three PostgreSQL and 17 schema-contract cases passed locally.
+This material correction returns to independent review as Round 4 without
+resetting the completed rounds.

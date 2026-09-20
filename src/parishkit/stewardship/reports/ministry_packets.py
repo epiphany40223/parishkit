@@ -14,6 +14,7 @@ from itertools import chain
 from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.web.exports import csv_cell
+from parishkit.stewardship.web.presentation import campaign_year
 
 from .information_rendering import (
     FORMAT_NOTE,
@@ -105,6 +106,11 @@ def packet_document(payload, parameters, *, parish_name, requested_at, timezone)
 
     source = payload["metadata"]
     period = f"{source['start_date']} to {source['end_date']}"
+    # The same single meaning of a campaign's year as Admin previews, page
+    # blocks and share labels: the configured label, else the start year.
+    year = campaign_year(
+        {"year_label": source.get("year_label"), "start_date": source["start_date"]}
+    )
     sections = tuple(
         PacketSection(
             name=entry["name"],
@@ -113,6 +119,7 @@ def packet_document(payload, parameters, *, parish_name, requested_at, timezone)
                 ("Ministry DUID", str(entry["duid"])),
                 ("Chairs", ", ".join(entry["chairs"]) or "None recorded"),
                 ("Stewardship campaign", source["name"]),
+                ("Stewardship year", year),
                 ("Stewardship period", period),
             ),
             rows=tuple(
@@ -142,6 +149,7 @@ def packet_document(payload, parameters, *, parish_name, requested_at, timezone)
         ("Parish", parish_name),
         ("Campaign", source["name"]),
         ("Campaign reference", source["id"]),
+        ("Stewardship year", year),
         ("Stewardship period", period),
         ("Source reference", source["source_id"]),
         ("Source generation", f"{source['source_generation']:,}"),

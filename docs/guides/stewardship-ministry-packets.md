@@ -15,7 +15,7 @@ are authorized for, and chooses whether to include resolved and withdrawn
 requests. One control has one meaning, so the native form cannot reach an
 ambiguous state without scripts. The packet
 has one section per Ministry with its name, active chair names and stewardship
-campaign and period, then one row for each latest effective join or leave
+campaign, year and period, then one row for each latest effective join or leave
 request: Member name and DUID, authorized email and phone values, the recorded
 email-contact and phone-contact dates, and the outcome under the specified
 mapping. Recorded values are prefilled; every other cell stays blank for
@@ -80,9 +80,13 @@ pass over the snapshot roster for every Ministry at once, because the capture
 runs while holding the shared work lock and a per-Ministry rescan would stall
 Staff follow-up during a parish-wide packet.
 
-No stewardship year is stored, and deriving one from dates would be wrong for an
-autumn campaign that funds the following year. The header therefore carries the
-campaign name and its period dates.
+The header carries the campaign name, its stewardship year and its period
+dates. The year uses the application's single campaign-year rule, the one behind
+Admin previews, page blocks and share labels: the Admin-configured year label,
+otherwise the start year. An autumn campaign that funds the following year is
+labelled by that configuration, so the packet never derives a year of its own.
+SQL captures the raw label and the application applies the rule, keeping one
+copy of it.
 
 The specified row contents do not say whether a request is to join or leave, and
 with history a blank outcome cannot tell an unresolved request from a withdrawn

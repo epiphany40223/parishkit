@@ -206,6 +206,10 @@ def test_packet_scope_history_privacy_and_rendering(response_service, google):
         render_packet(document, output, format="csv")
     text = output.getvalue().decode()
     assert "Other: OTHER-REFERENCE moved parishes" in text
+    # The capture carries the raw configured label; the application applies the
+    # one campaign-year rule, so the rendered year is never blank.
+    assert "year_label" in complete.ministry_snapshot.document["metadata"]
+    assert "Stewardship year," in text and "Stewardship year,\r\n" not in text
     assert "PRIVATE-JOIN-NOTE" not in text and text.count("Member,Member DUID") == 2
 
 

@@ -150,7 +150,9 @@ SELECT CASE WHEN NOT z.values->'modules' ? 'ministry'
     'metadata',jsonb_build_object('id',x.id,'name',x.name,'timezone',x.timezone,
         'source_id',x.source_id,'source_generation',x.source_generation,
         'source_as_of',x.source_as_of,'observed_at',x.observed_at,
-        'start_date',x.start_date,'end_date',x.end_date),
+        'start_date',x.start_date,'end_date',x.end_date,
+        -- Captured raw: the one campaign-year rule lives in the application.
+        'year_label',x.values->>'year_label'),
     'total',(SELECT count(*) FROM detail),
     -- An empty selected Ministry still gets its section: a packet with a
     -- missing page would read as "nothing to do" for the wrong reason.

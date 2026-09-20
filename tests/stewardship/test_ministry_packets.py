@@ -50,7 +50,14 @@ def item(**values):
     )
 
 
-def packet(sections=None, *, ministries=None, history=False, timezone="UTC"):
+def packet(
+    sections=None,
+    *,
+    ministries=None,
+    history=False,
+    timezone="UTC",
+    year_label=None,
+):
     """Build a document from a closed capture payload."""
     if sections is None:
         sections = [dict(duid=9, name="Choir", chairs=["Pat Lee"], rows=[item()])]
@@ -66,6 +73,7 @@ def packet(sections=None, *, ministries=None, history=False, timezone="UTC"):
             observed_at=MOMENT.isoformat(),
             start_date="2026-09-01",
             end_date="2026-10-31",
+            year_label=year_label,
         ),
     )
     return packet_document(
@@ -188,6 +196,9 @@ def test_contact_dates_prefill_in_the_display_zone_and_privacy_holds():
     assert dict(document.sections[0].details)["Stewardship period"] == (
         "2026-09-01 to 2026-10-31"
     )
+    # No configured label: the campaign-year rule falls back to the start year.
+    assert dict(document.sections[0].details)["Stewardship year"] == "2026"
+    assert dict(document.metadata)["Stewardship year"] == "2026"
     assert "hidden" not in str(document) and document.item_count == 2
 
 
@@ -281,10 +292,14 @@ def test_xlsx_has_one_literal_sheet_per_ministry_with_safe_distinct_names():
         "Report information",
     ]
     choir = book["Choir"]
-    assert [cell.value for cell in choir[7]] == list(HEADINGS)
-    assert choir.cell(8, 1).value == "=Example Member"
-    assert choir.cell(8, 1).data_type == "s"  # A literal string, never a formula.
-    assert book["Bereavement"].max_row == 7  # Header and headings, no request rows.
+    # Headings follow the Ministry's header lines and one blank separator row.
+    head = len(packet(three_ministries()).sections[0].details) + 2
+    assert [cell.value for cell in choir[head]] == list(HEADINGS)
+    assert choir.cell(head + 1, 1).value == "=Example Member"
+    # A literal string, never a formula.
+    assert choir.cell(head + 1, 1).data_type == "s"
+    # A selected but empty Ministry has its header and headings, no request rows.
+    assert book["Bereavement"].max_row == head
     # An empty packet is still a valid workbook carrying its provenance.
     assert load_workbook(io.BytesIO(rendered(packet([]), "xlsx"))).sheetnames == [
         "Report information"
@@ -331,3 +346,13 @@ def test_xlsx_refuses_a_value_beyond_the_cell_limit_instead_of_truncating():
     assert ("Q" * (limit + 1)).encode() in rendered(packet(over), "csv")
     wrapped = "".join(line for page in packet_pages(packet(over)) for line in page)
     assert wrapped.count("Q") == limit + 1
+
+
+def test_stewardship_year_is_the_configured_label_not_a_derived_date():
+    """An autumn campaign funding next year is labelled by its configuration."""
+    configured = packet(year_label="2027")
+    assert dict(configured.metadata)["Stewardship year"] == "2027"
+    assert dict(configured.sections[0].details)["Stewardship year"] == "2027"
+    assert "Stewardship year,2027" in rendered(configured, "csv").decode()
+    # Without a label the shared campaign-year rule falls back to the start year.
+    assert dict(packet().metadata)["Stewardship year"] == "2026"
