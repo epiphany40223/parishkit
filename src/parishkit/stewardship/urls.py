@@ -53,6 +53,7 @@ from .reports import (
     export_views,
     information_export_views,
     information_views,
+    ministry_export_views,
     weekly_manual_views,
     weekly_views,
     workspace_views,
@@ -79,6 +80,11 @@ family_patterns = [
 ]
 admin_patterns = [
     path("ministry-reports/", ministry_report_views.index, name="ministry_reports"),
+    path(
+        "reports/<uuid:campaign_id>/ministries/export/",
+        ministry_export_views.create,
+        name="ministry_export",
+    ),
     path(
         "ministry-reports/campaigns/",
         ministry_report_views.picker,

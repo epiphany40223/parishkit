@@ -849,6 +849,11 @@ Only Admins access the combined log screen. It supports:
 - before/after detail for audit events; and
 - text or structured JSONL export of the filtered result.
 
+Ministry filtering includes both interactive event identifiers and the
+[retained export result scope](../reports/spec.md#ministry-change-summary),
+including after campaign-detail purge. ADM-08/RPT-09 own this log-query
+integration; report owners supply the durable non-sensitive event metadata.
+
 Log exports use the asynchronous export-job pipeline, authorization rechecks,
 atomic file publication, purge admission gate, and temporary retention defined
 for other large exports. Text and JSONL are additional formats of that shared

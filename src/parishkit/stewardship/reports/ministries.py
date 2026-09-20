@@ -16,7 +16,6 @@ from parishkit.stewardship.web.presentation import out_of
 
 from .directories import address_lines
 from .information import parse_page
-from .ministry_queries import MINISTRY_REPORT
 
 PAGE_SIZE = 50
 STATES = {
@@ -162,20 +161,25 @@ def ministry_page(campaign_id, query, principal, *, ministry_id=None, action="jo
         raise PermissionError("Ministry report access is unavailable.")
     if action not in {"join", "leave"}:
         raise ValueError("Invalid Ministry action.")
-    parameters = query.form_values() | {
-        "campaign": campaign_id,
-        "operational": allows(principal, Capability.MINISTRY_REPORT),
-        "scope": sorted(value for value in principal.ministries if value < 2**31),
-        "ministry": ministry_id,
-        "action": action,
-        "history": query.history == "all",
-        "limit": PAGE_SIZE,
-        "offset": (query.page - 1) * PAGE_SIZE,
-    }
     with connection.cursor() as cursor:
-        cursor.execute(MINISTRY_REPORT, parameters)
+        cursor.execute(
+            "SELECT stewardship_ministry_report_v1("
+            "campaign_uuid => %s, filters => %s::jsonb, operational => %s, "
+            "ministry_scope => %s::bigint[], ministry_id => %s, request_action => %s, "
+            "page_limit => %s, page_offset => %s)::text",
+            [
+                campaign_id,
+                json.dumps(query.form_values()),
+                allows(principal, Capability.MINISTRY_REPORT),
+                sorted(value for value in principal.ministries if value < 2**31),
+                ministry_id,
+                action,
+                PAGE_SIZE,
+                (query.page - 1) * PAGE_SIZE,
+            ],
+        )
         value = cursor.fetchone()
-    if value is None:
+    if value is None or value[0] is None:
         raise ReadUnavailable("Ministry report inputs are unavailable.")
     result = json.loads(value[0])
     if result.get("disabled"):
