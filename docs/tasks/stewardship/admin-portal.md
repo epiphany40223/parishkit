@@ -209,8 +209,9 @@ implements .03 and the Ministry portion of .05: a row-scoped queue with
 assignee/status/outcome filters, contact-attempt entry, notes, bulk assignment,
 immutable history, optimistic concurrency and links to the Member's authorized
 report detail. It was sequenced before RPT-07 so packets read real contact
-dates and notes. Independent review rounds, full exact-head CI/DCO and protected
-delivery remain open. .01, .04 and the remaining scope of .02/.05 are not
+dates and notes. Three
+[review/fix rounds](../../guides/stewardship-ministry-followup-reviews.md#round-3)
+are complete; full exact-head CI/DCO and protected delivery remain open. .01, .04 and the remaining scope of .02/.05 are not
 complete.
 
 ## ADM-09: Census review and ParishSoft publication UI

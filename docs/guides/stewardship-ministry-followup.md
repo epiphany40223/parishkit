@@ -78,7 +78,14 @@ specifications define no reopening.
 An assignee must currently hold Ministry follow-up authority for that Ministry:
 an active Admin/Staff user, or a leader currently assigned to it. Authority is
 rechecked on every revision, so an edit cannot silently retain an assignee who
-was disabled or lost the Ministry; the editor reassigns or clears it.
+was disabled or lost the Ministry; the editor reassigns or clears it. The
+request page names such an assignee and says the request cannot stay assigned
+to them, rather than letting the choice fall back to nobody unexplained.
+
+`new` and `assigned` mean only whether a request has an assignee, so both the
+single edit and bulk assignment derive them from the submitted assignee.
+Choosing or clearing an assignee is one intent and needs one control. Every
+stored revision still carries the complete resulting state.
 
 ### Surviving Family resubmission
 
@@ -195,8 +202,10 @@ complete baseline run.
 
 ## Checkpoint
 
-Implementation and focused validation are complete. Independent review rounds,
-full exact-head CI, DCO and protected delivery remain open. ADM-08.03 is
+Implementation, focused validation and
+[three review/fix rounds](stewardship-ministry-followup-reviews.md#round-3) are
+complete, with no unresolved accepted Medium-or-higher finding. Full exact-head
+CI, DCO and protected delivery remain open. ADM-08.03 is
 implemented; RPT-07 stays unchecked until its packet reads this workflow, and
 M5 and Gate 3 remain open. No deployment, release, live-provider write or
 database deletion is authorized by this increment.
