@@ -82,3 +82,31 @@ All accepted Medium-or-higher findings are fixed, with passing focused tests.
 RPT-06.03 is implemented; exact-head full CI/DCO and protected PR #71 delivery
 remain open. No integrated gate, deployment or release is authorized by this
 package checkpoint alone.
+
+## Protected delivery
+
+PR #71 delivered candidate `49dd5427584a9bdca4c96d8592e7f06a4a6504f1`, whose
+tree `1fd390f92ca052c4b09f259f0e86b4a3504cdc3f` matches retained correction
+checkpoint `52404dd0` on `pr/stewardship-ministry-exports-ci-reviewed`. The
+earlier three-round history remains on `pr/stewardship-ministry-exports-reviewed`.
+Exact-head ready-candidate CI `35473195305` and DCO passed all 24 jobs.
+
+The first attempt (22:23:29–22:39:58 UTC, September 19, 2026) passed 23 jobs.
+PostgreSQL partition 2 exited 245 inside the unmodified
+`test_reference_confirmation_and_family_submit_during_incomplete_catchup` load
+case: the 120-second `faulthandler` watchdog fired mid-test and the interpreter
+crashed while dumping its traceback, before any assertion ran. That case took
+77.2 seconds on `main` run `35468347156` and 120.1 seconds in PR #70's passing
+run, so its margin depends on the hosted runner. Attempt 2 reran only the
+failed jobs on the same head (13:35:05–13:46:15 UTC, September 20); the case
+passed in 77.5 seconds. No code changed between attempts. The narrow watchdog
+margin is a CI reliability defect for a separate correction, not acceptance
+evidence against this increment. Failed, cancelled and draft-skipped runs are
+not counted as acceptance.
+
+`origin/main` had no intervening commits since the candidate's base `5b0d3051`.
+Protected auto-merge landed as `c08fd51d54d188ccb7a85cffb9800ace3ee9a761` at
+13:46:17 UTC, verified on freshly fetched `origin/main` with the identical
+candidate tree, before starting the Ministry follow-up increment. This used the
+standing delivery authority, without deployment or release, and supersedes the
+pending delivery checkpoint above. RPT-07, ADM-08.03 and M5/Gate 3 remain open.
