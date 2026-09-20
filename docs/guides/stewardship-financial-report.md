@@ -36,17 +36,23 @@ parameter object so that a later immutable capture shares this page's meaning.
 and refuses anything else at the statement, so the page and a later capture
 cannot drift apart. The application parses the same grammar first and returns a
 400 before any statement; SQL remains the authority. A share method is a
-canonical option identity on both sides. Ranges are compared only after the
-grammar has passed, because SQL may evaluate one condition's terms in any order
-and a cast beside its own guard could fail first and echo a filter value; an
-absent bound becomes NULL, so no range term depends on another to be safe. The
-caller must state a bounded page size, with no default on either side, so its
-paging arithmetic cannot drift from the rows returned. A NULL page number
-returns the complete result and needs no size. The function is `STABLE`, reads the campaign's own
-configuration and source snapshot, and returns `disabled` for a campaign without
-the financial module and `unavailable` when its inputs are missing. The
-application maps those to denial and to a retryable 503, never to an empty
-report.
+canonical option identity on both sides.
+
+Validation runs as ordered statements, each relying only on what an earlier one
+established: the object shapes, then the proof, then the filter grammar, then
+the ranges. SQL does not promise to evaluate one condition's terms in order, so
+a container operator or a cast beside its own guard could run first and fail
+with its own error, echoing a filter value, instead of the closed refusal. An
+absent range bound becomes NULL, so no range term depends on another to be safe,
+and an undecidable step refuses.
+
+The caller must state a bounded page size, with no default on either side, so
+its paging arithmetic cannot drift from the rows returned. A NULL page number
+returns the complete result and needs no size. The function is `STABLE`, reads
+the campaign's own configuration and source snapshot, and returns `disabled` for
+a campaign without the financial module and `unavailable` when its inputs are
+missing. The application maps those to denial and to a retryable 503, never to
+an empty report.
 
 ### Exact money
 
@@ -84,14 +90,16 @@ worded by the Family form's own label rule against that immutable configuration,
 so a later edit of the year label, the financial period or an option never
 rewords a retained answer and there is no second copy of the substitution set to
 drift. The parish name is the exception: it comes from the system configuration
-and is always the current one. An option
-missing from that configuration renders as `Unavailable share method` rather
-than a guess. The whole-result summary and the filter span every page, so they
-can only use the current wording, and count options no longer offered together.
-Share methods appear in the order the parish configured, because their
-identities are opaque. Labels use the neutral household wording because a report
-addresses no single household, and are rendered on the server so the browser
-never evaluates a template.
+and is always the current one. An option missing from that configuration renders
+as `Unavailable share method` rather than a guess.
+
+The whole-result summary and the filter span every page, so they can only use
+the current wording. Counts stay separate per offered option even when two are
+worded alike, and only options no longer offered are counted together. Share
+methods appear in the order the parish configured, because their identities are
+opaque. Labels use the neutral household wording because a report addresses no
+single household, and are rendered on the server so the browser never evaluates
+a template.
 
 ### Private native page
 
@@ -104,13 +112,16 @@ events carrying counts only, never a filter, a name or an amount. The campaign
 reports page links to the report only when the campaign enables the financial
 module.
 
-Only the requester's own filters produce a 400, on an accessible page that
-explains the money format and links back without echoing any value; a later
-failure while shaping data is a 503, because no change of filters could fix it.
-Unavailable inputs, which the shared read guard answers itself, reach the same
-recovery page rather than that guard's bare response.
-A page past the last match keeps its count and says so, and Previous returns to
-the real last page.
+The campaign is admitted before its filters are judged, so an unknown campaign
+is denied rather than described as a filter problem. Only the requester's own
+filters then produce a 400, on an accessible page that explains the money format
+and links back without echoing any value. A later `ValueError` while shaping
+data is a 503 on the same recovery page, because no change of filters could fix
+it; unavailable inputs, which the shared read guard answers itself, reach that
+page too rather than the guard's bare response. Other unexpected errors are
+deliberately not mapped: they stay an ordinary logged server error rather than a
+quiet recovery page that would hide a defect. A page past the last match keeps
+its count and says so, and Previous returns to the real last page.
 
 ## Fresh-install schema audit
 
@@ -149,16 +160,18 @@ are focused selections rather than a complete acceptance pass.
   proven complete zero, all six sorts, thirteen filter outcomes each with a
   matching filtered summary, disjoint ordered pages at a page size of two with
   one identical summary, a page past the end, and the complete unpaged mode.
-  Twenty-one parameter objects, including well-formed inverted intervals, and
-  five page bounds refused at the statement beside accepted positive controls. A
+  Twenty-seven parameter values, including scalars and arrays where an object
+  belongs and well-formed inverted intervals, and five page bounds refused at
+  the statement with the closed refusal, beside accepted positive controls. A
   real year-label change after a Family answered, leaving that row's wording
   intact while the summary and filter change. An archived campaign whose proof
   names its own pinned snapshot under the web role, shows that snapshot's money,
   and withholds for a proof of the successor. The native page with CSRF, a
   refused query string, the error page without an echoed value, a page past the
-  end, the unavailable-inputs recovery page, another campaign, the reports-page
-  entry, leader denial and an audit context free of names and amounts. A
-  campaign without the module denied and unlinked.
+  end, the recovery page for both unavailable inputs and a data-shaping
+  `ValueError` without echoing its text, another campaign denied even with
+  malformed filters, the reports-page entry, leader denial and an audit context
+  free of names and amounts. A campaign without the module denied and unlinked.
 - The 17-case schema contract, about 25 seconds.
 - Nine browser cases on Chromium, Firefox and WebKit, 17 seconds: accessibility
   scans of five report states and two error pages at 320 and 1280 pixels,
@@ -176,7 +189,8 @@ keeping the ten-module bound; that module stays in the complete baseline.
 
 Implementation, focused validation and the first dual-source
 [review/fix round](stewardship-financial-report-reviews.md#round-1) are
-complete. A second attempt was single-source and is not counted. Further review
-rounds, full exact-head CI, DCO and protected delivery remain open. M5 and
+complete. Two further attempts were single-source, because the Codex reviewer
+failed, and are not counted; their Claude findings were fixed. Two more
+dual-source rounds, full exact-head CI, DCO and protected delivery remain open. M5 and
 Gate 3 remain open. No deployment, release, live-provider write or database
 deletion is authorized by this increment.

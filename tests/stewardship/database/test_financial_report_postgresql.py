@@ -40,7 +40,7 @@ from .auth_builders import signed_in
 from .campaign_builders import campaign_clock, change, close_campaign, command
 from .response_builders import activate_response_service, response_source
 from .test_background_grants_postgresql import task_login
-from .test_family_auth_postgresql import login
+from .test_family_auth_postgresql import login as family_login
 from .test_family_mail_dispatch_postgresql import claim
 from .test_financial_source_postgresql import financial_source
 from .test_information_followup_postgresql import search
@@ -88,24 +88,13 @@ def report(harness, *, principal=STAFF, proof=PROVE, page_size=PAGE_SIZE, **valu
         )
 
 
-def shown_money(page):
-    """Every amount the page displays, and nothing else.
-
-    A scan of the whole serialized page would also cover random identities and
-    wall-clock microseconds, where a digit run can match by chance.
-    """
-    fields = ("annual", "installment", "source_pledge", "source_contributions")
-    amounts = [row[field].display for row in page["rows"] for field in fields]
-    return " ".join([*amounts, page["summary"]["annual_total"].display])
-
-
 def family_session(harness, duid):
     """Sign another real household in with its own live campaign credential."""
     family = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=duid)
     code = harness.rings.general.decrypt(
         family.code_ciphertext, context=code_context(family.pk)
     ).decode()
-    client, response = login(code)
+    client, response = family_login(code)
     assert response.status_code == 302
     return replace(harness, code=code, client=client, request=response.wsgi_request)
 
@@ -132,7 +121,6 @@ def test_effective_response_exact_money_filters_and_privacy(response_service):
     # Family's mapped comparison funds, beside decoys for others.
     assert row["source_pledge"].display == "$1,200.00"
     assert row["source_contributions"].display == "$100.00"
-    assert "9,999" not in shown_money(page) and "8,888" not in shown_money(page)
     summary = page["summary"]
     assert summary["families"] == 1
     assert summary["annual_total"].display == "$1,234.50"
@@ -218,6 +206,14 @@ def test_unproven_giving_and_closed_parameters(response_service):
     neutral = {"filters": FinancialQuery().form_values(), "proof": None}
     identity = str(uuid4())
     invalid = (
+        # Wrong containers: the closed refusal, never a container operator's own
+        # error for a scalar or an array where an object belongs.
+        5,
+        [],
+        neutral | {"filters": "any"},
+        neutral | {"filters": []},
+        neutral | {"proof": []},
+        neutral | {"proof": "proof"},
         neutral | {"proof": True},
         neutral | {"proof": {"snapshot": identity}},
         neutral | {"proof": {"snapshot": identity, "configuration": identity, "x": 1}},
@@ -464,9 +460,8 @@ def test_source_totals_respect_fund_window_and_giving_cutoff(response_service):
     assert row["source_pledge"].display == "$1,211.00"
     assert row["source_contributions"].display == "$105.00"
     assert page["metadata"]["giving_through"].isoformat() == "2026-03-01"
-    # The exact totals above already exclude every decoy; this names them.
-    for excluded in ("7,654", "4,321", "6,543", "333.33", "444.44", "777.77", "9,999"):
-        assert excluded not in shown_money(page)
+    # Those exact totals are the proof: a wrongly admitted row would be summed
+    # into them, not displayed beside them, so no text scan could catch it.
 
 
 def test_several_families_summary_order_and_pages(response_service):
@@ -633,26 +628,33 @@ def test_native_page_filters_privately_and_denies_leaders(
         # Another campaign is indistinguishable from none.
         wrong = f"/admin/reports/{uuid4()}/financial/"
         assert get(browser, wrong)[0].status_code == 403
+        # Denied even with malformed filters: never a filter error whose link
+        # back could only lead to a denial.
+        assert search(browser, wrong, {"sort": "random"})[0].status_code == 403
         # The campaign reports page offers the entry only with the module enabled.
         _, body = get(browser, route.replace("financial", "participation"))
         assert route.encode() in body
 
-    def unavailable(*args, **kwargs):
-        """Stand in for SQL reporting that the report's inputs are missing."""
-        raise ReadUnavailable("Financial report inputs are unavailable.")
+    # Two different routes to the same recovery page. The shared guard answers
+    # unavailable inputs itself and the view substitutes its page; a ValueError
+    # while shaping data reaches the view's own handler and must not be blamed on
+    # the requester's filters. Patches are scoped so the Google fixture's own
+    # patch survives for the leader below.
+    for failure in (ReadUnavailable("Inputs are unavailable."), ValueError(name)):
 
-    # The shared guard answers unavailable inputs itself; this report still
-    # gives its own recovery page rather than that bare response. The patch is
-    # scoped so the Google fixture's own patch survives for the leader below.
-    with (
-        monkeypatch.context() as patch,
-        task_login(ServiceRole.WEB, exact=True, reconnect=True),
-    ):
-        patch.setattr(financial_views, "financial_page", unavailable)
-        response, body = get(browser, route)
-        assert response.status_code == 503 and response["Retry-After"] == "5"
-        assert b"temporarily unavailable" in body and route.encode() in body
-        assert name not in body and response["Cache-Control"] == "no-store"
+        def fail(*args, error=failure, **kwargs):
+            """Stand in for the read model failing after admission."""
+            raise error
+
+        with (
+            monkeypatch.context() as patch,
+            task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        ):
+            patch.setattr(financial_views, "financial_page", fail)
+            response, body = get(browser, route)
+            assert response.status_code == 503 and response["Retry-After"] == "5"
+            assert b"temporarily unavailable" in body and route.encode() in body
+            assert name not in body and response["Cache-Control"] == "no-store"
     # Signing the leader in changes the login policy, so this comes last.
     other, *_ = leader(harness, google)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):

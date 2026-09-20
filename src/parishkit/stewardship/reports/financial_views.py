@@ -82,6 +82,9 @@ def report(request, campaign_id):
     try:
         service = runtime()
         principal = _principal(request, service.store)
+        # Admit the campaign before judging the filters, so an unknown campaign
+        # is denied rather than described as a filter problem with a dead link.
+        admit_report_read(campaign_id)
         try:
             if request.GET:
                 raise ValueError("Financial filters require private POST state.")
@@ -92,7 +95,6 @@ def report(request, campaign_id):
             # Only the requester's own filters are a 400. A later ValueError is
             # a data problem that no change of filters could fix.
             return _error(campaign_id, status=400)
-        admit_report_read(campaign_id)
         _audit(principal, campaign_id, Outcome.STARTED)
         finalized, count, total = False, 0, 0
 

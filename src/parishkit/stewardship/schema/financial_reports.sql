@@ -22,58 +22,74 @@ CREATE FUNCTION stewardship_financial_report_v1(
 ) RETURNS jsonb LANGUAGE plpgsql STABLE
 SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE f jsonb:=parameters->'filters'; proof jsonb:=parameters->'proof';
-    answer jsonb;
+    answer jsonb; bad boolean;
     money_text constant text:='^(0|[1-9][0-9]{0,8})(\.[0-9]{2})?$';
     -- Canonical lowercase text, so identities compare without a fallible cast.
     uuid_text constant text:='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 BEGIN
-    IF jsonb_typeof(parameters) IS DISTINCT FROM 'object'
-       OR NOT parameters ?& ARRAY['filters','proof']
-       OR parameters-ARRAY['filters','proof']<>'{}'::jsonb
-       OR jsonb_typeof(proof) NOT IN ('null','object')
-       OR (jsonb_typeof(proof)='object' AND (
-           NOT proof ?& ARRAY['snapshot','configuration']
-           OR proof-ARRAY['snapshot','configuration']<>'{}'::jsonb
-           OR jsonb_typeof(proof->'snapshot') IS DISTINCT FROM 'string'
-           OR jsonb_typeof(proof->'configuration') IS DISTINCT FROM 'string'
-           OR NOT proof->>'snapshot' ~ uuid_text
-           OR NOT proof->>'configuration' ~ uuid_text))
-       OR jsonb_typeof(f) IS DISTINCT FROM 'object'
-       OR NOT f ?& ARRAY['search','active','first_start','first_end','latest_start',
-           'latest_end','pledge_min','pledge_max','amount','frequency','share','sort']
-       OR f-ARRAY['search','active','first_start','first_end','latest_start',
-           'latest_end','pledge_min','pledge_max','amount','frequency','share','sort']
-          <>'{}'::jsonb
-       OR EXISTS(SELECT 1 FROM jsonb_each(f) WHERE jsonb_typeof(value)<>'string')
-       OR length(f->>'search')>200
-       OR (f->>'share' NOT IN ('any','none') AND NOT f->>'share' ~ uuid_text)
-       OR f->>'active' NOT IN ('any','active','inactive','unavailable')
-       OR f->>'amount' NOT IN ('any','zero','nonzero')
-       OR f->>'frequency' NOT IN ('any','none','weekly','monthly','quarterly','annual')
-       OR f->>'sort' NOT IN ('name','name_desc','newest','oldest','pledge','pledge_desc')
-       OR EXISTS(SELECT 1 FROM jsonb_each_text(f) d
-           WHERE d.key IN ('first_start','first_end','latest_start','latest_end')
-             AND d.value<>'' AND (NOT d.value ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
-                 OR NOT pg_input_is_valid(d.value,'date')))
-       OR EXISTS(SELECT 1 FROM jsonb_each_text(f) d
-           WHERE d.key IN ('pledge_min','pledge_max') AND d.value<>''
-             AND NOT d.value ~ money_text)
-       OR (page_number IS NOT NULL AND page_number NOT BETWEEN 1 AND 10000)
-       OR (page_number IS NOT NULL
-           AND (page_size IS NULL OR page_size NOT BETWEEN 1 AND 200))
-    THEN RAISE EXCEPTION 'Invalid financial report parameters' USING ERRCODE='23514'; END IF;
-    -- Compare ranges only after the grammar above has passed. SQL does not
-    -- promise to evaluate one condition's terms in order, so a cast placed beside
-    -- its own guard could fail first and echo a filter value in its error. An
-    -- absent bound becomes NULL, so no term here depends on another to be safe.
-    IF coalesce(nullif(f->>'first_start','')>nullif(f->>'first_end',''),false)
-       OR coalesce(nullif(f->>'latest_start','')>nullif(f->>'latest_end',''),false)
-       OR coalesce(nullif(f->>'pledge_min','')::numeric
-           >nullif(f->>'pledge_max','')::numeric,false)
-    THEN RAISE EXCEPTION 'Invalid financial report parameters' USING ERRCODE='23514'; END IF;
+    -- Each step relies only on what an earlier statement established. PL/pgSQL
+    -- runs statements in order, which SQL does not promise for the terms of one
+    -- condition: a container operator or a cast placed beside its own guard could
+    -- run first and fail with its own error, echoing a filter value, instead of
+    -- this closed refusal. An undecidable step refuses.
+    bad:=jsonb_typeof(parameters) IS DISTINCT FROM 'object';
+    IF NOT bad THEN
+        bad:=coalesce(NOT parameters ?& ARRAY['filters','proof']
+            OR parameters-ARRAY['filters','proof']<>'{}'::jsonb
+            OR jsonb_typeof(f) IS DISTINCT FROM 'object'
+            OR jsonb_typeof(proof) NOT IN ('null','object')
+            OR (page_number IS NOT NULL AND page_number NOT BETWEEN 1 AND 10000)
+            OR (page_number IS NOT NULL
+                AND (page_size IS NULL OR page_size NOT BETWEEN 1 AND 200)),true);
+    END IF;
+    IF NOT bad AND jsonb_typeof(proof)='object' THEN
+        bad:=coalesce(NOT proof ?& ARRAY['snapshot','configuration']
+            OR proof-ARRAY['snapshot','configuration']<>'{}'::jsonb
+            OR jsonb_typeof(proof->'snapshot') IS DISTINCT FROM 'string'
+            OR jsonb_typeof(proof->'configuration') IS DISTINCT FROM 'string'
+            OR NOT proof->>'snapshot' ~ uuid_text
+            OR NOT proof->>'configuration' ~ uuid_text,true);
+    END IF;
+    IF NOT bad THEN
+        bad:=coalesce(NOT f ?& ARRAY['search','active','first_start','first_end',
+                'latest_start','latest_end','pledge_min','pledge_max','amount',
+                'frequency','share','sort']
+            OR f-ARRAY['search','active','first_start','first_end','latest_start',
+                'latest_end','pledge_min','pledge_max','amount','frequency','share',
+                'sort']<>'{}'::jsonb
+            OR EXISTS(SELECT 1 FROM jsonb_each(f) WHERE jsonb_typeof(value)<>'string')
+            OR length(f->>'search')>200
+            OR (f->>'share' NOT IN ('any','none') AND NOT f->>'share' ~ uuid_text)
+            OR f->>'active' NOT IN ('any','active','inactive','unavailable')
+            OR f->>'amount' NOT IN ('any','zero','nonzero')
+            OR f->>'frequency'
+                NOT IN ('any','none','weekly','monthly','quarterly','annual')
+            OR f->>'sort'
+                NOT IN ('name','name_desc','newest','oldest','pledge','pledge_desc')
+            OR EXISTS(SELECT 1 FROM jsonb_each_text(f) d
+                WHERE d.key IN ('first_start','first_end','latest_start','latest_end')
+                  AND d.value<>'' AND (NOT d.value ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+                      OR NOT pg_input_is_valid(d.value,'date')))
+            OR EXISTS(SELECT 1 FROM jsonb_each_text(f) d
+                WHERE d.key IN ('pledge_min','pledge_max') AND d.value<>''
+                  AND NOT d.value ~ money_text),true);
+    END IF;
+    IF NOT bad THEN
+        -- Ranges, once every bound is known to be well formed. An absent bound
+        -- becomes NULL, so no term here depends on another to be safe.
+        bad:=coalesce(nullif(f->>'first_start','')>nullif(f->>'first_end',''),false)
+            OR coalesce(nullif(f->>'latest_start','')>nullif(f->>'latest_end',''),false)
+            OR coalesce(nullif(f->>'pledge_min','')::numeric
+                >nullif(f->>'pledge_max','')::numeric,false);
+    END IF;
+    IF bad THEN
+        RAISE EXCEPTION 'Invalid financial report parameters' USING ERRCODE='23514';
+    END IF;
 
 WITH selected AS MATERIALIZED (
-    SELECT c.id,cc.id AS configuration_id,cc.name,cc.timezone,cc.values,
+    -- The campaign configuration row the proof names. It is not a submission's
+    -- applied configuration version, which the response rows carry below.
+    SELECT c.id,cc.id AS active_configuration_id,cc.name,cc.timezone,cc.values,
         CASE WHEN c.state='archived' THEN k.source_snapshot_id
              ELSE sc.snapshot_id END AS source_id
     FROM stewardship_campaign c
@@ -93,7 +109,8 @@ WITH selected AS MATERIALIZED (
     FROM selected x JOIN stewardship_source_snapshot s ON s.id=x.source_id
     CROSS JOIN LATERAL (SELECT coalesce(
         proof->>'snapshot'=x.source_id::text
-        AND proof->>'configuration'=x.configuration_id::text,false) AS proven) v
+        AND proof->>'configuration'=x.active_configuration_id::text,false)
+        AS proven) v
     WHERE s.state='promoted' AND s.compacted_at IS NULL
         AND x.values->'modules' ? 'financial'
 ), responses AS MATERIALIZED (

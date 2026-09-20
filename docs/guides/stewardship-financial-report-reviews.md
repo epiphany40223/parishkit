@@ -142,3 +142,53 @@ one rather than versioned with the row. The guide now says so.
 A fresh install again differed from main only by the one added function, now
 with two required paging arguments. Post-fix validation: five database-free,
 eight PostgreSQL and 17 schema-contract cases passed locally.
+
+## Round 2 second attempt: not a completed round
+
+Reviewed `419a0d0`, the 2,031-line correction delta from `7f92831`. The Claude
+reviewer completed with 11 findings, one Medium and ten Low. The Codex reviewer
+again exited without structured output, so this too is **not** a completed
+round. The cause is unverified: the `codex` command is outside this session's
+shell allowlist, which was deliberately not widened or bypassed to diagnose it.
+Two dual-source rounds are therefore still owed, and whether to restore Codex or
+grant a new exemption is the human's decision. The Claude findings were acted on
+meanwhile.
+
+- **Claude, Medium: the `ValueError` to 503 mapping was untested.** The only
+  HTTP 503 case raised `ReadUnavailable`, which the shared guard answers before
+  the view's own handler. The case now also raises a `ValueError` carrying a
+  Family name and asserts the recovery page, the retry header and that the text
+  is not echoed.
+
+Acted on from the ten Low findings:
+
+- The new proof guard repeated the pattern forbidden for ranges: a container
+  operator beside its own type guard in one condition, as the original filter
+  guard also did. Validation is now ordered statements, each relying only on
+  what an earlier one established, and scalars or arrays where an object belongs
+  are refused at the statement with the closed refusal.
+- Filters were judged before the campaign was admitted, so a malformed filter
+  for an unknown campaign produced a filter error whose link led only to a
+  denial. The campaign is admitted first.
+- One statement used `configuration_id` for both the campaign configuration
+  row and a submission's applied version. The former is renamed.
+- The remaining amount scans could not fail independently of the exact totals,
+  because a wrongly admitted row would be summed, not displayed. They are gone.
+- A test local shadowed the imported Family `login` helper; the shared harness
+  rebuilt a set per iteration and did not say why a Family group is needed; a
+  parameter named `counts` also received share text; two guide paragraphs were
+  not rewrapped.
+
+Not acted on, with reasons:
+
+- Mapping `LookupError` and `TypeError` to the recovery page as well. That would
+  turn a programming error into a quiet page; an unmapped error stays a logged
+  server error. The guide's wording was narrowed to say only `ValueError`.
+- Sharing one error-response helper with the directory report. It would change
+  unrelated production code in this increment.
+- A malformed filter for a campaign without the financial module still reports
+  the filter first, because only the projection knows the module is disabled.
+
+A fresh install again differed from main only by the one added function.
+Post-fix validation: five database-free, eight PostgreSQL, three shared-harness
+and 17 schema-contract cases passed locally.

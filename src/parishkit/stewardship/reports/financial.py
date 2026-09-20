@@ -186,15 +186,17 @@ def seen_configurations(campaign_id, identifiers):
     }
 
 
-def in_offered_order(counts, labels):
+def in_offered_order(by_option, labels):
     """Order share methods as the parish configured them, unknown ones last.
 
-    Option identities are opaque, so sorting by them would read as random and
-    differ from the order the Family saw.
+    Accepts any mapping keyed by option identity: a Family's chosen shares or the
+    summary's counts. Option identities are opaque, so sorting by them would read
+    as random and differ from the order the Family saw.
     """
     position = {key: index for index, key in enumerate(labels)}
     return sorted(
-        counts.items(), key=lambda item: (position.get(item[0], len(position)), item[0])
+        by_option.items(),
+        key=lambda item: (position.get(item[0], len(position)), item[0]),
     )
 
 

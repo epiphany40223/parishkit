@@ -80,10 +80,11 @@ def financial_source(
     data.funds.update(extra_funds or {})
     data.families.update(extra_families or {})
     data.members.update(extra_members or {})
+    # A household is eligible only in an active Family group; 7 is the fixture's
+    # one "Active" group, which the sample's second Family otherwise lacks.
+    headed = {member["familyDUID"] for member in (extra_members or {}).values()}
     for family in data.families.values():
-        if extra_members and family["familyDUID"] in {
-            member["familyDUID"] for member in extra_members.values()
-        }:
+        if family["familyDUID"] in headed:
             family.setdefault("famGroupID", 7)
         if family.get("registeredOrganizationID") == 5:
             family["registeredOrganizationID"] = 12345
