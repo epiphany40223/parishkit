@@ -140,6 +140,31 @@ class PolicySecurityEvent(ImmutableRecord):
         ]
 
 
+class PolicySecurityAcknowledgement(ImmutableRecord):
+    """One Administrator's acknowledgement of an expansion, by the address held then.
+
+    The acknowledging identity is the audit actor; its address is what the event's
+    recipients are keyed on, since several Google identities may share one
+    address and an address may change. Whether the acknowledgement is the
+    granting actor's own is decided when it is recorded, so a later change of
+    address cannot turn it into another Administrator's.
+    """
+
+    event = models.ForeignKey(
+        PolicySecurityEvent, on_delete=models.PROTECT, related_name="acknowledgements"
+    )
+    email = models.EmailField()
+    own = models.BooleanField()
+
+    class Meta:
+        db_table = "stewardship_policy_security_ack"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["event", "email"], name="policy_security_ack_identity"
+            )
+        ]
+
+
 class PolicyEpoch(ImmutableRecord):
     """Namespace generations prevent old denied-login counters blocking new grants."""
 

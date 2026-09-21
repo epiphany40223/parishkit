@@ -78,6 +78,7 @@ class Action(StrEnum):
     SYSTEM_LOGS_VIEWED = "system_logs_viewed"
     PRESENCE_VIEWED = "family_presence_viewed"
     USERS_VIEWED = "portal_users_viewed"
+    SECURITY_EVENT_ACKNOWLEDGED = "security_event_acknowledged"
     SETUP_STARTED = "setup_started"
     SETUP_SOURCE_STARTED = "setup_source_started"
     SETUP_SOURCE_COMPLETED = "setup_source_completed"

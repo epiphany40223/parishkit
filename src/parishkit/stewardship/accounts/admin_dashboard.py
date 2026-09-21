@@ -53,6 +53,12 @@ def summary(actor, configuration, now):
                 counts["eligible_responded"], counts["eligible"]
             )
             result["families"] = counts
+    if "administrator" in actor.roles:
+        from .security_events import open_events
+
+        # Every Administrator's dashboard shows an expansion of who may sign
+        # in until an Administrator acknowledges it.
+        result["security_events"] = open_events(actor)
     if allows(actor, Capability.BACKGROUND_WORK):
         result["recent_failures"] = list(
             TaskRun.objects.filter(

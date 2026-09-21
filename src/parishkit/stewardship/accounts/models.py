@@ -35,6 +35,7 @@ from .policy_models import (  # noqa: F401
     DomainRule,
     MinistryAssignment,
     PolicyEpoch,
+    PolicySecurityAcknowledgement,
     PolicySecurityEvent,
     PortalUser,
 )

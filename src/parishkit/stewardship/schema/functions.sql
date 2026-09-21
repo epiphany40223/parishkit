@@ -4021,6 +4021,16 @@ BEGIN
 END;
 $$;
 
+-- FUNCTION: stewardship_policy_security_ack_immutable_v1()
+CREATE FUNCTION public.stewardship_policy_security_ack_immutable_v1() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+            BEGIN
+                RAISE EXCEPTION 'Historical records are append-only'
+                    USING ERRCODE = '23514';
+            END;
+            $$;
+
 -- FUNCTION: stewardship_policy_security_event_immutable_v1()
 CREATE FUNCTION public.stewardship_policy_security_event_immutable_v1() RETURNS trigger
     LANGUAGE plpgsql
