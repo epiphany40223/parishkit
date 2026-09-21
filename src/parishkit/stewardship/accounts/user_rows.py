@@ -247,6 +247,10 @@ def address_rows(policy):
                 "assignments": held,
                 "last_login": _latest(policy.identities.get(email, [])),
                 "warnings": warnings,
+                # A Ministry leader role held only by the Chairperson seed can
+                # be kept independently; one with a manual origin already is.
+                "seed_only": set(values["grants"].get("ministry_leader", {}))
+                == {"chair-seed"},
             }
         )
     return rows

@@ -79,6 +79,7 @@ class Action(StrEnum):
     PRESENCE_VIEWED = "family_presence_viewed"
     USERS_VIEWED = "portal_users_viewed"
     SECURITY_EVENT_ACKNOWLEDGED = "security_event_acknowledged"
+    CHAIR_REVIEW_DECIDED = "chair_review_decided"
     SETUP_STARTED = "setup_started"
     SETUP_SOURCE_STARTED = "setup_source_started"
     SETUP_SOURCE_COMPLETED = "setup_source_completed"
@@ -155,8 +156,17 @@ FIELDS = {
         "ministry_duid",
         "ministry_duids",
         "ministry_operational",
+        # An Administrator's decision on a suspended Chairperson seed and the
+        # reason entered for it: the decision is a closed word; the reason is
+        # the Administrator's own bounded text, refused when it carries an
+        # address-like token, since this context is not a container for
+        # personal data.
+        "decision",
+        "review_reason",
     },
 }
+
+REVIEW_DECISIONS = frozenset({"keep_role", "restore", "remove"})
 
 
 def sanitize(kind, values):
@@ -207,6 +217,12 @@ def sanitize(kind, values):
         elif key == "method":
             valid = type(value) is str and value in {"GET", "HEAD", "POST"}
             safe[key] = value
+        elif key == "decision":
+            valid = type(value) is str and value in REVIEW_DECISIONS
+            safe[key] = value
+        elif key == "review_reason":
+            valid = type(value) is str and 0 < len(value) <= 500 and "@" not in value
+            safe[key] = value if valid else None
         elif key.endswith("_id"):
             valid = isinstance(value, UUID)
             safe[key] = str(value) if valid else None
