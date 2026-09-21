@@ -193,9 +193,12 @@ display of .03 and .04, with address-over-domain precedence from .05. It changes
 no rule. The [login rule edit increment](../../guides/stewardship-user-rule-edits.md)
 adds the low-friction role edits, rule creation and removal of .02 as reviewed
 configuration requests with the last-Administrator guard, provenance-preserving
-grants and closed refusals; the autosave queue of .01, the high-impact security
-event and notifications of .02, and the suggestion and assignment editors of
-.03 and .04 remain, so every task stays unchecked.
+grants and closed refusals. The
+[security event acknowledgement increment](../../guides/stewardship-policy-security-events.md)
+adds the dashboard prominence and audited acknowledgement of .02's high-impact
+expansions, which the activation trigger already recorded; the operational
+email of .02, the autosave queue of .01, and the suggestion and assignment
+editors of .03 and .04 remain, so every task stays unchecked.
 
 ## ADM-08: Manual refresh, follow-up queues, and logs
 
