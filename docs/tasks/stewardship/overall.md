@@ -950,6 +950,17 @@ records the identical landed tree and the refreshed-main verification. The
 ADM-07 race and exact-once tests increment now starts from that verified
 main tip. M5 and Gate 3 remain open.
 
+That [race and exact-once tests increment](../../guides/stewardship-autosave-races.md)
+adds the tests of ADM-07.05 the delivered suites did not yet hold: an
+autosaved Administrator grant exactly once with one security event, two
+Administrators' intents on one base with the second failing at activation
+as stale and retried afresh, a revoked session denying mid-queue, rapid
+edits across rows and tables in tick order, a deleted target resolved
+explicitly, and a stale digest on a later intent leaving the applied one
+alone; it changes no behavior and checks ADM-07.01 to .05. Review/fix
+rounds, full exact-head CI/DCO and protected delivery remain pending. M5
+and Gate 3 remain open.
+
 1. Finish [BG-08](background-processing.md#bg-08-export-and-graph-workers); implement [RPT-01](reports.md#rpt-01-shared-report-framework-and-campaign-selection) and finish [RPT-02](reports.md#rpt-02-population-and-calculation-library).
 2. Complete [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics), [RPT-04](reports.md#rpt-04-additional-information-workflow-report), [RPT-05](reports.md#rpt-05-family-code-and-postal-outreach-reports), [RPT-06](reports.md#rpt-06-ministry-summary-and-detail), [RPT-07](reports.md#rpt-07-multi-ministry-follow-up-packet), and the reporting slice of [RPT-08](reports.md#rpt-08-census-and-financial-reports).
 3. [ADM-07](admin-portal.md#adm-07-user-rules-and-ministry-assignments) → [ADM-08](admin-portal.md#adm-08-manual-refresh-follow-up-queues-and-logs) → [RPT-09](reports.md#rpt-09-logs-and-daily-email-parity); connect [RPT-04](reports.md#rpt-04-additional-information-workflow-report)/[RPT-06](reports.md#rpt-06-ministry-summary-and-detail) follow-up and verify [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests) parity.
