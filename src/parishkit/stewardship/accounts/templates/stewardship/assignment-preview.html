@@ -1,0 +1,25 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Review Ministry assignment change" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Review Ministry assignment change" %}</h1>
+<section class="panel">
+  <h2>{% translate "Exact address" %}: {{ identity }}</h2>
+  {% if operation == 'add' %}<p>{% blocktranslate with name=ministry.name duid=ministry.duid %}An Administrator entry assignment to {{ name }} (Ministry DUID {{ duid }}) will be added. The parish source never rewrites it; only an Administrator removes it.{% endblocktranslate %}</p>
+  {% elif ministry.name %}<p>{% blocktranslate with name=ministry.name duid=ministry.duid %}The Administrator entry assignment to {{ name }} (Ministry DUID {{ duid }}) will be removed. A Parish source Chairperson assignment to the same Ministry, if any, stays and is decided by the review.{% endblocktranslate %}</p>
+  {% else %}<p>{% blocktranslate with duid=ministry.duid %}The Administrator entry assignment to Ministry DUID {{ duid }}, which the promoted catalog no longer names, will be removed. A Parish source Chairperson assignment to the same Ministry, if any, stays and is decided by the review.{% endblocktranslate %}</p>{% endif %}
+  {% if operation == 'remove' %}<p>{% translate "Any scope this assignment gave ends on the next request after activation." %}</p>
+  {% elif administrator %}<p>{% translate "This address's rule grants Administrator, who leads every Ministry already, so the assignment adds no scope; it is recorded as an Administrator entry only." %}</p>
+  {% elif rule == 'address' and leader %}<p>{% translate "This address has an exact-address rule granting Ministry leader, so the assignment takes effect on the next request after activation." %}</p>
+  {% elif rule == 'address' %}<p class="notice">{% translate "This address has an exact-address rule that does not grant Ministry leader, so the assignment has no effect until that role is granted." %}</p>
+  {% elif rule == 'domain' and leader %}<p>{% blocktranslate with domain=domain %}This address has no exact-address rule. The assignment takes effect only when a Google account for it presents the {{ domain }} hosted-domain claim, whose rule grants Ministry leader.{% endblocktranslate %}</p>
+  {% elif rule == 'domain' %}<p class="notice">{% blocktranslate with domain=domain %}This address has no exact-address rule, and the {{ domain }} hosted-domain rule does not grant Ministry leader, so the assignment has no effect until a rule does.{% endblocktranslate %}</p>
+  {% else %}<p class="notice">{% translate "No login rule names this address or its domain, so the assignment has no effect until a rule granting Ministry leader does." %}</p>{% endif %}
+  <p>{% translate "The change is applied as a configuration request against the applied policy. This preview expires in 15 minutes." %}</p>
+</section>
+<form method="post" action="{% url 'admin:assignments' %}">
+  {% csrf_token %}<input type="hidden" name="action" value="confirm">
+  <input type="hidden" name="preview" value="{{ preview }}">
+  <button type="submit">{% translate "Apply assignment change" %}</button>
+  <a href="{% url 'admin:users' %}">{% translate "Cancel" %}</a>
+</form>
+{% endblock %}

@@ -16,11 +16,12 @@ from parishkit.stewardship.web.contracts import filters
 
 from .admin_editing import editable_configuration, error_response, principal
 from .authentication import runtime
-from .chair_review_data import open_reviews
+from .chair_review_data import ministry_names, open_reviews
 from .chair_review_rows import suspended_rows
 from .chair_rows import suggestion_rows
 from .limiting import LimiterUnavailable
 from .ministry_activity import active_ministries
+from .ministry_views import current_catalog
 from .policy import Capability, confirmed_seeded
 from .policy_models import PortalUser
 from .user_rows import (
@@ -149,12 +150,30 @@ def users(request):
             relationships, ministries = chair_relationships(
                 configuration.active_configuration.canonical_document
             )
-            reviews = open_reviews(
-                configuration, SourceCurrent.objects.filter(singleton=True).first()
-            )
+            current = SourceCurrent.objects.filter(singleton=True).first()
+            reviews = open_reviews(configuration, current)
+            names = ministry_names(current)
             # The chrome presents this verified observation, never a newer one.
             request._stewardship_display_configuration = configuration
-        policy = AppliedPolicy(records, identities, active)
+        policy = AppliedPolicy(records, identities, active, names=names)
+        # The assignment editor offers the promoted catalog's active Ministries,
+        # judged by the same rule the suggestion table applies, and only when
+        # the editor itself would accept the catalog, so the page never offers
+        # an addition the route refuses. Removals need no catalog.
+        document = configuration.active_configuration.canonical_document
+        assignable = sorted(
+            (
+                (duid, names[duid])
+                for duid in active_ministries(
+                    document,
+                    organization_id=current.organization_id,
+                    catalog_duids=frozenset(names),
+                )
+            )
+            if current_catalog(document, current) is not None
+            else (),
+            key=lambda item: (item[1].casefold(), item[0]),
+        )
         tables = {
             "domains": domain_rows(policy),
             "addresses": address_rows(policy),
@@ -171,6 +190,7 @@ def users(request):
                 # change proposed against an older policy is refused as stale.
                 "base_digest": configuration.active_configuration.digest,
                 "roles": [(role, ROLE_LABELS[role]) for role in ROLE_ORDER],
+                "assignable": assignable,
             },
         )
         with transaction.atomic():

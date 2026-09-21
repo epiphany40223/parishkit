@@ -1,0 +1,8 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Ministry assignment change not made" %}{% endblock %}
+{% block content %}<section class="flow panel">
+  <h1>{% translate "Ministry assignment change not made" %}</h1>
+  <p role="alert">{% if code == 'inactive' %}{% translate "That Ministry is not an active Ministry of the promoted parish source, so it cannot be assigned. Reload the page to see the current catalog." %}{% elif code == 'target' %}{% translate "The address is not valid. An address must be a complete email address." %}{% elif code == 'already' %}{% translate "That address already has an Administrator entry assignment to that Ministry." %}{% elif code == 'seeded' %}{% translate "That assignment is a Parish source Chairperson seed, which is decided in the suspended-assignment review, not removed here." %}{% elif code == 'missing' %}{% translate "That assignment no longer exists. Reload the page to see the applied policy." %}{% elif code == 'stale' %}{% translate "The applied login rules changed since this page or review was drawn, so nothing was changed. Reload the Portal users page and review the change again against the current rules." %}{% elif code == 'policy' %}{% translate "The resulting policy is not valid, so nothing was changed." %}{% else %}{% translate "The change was not understood. Use the forms on the Portal users page." %}{% endif %}</p>
+  <p>{% translate "The submitted address is never repeated on this page." %}</p>
+  <p><a href="{% url 'admin:users' %}">{% translate "Return to Portal users" %}</a></p>
+</section>{% endblock %}

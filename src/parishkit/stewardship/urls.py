@@ -6,6 +6,7 @@ from . import views
 from .accounts import (
     access_gate,
     activation_views,
+    assignment_views,
     authentication,
     branding_views,
     campaign_mail_views,
@@ -440,6 +441,7 @@ admin_patterns = [
         name="chair_confirmations",
     ),
     path("users/reviews", chair_review_views.chair_reviews, name="chair_reviews"),
+    path("users/assignments", assignment_views.assignments, name="assignments"),
     path(
         "security-events/<uuid:event_id>/acknowledge",
         security_event_views.acknowledge_event,
