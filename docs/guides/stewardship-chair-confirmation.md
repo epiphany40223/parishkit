@@ -154,7 +154,8 @@ path, and no retained database was deleted.
 Implementation, focused validation and three
 [review/fix rounds](stewardship-chair-confirmation-reviews.md) are complete,
 single-source under the second September 20, 2026 Codex exemption, with
-every accepted finding fixed; a correction check of the third round's
-fixes, full exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
+every accepted finding fixed and a correction check of the third round's
+fixes finding nothing; full exact-head CI, DCO and protected delivery remain
+open. M5 and Gate 3 remain
 open. No deployment, release, live-provider write or database deletion is
 authorized by this increment.

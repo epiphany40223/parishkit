@@ -108,3 +108,10 @@ object.
 Post-fix validation: the confirmation, retained-evidence and reconciliation
 suites passed locally under the restricted roles, with the schema baseline
 and the users page browser suite on Chromium.
+
+## Round 4, correction check, single-source under the second exemption
+
+Reviewed `79b07b8e`, the round 3 fixes. Codex did not answer; Claude, in one
+pass, confirmed the optional selection refused by the builder's own reason,
+the intent requirement's case and the bound evidence guard present and
+correct, and validated no finding.
