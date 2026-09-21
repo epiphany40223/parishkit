@@ -35,7 +35,7 @@ def identity(purpose="weekly_digest", *, testing=False):
         semantic_key=uuid4(),
         mode="testing" if testing else "production",
         routing="operational"
-        if purpose == "operational"
+        if purpose in {"operational", "security_event"}
         else "testing_override"
         if testing
         else "production",
@@ -105,7 +105,8 @@ def test_weekly_capacity_is_bounded_in_utf8_bytes(field):
 
 
 @pytest.mark.parametrize(
-    "purpose", ["initial", "reminder", "receipt", "daily_digest", "operational"]
+    "purpose",
+    ["initial", "reminder", "receipt", "daily_digest", "operational", "security_event"],
 )
 def test_weekly_type_cannot_bind_to_another_purpose(purpose):
     value = WeeklyRenderInput(**asdict(rendering()))
