@@ -1755,6 +1755,19 @@ BEGIN
         RAISE EXCEPTION 'Chair seed evidence requires the exact current relationship'
             USING ERRCODE='23514';
     END IF;
+    -- A deployed role records evidence only from the Administrator's own
+    -- selection, the intent bound to the confirmation request; only the
+    -- schema owner may seed evidence without one. No installation or refresh
+    -- can infer a Member from an address.
+    IF current_user <> (SELECT tableowner FROM pg_tables
+            WHERE schemaname='public' AND tablename='stewardship_chair_seed_evidence')
+       AND NOT EXISTS (SELECT 1 FROM stewardship_chair_seed_intent intent
+            WHERE intent.assignment_record_id=NEW.assignment_record_id
+              AND intent.organization_id=NEW.organization_id
+              AND intent.member_duid=NEW.member_duid) THEN
+        RAISE EXCEPTION 'Chair seed evidence requires the confirmed selection'
+            USING ERRCODE='23514';
+    END IF;
     RETURN NEW;
 END;
 $$;
@@ -4871,6 +4884,12 @@ CREATE FUNCTION public.stewardship_request_checkpoint_v2() RETURNS trigger
                         -- Never from the web role: its own checkpoint grant
                         -- must not be able to strand a selected candidate.
                         OR (NEW.state='failed' AND NEW.failure_code='actor_unauthorized'
+                            AND current_user<>'pk_stewardship_web')
+                         -- A Chairperson confirmation whose seed the promoted
+                         -- source no longer shows is refused inside the
+                         -- activation the same way and restored the same way.
+                        OR (NEW.state='failed' AND NEW.failure_code='invalid_candidate'
+                            AND intent.request_schema='chair-seed-patch-v9'
                             AND current_user<>'pk_stewardship_web')
                         OR (NEW.state='failed' AND NEW.failure_code='invalid_candidate'
                         AND (EXISTS(SELECT 1 FROM stewardship_campaign_config_abort b

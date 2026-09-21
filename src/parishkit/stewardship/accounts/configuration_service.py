@@ -56,7 +56,10 @@ CONFIGURATION_GRANTS = {
     "stewardship_assignment_overlay": {"SELECT", "INSERT", "UPDATE"},
     "stewardship_current_chair": {"SELECT"},
     "stewardship_source_current": {"SELECT"},
-    "stewardship_chair_seed_evidence": {"SELECT"},
+    # A confirmation's selected Members are read, and the seed's retained
+    # identity evidence written, inside the activation transaction.
+    "stewardship_chair_seed_intent": {"SELECT"},
+    "stewardship_chair_seed_evidence": {"SELECT", "INSERT"},
     "stewardship_chair_reconciliation": {"SELECT", "INSERT"},
     "stewardship_chair_review": {"SELECT", "INSERT", "UPDATE"},
     "stewardship_campaign_configuration": {"SELECT", "INSERT"},
@@ -88,6 +91,9 @@ CONFIGURATION_COLUMNS = {
     # which PostgreSQL allows only with one UPDATE privilege; the identity
     # trigger rejects an id-only update, so the row itself stays read-only.
     "stewardship_portal_user": {"UPDATE": {"id"}},
+    # Recording a confirmed seed's retained evidence share-locks the current
+    # source pointer the same way; the pointer's own guards keep it read-only.
+    "stewardship_source_current": {"UPDATE": {"id"}},
 }
 
 
