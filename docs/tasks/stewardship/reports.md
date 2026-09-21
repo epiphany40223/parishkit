@@ -230,15 +230,19 @@ Scope and dependencies: [RPT-08 work package](../../plans/stewardship/reports.md
 - [ ] RPT-08.01 — Build the pending-census change report.
 - [ ] RPT-08.02 — Integrate authorized publication and manual-resolution actions.
 - [ ] RPT-08.03 — Export change, decision, conflict, and execution detail.
-- [ ] RPT-08.04 — Build Family financial detail and list reports.
+- [x] RPT-08.04 — Build Family financial detail and list reports.
 - [ ] RPT-08.05 — Test source conflicts, edited provenance, and money privacy.
 
 Evidence: In progress. The
 [financial stewardship detail increment](../../guides/stewardship-financial-report.md)
 implements the interactive Admin/Staff half of .04 with exact money, proven or
 unavailable source comparison totals, zero and missing money, and Ministry-leader
-denial from .05. RPT-08.04 stays unchecked until its CSV, XLSX and PDF exports
-land; .01 through .03 and the rest of .05 are not started.
+denial from .05. The
+[financial export increment](../../guides/stewardship-financial-exports.md)
+completes .04 with CSV, XLSX and PDF captures of the same projection on the
+shared export lifecycle, immutable and proof-honoring, with leader denial at
+every boundary. This closes the implementation checkbox, not M5/Gate 3; .01
+through .03 and the rest of .05 are not started.
 
 ## RPT-09: Logs and daily email parity
 
