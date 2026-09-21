@@ -1,6 +1,7 @@
 """Financial stewardship detail under the real web role, with exact money."""
 
 import json
+import logging
 from dataclasses import asdict, replace
 from datetime import timedelta
 from uuid import uuid4
@@ -100,7 +101,11 @@ def family_session(harness, duid):
 
 
 def test_effective_response_exact_money_filters_and_privacy(response_service):
-    """One row per effective live response; decoy source money never appears."""
+    """One row per effective live response, with only its own source money.
+
+    The exact totals are the proof: another Family's decoy rows, if wrongly
+    admitted, would be summed into them rather than shown beside them.
+    """
     harness = response_service
     financial_source(harness, modules=["financial"], options=map(asdict, OPTIONS))
     harness = activate_response_service(harness)
@@ -118,7 +123,8 @@ def test_effective_response_exact_money_filters_and_privacy(response_service):
     assert [share["text"] for share in row["shares"]] == ["", "Stock gift"]
     assert all(share["label"] != "Unavailable share method" for share in row["shares"])
     # The harness source holds 1,200.00 pledged and 100.00 contributed for this
-    # Family's mapped comparison funds, beside decoys for others.
+    # Family's mapped comparison funds; the 9,999.00 and 8,888.00 rows belong to
+    # another Family and would change these exact totals if they were admitted.
     assert row["source_pledge"].display == "$1,200.00"
     assert row["source_contributions"].display == "$100.00"
     summary = page["summary"]
@@ -207,9 +213,11 @@ def test_unproven_giving_and_closed_parameters(response_service):
     identity = str(uuid4())
     invalid = (
         # Wrong containers: the closed refusal, never a container operator's own
-        # error for a scalar or an array where an object belongs.
+        # error for a scalar, an array or a JSON null where an object belongs.
         5,
         [],
+        None,
+        neutral | {"filters": None},
         neutral | {"filters": "any"},
         neutral | {"filters": []},
         neutral | {"proof": []},
@@ -588,7 +596,7 @@ def test_several_families_summary_order_and_pages(response_service):
 
 
 def test_native_page_filters_privately_and_denies_leaders(
-    response_service, google, monkeypatch
+    response_service, google, monkeypatch, caplog
 ):
     """An Admin's real session filters by CSRF POST; a leader never reaches money."""
     harness = response_service
@@ -648,6 +656,7 @@ def test_native_page_filters_privately_and_denies_leaders(
 
         with (
             monkeypatch.context() as patch,
+            caplog.at_level(logging.ERROR, logger="parishkit.stewardship"),
             task_login(ServiceRole.WEB, exact=True, reconnect=True),
         ):
             patch.setattr(financial_views, "financial_page", fail)
@@ -655,6 +664,15 @@ def test_native_page_filters_privately_and_denies_leaders(
             assert response.status_code == 503 and response["Retry-After"] == "5"
             assert b"temporarily unavailable" in body and route.encode() in body
             assert name not in body and response["Cache-Control"] == "no-store"
+    # A value the read model could not shape is a persistent defect: recorded as
+    # an operational failure once, naming nothing; the transient route is not.
+    failures = [
+        record
+        for record in caplog.records
+        if record.getMessage() == "report_shaping_failed"
+    ]
+    assert len(failures) == 1 and failures[0].levelno == logging.ERROR
+    assert name.decode() not in str(vars(failures[0]))
     # Signing the leader in changes the login policy, so this comes last.
     other, *_ = leader(harness, google)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):

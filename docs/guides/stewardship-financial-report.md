@@ -39,8 +39,8 @@ cannot drift apart. The application parses the same grammar first and returns a
 canonical option identity on both sides.
 
 Validation runs as ordered statements, each relying only on what an earlier one
-established: the object shapes, then the proof, then the filter grammar, then
-the ranges. SQL does not promise to evaluate one condition's terms in order, so
+established: the object shapes together with the page bounds, then the proof,
+then the filter grammar, then the ranges. SQL does not promise to evaluate one condition's terms in order, so
 a container operator or a cast beside its own guard could run first and fail
 with its own error, echoing a filter value, instead of the closed refusal. An
 absent range bound becomes NULL, so no range term depends on another to be safe,
@@ -117,8 +117,10 @@ is denied rather than described as a filter problem. Only the requester's own
 filters then produce a 400, on an accessible page that explains the money format
 and links back without echoing any value. A later `ValueError` while shaping
 data is a 503 on the same recovery page, because no change of filters could fix
-it; unavailable inputs, which the shared read guard answers itself, reach that
-page too rather than the guard's bare response. Other unexpected errors are
+it; it is a persistent defect that every retry reproduces, so it is recorded as
+an operational failure event before the page is returned, never hidden by it.
+Unavailable inputs, which the shared read guard answers itself, reach that page
+too rather than the guard's bare response. Other unexpected errors are
 deliberately not mapped: they stay an ordinary logged server error rather than a
 quiet recovery page that would hide a defect. A page past the last match keeps
 its count and says so, and Previous returns to the real last page.
@@ -191,6 +193,8 @@ Implementation, focused validation and three
 [review/fix rounds](stewardship-financial-report-reviews.md#round-3-single-source-under-the-second-exemption)
 are complete: the first dual-source, the second and third single-source under
 the second September 20, 2026 exemption, with every accepted finding fixed and
-validated. Full exact-head CI, DCO and protected delivery remain open. M5 and
+validated, plus a
+[fourth correction check](stewardship-financial-report-reviews.md#round-4-correction-check-single-source-under-the-second-exemption)
+of the last delta. Full exact-head CI, DCO and protected delivery remain open. M5 and
 Gate 3 remain open. No deployment, release, live-provider write or database
 deletion is authorized by this increment.

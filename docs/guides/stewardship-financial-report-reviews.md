@@ -1,10 +1,13 @@
 # Financial stewardship detail review ledger
 
 Review evidence for the [financial stewardship detail increment](stewardship-financial-report.md),
-PR #76. Every round is dual-source: a Claude reviewer and the Codex reviewer
-both completed. Severities are the raw reviewer values. Findings below the
-tool's Medium/confidence cutoff are counted but listed only where they were
-acted on or deliberately deferred.
+PR #76. A round is dual-source, a Claude reviewer and the Codex reviewer both
+completing, unless a recorded exemption admits a completed single-source pass.
+Round 1 was dual-source; rounds 2 and 3 were single-source under the human's
+second September 20, 2026 exemption, granted after Codex ran out of quota
+again. Severities are the raw reviewer values. Findings below the tool's
+Medium/confidence cutoff are counted but listed only where they were acted on
+or deliberately deferred.
 
 At delivery the review corrections are squashed into logical commits, and the
 complete commit-by-commit history, including every reviewed SHA below, is pushed
@@ -190,3 +193,30 @@ Not acted on, with reasons:
 A fresh install again differed from main only by the one added function.
 Post-fix validation: five database-free, eight PostgreSQL, three shared-harness
 and 17 schema-contract cases passed locally.
+
+## Round 4 correction check, single-source under the second exemption
+
+Reviewed `e6d0d020`, the correction delta from `419a0d0`: the ordered SQL
+validation, admission before filter parsing, the renamed configuration key,
+the recovery-page routes and their tests. Claude only, under the exemption;
+Codex was out of quota. Seven findings, one Medium and six Low. Accepted and
+fixed:
+
+- **Medium: the shaping `ValueError` route was a quiet page.** It returned the
+  503 recovery page and recorded only a failed audit outcome, so a persistent
+  defect that every retry reproduces would have stayed invisible to operators,
+  the very outcome the round-3 reasoning rejected for other errors. The route
+  now records an operational failure event before the page.
+- Low: JSON null where an object belongs is refused at the statement, with
+  cases for a null document and null filters; the one-Family test's docstring
+  and comment describe the exact-total proof rather than a decoy scan that no
+  longer exists; the ledger's opening rule names the exemption; and the guide's
+  statement order names the page bounds with the object shapes.
+
+Not acted on: threading a `bad` flag through five ordered statements is heavier
+than raising in each, but it keeps one refusal site; and a malformed filter for
+a campaign that exists without the module still answers 400 before the
+projection's denial, as the round-3 ledger already records.
+
+Post-fix validation: five database-free and eight PostgreSQL cases passed
+locally, with the observability and build contracts.

@@ -182,7 +182,13 @@ def report(request, campaign_id):
         return response
     except (PermissionError, ObjectDoesNotExist):
         return denial()
-    except (*SAFE_FAILURES, StorageInvariantError, ValueError):
+    except (*SAFE_FAILURES, StorageInvariantError):
+        return _error(campaign_id, status=503)
+    except ValueError as error:
+        # A value the read model could not shape is a persistent defect that
+        # every retry reproduces, unlike the transient failures above. Record it
+        # for operators before the recovery page, so the page cannot hide it.
+        emit_failure(error, event=Event.REPORT_SHAPING_FAILED)
         return _error(campaign_id, status=503)
     finally:
         if finish is not None and not handed_off:
