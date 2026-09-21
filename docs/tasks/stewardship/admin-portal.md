@@ -206,7 +206,10 @@ The [Chairperson suggestions increment](../../guides/stewardship-chair-suggestio
 adds the read-only suggestion review of .03, each current Chairperson with the
 Member, Ministry, publication flag, current rule and assignments and any
 ambiguity, and is delivered under its
-[protected receipt](../../guides/stewardship-chair-suggestions.md#protected-delivery);
+[protected receipt](../../guides/stewardship-chair-suggestions.md#protected-delivery).
+The [Chairperson confirmation increment](../../guides/stewardship-chair-confirmation.md)
+adds the confirmed suggestion request of .03, the sole creator of seeded
+rules, grants and assignments, with the selected Member retained as evidence;
 the autosave queue of .01, the suggestion confirmation, provenance
 action and suspended review of .03, the assignment editor of .04 and the
 tests of .05 remain, so every task stays unchecked.
