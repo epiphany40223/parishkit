@@ -224,8 +224,9 @@ each assignment, and is delivered under its
 The [login-rule autosave queue increment](../../guides/stewardship-rule-autosave.md)
 adds the autosave of role checkbox changes of .01 through keyed configuration
 requests with the queue, applied-digest adoption, pause and conflict
-resolution the specification requires; the tests of .05 remain, so every
-task stays unchecked.
+resolution the specification requires, and is delivered under its
+[protected receipt](../../guides/stewardship-rule-autosave.md#protected-delivery);
+the tests of .05 remain, so every task stays unchecked.
 
 ## ADM-08: Manual refresh, follow-up queues, and logs
 
