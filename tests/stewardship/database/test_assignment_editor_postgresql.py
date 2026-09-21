@@ -15,7 +15,7 @@ from parishkit.stewardship.accounts.policy_models import MinistryAssignment
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.deployment import ServiceRole
 
-from ..policy_factory import address, domain
+from ..policy_factory import address, assignment, domain
 from ..test_source_corpus import source
 from .auth_builders import signed_in
 from .test_background_grants_postgresql import task_login
@@ -156,11 +156,28 @@ def test_an_address_without_a_rule_is_assigned_and_told_how_it_takes_effect(
 ):
     """The preview states the rule it depends on; the page lists it by domain."""
     store = auth_service.store
-    add_rules(store, domain("example.org", roles=("staff",)))
+    add_rules(
+        store,
+        domain("example.org", roles=("staff",)),
+        domain("other.example", roles=("ministry_leader",)),
+        address("clerk@example.org", ("staff",)),
+    )
     publish(source())
     browser, login = signed_in()
     assert login.status_code == 302
     with web():
+        # Each remaining wording: a domain rule that grants Ministry leader
+        # and an exact rule that does not.
+        leading = post(browser, proposal(store, identity="lead@other.example"))
+        assert (
+            "presents the other.example hosted-domain claim, whose rule grants"
+            in leading.content.decode()
+        )
+        clerk = post(browser, proposal(store, identity="clerk@example.org"))
+        assert (
+            "exact-address rule that does not grant Ministry leader"
+            in clerk.content.decode()
+        )
         preview = post(browser, proposal(store, identity="helper@example.org"))
         assert preview.status_code == 200
         text = preview.content.decode()
@@ -189,7 +206,11 @@ def test_an_address_without_a_rule_is_assigned_and_told_how_it_takes_effect(
 def test_an_assignment_to_a_deactivated_ministry_is_still_removed(auth_service, google):
     """The catalog gates additions only; cleaning up is what a removal is for."""
     store = auth_service.store
-    add_rules(store, address("leader@example.org", ("ministry_leader",)))
+    add_rules(
+        store,
+        address("leader@example.org", ("ministry_leader",)),
+        assignment("leader@example.org", ministry=77),
+    )
     publish(source())
     browser, login = signed_in()
     assert login.status_code == 302
@@ -212,19 +233,36 @@ def test_an_assignment_to_a_deactivated_ministry_is_still_removed(auth_service, 
         assert "not an active Ministry" in inactive.content.decode()
         removal = post(browser, proposal(store, operation="remove")).content.decode()
         assert "assignment to Choir (Ministry DUID 4) will be removed" in removal
+        # A Ministry the catalog never had is removed by DUID alone.
+        dropped = proposal(store, operation="remove", ministry_duid=77)
+        assert "no longer names" in post(browser, dropped).content.decode()
     applied(store, browser, proposal(store, operation="remove"))
+    applied(store, browser, dropped | {"base_digest": store.active().digest})
     assert not MinistryAssignment.objects.filter(
         configuration_id=store.active().version_id, email="leader@example.org"
     ).exists()
 
 
-def test_without_a_promoted_catalog_the_editor_is_unavailable(auth_service, google):
-    """No catalog, no assignments: the page offers no form and the route refuses."""
+@pytest.mark.usefixtures("config_role")
+def test_without_a_promoted_catalog_only_removals_are_possible(auth_service, google):
+    """No catalog: the page offers no addition and the route refuses one, but an
+    assignment left behind is still listed and removed."""
     store = auth_service.store
+    add_rules(
+        store,
+        address("leader@example.org", ("ministry_leader",)),
+        assignment("leader@example.org", ministry=77),
+    )
     browser, login = signed_in()
     assert login.status_code == 302
     with web():
         body = browser.get(PAGE).content.decode()
         assert "Add a Ministry assignment" not in body
-        response = post(browser, proposal(store))
-    assert response.status_code == 503
+        listed = address_row(body, "leader@example.org")
+        assert "Ministry DUID 77 (Administrator entry)" in listed
+        assert 'name="operation" value="remove"' in listed
+        assert post(browser, proposal(store)).status_code == 503
+    applied(store, browser, proposal(store, operation="remove", ministry_duid=77))
+    assert not MinistryAssignment.objects.filter(
+        configuration_id=store.active().version_id, email="leader@example.org"
+    ).exists()

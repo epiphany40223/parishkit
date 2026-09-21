@@ -44,12 +44,15 @@ parish source never rewrites a manual one.
 
 The editor offers only the promoted catalog's Ministries the applied activity
 keeps active, read as the Ministry activity editor reads them, and refuses any
-other Ministry for an addition by closed reason; without a promoted catalog
-the page offers no form and the route is unavailable. A removal is judged by
-the applied policy alone, since an assignment to a Ministry since deactivated
-or dropped from the catalog is exactly what an Administrator cleans up; the
-catalog then serves only the Ministry's name, and the preview says when the
-catalog no longer has one. An assignment takes effect only through a rule
+other Ministry for an addition by closed reason; the page offers an addition
+only when that editor would accept the catalog, so without a promoted source
+of the configured organization the page offers no addition form and an
+addition is unavailable. A removal needs no catalog and is judged by the
+applied policy alone, since an assignment to a Ministry since deactivated,
+dropped from the catalog or left behind by a source no longer promoted is
+exactly what an Administrator cleans up; the promoted snapshot, if any,
+serves a removal only the Ministry's name, and the preview says when there is
+none. An assignment takes effect only through a rule
 granting Ministry leader, so the preview states through which rule it would:
 the address's exact rule, its hosted-domain rule and that rule's Google
 claim, or none until such a rule exists. The roles come from the one policy
@@ -90,10 +93,13 @@ already reads.
   an invalid address refused, and the assignment removed, previewed as such,
   with a second removal refused; an address with no rule assigned with the
   preview stating the domain rule it depends on and the page listing it by
-  domain; an assignment to a Ministry the activity editor then deactivates
-  still listed, no longer offered, refused for a new addition and removed;
-  and without a promoted catalog the page offering no form and the route
-  unavailable.
+  domain, beside the wordings for a domain rule granting Ministry leader and
+  an exact rule not granting it; an assignment to a Ministry the activity
+  editor then deactivates still listed, no longer offered, refused for a new
+  addition and removed, with an assignment to a DUID the catalog never had
+  removed as such; and without a promoted catalog the page offering no
+  addition form and refusing an addition while an assignment left behind is
+  listed and removed.
 - The Portal users page, suggestion and seed review suites pass with the
   named assignments; the grant registry and build contract database-free
   suites pass.
@@ -102,7 +108,8 @@ already reads.
 ## Checkpoint
 
 Implementation and focused validation are complete and
-[round 1](stewardship-assignment-editor-reviews.md) is answered; the remaining
-review/fix rounds, full exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
+[rounds 1 and 2](stewardship-assignment-editor-reviews.md) are answered; the
+remaining review/fix rounds, full exact-head CI, DCO and protected delivery
+remain open. M5 and Gate 3 remain
 open. No deployment, release, live-provider write or database deletion is
 authorized by this increment.

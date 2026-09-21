@@ -7,7 +7,7 @@ confirmation records one ordinary policy request bound to the applied digest;
 the installer, not this process, activates it, and every guard the rule editor
 relies on applies here. The Ministry catalog comes from the promoted snapshot
 with the applied activity, as the Ministry activity editor reads it; only an
-active catalog Ministry may be assigned.
+active catalog Ministry may be assigned, while a removal needs no catalog.
 """
 
 from uuid import uuid4
@@ -19,6 +19,7 @@ from django.shortcuts import render
 from django.views.decorators.http import require_POST
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 
@@ -36,6 +37,7 @@ from .assignment_edits import (
     remove_assignment_patch,
 )
 from .authentication import runtime
+from .chair_review_data import ministry_names
 from .configuration_requests import policy_operation_id
 from .limiting import LimiterUnavailable
 from .ministry_views import _state as ministry_state
@@ -77,20 +79,28 @@ def _preview(request, service, actor):
     if not form.is_valid():
         return _error(request, "invalid")
     data = form.cleaned_data
-    configuration, _, _, catalog = ministry_state(service)
+    # Only an active catalog Ministry may be assigned, so an addition needs
+    # the catalog and is refused without one. A removal is judged by the
+    # applied policy alone: an assignment to a Ministry since deactivated,
+    # dropped from the catalog or left behind by a source no longer promoted
+    # is exactly the one an Administrator cleans up, so a removal reads the
+    # promoted snapshot, if any, only for the Ministry's name.
+    if data["operation"] == "add":
+        configuration, _, _, catalog = ministry_state(service)
+        ministry = next(
+            (row for row in catalog if row["duid"] == data["ministry_duid"]), None
+        )
+        if ministry is None or not ministry["active"]:
+            return _error(request, "inactive")
+    else:
+        configuration = editable_configuration(service)
+        names = ministry_names(SourceCurrent.objects.filter(singleton=True).first())
+        ministry = {
+            "duid": data["ministry_duid"],
+            "name": names.get(data["ministry_duid"], ""),
+        }
     if data["base_digest"] != configuration.active_configuration.digest:
         raise StaleRecordError("Reload the page before changing assignments.")
-    ministry = next(
-        (row for row in catalog if row["duid"] == data["ministry_duid"]), None
-    )
-    # Only an active catalog Ministry may be assigned. A removal is judged by
-    # the applied policy alone: an assignment to a Ministry since deactivated
-    # or dropped from the catalog is exactly the one an Administrator cleans
-    # up, so the catalog serves a removal only for the Ministry's name.
-    if data["operation"] == "add" and (ministry is None or not ministry["active"]):
-        return _error(request, "inactive")
-    if ministry is None:
-        ministry = {"duid": data["ministry_duid"], "name": ""}
     records = configuration.active_configuration.canonical_document["sections"].get(
         "login_rules", []
     )

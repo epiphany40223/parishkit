@@ -32,3 +32,24 @@ corrected:
 
 The six findings the validation step did not confirm were not carried
 forward.
+
+## Round 2
+
+Claude only (Codex out of quota). Twelve raw findings, two validated, both
+corrected:
+
+- Medium: a removal still read the catalog through the Ministry activity
+  editor's state, which is unavailable without a promoted source of the
+  configured organization, while the page offered the removal button for
+  every Administrator entry, the same class of gap round 1 corrected in a
+  narrower precondition, and the page gated additions on a looser condition
+  than the route. A removal now reads the applied configuration and, for the
+  Ministry's name only, the promoted snapshot if any; one shared definition
+  of a usable catalog decides both the page's addition forms and the route.
+- Medium: three preview wordings and the dropped-from-catalog removal were
+  unasserted. The exact rule without Ministry leader, the domain rule with
+  it, a removal by DUID alone beside a catalog and a removal without any
+  catalog are now asserted.
+
+The ten findings the validation step did not confirm were not carried
+forward.
