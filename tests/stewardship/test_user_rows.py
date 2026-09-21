@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 
 from parishkit.stewardship.accounts.user_rows import (
-    Policy,
+    AppliedPolicy,
     address_rows,
     disclosed,
     domain_assignment_rows,
@@ -45,12 +45,14 @@ def test_domain_rows_count_only_accounts_the_rule_really_authorizes():
         # The suffix matches, but Google presented no hosted-domain claim.
         identity("four@alpha.example"),
     ]
-    alpha, zeta = domain_rows(Policy(records, identities))
+    alpha, zeta = domain_rows(AppliedPolicy(records, identities))
     assert (alpha["domain"], zeta["domain"]) == ("alpha.example", "zeta.example")
     assert text(zeta["roles"]) == ["Staff", "Ministry leader"]
     assert zeta["authorized"] == 2 and zeta["last_login"] == LATER
     assert zeta["warnings"] == []
-    assert alpha["authorized"] == 0 and alpha["last_login"] is None
+    # Nobody is authorized through alpha's rule, yet the last successful sign-in
+    # is, as for an address, over every recorded identity at that domain.
+    assert alpha["authorized"] == 0 and alpha["last_login"] == LATER
     assert len(alpha["warnings"]) == 1
     assert text(alpha["warnings"])[0].startswith(
         "No recorded Google account is authorized through this rule yet."
@@ -70,7 +72,7 @@ def test_address_rows_show_granted_roles_provenance_and_denial():
         # Google verified this attempt, policy refused it: not a sign-in.
         identity("blocked@example.org", login=None),
     ]
-    admin, blocked, zed = address_rows(Policy(records, identities))
+    admin, blocked, zed = address_rows(AppliedPolicy(records, identities))
     assert [row["email"] for row in (admin, blocked, zed)] == [
         "admin@example.org",
         "blocked@example.org",
@@ -106,7 +108,7 @@ def test_seeded_leader_is_suspended_until_the_source_confirms_a_chair():
     staff = address("staff@example.org", roles=("staff",))
     records = [rule, held, manual, idle, staff]
 
-    chair, leader, other = address_rows(Policy(records, []))
+    chair, leader, other = address_rows(AppliedPolicy(records, []))
     assert chair["granted"] == []
     assert chair["assignments"][0]["active"] is False
     # The whole list: a suspended role is not told to go and get the role.
@@ -123,7 +125,7 @@ def test_seeded_leader_is_suspended_until_the_source_confirms_a_chair():
         "Ministry assignments have no effect without the Ministry leader role."
     ]
 
-    confirmed, *_ = address_rows(Policy(records, [], frozenset({held["id"]})))
+    confirmed, *_ = address_rows(AppliedPolicy(records, [], frozenset({held["id"]})))
     assert text(confirmed["granted"]) == ["Ministry leader"]
     assert [item["active"] for item in confirmed["assignments"]] == [True]
     assert confirmed["warnings"] == []
@@ -135,21 +137,21 @@ def test_several_google_identities_for_one_address_are_grouped():
     old = identity("moved@example.org", login=EARLIER, disabled=True)
     new = identity("Moved@example.org", login=LATER)
     for identities in ([old, new], [new, old]):
-        _, moved = address_rows(Policy(records, identities))
+        _, moved = address_rows(AppliedPolicy(records, identities))
         # The latest successful sign-in, whichever row the query returned last.
         assert moved["last_login"] == LATER
         assert text(moved["granted"]) == ["Staff"]
         assert text(moved["warnings"]) == [
             "1 of 2 recorded Google identities for this address is disabled."
         ]
-    _, only = address_rows(Policy(records, [old]))
+    _, only = address_rows(AppliedPolicy(records, [old]))
     # Policy still grants the address; this identity simply cannot use it.
     assert text(only["granted"]) == ["Staff"]
     assert text(only["warnings"]) == [
         "The recorded Google identity for this address is disabled and cannot "
         "sign in, whatever policy grants the address."
     ]
-    _, both = address_rows(Policy(records, [old, old | {"last_login": None}]))
+    _, both = address_rows(AppliedPolicy(records, [old, old | {"last_login": None}]))
     assert text(both["warnings"])[0].startswith("All 2 recorded Google identities")
 
 
@@ -175,7 +177,8 @@ def test_assignments_relying_on_a_domain_rule_use_the_real_hosted_claim():
         identity("off@lead.example", hosted="lead.example", disabled=True),
     ]
     rows = {
-        row["email"]: row for row in domain_assignment_rows(Policy(records, identities))
+        row["email"]: row
+        for row in domain_assignment_rows(AppliedPolicy(records, identities))
     }
     assert list(rows) == sorted(rows) and "exact@lead.example" not in rows
     claimed = rows["claimed@lead.example"]
@@ -190,10 +193,33 @@ def test_assignments_relying_on_a_domain_rule_use_the_real_hosted_claim():
     unseen = rows["unseen@lead.example"]
     assert not unseen["leading"]
     assert "lead.example hosted-domain claim" in text(unseen["warnings"])[0]
-    assert text(rows["nobody@staff.example"]["warnings"]) == [
-        "No login rule gives this person the Ministry leader role."
-    ]
-    assert domain_assignment_rows(Policy([address()], [])) == []
     # The audit count covers every row of all three tables, naming none: two
     # exact rules, two domain rules and five people who rely on a domain rule.
     assert disclosed(records) == 2 + 2 + 5 == 2 + 2 + len(rows)
+    # The root cause is stated whether or not the person has signed in.
+    nobody = records[:] + [assignment("seen@staff.example", ministry=1)]
+    seen = identity("seen@staff.example", hosted="staff.example")
+    rows = {
+        row["email"]: row
+        for row in domain_assignment_rows(AppliedPolicy(nobody, [seen]))
+    }
+    for email in ("nobody@staff.example", "seen@staff.example"):
+        assert text(rows[email]["warnings"]) == [
+            "No login rule gives this person the Ministry leader role."
+        ]
+    assert domain_assignment_rows(AppliedPolicy([address()], [])) == []
+
+
+def test_a_role_with_only_suspended_assignments_leads_nothing():
+    """Valid policy can keep a seeded assignment after its exact rule is gone."""
+    held = assignment("chair@lead.example", ministry=9, seeded=True)
+    records = [address(), domain("lead.example", roles=("ministry_leader",)), held]
+    known = [identity("chair@lead.example", hosted="lead.example")]
+    (row,) = domain_assignment_rows(AppliedPolicy(records, known))
+    # The domain rule grants the role, but no assignment is in force.
+    assert not row["leading"] and row["assignments"][0]["active"] is False
+    assert text(row["warnings"])[0].startswith("No usable Google identity")
+    (confirmed,) = domain_assignment_rows(
+        AppliedPolicy(records, known, frozenset({held["id"]}))
+    )
+    assert confirmed["leading"] and confirmed["warnings"] == []

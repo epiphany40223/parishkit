@@ -88,9 +88,11 @@ three tables, never an address or a role. The response is never cached.
 
 The observation runs under the shared work lock so the applied policy, the
 source overlays and the identities are one coherent read. That lock serializes
-the whole system's admissions, so only the observation, the recheck of current
-access and the audit run inside it; shaping and rendering happen after release.
-The identity read is bounded by the addresses and domains the policy names, not
+the whole system's admissions, so only the observation runs inside it. Shaping
+and rendering happen after release, and only then does a short transaction
+recheck current access and record the view: a response that failed to render,
+or whose reader was revoked meanwhile, never leaves a successful disclosure on
+record. The identity read is bounded by the addresses and domains the policy names, not
 by how many strangers have attempted a sign-in, and the rows index the records
 once rather than rescanning them per address.
 
@@ -109,24 +111,27 @@ under that role.
 All runs are local, on the disposable PostgreSQL 18.6 and Valkey services, and
 are focused selections rather than a complete acceptance pass.
 
-- Five database-free cases, under one second: a domain rule counting only the
+- Six database-free cases, under one second: a domain rule counting only the
   accounts it authorizes, excluding an explicit deny, a disabled identity, a
   Workspace alias and a suffix without the claim; address rows with granted
   roles, origins, explicit denial and a refused attempt that is not a sign-in; a
   seeded leader suspended until the source confirms a Chairperson, with its
   complete warning list; several Google identities for one address in either
-  query order; and assignments relying on a domain rule judged by the real
-  hosted claim, with the audit count of all three tables.
-- Seven PostgreSQL cases under the real web role, 20 seconds. Rules installed
+  query order; assignments relying on a domain rule judged by the real hosted
+  claim, with the root cause stated and the audit count of all three tables;
+  and a role whose only assignments are suspended leading nothing.
+- Nine PostgreSQL cases under the real web role, 25 seconds. Rules installed
   through the real configuration owner, with a refused sign-in attempt, a real
   domain-rule sign-in and a disabled identity: each row's content, a refused
   query string, a CSRF-carrying POST refused with 405, and one audit row free of
   addresses. Chairperson-seeded rules installed the way the evaluator's tests
   install them, with real overlays, agreeing with `current_principal` for a
   confirmed and an unconfirmed Chairperson. Staff and Ministry leaders denied
-  with no audit row. Access lost between admission and the in-lock recheck
-  disclosing and auditing nothing. An Administrator refused with 403 once their
-  rule is removed. Forty strangers' identities adding no query and no row.
+  with no audit row. The Administrator's own identity disabled during the
+  observation, refused by the genuine recheck after rendering with no address
+  and no audit row. An Administrator refused with 403 once their rule is
+  removed. An incomplete deployment redirected to setup. Forty strangers'
+  identities adding no query and no row.
 - The evaluator's own database and unit tests and the Chairperson reconciliation
   suite, 335 cases with the above, pass with the shared confirmed-assignment
   query. The 16-case navigation suite pins the entry to Administrators.
@@ -143,9 +148,9 @@ the delivery order is known.
 
 ## Checkpoint
 
-Implementation, focused validation and the first
-[review/fix round](stewardship-portal-users-reviews.md) are complete; that round
-was single-source under the second September 20, 2026 Codex exemption, with
-every accepted finding fixed. Two more rounds, full exact-head CI, DCO and
-protected delivery remain open. M5 and Gate 3 remain open. No deployment, release, live-provider
+Implementation, focused validation and two
+[review/fix rounds](stewardship-portal-users-reviews.md) are complete: the
+first single-source under the second September 20, 2026 Codex exemption, the
+second dual-source, with every accepted finding fixed. One more round, full
+exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain open. No deployment, release, live-provider
 write or database deletion is authorized by this increment.

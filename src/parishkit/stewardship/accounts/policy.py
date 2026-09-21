@@ -64,6 +64,15 @@ class Principal:
             raise ValueError("Family and administration principals are separate.")
 
 
+def assignment_in_force(record, active_seeded):
+    """The one rule for whether an assignment grants scope right now.
+
+    A manual assignment always does; a Chairperson-seeded one only while the
+    promoted source confirms it. Displays reuse this rather than restating it.
+    """
+    return record["values"]["source"] == "manual" or record["id"] in active_seeded
+
+
 def resolve_roles(email, hosted_domain, records, active_seeded=frozenset()):
     """Exact address replaces domain rules; seeded scope fails closed on suspension."""
     email = normalized_email(email)
@@ -83,7 +92,7 @@ def resolve_roles(email, hosted_domain, records, active_seeded=frozenset()):
     ministries = frozenset(
         record["values"]["ministry_duid"]
         for record in assignments
-        if record["values"]["source"] == "manual" or record["id"] in active_seeded
+        if assignment_in_force(record, active_seeded)
     )
     exact = next(
         (

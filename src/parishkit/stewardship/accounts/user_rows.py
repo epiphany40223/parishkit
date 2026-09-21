@@ -14,7 +14,7 @@ Google attempt that policy then denied is not a sign-in.
 from django.utils.translation import gettext_lazy as _
 from django.utils.translation import ngettext_lazy
 
-from .policy import resolve_roles
+from .policy import assignment_in_force, resolve_roles
 
 ROLE_LABELS = {
     "administrator": _("Administrator"),
@@ -43,8 +43,8 @@ def _latest(identities):
     )
 
 
-class Policy:
-    """Index the applied records once, so no row rescans the whole policy."""
+class AppliedPolicy:
+    """The applied records indexed once, so no row rescans the whole policy."""
 
     def __init__(self, records, identities, active_seeded=frozenset()):
         """Group rules by address and domain, and identities by address."""
@@ -59,8 +59,11 @@ class Policy:
                 self.addresses[values["email"]] = record
             else:
                 self.assignments.setdefault(values["email"], []).append(record)
+        self.suffixed = {}
         for identity in identities:
-            self.identities.setdefault(identity["email"].lower(), []).append(identity)
+            email = identity["email"].lower()
+            self.identities.setdefault(email, []).append(identity)
+            self.suffixed.setdefault(email.rsplit("@", 1)[1], []).append(identity)
         # Evidence that a domain rule works is an identity the evaluator really
         # authorizes through it: the email suffix, the signed hosted-domain claim
         # and the rule must all agree, no exact rule may replace it, and the
@@ -101,8 +104,7 @@ class Policy:
                 {
                     "ministry_duid": record["values"]["ministry_duid"],
                     "source": ORIGIN_LABELS[record["values"]["source"]],
-                    "active": record["values"]["source"] == "manual"
-                    or record["id"] in self.active_seeded,
+                    "active": assignment_in_force(record, self.active_seeded),
                 }
                 for record in self.assignments.get(email, [])
             ),
@@ -170,7 +172,9 @@ def domain_rows(policy):
                 "domain": domain,
                 "roles": _labels(record["values"]["roles"]),
                 "authorized": len(authorized),
-                "last_login": _latest(authorized),
+                # As for an address: the latest successful sign-in among every
+                # recorded identity at this domain, whatever its state now.
+                "last_login": _latest(policy.suffixed.get(domain, [])),
                 "warnings": []
                 if authorized
                 else [
@@ -269,23 +273,22 @@ def domain_assignment_rows(policy):
     rows = []
     for email in sorted(set(policy.assignments) - set(policy.addresses)):
         known = policy.identities.get(email, [])
+        # In effect only when a usable identity receives the role *and* scope:
+        # the role alone, with every assignment suspended, leads nothing.
         leading = any(
-            not item["disabled"]
-            and "ministry_leader" in policy.resolve(email, item["hosted_domain"])[0]
+            not item["disabled"] and "ministry_leader" in roles and ministries
             for item in known
+            for roles, ministries in [policy.resolve(email, item["hosted_domain"])]
         )
         domain = email.rsplit("@", 1)[1]
         rule = policy.domains.get(domain)
         warnings = []
-        if known and not leading:
+        if not (rule and "ministry_leader" in rule["values"]["roles"]):
+            # The root cause, stated whether or not anyone has signed in.
             warnings.append(
-                _(
-                    "No usable Google identity recorded for this address "
-                    "receives the Ministry leader role, so these assignments "
-                    "have no effect."
-                )
+                _("No login rule gives this person the Ministry leader role.")
             )
-        elif not known and rule and "ministry_leader" in rule["values"]["roles"]:
+        elif not known:
             warnings.append(
                 _(
                     "Not seen yet. These assignments take effect only if this "
@@ -294,9 +297,13 @@ def domain_assignment_rows(policy):
                 )
                 % {"domain": domain}
             )
-        elif not known:
+        elif not leading:
             warnings.append(
-                _("No login rule gives this person the Ministry leader role.")
+                _(
+                    "No usable Google identity recorded for this address "
+                    "receives the Ministry leader role with an assignment in "
+                    "force, so these assignments have no effect."
+                )
             )
         warnings.extend(policy.disabled_warning(email))
         rows.append(

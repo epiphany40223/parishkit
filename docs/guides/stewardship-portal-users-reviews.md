@@ -71,3 +71,43 @@ restore review, like the editors beside it.
 Post-fix validation: five database-free, seven PostgreSQL, 16 navigation and six
 browser cases passed locally, and the evaluator's own suites passed with the
 shared query.
+
+## Round 2, dual-source
+
+Reviewed `fc41d76c`, the complete diff from main `1070fd28`. Both sources
+completed: Codex answered this smaller diff despite its quota, and Claude
+returned 12 findings. Three validated Medium findings, one from each source
+and one agreed in substance; all accepted and fixed.
+
+- **Codex: "in effect" ignored suspended assignments.** The third table said an
+  assignment was in effect whenever a usable identity received the Ministry
+  leader role, even with every assignment suspended, which valid policy allows
+  after an exact rule is removed. It now requires the evaluator to return scope
+  as well as the role, with a case for a matching claim and only suspended
+  assignments.
+- **Claude: the view audited before it rendered.** The audit row was committed
+  when the work transaction ended, so a render that failed afterwards, or a
+  reader revoked meanwhile, left a successful disclosure on record. The view
+  now observes under the lock, releases it, shapes and renders, and only then
+  rechecks access and records the view in a short transaction, as the dashboard
+  does.
+- **Claude: the recheck test substituted the recheck.** It stubbed the
+  admission helper to raise, proving only that something was called. The case
+  now disables the Administrator's Google identity mid-request, while the
+  observation is being taken, and the genuine read-only authorization refuses
+  with 403, no address and no audit row.
+
+Acted on from the nine Low findings: the third table states the root cause
+whether or not anyone has signed in; the in-force rule for an assignment is one
+shared predicate in the evaluator; the Admin editors' admission helper takes the
+page's capability and a read-only flag, so this page has no admission helper of
+its own; an incomplete deployment is tested to redirect to setup with no audit
+row; the seeded fixture reuses one authentication-runtime factory instead of
+copying it; the rules-first rationale is stated correctly; the index class is
+named `AppliedPolicy`; both tables define the last successful sign-in the same
+way, over every recorded identity at the address or domain; and the guide's
+checkpoint is rewrapped.
+
+Post-fix validation: six database-free, nine PostgreSQL, 16 navigation and six
+browser cases passed locally, with the evaluator's own suites and the parish and
+Ministry editors that share the admission helper.

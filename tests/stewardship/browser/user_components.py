@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts.user_rows import (
-    Policy,
+    AppliedPolicy,
     address_rows,
     domain_assignment_rows,
     domain_rows,
@@ -50,7 +50,7 @@ def components(context, admin):
 
     def page(rules, known, active=frozenset()):
         """Render exactly the context the view builds."""
-        policy = Policy(rules, known, active)
+        policy = AppliedPolicy(rules, known, active)
         return render_to_string(
             "stewardship/users.html",
             context

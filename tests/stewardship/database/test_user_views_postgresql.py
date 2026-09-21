@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from django.db import connection
+from django.db.models import F
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
@@ -16,8 +17,8 @@ from parishkit.stewardship.audit.models import AuditContext
 from parishkit.stewardship.deployment import ServiceRole
 
 from ..policy_factory import address, assignment, domain
-from .auth_builders import signed_in
-from .campaign_builders import change, initialized
+from .auth_builders import auth_runtime, signed_in
+from .campaign_builders import change
 from .test_background_grants_postgresql import task_login
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -27,7 +28,8 @@ URL = "/admin/users"
 def add_rules(store, *records):
     """Install login rules through the real configuration owner, before sign-in.
 
-    A policy change ends existing Admin sessions, so rules always come first.
+    Rules come first so every sign-in in a case is decided by the final policy;
+    a session that outlives a policy change is refused by the reload, not ended.
     """
     receipt = change(
         store,
@@ -142,8 +144,10 @@ def seeded_service(tmp_path, settings, real_limiter):
     """
     confirmed = assignment("confirmed@example.org", ministry=9, seeded=True)
     missing = assignment("missing@example.org", ministry=4, seeded=True)
-    store, _, _ = initialized(
+    service = auth_runtime(
         tmp_path,
+        settings,
+        real_limiter,
         [
             address(),
             address("confirmed@example.org", ("ministry_leader",), seeded=True),
@@ -164,20 +168,7 @@ def seeded_service(tmp_path, settings, real_limiter):
         source_snapshot_id=uuid4(),
         reason="chair_missing",
     )
-    settings.STEWARDSHIP_AUTH_RUNTIME = AuthRuntime(store, real_limiter, lambda: True)
-    settings.SOCIALACCOUNT_PROVIDERS = {
-        "google": {
-            "OAUTH_PKCE_ENABLED": True,
-            "APPS": [
-                {
-                    "client_id": "synthetic-client",
-                    "secret": "synthetic-secret",
-                    "key": "",
-                }
-            ],
-        },
-    }
-    return settings.STEWARDSHIP_AUTH_RUNTIME
+    return service
 
 
 def test_chairperson_suspension_matches_what_a_sign_in_receives(seeded_service, google):
@@ -222,24 +213,42 @@ def test_portal_users_are_not_exposed_to_other_roles(auth_service, google, role)
 def test_access_lost_during_the_request_discloses_and_audits_nothing(
     auth_service, google, monkeypatch
 ):
-    """The recheck inside the lock, not the admission before it, is what refuses."""
+    """A real demotion after admission is caught by the genuine recheck.
+
+    The Administrator's Google identity is disabled while the observation is
+    being taken, so ordinary admission has already passed. Nothing substitutes
+    the recheck itself: the real read-only authorization must notice.
+    """
     browser, _ = signed_in()
-    genuine, calls = user_views._principal, []
+    admin = PortalUser.objects.get(email="admin@example.org")
+    genuine = user_views.confirmed_seeded
 
-    def demoted(request, service, *, read_only=False):
-        """Admit the request normally, then lose access before the recheck."""
-        calls.append(read_only)
-        if read_only:
-            raise PermissionError("Access was revoked during the request.")
-        return genuine(request, service)
+    def disabling(configuration):
+        """Observe as usual, then lose the identity before the recheck."""
+        PortalUser.objects.filter(pk=admin.pk).update(
+            disabled=True, version=F("version") + 1
+        )
+        return genuine(configuration)
 
-    monkeypatch.setattr(user_views, "_principal", demoted)
+    monkeypatch.setattr(user_views, "confirmed_seeded", disabling)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response = browser.get(URL)
-    assert calls == [False, True]
     assert response.status_code == 403
     assert b"admin@example.org" not in response.content
     assert views() == []
+
+
+def test_the_page_waits_for_completed_setup(auth_service, google, settings):
+    """Before setup completes the applied policy is not yet the parish's own."""
+    browser, _ = signed_in()
+    settings.STEWARDSHIP_AUTH_RUNTIME = AuthRuntime(
+        auth_service.store, auth_service.limiter, lambda: False
+    )
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response = browser.get(URL)
+    # Admission itself sends an incomplete deployment to setup, before the page.
+    assert response.status_code == 302 and response["Location"] == "/admin/setup"
+    assert b"admin@example.org" not in response.content and views() == []
 
 
 def test_a_revoked_administrator_loses_the_page(auth_service, google):
