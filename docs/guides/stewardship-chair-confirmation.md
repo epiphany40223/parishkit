@@ -156,6 +156,33 @@ Implementation, focused validation and three
 single-source under the second September 20, 2026 Codex exemption, with
 every accepted finding fixed and a correction check of the third round's
 fixes finding nothing; full exact-head CI, DCO and protected delivery remain
-open. M5 and Gate 3 remain
-open. No deployment, release, live-provider write or database deletion is
-authorized by this increment.
+open. M5 and Gate 3 remain open. No deployment, release, live-provider write
+or database deletion is authorized by this increment.
+
+## Protected delivery
+
+PR #85 delivered candidate `0f57a244`, three logical commits plus the PR #84
+receipt and the fast-selection rotation, whose tree `c4f72c10` is identical
+to the retained commit-by-commit review history on
+`pr/stewardship-chair-confirmation-reviewed` (`8403d43b`) and to the landed
+tree. The three [review/fix rounds](stewardship-chair-confirmation-reviews.md)
+and the correction check were single-source under the second exemption,
+with every accepted finding fixed and the check finding nothing. The pull
+request was marked ready before the candidate was pushed, so the push
+created the ready-candidate run directly. Exact-head ready-candidate CI
+`35640246705` and DCO then passed all 25 checks, from 18:43:39 to 19:02:40
+UTC on September 21, 2026 (19 minutes 1 second). `origin/main` had no
+intervening commits since the candidate's base `3fd51b5a`. Protected
+auto-merge landed as `f26050d2e49a7bcd04472275f8662c3f2315eba7` at 19:03:00
+UTC and was verified on freshly fetched `origin/main`, whose second parent's
+tree is the candidate's, before the next increment started. This used the
+standing delivery authority, without deployment or release, and supersedes
+the checkpoint above. The cancelled and retained-history runs are not counted
+as acceptance.
+
+The Chairperson confirmation increment is delivered: an Administrator
+confirms selected suggestions as one reviewed request under the schema that
+alone creates Chairperson-seeded rules, grants and assignments, with the
+selected Member retained as identity evidence inside the activation. ADM-07
+stays open for the provenance and suspended-assignment review, the
+assignment editor and the autosave queue. M5 and Gate 3 remain open.
