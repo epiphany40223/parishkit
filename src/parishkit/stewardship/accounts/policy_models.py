@@ -143,15 +143,18 @@ class PolicySecurityEvent(ImmutableRecord):
 class PolicySecurityAcknowledgement(ImmutableRecord):
     """One Administrator's acknowledgement of an expansion, by the address held then.
 
-    The acknowledging identity is the audit actor; its address is kept because a
-    Google identity's address can change, while an event's recipients are the
-    addresses of the Administrators who existed at activation.
+    The acknowledging identity is the audit actor; its address is what the event's
+    recipients are keyed on, since several Google identities may share one
+    address and an address may change. Whether the acknowledgement is the
+    granting actor's own is decided when it is recorded, so a later change of
+    address cannot turn it into another Administrator's.
     """
 
     event = models.ForeignKey(
         PolicySecurityEvent, on_delete=models.PROTECT, related_name="acknowledgements"
     )
     email = models.EmailField()
+    own = models.BooleanField()
 
     class Meta:
         db_table = "stewardship_policy_security_ack"

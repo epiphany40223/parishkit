@@ -14,7 +14,7 @@ def components(context, admin):
     """A dashboard with expansions to acknowledge, one already acknowledged."""
     moment = datetime(2026, 9, 21, 14, 30, 0, tzinfo=UTC)
 
-    def event(index, kind, target, before, after, *, acknowledged=False):
+    def event(index, kind, target, before, after):
         """One row as `open_events` shapes it."""
         return {
             "id": UUID(int=index),
@@ -25,7 +25,6 @@ def components(context, admin):
             "after": role_labels(after),
             "created_at": moment,
             "actor": "admin@example.org" if index != 3 else None,
-            "acknowledged": acknowledged,
         }
 
     events = [
@@ -36,7 +35,6 @@ def components(context, admin):
             "partner.example",
             ["ministry_leader"],
             ["ministry_leader", "staff"],
-            acknowledged=True,
         ),
         # A recovery event has no portal actor, and its target is shown as text.
         event(3, "domain_created", "<b>partner.example</b>", [], ["staff"]),

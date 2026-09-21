@@ -1255,6 +1255,7 @@ CREATE TABLE public.stewardship_policy_security_ack (
     actor_id uuid,
     correlation_id uuid NOT NULL,
     email character varying(254) NOT NULL,
+    own boolean NOT NULL,
     event_id uuid NOT NULL
 );
 

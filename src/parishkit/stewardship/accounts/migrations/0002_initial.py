@@ -893,6 +893,7 @@ class Migration(migrations.Migration):
                             ),
                         ),
                         ("email", models.EmailField(max_length=254)),
+                        ("own", models.BooleanField()),
                     ],
                     options={
                         "db_table": "stewardship_policy_security_ack",

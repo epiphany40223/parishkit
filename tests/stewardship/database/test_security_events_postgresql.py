@@ -97,18 +97,32 @@ def test_an_expansion_waits_for_another_administrator(auth_service, google):
         ).count()
         == 1
     )
-    # The other Administrator still sees it, without the actor's note.
+    acknowledgement = PolicySecurityAcknowledgement.objects.get(event=event)
+    assert acknowledgement.own
+    # The actor's second Google identity at the same address is the actor
+    # still: nothing more is recorded, and the event is not settled.
+    again = signed_in_as(google, "admin@example.org", "admin-second-subject")
+    assert not offered(home(again), event)
+    assert acknowledge(again, event.pk).status_code == 302
+    assert PolicySecurityAcknowledgement.objects.filter(event=event).count() == 1
+    # The granted account cannot wave its own grant through: acknowledging
+    # clears it for that account alone.
+    newcomer = signed_in_as(google, "new@example.org", "new-subject")
+    assert offered(home(newcomer), event)
+    assert acknowledge(newcomer, event.pk).status_code == 302
+    assert not offered(home(newcomer), event)
+    assert not PolicySecurityAcknowledgement.objects.get(
+        event=event, email="new@example.org"
+    ).own
+    # The other Administrator who existed at activation still sees it.
     other = signed_in_as(google, "second@example.org", "second-subject")
-    page = home(other)
-    assert offered(page, event) and "You have acknowledged" not in page
-    # Their acknowledgement settles it for everyone, the newcomer included.
+    assert offered(home(other), event)
+    # Their acknowledgement settles it for everyone.
     assert acknowledge(other, event.pk).status_code == 302
     assert not offered(home(other), event)
     assert not offered(home(browser), event)
-    newcomer = signed_in_as(google, "new@example.org", "new-subject")
-    page = home(newcomer)
-    assert not offered(page, event) and "You have acknowledged" not in page
-    assert PolicySecurityAcknowledgement.objects.filter(event=event).count() == 2
+    assert not offered(home(newcomer), event)
+    assert PolicySecurityAcknowledgement.objects.filter(event=event).count() == 3
 
 
 def test_the_only_administrator_settles_an_expansion_alone(auth_service, google):
@@ -136,8 +150,14 @@ def test_the_only_administrator_settles_an_expansion_alone(auth_service, google)
     assert not offered(page, event) and "partner.example" not in page
 
 
-def test_acknowledgement_needs_an_administrator_and_a_real_event(auth_service, google):
+def test_acknowledgement_needs_an_administrator_and_a_real_event(
+    auth_service, google, monkeypatch
+):
     """Staff are refused, an unknown event is not found, and only POST is served."""
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts import security_event_views as views
+
     store = auth_service.store
     add_rules(store, address("staff@example.org", ("staff",)))
     browser, login = signed_in()
@@ -151,15 +171,22 @@ def test_acknowledgement_needs_an_administrator_and_a_real_event(auth_service, g
     )
     event = PolicySecurityEvent.objects.get(target="new@example.org")
     assert acknowledge(browser, uuid4()).status_code == 404
+    route = f"/admin/security-events/{event.pk}/acknowledge"
+    csrf = {"csrfmiddlewaretoken": browser.cookies["csrftoken"].value}
     with web():
-        assert (
-            browser.get(f"/admin/security-events/{event.pk}/acknowledge").status_code
-            == 405
+        assert browser.get(route).status_code == 405
+        assert browser.post(route).status_code == 403
+        assert browser.post(route + "?next=/", csrf).status_code == 400
+    # A configuration under restore review takes no acknowledgement either.
+    # Scoped, so the Google fixture's own patch stays in force for the
+    # sign-ins below.
+    with monkeypatch.context() as patched:
+        patched.setattr(
+            views,
+            "coherent_configuration",
+            lambda store: SimpleNamespace(restore_review_required=True),
         )
-        assert (
-            browser.post(f"/admin/security-events/{event.pk}/acknowledge").status_code
-            == 403
-        )
+        assert acknowledge(browser, event.pk).status_code == 503
     staff = signed_in_as(google, "staff@example.org", "staff-subject")
     assert PANEL not in home(staff)
     assert acknowledge(staff, event.pk).status_code == 403

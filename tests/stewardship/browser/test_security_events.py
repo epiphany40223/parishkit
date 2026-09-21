@@ -44,13 +44,11 @@ def test_security_events_are_prominent_accessible_and_acknowledgeable(
     # A target is shown as text, never interpreted as markup.
     assert panel.get_by_text("<b>partner.example</b>").count() == 1
     assert panel.locator("b").count() == 0
-    # The viewer's own earlier acknowledgement is worded, without a button.
-    assert panel.get_by_text("You have acknowledged this", exact=False).count() == 1
     buttons = panel.get_by_role("button", name="Acknowledge")
-    assert buttons.count() == 2
+    assert buttons.count() == 3
     # Each button is a native form posting to its own event's route.
     forms = panel.locator("form")
-    assert forms.count() == 2
+    assert forms.count() == 3
     assert forms.nth(0).get_attribute("method").lower() == "post"
     assert (
         forms.nth(0)
