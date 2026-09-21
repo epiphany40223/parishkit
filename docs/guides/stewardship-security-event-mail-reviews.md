@@ -87,3 +87,13 @@ cases, the operational fanout and dispatch suites, the background and mail
 grant suites and the schema baseline passed locally, with the content,
 envelope, owner, background registry, scheduler process and grant registry
 database-free suites.
+
+## Round 3, single-source under the second exemption
+
+Reviewed `e4729b1b`, the round 2 result, as the closing check. Codex did
+not answer; Claude, in two shards, confirmed the set-based cohort binding,
+the scheduler count view, the Django-free role words, the registry
+expectations and the new SQL branch cases present and correct, and
+validated no finding. Its twenty-one Low remarks concerned wording,
+counts and naming; a stale comment beside the cohort binding and the
+envelope suite's case count in the increment guide were corrected.

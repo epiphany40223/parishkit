@@ -58,8 +58,8 @@ CREATE TRIGGER stewardship_security_recipient_immutable_guard_v1
 BEFORE UPDATE OR DELETE ON stewardship_security_recipient
 FOR EACH ROW EXECUTE FUNCTION stewardship_security_recipient_immutable_v1();
 
--- The cohort must be exactly the event's recorded recipients, sorted, under
--- the fenced preparation Task that owns this event.
+-- The cohort must be exactly the event's recorded recipients as a set, each
+-- address once, under the fenced preparation Task that owns this event.
 CREATE FUNCTION stewardship_security_cohort_binding_v1()
 RETURNS trigger LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE actual jsonb;

@@ -103,9 +103,10 @@ constraints, the outbox scope trigger function, the SMTP result function's
 purpose list, the worker-side outbox insertion trigger function and the
 shared dispatch trigger function, each admitting the new purpose; nothing
 is removed. The candidate has 214 relations, 2,390 columns, 3,316
-constraints, 987 indexes, 583 functions, 543 triggers and 28 policies. The strict fixture was updated only after this inspected
-comparison. This is a pre-production fresh-install baseline; no upgrade path
-is added and no retained database was deleted.
+constraints, 987 indexes, 583 functions, 543 triggers and 28 policies. The
+strict fixture was updated only after this inspected comparison. This is a
+pre-production fresh-install baseline; no upgrade path is added and no
+retained database was deleted.
 
 ## Focused validation
 
@@ -114,7 +115,7 @@ is added and no retained database was deleted.
   visible, only canonical UTC accepted, unknown or untyped facts refused,
   the role words equal to the page's labels in their order, and the kinds
   matching the dashboard's wording.
-- Fifteen database-free cases for the envelope and helper: facts round-trip
+- Sixteen database-free cases for the envelope and helper: facts round-trip
   and generate the MIME, invalid facts and arbitrary content refused without
   echo, the operational and security envelopes and submitters not
   interchangeable, the real pipe owner launching the security helper with a
@@ -149,10 +150,10 @@ is added and no retained database was deleted.
 
 ## Checkpoint
 
-Implementation, focused validation and two
+Implementation, focused validation and three
 [review/fix rounds](stewardship-security-event-mail-reviews.md) are
 complete, single-source under the second September 20, 2026 Codex
-exemption; a third round, full exact-head CI, DCO and protected delivery
-remain open. M5 and Gate 3
+exemption, the third validating nothing; full exact-head CI, DCO and
+protected delivery remain open. M5 and Gate 3
 remain open. No deployment, release, live-provider write or database
 deletion is authorized by this increment.
