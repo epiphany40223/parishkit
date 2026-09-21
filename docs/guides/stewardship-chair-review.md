@@ -144,6 +144,38 @@ Implementation, focused validation and three
 [review/fix rounds](stewardship-chair-review-reviews.md) are complete,
 single-source under the second September 20, 2026 Codex exemption, the third
 validating nothing; full exact-head CI, DCO and protected delivery remain
-open. M5 and Gate 3 remain
-open. No deployment, release, live-provider write or database deletion is
-authorized by this increment.
+open. M5 and Gate 3 remain open. No deployment, release, live-provider write
+or database deletion is authorized by this increment.
+
+## Protected delivery
+
+PR #86 delivered candidate `41b6f1ab`, three logical commits plus the PR #85
+receipt and the fast-selection rotation, whose tree `6b1eea25` is identical
+to the retained commit-by-commit review history on
+`pr/stewardship-chair-review-reviewed` (`0f5e251f`) and to the landed tree.
+The three [review/fix rounds](stewardship-chair-review-reviews.md) were
+single-source under the second exemption, with every accepted finding fixed
+and the third validating nothing. The pull request was marked ready before
+the candidate was pushed, but the ready-for-review run for the previous head
+started after the push's run and cancelled it under the workflow's
+concurrency group, so the request was marked ready again to create the
+ready-candidate run for the candidate. In that run PostgreSQL shard 11
+passed every case and then failed to upload its evidence artifact, a
+GitHub-side 403 unrelated to the change; its failed jobs were re-run on the
+same head. Exact-head ready-candidate CI `35646656758` and DCO then passed
+all 25 checks, from 19:43:59 to 20:17:23 UTC on September 21, 2026 (33
+minutes 24 seconds, including the re-run). `origin/main` had no intervening
+commits since the candidate's base `f26050d2`. Protected auto-merge landed
+as `a69cb0983343ba6adc480461867e43b81d5a56ba` at 20:18:46 UTC and was
+verified on freshly fetched `origin/main`, whose second parent's tree is the
+candidate's, before the next increment started. This used the standing
+delivery authority, without deployment or release, and supersedes the
+checkpoint above. The cancelled and retained-history runs, and the failed
+first attempt of the shard's evidence upload, are not counted as acceptance.
+
+The Chairperson seed review increment is delivered: the Administrator sees
+each suspended seeded assignment with its Member, reason and source state,
+and restores it as a manual assignment, removes it, or keeps a seeded
+Ministry leader role independently, each an ordinary policy request whose
+entered reason is recorded in the audit. ADM-07 stays open for the manual
+assignment editor and the autosave queue. M5 and Gate 3 remain open.
