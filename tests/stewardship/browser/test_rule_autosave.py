@@ -30,10 +30,20 @@ def receipt(request_id, state, digest=None, failure=""):
     )
 
 
-def serve(page, *, states, refuse=None, stale=None, deny=False, drop_first=False):
+def serve(
+    page,
+    *,
+    states,
+    refuse=None,
+    stale=None,
+    deny=False,
+    drop_first=False,
+    base_failures=0,
+):
     """Mock the apply, status and base routes; record every intent sent."""
     sent = []
     polled = []
+    reads = []
     rules = {"address": {LEADER: ["ministry_leader", "staff"]}, "domain": {}}
 
     def apply(route, request):
@@ -83,7 +93,11 @@ def serve(page, *, states, refuse=None, stale=None, deny=False, drop_first=False
         )
 
     def base(route, request):
-        """The current rules for the conflict view."""
+        """The current rules for the conflict view, after any scripted failures."""
+        reads.append(request.url)
+        if len(reads) <= base_failures:
+            route.abort()
+            return
         route.fulfill(
             status=200,
             content_type="application/json",
@@ -214,10 +228,16 @@ def test_a_conflict_shows_current_rules_and_retries_selected_intents_afresh(
 
 def test_discarding_a_conflict_restores_current_rules(page, component_origin):
     """Discard all adopts the refreshed digest and the current values."""
-    sent, _, rules = serve(page, states={}, stale=lambda intent, count: count == 1)
+    sent, _, rules = serve(
+        page, states={}, stale=lambda intent, count: count == 1, base_failures=1
+    )
     rules["address"][LEADER] = ["administrator", "ministry_leader", "staff"]
     leader = leader_row(page, component_origin)
     leader.get_by_label("Staff").uncheck()
+    # The rules could not be read: the queue is kept and the read offered again.
+    page.get_by_role("button", name="Read the current rules again").wait_for()
+    assert page.get_by_role("alert").get_by_role("listitem").count() == 1
+    page.get_by_role("button", name="Read the current rules again").click()
     page.get_by_role("button", name="Discard all").wait_for()
     page.get_by_role("button", name="Discard all").click()
     assert leader.get_by_label("Staff").is_checked()

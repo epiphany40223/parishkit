@@ -73,3 +73,17 @@ all corrected:
 
 The twelve findings the validation step did not confirm were not carried
 forward.
+
+## Round 3
+
+Claude only (Codex out of quota). Twenty raw findings, one validated and
+corrected:
+
+- Medium: when the read of the current rules for the conflict view failed,
+  the only offer was a reload, which raised the unsaved-changes warning for
+  the very intents the Administrator was abandoning and gave no way to read
+  again. A failed read is now offered again with the queue kept, as every
+  other uncertain outcome is, and the reload abandons the queue first.
+
+The nineteen findings the validation step did not confirm were not carried
+forward.

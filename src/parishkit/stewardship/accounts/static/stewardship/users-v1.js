@@ -252,7 +252,14 @@
     });
     view.append(list);
     if (!current) {
-      view.append(button("Reload page", () => window.location.reload()));
+      // The rules could not be read: that is uncertainty, so offer the
+      // same read again with the queue kept; a reload first abandons the
+      // queue, so the leaving warning is not raised for it.
+      view.append(button("Read the current rules again", () => {
+        hidePanel(); conflict = null; openConflict(message);
+      }), " ", button("Discard all and reload page", () => {
+        queue.length = 0; inflight = null; window.location.reload();
+      }));
     } else {
       view.append(button("Retry selected against current rules", () => {
         resolveConflict(current, queue.filter((intent) => intent.retry));

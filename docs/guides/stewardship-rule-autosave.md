@@ -82,7 +82,9 @@ disabled until the page is redrawn. A change of mind back to a confirmed
 value, or to the value a request in flight will confirm, needs no request,
 and the queue is pruned of such intents before each dispatch and after each
 refusal. Every request has a deadline, so a stalled connection reaches the
-uncertain state rather than waiting forever. A lost session ends the queue,
+uncertain state rather than waiting forever, and a failed read of the
+current rules is offered again with the queue kept, a reload abandoning the
+queue first so no warning is raised for changes just given up. A lost session ends the queue,
 clears the restricted tables and forms, and offers sign-in; nothing is
 retried across a login.
 
@@ -132,8 +134,9 @@ No schema change.
   current rules, taking a newer change into the same list, keeping the
   Administrator's selection across a redraw, retrying the selected intents
   with new keys on the refreshed digest, discarding the rest and reconciling
-  an untouched row; discarding a conflict restoring the current values and
-  later changes using the refreshed digest; lost access clearing the tables
+  an untouched row; a failed read of the current rules offered again with
+  the queue kept, then discarding the conflict restoring the current values
+  and later changes using the refreshed digest; lost access clearing the tables
   and offering sign-in; a lost answer resent with the same key; and a failed
   request pausing while a stale base found at activation opens the conflict
   view.
@@ -143,7 +146,7 @@ No schema change.
 ## Checkpoint
 
 Implementation and focused validation are complete and
-[rounds 1 and 2](stewardship-rule-autosave-reviews.md) are answered; the
-remaining review/fix rounds, full exact-head CI, DCO and protected delivery
-remain open. M5 and Gate 3 remain open. No deployment, release, live-provider write
+[rounds 1 to 3](stewardship-rule-autosave-reviews.md) are answered; the
+correction check, full exact-head CI, DCO and protected delivery remain
+open. M5 and Gate 3 remain open. No deployment, release, live-provider write
 or database deletion is authorized by this increment.
