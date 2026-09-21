@@ -15,6 +15,27 @@ from .chair_models import ChairAssignmentReview, ChairSeedEvidence
 from .policy_models import AssignmentOverlay, MinistryAssignment
 
 
+def ministry_names(current):
+    """The promoted snapshot's Ministry names by DUID, or nothing without a source.
+
+    Names come from the snapshot's own canonical payloads, which the web role
+    reads for the Family form already; a payload without a name yields an
+    empty name rather than NULL.
+    """
+    if current is None or current.snapshot_id is None:
+        return {}
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT (tm.source_key)::bigint,"
+            " COALESCE(ministry.canonical::jsonb->>'name','')"
+            " FROM stewardship_snapshot_ministry tm"
+            " JOIN stewardship_source_ministry ministry ON ministry.id=tm.payload_id"
+            " WHERE tm.snapshot_id=%s",
+            [current.snapshot_id],
+        )
+        return dict(cursor.fetchall())
+
+
 def open_reviews(configuration, current):
     """Every open review as the row shaper expects, for the active configuration.
 
