@@ -57,6 +57,10 @@ def components(context, admin):
         previous_page=None,
         next_page=2,
         total=51,
+        # The export form: enabled, with its one-time key and timezone choices.
+        mutable=True,
+        request_key=UUID(int=100),
+        export_timezones=("America/New_York", "UTC"),
         rows=[row],
         summary=dict(
             families=51,
@@ -82,6 +86,8 @@ def components(context, admin):
             metadata=values["metadata"] | dict(giving_through=None),
         ),
         "/financial-empty": values | dict(rows=[], total=0, next_page=None),
+        # The campaign cannot accept work: the export controls are offered gated.
+        "/financial-gated": values | dict(mutable=False),
         "/financial-last": values | dict(previous_page=1, next_page=None),
         # A stale Next click: matches exist, but none on this page.
         "/financial-beyond": values | dict(rows=[], previous_page=2, next_page=None),

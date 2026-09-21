@@ -13,6 +13,7 @@ PAGES = (
     "/financial-report",
     "/financial-unproven",
     "/financial-empty",
+    "/financial-gated",
     "/financial-last",
     "/financial-beyond",
     "/financial-error-400",
@@ -54,6 +55,15 @@ def test_financial_mobile_keyboard_and_accessibility(
     assert page.locator(":focus").get_attribute("name") == "active"
     assert page.get_by_role("button", name="Next page").count() == 1
     assert page.get_by_role("button", name="Previous page").count() == 0
+    # The complete export is offered beside the page, with its own controls.
+    assert page.get_by_role("button", name="Queue complete export").count() == 1
+    assert page.get_by_label("Export format").input_value() == "csv"
+    assert page.get_by_label("Export timezone").count() == 1
+    # While the campaign cannot accept work every export control is disabled.
+    page.goto(component_origin + "/financial-gated")
+    assert page.get_by_role("button", name="Queue complete export").is_disabled()
+    assert page.get_by_label("Export format").is_disabled()
+    assert page.get_by_label("Export timezone").is_disabled()
     page.goto(component_origin + "/financial-last")
     assert page.get_by_role("button", name="Next page").count() == 0
     assert page.get_by_role("button", name="Previous page").count() == 1
@@ -103,5 +113,17 @@ def test_financial_filters_and_pages_without_scripts(browser_engine, component_o
         body = sent.value.post_data
         assert "page=2" in body and "search=Example" in body
         assert "pledge_min=100.00" in body and "?" not in sent.value.url
+
+        # The export carries the applied filters, the chosen format and the
+        # one-time key natively; without scripts the timezone stays UTC.
+        page.goto(component_origin + "/financial-report")
+        page.get_by_label("Export format").select_option("pdf")
+        page.route("**/financial/export", lambda route: route.fulfill(body="Queued"))
+        with page.expect_request(lambda request: request.method == "POST") as sent:
+            page.get_by_role("button", name="Queue complete export").click()
+        body = sent.value.post_data
+        assert "format=pdf" in body and "browser_timezone=UTC" in body
+        assert "search=Example" in body and "request_key=" in body
+        assert "page=" not in body and sent.value.url.endswith("/financial/export")
     finally:
         context.close()
