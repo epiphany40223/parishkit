@@ -363,6 +363,7 @@ def configure_background(configuration, *, stop, heartbeat):
         from .jobs.operational_fanout import fanout_handler
         from .jobs.operational_slack_tasks import TASK_TYPE as OPERATIONAL_SLACK
         from .jobs.operational_slack_tasks import slack_handler
+        from .jobs.security_owner import SECURITY
 
         # Safe operational intake stays available through restore/setup holds.
         # It never reads campaign content or grants provider delivery authority.
@@ -371,6 +372,14 @@ def configure_background(configuration, *, stop, heartbeat):
         )
         handlers[OPERATIONAL_PREPARE] = replace(
             fanout_handler(store, scheduler=role is ServiceRole.SCHEDULER),
+            pulse=heartbeat,
+        )
+        # A security alert's recipients were recorded at activation; its
+        # preparation is the same engine under its own compiled owner.
+        handlers[SECURITY.task_type] = replace(
+            fanout_handler(
+                store, scheduler=role is ServiceRole.SCHEDULER, owner=SECURITY
+            ),
             pulse=heartbeat,
         )
         # Keep the owner registered even without a mounted optional key: it

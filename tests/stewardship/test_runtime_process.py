@@ -3,7 +3,7 @@
 from dataclasses import replace
 from threading import Event
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 import pytest
 
@@ -398,6 +398,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
             outputs = {
                 "operational": "operational-receipt",
                 "operational_fanout": "operational-fanout-receipt",
+                "security_fanout": "security-fanout-receipt",
                 "operational_slack": "operational-slack-receipt",
                 "finalization": "finalization-receipt",
                 "boundary": "boundary-receipt",
@@ -414,6 +415,11 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                 "verification": "verification-receipt",
                 "setup_cleanup": "setup-cleanup-receipt",
             }
+            # One patched fanout producer serves both alert owners, so its
+            # failure loses the security receipt as well.
+            failing = {failing_producer}
+            if failing_producer == "operational_fanout":
+                failing.add("security_fanout")
             assert kwargs["produce"](guard) == (
                 (
                     tuple(
@@ -422,14 +428,14 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                             "operational",
                             "finalization",
                         )
-                        if owner != failing_producer
+                        if owner not in failing
                     )
                 )
                 if held
                 else tuple(
                     receipt
                     for owner, receipt in outputs.items()
-                    if owner != failing_producer
+                    if owner not in failing
                 )
             )
         signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
@@ -450,8 +456,18 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
     facts = Mock(return_value=("facts-receipt",))
     verification = Mock(return_value=("verification-receipt",))
     operational = Mock(return_value=("operational-receipt",))
-    operational_fanout = Mock(return_value=("operational-fanout-receipt",))
     operational_slack = Mock(return_value=("operational-slack-receipt",))
+
+    def fanout(guard, owner=None):
+        """The scheduler runs one fanout producer per alert owner in turn."""
+        from parishkit.stewardship.jobs.security_owner import SECURITY
+
+        if owner is None:
+            return ("operational-fanout-receipt",)
+        assert owner is SECURITY
+        return ("security-fanout-receipt",)
+
+    operational_fanout = Mock(side_effect=fanout)
     monkeypatch.setattr(
         "parishkit.stewardship.jobs.operational_slack_tasks.produce_slack",
         operational_slack,
@@ -620,7 +636,12 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                 operation.assert_not_called()
             return
         hold.assert_not_called()
-        operational_fanout.assert_called_once_with(guard)
+        from parishkit.stewardship.jobs.security_owner import SECURITY
+
+        assert operational_fanout.call_args_list == [
+            call(guard),
+            call(guard, SECURITY),
+        ]
         operational_slack.assert_called_once_with(guard)
         boundary.assert_called_once_with(guard)
         schedules.assert_called_once_with(guard)
@@ -638,7 +659,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         mail_recovery.assert_called_once_with()
         campaign_recovery.assert_called_once_with()
         slack_recovery.assert_called_once_with()
-        assert guard.check.call_count == 42
+        # Twenty-two independent producers, each bracketed by two checks.
+        assert guard.check.call_count == 44
     else:
         operational.assert_not_called()
         operational_fanout.assert_not_called()

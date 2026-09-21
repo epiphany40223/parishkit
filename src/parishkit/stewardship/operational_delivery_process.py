@@ -8,6 +8,7 @@ from .operational_delivery import OperationalMail, OperationalSlack
 from .operational_slack_worker import MAX_INPUT as MAX_SLACK_INPUT
 from .readiness_delivery_process import _submit_private
 from .readiness_delivery_worker import MAX_INPUT as MAX_MAIL_INPUT
+from .security_delivery import SecurityMail
 
 
 def submit_operational_mail(value, settings, mail, *, seconds, check):
@@ -21,6 +22,21 @@ def submit_operational_mail(value, settings, mail, *, seconds, check):
         seconds=seconds,
         check=check,
         helper="operational_mail_worker",
+        limit=MAX_MAIL_INPUT,
+    )
+
+
+def submit_security_mail(value, settings, mail, *, seconds, check):
+    """A security alert crosses its own private helper with the same bounds."""
+    if not isinstance(mail, SecurityMail):
+        raise ValueError("Invalid security mail invocation.")
+    return _submit_mail(
+        value,
+        settings,
+        mail,
+        seconds=seconds,
+        check=check,
+        helper="security_mail_worker",
         limit=MAX_MAIL_INPUT,
     )
 

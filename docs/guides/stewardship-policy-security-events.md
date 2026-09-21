@@ -150,3 +150,37 @@ the check finding nothing to fix; full exact-head CI, DCO and protected
 delivery remain open. M5 and Gate 3
 remain open. No deployment, release, live-provider write or database
 deletion is authorized by this increment.
+
+## Protected delivery
+
+PR #81 delivered candidate `e6c40398`, three logical commits plus the PR #80
+receipt, the fast-selection rotation and two standalone corrections, whose
+tree `a56586ef` is identical to the retained commit-by-commit review history on
+`pr/stewardship-policy-security-events-reviewed` and to the landed tree. The
+first ready candidate, `39843f19`, failed one of the 24 exact-head jobs:
+PostgreSQL shard 7's identity performance suite holds the Admin page to
+sixty-four queries, the page had none to spare, and the dashboard's new
+panel cost four. The corrections make the panel one query, every event read
+with its acknowledgements and the actor's and viewer's addresses as
+subqueries, read the dashboard's source-refresh time in one statement rather
+than two, and budget the Admin shell at sixty-five with the reason beside
+it, since that fold gives the query back only once a source snapshot has
+been promoted; a case proves the panel's query count. A fifth Claude-only
+correction check of those corrections, recorded in the
+[ledger](stewardship-policy-security-event-reviews.md#round-5-correction-check-single-source-under-the-second-exemption),
+found nothing to fix. Exact-head ready-candidate CI `35613948176` and DCO then
+passed all 25 checks, from 14:42:22 to 15:00:51 UTC on September 21, 2026 (18
+minutes 29 seconds). `origin/main` had no intervening commits since the
+candidate's base `4f0465fa`. Protected auto-merge landed as
+`f9ce5278fed99dd58255eb649c94e71c3f390d4b` at 15:02:07 UTC and was verified on
+freshly fetched `origin/main` before the next increment started. This used the
+standing delivery authority, without deployment or release, and supersedes the
+pending delivery checkpoint above. The failed and cancelled runs, including the
+superseded runs GitHub created when its delayed pull-request events arrived,
+are not counted as acceptance.
+
+The security event acknowledgement increment is delivered: every high-impact
+login-policy expansion stays on each Administrator's dashboard until an
+Administrator acknowledges it, recorded once and audited. ADM-07 stays open
+for its operational email, autosave queue, suggestions and assignments. M5
+and Gate 3 remain open.

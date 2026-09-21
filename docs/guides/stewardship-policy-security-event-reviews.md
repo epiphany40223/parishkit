@@ -126,3 +126,13 @@ the round-3 rule. Codex did not answer; Claude returned no finding above
 the validation cutoff: six Low, each repeating an earlier disposition or
 concerning wording. Nothing to fix; the branch is the candidate for
 protected delivery.
+
+## Round 5, correction check, single-source under the second exemption
+
+Reviewed `da795a19`, the complete diff from main `4f0465fa`, as a check of
+the standalone correction the first ready candidate's CI failure required:
+the dashboard panel read as one annotated query and the dashboard's
+source-refresh time read in one statement. Codex did not answer; Claude
+returned no finding above the validation cutoff: six Low, each repeating an
+earlier disposition or concerning wording. Nothing to fix. The second
+correction, the Admin shell's query budget with its reason, is test-only.

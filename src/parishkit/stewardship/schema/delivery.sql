@@ -286,7 +286,8 @@ BEGIN
        public.stewardship_family_mail_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),NULL) IS NOT TRUE
        AND public.stewardship_daily_digest_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),NULL) IS NOT TRUE
        AND public.stewardship_weekly_digest_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),NULL) IS NOT TRUE
-       AND public.stewardship_ops_prepare_write_v1(TG_TABLE_NAME,to_jsonb(NEW)) IS NOT TRUE THEN
+       AND public.stewardship_ops_prepare_write_v1(TG_TABLE_NAME,to_jsonb(NEW)) IS NOT TRUE
+       AND public.stewardship_security_prepare_write_v1(TG_TABLE_NAME,to_jsonb(NEW)) IS NOT TRUE THEN
         RAISE EXCEPTION 'Outbox insertion requires current preparation ownership'
             USING ERRCODE='23514';
     END IF;
@@ -432,8 +433,8 @@ BEGIN
        OR claim.domain_request_id IS DISTINCT FROM NEW.id THEN
         RAISE EXCEPTION 'Invalid delivery task binding' USING ERRCODE='23514';
     END IF;
-    IF (NEW.purpose <> 'operational' AND NEW.scope_id IS DISTINCT FROM NEW.campaign_id)
-       OR (NEW.purpose = 'operational' AND NOT EXISTS (
+    IF (NEW.purpose NOT IN ('operational','security_event') AND NEW.scope_id IS DISTINCT FROM NEW.campaign_id)
+       OR (NEW.purpose IN ('operational','security_event') AND NOT EXISTS (
            SELECT 1 FROM public.stewardship_parish WHERE id=NEW.scope_id
        )) OR (NEW.family_id IS NOT NULL AND NOT EXISTS (
            SELECT 1 FROM public.stewardship_family_campaign
@@ -839,7 +840,7 @@ BEGIN
     SELECT * INTO r FROM public.stewardship_outbox_render WHERE id=e.render_id;
     SELECT * INTO m FROM public.stewardship_outbox_message WHERE id=e.message_id;
     IF e.id IS NULL OR r.id IS NULL OR m.id IS NULL OR e.previous_state<>'submitting'
-       OR m.purpose NOT IN ('initial','reminder','receipt','daily_digest','weekly_digest','operational') OR e.attempt<1
+       OR m.purpose NOT IN ('initial','reminder','receipt','daily_digest','weekly_digest','operational','security_event') OR e.attempt<1
        OR e.evidence_digest<>encode(sha256(convert_to(e.evidence_note,'UTF8')),'hex')
        OR e.provider_key_digest<>encode(sha256(convert_to(m.semantic_key::text,'UTF8')),'hex')
        THEN RETURN NULL; END IF;

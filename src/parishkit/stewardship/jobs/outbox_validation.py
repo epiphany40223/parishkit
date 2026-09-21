@@ -80,12 +80,13 @@ class DeliveryIdentity:
             "daily_digest",
             "weekly_digest",
             "operational",
+            "security_event",
         ):
             raise ValueError("Invalid delivery identity.")
         family_purpose = self.purpose in ("initial", "reminder", "receipt")
         if (self.family_id is not None) != family_purpose:
             raise ValueError("Invalid delivery Family binding.")
-        if self.purpose == "operational":
+        if self.purpose in ("operational", "security_event"):
             valid = self.routing == "operational"
         else:
             valid = (

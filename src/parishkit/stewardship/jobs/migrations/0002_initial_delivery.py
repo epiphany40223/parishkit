@@ -630,6 +630,144 @@ class Migration(migrations.Migration):
                     },
                 ),
                 migrations.CreateModel(
+                    name="SecurityCohort",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        ("mode", models.CharField(max_length=16)),
+                        ("addresses", models.JSONField()),
+                        ("recipient_count", models.PositiveIntegerField()),
+                        ("fence", models.PositiveBigIntegerField()),
+                        ("worker_id", models.UUIDField()),
+                        (
+                            "configuration",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_accounts.appliedconfigurationversion",
+                            ),
+                        ),
+                        (
+                            "event",
+                            models.OneToOneField(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_accounts.policysecurityevent",
+                            ),
+                        ),
+                        (
+                            "parish",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_accounts.parish",
+                            ),
+                        ),
+                        (
+                            "run",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_jobs.taskrun",
+                            ),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_security_cohort",
+                        "constraints": [
+                            models.CheckConstraint(
+                                condition=models.Q(mode__in=("testing", "production")),
+                                name="security_cohort_mode",
+                            ),
+                            models.CheckConstraint(
+                                condition=models.Q(
+                                    fence__gte=1, recipient_count__gte=1
+                                ),
+                                name="security_cohort_counts",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
+                    name="SecurityRecipient",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        ("address", models.EmailField(max_length=254)),
+                        (
+                            "cohort",
+                            models.ForeignKey(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_jobs.securitycohort",
+                            ),
+                        ),
+                        (
+                            "outbox",
+                            models.OneToOneField(
+                                on_delete=django.db.models.deletion.PROTECT,
+                                to="stewardship_jobs.outboxmessage",
+                            ),
+                        ),
+                    ],
+                    options={
+                        "db_table": "stewardship_security_recipient",
+                        "constraints": [
+                            models.UniqueConstraint(
+                                fields=("cohort", "address"),
+                                name="security_recipient_address",
+                            )
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
                     name="DeliveryResolution",
                     fields=[
                         (
@@ -1373,6 +1511,7 @@ class Migration(migrations.Migration):
                                     "daily_digest",
                                     "weekly_digest",
                                     "operational",
+                                    "security_event",
                                 ),
                             )
                         ),
@@ -1392,11 +1531,14 @@ class Migration(migrations.Migration):
                         condition=models.Q(
                             models.Q(
                                 ("family", None),
-                                ("purpose", "operational"),
+                                ("purpose__in", ("operational", "security_event")),
                                 ("routing", "operational"),
                             ),
                             models.Q(
-                                models.Q(("purpose", "operational"), _negated=True),
+                                models.Q(
+                                    ("purpose__in", ("operational", "security_event")),
+                                    _negated=True,
+                                ),
                                 ("campaign__isnull", False),
                                 models.Q(
                                     models.Q(
@@ -1427,7 +1569,12 @@ class Migration(migrations.Migration):
                                 ("family", None),
                                 (
                                     "purpose__in",
-                                    ["daily_digest", "weekly_digest", "operational"],
+                                    [
+                                        "daily_digest",
+                                        "weekly_digest",
+                                        "operational",
+                                        "security_event",
+                                    ],
                                 ),
                             ),
                             _connector="OR",
