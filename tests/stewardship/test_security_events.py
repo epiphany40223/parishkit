@@ -16,7 +16,7 @@ def event(recipients, target=NEWCOMER):
 
 def acknowledgement(email, *, own=False):
     """One Administrator's acknowledgement, by the address held then."""
-    return SimpleNamespace(email=email, own=own)
+    return {"email": email, "own": own}
 
 
 @pytest.mark.parametrize("viewer", [ACTOR, OTHER, NEWCOMER])

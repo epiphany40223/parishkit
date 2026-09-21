@@ -55,9 +55,12 @@ and names the account it grants among its recipients, since that account
 must be told; that account was not an Administrator at activation, so its
 acknowledgement clears the event for itself alone and any prior recipient's
 settles it. The rule is one pure function
-over the event and its acknowledgements; the dashboard reads every event
-with its acknowledgements in one query, since an expansion is recorded
-rarely and only an acknowledged one needs judging.
+over the event and its acknowledgements; the dashboard reads every event in
+one query, its acknowledgements, the granting actor's address and the
+viewer's own address riding along as subqueries, since the Admin page has a
+fixed query budget, an expansion is recorded rarely and only an acknowledged
+one needs judging. The dashboard's source-refresh time gives back the one
+query the panel costs, so the page's budget is unchanged.
 
 ### What the dashboard shows
 
@@ -125,7 +128,7 @@ retained database was deleted.
   rule created by the only Administrator settled by their own word, the root
   activation's own event with no recipients settled by any acknowledgement,
   and a later Administrator inheriting nothing; and an unknown event not
-  found, GET not served, a
+  found, GET not served, the panel costing exactly one query, a
   missing CSRF token, a query string, a configuration under restore review
   and Staff refused with nothing recorded.
 - The schema baseline, immutable-record inventory, policy activation,
