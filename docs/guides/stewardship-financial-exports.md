@@ -63,8 +63,9 @@ A Family's share wording can exceed a spreadsheet cell: a configuration may
 offer a hundred options and each Other text may run to two thousand
 characters, and openpyxl truncates a cell beyond 32,767 characters silently.
 Whole entries therefore continue in further rows for the same Family once a
-cell reaches half that maximum, since the spreadsheet writer doubles every
-backslash and an Other text may be nothing else. A continuation row is marked
+cell, measured as the writer really stores it with every backslash doubled and
+every character XML cannot carry spelled as an escape, would reach that
+maximum. A continuation row is marked
 as continued in the wording cell and carries the Family, its DUID and the
 response reference and nothing else, so no amount is counted twice, no filter
 on another column sees a second value, and the cells concatenate back to every
@@ -135,10 +136,10 @@ database was deleted.
 
 ## Checkpoint
 
-Implementation, focused validation and two
+Implementation, focused validation and three
 [review/fix rounds](stewardship-financial-export-reviews.md) are complete, the
-first dual-source and the second single-source under the second September 20,
-2026 Codex exemption, with every accepted finding fixed. One more round, full
+first dual-source and the second and third single-source under the second
+September 20, 2026 Codex exemption, with every accepted finding fixed. Full
 exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain open. No deployment,
 release, live-provider write or database deletion is authorized by this
 increment.

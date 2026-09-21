@@ -32,13 +32,15 @@ UNPROVEN = (
     "Unavailable: the latest giving read is not proven complete for the "
     "comparison period. Unavailable does not mean zero."
 )
-# Half the spreadsheet cell maximum of 32,767 characters, which openpyxl would
-# otherwise truncate silently: the spreadsheet writer doubles every backslash
-# and an Other text may be nothing but backslashes, so the worst case is twice
-# the raw length. A configuration may offer a hundred share options and each
-# Other text may run to 2,000 characters, so one Family's wording can exceed a
-# cell; it then continues in further rows for the same Family.
-CELL_LIMIT = 16_000
+# Below the spreadsheet cell maximum of 32,767 characters, which openpyxl would
+# otherwise truncate silently, measured on the text the spreadsheet writer
+# really stores: it doubles every backslash and spells a character XML cannot
+# carry as a six-character escape, and an Other text may be nothing but those.
+# A configuration may offer a hundred share options and each Other text may
+# run to 2,000 characters, so one Family's wording can exceed a cell; it then
+# continues in further rows for the same Family.
+CELL_LIMIT = 32_000
+CONTINUED = "(continued) "
 
 
 @dataclass(frozen=True, repr=False)
@@ -60,6 +62,10 @@ def _share_cells(row):
     Whole entries move to the next cell, so no wording is cut mid-word and a
     reader can concatenate the cells in order to recover every character.
     """
+    # Imported here: the renderer brings its PDF toolkit with it, which the web
+    # process that queues an export never needs.
+    from .information_rendering import visible_text
+
     entries = [
         f"{share['label']}: {share['text']}" if share["text"] else share["label"]
         for share in row["shares"]
@@ -67,12 +73,14 @@ def _share_cells(row):
     if not entries:
         return ["None chosen"]
     cells, current = [], entries[0]
+    stored = len(visible_text(current)) + len(CONTINUED)
     for entry in entries[1:]:
-        if len(current) + len(entry) + 2 > CELL_LIMIT:
+        length = len(visible_text(entry)) + 2
+        if stored + length > CELL_LIMIT:
             cells.append(current)
-            current = entry
+            current, stored = entry, len(visible_text(entry)) + len(CONTINUED)
         else:
-            current = f"{current}; {entry}"
+            current, stored = f"{current}; {entry}", stored + length
     cells.append(current)
     return cells
 
@@ -153,7 +161,7 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
                 str(row["family_duid"]),
                 STATUS[row["active"]],
                 row["annual"].display,
-                str(row["frequency_label"]),
+                row["frequency_label"],
                 row["installment"].display if row["installment"].available else "",
                 first,
                 row["source_pledge"].display,
@@ -171,7 +179,7 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
             rows.append(
                 (row["family_name"], str(row["family_duid"]))
                 + ("",) * 4
-                + (f"(continued) {cell}",)
+                + (CONTINUED + cell,)
                 + ("",) * 5
                 + (row["id"],)
             )

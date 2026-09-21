@@ -1,5 +1,6 @@
 """Detached financial export documents render every format from one capture."""
 
+import csv
 import io
 from datetime import UTC, date, datetime
 from uuid import UUID
@@ -12,7 +13,10 @@ from parishkit.stewardship.reports.financial_documents import (
     UNPROVEN,
     financial_document,
 )
-from parishkit.stewardship.reports.information_rendering import render_information
+from parishkit.stewardship.reports.information_rendering import (
+    render_information,
+    visible_text,
+)
 from parishkit.stewardship.reports.money import MoneyAmount
 
 MOMENT = datetime(2026, 9, 19, 15, 4, tzinfo=UTC)
@@ -156,34 +160,41 @@ def test_share_wording_beyond_a_spreadsheet_cell_continues_in_later_rows():
     """A hundred options with long Other text never truncate silently in XLSX."""
     from openpyxl import load_workbook
 
-    # Other text of nothing but backslashes: the spreadsheet writer doubles
-    # each one, so the worst case for a cell is twice the raw length.
+    # Other text the spreadsheet cannot store as is: XML carries neither a
+    # noncharacter nor a bare backslash, so the writer spells each as an escape
+    # up to six characters long, and the cells are packed by that length.
     shares = [
-        {"label": f"Option {index}", "text": f"{index}:" + "\\" * 1_990}
+        {"label": f"Option {index}", "text": f"{index}:" + "￾\\" * 995}
         for index in range(17)
     ]
     built = document([row(shares=shares), row(family_duid=2)])
-    # Seventeen entries of about two thousand raw characters need three cells.
-    assert built.item_count == 2 and len(built.rows) == 4
-    assert [cell[1] for cell in built.rows] == ["1234567"] * 3 + ["2"]
+    # Each entry stores as about eight thousand characters: four per cell.
+    assert built.item_count == 2 and len(built.rows) == 6
+    assert [cell[1] for cell in built.rows] == ["1234567"] * 5 + ["2"]
     # A continuation row carries the Family, the wording and the reference only.
     assert built.rows[1][2:6] == ("", "", "", "") and built.rows[1][7:12] == ("",) * 5
     assert built.rows[1][6].startswith("(continued) Option ")
     assert built.rows[1][12] == str(UUID(int=97))
-    expected = "; ".join(f"{s['label']}: {s['text']}" for s in shares)
-    # Every character survives a workbook round trip, in order, and the CSV
-    # and PDF writers lay out the continuation rows too.
+    expected = visible_text("; ".join(f"{s['label']}: {s['text']}" for s in shares))
+    # Every character survives a workbook round trip, in order, in the
+    # writer's own spelling, and no stored cell exceeds the maximum.
     output = io.BytesIO()
     render_information(built, output, format="xlsx")
     sheet = load_workbook(io.BytesIO(output.getvalue()))["Financial detail"]
-    cells = [str(sheet.cell(index, 7).value) for index in range(2, 5)]
+    cells = [str(sheet.cell(index, 7).value) for index in range(2, 7)]
     assert all(len(cell) <= 32_767 for cell in cells)
-    recovered = "; ".join(cell.removeprefix("(continued) ") for cell in cells)
-    assert recovered.replace("\\\\", "\\") == expected
-    for format in ("csv", "pdf"):
-        output = io.BytesIO()
-        render_information(built, output, format=format)
-        assert output.getvalue()
+    assert "; ".join(cell.removeprefix("(continued) ") for cell in cells) == expected
+    # The CSV lays out the same six rows, with the continuation cells in the
+    # share column and nothing in the status or money columns.
+    output = io.BytesIO()
+    render_information(built, output, format="csv")
+    records = list(csv.reader(io.StringIO(output.getvalue().decode())))
+    data = records[2:]
+    assert len(data) == 6 and [item[1] for item in data] == [c[1] for c in built.rows]
+    assert data[1][6].startswith("(continued) ") and data[1][2] == data[1][3] == ""
+    assert data[1][12] == str(UUID(int=97))
+    output = io.BytesIO()
+    render_information(built, output, format="pdf")
     assert output.getvalue().startswith(b"%PDF")
     # A long share label is a wrapped metadata value, so the PDF still renders.
     long = row(shares=[{"label": "L" * 150, "text": ""}])

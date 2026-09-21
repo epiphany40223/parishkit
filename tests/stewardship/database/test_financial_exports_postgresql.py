@@ -14,7 +14,7 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.dispatch import execute_hint
 from parishkit.stewardship.jobs.queues import WorkQueue
-from parishkit.stewardship.reports import export_services
+from parishkit.stewardship.reports import export_services, financial_exports
 from parishkit.stewardship.reports.export_models import (
     ExportRequest,
     FinancialExportSnapshot,
@@ -84,7 +84,9 @@ def capture(harness, actor, **values):
         )
 
 
-def test_complete_capture_is_the_whole_result_with_proven_money(response_service):
+def test_complete_capture_is_the_whole_result_with_proven_money(
+    response_service, monkeypatch
+):
     """The capture is unpaged, proven, canonical and immutable; replay is exact."""
     harness = three_families(response_service)
     page = report(harness, page_size=2)
@@ -117,6 +119,14 @@ def test_complete_capture_is_the_whole_result_with_proven_money(response_service
         harness, actor, query=FinancialQuery(sort="pledge_desc"), request_key=key
     )
     assert replayed.pk == request.pk
+    # Still the same export when the proof would now come out differently, as
+    # after a promotion between two identical submissions: nothing is recomputed.
+    with monkeypatch.context() as patch:
+        patch.setattr(financial_exports, "giving_proof", lambda campaign: None)
+        again = capture(
+            harness, actor, query=FinancialQuery(sort="pledge_desc"), request_key=key
+        )
+    assert again.pk == request.pk and again.parameters["proof"] is not None
     with pytest.raises(ValueError):
         capture(harness, actor, query=FinancialQuery(sort="name"), request_key=key)
     # Captures are immutable in SQL itself: even the schema owner, who holds

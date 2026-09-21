@@ -79,3 +79,33 @@ at the reviewed base the heading does not yet exist.
 
 Post-fix validation: seven database-free, two PostgreSQL and nine browser cases
 passed locally.
+
+## Round 3, single-source under the second exemption
+
+Reviewed `9ffa0688`, the complete diff from main `f3bdac13`. The Claude
+reviewer completed with six findings, one Medium and five Low; Codex exited
+without output. Under the exemption this counts as round 3. Accepted and
+fixed:
+
+- **Medium: the halved limit still assumed the wrong worst case.** The
+  spreadsheet writer also spells a character XML cannot carry as an escape up
+  to six characters long, and the Family form accepts the noncharacters that
+  need it, so a cell packed to half the maximum could still expand past it.
+  Cells are now packed by the length the writer really stores, escapes and
+  the continuation prefix included, against the true maximum, and the
+  round-trip case's Other text is noncharacters and backslashes.
+- Low: a replay case now changes what the proof would compute to and asserts
+  the same export with the original proof; the continuation rows' CSV layout
+  is parsed and asserted, not merely produced; the frequency cell drops a
+  wrapper that suggested a lazy value; the task map's retained sentence about
+  the financial detail increment defers to its receipt rather than calling
+  its delivery pending.
+
+Left as is: neither PostgreSQL fixture turns the financial module off, so a
+fresh capture on a campaign without the module and regeneration after the
+module is switched off are not exercised here; the interactive report's own
+suite proves the module-off denial that the fresh capture shares, and the
+regeneration path renders a retained capture with no read of the module.
+
+Post-fix validation: seven database-free, two PostgreSQL and nine browser cases
+passed locally.
