@@ -1202,7 +1202,8 @@ CREATE TABLE public.stewardship_operational_log (
     CONSTRAINT operational_context_safe CHECK (public.stewardship_safe_context_v1((schema)::text, context)),
     CONSTRAINT operational_event_safe CHECK (event IN (
         'configuration_rejected','configuration_digest_mismatch','startup_rejected',
-        'startup_validated','request_completed','report_audit_failed','task_started','task_completed',
+        'startup_validated','request_completed','report_audit_failed','report_shaping_failed',
+        'task_started','task_completed',
         'task_failed','fact_drift','unstructured_log_suppressed','authentication_limits_weakened',
         'installer_request_failed','source_refresh_invalid','source_member_unusable',
         'source_tenant_mismatch','source_destructive_change',
