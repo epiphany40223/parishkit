@@ -14,9 +14,10 @@ and follows the [pre-production development policy](../specs/stewardship/operati
 An Administrator assigns an address to an active Ministry of the promoted
 catalog, or removes an Administrator entry assignment, from the Portal users
 page: an **Assign to Ministry** form on each exact-address rule's row, a
-**Review removal** button beside each Administrator entry assignment in the
-exact-address and domain-assignment tables, and an **Add a Ministry
-assignment** form for an address that has no rule yet. Each is previewed and
+**Review assignment removal** button beside each Administrator entry
+assignment in the exact-address and domain-assignment tables, worded apart
+from the rule's own removal, and an **Add a Ministry assignment** form for
+an address that has no rule yet. Each is previewed and
 confirmed exactly as a rule change is and applied as an ordinary policy
 request. The page now names each assignment's Ministry beside its DUID from
 the promoted catalog, as the
