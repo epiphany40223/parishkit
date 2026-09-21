@@ -16,13 +16,14 @@ from .policy import Capability, allows
 def summary(actor, configuration, now):
     """Read under the caller's work lock, which pins source/configuration promotion."""
     campaign = configuration.current_campaign
-    current = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
+    # One query for the promoted snapshot's time: the page has a fixed query
+    # budget, and the pointer's own row need not be read first.
     refreshed_at = (
-        SourceSnapshot.objects.filter(pk=current)
+        SourceSnapshot.objects.filter(
+            pk__in=SourceCurrent.objects.exclude(snapshot_id=None).values("snapshot_id")
+        )
         .values_list("promoted_at", flat=True)
         .first()
-        if current
-        else None
     )
     result = {"campaign": campaign, "refreshed_at": refreshed_at}
     if campaign is not None:
@@ -53,6 +54,12 @@ def summary(actor, configuration, now):
                 counts["eligible_responded"], counts["eligible"]
             )
             result["families"] = counts
+    if "administrator" in actor.roles:
+        from .security_events import open_events
+
+        # Every Administrator's dashboard shows an expansion of who may sign
+        # in until an Administrator acknowledges it.
+        result["security_events"] = open_events(actor)
     if allows(actor, Capability.BACKGROUND_WORK):
         result["recent_failures"] = list(
             TaskRun.objects.filter(

@@ -24,6 +24,7 @@ from .accounts import (
     parish_views,
     presence,
     schedule_views,
+    security_event_views,
     setup_branding_views,
     setup_campaign_views,
     setup_cancellation_views,
@@ -431,6 +432,11 @@ admin_patterns = [
     path("configuration/parish", parish_views.parish_settings, name="parish_settings"),
     path("users", user_views.users, name="users"),
     path("users/rules", user_rule_views.user_rules, name="user_rules"),
+    path(
+        "security-events/<uuid:event_id>/acknowledge",
+        security_event_views.acknowledge_event,
+        name="security_event_acknowledge",
+    ),
     path(
         "configuration/ministries", ministry_views.ministry_activity, name="ministries"
     ),

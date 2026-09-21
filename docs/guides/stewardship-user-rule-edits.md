@@ -210,3 +210,25 @@ with every accepted finding fixed and the last check finding nothing to
 fix. Full exact-head CI, DCO and protected
 delivery remain open. M5 and Gate 3 remain open. No deployment, release,
 live-provider write or database deletion is authorized by this increment.
+
+## Protected delivery
+
+PR #80 delivered candidate `5bf72cd4`, three logical commits plus the PR #79
+receipt and the fast-selection rotation, whose tree `0b20f97c` is identical
+to the retained commit-by-commit review history on
+`pr/stewardship-user-rule-edits-reviewed` and to the landed tree. Exact-head
+ready-candidate CI `35603873225` and DCO passed all 25 checks on the first
+ready candidate, from 13:10:13 to 13:29:20 UTC on September 21, 2026 (19
+minutes 7 seconds). `origin/main` had no intervening commits since the
+candidate's base `e01b52ba`. Protected auto-merge landed as
+`4f0465fab46eff999985a3d053ab63b363c86822` at 13:29:45 UTC and was verified on
+freshly fetched `origin/main` before the next increment started. This used the
+standing delivery authority, without deployment or release, and supersedes the
+pending delivery checkpoint above. The cancelled runs GitHub created for the
+draft head and for its delayed pull-request events are not counted as
+acceptance.
+
+The login rule edit increment is delivered: reviewed role, rule creation and
+removal requests from the Portal users page, with the activation-time actor
+recheck. ADM-07 stays open for its security events and notifications,
+autosave queue, suggestions and assignments. M5 and Gate 3 remain open.

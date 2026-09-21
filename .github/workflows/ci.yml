@@ -55,7 +55,7 @@ jobs:
           tests/stewardship/test_quality_ci.py
           tests/stewardship/test_browser_ci.py
           tests/stewardship/test_database_gate.py
-          tests/stewardship/test_user_rules.py
+          tests/stewardship/test_security_events.py
           tests/stewardship/test_financial_documents.py
           tests/stewardship/test_financial_report.py
           tests/stewardship/test_log_rows.py

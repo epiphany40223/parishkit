@@ -49,6 +49,7 @@ WEB_READ_TABLES = frozenset(
         "stewardship_portal_user",
         "stewardship_assignment_overlay",
         "stewardship_policy_security_event",
+        "stewardship_policy_security_ack",
         "stewardship_policy_epoch",
         "stewardship_admin_revocation",
         "stewardship_config_request",
@@ -276,6 +277,9 @@ def runtime_grants(role, *, target=None):
         # Login incidents and critical diagnostics retain atomic safe intent,
         # never rendered messages, recipients or provider mutation authority.
         tables["stewardship_ops_incident"] = {"SELECT", "INSERT"}
+        # An Administrator's acknowledgement of a security event is one
+        # append-only row; the event itself stays readable and immutable.
+        tables["stewardship_policy_security_ack"] = {"SELECT", "INSERT"}
         columns["stewardship_ops_incident"] = {
             "UPDATE": {
                 "signal_level",
