@@ -444,6 +444,28 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
                 )
 
                 validate_credentials(intent.candidate.document())
+                if any(
+                    type(item) is dict and item.get("section") == "login_rules"
+                    for item in request.patch
+                ):
+                    # A login-policy change confirmed by a portal user is
+                    # applied only while that Administrator is still one under
+                    # the policy being replaced, here under the installation
+                    # lock. A disabled identity or a rule revoked since
+                    # confirmation leaves the base digest unchanged, so the
+                    # stale-base check alone would still activate their grant.
+                    # Operator recovery and other system producers are not
+                    # portal users and are admitted by their own boundaries.
+                    from .policy import Capability, allows, current_principal
+                    from .policy_models import PortalUser
+
+                    if PortalUser.objects.filter(pk=request.actor_id).exists():
+                        try:
+                            actor = current_principal(store, request.actor_id)
+                        except PortalUser.DoesNotExist:
+                            actor = None
+                        if not allows(actor, Capability.MANAGE_USERS):
+                            failure_code = "actor_unauthorized"
             except ConfigurationReadinessUnavailable:
                 # Retain the exact durable request for a later installer pass;
                 # unfinished normalization/replacement is not malformed intent.

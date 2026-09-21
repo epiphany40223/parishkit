@@ -5,6 +5,7 @@ from html import unescape
 from uuid import uuid4
 
 import pytest
+from django.db.models import F
 from django.utils import timezone
 
 from parishkit.stewardship.accounts.configuration_installation import install_request
@@ -12,8 +13,8 @@ from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.deployment import ServiceRole
 
-from ..policy_factory import address, domain
-from .auth_builders import signed_in
+from ..policy_factory import address, assignment, domain
+from .auth_builders import auth_runtime, signed_in
 from .test_background_grants_postgresql import task_login
 from .test_user_views_postgresql import add_rules, row
 
@@ -176,6 +177,141 @@ def test_a_signed_review_confirmed_twice_is_one_request(auth_service, google):
     assert rules(store)["twice@example.org"]["creation_operation"] == str(request.pk)
 
 
+def test_activation_requires_the_confirming_administrator_still_to_be_one(
+    auth_service, google
+):
+    """A confirmed grant is not applied for an actor revoked since confirmation."""
+    store = auth_service.store
+    add_rules(store, address("second@example.org"))
+    browser, login = signed_in()
+    assert login.status_code == 302
+    admin = PortalUser.objects.get(email="admin@example.org")
+    with web():
+        signed = token(
+            post(
+                browser,
+                proposal(
+                    store,
+                    kind="address",
+                    identity="grant@example.org",
+                    roles=["administrator"],
+                ),
+            )
+        )
+        queued = post(browser, {"action": "confirm", "preview": signed})
+    assert queued.status_code == 302
+    request = ConfigurationChangeRequest.objects.get(
+        pk=queued["Location"].rsplit("/", 1)[-1]
+    )
+    # The digest is unchanged, but the actor's identity is disabled: the
+    # installer refuses at activation, and the policy is untouched.
+    PortalUser.objects.filter(pk=admin.pk).update(
+        disabled=True, version=F("version") + 1
+    )
+    receipt = install_request(store, request_id=request.pk, correlation_id=uuid4())
+    assert receipt.state == "failed" and receipt.failure_code == "actor_unauthorized"
+    assert "grant@example.org" not in rules(store)
+    # The same for an actor whose Administrator rule another Administrator
+    # removed meanwhile: the base moved, so it is stale before it is anything.
+    PortalUser.objects.filter(pk=admin.pk).update(
+        disabled=False, version=F("version") + 1
+    )
+    with web():
+        signed = token(
+            post(
+                browser,
+                proposal(
+                    store, kind="address", identity="later@example.org", roles=["staff"]
+                ),
+            )
+        )
+        queued = post(browser, {"action": "confirm", "preview": signed})
+    assert queued.status_code == 302
+    request = ConfigurationChangeRequest.objects.get(
+        pk=queued["Location"].rsplit("/", 1)[-1]
+    )
+    google[0].update(email="second@example.org", sub="second-subject")
+    other, login = signed_in()
+    assert login.status_code == 302
+    applied(
+        store,
+        other,
+        proposal(store, kind="address", identity="admin@example.org", roles=["staff"]),
+    )
+    receipt = install_request(store, request_id=request.pk, correlation_id=uuid4())
+    assert receipt.state == "failed" and receipt.failure_code == "stale_base"
+    assert "later@example.org" not in rules(store)
+
+
+def test_a_review_signed_for_one_administrator_is_refused_for_another(
+    auth_service, google
+):
+    """The signed review binds its actor; another Administrator cannot confirm it."""
+    store = auth_service.store
+    add_rules(store, address("second@example.org"))
+    requests = ConfigurationChangeRequest.objects.count()
+    browser, login = signed_in()
+    assert login.status_code == 302
+    with web():
+        signed = token(
+            post(
+                browser,
+                proposal(
+                    store, kind="address", identity="new@example.org", roles=["staff"]
+                ),
+            )
+        )
+    google[0].update(email="second@example.org", sub="second-subject")
+    other, login = signed_in()
+    assert login.status_code == 302
+    with web():
+        refused = other.post(
+            URL,
+            {
+                "csrfmiddlewaretoken": other.cookies["csrftoken"].value,
+                "action": "confirm",
+                "preview": signed,
+            },
+        )
+    assert refused.status_code == 403
+    assert ConfigurationChangeRequest.objects.count() == requests
+
+
+def test_a_seeded_grant_keeps_its_origin_through_the_route(
+    tmp_path, settings, real_limiter, google
+):
+    """Widening a seeded address keeps its seeded origin beside the manual one."""
+    held = assignment("chair@example.org", ministry=9, seeded=True)
+    service = auth_runtime(
+        tmp_path,
+        settings,
+        real_limiter,
+        [
+            address(),
+            address("chair@example.org", ("ministry_leader",), seeded=True),
+            held,
+        ],
+    )
+    store = service.store
+    browser, login = signed_in()
+    assert login.status_code == 302
+    request = applied(
+        store,
+        browser,
+        proposal(
+            store,
+            kind="address",
+            identity="chair@example.org",
+            roles=["ministry_leader", "staff"],
+        ),
+    )
+    chair = rules(store)["chair@example.org"]
+    assert chair["roles"] == ["ministry_leader", "staff"]
+    assert set(chair["grants"]["ministry_leader"]) == {"chair-seed"}
+    assert chair["grants"]["staff"] == {"manual": str(request.pk)}
+    assert chair["creation_origin"] == "chair-seed"
+
+
 def test_the_review_counts_reach_as_the_page_does(auth_service, google):
     """Domain reach is the page's column; address reach is read for that address."""
     store = auth_service.store
@@ -217,11 +353,24 @@ def test_the_review_counts_reach_as_the_page_does(auth_service, google):
             ),
         )
         assert b"1 recorded Google account is authorized" in widened.content
+        # A rule that does not exist yet reaches the usable identities that
+        # presented its claim from a matching address and have no exact rule.
         fresh = post(
             browser,
             proposal(store, kind="domain", identity="new.example", roles=["staff"]),
         )
         assert b"0 recorded Google accounts are authorized" in fresh.content
+        PortalUser.objects.create(
+            google_subject=str(uuid4()),
+            email="someone@new.example",
+            hosted_domain="new.example",
+            verified_at=timezone.now(),
+        )
+        fresh = post(
+            browser,
+            proposal(store, kind="domain", identity="new.example", roles=["staff"]),
+        )
+        assert b"1 recorded Google account is authorized" in fresh.content
         # The consumer account is outside every domain rule and has no rule
         # yet, so the page's index never loaded it; the review still counts it.
         consumer = post(

@@ -521,7 +521,7 @@ CREATE TABLE public.stewardship_config_checkpoint (
     state character varying(16) NOT NULL,
     request_id uuid NOT NULL,
     failure_code character varying(32) DEFAULT ''::character varying NOT NULL,
-    CONSTRAINT config_checkpoint_failure_code CHECK (((((failure_code)::text = ANY ((ARRAY['stale_base'::character varying, 'invalid_candidate'::character varying])::text[])) AND ((state)::text = 'failed'::text)) OR ((NOT ((state)::text = 'failed'::text)) AND ((failure_code)::text = ''::text)))),
+    CONSTRAINT config_checkpoint_failure_code CHECK (((((failure_code)::text = ANY ((ARRAY['stale_base'::character varying, 'invalid_candidate'::character varying, 'actor_unauthorized'::character varying])::text[])) AND ((state)::text = 'failed'::text)) OR ((NOT ((state)::text = 'failed'::text)) AND ((failure_code)::text = ''::text)))),
     CONSTRAINT config_checkpoint_installer_states CHECK (((state)::text = ANY ((ARRAY['staged'::character varying, 'validating'::character varying, 'prepared'::character varying, 'yaml_activated'::character varying, 'applied'::character varying, 'failed'::character varying, 'cancelled'::character varying])::text[]))),
     CONSTRAINT config_checkpoint_positive CHECK ((sequence >= 1)),
     CONSTRAINT stewardship_config_checkpoint_sequence_check CHECK ((sequence >= 0))

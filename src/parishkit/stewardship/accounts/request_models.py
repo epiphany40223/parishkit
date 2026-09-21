@@ -149,7 +149,11 @@ class ConfigurationRequestCheckpoint(ImmutableRecord):
                 condition=(
                     models.Q(
                         state="failed",
-                        failure_code__in=["stale_base", "invalid_candidate"],
+                        failure_code__in=[
+                            "stale_base",
+                            "invalid_candidate",
+                            "actor_unauthorized",
+                        ],
                     )
                     | (~models.Q(state="failed") & models.Q(failure_code=""))
                 ),

@@ -85,9 +85,28 @@ def _reach(records, change):
     policy names, and a new rule's address, such as a consumer account that
     already tried to sign in, is not yet among them.
     """
-    if change.kind == "domain":
+    if change.kind == "domain" and change.before is not None:
         policy = AppliedPolicy(records, policy_identities(records))
         return len(policy.authorized.get(change.identity, []))
+    if change.kind == "domain":
+        # A rule that does not exist yet authorizes nobody through the page's
+        # index. What the Administrator needs at this review is who would be
+        # authorized once it does: recorded identities that presented this
+        # claim from a matching address, are usable, and have no exact rule.
+        exact = {
+            record["values"]["email"]
+            for record in records
+            if record["values"]["kind"] == "address"
+        }
+        return (
+            PortalUser.objects.filter(
+                hosted_domain=change.identity,
+                email__endswith="@" + change.identity,
+                disabled=False,
+            )
+            .exclude(email__in=exact)
+            .count()
+        )
     return PortalUser.objects.filter(email=change.identity, disabled=False).count()
 
 
@@ -127,6 +146,8 @@ def _preview(request, service, actor):
         build_candidate(base, change.patch, candidate_id=uuid4())
     except ConfigError:
         return _error(request, "policy")
+    # The chrome presents the configuration this review was drawn against.
+    request._stewardship_display_configuration = configuration
     own = (
         PortalUser.objects.filter(pk=actor.identity)
         .values_list("email", flat=True)
@@ -190,7 +211,11 @@ def user_rules(request):
             # own explanation rather than the editors' JSON conflict, and the
             # same final recheck as every other response on this route.
             response = _error(request, "stale", status=409)
-        principal(request, service, read_only=True, capability=Capability.MANAGE_USERS)
+        fresh = principal(
+            request, service, read_only=True, capability=Capability.MANAGE_USERS
+        )
+        if fresh.identity != actor.identity:
+            raise PermissionError("Login rule editor changed.")
         response["Cache-Control"] = "no-store"
         return response
     except (
@@ -199,6 +224,7 @@ def user_rules(request):
         LimiterUnavailable,
         PermissionError,
         ValueError,
+        StaleRecordError,
         signing.BadSignature,
     ) as error:
         return error_response(error)

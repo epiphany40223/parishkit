@@ -4,6 +4,8 @@ from uuid import uuid4
 
 import pytest
 
+from parishkit.config import ConfigError
+from parishkit.stewardship.accounts.policy_schema import validate_policy_records
 from parishkit.stewardship.accounts.user_rules import RuleRefused, rule_patch
 
 from .policy_factory import address, domain
@@ -162,6 +164,20 @@ def test_refusals_are_closed_reason_codes():
     }
     for code, values in cases.items():
         assert refused(records, **values) == code, code
+    # The consumer list is the policy schema's own, so both refuse alike.
+    assert (
+        refused(
+            records,
+            kind="domain",
+            identity="googlemail.com",
+            roles=["staff"],
+            operation="set",
+        )
+        == "consumer"
+    )
+    for name in ("gmail.com", "googlemail.com"):
+        with pytest.raises(ConfigError):
+            validate_policy_records([address(), domain(name, roles=("staff",))])
     assert (
         refused(
             records,

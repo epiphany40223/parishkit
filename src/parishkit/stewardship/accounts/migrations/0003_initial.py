@@ -1300,7 +1300,11 @@ class Migration(migrations.Migration):
                             models.Q(
                                 (
                                     "failure_code__in",
-                                    ["stale_base", "invalid_candidate"],
+                                    [
+                                        "stale_base",
+                                        "invalid_candidate",
+                                        "actor_unauthorized",
+                                    ],
                                 ),
                                 ("state", "failed"),
                             ),

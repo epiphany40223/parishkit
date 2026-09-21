@@ -843,8 +843,9 @@ verified main tip. M5 and Gate 3 remain open.
 That [login rule edit increment](../../guides/stewardship-user-rule-edits.md)
 now lets an Administrator set roles, create and remove login rules from the
 Portal users page through previewed configuration requests, with focused
-acceptance and three-engine browser checks. Review/fix rounds, full exact-head
-CI/DCO and protected delivery remain pending. M5 and Gate 3 remain open.
+acceptance and three-engine browser checks. Three review/fix rounds are
+complete; full exact-head CI/DCO and protected delivery remain pending. M5 and
+Gate 3 remain open.
 
 1. Finish [BG-08](background-processing.md#bg-08-export-and-graph-workers); implement [RPT-01](reports.md#rpt-01-shared-report-framework-and-campaign-selection) and finish [RPT-02](reports.md#rpt-02-population-and-calculation-library).
 2. Complete [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics), [RPT-04](reports.md#rpt-04-additional-information-workflow-report), [RPT-05](reports.md#rpt-05-family-code-and-postal-outreach-reports), [RPT-06](reports.md#rpt-06-ministry-summary-and-detail), [RPT-07](reports.md#rpt-07-multi-ministry-follow-up-packet), and the reporting slice of [RPT-08](reports.md#rpt-08-census-and-financial-reports).
