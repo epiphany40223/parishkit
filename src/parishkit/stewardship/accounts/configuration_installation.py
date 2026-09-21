@@ -191,16 +191,28 @@ class DatabaseMaterializer:
                 cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [736220, 1])
             runtime = SystemConfiguration.objects.select_for_update().first()
             self._campaign_admission()
+            from .chair_seeding import confirmable
+
             if self.admit_actor is not None and not self.admit_actor():
                 # The refusal is committed under the very lock that judged it,
                 # so no crash before the YAML restore can let a later pass, the
                 # actor authorized again by then, judge the request afresh.
                 self._record("failed", "actor_unauthorized")
-                refused = True
+                refused = ActorUnauthorized(
+                    "The confirming Administrator is no longer one."
+                )
+            elif not confirmable(
+                self.request, selected.version_id, selected.document()
+            ):
+                # A confirmed Chairperson the promoted source no longer shows:
+                # judged under the lock source promotion takes too, recorded
+                # durably, and restored like any other refusal.
+                self._record("failed", "invalid_candidate")
+                refused = SeedUnconfirmable("The confirmed Chairperson is no longer.")
             else:
                 self._apply(runtime, selected)
         if refused:
-            raise ActorUnauthorized("The confirming Administrator is no longer one.")
+            raise refused
 
     def _apply(self, runtime, selected):
         """Commit the pointer, request and audit effects inside the activation."""
@@ -222,7 +234,11 @@ class DatabaseMaterializer:
             correlation_id=self.correlation_id,
         )
         from .chair_reconciliation import reconcile_configuration_chairs
+        from .chair_seeding import record_seed_evidence
 
+        # A confirmed suggestion's retained identity is recorded before the
+        # reconciliation judges the new seed, so it is never born suspended.
+        record_seed_evidence(activation, self.request)
         reconcile_configuration_chairs(activation)
         # SQL inserts Applied, safe audit, and the runtime pointer in this
         # same transaction. A failure in any effect rolls them all back.
@@ -369,8 +385,20 @@ def install_request(store, *, request_id, correlation_id, admit_campaign=None):
     )
 
 
-class ActorUnauthorized(Exception):
+class ActivationRefused(Exception):
+    """An activation refused under its own lock, recorded durably before raising.
+
+    The manifest is already selected when the refusal is judged, so every
+    refusal is followed by the same restore of the previous configuration.
+    """
+
+
+class ActorUnauthorized(ActivationRefused):
     """The Administrator who confirmed a login-policy change no longer is one."""
+
+
+class SeedUnconfirmable(ActivationRefused):
+    """A confirmed Chairperson the promoted source no longer shows as one."""
 
 
 def actor_authorized(request, *, lock):
@@ -477,7 +505,7 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
                 raise ConfigError("Another configuration requires recovery first.")
             try:
                 recover_active(store, materializer)
-            except ActorUnauthorized:
+            except ActivationRefused:
                 _restore_refused(store, materializer._check)
             return _status(request)
 
@@ -512,6 +540,9 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
                         intent.candidate.document()["sections"].get("login_rules", []),
                         request.pk,
                     )
+                from .chair_seeding import validate_intents
+
+                validate_intents(request)
                 from .request_admission import check_historical_additions
 
                 check_historical_additions(request.base_id, request.patch)
@@ -576,7 +607,7 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
             return _status(request)
         try:
             apply_version(store, materializer, intent.candidate)
-        except ActorUnauthorized:
+        except ActivationRefused:
             _restore_refused(store, materializer._check)
         return _status(request)
 
@@ -612,14 +643,16 @@ def _selected_over(store):
 
 
 def _restore_refused(store, check):
-    """Select the base YAML again after an activation refused its actor.
+    """Select the base YAML again after an activation refused its request.
 
-    The refusal is recorded inside the activation transaction, before the
-    restore, so a crash between the two leaves a failed request's candidate
-    selected over an unchanged base. Every install, and every idle installer
-    pass, finishes that restore, as an exceptional abort's recovery does;
-    until then no other request can proceed, since its base is not what the
-    file names. `check` is the installation lock's connection check.
+    The refusal, of the actor who is no longer an Administrator or of a
+    Chairperson confirmation the source no longer supports, is recorded
+    inside the activation transaction, before the restore, so a crash between
+    the two leaves a failed request's candidate selected over an unchanged
+    base. Every install, and every idle installer pass, finishes that
+    restore, as an exceptional abort's recovery does; until then no other
+    request can proceed, since its base is not what the file names. `check`
+    is the installation lock's connection check.
     """
     check()
     selected = _selected_over(store)
@@ -630,7 +663,10 @@ def _restore_refused(store, check):
         candidate_version_id=version_id, base__digest=active_digest
     ):
         status = _status(refused)
-        if status.state == "failed" and status.failure_code == "actor_unauthorized":
+        if status.state == "failed" and status.failure_code in {
+            "actor_unauthorized",
+            "invalid_candidate",
+        }:
             store.select(store.read_version(refused.base_id))
             check()
             return

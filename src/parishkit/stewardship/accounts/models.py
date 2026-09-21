@@ -15,6 +15,7 @@ from .chair_models import (  # noqa: F401
     ChairAssignmentReview,
     ChairReconciliation,
     ChairSeedEvidence,
+    ChairSeedIntent,
 )
 
 # Django discovers these models through this module; keep session and immutable

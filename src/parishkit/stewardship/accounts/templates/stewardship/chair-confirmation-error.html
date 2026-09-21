@@ -1,0 +1,8 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Chairperson confirmation not made" %}{% endblock %}
+{% block content %}<section class="flow panel">
+  <h1>{% translate "Chairperson confirmation not made" %}</h1>
+  <p role="alert">{% if code == 'ambiguous' %}{% translate "That address is used by more than one active Member. Choose the Member to seed before confirming." %}{% elif code == 'already' %}{% translate "That Ministry is already assigned to the address by a Parish source Chairperson seed, so there is nothing to confirm." %}{% elif code == 'empty' %}{% translate "No suggestion was selected." %}{% elif code == 'stale' %}{% translate "The applied login rules or the promoted parish source changed since this page or review was drawn, so nothing was changed. Reload the Portal users page and review the confirmation again." %}{% elif code == 'policy' %}{% translate "The resulting policy is not valid, so nothing was changed." %}{% else %}{% translate "The confirmation was not understood. Use the form on the Portal users page." %}{% endif %}</p>
+  <p>{% translate "The submitted address is never repeated on this page." %}</p>
+  <p><a href="{% url 'admin:users' %}">{% translate "Return to Portal users" %}</a></p>
+</section>{% endblock %}

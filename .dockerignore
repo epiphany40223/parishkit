@@ -58,6 +58,7 @@
 !src/parishkit/stewardship/schema/security_render.sql
 !src/parishkit/stewardship/schema/security_dispatch.sql
 !src/parishkit/stewardship/schema/chair_suggestions.sql
+!src/parishkit/stewardship/schema/chair_confirmation.sql
 !src/parishkit/stewardship/schema/daily_digests.sql
 !src/parishkit/stewardship/schema/weekly_digests.sql
 !src/parishkit/stewardship/schema/weekly_manual.sql
