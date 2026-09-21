@@ -77,6 +77,7 @@ def _submit_private(payload, *, helper, seconds, check, decode=None):
             "weekly_delivery_worker",
             "operational_mail_worker",
             "operational_slack_worker",
+            "security_mail_worker",
         }
         or type(payload) is not bytes
         or not 0 < len(payload) <= limit
@@ -92,6 +93,7 @@ def _submit_private(payload, *, helper, seconds, check, decode=None):
                 "digest_delivery_worker",
                 "weekly_delivery_worker",
                 "operational_mail_worker",
+                "security_mail_worker",
             }
         )
         != (decode is not None)

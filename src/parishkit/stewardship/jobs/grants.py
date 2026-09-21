@@ -97,6 +97,12 @@ def task_runtime_grants(role):
         tables["stewardship_ops_notice"] = {"SELECT"}
         tables["stewardship_ops_cohort"] = {"SELECT", "INSERT"}
         tables["stewardship_ops_recipient"] = {"SELECT", "INSERT"}
+        # Security alerts fan out from the trigger-recorded event and its
+        # recipients; the worker reads the event and writes the cohort.
+        tables["stewardship_policy_security_event"] = {"SELECT"}
+        tables["stewardship_security_notifiable"] = {"SELECT"}
+        tables["stewardship_security_cohort"] = {"SELECT", "INSERT"}
+        tables["stewardship_security_recipient"] = {"SELECT", "INSERT"}
         tables["stewardship_ops_log_receipt"] = {"SELECT", "INSERT"}
         tables["stewardship_ops_slack_attempt"] = {"SELECT", "INSERT"}
         tables["stewardship_ops_slack_result"] = {"SELECT", "INSERT"}
@@ -136,6 +142,15 @@ def task_runtime_grants(role):
             "SELECT": {"id", "notice_id", "run_id", "recipient_count"}
         }
         columns["stewardship_ops_recipient"] = {
+            "SELECT": {"id", "cohort_id", "outbox_id"}
+        }
+        # Whether an event has anyone to tell is a count, read through a view
+        # owned by the schema; the scheduler never holds an address grant.
+        tables["stewardship_security_notifiable"] = {"SELECT"}
+        columns["stewardship_security_cohort"] = {
+            "SELECT": {"id", "event_id", "run_id", "recipient_count"}
+        }
+        columns["stewardship_security_recipient"] = {
             "SELECT": {"id", "cohort_id", "outbox_id"}
         }
         from parishkit.stewardship.source.grants import add_refresh_scheduler_grants
