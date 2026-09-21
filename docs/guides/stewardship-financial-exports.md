@@ -140,6 +140,30 @@ Implementation, focused validation and three
 [review/fix rounds](stewardship-financial-export-reviews.md) are complete, the
 first dual-source and the second and third single-source under the second
 September 20, 2026 Codex exemption, with every accepted finding fixed. Full
-exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain open. No deployment,
-release, live-provider write or database deletion is authorized by this
-increment.
+exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
+open. No deployment, release, live-provider write or database deletion is
+authorized by this increment.
+
+## Protected delivery
+
+PR #79 delivered candidate `fee431e7`, three logical commits plus the PR #78
+receipt, the fast-selection rotation and one standalone correction, whose tree
+`db18b426` is identical to the retained commit-by-commit review history on
+`pr/stewardship-financial-export-reviewed` and to the landed tree. The first
+ready candidate, `6b608368`, failed one of the 24 exact-head jobs: PostgreSQL
+shard 12's immutable-record inventory proves every append-only table's SQL
+guard by name, the capture tables name their capture trigger as that guard,
+and the new table was not listed. The correction is test-only and lists it
+beside its siblings. Exact-head ready-candidate CI `35564179100` and DCO then
+passed all 24 jobs, from 05:19:39 to 05:37:50 UTC on September 21, 2026 (18
+minutes 11 seconds). `origin/main` had no intervening commits since the
+candidate's base `30cb4635`. Protected auto-merge landed as
+`e01b52bae8a8fa667170ebc677a278780a5b6612` at 05:37:54 UTC and was verified on
+freshly fetched `origin/main` before the next increment started. This used the
+standing delivery authority, without deployment or release, and supersedes the
+pending delivery checkpoint above. The failed and cancelled runs, including the
+superseded runs GitHub created when its delayed pull-request events arrived,
+are not counted as acceptance.
+
+RPT-08.04 is delivered: the interactive financial stewardship detail and its
+complete CSV, XLSX and PDF exports. M5 and Gate 3 remain open.
