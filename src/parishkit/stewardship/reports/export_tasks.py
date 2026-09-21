@@ -182,6 +182,10 @@ def load_document(request, *, general=None):
             requested_at=request.created_at,
             timezone=request.browser_timezone,
         )
+    if request.report == "financial":
+        from .financial_exports import export_document
+
+        return export_document(request)
     facts = CampaignDailyFactSet.objects.get(
         pk=request.fact_set_id, campaign_id=request.campaign_id, state="ready"
     )
@@ -246,6 +250,7 @@ def _execute(execution, *, store, root, general=None):
                 "family_directory",
                 "postal_outreach",
                 "ministry",
+                "financial",
             }:
                 from .information_rendering import render_information
 
