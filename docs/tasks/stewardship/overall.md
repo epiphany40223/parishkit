@@ -914,10 +914,14 @@ lists each suspended seeded assignment on the Portal users page with its
 Member, reason and source state, and lets the Administrator restore it as a
 manual assignment, remove it, or keep a seeded Ministry leader role
 independently, each an ordinary policy request whose entered reason is
-recorded in the audit. Three review/fix rounds are complete, single-source
-under the second Codex exemption, the third validating nothing; full
-exact-head CI/DCO and protected delivery remain pending. M5 and Gate 3
-remain open.
+recorded in the audit. Three review/fix rounds were single-source under the
+second Codex exemption, the third validating nothing. PR #86 merged through
+protected auto-merge as `a69cb098`; its
+[protected receipt](../../guides/stewardship-chair-review.md#protected-delivery)
+records the identical landed tree, the infrastructure re-run of one shard's
+evidence upload and the refreshed-main verification. The ADM-07 manual
+assignment editor increment now starts from that verified main tip. M5 and
+Gate 3 remain open.
 
 1. Finish [BG-08](background-processing.md#bg-08-export-and-graph-workers); implement [RPT-01](reports.md#rpt-01-shared-report-framework-and-campaign-selection) and finish [RPT-02](reports.md#rpt-02-population-and-calculation-library).
 2. Complete [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics), [RPT-04](reports.md#rpt-04-additional-information-workflow-report), [RPT-05](reports.md#rpt-05-family-code-and-postal-outreach-reports), [RPT-06](reports.md#rpt-06-ministry-summary-and-detail), [RPT-07](reports.md#rpt-07-multi-ministry-follow-up-packet), and the reporting slice of [RPT-08](reports.md#rpt-08-census-and-financial-reports).

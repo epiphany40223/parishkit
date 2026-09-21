@@ -215,7 +215,9 @@ and is delivered under its
 The [Chairperson seed review increment](../../guides/stewardship-chair-review.md)
 adds the suspended-assignment review, the restore and removal decisions and
 the Keep role independently action of .03 and .04, each an ordinary policy
-request; the autosave queue of .01, the suggestion confirmation, provenance
+request, and is delivered under its
+[protected receipt](../../guides/stewardship-chair-review.md#protected-delivery);
+the autosave queue of .01, the suggestion confirmation, provenance
 action and suspended review of .03, the assignment editor of .04 and the
 tests of .05 remain, so every task stays unchecked.
 
