@@ -152,9 +152,9 @@ delivery order is known.
 
 ## Checkpoint
 
-Implementation and focused validation are complete. One
-[review attempt](stewardship-admin-logs-reviews.md) was single-source because
-the Codex reviewer failed, and is not counted; its findings were fixed. Three
-dual-source review/fix rounds, full exact-head CI, DCO and protected delivery remain open. M5 and
+Implementation, focused validation and the first
+[review/fix round](stewardship-admin-logs-reviews.md) are complete; that round
+was single-source under the second September 20, 2026 Codex exemption, with
+every accepted finding fixed. Two more rounds, full exact-head CI, DCO and protected delivery remain open. M5 and
 Gate 3 remain open. No deployment, release, live-provider write or database
 deletion is authorized by this increment.
