@@ -74,7 +74,15 @@ def test_portal_users_mobile_keyboard_and_accessibility(
     assert page.evaluate("document.activeElement.getAttribute('role')") == "region"
     # Every rule row offers its own reviewed change; a domain can never be
     # ticked Administrator, and an address row shows its applied roles ticked.
-    assert page.get_by_role("button", name="Review role change").count() == 6
+    # With scripting the ticks autosave, so each row's review button is hidden
+    # but still there for the native path; every removal stays reviewed.
+    assert page.get_by_role("button", name="Review role change").count() == 0
+    assert (
+        page.get_by_role(
+            "button", name="Review role change", include_hidden=True
+        ).count()
+        == 6
+    )
     assert page.get_by_role("button", name="Review removal").count() == 6
     domain_admin = used.get_by_label("Administrator")
     assert domain_admin.is_disabled() and not domain_admin.is_checked()
