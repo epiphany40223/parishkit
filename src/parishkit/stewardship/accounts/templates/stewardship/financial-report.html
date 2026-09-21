@@ -1,0 +1,49 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Financial stewardship detail" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Financial stewardship detail" %}</h1>
+<p>{{ metadata.name }}</p>
+<p>{% translate "One row for each Family's current live pledge. A later submission replaces the earlier one; testing responses are excluded. Pledges are reported here and are never written to the parish source." %}</p>
+<p>{% translate "Family names use the source as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time>. {% translate "Timestamps use your browser timezone when available; UTC is the fallback." %}</p>
+{% if metadata.giving_through %}<p>{% blocktranslate with start=metadata.comparison_start end=metadata.comparison_end through=metadata.giving_through|date:'Y-m-d' %}Source pledges and contributions cover the comparison period {{ start }} — {{ end }}, with contributions through {{ through }}.{% endblocktranslate %}</p>
+{% else %}<p class="notice">{% translate "Source pledges and contributions are unavailable: the latest giving read is not proven complete for this campaign's comparison period. Unavailable does not mean zero." %}</p>{% endif %}
+<p><a href="{% url 'admin:participation' campaign_id %}">{% translate "Campaign reports and selection" %}</a></p>
+<h2>{% translate "Summary of matching pledges" %}</h2>
+<dl>
+<dt>{% translate "Families" %}</dt><dd data-summary="families">{{ summary.families|number }}</dd>
+<dt>{% translate "Total annual pledges" %}</dt><dd data-summary="annual-total">{{ summary.annual_total.display }}</dd>
+{% for label,count in summary.frequencies %}<dt>{{ label }}</dt><dd>{{ count|number }}</dd>{% endfor %}
+{% for label,count in summary.shares %}<dt>{{ label }}</dt><dd>{{ count|number }}</dd>{% endfor %}
+<dt>{% translate "No share method chosen" %}</dt><dd>{{ summary.no_share|number }}</dd>
+</dl>
+<form method="post" action="{% url 'admin:financial_report' campaign_id %}">{% csrf_token %}
+<label for="financial-search">{% translate "Search Family name or Family DUID" %}</label><input id="financial-search" name="search" maxlength="200" value="{{ query.search }}">
+<label for="filter-active">{% translate "Family status" %}</label><select id="filter-active" name="active"><option value="any">{% translate "Any status" %}</option><option value="active"{% if query.active == 'active' %} selected{% endif %}>{% translate "Active" %}</option><option value="inactive"{% if query.active == 'inactive' %} selected{% endif %}>{% translate "Inactive" %}</option><option value="unavailable"{% if query.active == 'unavailable' %} selected{% endif %}>{% translate "Status unavailable" %}</option></select>
+<fieldset><legend>{% translate "First response date (campaign timezone)" %}</legend>
+<label for="first-start">{% translate "From" %}</label><input id="first-start" type="date" name="first_start" value="{{ query.first_start }}">
+<label for="first-end">{% translate "Through" %}</label><input id="first-end" type="date" name="first_end" value="{{ query.first_end }}"></fieldset>
+<fieldset><legend>{% translate "Latest response date (campaign timezone)" %}</legend>
+<label for="latest-start">{% translate "From" %}</label><input id="latest-start" type="date" name="latest_start" value="{{ query.latest_start }}">
+<label for="latest-end">{% translate "Through" %}</label><input id="latest-end" type="date" name="latest_end" value="{{ query.latest_end }}"></fieldset>
+<fieldset><legend>{% translate "Annual pledge, in whole dollars or dollars and cents without commas" %}</legend>
+<label for="pledge-min">{% translate "At least" %}</label><input id="pledge-min" name="pledge_min" inputmode="decimal" maxlength="12" value="{{ query.pledge_min }}">
+<label for="pledge-max">{% translate "At most" %}</label><input id="pledge-max" name="pledge_max" inputmode="decimal" maxlength="12" value="{{ query.pledge_max }}"></fieldset>
+<label for="filter-amount">{% translate "Pledge amount" %}</label><select id="filter-amount" name="amount"><option value="any">{% translate "Any amount" %}</option><option value="nonzero"{% if query.amount == 'nonzero' %} selected{% endif %}>{% translate "More than zero" %}</option><option value="zero"{% if query.amount == 'zero' %} selected{% endif %}>{% translate "Zero" %}</option></select>
+<label for="filter-frequency">{% translate "Frequency" %}</label><select id="filter-frequency" name="frequency"><option value="any">{% translate "Any frequency" %}</option>{% for key,label in frequencies.items %}<option value="{{ key }}"{% if query.frequency == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+<label for="filter-share">{% translate "Share method" %}</label><select id="filter-share" name="share"><option value="any">{% translate "Any share method" %}</option><option value="none"{% if query.share == 'none' %} selected{% endif %}>{% translate "No share method chosen" %}</option>{% for key,label in share_choices %}<option value="{{ key }}"{% if query.share == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+<label for="filter-sort">{% translate "Sort order" %}</label><select id="filter-sort" name="sort"><option value="name">{% translate "Family name A–Z" %}</option><option value="name_desc"{% if query.sort == 'name_desc' %} selected{% endif %}>{% translate "Family name Z–A" %}</option><option value="newest"{% if query.sort == 'newest' %} selected{% endif %}>{% translate "Latest response, newest first" %}</option><option value="oldest"{% if query.sort == 'oldest' %} selected{% endif %}>{% translate "Latest response, oldest first" %}</option><option value="pledge_desc"{% if query.sort == 'pledge_desc' %} selected{% endif %}>{% translate "Largest pledge first" %}</option><option value="pledge"{% if query.sort == 'pledge' %} selected{% endif %}>{% translate "Smallest pledge first" %}</option></select>
+<button type="submit">{% translate "Apply filters" %}</button></form>
+<p>{% translate "Matching Families:" %} {{ total|number }}. {% translate "Page" %} {{ query.page|number }}.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Financial stewardship results' %}"><table>
+<caption>{% translate "Current live pledges by Family" %}</caption><thead><tr><th scope="col">{% translate "Family" %}</th><th scope="col">{% translate "Annual pledge" %}</th><th scope="col">{% translate "Frequency and installment" %}</th><th scope="col">{% translate "Share methods" %}</th><th scope="col">{% translate "Source pledged" %}</th><th scope="col">{% translate "Source contributed" %}</th><th scope="col">{% translate "Responses" %}</th></tr></thead><tbody>
+{% for row in rows %}<tr>
+<th scope="row">{{ row.family_name }}<br>{% translate "DUID" %} {{ row.family_duid }}{% if row.active is False %}<br>{% translate "Inactive" %}{% elif row.active is None %}<br>{% translate "Status unavailable" %}{% endif %}</th>
+<td>{{ row.annual.display }}</td>
+<td>{{ row.frequency_label }}{% if row.installment.available %}<br>{{ row.installment.display }}{% endif %}</td>
+<td>{% for share in row.shares %}{{ share.label }}{% if share.text %}: {{ share.text }}{% endif %}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "None chosen" %}{% endfor %}</td>
+<td>{{ row.source_pledge.display }}</td><td>{{ row.source_contributions.display }}</td>
+<td>{% translate "Latest" %} <time datetime="{{ row.submitted_at|date:'c' }}" data-local-instant>{{ row.submitted_at|date:'c' }}</time><br>{% translate "First" %} <time datetime="{{ row.first_submitted_at|date:'c' }}" data-local-instant>{{ row.first_submitted_at|date:'c' }}</time><br>{% translate "Version" %} {{ row.family_version|number }}</td></tr>
+{% empty %}<tr><td colspan="7">{% if total %}{% translate "This page is past the last matching pledge. Use Previous page to return to the results." %}{% else %}{% translate "No matching pledges." %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+<nav aria-label="{% translate 'Financial result pages' %}"><form method="post" action="{% url 'admin:financial_report' campaign_id %}">{% csrf_token %}{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+{% if previous_page %}<button name="page" value="{{ previous_page }}">{% translate "Previous page" %}</button>{% endif %} {% if next_page %}<button name="page" value="{{ next_page }}">{% translate "Next page" %}</button>{% endif %}</form></nav>
+{% endblock %}

@@ -157,3 +157,26 @@ are complete, with no unresolved accepted Medium-or-higher finding. Full
 exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
 open. No deployment, release, live-provider write or database deletion is
 authorized by this increment.
+
+## Protected delivery
+
+PR #75 delivered candidate `f57a007`, three logical commits whose tree
+`4e9c6c1fb47985b958d9fc300709f36a5fe39e6e` is identical to the retained
+commit-by-commit review history on `pr/stewardship-ministry-packets-reviewed`
+and to the landed tree. Exact-head ready-candidate CI `35536167338` and DCO
+passed all 24 jobs on the first attempt, from 20:38:01 to 20:55:08 UTC on
+September 20, 2026 (17 minutes 7 seconds), without a correction rerun.
+`origin/main` had no intervening commits since the candidate's base `bd5522f6`.
+Protected auto-merge landed as `1070fd28143577a1b6d174aa1e93d33d6eabeb41` at
+20:55:17 UTC and was verified on freshly fetched `origin/main` before starting
+the financial stewardship detail increment. This used the standing delivery
+authority, without deployment or release, and supersedes the pending delivery
+checkpoint above. Failed, cancelled and draft-skipped runs are not counted as
+acceptance.
+
+An earlier ready candidate, `b8364a3`, was withdrawn by its author before its
+complete CI finished, when the missing stewardship year was found; auto-merge
+was disabled and the pull request returned to draft. The draft-state runs that
+followed skipped the complete suites by design and are not acceptance evidence.
+
+RPT-07 is delivered. M5 and Gate 3 remain open.

@@ -63,6 +63,7 @@ def schema_sql():
                 "ministry_exports",
                 "ministry_followup",
                 "ministry_packets",
+                "financial_reports",
             )
         ]
     )

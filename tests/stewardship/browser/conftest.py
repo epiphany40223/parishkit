@@ -48,6 +48,7 @@ from ..campaign_factory import campaign, schedule
 from .delivery_components import components as delivery_components
 from .digest_components import components as digest_components
 from .directory_components import components as directory_components
+from .financial_components import components as financial_components
 from .followup_components import components as followup_components
 from .go_live_components import components as go_live_components
 from .information_components import components as information_components
@@ -1035,6 +1036,7 @@ def component_origin():
     responses.update(directory_components(context, admin))
     responses.update(ministry_components(context, admin))
     responses.update(followup_components(context, admin))
+    responses.update(financial_components(context, admin))
     responses.update(weekly_components(context, admin))
     responses.update(go_live_components(context, admin))
     responses.update(pause_components(context, admin))

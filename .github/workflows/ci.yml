@@ -57,8 +57,8 @@ jobs:
           tests/stewardship/test_database_gate.py
           tests/stewardship/test_report_workspace.py
           tests/stewardship/test_exact_export_ui.py
+          tests/stewardship/test_financial_report.py
           tests/stewardship/test_ministry_exports.py
-          tests/stewardship/test_ministry_packets.py
           tests/stewardship/test_ministry_reports.py
           --require-no-skips -q
 

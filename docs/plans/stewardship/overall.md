@@ -173,6 +173,15 @@ CI, DCO and applicable gates. A Claude review that itself fails or is degraded
 is still not a completed round. Resume dual-source rounds once Codex returns;
 this exemption does not reclassify earlier or later dual-source requirements.
 
+Human clarification, September 20, 2026, later that day: Codex returned briefly
+and then ran out of quota again, failing four consecutive review attempts across
+PRs #76, #77 and #78. A second exemption on the same terms applies for five days,
+through September 25, 2026: a completed Claude-only review counts as a
+completed round, recorded as single-source with the observed Codex failure.
+Claude-only passes already completed during the outage count as rounds; their
+findings were fixed with post-fix validation. Resume dual-source rounds when the
+exemption lapses or Codex returns, whichever is first.
+
 Autonomously investigate failures, implement specification-consistent fixes,
 commit with sign-off, push backups, run reviews, and correct CI. Ask during the
 cycle only when proceeding genuinely needs new authority or a product/security

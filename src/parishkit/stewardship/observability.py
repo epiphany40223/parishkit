@@ -20,6 +20,7 @@ class Event(StrEnum):
     STARTUP_VALIDATED = "startup_validated"
     REQUEST_COMPLETED = "request_completed"
     REPORT_AUDIT_FAILED = "report_audit_failed"
+    REPORT_SHAPING_FAILED = "report_shaping_failed"
     TASK_STARTED = "task_started"
     TASK_COMPLETED = "task_completed"
     TASK_FAILED = "task_failed"

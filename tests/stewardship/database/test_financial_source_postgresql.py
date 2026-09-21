@@ -39,8 +39,17 @@ def financial_source(
     selected=(),
     extra_pledges=None,
     extra_funds=None,
+    extra_contributions=None,
+    extra_families=None,
+    extra_members=None,
+    giving_as_of=None,
 ):
-    """Use actual configuration/staging/promotion, with only synthetic money rows."""
+    """Use actual configuration/staging/promotion, with only synthetic money rows.
+
+    `extra_families` and `extra_members` can make more households eligible, and
+    `giving_as_of` backdates the recorded giving cutoff so a test does not
+    depend on today.
+    """
     financial = configuration()["financial"] | {
         "fund_duids": [9],
         "overlap_confirmed": True,
@@ -69,7 +78,14 @@ def financial_source(
     definition = financial_definition(values, campaign_id=harness.campaign.pk)
     data = replace(response_source(), organization_id=12345)
     data.funds.update(extra_funds or {})
+    data.families.update(extra_families or {})
+    data.members.update(extra_members or {})
+    # A household is eligible only in an active Family group; 7 is the fixture's
+    # one "Active" group, which the sample's second Family otherwise lacks.
+    headed = {member["familyDUID"] for member in (extra_members or {}).values()}
     for family in data.families.values():
+        if family["familyDUID"] in headed:
+            family.setdefault("famGroupID", 7)
         if family.get("registeredOrganizationID") == 5:
             family["registeredOrganizationID"] = 12345
     corpus = normalize_core(data, as_of=TODAY)
@@ -84,6 +100,7 @@ def financial_source(
             "303": record("8888.00", effective_date="2026-01-01", family_key="2"),
         }
     corpus["pledge"].update(extra_pledges or {})
+    corpus["contribution"].update(extra_contributions or {})
     claim = acquire_source(**running_source_task(), phase="full")
     snapshot = begin_snapshot(claim, organization_id=12345, admit=permit)
     for kind, entities in corpus.items():
@@ -102,7 +119,7 @@ def financial_source(
                 "schema": "source-load-v1",
                 "window_digest": definition.window.digest,
                 "as_of_date": as_of,
-                "giving_as_of_date": as_of,
+                "giving_as_of_date": giving_as_of or as_of,
             },
         )
         if covered
