@@ -202,7 +202,9 @@ def test_portal_users_are_not_exposed_to_other_roles(auth_service, google, role)
     """Who else holds access is an Administrator-only disclosure."""
     add_rules(auth_service.store, address("reader@example.org", roles=(role,)))
     google[0]["email"] = "reader@example.org"
-    browser, _ = signed_in()
+    browser, login = signed_in()
+    # The sign-in itself succeeds, so the 403 is the capability's alone.
+    assert login.status_code == 302
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response = browser.get(URL)
     assert response.status_code == 403
@@ -219,12 +221,15 @@ def test_access_lost_during_the_request_discloses_and_audits_nothing(
     being taken, so ordinary admission has already passed. Nothing substitutes
     the recheck itself: the real read-only authorization must notice.
     """
-    browser, _ = signed_in()
+    browser, login = signed_in()
+    # Ordinary admission must succeed, so the later 403 is the recheck's alone.
+    assert login.status_code == 302
     admin = PortalUser.objects.get(email="admin@example.org")
-    genuine = user_views.confirmed_seeded
+    genuine, observed = user_views.confirmed_seeded, []
 
     def disabling(configuration):
         """Observe as usual, then lose the identity before the recheck."""
+        observed.append(configuration.pk)
         PortalUser.objects.filter(pk=admin.pk).update(
             disabled=True, version=F("version") + 1
         )
@@ -233,6 +238,8 @@ def test_access_lost_during_the_request_discloses_and_audits_nothing(
     monkeypatch.setattr(user_views, "confirmed_seeded", disabling)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response = browser.get(URL)
+    # The observation ran, under the lock, before the identity was lost.
+    assert len(observed) == 1
     assert response.status_code == 403
     assert b"admin@example.org" not in response.content
     assert views() == []
@@ -252,10 +259,16 @@ def test_the_page_waits_for_completed_setup(auth_service, google, settings):
 
 
 def test_a_revoked_administrator_loses_the_page(auth_service, google):
-    """Current policy is reloaded on every request, not remembered by a session."""
+    """Current policy is reloaded on every request, not remembered by a session.
+
+    The revoked person signed in from a consumer account: no hosted-domain
+    claim, and after the removal no rule at all. Their sign-in is still history
+    for the domain's row, which the evaluator's stricter test never authorizes.
+    """
     store = auth_service.store
-    add_rules(store, address("second@example.org"))
+    add_rules(store, address("second@example.org"), domain("example.org"))
     google[0].update(email="second@example.org", sub="second-subject")
+    google[0].pop("hd")
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert browser.get(URL).status_code == 200
@@ -275,6 +288,18 @@ def test_a_revoked_administrator_loses_the_page(auth_service, google):
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert browser.get(URL).status_code == 403
     assert len(views()) == 1
+    google[0].update(email="admin@example.org", sub="synthetic-google-subject")
+    google[0]["hd"] = "example.org"
+    browser, login = signed_in()
+    assert login.status_code == 302
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        body = browser.get(URL).content.decode()
+    # The rule authorizes nobody: the Administrator has an exact rule and the
+    # consumer account presented no claim. The sign-in still happened here.
+    claimed = row(body, "example.org")
+    assert "No recorded Google account is authorized" in claimed
+    assert "data-local-instant" in claimed
+    assert "second@example.org" not in body
 
 
 def test_strangers_who_only_attempted_a_sign_in_cost_and_show_nothing(
@@ -294,5 +319,6 @@ def test_strangers_who_only_attempted_a_sign_in_cost_and_show_nothing(
     loaded = [
         query["sql"] for query in after if "stewardship_portal_user" in query["sql"]
     ]
-    # Identities are selected by the addresses and domains the policy names.
-    assert any("LOWER(" in sql.upper() and " IN (" in sql.upper() for sql in loaded)
+    # Identities are selected by the addresses and domains the policy names, on
+    # the column as stored, so the rows loaded are bounded by policy.
+    assert any('"email" IN (' in sql and "LOWER(" not in sql.upper() for sql in loaded)

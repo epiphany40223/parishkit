@@ -2,7 +2,6 @@
 
 from django.db import DatabaseError, transaction
 from django.db.models import Max, Q
-from django.db.models.functions import Lower
 from django.shortcuts import render
 from django.views.decorators.http import require_safe
 
@@ -22,7 +21,6 @@ from .policy_models import PortalUser
 from .user_rows import (
     AppliedPolicy,
     address_rows,
-    disclosed,
     domain_assignment_rows,
     domain_rows,
 )
@@ -46,10 +44,18 @@ def _identities(records):
         for record in records
         if record["values"]["kind"] == "domain"
     }
+    # Addresses are stored normalized, so the stored column is compared as is.
+    # An identity at a configured domain is history for that domain's row even
+    # when no rule names its address and it presented no hosted claim, such as
+    # a consumer account whose exact rule was since removed; the evaluator's
+    # stricter claim test still decides whom the rule authorizes.
+    named = Q(email__in=emails)
+    for domain in domains:
+        named |= Q(email__endswith=f"@{domain}")
     rows = list(
-        PortalUser.objects.annotate(address=Lower("email"))
-        .filter(Q(address__in=emails) | Q(hosted_domain__in=domains))
-        .values("id", "email", "hosted_domain", "disabled")
+        PortalUser.objects.filter(named).values(
+            "id", "email", "hosted_domain", "disabled"
+        )
     )
     logins = dict(
         AuditEvent.objects.filter(
@@ -92,16 +98,15 @@ def users(request):
             identities = _identities(records)
             # The same definition of a confirmed Chairperson that sign-in uses.
             active = confirmed_seeded(configuration.active_configuration)
+            # The chrome presents this verified observation, never a newer one.
+            request._stewardship_display_configuration = configuration
         policy = AppliedPolicy(records, identities, active)
-        response = render(
-            request,
-            "stewardship/users.html",
-            {
-                "domains": domain_rows(policy),
-                "addresses": address_rows(policy),
-                "domain_assignments": domain_assignment_rows(policy),
-            },
-        )
+        tables = {
+            "domains": domain_rows(policy),
+            "addresses": address_rows(policy),
+            "domain_assignments": domain_assignment_rows(policy),
+        }
+        response = render(request, "stewardship/users.html", tables)
         with transaction.atomic():
             current = principal(
                 request, service, read_only=True, capability=Capability.MANAGE_USERS
@@ -112,8 +117,11 @@ def users(request):
                 Action.USERS_VIEWED,
                 actor_kind=ActorKind.PORTAL_USER,
                 actor_id=current.identity,
-                # A count only: an audit row never carries an address or a role.
-                context={"outcome": Outcome.SUCCEEDED, "count": disclosed(records)},
+                # The rows actually rendered, counted; never an address or role.
+                context={
+                    "outcome": Outcome.SUCCEEDED,
+                    "count": sum(len(rows) for rows in tables.values()),
+                },
             )
         response["Cache-Control"] = "no-store"
         return response

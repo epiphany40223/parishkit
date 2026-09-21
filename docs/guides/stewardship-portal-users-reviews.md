@@ -101,8 +101,8 @@ Acted on from the nine Low findings: the third table states the root cause
 whether or not anyone has signed in; the in-force rule for an assignment is one
 shared predicate in the evaluator; the Admin editors' admission helper takes the
 page's capability and a read-only flag, so this page has no admission helper of
-its own; an incomplete deployment is tested to redirect to setup with no audit
-row; the seeded fixture reuses one authentication-runtime factory instead of
+its own; an incomplete deployment is tested to be sent to setup by the access
+gate before the page runs, with no audit row; the seeded fixture reuses one authentication-runtime factory instead of
 copying it; the rules-first rationale is stated correctly; the index class is
 named `AppliedPolicy`; both tables define the last successful sign-in the same
 way, over every recorded identity at the address or domain; and the guide's
@@ -111,3 +111,35 @@ checkpoint is rewrapped.
 Post-fix validation: six database-free, nine PostgreSQL, 16 navigation and six
 browser cases passed locally, with the evaluator's own suites and the parish and
 Ministry editors that share the admission helper.
+
+## Round 3, dual-source
+
+Reviewed `c21bb6d3`, the complete diff from main `1070fd28`. Both sources
+completed again; two validated Medium findings, one from each source, both
+accepted and fixed.
+
+- **Codex: the domain's last sign-in missed consumer accounts.** The row is
+  defined over every recorded identity at the domain, but the bounded identity
+  read selected only addresses with a rule or assignment and identities with a
+  matching hosted claim. A consumer account whose exact rule was since removed
+  presented no claim and had no rule, so its sign-in vanished from the domain's
+  history. The read now also selects identities by normalized email suffix, and
+  the revoked-Administrator case signs in from such an account and asserts the
+  domain row shows the sign-in while authorizing nobody.
+- **Claude: the mid-request revocation case never proved admission.** It
+  ignored the sign-in response and did not check that the disabling hook ran,
+  so a 403 from ordinary admission would have passed. It now asserts the 302 of
+  a completed sign-in and that the observation ran exactly once.
+
+Acted on from the ten Low findings: the role-denial case also asserts the
+sign-in completed; the ledger says the setup redirect comes from the access
+gate; the guide's scope sentence describes the domain row's sign-in as
+implemented; the chrome is handed the verified configuration the way the
+dashboard does it; the identity read drops `Lower()` on an already normalized
+column and the cost case pins that; the audit count is taken from the rendered
+tables rather than recomputed from the records; the index groups identities in
+one pass and the in-effect test is a named predicate; the admission helper's
+refusal names the capability it checked; the guide's checkpoint is rewrapped.
+
+Post-fix validation: six database-free, nine PostgreSQL, 16 navigation and six
+browser cases passed locally, with the evaluator's own suites.

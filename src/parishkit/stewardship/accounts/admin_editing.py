@@ -45,7 +45,7 @@ def principal(
         read_only=read_only,
     )
     if not allows(value, capability):
-        raise PermissionError("Configuration requires an Administrator.")
+        raise PermissionError(f"This page requires the {capability} capability.")
     return value
 
 

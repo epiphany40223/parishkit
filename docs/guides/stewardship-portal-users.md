@@ -14,7 +14,8 @@ branches from main, not from that unmerged work.
 An Administrator opens **Portal users** from the Admin navigation and sees the
 applied login rules in the specification's two sorted tables. Hosted-domain
 rules show their roles, how many recorded Google accounts the rule really
-authorizes, the latest successful sign-in among them and warnings. Exact-address
+authorizes, the latest successful sign-in by any recorded account at that
+domain, and warnings. Exact-address
 rules show the rule's origin, the configured roles with each grant's origin, the
 roles current policy grants now, Ministry assignments with their source and
 whether the parish source currently confirms them, the last successful sign-in
@@ -148,9 +149,10 @@ the delivery order is known.
 
 ## Checkpoint
 
-Implementation, focused validation and two
+Implementation, focused validation and three
 [review/fix rounds](stewardship-portal-users-reviews.md) are complete: the
 first single-source under the second September 20, 2026 Codex exemption, the
-second dual-source, with every accepted finding fixed. One more round, full
-exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain open. No deployment, release, live-provider
-write or database deletion is authorized by this increment.
+second and third dual-source, with every accepted finding fixed. Full
+exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
+open. No deployment, release, live-provider write or database deletion is
+authorized by this increment.

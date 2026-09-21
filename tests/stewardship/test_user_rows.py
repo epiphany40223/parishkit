@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from parishkit.stewardship.accounts.user_rows import (
     AppliedPolicy,
     address_rows,
-    disclosed,
     domain_assignment_rows,
     domain_rows,
 )
@@ -193,9 +192,6 @@ def test_assignments_relying_on_a_domain_rule_use_the_real_hosted_claim():
     unseen = rows["unseen@lead.example"]
     assert not unseen["leading"]
     assert "lead.example hosted-domain claim" in text(unseen["warnings"])[0]
-    # The audit count covers every row of all three tables, naming none: two
-    # exact rules, two domain rules and five people who rely on a domain rule.
-    assert disclosed(records) == 2 + 2 + 5 == 2 + 2 + len(rows)
     # The root cause is stated whether or not the person has signed in.
     nobody = records[:] + [assignment("seen@staff.example", ministry=1)]
     seen = identity("seen@staff.example", hosted="staff.example")

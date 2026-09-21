@@ -59,20 +59,17 @@ class AppliedPolicy:
                 self.addresses[values["email"]] = record
             else:
                 self.assignments.setdefault(values["email"], []).append(record)
-        self.suffixed = {}
-        for identity in identities:
-            email = identity["email"].lower()
-            self.identities.setdefault(email, []).append(identity)
-            self.suffixed.setdefault(email.rsplit("@", 1)[1], []).append(identity)
         # Evidence that a domain rule works is an identity the evaluator really
         # authorizes through it: the email suffix, the signed hosted-domain claim
         # and the rule must all agree, no exact rule may replace it, and the
         # identity must be usable. A Workspace alias domain presents the primary
         # claim with another suffix, so a bare claim match would mislead.
-        self.authorized = {}
+        self.suffixed, self.authorized = {}, {}
         for identity in identities:
             email = identity["email"].lower()
             domain = email.rsplit("@", 1)[1]
+            self.identities.setdefault(email, []).append(identity)
+            self.suffixed.setdefault(domain, []).append(identity)
             if (
                 domain in self.domains
                 and email not in self.addresses
@@ -80,6 +77,13 @@ class AppliedPolicy:
                 and self.resolve(email, identity["hosted_domain"])[0]
             ):
                 self.authorized.setdefault(domain, []).append(identity)
+
+    def leads(self, email, identity):
+        """Whether this identity would sign in as a leader with scope in force."""
+        if identity["disabled"]:
+            return False
+        roles, ministries = self.resolve(email, identity["hosted_domain"])
+        return "ministry_leader" in roles and bool(ministries)
 
     def relevant(self, email):
         """Only the records the evaluator could use for this one address."""
@@ -139,23 +143,6 @@ class AppliedPolicy:
             )
             % {"count": disabled, "total": len(known)}
         ]
-
-
-def disclosed(records):
-    """How many rows the page shows, for an audit that names none of them."""
-    addressed = {
-        record["values"]["email"]
-        for record in records
-        if record["values"]["kind"] == "address"
-    }
-    relying = {
-        record["values"]["email"]
-        for record in records
-        if record["values"]["kind"] == "assignment"
-    } - addressed
-    return sum(record["values"]["kind"] != "assignment" for record in records) + len(
-        relying
-    )
 
 
 def domain_rows(policy):
@@ -275,11 +262,7 @@ def domain_assignment_rows(policy):
         known = policy.identities.get(email, [])
         # In effect only when a usable identity receives the role *and* scope:
         # the role alone, with every assignment suspended, leads nothing.
-        leading = any(
-            not item["disabled"] and "ministry_leader" in roles and ministries
-            for item in known
-            for roles, ministries in [policy.resolve(email, item["hosted_domain"])]
-        )
+        leading = any(policy.leads(email, item) for item in known)
         domain = email.rsplit("@", 1)[1]
         rule = policy.domains.get(domain)
         warnings = []
