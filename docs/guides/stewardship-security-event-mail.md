@@ -157,3 +157,37 @@ exemption, the third validating nothing; full exact-head CI, DCO and
 protected delivery remain open. M5 and Gate 3
 remain open. No deployment, release, live-provider write or database
 deletion is authorized by this increment.
+
+## Protected delivery
+
+PR #83 delivered candidate `24d575e4`, three logical commits plus the PR #81
+receipt, the fast-selection rotation and one standalone build correction,
+whose tree differs from the retained commit-by-commit review history on
+`pr/stewardship-security-event-mail-reviewed` (`b74a9f9f`) only by the README
+commit `origin/main` gained from PR #82 while the rounds ran; the candidate
+was built on that tip, `ba7edc92`, and the landed tree is the candidate's.
+The three [review/fix rounds](stewardship-security-event-mail-reviews.md)
+were single-source under the second exemption, the third finding nothing to
+fix. The first ready candidate, `2670ac4c`, failed the fast build contract:
+the default-deny container context re-includes each schema file by name, and
+the three security schema files were not listed, so the image would have
+started without them. The correction lists them beside the operational alert
+schema in both ignore files; a Claude-only correction check, recorded in the
+[ledger](stewardship-security-event-mail-reviews.md#round-4-correction-check-single-source-under-the-second-exemption),
+found nothing to fix. Exact-head ready-candidate CI `35623288625` and DCO then
+passed all 25 checks, from 16:05:06 to 16:22:46 UTC on September 21, 2026
+(17 minutes 40 seconds). `origin/main` had no intervening commits since the
+candidate's base `ba7edc92`. Protected auto-merge landed as
+`b1f806617691d46e7d8efe866c07c999252d64e7` at 16:22:55 UTC and was verified on
+freshly fetched `origin/main`, whose second parent's tree `54eaea38` is the
+candidate's, before the next increment started. This used the standing
+delivery authority, without deployment or release, and supersedes the
+checkpoint above. The failed and cancelled runs, including those GitHub
+created for the draft and retained-history branches, are not counted as
+acceptance.
+
+The security event email increment is delivered: every high-impact
+login-policy expansion is sent to the Administrators who existed before it,
+through the durable outbox as its own delivery purpose, prepared, sent and
+settled by the owner-parametrized alert engine. ADM-07 stays open for its
+autosave queue, suggestions and assignments. M5 and Gate 3 remain open.
