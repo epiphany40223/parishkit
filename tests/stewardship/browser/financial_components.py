@@ -57,6 +57,10 @@ def components(context, admin):
         previous_page=None,
         next_page=2,
         total=51,
+        # The export form: enabled, with its one-time key and timezone choices.
+        mutable=True,
+        request_key=UUID(int=100),
+        export_timezones=("America/New_York", "UTC"),
         rows=[row],
         summary=dict(
             families=51,
