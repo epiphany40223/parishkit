@@ -37,16 +37,20 @@ def cleared(event, acknowledgements, *, viewer_email):
     for everyone. The actor's own settles it only when no other Administrator
     existed at activation: the actor of a portal-driven activation is always
     among the recipients, so that is a recipient list of one. An event with
-    no recipients at all, a deployment's root activation or one whose
-    predecessor named no Administrator, had nobody to await and is settled by
-    any acknowledgement. Any other acknowledgement, the actor's, a newer
-    Administrator's or the granted account's own, clears the event for that
-    address alone, so a grant cannot be waved through by its beneficiary.
+    nobody else to await, a deployment's root activation or one whose
+    predecessor named no Administrator, is settled by any acknowledgement.
+    Any other acknowledgement, the actor's, a newer Administrator's or the
+    granted account's own, clears the event for that address alone, so a
+    grant cannot be waved through by its beneficiary: a recovery event names
+    the account it grants among its recipients, since that account must be
+    told, but it was not an Administrator at activation and settles nothing.
     """
-    recipients = set(event.recipients)
+    recipients = set(event.recipients) - {event.target}
     for acknowledgement in acknowledgements:
         if acknowledgement.email == viewer_email or not recipients:
             return True
+        if acknowledgement.email == event.target:
+            continue
         if acknowledgement.own:
             if len(recipients) <= 1:
                 return True

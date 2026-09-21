@@ -94,3 +94,27 @@ The eight Low findings concerned wording or repeated the validated ones.
 Post-fix validation: ten database-free, three PostgreSQL and six browser
 cases passed locally, with the schema baseline, immutable-record inventory,
 policy activation, recovery and login rule edit suites.
+
+## Round 3, single-source under the second exemption
+
+Reviewed `08991a80`, the complete diff from main `4f0465fa`. Codex did not
+answer; Claude returned one Medium and eight Low. The Medium was accepted
+and fixed.
+
+- **Medium: a recovery grant could be settled by its beneficiary.** The
+  recovery-recipient trigger names the account operator recovery grants
+  among the event's recipients, so that it is told, and a recovery event has
+  no portal actor, so the rule let that account's acknowledgement settle the
+  event for every Administrator who existed before it, the outcome round 1
+  closed for portal-driven grants. The account the event grants now clears
+  the event for itself alone, and settlement is judged against the
+  recipients less that account, so a root activation with nobody else to
+  await is still settled by anyone. Cases cover a recovery event
+  acknowledged by its target, by a prior recipient, and one with nobody
+  else.
+
+The eight Low findings concerned wording or repeated the validated one.
+
+Post-fix validation: eleven database-free, three PostgreSQL and six browser
+cases passed locally, with the schema baseline, immutable-record inventory,
+policy activation, recovery and login rule edit suites.

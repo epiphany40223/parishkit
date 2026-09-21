@@ -9,9 +9,9 @@ from parishkit.stewardship.accounts.security_events import KINDS, cleared
 ACTOR, OTHER, NEWCOMER = "admin@example.org", "second@example.org", "new@example.org"
 
 
-def event(recipients):
+def event(recipients, target=NEWCOMER):
     """One expansion recorded at activation with the Administrators of the time."""
-    return SimpleNamespace(recipients=recipients)
+    return SimpleNamespace(recipients=recipients, target=target)
 
 
 def acknowledgement(email, *, own=False):
@@ -76,11 +76,21 @@ def test_an_event_with_no_recipients_is_settled_by_anyone():
     assert cleared(value, [acknowledgement(NEWCOMER)], viewer_email=OTHER)
 
 
-def test_a_recovery_event_is_settled_by_any_recipient():
-    """Recovery has no portal actor, so no acknowledgement is the actor's own."""
-    value = event([ACTOR])
+def test_a_recovery_event_is_settled_by_a_prior_recipient_never_its_target():
+    """Recovery names the account it grants so it is told; it settles nothing."""
+    value = event([ACTOR, NEWCOMER], target=NEWCOMER)
     assert not cleared(value, [], viewer_email=ACTOR)
+    by_target = [acknowledgement(NEWCOMER)]
+    assert cleared(value, by_target, viewer_email=NEWCOMER)
+    assert not cleared(value, by_target, viewer_email=ACTOR)
+    assert not cleared(value, by_target, viewer_email=OTHER)
     assert cleared(value, [acknowledgement(ACTOR)], viewer_email=OTHER)
+
+
+def test_a_recovery_with_nobody_else_is_settled_by_its_target():
+    """When no Administrator existed before, the granted account settles it."""
+    value = event([NEWCOMER], target=NEWCOMER)
+    assert cleared(value, [acknowledgement(NEWCOMER)], viewer_email=OTHER)
 
 
 def test_every_expansion_kind_the_trigger_records_has_a_label():

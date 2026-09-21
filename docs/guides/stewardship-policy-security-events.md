@@ -42,17 +42,19 @@ existed at activation: the actor of a portal-driven activation is always
 among the recipients, since Administrator is an exact-address role and the
 request is bound to the predecessor, so that is a recipient list of one,
 judged by its length rather than by an address that may since have changed.
-An event with no recipients at all, a deployment's root activation or one
-whose predecessor named no Administrator, had nobody to await and is
-settled by any acknowledgement.
+An event with nobody else to await, a deployment's root activation or one
+whose predecessor named no Administrator, is settled by any acknowledgement.
 Any other acknowledgement, the actor's, a newer Administrator's or the
 granted account's own, clears the event for that address alone, so a grant
 one Administrator gave themselves, or gave a second account they control,
 still awaits an Administrator who was already one. Whether an
 acknowledgement is the actor's own is decided when it is recorded, from the
 actor's identity or current address, so a later change of address cannot
-turn it into another Administrator's. A recovery event has no portal actor,
-so any recipient's acknowledgement settles it. The rule is one pure function
+turn it into another Administrator's. A recovery event has no portal actor
+and names the account it grants among its recipients, since that account
+must be told; that account was not an Administrator at activation, so its
+acknowledgement clears the event for itself alone and any prior recipient's
+settles it. The rule is one pure function
 over the event and its acknowledgements; the dashboard reads every event
 with its acknowledgements in one query, since an expansion is recorded
 rarely and only an acknowledged one needs judging.
@@ -104,14 +106,15 @@ retained database was deleted.
 
 ## Focused validation
 
-- Ten database-free cases for who still sees an event: everyone while it
+- Eleven database-free cases for who still sees an event: everyone while it
   is unacknowledged, the granting actor alone after their own acknowledgement
   while another Administrator existed, everyone after another recipient's, a
   newer Administrator or the granted account alone after their own even
   beside the actor's, everyone after the actor's alone when no other
   Administrator existed even under an address changed since, anyone settling
-  an event with no recipients, any recipient settling a recovery event, and
-  a label for each kind the trigger records.
+  an event with no recipients, a recovery event settled by a prior recipient
+  and never by the account it grants unless nobody else existed, and a label
+  for each kind the trigger records.
 - Three PostgreSQL cases under the real web role, with rules applied through
   the real installer: an Administrator grant recorded as an event naming both
   existing Administrators, shown on the granting actor's dashboard,
@@ -136,10 +139,10 @@ retained database was deleted.
 
 ## Checkpoint
 
-Implementation, focused validation and two
+Implementation, focused validation and three
 [review/fix rounds](stewardship-policy-security-event-reviews.md) are
-complete, both single-source under the second September 20, 2026 Codex
-exemption; the third round, full exact-head CI, DCO and protected delivery
-remain open. M5 and Gate 3
+complete, all single-source under the second September 20, 2026 Codex
+exemption, with every accepted finding fixed; full exact-head CI, DCO and
+protected delivery remain open. M5 and Gate 3
 remain open. No deployment, release, live-provider write or database
 deletion is authorized by this increment.
