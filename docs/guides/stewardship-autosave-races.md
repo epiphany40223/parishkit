@@ -40,7 +40,7 @@ and cites where the rest already live, so ADM-07's tasks can be checked.
   [assignment editor](stewardship-assignment-editor.md) suites.
 - Slow installers, lost acceptance responses, failed requests, another
   Administrator's activation found at intake or activation, a removed target
-  refused at the route, session expiry, page teardown and repeated toggles of
+  refused at the route, lost access, page teardown and repeated toggles of
   an in-flight checkbox in one row: the
   [autosave queue](stewardship-rule-autosave.md) suites.
 
@@ -54,8 +54,8 @@ and cites where the rest already live, so ADM-07's tasks can be checked.
   later resubmission; two Administrators' intents against one
   base, the second failing at activation with `stale_base`, reported so by
   its status route, and its retry as a new key against the new digest
-  applied; and a session revoked mid-queue denying the apply and status
-  routes with nothing recorded.
+  applied; and a session revoked, or expired, mid-queue denying the apply
+  and status routes with nothing recorded.
 - Browser, in every engine against the component page with the routes
   mocked: rapid edits across two address rows and the domain table applied
   one at a time in tick order, each against the digest the previous one
@@ -70,8 +70,8 @@ No schema change.
 ## Checkpoint
 
 The tests are complete and pass locally and
-[rounds 1 and 2](stewardship-autosave-races-reviews.md) are answered; the
-remaining review/fix rounds, full exact-head CI, DCO and protected delivery
-remain open. With them ADM-07.01 to .05 are
+[rounds 1 to 3](stewardship-autosave-races-reviews.md) are answered; the
+correction check, full exact-head CI, DCO and protected delivery remain
+open. With them ADM-07.01 to .05 are
 checked in the task map. M5 and Gate 3 remain open. No deployment, release,
 live-provider write or database deletion is authorized by this increment.

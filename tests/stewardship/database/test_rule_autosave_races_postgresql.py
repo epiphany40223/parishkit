@@ -1,5 +1,6 @@
 """Policy races and exact-once behavior of the login-rule autosave queue."""
 
+from datetime import timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -137,9 +138,21 @@ def test_another_administrators_activation_fails_the_second_intent_as_stale(
     assert installed(store, again["request_id"]).state == "applied"
 
 
+@pytest.mark.parametrize(
+    "ending",
+    [
+        # Revoked now, after its last activity; or expired just after that
+        # activity, which is already in the past.
+        lambda row: {"revoked_at": timezone.now()},
+        lambda row: {"expires_at": row.last_activity_at + timedelta(milliseconds=1)},
+    ],
+    ids=["revoked", "expired"],
+)
 @pytest.mark.usefixtures("config_role")
-def test_a_revoked_session_stops_the_queue_and_records_nothing(auth_service, google):
-    """Revocation mid-queue: the apply and status routes deny, nothing is recorded."""
+def test_an_ended_session_stops_the_queue_and_records_nothing(
+    auth_service, google, ending
+):
+    """Revocation or expiry mid-queue: apply and status deny, nothing is recorded."""
     store = auth_service.store
     add_rules(store, address("clerk@example.org", ("staff",)))
     browser, login = signed_in()
@@ -149,7 +162,7 @@ def test_a_revoked_session_stops_the_queue_and_records_nothing(auth_service, goo
     row = PortalSession.objects.get(revoked_at__isnull=True)
     # Every update of a mutable record advances its version, as the owner does.
     PortalSession.objects.filter(pk=row.pk, version=row.version).update(
-        revoked_at=timezone.now(), version=F("version") + 1
+        **ending(row), version=F("version") + 1
     )
     before = ConfigurationChangeRequest.objects.count()
     with web():

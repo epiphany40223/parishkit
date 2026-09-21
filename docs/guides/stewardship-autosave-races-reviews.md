@@ -41,3 +41,16 @@ corrected:
 
 The nine findings the validation step did not confirm were not carried
 forward.
+
+## Round 3
+
+Claude only (Codex out of quota). Twelve raw findings, one validated and
+corrected:
+
+- Medium: session expiry was cited as held by the autosave queue suites,
+  which hold only lost access. The ended-session case now runs for a
+  revoked and for an expired session alike, and the citation says lost
+  access.
+
+The eleven findings the validation step did not confirm were not carried
+forward.
