@@ -1,14 +1,18 @@
 """Security events stay on every Administrator's dashboard until acknowledged."""
 
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from parishkit.stewardship.accounts.policy_models import (
     PolicySecurityAcknowledgement,
     PolicySecurityEvent,
     PortalUser,
 )
+from parishkit.stewardship.accounts.security_events import open_events
 from parishkit.stewardship.audit.models import AuditEvent
 
 from ..policy_factory import address
@@ -73,6 +77,15 @@ def test_an_expansion_waits_for_another_administrator(auth_service, google):
     assert PANEL in page and "new@example.org" in page
     assert "Administrator added to an exact address" in page
     assert offered(page, event)
+    # The panel costs the Admin page's fixed query budget exactly one query.
+    principal = SimpleNamespace(identity=admin.pk)
+    with CaptureQueriesContext(connection) as queries:
+        rows = open_events(principal)
+    assert len(queries) == 1
+    assert [row["id"] for row in rows if row["id"] == event.pk] == [event.pk]
+    assert next(row for row in rows if row["id"] == event.pk)["actor"] == (
+        "admin@example.org"
+    )
     # The actor acknowledges through a second Google identity at the same
     # address: the actor still, by address, so the row is the actor's own,
     # recorded once and audited, and the event is gone for the actor's
@@ -160,8 +173,6 @@ def test_acknowledgement_needs_an_administrator_and_a_real_event(
     auth_service, google, monkeypatch
 ):
     """Staff are refused, an unknown event is not found, and only POST is served."""
-    from types import SimpleNamespace
-
     from parishkit.stewardship.accounts import security_event_views as views
 
     store = auth_service.store

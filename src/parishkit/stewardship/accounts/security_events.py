@@ -9,7 +9,10 @@ acknowledgement that clears one, audited; the operational email is a separate
 delivery.
 """
 
+from django.contrib.postgres.expressions import ArraySubquery
 from django.db import IntegrityError, transaction
+from django.db.models import OuterRef, Subquery
+from django.db.models.functions import JSONObject
 
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
@@ -47,50 +50,55 @@ def cleared(event, acknowledgements, *, viewer_email):
     """
     recipients = set(event.recipients) - {event.target}
     for acknowledgement in acknowledgements:
-        if acknowledgement.email == viewer_email or not recipients:
+        if acknowledgement["email"] == viewer_email or not recipients:
             return True
-        if acknowledgement.email == event.target:
+        if acknowledgement["email"] == event.target:
             continue
-        if acknowledgement.own:
+        if acknowledgement["own"]:
             if len(recipients) <= 1:
                 return True
-        elif acknowledgement.email in recipients:
+        elif acknowledgement["email"] in recipients:
             return True
     return False
 
 
 def open_events(viewer):
-    """The events still shown to this Administrator, newest first."""
-    viewer_email = normalized_email(
-        PortalUser.objects.values_list("email", flat=True).get(pk=viewer.identity)
-    )
-    # Every expansion ever activated is one row, and only an acknowledged one
-    # needs judging, so one query with its acknowledgements suffices; the
-    # deployment records an expansion rarely, never per request.
-    events = list(
-        PolicySecurityEvent.objects.prefetch_related("acknowledgements").order_by(
-            "-created_at", "-id"
+    """The events still shown to this Administrator, newest first.
+
+    One query: every expansion ever activated is one row, and only an
+    acknowledged one needs judging, so the acknowledgements, the granting
+    actor's address and the viewer's own address ride along as subqueries.
+    The Admin page has a fixed query budget, and an expansion is recorded
+    rarely, never per request.
+    """
+    address = PortalUser.objects.filter(pk=OuterRef("actor_id")).values("email")[:1]
+    viewer_address = PortalUser.objects.filter(pk=viewer.identity).values("email")[:1]
+    acknowledgements = PolicySecurityAcknowledgement.objects.filter(
+        event=OuterRef("pk")
+    ).values(item=JSONObject(email="email", own="own"))
+    events = PolicySecurityEvent.objects.annotate(
+        actor_address=Subquery(address),
+        viewer_address=Subquery(viewer_address),
+        acknowledged_by=ArraySubquery(acknowledgements),
+    ).order_by("-created_at", "-id")
+    rows = []
+    for event in events:
+        viewer_email = normalized_email(event.viewer_address)
+        if cleared(event, event.acknowledged_by, viewer_email=viewer_email):
+            continue
+        rows.append(
+            {
+                "id": event.pk,
+                "kind": event.kind,
+                "label": KINDS.get(event.kind, event.kind),
+                "target": event.target,
+                "before": role_labels(event.before_roles),
+                "after": role_labels(event.after_roles),
+                "created_at": event.created_at,
+                "actor": event.actor_address,
+            }
         )
-    )
-    actors = dict(
-        PortalUser.objects.filter(
-            pk__in={event.actor_id for event in events if event.actor_id}
-        ).values_list("pk", "email")
-    )
-    return [
-        {
-            "id": event.pk,
-            "kind": event.kind,
-            "label": KINDS.get(event.kind, event.kind),
-            "target": event.target,
-            "before": role_labels(event.before_roles),
-            "after": role_labels(event.after_roles),
-            "created_at": event.created_at,
-            "actor": actors.get(event.actor_id),
-        }
-        for event in events
-        if not cleared(event, event.acknowledgements.all(), viewer_email=viewer_email)
-    ]
+    return rows
 
 
 def acknowledge(event_id, actor, *, parish_id):
