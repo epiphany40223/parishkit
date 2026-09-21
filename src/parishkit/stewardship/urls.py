@@ -10,6 +10,7 @@ from .accounts import (
     branding_views,
     campaign_mail_views,
     campaign_views,
+    chair_review_views,
     chair_views,
     clone_views,
     code_reports,
@@ -438,6 +439,7 @@ admin_patterns = [
         chair_views.chair_confirmations,
         name="chair_confirmations",
     ),
+    path("users/reviews", chair_review_views.chair_reviews, name="chair_reviews"),
     path(
         "security-events/<uuid:event_id>/acknowledge",
         security_event_views.acknowledge_event,

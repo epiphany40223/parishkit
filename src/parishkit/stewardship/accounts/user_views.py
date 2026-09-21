@@ -16,6 +16,8 @@ from parishkit.stewardship.web.contracts import filters
 
 from .admin_editing import editable_configuration, error_response, principal
 from .authentication import runtime
+from .chair_review_data import open_reviews
+from .chair_review_rows import suspended_rows
 from .chair_rows import suggestion_rows
 from .limiting import LimiterUnavailable
 from .ministry_activity import active_ministries
@@ -147,6 +149,9 @@ def users(request):
             relationships, ministries = chair_relationships(
                 configuration.active_configuration.canonical_document
             )
+            reviews = open_reviews(
+                configuration, SourceCurrent.objects.filter(singleton=True).first()
+            )
             # The chrome presents this verified observation, never a newer one.
             request._stewardship_display_configuration = configuration
         policy = AppliedPolicy(records, identities, active)
@@ -154,6 +159,7 @@ def users(request):
             "domains": domain_rows(policy),
             "addresses": address_rows(policy),
             "domain_assignments": domain_assignment_rows(policy),
+            "reviews": suspended_rows(policy, reviews),
             "suggestions": suggestion_rows(policy, relationships, active=ministries),
         }
         response = render(

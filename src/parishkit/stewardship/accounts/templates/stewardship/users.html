@@ -41,7 +41,7 @@
 <td><form method="post" action="{% url 'admin:user_rules' %}">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="kind" value="address"><input type="hidden" name="identity" value="{{ row.email }}">
 <fieldset><legend>{% blocktranslate with email=row.email %}Roles for {{ email }}{% endblocktranslate %}</legend>
 {% for key,label in roles %}<label><input type="checkbox" name="roles" value="{{ key }}"{% if key in row.configured %} checked{% endif %}> {{ label }}</label> {% endfor %}
-<button type="submit" name="operation" value="set">{% translate "Review role change" %}</button> <button type="submit" name="operation" value="remove">{% translate "Review removal" %}</button></fieldset></form></td></tr>
+<button type="submit" name="operation" value="set">{% translate "Review role change" %}</button> <button type="submit" name="operation" value="remove">{% translate "Review removal" %}</button></fieldset></form>{% if row.seed_only %}<form method="post" action="{% url 'admin:chair_reviews' %}">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="decision" value="keep_role"><input type="hidden" name="identity" value="{{ row.email }}"><button type="submit">{% translate "Keep Ministry leader independently" %}</button></form>{% endif %}</td></tr>
 {% empty %}<tr><td colspan="8">{% translate "No exact-address rules." %}</td></tr>{% endfor %}</tbody></table></div>
 <form method="post" action="{% url 'admin:user_rules' %}">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="kind" value="address"><input type="hidden" name="operation" value="set">
 <fieldset><legend>{% translate "Add an exact-address rule" %}</legend>
@@ -60,6 +60,27 @@
 <td>{% if row.leading %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}</td>
 <td>{% if row.last_login %}<time datetime="{{ row.last_login|date:'c' }}" data-local-instant>{{ row.last_login|date:'c' }}</time>{% else %}{% translate "None on record" %}{% endif %}</td>
 <td>{% if row.warnings %}<ul>{% for warning in row.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% else %}{% translate "None" %}{% endif %}</td></tr>
+{% endfor %}</tbody></table></div>
+{% endif %}
+
+{% if reviews %}
+<h2 id="chair-reviews">{% translate "Suspended Chairperson assignments awaiting review" %}</h2>
+<p>{% translate "Each row is a Parish source Chairperson assignment the promoted source no longer confirms, with the Member it was confirmed for and why it is suspended. It grants no Ministry scope now. Restore it as an Administrator entry, which the parish source never rewrites, or remove it; either is a reviewed configuration request, and the reason you enter is recorded in the audit. If the parish source shows the Member as Chairperson again before you decide, the seed reactivates and the review closes by itself." %}</p>
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="chair-reviews"><table>
+<caption>{% translate "Suspended seeded assignments" %}</caption><thead><tr><th scope="col">{% translate "Address" %}</th><th scope="col">{% translate "Ministry" %}</th><th scope="col">{% translate "Confirmed Member" %}</th><th scope="col">{% translate "Why suspended" %}</th><th scope="col">{% translate "Suspended since" %}</th><th scope="col">{% translate "Current source" %}</th><th scope="col">{% translate "Roles granted now" %}</th><th scope="col">{% translate "Last successful sign-in" %}</th><th scope="col">{% translate "Decide" %}</th></tr></thead><tbody>
+{% for row in reviews %}<tr>
+<th scope="row">{{ row.email }}</th>
+<td>{{ row.ministry_name }} ({% translate "Ministry DUID" %} {{ row.ministry_duid }})</td>
+<td>{% if row.member_duid %}{% translate "DUID" %} {{ row.member_duid }}{% else %}{% translate "None retained" %}{% endif %}</td>
+<td>{{ row.reason }}</td>
+<td><time datetime="{{ row.opened_at|date:'c' }}" data-local-instant>{{ row.opened_at|date:'c' }}</time>{% if row.generation %} ({% blocktranslate with generation=row.generation %}source generation {{ generation }}{% endblocktranslate %}){% endif %}</td>
+<td>{% translate "Last checked" %} <time datetime="{{ row.latest_at|date:'c' }}" data-local-instant>{{ row.latest_at|date:'c' }}</time>. {% if row.elsewhere %}{% translate "The Member is a current Chairperson of another active Ministry." %}{% else %}{% translate "The Member is not a current Chairperson of any active Ministry." %}{% endif %}</td>
+<td>{% for role in row.granted %}{{ role }}{% if not forloop.last %}, {% endif %}{% empty %}{% translate "None" %}{% endfor %}{% if row.leading %}; {% translate "leading through another assignment" %}{% endif %}</td>
+<td>{% if row.last_login %}<time datetime="{{ row.last_login|date:'c' }}" data-local-instant>{{ row.last_login|date:'c' }}</time>{% else %}{% translate "None on record" %}{% endif %}</td>
+<td><form method="post" action="{% url 'admin:chair_reviews' %}">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="identity" value="{{ row.email }}"><input type="hidden" name="ministry_duid" value="{{ row.ministry_duid }}">
+<fieldset><legend>{% blocktranslate with email=row.email duid=row.ministry_duid %}Decision for {{ email }}, Ministry DUID {{ duid }}{% endblocktranslate %}</legend>
+<label>{% translate "Reason" %} <input type="text" name="reason" maxlength="500" required></label>
+{% if not row.manual %}<button type="submit" name="decision" value="restore">{% translate "Review restore as Administrator entry" %}</button> {% endif %}<button type="submit" name="decision" value="remove">{% translate "Review removal" %}</button></fieldset></form></td></tr>
 {% endfor %}</tbody></table></div>
 {% endif %}
 

@@ -209,8 +209,13 @@ ambiguity, and is delivered under its
 [protected receipt](../../guides/stewardship-chair-suggestions.md#protected-delivery).
 The [Chairperson confirmation increment](../../guides/stewardship-chair-confirmation.md)
 adds the confirmed suggestion request of .03, the sole creator of seeded
-rules, grants and assignments, with the selected Member retained as evidence;
-the autosave queue of .01, the suggestion confirmation, provenance
+rules, grants and assignments, with the selected Member retained as evidence,
+and is delivered under its
+[protected receipt](../../guides/stewardship-chair-confirmation.md#protected-delivery).
+The [Chairperson seed review increment](../../guides/stewardship-chair-review.md)
+adds the suspended-assignment review, the restore and removal decisions and
+the Keep role independently action of .03 and .04, each an ordinary policy
+request; the autosave queue of .01, the suggestion confirmation, provenance
 action and suspended review of .03, the assignment editor of .04 and the
 tests of .05 remain, so every task stays unchecked.
 

@@ -27,6 +27,12 @@ WEB_READ_TABLES = frozenset(
         "stewardship_source_current",
         "stewardship_chair_suggestion",
         "stewardship_chair_seed_intent",
+        # The suspended-assignment review reads the episodes, the receipts
+        # that opened them and the retained Member: record ids, reasons and
+        # DUIDs, never contact data.
+        "stewardship_chair_review",
+        "stewardship_chair_reconciliation",
+        "stewardship_chair_seed_evidence",
         "stewardship_snapshot_ministry",
         "stewardship_source_ministry",
         "stewardship_snapshot_fund",
