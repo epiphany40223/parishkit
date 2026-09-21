@@ -39,3 +39,10 @@ Post-fix validation: the suggestion rows and Portal users page suites, the
 Chairperson projection suite, the web grant suite and the schema baseline
 passed locally, with the rows, grant registry and build contract
 database-free suites, and the users page browser suite on Chromium.
+
+## Round 2, single-source under the second exemption
+
+Reviewed `b39ea2af`, the round 1 result. Codex did not answer; Claude, in one
+pass, confirmed the granted-roles rule column, the coalesced Ministry name
+and the once-per-snapshot ownership aggregate present and correct, and
+validated no finding. Its seven Low remarks concerned wording and naming.

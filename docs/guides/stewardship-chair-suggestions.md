@@ -115,9 +115,10 @@ path, and no retained database was deleted.
 
 ## Checkpoint
 
-Implementation, focused validation and the first
-[review/fix round](stewardship-chair-suggestions-reviews.md) are complete,
-single-source under the second September 20, 2026 Codex exemption; further
-rounds, full exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
+Implementation, focused validation and two
+[review/fix rounds](stewardship-chair-suggestions-reviews.md) are complete,
+single-source under the second September 20, 2026 Codex exemption, the
+second validating nothing; a third round, full exact-head CI, DCO and
+protected delivery remain open. M5 and Gate 3 remain
 open. No deployment, release, live-provider write or database deletion is
 authorized by this increment.
