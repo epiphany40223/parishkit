@@ -58,7 +58,11 @@ def auth_runtime(tmp_path, settings, limiter, records=None):
     Tests that need Chairperson-seeded rules, which no ordinary patch can add,
     pass them as the initial `records`; everything else stays identical.
     """
-    store, _, _ = initialized(tmp_path, records)
+    # The setup suites replace `initialized` with a one-argument stand-in, so
+    # the optional records are passed only when a caller really supplies them.
+    store, _, _ = (
+        initialized(tmp_path) if records is None else initialized(tmp_path, records)
+    )
     # These focused authentication tests explicitly model completed setup;
     # the setup integration suites exercise the real durable completion marker.
     settings.STEWARDSHIP_AUTH_RUNTIME = AuthRuntime(store, limiter, lambda: True)
