@@ -46,8 +46,9 @@ all of its origins, as the specification requires. Removing a rule removes
 nothing else: an assignment for the address stays, and the page shows it as
 relying on a domain rule. A domain rule needs at least one role and can never
 grant Administrator; `gmail.com` and `googlemail.com` are refused as hosted
-domains. Every refusal is a closed reason code, worded by the error page, and
-never repeats the submitted address or domain.
+domains by the policy schema's one consumer-domain list, which the builder
+shares so the two cannot drift. Every refusal is a closed reason code, worded
+by the error page, and never repeats the submitted address or domain.
 
 The preview chooses the request key before building the patch, so the
 provenance written into the patch names the request that will carry it, and
@@ -73,15 +74,25 @@ and error pages are never cached.
 Before and after roles in one fixed order; an explicit deny named as such; the
 high-impact expansions the specification lists, named so the Administrator
 knows the change will be alerted once that follow-on lands; the count of
-recorded Google accounts the rule reaches, counted as the page counts them:
-for a domain, the accounts the evaluator really authorizes through the rule;
-for an address, its usable recorded identities; and, when the Administrator is
+recorded Google accounts the rule reaches; and, when the Administrator is
 removing their own Administrator role or their own exact rule while another
-Administrator remains, that it takes effect on their next request. A stale
-form or review, one drawn from a policy that has since changed, is explained
-on the same refusal page with a 409, whether it is caught at review or, by the
-shared admission under the work transaction, at confirmation. Removed roles take effect on each person's next
-request after activation; an open session is not ended.
+Administrator remains, that it takes effect on their next request. Removed
+roles take effect on each person's next request after activation; an open
+session is not ended.
+
+Reach is counted as the page counts it. For a domain, the page's own index
+decides: the accounts the evaluator really authorizes through the rule, which
+is legitimately zero for a rule that does not exist yet, and which no
+Chairperson confirmation can change. For an address, the usable recorded
+identities at that one address are read directly, because the page's index
+loads only identities the applied policy names, and a new rule's address, such
+as a consumer account that already tried to sign in, is not yet among them.
+
+A stale form or review, one drawn from a policy that has since changed, is
+explained on the same refusal page with a 409, whether it is caught at review
+or, by the shared admission under the work transaction, at confirmation, and
+it passes the same final authorization recheck as every other response on the
+route.
 
 ## Focused validation
 
@@ -110,10 +121,9 @@ request after activation; an open session is not ended.
 
 ## Checkpoint
 
-Implementation, focused validation and one single-source
-[review/fix round](stewardship-user-rule-edit-reviews.md) under the second
+Implementation, focused validation and two single-source
+[review/fix rounds](stewardship-user-rule-edit-reviews.md) under the second
 September 20, 2026 Codex exemption are complete, with every accepted finding
-fixed. Two more rounds, full exact-head CI, DCO and protected delivery remain
-open. M5 and Gate 3 remain
-open. No deployment, release, live-provider write or database deletion is
-authorized by this increment.
+fixed. One more round, full exact-head CI, DCO and protected delivery remain
+open. M5 and Gate 3 remain open. No deployment, release, live-provider write or
+database deletion is authorized by this increment.

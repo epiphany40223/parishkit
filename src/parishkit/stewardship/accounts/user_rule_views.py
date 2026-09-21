@@ -35,7 +35,7 @@ from .limiting import LimiterUnavailable
 from .policy import Capability
 from .policy_models import PortalUser
 from .request_patch import build_candidate
-from .user_rows import AppliedPolicy, _labels
+from .user_rows import AppliedPolicy, role_labels
 from .user_rules import ROLE_ORDER, RuleRefused, rule_patch
 from .user_views import policy_identities
 
@@ -74,18 +74,21 @@ def _scope(service):
     return editable_configuration(service), None
 
 
-def _reach(policy, change):
+def _reach(records, change):
     """How many recorded Google accounts the rule reaches, as the page counts.
 
     A domain rule reaches the accounts the evaluator really authorizes through
-    it, the number the page's column shows; an address reaches its usable
-    recorded identities. Neither counts a disabled identity.
+    it, the number the page's column shows, so the page's own index decides it;
+    a Chairperson confirmation cannot change a domain rule's count, so none is
+    consulted. An address reaches its usable recorded identities, read for that
+    one address directly: the page's index loads only identities the applied
+    policy names, and a new rule's address, such as a consumer account that
+    already tried to sign in, is not yet among them.
     """
     if change.kind == "domain":
+        policy = AppliedPolicy(records, policy_identities(records))
         return len(policy.authorized.get(change.identity, []))
-    return sum(
-        not item["disabled"] for item in policy.identities.get(change.identity, [])
-    )
+    return PortalUser.objects.filter(email=change.identity, disabled=False).count()
 
 
 def _preview(request, service, actor):
@@ -124,7 +127,6 @@ def _preview(request, service, actor):
         build_candidate(base, change.patch, candidate_id=uuid4())
     except ConfigError:
         return _error(request, "policy")
-    policy = AppliedPolicy(records, policy_identities(records))
     own = (
         PortalUser.objects.filter(pk=actor.identity)
         .values_list("email", flat=True)
@@ -138,10 +140,10 @@ def _preview(request, service, actor):
             "identity": change.identity,
             "created": change.before is None,
             "removed": change.after is None,
-            "before": _labels(change.before or ()),
-            "after": _labels(change.after or ()),
+            "before": role_labels(change.before or ()),
+            "after": role_labels(change.after or ()),
             "expansion": change.expansion,
-            "recorded": _reach(policy, change),
+            "recorded": _reach(records, change),
             # Losing one's own Administrator role, by a role change or by
             # removing one's own exact rule, is allowed when another
             # Administrator remains; it takes effect on the next request.
@@ -185,8 +187,9 @@ def user_rules(request):
         except StaleRecordError:
             # A form drawn from, or a review signed against, an older policy:
             # an ordinary case for a page left open, so it gets the page's
-            # own explanation rather than the editors' JSON conflict.
-            return _error(request, "stale", status=409)
+            # own explanation rather than the editors' JSON conflict, and the
+            # same final recheck as every other response on this route.
+            response = _error(request, "stale", status=409)
         principal(request, service, read_only=True, capability=Capability.MANAGE_USERS)
         response["Cache-Control"] = "no-store"
         return response

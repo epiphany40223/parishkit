@@ -30,7 +30,7 @@ ORIGIN_LABELS = {
 }
 
 
-def _labels(roles):
+def role_labels(roles):
     """Present roles in one fixed order rather than a set's arbitrary one."""
     return [ROLE_LABELS[role] for role in ROLE_LABELS if role in roles]
 
@@ -157,7 +157,7 @@ def domain_rows(policy):
         rows.append(
             {
                 "domain": domain,
-                "roles": _labels(record["values"]["roles"]),
+                "roles": role_labels(record["values"]["roles"]),
                 # The stored role keys, so the edit form ticks what is applied.
                 "configured": record["values"]["roles"],
                 "authorized": len(authorized),
@@ -230,7 +230,7 @@ def address_rows(policy):
                 # An empty role set is a deliberate denial, never an accident.
                 "deny": not values["roles"],
                 "configured": values["roles"],
-                "granted": _labels(granted),
+                "granted": role_labels(granted),
                 "origin": ORIGIN_LABELS[values["creation_origin"]],
                 "grants": [
                     {

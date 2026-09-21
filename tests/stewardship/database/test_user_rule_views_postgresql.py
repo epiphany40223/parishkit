@@ -5,6 +5,7 @@ from html import unescape
 from uuid import uuid4
 
 import pytest
+from django.utils import timezone
 
 from parishkit.stewardship.accounts.configuration_installation import install_request
 from parishkit.stewardship.accounts.policy_models import PortalUser
@@ -146,6 +147,102 @@ def test_rules_are_added_changed_and_removed_through_reviewed_requests(
     assert rules(store)["admin@example.org"]["roles"] == ["administrator"]
 
 
+def test_a_signed_review_confirmed_twice_is_one_request(auth_service, google):
+    """A lost response and a resubmitted confirmation never make a second grant."""
+    store = auth_service.store
+    before = ConfigurationChangeRequest.objects.count()
+    browser, login = signed_in()
+    assert login.status_code == 302
+    with web():
+        signed = token(
+            post(
+                browser,
+                proposal(
+                    store, kind="address", identity="twice@example.org", roles=["staff"]
+                ),
+            )
+        )
+        first = post(browser, {"action": "confirm", "preview": signed})
+        again = post(browser, {"action": "confirm", "preview": signed})
+    assert first.status_code == again.status_code == 302
+    assert first["Location"] == again["Location"]
+    assert ConfigurationChangeRequest.objects.count() == before + 1
+    request = ConfigurationChangeRequest.objects.get(
+        pk=first["Location"].rsplit("/", 1)[-1]
+    )
+    # The provenance the patch carries is the one request the installer checks.
+    receipt = install_request(store, request_id=request.pk, correlation_id=uuid4())
+    assert receipt.state == "applied"
+    assert rules(store)["twice@example.org"]["creation_operation"] == str(request.pk)
+
+
+def test_the_review_counts_reach_as_the_page_does(auth_service, google):
+    """Domain reach is the page's column; address reach is read for that address."""
+    store = auth_service.store
+    add_rules(
+        store,
+        domain("example.org", roles=("staff",)),
+        address("exact@example.org", roles=("staff",)),
+    )
+    # Four identities presented the example.org claim; only one is authorized
+    # through the rule: the exact address is replaced, the alias domain's suffix
+    # does not match, and a disabled identity cannot sign in. A consumer account
+    # outside every configured domain is recorded too, from a refused attempt.
+    for email, hosted, disabled in (
+        ("colleague@example.org", "example.org", False),
+        ("exact@example.org", "example.org", False),
+        ("alias@other.example", "example.org", False),
+        ("off@example.org", "example.org", True),
+        ("person@gmail.com", None, False),
+        ("person@gmail.com", None, True),
+    ):
+        PortalUser.objects.create(
+            google_subject=str(uuid4()),
+            email=email,
+            hosted_domain=hosted,
+            verified_at=timezone.now(),
+            disabled=disabled,
+        )
+    browser, login = signed_in()
+    assert login.status_code == 302
+    assert "<td>1</td>" in row(page(browser), "example.org")
+    with web():
+        widened = post(
+            browser,
+            proposal(
+                store,
+                kind="domain",
+                identity="example.org",
+                roles=["staff", "ministry_leader"],
+            ),
+        )
+        assert b"1 recorded Google account is authorized" in widened.content
+        fresh = post(
+            browser,
+            proposal(store, kind="domain", identity="new.example", roles=["staff"]),
+        )
+        assert b"0 recorded Google accounts are authorized" in fresh.content
+        # The consumer account is outside every domain rule and has no rule
+        # yet, so the page's index never loaded it; the review still counts it.
+        consumer = post(
+            browser,
+            proposal(
+                store, kind="address", identity="Person@gmail.com", roles=["staff"]
+            ),
+        )
+        assert (
+            b"1 usable recorded Google identity is at this address" in consumer.content
+        )
+        assert b"2 usable" not in consumer.content
+        exact = post(
+            browser,
+            proposal(
+                store, kind="address", identity="exact@example.org", operation="remove"
+            ),
+        )
+        assert b"1 usable recorded Google identity is at this address" in exact.content
+
+
 def test_refusals_explain_without_echoing_and_guards_hold(auth_service, google):
     """Closed refusals, a stale digest, the last Administrator, and denial."""
     store = auth_service.store
@@ -239,6 +336,14 @@ def test_refusals_explain_without_echoing_and_guards_hold(auth_service, google):
         assert own.status_code == 200
         assert b"removes your own Administrator role" in own.content
         assert b"High-impact expansion" not in own.content
+        gone = post(
+            browser,
+            proposal(
+                store, kind="address", identity="admin@example.org", operation="remove"
+            ),
+        )
+        assert gone.status_code == 200
+        assert b"removes your own exact-address rule" in gone.content
         promotion = post(
             browser,
             proposal(
