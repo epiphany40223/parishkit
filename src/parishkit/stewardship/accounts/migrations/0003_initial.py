@@ -1548,6 +1548,22 @@ class Migration(migrations.Migration):
                         name="policy_security_event_identity",
                     ),
                 ),
+                migrations.AddField(
+                    model_name="policysecurityacknowledgement",
+                    name="event",
+                    field=models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="acknowledgements",
+                        to="stewardship_accounts.policysecurityevent",
+                    ),
+                ),
+                migrations.AddConstraint(
+                    model_name="policysecurityacknowledgement",
+                    constraint=models.UniqueConstraint(
+                        fields=("event", "email"),
+                        name="policy_security_ack_identity",
+                    ),
+                ),
                 migrations.AddIndex(
                     model_name="portalsession",
                     index=models.Index(

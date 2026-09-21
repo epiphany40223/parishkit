@@ -1248,6 +1248,16 @@ CREATE TABLE public.stewardship_policy_epoch (
     CONSTRAINT stewardship_policy_epoch_sequence_check CHECK ((sequence >= 0))
 );
 
+-- TABLE: stewardship_policy_security_ack
+CREATE TABLE public.stewardship_policy_security_ack (
+    id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT statement_timestamp() NOT NULL,
+    actor_id uuid,
+    correlation_id uuid NOT NULL,
+    email character varying(254) NOT NULL,
+    event_id uuid NOT NULL
+);
+
 -- TABLE: stewardship_policy_security_event
 CREATE TABLE public.stewardship_policy_security_event (
     id uuid NOT NULL,

@@ -156,6 +156,10 @@ ALTER TABLE ONLY public.stewardship_ministry_assignment
 ALTER TABLE ONLY public.stewardship_occurrence_transition
     ADD CONSTRAINT occurrence_history_version UNIQUE (occurrence_id, version);
 
+-- CONSTRAINT: stewardship_policy_security_ack policy_security_ack_identity
+ALTER TABLE ONLY public.stewardship_policy_security_ack
+    ADD CONSTRAINT policy_security_ack_identity UNIQUE (event_id, email);
+
 -- CONSTRAINT: stewardship_policy_security_event policy_security_event_identity
 ALTER TABLE ONLY public.stewardship_policy_security_event
     ADD CONSTRAINT policy_security_event_identity UNIQUE (activation_id, rule_record_id);
@@ -663,6 +667,10 @@ ALTER TABLE ONLY public.stewardship_policy_epoch
 -- CONSTRAINT: stewardship_policy_epoch stewardship_policy_epoch_sequence_key
 ALTER TABLE ONLY public.stewardship_policy_epoch
     ADD CONSTRAINT stewardship_policy_epoch_sequence_key UNIQUE (sequence);
+
+-- CONSTRAINT: stewardship_policy_security_ack stewardship_policy_security_ack_pkey
+ALTER TABLE ONLY public.stewardship_policy_security_ack
+    ADD CONSTRAINT stewardship_policy_security_ack_pkey PRIMARY KEY (id);
 
 -- CONSTRAINT: stewardship_policy_security_event stewardship_policy_security_event_pkey
 ALTER TABLE ONLY public.stewardship_policy_security_event
@@ -1604,6 +1612,12 @@ CREATE INDEX stewardship_parish_record_id_b1d7afb4 ON public.stewardship_parish 
 
 -- INDEX: stewardship_policy_epoch_correlation_id_f37b28aa
 CREATE INDEX stewardship_policy_epoch_correlation_id_f37b28aa ON public.stewardship_policy_epoch USING btree (correlation_id);
+
+-- INDEX: stewardship_policy_security_ack_correlation_id_7960615c
+CREATE INDEX stewardship_policy_security_ack_correlation_id_7960615c ON public.stewardship_policy_security_ack USING btree (correlation_id);
+
+-- INDEX: stewardship_policy_security_ack_event_id_6049ddfb
+CREATE INDEX stewardship_policy_security_ack_event_id_6049ddfb ON public.stewardship_policy_security_ack USING btree (event_id);
 
 -- INDEX: stewardship_policy_security_event_activation_id_a6ee0ad0
 CREATE INDEX stewardship_policy_security_event_activation_id_a6ee0ad0 ON public.stewardship_policy_security_event USING btree (activation_id);
@@ -2685,6 +2699,9 @@ CREATE TRIGGER stewardship_policy_projection_v1 BEFORE INSERT ON public.stewards
 -- TRIGGER: stewardship_ministry_assignment stewardship_policy_projection_v1
 CREATE TRIGGER stewardship_policy_projection_v1 BEFORE INSERT ON public.stewardship_ministry_assignment FOR EACH ROW EXECUTE FUNCTION public.stewardship_policy_projection_v1();
 
+-- TRIGGER: stewardship_policy_security_ack stewardship_policy_security_ack_immutable_guard_v1
+CREATE TRIGGER stewardship_policy_security_ack_immutable_guard_v1 BEFORE DELETE OR UPDATE ON public.stewardship_policy_security_ack FOR EACH ROW EXECUTE FUNCTION public.stewardship_policy_security_ack_immutable_v1();
+
 -- TRIGGER: stewardship_policy_security_event stewardship_policy_security_event_immutable_guard_v1
 CREATE TRIGGER stewardship_policy_security_event_immutable_guard_v1 BEFORE DELETE OR UPDATE ON public.stewardship_policy_security_event FOR EACH ROW EXECUTE FUNCTION public.stewardship_policy_security_event_immutable_v1();
 
@@ -3419,6 +3436,10 @@ ALTER TABLE ONLY public.stewardship_parish
 -- FK CONSTRAINT: stewardship_policy_epoch stewardship_policy_e_activation_id_792b6777_fk_stewardsh
 ALTER TABLE ONLY public.stewardship_policy_epoch
     ADD CONSTRAINT stewardship_policy_e_activation_id_792b6777_fk_stewardsh FOREIGN KEY (activation_id) REFERENCES public.stewardship_config_activation(id) DEFERRABLE INITIALLY DEFERRED;
+
+-- FK CONSTRAINT: stewardship_policy_security_ack stewardship_policy_s_event_id_6049ddfb_fk_stewardsh
+ALTER TABLE ONLY public.stewardship_policy_security_ack
+    ADD CONSTRAINT stewardship_policy_s_event_id_6049ddfb_fk_stewardsh FOREIGN KEY (event_id) REFERENCES public.stewardship_policy_security_event(id) DEFERRABLE INITIALLY DEFERRED;
 
 -- FK CONSTRAINT: stewardship_policy_security_event stewardship_policy_s_activation_id_a6ee0ad0_fk_stewardsh
 ALTER TABLE ONLY public.stewardship_policy_security_event

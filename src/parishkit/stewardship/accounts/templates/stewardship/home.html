@@ -13,6 +13,17 @@
     </p>
     {% if dashboard.next_mail %}<p>{% translate "Next planned Family mailing:" %} <time datetime="{{ dashboard.next_mail.due_at|instant }}" data-local-instant>{{ dashboard.next_mail.due_at|instant }}</time></p>{% endif %}
   </section>
+  {% if dashboard.security_events %}<section class="panel" id="security-events" aria-labelledby="security-events-heading">
+    <h2 id="security-events-heading">{% translate "Security events awaiting acknowledgement" %}</h2>
+    <p>{% translate "Each of these widened who may sign in the moment it was activated. It stays here until an Administrator acknowledges it." %}</p>
+    <ul>{% for event in dashboard.security_events %}<li>
+      <p><strong>{{ event.label }}</strong>: {{ event.target }} — <time datetime="{{ event.created_at|instant }}" data-local-instant>{{ event.created_at|instant }}</time>{% if event.actor %} {% translate "by" %} {{ event.actor }}{% endif %}</p>
+      <p>{% translate "Roles before:" %} {% if event.before %}{{ event.before|join:", " }}{% else %}{% translate "none" %}{% endif %}. {% translate "Roles after:" %} {% if event.after %}{{ event.after|join:", " }}{% else %}{% translate "none" %}{% endif %}.</p>
+      {% if event.acknowledged %}<p>{% translate "You have acknowledged this; it stays until another Administrator does." %}</p>{% else %}<form method="post" action="{% url 'admin:security_event_acknowledge' event.id %}">
+        {% csrf_token %}<button type="submit">{% translate "Acknowledge" %}</button>
+      </form>{% endif %}
+    </li>{% endfor %}</ul>
+  </section>{% endif %}
   {% if dashboard.families %}<section class="panel">
     <h2>{% translate "Family participation" %}</h2>
     <p>{% translate "Active Families:" %} {{ dashboard.families.active|number }}</p>
