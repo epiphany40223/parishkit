@@ -97,3 +97,11 @@ expectations and the new SQL branch cases present and correct, and
 validated no finding. Its twenty-one Low remarks concerned wording,
 counts and naming; a stale comment beside the cohort binding and the
 envelope suite's case count in the increment guide were corrected.
+
+## Round 4, correction check, single-source under the second exemption
+
+Reviewed `b74a9f9f`, the standalone build correction after the first ready
+candidate failed the fast build contract. Codex did not answer; Claude, in
+two shards, confirmed the three security schema files listed in both
+default-deny ignore files beside the operational alert schema and validated
+no finding.
