@@ -53,7 +53,7 @@ def test_rows_group_by_address_and_ministry_in_ministry_order():
         "deny": False,
         "suspended": False,
     }
-    assert row["assignment"] is None
+    assert row["assignments"] == []
     assert str(row["source"]) == "Parish source Chairperson"
 
 
@@ -134,8 +134,9 @@ def test_current_rule_and_assignment_are_shown_from_policy():
     # assignment reads as suspended.
     assert exact["rule"]["kind"] == "address" and exact["rule"]["roles"] == []
     assert exact["rule"]["suspended"] is True and exact["rule"]["deny"] is False
-    assert str(exact["assignment"]["source"]) == "Parish source Chairperson"
-    assert exact["assignment"]["active"] is False
+    (seed,) = exact["assignments"]
+    assert str(seed["source"]) == "Parish source Chairperson"
+    assert seed["active"] is False
     assert deny["rule"] == {
         "kind": "address",
         "roles": [],
@@ -146,7 +147,7 @@ def test_current_rule_and_assignment_are_shown_from_policy():
     assert inherited["rule"]["kind"] == "domain"
     assert inherited["rule"]["domain"] == "example.org"
     assert text(inherited["rule"]["roles"]) == ["Staff"]
-    assert inherited["assignment"] is None
+    assert inherited["assignments"] == []
     # A confirmed seed, or a manual grant, shows the role as granted.
     (confirmed,) = suggestion_rows(
         AppliedPolicy(records, [], active_seeded=frozenset({records[3]["id"]})),
@@ -155,4 +156,23 @@ def test_current_rule_and_assignment_are_shown_from_policy():
     )
     assert text(confirmed["rule"]["roles"]) == ["Ministry leader"]
     assert confirmed["rule"]["suspended"] is False
-    assert confirmed["assignment"]["active"] is True
+    assert confirmed["assignments"][0]["active"] is True
+
+
+def test_manual_and_seeded_assignments_are_both_shown_in_fixed_order():
+    """A manual assignment beside a suspended seed grants scope; neither hides."""
+    seed = assignment("valid@example.org", ministry=4, seeded=True)
+    manual = assignment("valid@example.org", ministry=4)
+    rule = address("valid@example.org", ("ministry_leader",), seeded=True)
+    for records in ([address(), rule, seed, manual], [address(), rule, manual, seed]):
+        (row,) = suggestion_rows(
+            AppliedPolicy(records, []), [relationship()], active=frozenset({4})
+        )
+        shown = [(str(item["source"]), item["active"]) for item in row["assignments"]]
+        assert shown == [
+            ("Administrator entry", True),
+            ("Parish source Chairperson", False),
+        ]
+        # The manual assignment keeps the seeded role in force.
+        assert text(row["rule"]["roles"]) == ["Ministry leader"]
+        assert row["rule"]["suspended"] is False

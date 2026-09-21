@@ -46,3 +46,22 @@ Reviewed `b39ea2af`, the round 1 result. Codex did not answer; Claude, in one
 pass, confirmed the granted-roles rule column, the coalesced Ministry name
 and the once-per-snapshot ownership aggregate present and correct, and
 validated no finding. Its seven Low remarks concerned wording and naming.
+
+## Round 3, single-source under the second exemption
+
+Reviewed `e8c9cf49`, the round 2 result. Codex did not answer; Claude, in one
+pass, validated one Medium and nine Low. The Medium was accepted and fixed.
+
+- **Medium: one assignment stood for both.** Policy admits a manual and a
+  Chairperson-seeded assignment for the same address and Ministry, and a
+  manual one grants scope while the seed is suspended, yet the row showed
+  only the first record, so record order decided whether the Administrator
+  saw a suspended seed or an assignment in force. The row now keeps every
+  matching assignment with its own provenance and state, ordered by
+  provenance, and a case holds both readings in both record orders.
+
+The nine Low findings concerned wording and naming.
+
+Post-fix validation: the rows and Portal users page suites and the schema
+baseline passed locally, with the rows database-free suite and the users
+page browser suite on Chromium.

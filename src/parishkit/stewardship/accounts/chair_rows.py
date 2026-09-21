@@ -57,11 +57,18 @@ def _rule(policy, email):
     return {"kind": None, "roles": [], "deny": False, "suspended": False}
 
 
-def _assignment(policy, email, ministry_duid):
-    """The configured assignment of this address to this Ministry, if any."""
-    return next(
+def _assignments(policy, email, ministry_duid):
+    """Every configured assignment of this address to this Ministry.
+
+    Policy admits a manual and a Chairperson-seeded assignment for the same
+    address and Ministry, and a manual one grants scope while the seed is
+    suspended, so each is shown with its own provenance and state rather
+    than one standing for both; the order is fixed by provenance, never by
+    record order.
+    """
+    return sorted(
         (item for item in policy.held(email) if item["ministry_duid"] == ministry_duid),
-        None,
+        key=lambda item: str(item["source"]),
     )
 
 
@@ -104,7 +111,6 @@ def suggestion_rows(policy, relationships, *, active):
             key=lambda row: (row["name"].casefold(), row["duid"]),
         )
         owners = sorted(set(group["owners"]) | {row["duid"] for row in candidates})
-        assignment = _assignment(policy, email, ministry_duid)
         rows.append(
             {
                 "email": email,
@@ -114,7 +120,7 @@ def suggestion_rows(policy, relationships, *, active):
                 "owners": len(owners),
                 "ambiguous": len(owners) != 1,
                 "rule": _rule(policy, email),
-                "assignment": assignment,
+                "assignments": _assignments(policy, email, ministry_duid),
                 "source": ORIGIN_LABELS["chair-seed"],
             }
         )

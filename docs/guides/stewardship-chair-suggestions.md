@@ -96,11 +96,13 @@ path, and no retained database was deleted.
 
 ## Focused validation
 
-- Five database-free cases for the rows: grouping and Ministry-name order,
+- Six database-free cases for the rows: grouping and Ministry-name order,
   a nameless Ministry sorting and showing empty, locally inactive Ministries
-  omitted, shared addresses ambiguous with every Member kept, and the rule
+  omitted, shared addresses ambiguous with every Member kept, the rule
   showing what the evaluator grants, suspended, denied, conditional on a
-  domain claim or confirmed, with the assignment from the applied records.
+  domain claim or confirmed, with the assignments from the applied records,
+  and a manual assignment beside a suspended seed both shown in either
+  record order.
 - Three PostgreSQL cases under the real web role with real normalized source
   promoted: the row naming the Member and Ministry with the publication flag,
   the audit count without an address, the view readable and the projection
@@ -115,10 +117,10 @@ path, and no retained database was deleted.
 
 ## Checkpoint
 
-Implementation, focused validation and two
+Implementation, focused validation and three
 [review/fix rounds](stewardship-chair-suggestions-reviews.md) are complete,
-single-source under the second September 20, 2026 Codex exemption, the
-second validating nothing; a third round, full exact-head CI, DCO and
-protected delivery remain open. M5 and Gate 3 remain
+single-source under the second September 20, 2026 Codex exemption, with
+every accepted finding fixed; a correction check of the third round's fix,
+full exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
 open. No deployment, release, live-provider write or database deletion is
 authorized by this increment.

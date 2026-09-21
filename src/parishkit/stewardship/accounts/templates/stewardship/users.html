@@ -74,7 +74,7 @@
 <td>{% for member in row.candidates %}{{ member.name }} ({% translate "DUID" %} {{ member.duid }}){% if not forloop.last %}<br>{% endif %}{% endfor %}</td>
 <td>{% for member in row.candidates %}{% if member.publishable %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}{% if not forloop.last %}<br>{% endif %}{% endfor %}</td>
 <td>{% if row.rule.kind == "address" %}{% translate "Exact-address rule" %}: {% if row.rule.deny %}{% translate "Explicit deny" %}{% elif row.rule.roles %}{{ row.rule.roles|join:", " }}{% else %}{% translate "no role in effect" %}{% endif %}{% if row.rule.suspended %} ({% translate "Ministry leader suspended" %}){% endif %}{% elif row.rule.kind == "domain" %}{% blocktranslate with domain=row.rule.domain %}Hosted-domain rule, only with the {{ domain }} claim{% endblocktranslate %}: {{ row.rule.roles|join:", " }}{% else %}{% translate "None" %}{% endif %}</td>
-<td>{% if row.assignment %}{{ row.assignment.source }}{% if not row.assignment.active %}; {% translate "suspended" %}{% endif %}{% else %}{% translate "None" %}{% endif %}</td>
+<td>{% for item in row.assignments %}{{ item.source }}{% if not item.active %}; {% translate "suspended" %}{% endif %}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "None" %}{% endfor %}</td>
 <td>{% if row.ambiguous %}{% blocktranslate count owners=row.owners %}{{ owners }} active Member uses this address{% plural %}{{ owners }} active Members use this address{% endblocktranslate %}{% else %}{% translate "None" %}{% endif %}</td></tr>
 {% endfor %}</tbody></table></div>
 {% else %}
