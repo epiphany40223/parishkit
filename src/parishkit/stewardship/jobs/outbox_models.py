@@ -28,7 +28,11 @@ DELIVERY_PURPOSES = (
     "daily_digest",
     "weekly_digest",
     "operational",
+    "security_event",
 )
+# Purposes routed to Administrators as operational mail: no campaign, no
+# Family, no credential namespace and no Testing redirection.
+ADMINISTRATOR_PURPOSES = ("operational", "security_event")
 DELIVERY_ACTIONS = ("created", "prepared", "hold", "release_hold") + tuple(
     action.value for action in DeliveryAction
 )
@@ -158,9 +162,13 @@ class OutboxMessage(MutableRecord, DeliveryCommand):
             ),
             models.CheckConstraint(
                 condition=(
-                    models.Q(routing="operational", purpose="operational", family=None)
+                    models.Q(
+                        routing="operational",
+                        purpose__in=ADMINISTRATOR_PURPOSES,
+                        family=None,
+                    )
                     | (
-                        ~models.Q(purpose="operational")
+                        ~models.Q(purpose__in=ADMINISTRATOR_PURPOSES)
                         & models.Q(campaign__isnull=False)
                         & (
                             models.Q(routing="testing_override", mode="testing")
@@ -177,7 +185,12 @@ class OutboxMessage(MutableRecord, DeliveryCommand):
                         family__isnull=False,
                     )
                     | models.Q(
-                        purpose__in=["daily_digest", "weekly_digest", "operational"],
+                        purpose__in=[
+                            "daily_digest",
+                            "weekly_digest",
+                            "operational",
+                            "security_event",
+                        ],
                         family=None,
                     )
                 ),

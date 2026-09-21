@@ -90,6 +90,8 @@ MODULE_SECONDS = {
     "test_daily_digest_schedule_postgresql.py": 6,
     "test_daily_digest_cleanup_postgresql.py": 6,
     "test_setup_credential_installation_postgresql.py": 5,
+    "test_security_fanout_postgresql.py": 8,
+    "test_security_dispatch_postgresql.py": 8,
 }
 
 # Only the loaded case retains a real source lease. Do not assign the unloaded

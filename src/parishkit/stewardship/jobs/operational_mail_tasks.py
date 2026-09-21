@@ -1,4 +1,8 @@
-"""Isolated operational MAIL execution with bounded retries and no alert recursion."""
+"""Isolated Administrator-routed MAIL execution with bounded retries and no recursion.
+
+One execution serves every compiled alert owner; the owner supplies the
+purpose, recipient rule, current content and private helper.
+"""
 
 import logging
 from functools import partial
@@ -15,7 +19,9 @@ from parishkit.stewardship.family_delivery import (
     FamilyDeliveryStatus,
     ProviderHealth,
 )
-from parishkit.stewardship.operational_delivery_process import submit_operational_mail
+from parishkit.stewardship.operational_delivery_process import (  # noqa: F401
+    submit_operational_mail,
+)
 from parishkit.stewardship.provider_checks import ProviderCheckDrainFailure
 from parishkit.stewardship.runtime_background import mail_authority
 from parishkit.stewardship.storage import StorageInvariantError
@@ -33,6 +39,7 @@ from .operational_dispatch import (
     recipient_current,
     recover_submission,
 )
+from .operational_owner import OPERATIONAL
 from .ownership import database_now, lock_task_claim
 from .phases import TaskPhase
 from .queues import WorkQueue
@@ -41,15 +48,15 @@ from .storage import _status
 LOG = logging.getLogger(__name__)
 
 
-def recovery_plan(status):
+def recovery_plan(status, owner=OPERATIONAL):
     """Only definitive unsent work may retry; abandoned submissions stay uncertain."""
-    message = bound_operational(status)
+    message = bound_operational(status, owner)
     if status.state != "abandoned":
-        raise PermissionError("Operational recovery requires abandonment.")
+        raise PermissionError(f"{owner.label} recovery requires abandonment.")
     if message.state == "submitting":
         if message.provider_deadline > database_now():
             return None
-        recover_submission(status)
+        recover_submission(status, owner)
         return RecoveryPlan("recovery_fail")
     action = {
         "delivered": "recovery_complete",
@@ -66,9 +73,9 @@ def recovery_plan(status):
     )
 
 
-def admit_task(action, status, *, store, circuit):
+def admit_task(action, status, *, store, circuit, owner=OPERATIONAL):
     """Preserve drainage even after configuration changes or recipient revocation."""
-    message = bound_operational(status)
+    message = bound_operational(status, owner)
     if action in {"heartbeat", "progress", "lease_expired"}:
         return True
     if action == "recovery_hint" and status.state == "running":
@@ -79,7 +86,7 @@ def admit_task(action, status, *, store, circuit):
                 action == "recovery_hint"
                 and message.provider_deadline <= database_now()
             )
-        plan = recovery_plan(status)
+        plan = recovery_plan(status, owner)
         return plan is not None and (action == "recovery_hint" or action == plan.action)
     if action == "complete":
         return message.state == "delivered"
@@ -98,7 +105,7 @@ def admit_task(action, status, *, store, circuit):
         )
     if action not in {"hint", "claim", "effect"}:
         return False
-    complete, failed = cohort_state(message)
+    complete, failed = cohort_state(message, owner)
     if not complete:
         return failed
     if circuit.blocks_new_send():
@@ -108,7 +115,7 @@ def admit_task(action, status, *, store, circuit):
     except ConfigError:
         if action == "effect":
             raise FamilyDeliveryHeld(
-                "Operational configuration requires recovery."
+                f"{owner.label} configuration requires recovery."
             ) from None
         return False
     return action == "effect" or _channels_configured(runtime)
@@ -125,29 +132,35 @@ def _channels_configured(runtime):
     )
 
 
-def delivery_handler(store, *, credential_path=None, scheduler=False):
+def delivery_handler(
+    store, *, credential_path=None, scheduler=False, owner=OPERATIONAL
+):
     """Only MAIL owns a mounted credential; schedulers receive metadata callbacks."""
     if type(scheduler) is not bool or (
         not scheduler and not isinstance(credential_path, Path)
     ):
-        raise TypeError("Operational mail requires its compiled service profile.")
-    # Operational alerts must recover without a human restarting an otherwise
-    # healthy, heartbeating process. Only new sends consult this finite cooldown.
+        raise TypeError(f"{owner.label} mail requires its compiled service profile.")
+    # Alerts must recover without a human restarting an otherwise healthy,
+    # heartbeating process. Only new sends consult this finite cooldown.
     circuit = DeliveryCircuit(recovery_seconds=300)
 
     def unavailable(execution):
         """No scheduler callback can be used to open a private provider pipe."""
-        raise PermissionError("Schedulers cannot submit operational mail.")
+        raise PermissionError(f"Schedulers cannot submit {owner.label.lower()} mail.")
 
     return Handler(
         WorkQueue.MAIL,
-        partial(admit_task, store=store, circuit=circuit),
+        partial(admit_task, store=store, circuit=circuit, owner=owner),
         unavailable
         if scheduler
         else partial(
-            _execute, store=store, credential_path=credential_path, circuit=circuit
+            _execute,
+            store=store,
+            credential_path=credential_path,
+            circuit=circuit,
+            owner=owner,
         ),
-        recover=recovery_plan,
+        recover=partial(recovery_plan, owner=owner),
         scope=work_transaction,
     )
 
@@ -160,25 +173,29 @@ def _check(execution):
         connections.close_all()
 
 
-def _execute(execution, *, store, credential_path, circuit):
+def _execute(execution, *, store, credential_path, circuit, owner):
     """Pin credentials, commit the attempt, submit privately, and retain certainty."""
     if connection.in_atomic_block or not execution.control.active:
-        raise StorageInvariantError("Operational mail requires maintained ownership.")
+        raise StorageInvariantError(
+            f"{owner.label} mail requires maintained ownership."
+        )
     execution.progress(0, 0, phase=TaskPhase.PREPARING)
     submitted = launched = False
     try:
         with execution.effect():
-            message = bound_operational(_status(lock_task_claim(execution.claim)))
+            message = bound_operational(
+                _status(lock_task_claim(execution.claim)), owner
+            )
             if message.state in {"pending", "retry_wait"}:
                 reason = (
                     "preparation_failed"
-                    if preparation_failed(message)
+                    if preparation_failed(message, owner)
                     else "recipient_revoked"
-                    if not recipient_current(message)
+                    if not recipient_current(message, owner)
                     else None
                 )
                 if reason is not None:
-                    cancel_unsent(message, execution.claim, reason=reason)
+                    cancel_unsent(message, execution.claim, reason=reason, owner=owner)
                     message.refresh_from_db()
             terminal = {
                 "delivered": "complete",
@@ -190,7 +207,7 @@ def _execute(execution, *, store, credential_path, circuit):
                 runtime = mail_authority(store)
                 if not _channels_configured(runtime):
                     raise FamilyDeliveryHeld(
-                        "Operational mail channel is not configured."
+                        f"{owner.label} mail channel is not configured."
                     )
                 configuration_id = runtime.active_configuration_id
                 workspace = AppliedIntegration.objects.get(
@@ -204,7 +221,11 @@ def _execute(execution, *, store, credential_path, circuit):
             raise PermissionError("Installed Workspace credential differs.")
         execution.check()
         prepared = begin_submission(
-            message.pk, execution.claim, store=store, configuration_id=configuration_id
+            message.pk,
+            execution.claim,
+            store=store,
+            configuration_id=configuration_id,
+            owner=owner,
         )
         if prepared is None:
             execution.transition("safe_cancel")
@@ -223,7 +244,7 @@ def _execute(execution, *, store, credential_path, circuit):
         )
         if remaining > 0:
             launched = True
-            result = submit_operational_mail(
+            result = owner.submit(
                 candidate,
                 settings,
                 mail,
@@ -243,7 +264,7 @@ def _execute(execution, *, store, credential_path, circuit):
                     _status(lock_task_claim(execution.claim))
                 )
             if attempt >= MAX_ATTEMPTS:
-                LOG.error("Operational mail preparation exhausted bounded retries.")
+                LOG.error("%s mail preparation exhausted bounded retries.", owner.label)
                 execution.transition("permanent_failure")
             else:
                 execution.transition(
@@ -259,10 +280,12 @@ def _execute(execution, *, store, credential_path, circuit):
             if launched
             else ProviderHealth.UNOBSERVED,
         )
-    outcome = finish_submission(message.pk, execution.claim, result)
+    outcome = finish_submission(message.pk, execution.claim, result, owner)
     if circuit.observe(result.health):
         # Never feed a failed alert email back into the critical-email producer.
-        LOG.error("Operational email provider unavailable; further attempts are held.")
+        LOG.error(
+            "%s email provider unavailable; further attempts are held.", owner.label
+        )
     if outcome.state.value == "retry_wait":
         execution.transition("retryable_failure", retry_seconds=retry_delay(attempt))
     else:
