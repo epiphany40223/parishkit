@@ -73,3 +73,9 @@ corrected:
 
 The ten findings the validation step did not confirm were not carried
 forward.
+
+## Round 4
+
+Claude only (Codex out of quota). A correction check of the three rounds'
+corrections: thirteen raw findings, none validated. Nothing was carried
+forward, and this closes the review rounds for the increment.
