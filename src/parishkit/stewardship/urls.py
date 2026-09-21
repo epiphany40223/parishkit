@@ -26,6 +26,7 @@ from .accounts import (
     ministry_views,
     parish_views,
     presence,
+    rule_autosave_views,
     schedule_views,
     security_event_views,
     setup_branding_views,
@@ -435,6 +436,13 @@ admin_patterns = [
     path("configuration/parish", parish_views.parish_settings, name="parish_settings"),
     path("users", user_views.users, name="users"),
     path("users/rules", user_rule_views.user_rules, name="user_rules"),
+    path("users/rules/apply", rule_autosave_views.rule_apply, name="rule_apply"),
+    path("users/rules/base", rule_autosave_views.rule_base, name="rule_base"),
+    path(
+        "users/rules/requests/<uuid:request_id>",
+        rule_autosave_views.rule_request,
+        name="rule_request",
+    ),
     path(
         "users/suggestions",
         chair_views.chair_confirmations,
