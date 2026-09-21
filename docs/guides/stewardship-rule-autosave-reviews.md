@@ -45,3 +45,31 @@ validated, all corrected:
 
 The fifteen findings the validation step did not confirm were not carried
 forward.
+
+## Round 2
+
+Claude only (Codex out of quota). Twenty-two raw findings, ten validated,
+all corrected:
+
+- Medium (route): the used-key lookup and the digest check were not
+  serialized, so an original request that activated between them was
+  refused as stale. The key is looked up again before a stale digest is
+  refused; the interleaving itself is not reproduced by a test.
+- Medium (client, nine): a redraw of the conflict view reset the
+  Administrator's selections; discarding emptied the queue before judging
+  a retained intent for the same control; intents that had come to equal
+  the confirmed value, or the value in flight, were still sent and refused
+  as unchanged, before dispatch and after a refusal alike; the CSRF token
+  captured at load stranded a rotated session; untouched controls were not
+  reconciled with the current rules after a conflict; requests had no
+  deadline; and the row kept reading Applying while the conflict view was
+  open. The selection now belongs to the intent, both resolutions reconcile
+  every control with the current rules while kept intents keep their ticks,
+  the queue is pruned before each dispatch and after each refusal with the
+  in-flight value as the reference for its control, every answer names the
+  session's CSRF token which the page adopts, every request has a deadline,
+  and the row says the change was not saved when it enters the conflict
+  view.
+
+The twelve findings the validation step did not confirm were not carried
+forward.

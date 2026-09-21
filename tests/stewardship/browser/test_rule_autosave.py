@@ -13,8 +13,11 @@ CURRENT = "c" * 64
 LEADER = "leader@workspace.example"
 
 
+ROTATED = "r" * 64
+
+
 def receipt(request_id, state, digest=None, failure=""):
-    """A request receipt as the status route answers."""
+    """A request receipt as the status route answers, with a rotated token."""
     return json.dumps(
         {
             "request_id": request_id,
@@ -22,6 +25,7 @@ def receipt(request_id, state, digest=None, failure=""):
             "sequence": 1,
             "failure_code": failure,
             "applied_digest": digest,
+            "csrf_token": ROTATED,
         }
     )
 
@@ -35,7 +39,10 @@ def serve(page, *, states, refuse=None, stale=None, deny=False, drop_first=False
     def apply(route, request):
         """Accept one intent with a fresh id, or answer as the scenario says."""
         body = parse_qs(request.post_data)
-        sent.append({key: value[0] for key, value in body.items()})
+        sent.append(
+            {key: value[0] for key, value in body.items()}
+            | {"csrf": request.headers.get("x-csrftoken")}
+        )
         if drop_first and len(sent) == 1:
             route.abort()
             return
@@ -122,6 +129,16 @@ def test_ticks_autosave_in_order_and_adopt_the_applied_digest(page, component_or
     assert len({item["request_key"] for item in sent}) == 2
     assert page.locator('input[name="base_digest"]').first.input_value() == APPLIED
     assert leader.get_by_text("Applied", exact=True).count() == 2
+    # The rotated token from the first answer was adopted everywhere.
+    assert sent[0]["csrf"] == "a" * 64 and sent[1]["csrf"] == ROTATED
+    assert page.locator('[name="csrfmiddlewaretoken"]').first.input_value() == ROTATED
+    # Off, on, off while the withdrawal is pending: the value it confirms
+    # needs no further request.
+    leader.get_by_label("Staff").uncheck()
+    leader.get_by_label("Staff").check()
+    leader.get_by_label("Staff").uncheck()
+    leader.get_by_text("Applied", exact=True).nth(2).wait_for()
+    assert len(sent) == 3 and sent[2]["role"] == "staff"
     # No intent remains, so leaving does not warn.
     page.close(run_before_unload=True)
 
@@ -157,24 +174,42 @@ def test_a_conflict_shows_current_rules_and_retries_selected_intents_afresh(
     """A stale digest opens the conflict view; retries take new keys and digest."""
     sent, _, rules = serve(page, states={}, stale=lambda intent, count: count == 1)
     rules["address"][LEADER] = ["staff"]
+    rules["address"]["admin@example.org"] = ["administrator", "staff"]
     leader = leader_row(page, component_origin)
     leader.get_by_label("Administrator").check()
     panel = page.get_by_role("alert")
     panel.get_by_text("now: staff", exact=False).wait_for()
+    # The row itself says the change was not applied.
+    assert leader.get_by_text("Not saved: the rules changed", exact=False).is_visible()
     # A newer change while the view is open joins the same ordered list.
     leader.get_by_label("Ministry leader").uncheck()
     assert panel.get_by_role("listitem").count() == 2
     # The withdrawal already matches the current rules, so it is not preselected.
     picks = panel.get_by_role("checkbox")
     assert picks.nth(0).is_checked() and not picks.nth(1).is_checked()
+    # A selection survives the redraw a further change causes.
+    picks.nth(0).uncheck()
+    picks.nth(1).check()
+    leader.get_by_label("Staff").uncheck()
+    picks = panel.get_by_role("checkbox")
+    assert not picks.nth(0).is_checked() and picks.nth(1).is_checked()
+    picks.nth(0).check()
+    picks.nth(1).uncheck()
     page.get_by_role("button", name="Retry selected against current rules").click()
-    leader.get_by_text("Applied", exact=True).wait_for()
-    assert [item["role"] for item in sent] == ["administrator", "administrator"]
+    leader.get_by_text("Applied", exact=True).nth(1).wait_for()
+    assert [item["role"] for item in sent] == [
+        "administrator",
+        "administrator",
+        "staff",
+    ]
     assert sent[0]["request_key"] != sent[1]["request_key"]
-    assert sent[1]["base_digest"] == CURRENT
-    # The discarded withdrawal shows the current rules' value.
+    assert sent[1]["base_digest"] == CURRENT and sent[2]["base_digest"] == APPLIED
+    # The discarded withdrawal shows the current rules' value, and an untouched
+    # row was reconciled with the current rules as well.
     assert not leader.get_by_label("Ministry leader").is_checked()
     assert leader.get_by_text("Change discarded", exact=True).is_visible()
+    admin = page.get_by_role("row", name="admin@example.org", exact=False)
+    assert admin.get_by_label("Staff").is_checked()
 
 
 def test_discarding_a_conflict_restores_current_rules(page, component_origin):
@@ -187,6 +222,8 @@ def test_discarding_a_conflict_restores_current_rules(page, component_origin):
     page.get_by_role("button", name="Discard all").click()
     assert leader.get_by_label("Staff").is_checked()
     assert leader.get_by_text("Change discarded", exact=True).is_visible()
+    # Every control now shows the current rules, not the page's first render.
+    assert leader.get_by_label("Administrator").is_checked()
     # Later changes go against the refreshed digest.
     leader.get_by_label("Staff").uncheck()
     leader.get_by_text("Applied", exact=True).wait_for()

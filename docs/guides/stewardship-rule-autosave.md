@@ -73,22 +73,33 @@ reads the applied digest and configured roles through a read-only route
 under the same capability and shows every remaining intent, in the one
 order the queue keeps, beside the rule's current roles or that the rule no
 longer exists; intents the current rules already satisfy are not
-preselected, a deleted target cannot be retried, and the Administrator
-retries the selected intents as new requests against the refreshed digest
-or discards them, each discarded tick returning to the current rules. A
-change of mind back to a confirmed value needs no request. A lost session
-ends the queue, clears the restricted tables and forms, and offers sign-in;
-nothing is retried across a login.
+preselected, a deleted target cannot be retried, the selection belongs to
+the intent so a redraw never resets it, and the Administrator retries the
+selected intents as new requests against the refreshed digest or discards
+them; either way every control on the page is reconciled with the current
+rules, a kept intent keeping its tick and a deleted target's controls
+disabled until the page is redrawn. A change of mind back to a confirmed
+value, or to the value a request in flight will confirm, needs no request,
+and the queue is pruned of such intents before each dispatch and after each
+refusal. Every request has a deadline, so a stalled connection reaches the
+uncertain state rather than waiting forever. A lost session ends the queue,
+clears the restricted tables and forms, and offers sign-in; nothing is
+retried across a login.
 
 ### Privacy, authority and cost
 
 Every route requires the current session, the users capability and CSRF,
 rechecks the actor after the work, and answers with the closed error codes
-every enhanced client understands, never a submitted value. The status read
-is passive and actor-scoped, so an open page cannot keep an idle login alive
-or observe another Administrator's request, and polling waits while the tab
-is hidden. The page adds no query to its own render; the script runs only
-when a rule row exists.
+every enhanced client understands, never a submitted value. Every answer
+names the session's current CSRF token, which the page adopts for its later
+requests and forms, since an Administrator who changes their own roles keeps
+a rotated session whose token the page cannot read from its cookie. The
+status read is passive and actor-scoped, so an open page cannot keep an idle
+login alive or observe another Administrator's request, and polling waits
+while the tab is hidden. A used key is looked up again before a stale digest
+is refused, so an original request that activated between the two reads
+still answers. The page adds no query to its own render; the script runs
+only when a rule row exists.
 
 ## Schema
 
@@ -107,29 +118,32 @@ No schema change.
   request has applied, the request read as staged and then as applied with
   the applied digest, the role in force at sign-in with its grant bound to
   the request, a stale digest refused, the base read returning the current
-  digest and roles, and another Administrator unable to read the request by
-  its real id; and the last Administrator's withdrawal, a rule the page does
+  digest and roles, the answered CSRF token accepted, and another
+  Administrator unable to read the request by its real id; and the last Administrator's withdrawal, a rule the page does
   not show either way, a new domain, the domain-rule fences, malformed and
   unexpected fields, a wrong method, a missing CSRF token and a Staff reader
   all refused with nothing recorded.
 - Seven browser cases in every engine against the component page with the
-  routes mocked: ticks applied in order with Applied only from the receipt
-  and the digest adopted, a change of mind dropped; a refusal restoring its
-  tick, pausing, and surviving a queued change to another role, with leaving
-  warning; a conflict listing the current rules, taking a newer change into
-  the same list, retrying the selected intent with a new key on the
-  refreshed digest and discarding the rest; discarding a conflict restoring
-  the current values and later changes using the refreshed digest; lost
-  access clearing the tables and offering sign-in; a lost answer resent with
-  the same key; and a failed request pausing while a stale base found at
-  activation opens the conflict view.
+  routes mocked: ticks applied in order with Applied only from the receipt,
+  the digest and a rotated CSRF token adopted, a change of mind dropped
+  whether against the confirmed value or the one in flight; a refusal
+  restoring its tick, pausing, and surviving a queued change to another
+  role, with leaving warning; a conflict marking the row, listing the
+  current rules, taking a newer change into the same list, keeping the
+  Administrator's selection across a redraw, retrying the selected intents
+  with new keys on the refreshed digest, discarding the rest and reconciling
+  an untouched row; discarding a conflict restoring the current values and
+  later changes using the refreshed digest; lost access clearing the tables
+  and offering sign-in; a lost answer resent with the same key; and a failed
+  request pausing while a stale base found at activation opens the conflict
+  view.
 - The Portal users page, rule editor and assignment editor suites pass.
 - Ruff, formatting, Markdown lint and the migration drift check pass.
 
 ## Checkpoint
 
 Implementation and focused validation are complete and
-[round 1](stewardship-rule-autosave-reviews.md) is answered; the remaining
-review/fix rounds, full exact-head CI, DCO and protected delivery remain
-open. M5 and Gate 3 remain open. No deployment, release, live-provider write
+[rounds 1 and 2](stewardship-rule-autosave-reviews.md) are answered; the
+remaining review/fix rounds, full exact-head CI, DCO and protected delivery
+remain open. M5 and Gate 3 remain open. No deployment, release, live-provider write
 or database deletion is authorized by this increment.

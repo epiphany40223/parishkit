@@ -18,6 +18,7 @@ from uuid import UUID
 from django import forms
 from django.db import DatabaseError, transaction
 from django.http import JsonResponse
+from django.middleware.csrf import get_token
 from django.views.decorators.http import require_POST, require_safe
 
 from parishkit.config import ConfigError
@@ -61,9 +62,14 @@ class IntentForm(forms.Form):
     checked = forms.ChoiceField(choices=(("0", "0"), ("1", "1")))
 
 
-def _json(data, *, status=200):
-    """A closed JSON answer, never cached."""
-    response = JsonResponse(data, status=status)
+def _json(request, data, *, status=200):
+    """A closed JSON answer, never cached, carrying the session's CSRF token.
+
+    An Administrator who changes their own roles keeps a rotated session
+    whose CSRF token the page cannot read from its cookie, so every answer
+    names the current one and the page adopts it for its later requests.
+    """
+    response = JsonResponse(data | {"csrf_token": get_token(request)}, status=status)
     response["Cache-Control"] = "no-store"
     return response
 
@@ -93,18 +99,29 @@ def _apply(request, service, actor):
     key = data["request_key"]
     if key.version != 4:
         return _refused(ErrorCode.INVALID, "request_key")
+
     # A key this Administrator already used names its request, whatever the
     # rules are now: the answer is that request's committed state, so a lost
     # answer is recovered after the installer has moved on, and the intent
     # is never rebuilt over a base it was not made against.
-    existing = ConfigurationChangeRequest.objects.filter(
-        actor_id=actor.identity, request_key=key
-    ).first()
+    def recorded():
+        """The request this actor's key already names, if any."""
+        return ConfigurationChangeRequest.objects.filter(
+            actor_id=actor.identity, request_key=key
+        ).first()
+
+    existing = recorded()
     if existing is not None:
         status = request_status(request_id=existing.pk, actor_id=actor.identity)
-        return _json(_receipt(status), status=202)
+        return _json(request, _receipt(status), status=202)
     configuration = editable_configuration(service)
     if data["base_digest"] != configuration.active_configuration.digest:
+        # The original request may have committed and activated between the
+        # lookup above and this read; its key still answers before stale.
+        existing = recorded()
+        if existing is not None:
+            status = request_status(request_id=existing.pk, actor_id=actor.identity)
+            return _json(request, _receipt(status), status=202)
         return _refused(ErrorCode.STALE, "base_digest", status=409)
     records = configuration.active_configuration.canonical_document["sections"].get(
         "login_rules", []
@@ -163,7 +180,7 @@ def _apply(request, service, actor):
         if "already bound" in str(error):
             return _refused(ErrorCode.STALE, "request_key", status=409)
         return _refused(ErrorCode.INVALID, "intent")
-    return _json(_receipt(status), status=202)
+    return _json(request, _receipt(status), status=202)
 
 
 @require_POST
@@ -226,7 +243,8 @@ def rule_base(request):
             elif values["kind"] == "domain":
                 rules["domain"][values["domain"]] = values["roles"]
         return _json(
-            {"digest": configuration.active_configuration.digest, "rules": rules}
+            request,
+            {"digest": configuration.active_configuration.digest, "rules": rules},
         )
     except (
         ConfigError,
@@ -258,7 +276,7 @@ def rule_request(request, request_id):
                 or fresh.identity != actor.identity
             ):
                 raise PermissionError("Login rule reader changed.")
-        return _json(_receipt(status))
+        return _json(request, _receipt(status))
     except (
         ConfigError,
         DatabaseError,

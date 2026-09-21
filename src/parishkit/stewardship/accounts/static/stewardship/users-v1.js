@@ -2,15 +2,15 @@
 "use strict";
 (() => {
   const page = document.querySelector("[data-rule-autosave]");
-  if (!page || !window.crypto?.randomUUID) return;
+  if (!page || !window.crypto?.randomUUID || !window.AbortSignal?.timeout) return;
   const applyUrl = page.dataset.applyUrl, baseUrl = page.dataset.baseUrl;
   // The template resolves the status route with a placeholder id; the
   // prefix before it is what each request id is appended to.
   const requestUrl = (page.dataset.requestUrl || "").replace(/[0-9a-f-]{36}$/, "");
-  const csrf = document.querySelector('[name="csrfmiddlewaretoken"]')?.value;
+  let csrf = document.querySelector('[name="csrfmiddlewaretoken"]')?.value;
   if (!applyUrl || !requestUrl || !baseUrl || !csrf) return;
   const TERMINAL = new Set(["applied", "failed", "cancelled"]);
-  const POLL = 2000, RETRIES = 3, POLL_FAILURES = 5;
+  const POLL = 2000, RETRIES = 3, POLL_FAILURES = 5, DEADLINE = 15000;
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   // One base digest for every request this page sends; adopted from each
   // applied receipt, never from an acceptance or an intermediate state.
@@ -24,7 +24,9 @@
   // only from applied receipts or the current rules read for a conflict;
   // never from the live tick, which may hold a newer unsent value.
   const confirmed = new Map();
+  const controls = []; // every enhanced checkbox with its target
   let conflict = null; // {message, current} while the conflict view is open
+  let halted = null;   // the message of a refusal or failure while paused by it
 
   function output(box) {
     let node = box.parentElement.nextElementSibling;
@@ -46,6 +48,15 @@
       input.value = base;
     });
     page.dataset.baseDigest = base;
+  }
+  function adopt(answer) {
+    // A rotated session carries a new CSRF token; every form takes it.
+    if (typeof answer?.csrf_token === "string" && answer.csrf_token) {
+      csrf = answer.csrf_token;
+      document.querySelectorAll('[name="csrfmiddlewaretoken"]').forEach((input) => {
+        input.value = csrf;
+      });
+    }
   }
   function panel() {
     let node = document.getElementById("rule-autosave-panel");
@@ -71,11 +82,25 @@
     node.addEventListener("click", action);
     return node;
   }
-  function roleLabel(intent) {
-    return intent.box.parentElement.textContent.trim() || intent.role;
-  }
   function describe(intent) {
-    return `${intent.identity}: ${intent.checked ? "grant" : "withdraw"} ${roleLabel(intent)}`;
+    const role = intent.box.parentElement.textContent.trim() || intent.role;
+    return `${intent.identity}: ${intent.checked ? "grant" : "withdraw"} ${role}`;
+  }
+  function queuedFor(box) {
+    return queue.find((intent) => intent.box === box);
+  }
+  function prune() {
+    // An intent whose desired value is what the box is confirmed to be, or
+    // what the request in flight for it will confirm, needs no request.
+    for (let index = queue.length - 1; index >= 0; index -= 1) {
+      const intent = queue[index];
+      const flying = inflight && inflight.intent.box === intent.box;
+      const settled = flying ? inflight.intent.checked : confirmed.get(intent.box);
+      if (intent.checked === settled) {
+        queue.splice(index, 1);
+        status(intent.box, flying ? "Applying…" : "", flying ? "applying" : "");
+      }
+    }
   }
   function expired() {
     // Lost access: stop everything and clear the restricted page data, so
@@ -91,13 +116,14 @@
     link.href = "/admin/login"; link.textContent = "Sign in again";
     view.append(text, link); view.hidden = false;
   }
-  let halted = null; // the message of a refusal or failure while paused by it
   function pause(message, intent) {
-    // A refusal, a failed or cancelled request: the queue stops, the rest
-    // stays visibly unsaved, and the Administrator chooses how to go on.
+    // A refusal, a failed or cancelled request: nothing changed, the tick
+    // returns to its confirmed value, the queue stops, the rest stays
+    // visibly unsaved, and the Administrator chooses how to go on.
     paused = true; halted = message;
+    if (intent && !queuedFor(intent.box)) intent.box.checked = confirmed.get(intent.box);
+    prune();
     renderPause();
-    if (intent) restore(intent);
   }
   function renderPause() {
     const view = panel();
@@ -116,7 +142,10 @@
       view.append(button("Continue with the remaining changes", () => {
         halted = null; hidePanel(); paused = false; dispatch();
       }), " ", button("Discard the remaining changes", () => {
-        queue.splice(0).forEach((item) => discard(item, null));
+        queue.splice(0).forEach((item) => {
+          item.box.checked = confirmed.get(item.box);
+          status(item.box, "Change discarded", "discarded");
+        });
         halted = null; hidePanel(); paused = false;
       }));
     } else {
@@ -126,24 +155,24 @@
     }
     view.hidden = false;
   }
-  function restore(intent) {
-    // Back to the confirmed value unless a newer intent for this box waits.
-    if (!queue.some((item) => item.box === intent.box)) {
-      intent.box.checked = confirmed.get(intent.box);
-    }
-  }
-  function discard(intent, current) {
-    const value = currentValue(intent, current);
-    if (value !== null) confirmed.set(intent.box, value);
-    if (!queue.some((item) => item.box === intent.box)) {
-      intent.box.checked = confirmed.get(intent.box);
-    }
-    status(intent.box, "Change discarded", "discarded");
-  }
-  function currentValue(intent, current) {
+  function currentValue(control, current) {
     // The role's value in the current rules, or null when unknown or gone.
-    const roles = current?.rules?.[intent.kind]?.[intent.identity];
-    return Array.isArray(roles) ? roles.includes(intent.role) : null;
+    const roles = current?.rules?.[control.kind]?.[control.identity];
+    return Array.isArray(roles) ? roles.includes(control.role) : null;
+  }
+  function reconcile(current, kept) {
+    // Every rendered control takes the current rules as its confirmed
+    // value; a kept intent keeps its desired tick, a deleted target is
+    // disabled until the page is redrawn, and the rest show what applies.
+    base = current.digest; refresh();
+    controls.forEach((control) => {
+      const value = currentValue(control, current);
+      const roles = current.rules?.[control.kind]?.[control.identity];
+      if (roles === undefined) { control.box.disabled = true; return; }
+      confirmed.set(control.box, value);
+      const pending = kept.find((intent) => intent.box === control.box);
+      control.box.checked = pending ? pending.checked : value;
+    });
   }
   function uncertain(message, resume) {
     // The outcome is not known: keep the request and its key, dispatch
@@ -165,16 +194,26 @@
     // Nothing is rebased silently, and the intents stay in the queue.
     paused = true;
     if (inflight) { queue.unshift(inflight.intent); inflight = null; }
+    queue.forEach((intent) => status(intent.box,
+      "Not saved: the rules changed; see the notice above.", "conflict"));
     let current = null;
     try {
       const response = await fetch(baseUrl, {
         credentials: "same-origin", cache: "no-store",
-        headers: {"Accept": "application/json"}});
+        headers: {"Accept": "application/json"}, signal: AbortSignal.timeout(DEADLINE)});
       if (response.status === 403) { expired(); return; }
-      if (response.ok) current = await response.json();
+      if (response.ok) { current = await response.json(); adopt(current); }
     } catch (_) { current = null; }
     if (ended) return;
     conflict = {message, current};
+    queue.forEach((intent) => {
+      // The Administrator's selection belongs to the intent, decided once
+      // when it first enters the view, so a redraw never resets it.
+      if (intent.retry === undefined) {
+        const value = currentValue(intent, current);
+        intent.retry = value !== null && value !== intent.checked;
+      }
+    });
     renderConflict();
   }
   function renderConflict() {
@@ -198,16 +237,17 @@
           // A deleted target needs explicit resolution; retry never
           // recreates a rule.
           now.textContent = " (rule no longer exists; cannot be retried)";
-          pick.disabled = true;
+          pick.disabled = true; intent.retry = false;
         } else {
           const roles = current.rules[intent.kind][intent.identity];
           now.textContent = ` (now: ${roles.length ? roles.join(", ") : "explicit deny"})`;
-          pick.checked = value !== intent.checked;
         }
         text.append(now);
       }
+      if (intent.retry === undefined) intent.retry = value !== null && value !== intent.checked;
+      pick.checked = intent.retry;
+      pick.addEventListener("change", () => { intent.retry = pick.checked; });
       item.append(text);
-      item.intent = intent; item.pick = pick;
       list.append(item);
     });
     view.append(list);
@@ -215,27 +255,25 @@
       view.append(button("Reload page", () => window.location.reload()));
     } else {
       view.append(button("Retry selected against current rules", () => {
-        base = current.digest; refresh();
-        const kept = [];
-        Array.from(list.children).forEach((item) => {
-          if (item.pick.checked && !item.pick.disabled) kept.push(item.intent);
-        });
-        queue.splice(0).forEach((intent) => {
-          if (!kept.includes(intent)) discard(intent, current);
-        });
-        kept.forEach((intent) => {
-          const value = currentValue(intent, current);
-          if (value !== null) confirmed.set(intent.box, value);
-          queue.push(intent);
-        });
-        conflict = null; hidePanel(); paused = false; dispatch();
-      }), " ", button("Discard all", () => {
-        base = current.digest; refresh();
-        queue.splice(0).forEach((intent) => discard(intent, current));
-        conflict = null; hidePanel(); paused = false;
-      }));
+        resolveConflict(current, queue.filter((intent) => intent.retry));
+        dispatch();
+      }), " ", button("Discard all", () => resolveConflict(current, [])));
     }
     view.hidden = false;
+  }
+  function resolveConflict(current, kept) {
+    // Kept intents go on, in their order, as new requests against the
+    // refreshed digest; every other control shows the current rules.
+    const dropped = queue.filter((intent) => !kept.includes(intent));
+    queue.splice(0, queue.length, ...kept);
+    kept.forEach((intent) => { delete intent.retry; });
+    reconcile(current, kept);
+    dropped.forEach((intent) => {
+      if (!queuedFor(intent.box)) status(intent.box, "Change discarded", "discarded");
+    });
+    kept.forEach((intent) => status(intent.box, "Queued — not saved", "queued"));
+    prune();
+    conflict = null; hidePanel(); paused = false;
   }
   async function send(intent, key) {
     const body = new URLSearchParams({
@@ -245,15 +283,18 @@
     return fetch(applyUrl, {
       method: "POST", credentials: "same-origin", cache: "no-store",
       headers: {"Content-Type": "application/x-www-form-urlencoded",
-        "X-CSRFToken": csrf, "Accept": "application/json"}, body});
+        "X-CSRFToken": csrf, "Accept": "application/json"}, body,
+      signal: AbortSignal.timeout(DEADLINE)});
   }
   async function poll(id) {
     const response = await fetch(requestUrl + id, {
       credentials: "same-origin", cache: "no-store",
-      headers: {"Accept": "application/json"}});
+      headers: {"Accept": "application/json"}, signal: AbortSignal.timeout(DEADLINE)});
     if (response.status === 403) return {state: "ended"};
     if (!response.ok) return null;
-    return await response.json();
+    const answer = await response.json();
+    adopt(answer);
+    return answer;
   }
   function settle(intent, receipt) {
     inflight = null;
@@ -279,7 +320,8 @@
     // Send with one key until an answer says what became of it: an
     // acceptance is followed to its committed outcome, a refusal restores
     // the tick, a stale digest opens the conflict view, and no answer at
-    // all leaves the request uncertain with its key kept for another look.
+    // all, a timeout included, leaves the request uncertain with its key
+    // kept for another look.
     status(intent.box, "Applying…", "applying");
     let receipt = null;
     for (let attempt = 0; attempt <= RETRIES; attempt += 1) {
@@ -289,7 +331,7 @@
         const response = await send(intent, key);
         if (response.status === 403) { expired(); return; }
         if (response.status === 409) { openConflict("The login rules changed since this page was drawn, so this change was not saved."); return; }
-        if (response.status === 202) { receipt = await response.json(); break; }
+        if (response.status === 202) { receipt = await response.json(); adopt(receipt); break; }
         if (response.status === 400) {
           status(intent.box, "Not saved: this change is not allowed.", "failed");
           inflight = null;
@@ -334,25 +376,29 @@
     settle(intent, receipt);
   }
   function dispatch() {
-    if (inflight || paused || ended || !queue.length) return;
+    if (inflight || paused || ended) return;
+    prune();
+    if (!queue.length) return;
     const intent = queue.shift();
     inflight = {intent, key: window.crypto.randomUUID()};
     submit(intent, inflight.key);
   }
-  function enqueue(box, kind, identity) {
+  function enqueue(control) {
     if (ended) return;
+    const {box} = control;
     const index = queue.findIndex((item) => item.box === box);
     if (index >= 0) queue.splice(index, 1);
-    // A change of mind back to the confirmed value needs no request, unless
-    // an intent for this box is in flight: then it is a real change against
-    // the base that intent will have applied.
+    // A change of mind back to the confirmed value, or to the value the
+    // request in flight for this box will confirm, needs no request.
     const flying = inflight && inflight.intent.box === box;
-    if (!flying && box.checked === confirmed.get(box)) {
-      status(box, "", "");
+    const settled = flying ? inflight.intent.checked : confirmed.get(box);
+    if (box.checked === settled) {
+      status(box, flying ? "Applying…" : "", flying ? "applying" : "");
       if (conflict) renderConflict(); else if (halted) renderPause();
       return;
     }
-    queue.push({box, kind, identity, role: box.value, checked: box.checked});
+    queue.push({box, kind: control.kind, identity: control.identity,
+      role: box.value, checked: box.checked});
     if (inflight || paused) status(box, "Queued — not saved", "queued");
     if (conflict) renderConflict(); else if (halted) renderPause();
     dispatch();
@@ -362,8 +408,10 @@
     const identity = form.querySelector('input[name="identity"]')?.value;
     if (!kind || !identity) return;
     form.querySelectorAll('input[name="roles"]:not([disabled])').forEach((box) => {
+      const control = {box, kind, identity, role: box.value};
+      controls.push(control);
       confirmed.set(box, box.checked);
-      box.addEventListener("change", () => enqueue(box, kind, identity));
+      box.addEventListener("change", () => enqueue(control));
     });
     // With autosave the review button is not the way roles change.
     form.querySelector('button[value="set"]')?.setAttribute("hidden", "");

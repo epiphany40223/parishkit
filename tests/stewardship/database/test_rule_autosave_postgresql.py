@@ -53,6 +53,11 @@ def apply(browser, values):
     )
 
 
+def state(answer):
+    """A receipt without its CSRF token, which is masked afresh in every answer."""
+    return {key: value for key, value in answer.items() if key != "csrf_token"}
+
+
 def installed(store, request_id):
     """Activate under the restricted installer; the web process never does."""
     with as_config_installer():
@@ -80,25 +85,30 @@ def test_an_intent_is_recorded_once_and_reported_applied_with_its_digest(
     with web():
         first = apply(browser, values)
         assert first.status_code == 202, first.content
-        receipt = first.json()
+        receipt = state(first.json())
         assert receipt["state"] == "staged" and receipt["applied_digest"] is None
-        again = apply(browser, values)
-        assert again.status_code == 202 and again.json() == receipt
+        # Every answer names the session's current CSRF token, which the page
+        # adopts, so a rotated session does not strand the queue.
+        assert len(first.json()["csrf_token"]) == 64
+        again = browser.post(
+            APPLY, values, headers={"X-CSRFToken": first.json()["csrf_token"]}
+        )
+        assert again.status_code == 202 and state(again.json()) == receipt
         # The same key with another intent answers with the original request,
         # never a second one.
         rebound = apply(browser, values | {"role": "administrator"})
-        assert rebound.status_code == 202 and rebound.json() == receipt
+        assert rebound.status_code == 202 and state(rebound.json()) == receipt
         assert ConfigurationChangeRequest.objects.count() == before + 1
         pending = browser.get(REQUESTS + receipt["request_id"])
         assert pending.status_code == 200 and pending.json()["state"] == "staged"
         assert browser.get(REQUESTS + str(uuid4())).status_code == 404
     installed(store, receipt["request_id"])
     with web():
-        applied = browser.get(REQUESTS + receipt["request_id"]).json()
+        applied = state(browser.get(REQUESTS + receipt["request_id"]).json())
         # A lost answer recovered after activation reads the applied receipt,
         # although the digest the intent named is no longer the applied one.
         recovered = apply(browser, values)
-        assert recovered.status_code == 202 and recovered.json() == applied
+        assert recovered.status_code == 202 and state(recovered.json()) == applied
     assert applied["state"] == "applied"
     assert applied["applied_digest"] == store.active().digest
     assert "ministry_leader" in current_principal(store, account.pk).roles
