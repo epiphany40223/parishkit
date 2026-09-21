@@ -843,7 +843,7 @@ verified main tip. M5 and Gate 3 remain open.
 That [login rule edit increment](../../guides/stewardship-user-rule-edits.md)
 now lets an Administrator set roles, create and remove login rules from the
 Portal users page through previewed configuration requests, with focused
-acceptance and three-engine browser checks. Three review/fix rounds and six
+acceptance and three-engine browser checks. Three review/fix rounds and seven
 correction checks of its activation guard are complete; full exact-head CI/DCO
 and protected delivery remain pending. M5 and Gate 3 remain open.
 

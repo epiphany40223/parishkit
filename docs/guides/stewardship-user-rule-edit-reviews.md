@@ -351,3 +351,22 @@ Post-fix validation: four database-free, eight PostgreSQL and nine browser
 cases passed locally, with the page's own suite, the parish and Ministry
 editors, the installer's own suites, the runtime process suite and the
 schema baseline.
+
+## Round 10, correction check, single-source under the second exemption
+
+Reviewed `0fb8b430`, the complete diff from main `e01b52ba`, as a check of
+the round-9 precheck. Codex did not answer; Claude, in two shards, returned
+one Medium and sixteen Low. The Medium was accepted and fixed.
+
+- **Medium: the short-circuit was unproven.** The service suite asserted
+  only that an idle pass left the manifest unchanged, which was as true
+  before the precheck as after it. It now proves, with the service's
+  admission and the installation lock replaced by callables that raise,
+  that an idle pass with file and database agreeing calls neither, and that
+  with the manifest naming another version the pass admits the service
+  first and only then takes the lock.
+
+The sixteen Low findings repeated earlier dispositions or concerned wording.
+
+Post-fix validation: the installer's service suite, the page's PostgreSQL
+suite and the runtime process suite passed locally.

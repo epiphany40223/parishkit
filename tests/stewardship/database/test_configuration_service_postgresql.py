@@ -2,12 +2,14 @@
 
 from contextlib import contextmanager
 from dataclasses import replace
+from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.accounts import configuration_installation as installer
 from parishkit.stewardship.accounts.configuration_requests import record_request
 from parishkit.stewardship.accounts.configuration_service import (
     CONFIGURATION_COLUMNS,
@@ -16,6 +18,7 @@ from parishkit.stewardship.accounts.configuration_service import (
     admit_configuration_database,
 )
 from parishkit.stewardship.deployment import ServiceRole, load_deployment
+from parishkit.stewardship.storage import StorageInvariantError
 
 from ..test_ministry_activity import activity
 from ..test_request_patch import parish_patch
@@ -116,9 +119,28 @@ def test_restricted_installer_applies_real_yaml_and_retries(
         result = service.run_request(request.request_id)
         assert result.state == "applied"
         assert service.run_request(request.request_id) == result
-        # The idle pass has nothing to restore while file and database agree.
+        # The idle pass has nothing to restore while file and database agree:
+        # it neither readmits the service nor takes the installation lock.
         service.restore_refused()
         assert store.active().digest == result.applied_digest
+        admit = Mock(side_effect=StorageInvariantError("admitted"))
+        lock = Mock(side_effect=StorageInvariantError("locked"))
+        monkeypatch.setattr(installer, "installation_lock", lock)
+        installer.restore_refused(store, admit=admit)
+        admit.assert_not_called()
+        lock.assert_not_called()
+        # A disagreement admits the service first, then takes the lock.
+        applied = store.active()
+        store.select(root)
+        with pytest.raises(StorageInvariantError, match="admitted"):
+            installer.restore_refused(store, admit=admit)
+        lock.assert_not_called()
+        admit.side_effect = None
+        with pytest.raises(StorageInvariantError, match="locked"):
+            installer.restore_refused(store, admit=admit)
+        assert admit.call_count == 2
+        store.select(applied)
+        monkeypatch.undo()
         with pytest.raises(ConfigError):
             service.run_request("not-a-uuid")
         with pytest.raises(ConfigError):
