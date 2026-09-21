@@ -285,6 +285,54 @@ def test_credential_service_publishes_only_after_admission(
     assert runtime_process.serve_credential_installer(configuration, lease) == 0
 
 
+def test_configuration_service_restores_on_an_idle_pass(tmp_path, monkeypatch):
+    """An empty queue runs the requestless restore; a selected request runs alone."""
+    from contextlib import nullcontext
+
+    from parishkit.stewardship.accounts.configuration_service import (
+        ConfigurationInstaller,
+    )
+
+    configuration = replace(
+        configuration_at(tmp_path), service_role=ServiceRole.CONFIG_INSTALLER
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.service_boundaries.admit_online_service",
+        lambda _: ServiceRole.CONFIG_INSTALLER,
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.runtime_web.admit_lifecycle_mounts", Mock()
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.operator_commands.configure_operator_database", Mock()
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.runtime_grants.admit_runtime_database", Mock()
+    )
+    installer, lease = Mock(), Mock()
+    monkeypatch.setattr(
+        ConfigurationInstaller, "from_configuration", Mock(return_value=installer)
+    )
+    monkeypatch.setattr(
+        runtime_process, "next_configuration_request", Mock(side_effect=[None, "id"])
+    )
+    monkeypatch.setattr(runtime_process, "installer_request", lambda _: nullcontext())
+
+    def serve(run_once, actual_lease):
+        """The idle pass restores; a queued request is installed without one."""
+        assert actual_lease is lease
+        run_once()
+        installer.restore_refused.assert_called_once_with()
+        installer.run_request.assert_not_called()
+        run_once()
+        installer.run_request.assert_called_once_with("id")
+        installer.restore_refused.assert_called_once_with()
+        return 0
+
+    monkeypatch.setattr(runtime_process, "serve_installer_loop", serve)
+    assert runtime_process.serve_configuration_installer(configuration, lease) == 0
+
+
 @pytest.mark.parametrize(
     "role,held",
     [
