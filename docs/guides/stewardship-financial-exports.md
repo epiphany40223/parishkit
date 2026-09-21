@@ -54,8 +54,20 @@ Family answered under, from the campaign's retained versions; the summary uses
 the campaign's current wording, as the page's does. The document builder
 refuses a capture whose row count is not its total, so a page can never
 masquerade as a complete export. The generic field/value renderer produces the
-three formats, with the whole-result summary, the comparison period and the
-giving through-date or an explicit unavailability note carried as metadata.
+three formats, with the whole-result summary, the comparison period, the
+giving through-date or an explicit unavailability note, and the giving read's
+own observation time, stated apart from the source promotion time because a
+Family-only refresh keeps an older giving read, carried as metadata.
+
+A Family's share wording can exceed a spreadsheet cell: a configuration may
+offer a hundred options and each Other text may run to two thousand
+characters, and openpyxl truncates a cell beyond 32,767 characters silently.
+Whole entries therefore continue in further rows for the same Family, marked
+as continued and carrying the Family, its DUID and the response reference and
+nothing else, so no amount is counted twice and the cells concatenate back to
+every character. Summary counts are wrapped values, one label per line, never
+metadata keys, because the PDF renderer wraps a value to the width left after
+its key and a long share label would leave none.
 
 ### Authority and privacy
 
@@ -90,14 +102,19 @@ database was deleted.
 
 ## Focused validation
 
-- Six database-free document cases: every cell's wording in the export
+- Seven database-free document cases: every cell's wording in the export
   timezone, unproven money as the word and never zero, an incomplete or unzoned
-  capture refused, and each of the three formats rendered from one document.
+  capture refused, share wording beyond a spreadsheet cell continued in later
+  rows and recovered whole from a workbook round trip with a long share label
+  still rendering as PDF, and each of the three formats rendered from one
+  document.
 - Two PostgreSQL cases under the real web and worker roles: a three-Family
-  capture that is the whole result beside a two-row page, canonical proven
-  money including a real zero, exact replay and refused re-binding, SQL
-  immutability, the worker unable to capture, a filtered capture with its own
-  summary and count-only audit rows; and the native flow for all three formats
+  capture that is the whole result beside a two-row page, the web request
+  bringing back only the capture's header, canonical proven money including a
+  real zero, exact replay and refused re-binding, SQL immutability refusing
+  even the schema owner, the worker holding no insert grant, a filtered
+  capture with its own summary and count-only audit rows; and the native flow
+  for all three formats
   with CSRF, method, field, query-string and other-campaign refusals, the
   request page without the document, real worker execution, guarded downloads
   with the report's own file name, regeneration after expiry keeping the
@@ -107,14 +124,17 @@ database was deleted.
   export-view and exact-export cases, and the two schema baseline cases pass
   with the shared shaping, the new grants and the new fingerprint.
 - Nine browser cases across Chromium, Firefox and WebKit: the export controls
-  are reachable and accessible in every page state, and without scripts the
-  export posts the applied filters, the chosen format, UTC and the one-time key
-  natively to the export route.
+  are reachable and accessible in every page state, disabled while the
+  campaign cannot accept work, and without scripts the export posts the
+  applied filters, the chosen format, UTC and the one-time key natively to the
+  export route.
 - Ruff, formatting and Markdown lint pass.
 
 ## Checkpoint
 
-Implementation and focused validation are complete. Review/fix rounds, full
-exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
-open. No deployment, release, live-provider write or database deletion is
-authorized by this increment.
+Implementation, focused validation and one dual-source
+[review/fix round](stewardship-financial-export-reviews.md) are complete, with
+every accepted finding fixed. Two more rounds, full exact-head CI, DCO and
+protected delivery remain open. M5 and Gate 3 remain open. No deployment,
+release, live-provider write or database deletion is authorized by this
+increment.

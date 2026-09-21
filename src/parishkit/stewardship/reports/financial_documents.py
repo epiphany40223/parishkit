@@ -32,6 +32,11 @@ UNPROVEN = (
     "Unavailable: the latest giving read is not proven complete for the "
     "comparison period. Unavailable does not mean zero."
 )
+# Below the spreadsheet cell maximum of 32,767 characters, which openpyxl would
+# otherwise truncate silently. A configuration may offer a hundred share options
+# and each Other text may run to 2,000 characters, so one Family's wording can
+# exceed a cell; it then continues in further rows for the same Family.
+CELL_LIMIT = 32_000
 
 
 @dataclass(frozen=True, repr=False)
@@ -47,15 +52,32 @@ class FinancialDocument:
     sheet_name: ClassVar[str] = "Financial detail"
 
 
-def _shares(row):
-    """One cell: each chosen method's wording, with any Other text after it."""
-    return (
-        "; ".join(
-            f"{share['label']}: {share['text']}" if share["text"] else share["label"]
-            for share in row["shares"]
-        )
-        or "None chosen"
-    )
+def _share_cells(row):
+    """Each chosen method's wording, with any Other text, in cells that fit.
+
+    Whole entries move to the next cell, so no wording is cut mid-word and a
+    reader can concatenate the cells in order to recover every character.
+    """
+    entries = [
+        f"{share['label']}: {share['text']}" if share["text"] else share["label"]
+        for share in row["shares"]
+    ]
+    if not entries:
+        return ["None chosen"]
+    cells, current = [], entries[0]
+    for entry in entries[1:]:
+        if len(current) + len(entry) + 2 > CELL_LIMIT:
+            cells.append(current)
+            current = entry
+        else:
+            current = f"{current}; {entry}"
+    cells.append(current)
+    return cells
+
+
+def _counts(pairs):
+    """One wrapped value per line, so a long label never becomes a metadata key."""
+    return "\n".join(f"{label}: {count:,}" for label, count in pairs)
 
 
 def financial_document(result, parameters, *, parish_name, requested_at, timezone):
@@ -83,6 +105,12 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
         ("Source reference", source["source_id"]),
         ("Source generation", f"{source['source_generation']:,}"),
         ("Source as of", instant(source["source_as_of"])),
+        # A Family-only refresh keeps an older giving read, so the money's own
+        # observation time is stated apart from the source promotion time.
+        (
+            "Source giving read as of",
+            instant(source["giving_observed_at"]) or "Unavailable",
+        ),
         ("Captured at", instant(source["observed_at"])),
         ("Requested at", instant(requested_at)),
         ("Display timezone", timezone),
@@ -97,14 +125,8 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
         ),
         ("Matching Families", f"{result['total']:,}"),
         ("Total annual pledges", summary["annual_total"].display),
-        *(
-            (f"Frequency: {label}", f"{count:,}")
-            for label, count in summary["frequencies"]
-        ),
-        *(
-            (f"Share method: {label}", f"{count:,}")
-            for label, count in summary["shares"]
-        ),
+        ("Pledges by frequency", _counts(summary["frequencies"])),
+        ("Pledges by share method", _counts(summary["shares"])),
         ("No share method chosen", f"{summary['no_share']:,}"),
         (
             "Filters and sort",
@@ -120,22 +142,34 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
             "Amounts are exact as pledged or recorded. Unavailable never means zero.",
         ),
     )
-    rows = tuple(
-        (
-            row["family_name"],
-            str(row["family_duid"]),
-            STATUS[row["active"]],
-            row["annual"].display,
-            str(row["frequency_label"]),
-            row["installment"].display if row["installment"].available else "",
-            _shares(row),
-            row["source_pledge"].display,
-            row["source_contributions"].display,
-            instant(row["submitted_at"]),
-            instant(row["first_submitted_at"]),
-            f"{row['family_version']:,}",
-            row["id"],
+    rows = []
+    for row in result["rows"]:
+        first, *overflow = _share_cells(row)
+        rows.append(
+            (
+                row["family_name"],
+                str(row["family_duid"]),
+                STATUS[row["active"]],
+                row["annual"].display,
+                str(row["frequency_label"]),
+                row["installment"].display if row["installment"].available else "",
+                first,
+                row["source_pledge"].display,
+                row["source_contributions"].display,
+                instant(row["submitted_at"]),
+                instant(row["first_submitted_at"]),
+                f"{row['family_version']:,}",
+                row["id"],
+            )
         )
-        for row in result["rows"]
-    )
-    return FinancialDocument(metadata, rows, result["total"], requested_at)
+        # A continuation row names the Family and the response it continues
+        # and carries nothing else, so no amount is ever counted twice.
+        for cell in overflow:
+            rows.append(
+                (row["family_name"], str(row["family_duid"]), "Continued")
+                + ("",) * 3
+                + (f"(continued) {cell}",)
+                + ("",) * 5
+                + (row["id"],)
+            )
+    return FinancialDocument(metadata, tuple(rows), result["total"], requested_at)

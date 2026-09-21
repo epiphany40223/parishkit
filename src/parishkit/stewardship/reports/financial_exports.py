@@ -25,12 +25,20 @@ from .financial_documents import financial_document
 REPORT = "financial"
 
 
-def _campaign(campaign_id):
-    """The campaign with its own configuration; the financial module must be on."""
+def _campaign(campaign_id, *, capturing):
+    """The campaign with its own configuration.
+
+    A fresh capture needs the financial module on, as the page does; SQL would
+    refuse the capture anyway, but as an outage rather than a denial.
+    Regenerating a retained capture renders what was captured and needs no
+    module, so a later change of modules cannot strand an expired file.
+    """
     campaign = Campaign.objects.select_related("active_configuration").get(
         pk=campaign_id
     )
-    if "financial" not in campaign.active_configuration.values.get("modules", ()):
+    if capturing and "financial" not in campaign.active_configuration.values.get(
+        "modules", ()
+    ):
         raise PermissionError("Financial stewardship is not enabled for this campaign.")
     return campaign
 
@@ -79,7 +87,7 @@ def create_financial_export(
 
     with work_transaction():
         admit()
-        campaign = _campaign(campaign_id)
+        campaign = _campaign(campaign_id, capturing=snapshot is None)
         if snapshot is None:
             parameters = {
                 # Re-parsed, so only the closed grammar's own values are retained.
@@ -98,15 +106,21 @@ def create_financial_export(
         if previous is not None:
             # A replay is the same selection; the proof may legitimately differ
             # when a promotion landed between two identical submissions.
-            identity = (REPORT, campaign_id, parameters["filters"], format)
             if (
                 previous.report,
                 previous.campaign_id,
-                previous.parameters["filters"],
+                previous.parameters.get("filters"),
                 previous.format,
-            ) != identity or previous.browser_timezone != browser_timezone:
-                raise ValueError("Export request identity is already bound.")
-            if snapshot is not None and previous.financial_snapshot_id != snapshot.pk:
+                previous.browser_timezone,
+                None if snapshot is None else previous.financial_snapshot_id,
+            ) != (
+                REPORT,
+                campaign_id,
+                parameters["filters"],
+                format,
+                browser_timezone,
+                None if snapshot is None else snapshot.pk,
+            ):
                 raise ValueError("Export request identity is already bound.")
             return previous
         configuration_id = SystemConfiguration.objects.get().active_configuration_id
@@ -119,8 +133,10 @@ def create_financial_export(
                 correlation_id=correlation_id,
                 parameters=parameters,
             )
-            # The insert trigger, never client-supplied values, owns captured data.
-            snapshot.refresh_from_db()
+            # The insert trigger, never client-supplied values, owns captured
+            # data. Only the header comes back: the document itself, every
+            # Family's money, is read by the render owner, never here.
+            snapshot.refresh_from_db(fields=["created_at", "source", "row_count"])
         identifier = uuid4()
         task = enqueue(
             task_type=TASK_TYPE,

@@ -36,7 +36,7 @@
 <p>{% translate "Matching Families:" %} {{ total|number }}. {% translate "Page" %} {{ query.page|number }}.</p>
 <section aria-labelledby="financial-export-heading">
 <h2 id="financial-export-heading">{% translate "Export complete results" %}</h2>
-<p>{{ total|number }} {% translate "matching Families, using the applied filters and sort above—not just this page. Every matching pledge and its source comparison totals are captured when you queue the export; later submissions or a source promotion do not alter that capture." %}</p>
+<p>{% blocktranslate with shown=total|number count counter=total %}{{ shown }} matching Family, using the applied filters and sort above—not just this page. Every matching pledge and its source comparison totals are captured when you queue the export; later submissions or a source promotion do not alter that capture.{% plural %}{{ shown }} matching Families, using the applied filters and sort above—not just this page. Every matching pledge and its source comparison totals are captured when you queue the export; later submissions or a source promotion do not alter that capture.{% endblocktranslate %}</p>
 <p class="notice">{% translate "Sensitive parish financial information: download only to a trusted device and share only with authorized recipients." %}</p>
 <form method="post" action="{% url 'admin:financial_export' campaign_id %}">{% csrf_token %}
 {% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}

@@ -52,6 +52,9 @@ def result(rows, *, proven=True):
             "source_id": str(UUID(int=95)),
             "source_generation": 12,
             "source_as_of": MOMENT,
+            "giving_observed_at": (
+                MOMENT.replace(day=10).isoformat() if proven else None
+            ),
             "observed_at": MOMENT.isoformat(),
             "comparison_start": "2025-07-01",
             "comparison_end": "2026-06-30",
@@ -123,6 +126,8 @@ def test_rows_word_money_status_shares_and_local_instants():
     metadata = dict(built.metadata)
     assert metadata["Report"] == "Financial stewardship detail"
     assert metadata["Source as of"] == "2026-09-19T11:04:00-04:00"
+    # The money's own read time is stated apart from the source promotion time.
+    assert metadata["Source giving read as of"] == "2026-09-10T11:04:00-04:00"
     assert metadata["Captured at"] == metadata["Source as of"]
     assert metadata["Requested at"] == metadata["Source as of"]
     assert metadata["Display timezone"] == "America/New_York"
@@ -131,8 +136,9 @@ def test_rows_word_money_status_shares_and_local_instants():
     assert metadata["Source contributions through"] == "2026-06-30"
     assert metadata["Matching Families"] == "3"
     assert metadata["Total annual pledges"] == "$2,469.00"
-    assert metadata["Frequency: Monthly"] == "1"
-    assert metadata["Share method: Another way"] == "1"
+    # Counts are wrapped values, never keys, so a long label cannot break a PDF.
+    assert "Monthly: 1" in metadata["Pledges by frequency"].split("\n")
+    assert metadata["Pledges by share method"] == "Online giving: 1\nAnother way: 1"
     assert metadata["No share method chosen"] == "0"
     assert '"sort": "name"' in metadata["Filters and sort"]
 
@@ -140,8 +146,54 @@ def test_rows_word_money_status_shares_and_local_instants():
 def test_an_unproven_capture_says_unavailable_never_zero():
     """Without a proven giving read the file explains, and no total reads as zero."""
     built = document([row(source_pledge=MoneyAmount(None))], proven=False)
-    assert dict(built.metadata)["Source contributions through"] == UNPROVEN
+    metadata = dict(built.metadata)
+    assert metadata["Source contributions through"] == UNPROVEN
+    assert metadata["Source giving read as of"] == "Unavailable"
     assert built.rows[0][7] == "Unavailable"
+
+
+def test_share_wording_beyond_a_spreadsheet_cell_continues_in_later_rows():
+    """A hundred options with long Other text never truncate silently in XLSX."""
+    from openpyxl import load_workbook
+
+    shares = [
+        {"label": f"Option {index}", "text": f"{index}:" + "x" * 1_990}
+        for index in range(17)
+    ]
+    built = document([row(shares=shares), row(family_duid=2)])
+    # Seventeen entries of about two thousand characters need two cells.
+    assert built.item_count == 2 and len(built.rows) == 3
+    assert [cell[1] for cell in built.rows] == ["1234567", "1234567", "2"]
+    assert built.rows[1][2] == "Continued" and built.rows[1][3] == ""
+    assert built.rows[1][6].startswith("(continued) Option ")
+    assert built.rows[1][12] == str(UUID(int=97))
+    assert all(len(cell) <= 32_767 for cell in built.rows[1])
+    # Every character survives a workbook round trip, in order.
+    output = io.BytesIO()
+    render_information(built, output, format="xlsx")
+    sheet = load_workbook(io.BytesIO(output.getvalue()))["Financial detail"]
+    recovered = "; ".join(
+        str(sheet.cell(index, 7).value).removeprefix("(continued) ")
+        for index in range(2, 4)
+    )
+    assert recovered == "; ".join(f"{s['label']}: {s['text']}" for s in shares)
+    # A long share label is a wrapped metadata value, so the PDF still renders.
+    long = row(shares=[{"label": "L" * 150, "text": ""}])
+    shaped = result([long])
+    shaped["summary"]["shares"] = [("L" * 150, 1)]
+    output = io.BytesIO()
+    render_information(
+        financial_document(
+            shaped,
+            PARAMETERS,
+            parish_name="Sample Parish",
+            requested_at=MOMENT,
+            timezone="UTC",
+        ),
+        output,
+        format="pdf",
+    )
+    assert output.getvalue().startswith(b"%PDF")
 
 
 def test_an_incomplete_capture_is_refused():

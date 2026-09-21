@@ -13,6 +13,7 @@ PAGES = (
     "/financial-report",
     "/financial-unproven",
     "/financial-empty",
+    "/financial-gated",
     "/financial-last",
     "/financial-beyond",
     "/financial-error-400",
@@ -58,6 +59,10 @@ def test_financial_mobile_keyboard_and_accessibility(
     assert page.get_by_role("button", name="Queue complete export").count() == 1
     assert page.get_by_label("Export format").input_value() == "csv"
     assert page.get_by_label("Export timezone").count() == 1
+    # While the campaign cannot accept work every export control is disabled.
+    page.goto(component_origin + "/financial-gated")
+    assert page.get_by_role("button", name="Queue complete export").is_disabled()
+    assert page.get_by_label("Export format").is_disabled()
     page.goto(component_origin + "/financial-last")
     assert page.get_by_role("button", name="Next page").count() == 0
     assert page.get_by_role("button", name="Previous page").count() == 1

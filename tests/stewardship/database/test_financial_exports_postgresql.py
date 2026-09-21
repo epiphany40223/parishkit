@@ -94,7 +94,10 @@ def test_complete_capture_is_the_whole_result_with_proven_money(response_service
     request = capture(
         harness, actor, query=FinancialQuery(sort="pledge_desc"), request_key=key
     )
-    snapshot = request.financial_snapshot
+    # The service brings back only the capture's header; the document is read
+    # here as the render owner reads it, never into the web request.
+    assert request.financial_snapshot.document == {}
+    snapshot = FinancialExportSnapshot.objects.get(pk=request.financial_snapshot_id)
     document = snapshot.document
     assert snapshot.row_count == document["total"] == len(document["rows"]) == 3
     assert [row["family_duid"] for row in document["rows"]] == [1, 2, 6]
@@ -116,19 +119,18 @@ def test_complete_capture_is_the_whole_result_with_proven_money(response_service
     assert replayed.pk == request.pk
     with pytest.raises(ValueError):
         capture(harness, actor, query=FinancialQuery(sort="name"), request_key=key)
-    # Captures are immutable in SQL itself, and only the web role captures.
-    with (
-        task_login(ServiceRole.WEB, exact=True, reconnect=True),
-        pytest.raises(DatabaseError),
-        connection.cursor() as cursor,
-    ):
+    # Captures are immutable in SQL itself: even the schema owner, who holds
+    # every privilege, is refused by the trigger rather than by a grant.
+    with pytest.raises(DatabaseError, match="immutable"), connection.cursor() as cursor:
         cursor.execute(
             "UPDATE stewardship_financial_export_snapshot SET row_count=0 WHERE id=%s",
             [snapshot.pk],
         )
+    # The worker holds no insert grant at all; the trigger's own guard against
+    # it stands behind that grant, never instead of it.
     with (
         task_login(ServiceRole.WORKER, exact=True, reconnect=True),
-        pytest.raises(DatabaseError),
+        pytest.raises(DatabaseError, match="permission denied"),
     ):
         FinancialExportSnapshot.objects.create(
             campaign_id=harness.campaign.pk,
@@ -140,7 +142,8 @@ def test_complete_capture_is_the_whole_result_with_proven_money(response_service
     # A filtered capture is exactly the filtered result, with its own summary.
     filtered = capture(harness, actor, query=FinancialQuery(amount="nonzero"))
     assert filtered.financial_snapshot.row_count == 2
-    assert filtered.financial_snapshot.document["summary"]["families"] == 2
+    stored = FinancialExportSnapshot.objects.get(pk=filtered.financial_snapshot_id)
+    assert stored.document["summary"]["families"] == 2
     contexts = list(
         AuditContext.objects.filter(event__event_type="export_requested").values_list(
             "context", flat=True

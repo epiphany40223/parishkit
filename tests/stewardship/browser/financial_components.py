@@ -86,6 +86,8 @@ def components(context, admin):
             metadata=values["metadata"] | dict(giving_through=None),
         ),
         "/financial-empty": values | dict(rows=[], total=0, next_page=None),
+        # The campaign cannot accept work: the export controls are offered gated.
+        "/financial-gated": values | dict(mutable=False),
         "/financial-last": values | dict(previous_page=1, next_page=None),
         # A stale Next click: matches exist, but none on this page.
         "/financial-beyond": values | dict(rows=[], previous_page=2, next_page=None),
