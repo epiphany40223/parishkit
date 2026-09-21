@@ -41,6 +41,7 @@
 !src/parishkit/stewardship/schema/ministry_exports.sql
 !src/parishkit/stewardship/schema/ministry_followup.sql
 !src/parishkit/stewardship/schema/ministry_packets.sql
+!src/parishkit/stewardship/schema/financial_reports.sql
 !src/parishkit/stewardship/schema/schedule_reconciliation.sql
 !src/parishkit/stewardship/schema/exports.sql
 !src/parishkit/stewardship/schema/delivery_resolution.sql
