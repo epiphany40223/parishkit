@@ -203,3 +203,26 @@ validated, plus a
 of the last delta. Full exact-head CI, DCO and protected delivery remain open. M5 and
 Gate 3 remain open. No deployment, release, live-provider write or database
 deletion is authorized by this increment.
+
+## Protected delivery
+
+PR #76 delivered candidate `01f2b042`, five logical commits plus the PR #75
+receipt, whose tree `8503949b` is identical to the retained commit-by-commit
+review history on `pr/stewardship-financial-report-reviewed` and to the landed
+tree. The first ready candidate, `76cabd89`, failed one of the 24 exact-head
+jobs: PostgreSQL shard 1 found that the new `report_shaping_failed` operational
+event was not admitted by the `operational_event_safe` check constraint, which
+the SQL baseline had not been told about. The correction was one standalone
+commit, re-audited against the fresh schema (one changed constraint beside the
+one added function) with the fingerprint updated and the audit note amended.
+Exact-head ready-candidate CI `35556839783` and DCO then passed all 24 jobs,
+from 03:14:09 to 03:32:29 UTC on September 21, 2026 (18 minutes 20 seconds).
+`origin/main` had no intervening commits since the candidate's base `1070fd28`.
+Protected auto-merge landed as `f3bdac13be0583bfd956b164687ce76b22835b05` at
+03:32:43 UTC and was verified on freshly fetched `origin/main` before the
+portal users increment was rebased onto it. This used the standing delivery
+authority, without deployment or release, and supersedes the pending delivery
+checkpoint above. The failed and cancelled runs are not counted as acceptance.
+
+The interactive financial report of RPT-08 is delivered; its exports follow.
+M5 and Gate 3 remain open.
