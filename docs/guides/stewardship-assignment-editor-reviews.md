@@ -53,3 +53,23 @@ corrected:
 
 The ten findings the validation step did not confirm were not carried
 forward.
+
+## Round 3
+
+Claude only (Codex out of quota). Twelve raw findings, two validated, both
+corrected:
+
+- Medium: the confirmation rechecked only the applied digest, so a source
+  promotion between preview and confirmation, which changes no digest, could
+  confirm an addition to a Ministry the new catalog dropped. The preview now
+  signs the promoted snapshot it judged the catalog against and the
+  confirmation rechecks it, as the Ministry activity and Chairperson review
+  editors do; a removal signs whatever was promoted, nothing included.
+- Medium: the assertions that the removal button is offered on an
+  exact-address row matched the rule editor's own removal button, so the two
+  removal-availability corrections were proven vacuously. They now match the
+  assignment form's own label, count it per assignment, and the catalog-free
+  case also asserts no addition is offered on the row.
+
+The ten findings the validation step did not confirm were not carried
+forward.

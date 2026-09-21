@@ -126,7 +126,8 @@ def test_an_assignment_is_added_named_in_force_and_removed(auth_service, google)
         body = browser.get(PAGE).content.decode()
     listed = address_row(body, "leader@example.org")
     assert "Choir (Ministry DUID 4) (Administrator entry)" in listed
-    assert 'name="operation" value="remove"' in listed
+    # The assignment's own removal form, not the rule editor's removal button.
+    assert "Review assignment removal" in listed
     with web():
         again = post(browser, proposal(store))
         assert again.status_code == 400
@@ -183,6 +184,16 @@ def test_an_address_without_a_rule_is_assigned_and_told_how_it_takes_effect(
         text = preview.content.decode()
         assert "hosted-domain rule does not grant Ministry leader" in text
         signed = token(preview)
+    # A promotion changes no digest but may change the catalog the addition
+    # was judged against, so the preview is stale after one.
+    publish(source())
+    requests = ConfigurationChangeRequest.objects.count()
+    with web():
+        assert (
+            post(browser, {"action": "confirm", "preview": signed}).status_code == 409
+        )
+        assert ConfigurationChangeRequest.objects.count() == requests
+        signed = token(post(browser, proposal(store, identity="helper@example.org")))
         response = post(browser, {"action": "confirm", "preview": signed})
     assert response.status_code == 302
     request = ConfigurationChangeRequest.objects.get(
@@ -199,7 +210,7 @@ def test_an_address_without_a_rule_is_assigned_and_told_how_it_takes_effect(
     listed = row(body[body.index('id="domain-assignments"') :], "helper@example.org")
     assert "Choir (Ministry DUID 4) (Administrator entry)" in listed
     assert "No login rule gives this person the Ministry leader role." in listed
-    assert 'name="operation" value="remove"' in listed
+    assert "Review assignment removal" in listed
 
 
 @pytest.mark.usefixtures("source_singletons", "config_role")
@@ -225,7 +236,7 @@ def test_an_assignment_to_a_deactivated_ministry_is_still_removed(auth_service, 
         body = browser.get(PAGE).content.decode()
     listed = address_row(body, "leader@example.org")
     assert "Choir (Ministry DUID 4) (Administrator entry)" in listed
-    assert 'name="operation" value="remove"' in listed
+    assert listed.count("Review assignment removal") == 2
     assert '<option value="4">' not in listed
     with web():
         inactive = post(browser, proposal(store, identity="other@example.org"))
@@ -260,7 +271,8 @@ def test_without_a_promoted_catalog_only_removals_are_possible(auth_service, goo
         assert "Add a Ministry assignment" not in body
         listed = address_row(body, "leader@example.org")
         assert "Ministry DUID 77 (Administrator entry)" in listed
-        assert 'name="operation" value="remove"' in listed
+        assert "Review assignment removal" in listed
+        assert "Assign to Ministry" not in listed
         assert post(browser, proposal(store)).status_code == 503
     applied(store, browser, proposal(store, operation="remove", ministry_duid=77))
     assert not MinistryAssignment.objects.filter(

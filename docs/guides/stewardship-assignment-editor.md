@@ -67,7 +67,10 @@ assignment among those relying on a domain rule with its warning.
 The route is the rule editor's route in every guard: session and capability,
 CSRF, the applied digest signed into the preview, the actor rechecked at
 intake and activation, and the complete resulting policy validated before
-anything is signed. The Ministry names the page shows come from the snapshot's
+anything is signed. The preview also signs the promoted snapshot it judged
+the catalog against, as the Ministry activity editor does, since a
+promotion changes no digest yet may drop the Ministry an addition was
+previewed for; a removal signs whatever was promoted, nothing included. The Ministry names the page shows come from the snapshot's
 own canonical payloads, which the web role reads for the Family form already;
 the page adds one query for them.
 
@@ -92,9 +95,10 @@ already reads.
   the request and in force at sign-in, a duplicate, an unknown Ministry and
   an invalid address refused, and the assignment removed, previewed as such,
   with a second removal refused; an address with no rule assigned with the
-  preview stating the domain rule it depends on and the page listing it by
-  domain, beside the wordings for a domain rule granting Ministry leader and
-  an exact rule not granting it; an assignment to a Ministry the activity
+  preview stating the domain rule it depends on, stale after a promotion
+  until previewed again, and the page listing it by domain, beside the
+  wordings for a domain rule granting Ministry leader and an exact rule not
+  granting it; an assignment to a Ministry the activity
   editor then deactivates still listed, no longer offered, refused for a new
   addition and removed, with an assignment to a DUID the catalog never had
   removed as such; and without a promoted catalog the page offering no
@@ -108,8 +112,8 @@ already reads.
 ## Checkpoint
 
 Implementation and focused validation are complete and
-[rounds 1 and 2](stewardship-assignment-editor-reviews.md) are answered; the
-remaining review/fix rounds, full exact-head CI, DCO and protected delivery
-remain open. M5 and Gate 3 remain
+[rounds 1 to 3](stewardship-assignment-editor-reviews.md) are answered; the
+correction check, full exact-head CI, DCO and protected delivery remain
+open. M5 and Gate 3 remain
 open. No deployment, release, live-provider write or database deletion is
 authorized by this increment.

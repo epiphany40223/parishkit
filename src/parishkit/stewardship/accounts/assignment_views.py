@@ -69,8 +69,15 @@ def _error(request, code, *, status=400):
 
 
 def _scope(service):
-    """An assignment pins the applied policy; the catalog is advisory."""
-    return editable_configuration(service), None
+    """An assignment pins the applied policy and the promoted snapshot, if any.
+
+    A promotion changes no digest, yet it can drop the Ministry an addition
+    was previewed against, so the confirmation must see the catalog the
+    preview saw; a removal signs whatever was promoted, None included.
+    """
+    current = SourceCurrent.objects.filter(singleton=True).first()
+    snapshot = current.snapshot_id if current is not None else None
+    return editable_configuration(service), snapshot
 
 
 def _preview(request, service, actor):
@@ -86,7 +93,7 @@ def _preview(request, service, actor):
     # is exactly the one an Administrator cleans up, so a removal reads the
     # promoted snapshot, if any, only for the Ministry's name.
     if data["operation"] == "add":
-        configuration, _, _, catalog = ministry_state(service)
+        configuration, current, _, catalog = ministry_state(service)
         ministry = next(
             (row for row in catalog if row["duid"] == data["ministry_duid"]), None
         )
@@ -94,11 +101,15 @@ def _preview(request, service, actor):
             return _error(request, "inactive")
     else:
         configuration = editable_configuration(service)
-        names = ministry_names(SourceCurrent.objects.filter(singleton=True).first())
+        current = SourceCurrent.objects.filter(singleton=True).first()
+        names = ministry_names(current)
         ministry = {
             "duid": data["ministry_duid"],
             "name": names.get(data["ministry_duid"], ""),
         }
+    # The catalog judged here is signed into the preview: a promotion before
+    # the confirmation makes the preview stale even though no digest changed.
+    snapshot = current.snapshot_id if current is not None else None
     if data["base_digest"] != configuration.active_configuration.digest:
         raise StaleRecordError("Reload the page before changing assignments.")
     records = configuration.active_configuration.canonical_document["sections"].get(
@@ -165,6 +176,7 @@ def _preview(request, service, actor):
                 configuration=configuration,
                 patch=change.patch,
                 salt=SALT,
+                snapshot=snapshot,
                 key=key,
             ),
         },
