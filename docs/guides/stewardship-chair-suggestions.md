@@ -50,10 +50,16 @@ generation's names. Which of those Ministries are active is decided by
 `active_ministries` over the applied document, the rule the reconciliation
 owner applies. Row shaping is pure: one row per address and Ministry, several
 roster rows for one Member folded into one candidate, every Member retained
-rather than one picked, ordered by Ministry name, DUID and address. What the
+rather than one picked, ordered by Ministry name, DUID and address; a Ministry
+payload without a name is valid source and shows an empty name. What the
 address has today comes from the applied records through the same
-`AppliedPolicy` index the other tables use, and a seeded assignment reads as
-suspended exactly when sign-in would drop it.
+`AppliedPolicy` index the other tables use: an exact rule shows the roles the
+evaluator grants now, so a seeded Ministry leader role the source no longer
+confirms reads as suspended rather than held and an empty role set as an
+explicit denial; a hosted-domain rule shows its roles as conditional on the
+matching Google claim, since a consumer account on the same suffix receives
+nothing; and a seeded assignment reads as suspended exactly when sign-in
+would drop it.
 
 A row is ambiguous when its address is used by more than one active Member,
 or by a Member other than the Chairperson. The row states how many; a
@@ -65,8 +71,10 @@ is shown rather than resolved.
 Only an Administrator sees the table, under the page's existing capability,
 parameter refusal and unsafe-method refusal. The audit event counts the rows
 of all four tables and carries no name or address. The view adds one query
-for the current source pointer and one for the relationships; the identity
-read is unchanged.
+for the current source pointer and one for the relationships, read under the
+work lock; address ownership is aggregated once per snapshot and address and
+joined, so the cost is bounded by the snapshot's Members rather than their
+product with the roster. The identity read is unchanged.
 
 ## Schema
 
@@ -88,10 +96,11 @@ path, and no retained database was deleted.
 
 ## Focused validation
 
-- Four database-free cases for the rows: grouping and Ministry-name order,
-  locally inactive Ministries omitted, shared addresses ambiguous with every
-  Member kept, and the current rule and assignment taken from the applied
-  records alone.
+- Five database-free cases for the rows: grouping and Ministry-name order,
+  a nameless Ministry sorting and showing empty, locally inactive Ministries
+  omitted, shared addresses ambiguous with every Member kept, and the rule
+  showing what the evaluator grants, suspended, denied, conditional on a
+  domain claim or confirmed, with the assignment from the applied records.
 - Three PostgreSQL cases under the real web role with real normalized source
   promoted: the row naming the Member and Ministry with the publication flag,
   the audit count without an address, the view readable and the projection
@@ -106,7 +115,9 @@ path, and no retained database was deleted.
 
 ## Checkpoint
 
-Implementation and focused validation are complete; review/fix rounds, full
-exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
+Implementation, focused validation and the first
+[review/fix round](stewardship-chair-suggestions-reviews.md) are complete,
+single-source under the second September 20, 2026 Codex exemption; further
+rounds, full exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
 open. No deployment, release, live-provider write or database deletion is
 authorized by this increment.

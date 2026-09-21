@@ -150,7 +150,10 @@ def test_shared_addresses_and_existing_policy_are_shown_not_guessed(
     # The copied Member has no contact-information middle name of its own.
     assert "Another Example (DUID 6)<br>Member Middle Example (DUID 3)" in suggestion
     assert "2 active Members use this address" in suggestion
-    assert "Exact-address rule: Ministry leader" in suggestion
+    # What the evaluator grants now, not the configured roles: nothing.
+    assert "Exact-address rule: no role in effect (Ministry leader suspended)" in (
+        suggestion
+    )
     # The real effect ran and found no retained identity for the seed, so the
     # assignment is suspended, exactly as a sign-in would see it.
     assert "Parish source Chairperson; suspended" in suggestion

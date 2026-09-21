@@ -25,14 +25,36 @@ RULE_LABELS = {
 
 
 def _rule(policy, email):
-    """The rule the evaluator would use for this address, and its roles."""
+    """The rule the evaluator would use for this address, and what it grants.
+
+    An exact rule's roles are what the evaluator grants the address now, so a
+    seeded Ministry leader role the source no longer confirms is shown as
+    suspended rather than as a role the address has, and an empty configured
+    role set is an explicit denial rather than nothing. A hosted-domain rule
+    grants its roles only to a Google account presenting the matching claim,
+    so its roles are shown as conditional on that claim, never as held.
+    """
     exact = policy.addresses.get(email)
     if exact is not None:
-        return {"kind": "address", "roles": role_labels(exact["values"]["roles"])}
+        configured = exact["values"]["roles"]
+        granted, _ = policy.resolve(email, None)
+        return {
+            "kind": "address",
+            "roles": role_labels(granted),
+            "deny": not configured,
+            "suspended": "ministry_leader" in configured
+            and "ministry_leader" not in granted,
+        }
     domain = policy.domains.get(email.rsplit("@", 1)[1])
     if domain is not None:
-        return {"kind": "domain", "roles": role_labels(domain["values"]["roles"])}
-    return {"kind": None, "roles": []}
+        return {
+            "kind": "domain",
+            "roles": role_labels(domain["values"]["roles"]),
+            "deny": False,
+            "suspended": False,
+            "domain": domain["values"]["domain"],
+        }
+    return {"kind": None, "roles": [], "deny": False, "suspended": False}
 
 
 def _assignment(policy, email, ministry_duid):
@@ -58,7 +80,13 @@ def suggestion_rows(policy, relationships, *, active):
             continue
         group = groups.setdefault(
             (item["email"], item["ministry_duid"]),
-            {"ministry_name": item["ministry_name"], "candidates": {}, "owners": ()},
+            # A Ministry payload without a name is valid source; it sorts and
+            # shows as an empty name, exactly as the pure source suggestions do.
+            {
+                "ministry_name": item["ministry_name"] or "",
+                "candidates": {},
+                "owners": (),
+            },
         )
         group["candidates"][item["member_duid"]] = {
             "duid": item["member_duid"],

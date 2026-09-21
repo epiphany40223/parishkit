@@ -47,9 +47,27 @@ def test_rows_group_by_address_and_ministry_in_ministry_order():
         {"duid": 3, "name": "Member Middle Example", "publishable": False}
     ]
     assert row["owners"] == 1 and not row["ambiguous"]
-    assert row["rule"] == {"kind": None, "roles": []}
+    assert row["rule"] == {
+        "kind": None,
+        "roles": [],
+        "deny": False,
+        "suspended": False,
+    }
     assert row["assignment"] is None
     assert str(row["source"]) == "Parish source Chairperson"
+
+
+def test_a_ministry_without_a_name_sorts_and_shows_empty():
+    """A nameless Ministry payload is valid source and cannot break the page."""
+    rows = suggestion_rows(
+        AppliedPolicy([address()], []),
+        [relationship(ministry_duid=9, ministry_name=None), relationship()],
+        active=frozenset({4, 9}),
+    )
+    assert [(row["ministry_name"], row["ministry_duid"]) for row in rows] == [
+        ("", 9),
+        ("Choir", 4),
+    ]
 
 
 def test_inactive_ministries_are_not_suggested():
@@ -111,12 +129,30 @@ def test_current_rule_and_assignment_are_shown_from_policy():
         ],
         active=frozenset({4, 9}),
     )
-    assert exact["rule"]["kind"] == "address"
-    assert text(exact["rule"]["roles"]) == ["Ministry leader"]
+    # No overlay confirms the seed: the evaluator grants the seeded address
+    # nothing, so the rule shows its role suspended, not held, and the
+    # assignment reads as suspended.
+    assert exact["rule"]["kind"] == "address" and exact["rule"]["roles"] == []
+    assert exact["rule"]["suspended"] is True and exact["rule"]["deny"] is False
     assert str(exact["assignment"]["source"]) == "Parish source Chairperson"
-    # No overlay confirms the seed, so the assignment reads as suspended.
     assert exact["assignment"]["active"] is False
-    assert deny["rule"] == {"kind": "address", "roles": []}
+    assert deny["rule"] == {
+        "kind": "address",
+        "roles": [],
+        "deny": True,
+        "suspended": False,
+    }
+    # A domain rule's roles are conditional on the claim, never held.
     assert inherited["rule"]["kind"] == "domain"
+    assert inherited["rule"]["domain"] == "example.org"
     assert text(inherited["rule"]["roles"]) == ["Staff"]
     assert inherited["assignment"] is None
+    # A confirmed seed, or a manual grant, shows the role as granted.
+    (confirmed,) = suggestion_rows(
+        AppliedPolicy(records, [], active_seeded=frozenset({records[3]["id"]})),
+        [relationship()],
+        active=frozenset({4}),
+    )
+    assert text(confirmed["rule"]["roles"]) == ["Ministry leader"]
+    assert confirmed["rule"]["suspended"] is False
+    assert confirmed["assignment"]["active"] is True
