@@ -1,5 +1,6 @@
 """Chairperson suggestions on the Portal users page under the real web role."""
 
+import re
 from copy import deepcopy
 
 import pytest
@@ -23,7 +24,7 @@ from .test_source_families_postgresql import (
     source_singletons,  # noqa: F401
 )
 from .test_source_snapshots_postgresql import permit
-from .test_user_views_postgresql import URL, row, views
+from .test_user_views_postgresql import URL, views
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -74,8 +75,20 @@ def shared():
 
 
 def suggestion_row(body, email):
-    """The one suggestion row for this address; the rules tables may name it too."""
-    return row(body[body.index('id="chair-suggestions"') :], email)
+    """The one suggestion row for this address; the rules tables may name it too.
+
+    A suggestion row begins with its selection cell, before the header cell
+    that names the address.
+    """
+    section = body[body.index('id="chair-suggestions"') :]
+    found = re.findall(
+        rf'<tr>\s*<td><input[^>]*></td>\s*<th scope="row">{re.escape(email)}[<\s]'
+        r".*?</tr>",
+        section,
+        flags=re.S,
+    )
+    assert len(found) == 1, email
+    return found[0]
 
 
 def page():
@@ -147,8 +160,11 @@ def test_shared_addresses_and_existing_policy_are_shown_not_guessed(
     publish(shared(), seeded=True)
     body = page()
     suggestion = suggestion_row(body, "valid@example.org")
-    # The copied Member has no contact-information middle name of its own.
-    assert "Another Example (DUID 6)<br>Member Middle Example (DUID 3)" in suggestion
+    # The copied Member has no contact-information middle name of its own;
+    # an ambiguous row offers each Member as a choice for confirmation.
+    assert "Another Example (DUID 6)</label><br>" in suggestion
+    assert "Member Middle Example (DUID 3)</label>" in suggestion
+    assert 'name="member" value="4:valid@example.org:6"' in suggestion
     assert "2 active Members use this address" in suggestion
     # What the evaluator grants now, not the configured roles: nothing.
     assert "Exact-address rule: no role in effect (Ministry leader suspended)" in (
