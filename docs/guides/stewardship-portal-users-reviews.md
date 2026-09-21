@@ -11,17 +11,16 @@ to `pr/stewardship-portal-users-reviewed` with a tree identical to the delivered
 head. That branch is review evidence only and is never merged. Until it exists
 the reviewed SHAs are on the PR branch itself.
 
-## Round 1 attempt: not a completed round
+## Round 1, single-source under the second exemption
 
 Reviewed `f2c856d1`, the complete diff from main `1070fd28`. The Claude reviewer
 completed with 20 findings, seven Medium and 13 Low. The Codex reviewer exited
-without structured output, as it had on the two preceding attempts for PR #76,
-so this is **not** a completed dual-source round and is not counted toward the
-required three. The cause is unverified: the `codex` command is outside this
-session's shell allowlist, which was deliberately not widened or bypassed. The
-[September 20, 2026 exemption](../plans/stewardship/overall.md#automated-phase-delivery-cycle)
-had ended and was not reused; restoring Codex or granting a new exemption is the
-human's decision. The Claude findings were acted on meanwhile.
+without structured output, as it had on the two preceding attempts for PR #76.
+At the time this was recorded as not a completed round. Later that day the
+human confirmed Codex was out of quota and granted a
+[second exemption](../plans/stewardship/overall.md#automated-phase-delivery-cycle)
+through September 25, 2026, under which this completed Claude-only pass counts
+as round 1. The findings were acted on before that decision.
 
 All seven Medium findings were accepted and fixed.
 
