@@ -100,11 +100,14 @@ def test_reference_family_population_does_not_expand_interactive_queries(
         """Exercise the dashboard shell through current Google/policy session state."""
         assert admin.get("/admin/").status_code == 200
 
+    # The dashboard's security event panel is one fixed query on top of the
+    # identity shell, present for every Administrator; the shell itself gives
+    # that query back only once a source snapshot has been promoted.
     result = {
         "lookup_1_family": small,
         "lookup_5000_families": large,
         "family_page_100_sessions": _measure(family_page),
-        "admin_shell": _measure(admin_page),
+        "admin_shell": _measure(admin_page, query_limit=65),
     }
     print("Identity baseline: " + json.dumps(result, sort_keys=True))
 
