@@ -151,8 +151,7 @@ class ConfigurationInstaller:
 
     def restore_refused(self):
         """An idle pass finishes a refused request's restore a crash cut short."""
-        self._admit()
-        restore_refused(self.store)
+        restore_refused(self.store, admit=self._admit)
 
     def _admit(self):
         """Readmit the service, its authority path and its grants on every pass."""

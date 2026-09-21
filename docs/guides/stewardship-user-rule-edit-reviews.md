@@ -321,3 +321,33 @@ Post-fix validation: four database-free, eight PostgreSQL and nine browser
 cases passed locally, with the page's own suite, the parish and Ministry
 editors, the installer's own suites, the runtime process suite and the
 schema baseline.
+
+## Round 9, correction check, single-source under the second exemption
+
+Reviewed `4b13edc3`, the complete diff from main `e01b52ba`, as a check of
+the round-8 idle pass. Codex did not answer; Claude, in two shards,
+returned three Medium and ten Low. All three were accepted and fixed.
+
+- **Medium: the idle pass did the full restore's work every two seconds.**
+  Each empty pass readmitted the service's grants, took the installation
+  lock and parsed and validated the selected YAML document, where before it
+  ran one queue query. The pass now reads the small manifest and the
+  pointer digest first and returns while they agree; only a disagreement
+  admits the service, takes the lock and restores. The restore itself
+  compares the manifest reference rather than the parsed document.
+- **Medium, two findings: the in-install restore was exercised only as a
+  no-op.** The round-8 case restored through the idle pass alone, so the
+  restore at the start of every install, placed before the abort
+  recoveries, never met a stranded candidate. The case now crashes twice:
+  once with a request queued before the crash, whose install restores the
+  base and applies, and once with the queue empty, restored by the idle
+  pass. Left as is: a case installing an abort-journaled request in that
+  window, which needs a campaign intent and its admission and would prove a
+  one-line ordering the guide states.
+
+The ten Low findings repeated earlier dispositions or concerned wording.
+
+Post-fix validation: four database-free, eight PostgreSQL and nine browser
+cases passed locally, with the page's own suite, the parish and Ministry
+editors, the installer's own suites, the runtime process suite and the
+schema baseline.

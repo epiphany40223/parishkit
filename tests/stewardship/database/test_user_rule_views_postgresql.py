@@ -363,7 +363,7 @@ def test_a_refused_activation_is_recovered_and_recorded_under_real_roles(
     # The checkpoint trigger admits that refusal from yaml_activated alone: not
     # a stale base, and not the same code written by the web role.
     set_disabled(False)
-    stranded = queued("stranded@example.org")
+    stranded, later = queued("stranded@example.org"), queued("later@example.org")
     monkeypatch.setattr(installer.DatabaseMaterializer, "activate", crashing)
     with pytest.raises(StorageInvariantError):
         install(stranded)
@@ -390,39 +390,52 @@ def test_a_refused_activation_is_recovered_and_recorded_under_real_roles(
     # base YAML is restored. A crash between the two leaves the refused
     # request failed with its candidate still selected; the actor authorized
     # again by then changes nothing, since the refusal is already recorded.
-    # The queue never selects the terminal request again and the web refuses
-    # every page while file and database disagree, so the installer's idle
-    # pass finishes the restore with no request in hand.
-    set_disabled(True)
     restore = installer._restore_refused
 
-    def crashing_restore(store, check):
-        """Stop where a crash would, once the refusal is durable."""
-        if _status(stranded).state == "failed":
-            raise StorageInvariantError("simulated crash before the restore")
+    def crashed_before_restore(request):
+        """Refuse the request and stop where a crash would, the refusal durable."""
+        set_disabled(True)
 
-    monkeypatch.setattr(installer, "_restore_refused", crashing_restore)
+        def crashing_restore(store, check):
+            if _status(request).state == "failed":
+                raise StorageInvariantError("simulated crash before the restore")
+
+        monkeypatch.setattr(installer, "_restore_refused", crashing_restore)
+        with pytest.raises(StorageInvariantError):
+            install(request)
+        monkeypatch.setattr(installer, "_restore_refused", restore)
+        set_disabled(False)
+        refusal = _status(request)
+        assert refusal.state == "failed"
+        assert refusal.failure_code == "actor_unauthorized"
+        assert store.active().digest == request.candidate_digest
+
+    # A request queued before the crash restores the base first, then applies.
+    crashed_before_restore(stranded)
+    assert install(later).state == "applied"
+    assert "later@example.org" in rules(store)
+    assert "stranded@example.org" not in rules(store)
+    assert install(stranded).failure_code == "actor_unauthorized"
+    assert not ConfigurationActivation.objects.filter(request=stranded).exists()
+    # With the queue empty, the terminal request never selected again and the
+    # web refusing every page while file and database disagree, the
+    # installer's idle pass finishes the restore with no request in hand.
+    idle, base = queued("idle@example.org"), store.active()
+    monkeypatch.setattr(installer.DatabaseMaterializer, "activate", crashing)
     with pytest.raises(StorageInvariantError):
-        install(stranded)
-    receipt = _status(stranded)
-    assert receipt.state == "failed" and receipt.failure_code == "actor_unauthorized"
-    assert store.active().digest == stranded.candidate_digest
-    monkeypatch.setattr(installer, "_restore_refused", restore)
-    set_disabled(False)
+        install(idle)
+    monkeypatch.setattr(installer.DatabaseMaterializer, "activate", original)
+    crashed_before_restore(idle)
     assert next_configuration_request() is None
     with web():
         assert browser.get(PAGE).status_code == 503
     with as_config_installer():
         admit_configuration_database()
-        installer.restore_refused(store)
+        installer.restore_refused(store, admit=admit_configuration_database)
     assert store.active() == base
     with web():
         assert browser.get(PAGE).status_code == 200
-    assert "stranded@example.org" not in rules(store)
-    assert install(stranded).failure_code == "actor_unauthorized"
-    assert not ConfigurationActivation.objects.filter(request=stranded).exists()
-    assert install(queued("later@example.org")).state == "applied"
-    assert "later@example.org" in rules(store)
+    assert "idle@example.org" not in rules(store)
     # The installer's column grant serves the share lock alone: the identity
     # trigger refuses even an update that changes nothing.
     with (

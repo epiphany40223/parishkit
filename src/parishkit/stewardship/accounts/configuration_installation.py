@@ -581,16 +581,34 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
         return _status(request)
 
 
-def restore_refused(store):
+def restore_refused(store, *, admit=None):
     """Finish, with no request in hand, a refusal's restore a crash cut short.
 
     The installer queue selects only resumable requests and a refused request
     is terminal, so an idle installer pass runs this; otherwise the deployment
     would stay incoherent, every Admin page refused and no new request able
-    to be recorded, until an operator intervened.
+    to be recorded, until an operator intervened. The pass runs every few
+    seconds for the life of the service, so it costs one small manifest read
+    and one pointer read while file and database agree; only a disagreement
+    admits the service again, takes the installation lock and restores.
     """
+    if _selected_over(store) is None:
+        return
+    if admit is not None:
+        admit()
     with installation_lock() as guard:
         _restore_refused(store, guard.check)
+
+
+def _selected_over(store):
+    """The manifest reference and pointer digest, or None while they agree."""
+    reference = store.manifest_reference()
+    active_digest = SystemConfiguration.objects.values_list(
+        "active_configuration__digest", flat=True
+    ).first()
+    if reference is None or active_digest is None or reference[1] == active_digest:
+        return None
+    return reference, active_digest
 
 
 def _restore_refused(store, check):
@@ -604,14 +622,12 @@ def _restore_refused(store, check):
     file names. `check` is the installation lock's connection check.
     """
     check()
-    selected = store.active()
-    active_digest = SystemConfiguration.objects.values_list(
-        "active_configuration__digest", flat=True
-    ).first()
-    if selected is None or active_digest is None or selected.digest == active_digest:
+    selected = _selected_over(store)
+    if selected is None:
         return
+    (version_id, _), active_digest = selected
     for refused in ConfigurationChangeRequest.objects.filter(
-        candidate_version_id=selected.version_id, base__digest=active_digest
+        candidate_version_id=version_id, base__digest=active_digest
     ):
         status = _status(refused)
         if status.state == "failed" and status.failure_code == "actor_unauthorized":
