@@ -51,6 +51,8 @@ def test_navigation_and_testing_banner_match_current_capabilities(
     assert b"Testing mode" in body
     assert (b"test@example.org" in body) == (role == "administrator")
     assert (b"Ministry activity" in body) == (role == "administrator")
+    # Who else holds access is offered to Administrators only.
+    assert (b'href="/admin/users"' in body) == (role == "administrator")
     assert (b"Parish settings" in body) == (role == "administrator")
     assert (b"Background work" in body) == (role == "administrator")
     assert (b"Family codes" in body) == (role != "ministry_leader")

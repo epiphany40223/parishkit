@@ -52,13 +52,16 @@ def real_limiter():
         client.close()
 
 
-@pytest.fixture
-def auth_service(tmp_path, settings, real_limiter):
-    """Keep full configuration and HTTP login assembly for authentication tests."""
-    store, _, _ = initialized(tmp_path)
+def auth_runtime(tmp_path, settings, limiter, records=None):
+    """Assemble the ordinary authentication runtime over an initial policy.
+
+    Tests that need Chairperson-seeded rules, which no ordinary patch can add,
+    pass them as the initial `records`; everything else stays identical.
+    """
+    store, _, _ = initialized(tmp_path, records)
     # These focused authentication tests explicitly model completed setup;
     # the setup integration suites exercise the real durable completion marker.
-    settings.STEWARDSHIP_AUTH_RUNTIME = AuthRuntime(store, real_limiter, lambda: True)
+    settings.STEWARDSHIP_AUTH_RUNTIME = AuthRuntime(store, limiter, lambda: True)
     settings.SOCIALACCOUNT_PROVIDERS = {
         "google": {
             "OAUTH_PKCE_ENABLED": True,
@@ -72,6 +75,12 @@ def auth_service(tmp_path, settings, real_limiter):
         },
     }
     return settings.STEWARDSHIP_AUTH_RUNTIME
+
+
+@pytest.fixture
+def auth_service(tmp_path, settings, real_limiter):
+    """Keep full configuration and HTTP login assembly for authentication tests."""
+    return auth_runtime(tmp_path, settings, real_limiter)
 
 
 @pytest.fixture
