@@ -35,6 +35,12 @@ ALTER TABLE "stewardship_security_recipient" ADD CONSTRAINT "stewardship_securit
 CREATE INDEX "stewardship_security_recipient_correlation_id_cf51b200" ON "stewardship_security_recipient" ("correlation_id");
 CREATE INDEX "stewardship_security_recipient_cohort_id_b3150fb4" ON "stewardship_security_recipient" ("cohort_id");
 
+-- The scheduler decides whether an event has anyone to tell from a count; it
+-- holds no grant on the recorded addresses. The view runs as its owner.
+CREATE VIEW stewardship_security_notifiable AS
+    SELECT id, created_at, jsonb_array_length(recipients) AS recipient_count
+    FROM stewardship_policy_security_event;
+
 CREATE FUNCTION stewardship_security_cohort_immutable_v1()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
@@ -72,11 +78,14 @@ BEGIN
           AND NEW.mode=runtime.mode AND NEW.parish_id=p.id)
       THEN RAISE EXCEPTION 'Security cohort requires current fenced ownership'
         USING ERRCODE='23514'; END IF;
-    SELECT jsonb_agg(value ORDER BY value) INTO actual
-      FROM stewardship_policy_security_event e, jsonb_array_elements_text(e.recipients) AS value
-      WHERE e.id=NEW.event_id;
-    IF actual IS NULL OR NEW.addresses IS DISTINCT FROM actual
-      OR NEW.recipient_count<>jsonb_array_length(actual) THEN
+    -- The same addresses, compared as sets so no collation or code-point
+    -- ordering can disagree, and each exactly once.
+    SELECT recipients INTO actual FROM stewardship_policy_security_event WHERE id=NEW.event_id;
+    IF actual IS NULL OR jsonb_typeof(NEW.addresses)<>'array'
+      OR NOT (NEW.addresses <@ actual AND actual <@ NEW.addresses)
+      OR NEW.recipient_count<>jsonb_array_length(NEW.addresses)
+      OR NEW.recipient_count<>(SELECT count(DISTINCT value)
+          FROM jsonb_array_elements_text(NEW.addresses) AS value) THEN
         RAISE EXCEPTION 'Security cohort must match the event''s recorded recipients'
           USING ERRCODE='23514'; END IF;
     RETURN NEW;

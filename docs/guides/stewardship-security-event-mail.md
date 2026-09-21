@@ -74,31 +74,36 @@ each other's schema.
 Two relations are added, the security cohort and recipient tables, with the
 same immutability guards and binding triggers the operational tables have:
 a cohort may be written only by the running fenced preparation Task that
-owns its event and must equal the event's recorded recipients, sorted; a
-recipient row must bind an outbox message that is exactly one pending
-security-purpose envelope to that address. The three outbox purpose
+owns its event and must name exactly the event's recorded recipients, each
+once, compared as sets since the owner passes the recorded order through
+and the database's collation need not agree with Python's; a recipient row
+must bind an outbox message that is exactly one pending security-purpose
+envelope to that address. A schema-owned view exposes each event's
+recipient count, so the metadata scheduler decides whether an event has
+anyone to tell without holding any grant on the addresses. The three outbox purpose
 constraints and the outbox scope trigger admit the new purpose as they do
 the operational one, the shared dispatch trigger routes it to its own
 admission function, and a sibling error trigger leaves the same fixed safe
 ERROR a failed operational delivery leaves. The worker gains `SELECT` on the
-event table and `SELECT`/`INSERT` on the two new tables, the scheduler only
-their opaque metadata columns, and the mail process `SELECT` on all three.
-The private helper allowlist admits `security_mail_worker`.
+event table and the count view and `SELECT`/`INSERT` on the two new tables,
+the scheduler the count view and the new tables' opaque metadata columns
+only, and the mail process `SELECT` on the event and the two tables. The
+private helper allowlist admits `security_mail_worker`.
 
 ## Fresh-install schema audit
 
 Independent fresh predecessor and candidate databases were compared on the
 disposable PostgreSQL cluster; the predecessor, verified main `f9ce5278`,
-exactly matches its committed fingerprint. Two relations are added with
-their columns, constraints, indexes, immutability and binding triggers; the
-content, render-matcher, prepare and dispatch admission, receipt and error
-functions are added; and exactly seven existing objects change: the three
-outbox purpose constraints, the outbox scope trigger function, the SMTP
-result function's purpose list, the worker-side outbox insertion trigger
-function and the shared dispatch trigger function, each admitting the new
-purpose; nothing is removed. The candidate has 213 relations, 2,387
-columns, 3,316 constraints, 987 indexes, 583 functions, 543 triggers and 28
-policies. The strict fixture was updated only after this inspected
+exactly matches its committed fingerprint. Two relations and the recipient
+count view are added, the relations with their columns, constraints,
+indexes, immutability and binding triggers; the content, render-matcher,
+prepare and dispatch admission, receipt and error functions are added; and
+exactly seven existing objects change: the three outbox purpose
+constraints, the outbox scope trigger function, the SMTP result function's
+purpose list, the worker-side outbox insertion trigger function and the
+shared dispatch trigger function, each admitting the new purpose; nothing
+is removed. The candidate has 214 relations, 2,390 columns, 3,316
+constraints, 987 indexes, 583 functions, 543 triggers and 28 policies. The strict fixture was updated only after this inspected
 comparison. This is a pre-production fresh-install baseline; no upgrade path
 is added and no retained database was deleted.
 
@@ -114,12 +119,19 @@ is added and no retained database was deleted.
   interchangeable, the real pipe owner launching the security helper with a
   fake process, and the installed helper rejecting an invalid credential
   without network.
+- Two database-free cases for the owner record: the two owners distinct in
+  every closed part, and one assembled from an open part refused.
 - PostgreSQL cases under the real scheduler, worker and mail roles: an
   expansion allocating one durable outbox per recorded recipient with the
   root event never scheduled, SQL refusing a cohort that differs from the
-  recorded recipients, the metadata scheduler unable to read or prepare
-  cohorts, the security owner binding, preparing, submitting and settling a
-  recipient with the operational owner unable to bind it, and a recipient
+  recorded recipients, the metadata scheduler refused the event's
+  recipients, the cohort's addresses and the recipient's address while
+  allowed the count and unable to prepare, the SQL content twin equal to the
+  Python compiler for every kind and mode with and without a portal actor
+  and the escape helper equal to Python's, the security owner binding,
+  preparing, submitting and settling a recipient with the operational owner
+  unable to bind it, a failed partial preparation cancelling its committed
+  child as `preparation_failed` with two fixed ERROR logs, and a recipient
   revoked since activation still told.
 - The operational fanout, dispatch, routing and hold suites pass unchanged
   under the shared engine, with the background and mail grant suites, the
@@ -128,7 +140,10 @@ is added and no retained database was deleted.
 
 ## Checkpoint
 
-Implementation and focused validation are complete; the review/fix rounds,
-full exact-head CI, DCO and protected delivery remain open. M5 and Gate 3
+Implementation, focused validation and the first
+[review/fix round](stewardship-security-event-mail-reviews.md) are
+complete, single-source under the second September 20, 2026 Codex
+exemption; further rounds, full exact-head CI, DCO and protected delivery
+remain open. M5 and Gate 3
 remain open. No deployment, release, live-provider write or database
 deletion is authorized by this increment.

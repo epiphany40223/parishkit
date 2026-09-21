@@ -110,6 +110,65 @@ def test_security_mail_is_owned_and_recorded_under_the_actual_mail_role(routing)
     assert second.outbox.state == "pending"
 
 
+def test_failed_partial_fanout_cancels_children_and_leaves_a_fixed_error(
+    routing, monkeypatch, tmp_path
+):
+    """A failed parent cannot strand a committed child; SQL logs the fixed ERROR."""
+    from parishkit.stewardship.audit.models import OperationalLog
+    from parishkit.stewardship.jobs import operational_fanout
+    from parishkit.stewardship.jobs.dispatch import execute_hint
+    from parishkit.stewardship.jobs.storage import change_run
+
+    store, _, _, _ = routing
+    granted(routing)
+    monkeypatch.setattr(operational_fanout, "BATCH_SIZE", 1)
+    (identifier,) = schedule()
+    with task_login(ServiceRole.WORKER, exact=True):
+        execution = claim_hint(
+            identifier,
+            queue=WorkQueue.GENERAL,
+            worker_id=uuid4(),
+            handlers={
+                SECURITY.task_type: operational_fanout.fanout_handler(
+                    store, owner=SECURITY
+                )
+            },
+        )
+        with work_transaction():
+            assert operational_fanout.prepare_page(
+                execution.claim, store, SECURITY
+            ) == (1, 2)
+            row = TaskRun.objects.get(pk=identifier)
+            change_run(
+                run_id=row.pk,
+                expected_version=row.version,
+                action="permanent_failure",
+                actor_id=row.worker_id,
+                correlation_id=row.correlation_id,
+                fence=row.fence,
+                admit=lambda *_: True,
+            )
+    message = OutboxMessage.objects.get(purpose="security_event")
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True, reconnect=True):
+        assert execute_hint(
+            message.task_id,
+            queue=WorkQueue.MAIL,
+            worker_id=uuid4(),
+            handlers={
+                "outbox_delivery": delivery_handler(
+                    store, credential_path=tmp_path / "nonexistent-credential"
+                )
+            },
+        )
+    message.refresh_from_db()
+    assert message.state == "cancelled" and message.reason == "preparation_failed"
+    assert message.attempt == 0 and SecurityRecipient.objects.count() == 1
+    assert TaskRun.objects.get(pk=message.task_id).state == "cancelled"
+    assert (
+        OperationalLog.objects.filter(level="ERROR", event="task_failed").count() == 2
+    )
+
+
 def test_a_recipient_revoked_since_activation_is_still_told(routing):
     """The recipients are the Administrators who existed before the expansion."""
     store, actor, _, records = routing

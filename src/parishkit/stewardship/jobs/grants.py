@@ -100,6 +100,7 @@ def task_runtime_grants(role):
         # Security alerts fan out from the trigger-recorded event and its
         # recipients; the worker reads the event and writes the cohort.
         tables["stewardship_policy_security_event"] = {"SELECT"}
+        tables["stewardship_security_notifiable"] = {"SELECT"}
         tables["stewardship_security_cohort"] = {"SELECT", "INSERT"}
         tables["stewardship_security_recipient"] = {"SELECT", "INSERT"}
         tables["stewardship_ops_log_receipt"] = {"SELECT", "INSERT"}
@@ -143,9 +144,9 @@ def task_runtime_grants(role):
         columns["stewardship_ops_recipient"] = {
             "SELECT": {"id", "cohort_id", "outbox_id"}
         }
-        columns["stewardship_policy_security_event"] = {
-            "SELECT": {"id", "created_at", "recipients"}
-        }
+        # Whether an event has anyone to tell is a count, read through a view
+        # owned by the schema; the scheduler never holds an address grant.
+        tables["stewardship_security_notifiable"] = {"SELECT"}
         columns["stewardship_security_cohort"] = {
             "SELECT": {"id", "event_id", "run_id", "recipient_count"}
         }

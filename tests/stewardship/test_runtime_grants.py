@@ -40,6 +40,7 @@ def test_grant_registry_names_existing_models_and_excludes_unrelated_download_da
         "stewardship_postclose_current",  # Opaque exact-current semantic proofs.
         "stewardship_daily_digest_completion_ready",  # Opaque completed cohort IDs.
         "stewardship_weekly_digest_completion_ready",  # Opaque resolved interval IDs.
+        "stewardship_security_notifiable",  # Counts-only recipient projection.
     }
     assert WEB_INSERT_TABLES <= WEB_READ_TABLES
     assert WEB_UPDATE_TABLES <= WEB_READ_TABLES

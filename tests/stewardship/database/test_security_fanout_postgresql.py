@@ -1,11 +1,19 @@
 """Durable security alert cohorts and outbox ownership, with no external providers."""
 
+import html
+import json
+from dataclasses import asdict
 from uuid import uuid4
 
 import pytest
-from django.db import IntegrityError
+from django.db import IntegrityError, connection
+from django.utils import timezone
 
-from parishkit.stewardship.accounts.policy_models import PolicySecurityEvent
+from parishkit.stewardship.accounts.policy_models import (
+    PolicySecurityEvent,
+    PortalUser,
+)
+from parishkit.stewardship.campaigns.domain import SystemMode
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs import security_owner
@@ -19,10 +27,12 @@ from parishkit.stewardship.jobs.operational_fanout import (
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage
 from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.scheduler import scheduler_session
+from parishkit.stewardship.jobs.security_content import render_security_alert
 from parishkit.stewardship.jobs.security_models import SecurityCohort, SecurityRecipient
 from parishkit.stewardship.jobs.security_owner import SECURITY, TASK_TYPE
+from parishkit.stewardship.jobs.security_routing import event_alert
 
-from ..policy_factory import address
+from ..policy_factory import address, domain
 from .campaign_builders import change
 from .test_background_grants_postgresql import task_login
 from .test_operational_routing_postgresql import routing as routing_fixture
@@ -122,8 +132,8 @@ def test_sql_binds_the_cohort_to_the_recorded_recipients(routing, monkeypatch):
     assert not OutboxMessage.objects.filter(purpose="security_event").exists()
 
 
-def test_metadata_scheduler_cannot_read_cohorts_or_prepare_them(routing):
-    """The scheduler allocates opaque work and sees only metadata columns."""
+def test_metadata_scheduler_cannot_read_addresses_or_prepare(routing):
+    """The scheduler allocates opaque work from a count and sees no address."""
     from django.db import DatabaseError
 
     store, _, _, _ = routing
@@ -132,10 +142,97 @@ def test_metadata_scheduler_cannot_read_cohorts_or_prepare_them(routing):
     with task_login(ServiceRole.SCHEDULER, exact=True):
         with pytest.raises(PermissionError):
             fanout_handler(store, scheduler=True, owner=SECURITY).execute(None)
-        with pytest.raises(DatabaseError), work_transaction():
-            list(SecurityCohort.objects.values_list("addresses", flat=True))
+        for statement in (
+            "SELECT recipients FROM stewardship_policy_security_event",
+            "SELECT addresses FROM stewardship_security_cohort",
+            "SELECT address FROM stewardship_security_recipient",
+        ):
+            with pytest.raises(DatabaseError), work_transaction():
+                connection.cursor().execute(statement)
+        with work_transaction(), connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT recipient_count FROM stewardship_security_notifiable "
+                "ORDER BY recipient_count"
+            )
+            # The fixture's own activations recorded events with nobody to
+            # tell; only the grant above has recipients.
+            counts = [row[0] for row in cursor.fetchall()]
+            assert counts.count(2) == 1 and set(counts) == {0, 2}
     assert consume(identifier, store)
     with task_login(ServiceRole.SCHEDULER, exact=True), work_transaction():
         assert list(
             SecurityCohort.objects.values_list("recipient_count", flat=True)
         ) == [2]
+
+
+def test_closed_content_compilers_agree_for_every_kind_mode_and_actor(routing):
+    """The SQL twin recompiles every kind, both modes, with and without an actor."""
+    store, actor, _, _ = routing
+    rule = domain("partner.example", ("ministry_leader",))
+    assert (
+        change(
+            store,
+            store.active(),
+            actor,
+            [
+                {
+                    "operation": "add",
+                    "section": "login_rules",
+                    **address("new@example.org"),
+                },
+                {"operation": "add", "section": "login_rules", **rule},
+            ],
+        ).state
+        == "applied"
+    )
+    widened = domain("partner.example", ("ministry_leader", "staff"))
+    assert (
+        change(
+            store,
+            store.active(),
+            actor,
+            [
+                {
+                    "operation": "update",
+                    "section": "login_rules",
+                    "id": rule["id"],
+                    "values": widened["values"],
+                }
+            ],
+        ).state
+        == "applied"
+    )
+    events = list(PolicySecurityEvent.objects.exclude(recipients=[]))
+    assert sorted(event.kind for event in events) == [
+        "administrator_granted",
+        "domain_created",
+        "domain_staff_granted",
+    ]
+    for present in (False, True):
+        if present:
+            PortalUser.objects.create(
+                id=actor,
+                google_subject="synthetic-actor",
+                email="admin@example.org",
+                verified_at=timezone.now(),
+            )
+        for event in events:
+            for mode in SystemMode:
+                with work_transaction():
+                    alert = event_alert(event.pk, mode)
+                    with connection.cursor() as cursor:
+                        cursor.execute(
+                            "SELECT stewardship_security_content_v1(%s,%s)",
+                            [event.pk, mode.value],
+                        )
+                        compiled = cursor.fetchone()[0]
+                if isinstance(compiled, str):
+                    compiled = json.loads(compiled)
+                assert compiled == asdict(render_security_alert(alert))
+                assert ("By: admin@example.org" in compiled["text"]) is present
+                assert ("By: Operator recovery" in compiled["text"]) is not present
+    # Targets are validated addresses and domains, so no markup can reach the
+    # body; the escape twin is still held to Python's escaping exactly.
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT stewardship_security_escape_v1(%s)", ["a&<>\"'b"])
+        assert cursor.fetchone()[0] == html.escape("a&<>\"'b")

@@ -2,6 +2,8 @@
 
 from uuid import UUID
 
+from django.db import connection
+
 from parishkit.stewardship.accounts.configuration_models import (
     AppliedIntegration,
     Parish,
@@ -13,7 +15,6 @@ from parishkit.stewardship.operational_delivery_process import submit_security_m
 
 from .alert_owner import AlertOwner
 from .family_mail_dispatch import FamilyDeliveryHeld
-from .models import TaskRun
 from .operational_routing import current_routing
 from .outbox_validation import mailbox
 from .security_models import SecurityCohort, SecurityRecipient
@@ -38,32 +39,46 @@ def _configured():
 
 
 def _recipients(event_id):
-    """The event's recorded recipients, sorted, each a valid mailbox, or none."""
+    """The event's recorded recipients in their recorded order, each a valid mailbox.
+
+    The trigger recorded them under the database's collation; they are never
+    re-sorted here, since Python's code-point order can differ from it and
+    the cohort binding compares the two as sets, not as sequences.
+    """
     recorded = PolicySecurityEvent.objects.values_list("recipients", flat=True).get(
         pk=event_id
     )
-    addresses = sorted(set(recorded))
+    addresses = tuple(dict.fromkeys(recorded))
     for address in addresses:
         mailbox(address)
-    return tuple(addresses)
+    return addresses
 
 
 def _pending(limit):
-    """Events without a preparation Task yet; one with nobody to tell is skipped."""
-    owned = TaskRun.objects.filter(task_type=TASK_TYPE).values("domain_request_id")
-    return tuple(
-        PolicySecurityEvent.objects.exclude(pk__in=owned)
-        .exclude(recipients=[])
-        .order_by("created_at", "pk")
-        .values_list("pk", flat=True)[:limit]
-    )
+    """Events without a preparation Task yet; one with nobody to tell is skipped.
+
+    The scheduler reads only the count view, never an address.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT n.id FROM stewardship_security_notifiable n "
+            "WHERE n.recipient_count>0 AND NOT EXISTS ("
+            "SELECT 1 FROM stewardship_task_run t WHERE t.task_type=%s "
+            "AND t.domain_request_id=n.id) ORDER BY n.created_at, n.id LIMIT %s",
+            [TASK_TYPE, limit],
+        )
+        return tuple(row[0] for row in cursor.fetchall())
 
 
 def _source_exists(event_id):
-    """Only a recorded event with recipients may be prepared."""
-    return (
-        PolicySecurityEvent.objects.filter(pk=event_id).exclude(recipients=[]).exists()
-    )
+    """Only a recorded event with someone to tell may be prepared."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT 1 FROM stewardship_security_notifiable "
+            "WHERE id=%s AND recipient_count>0",
+            [event_id],
+        )
+        return cursor.fetchone() is not None
 
 
 def _capture(row, claim, store):
