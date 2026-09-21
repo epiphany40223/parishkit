@@ -1755,6 +1755,19 @@ BEGIN
         RAISE EXCEPTION 'Chair seed evidence requires the exact current relationship'
             USING ERRCODE='23514';
     END IF;
+    -- A deployed role records evidence only from the Administrator's own
+    -- selection, the intent bound to the confirmation request; only the
+    -- schema owner may seed evidence without one. No installation or refresh
+    -- can infer a Member from an address.
+    IF current_user <> (SELECT tableowner FROM pg_tables
+            WHERE schemaname='public' AND tablename='stewardship_chair_seed_evidence')
+       AND NOT EXISTS (SELECT 1 FROM stewardship_chair_seed_intent intent
+            WHERE intent.assignment_record_id=NEW.assignment_record_id
+              AND intent.organization_id=NEW.organization_id
+              AND intent.member_duid=NEW.member_duid) THEN
+        RAISE EXCEPTION 'Chair seed evidence requires the confirmed selection'
+            USING ERRCODE='23514';
+    END IF;
     RETURN NEW;
 END;
 $$;

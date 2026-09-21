@@ -116,6 +116,11 @@ def test_a_confirmation_creates_the_seeded_rule_assignment_and_evidence(
     with web():
         body = browser.get(PAGE).content.decode()
     assert 'name="selection" value="4:valid@example.org"' in body
+    with web():
+        # Nothing ticked is the builder's own refusal, not a malformed form.
+        empty = post(browser, proposal(store, selection=[]))
+        assert empty.status_code == 400
+        assert "No suggestion was selected." in empty.content.decode()
     request = confirmed(store, browser, proposal(store))
     assert request.request_schema == "chair-seed-patch-v9"
     rule = AddressRule.objects.filter(email="valid@example.org").latest("created_at")
@@ -286,6 +291,60 @@ def test_a_candidate_naming_another_organization_is_not_confirmable(
         assert confirmable(request, request.candidate_version_id, document) is False
         del integration["settings"]["organization_id"]
         assert confirmable(request, request.candidate_version_id, document) is False
+
+
+@pytest.mark.usefixtures("source_singletons", "config_role")
+def test_a_confirmation_request_without_its_selections_is_not_installed(
+    auth_service, google
+):
+    """A chair-schema request recorded with no intents fails validation."""
+    from parishkit.stewardship.accounts.chair_confirmation import seed_patch
+    from parishkit.stewardship.accounts.configuration_requests import (
+        policy_operation_id,
+    )
+    from parishkit.stewardship.accounts.request_models import (
+        ConfigurationRequestCheckpoint,
+    )
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+
+    store = auth_service.store
+    publish(source())
+    browser, login = signed_in()
+    assert login.status_code == 302
+    from parishkit.stewardship.accounts.policy_models import PortalUser
+
+    records = store.active().document()["sections"]["login_rules"]
+    actor = PortalUser.objects.get(email="admin@example.org").pk
+    key = uuid4()
+    patch, _ = seed_patch(
+        records,
+        [("valid@example.org", 4)],
+        operation_id=str(policy_operation_id(actor, key)),
+    )
+    # A legal internal path: the schema without the page's attachment.
+    receipt = record_request(
+        base_digest=store.active().digest,
+        patch=patch,
+        actor_id=actor,
+        request_key=key,
+        correlation_id=uuid4(),
+        request_schema="chair-seed-patch-v9",
+    )
+    request = ConfigurationChangeRequest.objects.get(pk=receipt.request_id)
+    assert not ChairSeedIntent.objects.filter(request=request).exists()
+    installed = install(store, request)
+    assert installed.state == "failed"
+    assert (
+        ConfigurationRequestCheckpoint.objects.filter(request=request)
+        .latest("sequence")
+        .failure_code
+        == "invalid_candidate"
+    )
+    active = SystemConfiguration.objects.get().active_configuration_id
+    assert not MinistryAssignment.objects.filter(
+        source="chair-seed", configuration_id=active
+    ).exists()
+    assert not ChairSeedEvidence.objects.exists()
 
 
 @pytest.mark.usefixtures("source_singletons", "config_role")

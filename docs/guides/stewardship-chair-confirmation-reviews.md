@@ -74,3 +74,37 @@ The eleven Low findings concerned wording and naming.
 
 Post-fix validation: the confirmation suite passed locally under the
 restricted roles, with the confirmation database-free suite.
+
+## Round 3, single-source under the second exemption
+
+Reviewed `8a6e3b43`, the round 2 result. Codex did not answer; Claude, in one
+pass, validated two Medium and eleven Low. Both Mediums were accepted and
+fixed.
+
+- **Medium: an empty submission was refused as a malformed form.** The
+  selection field was required, so the one refusal an ordinary user meets,
+  pressing review with nothing ticked, received the generic explanation
+  rather than the builder's own. The field is now optional, an empty
+  selection reaches the builder and is refused by its closed `empty` reason,
+  and a case asserts the page's words.
+- **Medium: the installer's intent requirement was untested.** A
+  confirmation request recorded through the schema without the page's
+  attachment is a legal internal path, and nothing proved the installer
+  refuses it. A case records such a request, installs it under the
+  restricted role, and asserts the `invalid_candidate` failure with nothing
+  seeded reaching the active configuration and no evidence recorded.
+
+The eleven Low findings concerned wording and naming.
+
+The wider regression run beside this round found the installer's new
+evidence insert grant weakening the retained-evidence suite's rule that no
+deployed role may infer an Administrator's selection. The evidence guard now
+holds every row a deployed role inserts to an intent naming that assignment,
+organization and Member, so the installer records only what an Administrator
+chose; the existing case keeps its refusal and states the installer's bound
+grant, and the fresh-install audit records the guard as the third changed
+object.
+
+Post-fix validation: the confirmation, retained-evidence and reconciliation
+suites passed locally under the restricted roles, with the schema baseline
+and the users page browser suite on Chromium.

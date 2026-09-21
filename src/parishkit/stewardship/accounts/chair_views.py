@@ -55,7 +55,9 @@ class ConfirmationForm(forms.Form):
     is the row's unanswered question, not a value.
     """
 
-    selection = forms.MultipleChoiceField(choices=())
+    # An untouched form posts no selection at all; that reaches the builder,
+    # which refuses it by its own closed reason rather than as a bad form.
+    selection = forms.MultipleChoiceField(choices=(), required=False)
     member = forms.MultipleChoiceField(choices=(), required=False)
     base_digest = forms.RegexField(regex=r"^[0-9a-f]{64}$")
 

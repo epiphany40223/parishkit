@@ -75,10 +75,13 @@ installer. Otherwise, after the activation row has moved the runtime pointer
 and before the Chairperson reconciliation judges the new seed, the installer
 records `ChairSeedEvidence` from each intent and the projection's roster
 keys, so a confirmed seed is born confirmed rather than `missing_binding`;
-the evidence guard remains the backstop. It share-locks the current source
-pointer, so the installer holds the same id-only update grant the actor
-recheck uses. The web role gains the intent table and the installer the
-evidence insert; nothing else may write either.
+the evidence guard remains the backstop, and it now also holds every row a
+deployed role inserts to an intent naming that assignment, organization and
+Member, so the installer's insert can record only what an Administrator
+chose and no installation or refresh can infer a Member from an address. It
+share-locks the current source pointer, so the installer holds the same
+id-only update grant the actor recheck uses. The web role gains the intent
+table and the installer the evidence insert; nothing else may write either.
 
 ### The page decides nothing new
 
@@ -101,18 +104,20 @@ and binding constraint trigger, registered after the suggestion view and
 re-included in the container build context; and two changed objects: the
 request schema check on `stewardship_config_request`, admitting
 `chair-seed-patch-v9` in the model, its migration state and the SQL baseline,
-and the checkpoint transition rule, which admits the installer's
+the checkpoint transition rule, which admits the installer's
 `invalid_candidate` refusal of a confirmation request after
 `yaml_activated`, never from the web role, exactly as it admits an actor
-refusal.
+refusal, and the evidence guard, which now holds every row a deployed role
+inserts to a selection bound to a confirmation request, so the installer's
+new insert grant can record only what an Administrator chose.
 
 An independent fresh-install audit against verified main `3fd51b5a`, with the
 same catalog inspection the previous increments used, found the predecessor
 matching its committed fingerprint, exactly one added relation with its eight
 columns, primary, unique and check constraints, foreign key and indexes, two
-added functions and two added triggers, and exactly two existing objects
-changed, the request schema check and the checkpoint transition function;
-nothing removed. The candidate has 216 relations, 2,409 columns, 3,330
+added functions and two added triggers, and exactly three existing objects
+changed, the request schema check, the checkpoint transition function and
+the evidence guard function; nothing removed. The candidate has 216 relations, 2,409 columns, 3,330
 constraints, 991 indexes, 585 functions, 545 triggers and 28 policies. The strict fixture was updated only after this
 inspected comparison. Pre-production fresh-install baseline only; no upgrade
 path, and no retained database was deleted.
@@ -125,11 +130,13 @@ path, and no retained database was deleted.
   each refused by the seed rule while the ordinary rule refuses the genuine
   confirmation, the schema refusing an appended parish edit, and an applied
   seed read as ordinary provenance afterwards.
-- Six PostgreSQL cases under the real web and restricted installer roles
-  with real promoted source: a confirmation previewed, confirmed and
-  installed creating the seeded rule, grants, assignment, intent and
-  retained evidence with the seed born confirmed on the page and the same
-  Ministry refused again; a shared address chairing two Ministries refused
+- Seven PostgreSQL cases under the real web and restricted installer roles
+  with real promoted source: nothing selected refused by the builder's own
+  words, then a confirmation previewed, confirmed and installed creating the
+  seeded rule, grants, assignment, intent and retained evidence with the
+  seed born confirmed on the page and the same Ministry refused again; a
+  confirmation request recorded without its selections refused by the
+  installer as an invalid candidate; a shared address chairing two Ministries refused
   without its Members or with a partial answer and confirmed with both; a
   Chairperson promoted away after confirmation failing the request as an
   invalid candidate with the previous policy restored and an ordinary change
@@ -144,9 +151,10 @@ path, and no retained database was deleted.
 
 ## Checkpoint
 
-Implementation, focused validation and two
+Implementation, focused validation and three
 [review/fix rounds](stewardship-chair-confirmation-reviews.md) are complete,
-single-source under the second September 20, 2026 Codex exemption; a third
-round, full exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
+single-source under the second September 20, 2026 Codex exemption, with
+every accepted finding fixed; a correction check of the third round's
+fixes, full exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
 open. No deployment, release, live-provider write or database deletion is
 authorized by this increment.
