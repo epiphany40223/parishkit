@@ -28,8 +28,9 @@ pytestmark = pytest.mark.django_db(transaction=True)
 def inputs(tmp_path, *, seeded=True):
     """Represent a previously confirmed seed, not a replacement for ADM-07's UI.
 
-    Schema-owner fixtures can install a seeded root. No deployed online role
-    currently creates seeds/evidence; the confirmed request owner is still due.
+    Schema-owner fixtures can install a seeded root. The deployed installer
+    records evidence only from an Administrator's selection bound to a
+    confirmation request, which the confirmation suite exercises.
     """
     _, _, actor = initialized(
         tmp_path,
@@ -116,10 +117,21 @@ def test_sql_rejects_unproven_or_misbound_identity(tmp_path, defect):
 
 @pytest.mark.usefixtures("config_role")
 def test_online_roles_cannot_create_confirmation_evidence(tmp_path):
-    """Source refresh or generic installation must never infer an Admin selection."""
+    """Source refresh or generic installation must never infer an Admin selection.
+
+    The installer may insert evidence, since it activates the Administrator's
+    confirmation request, but SQL holds each row to a selection bound to that
+    request; without one its insert is refused like any other role's.
+    """
     values = inputs(tmp_path)
-    with as_config_installer(), pytest.raises(DatabaseError), work_transaction():
+    with (
+        as_config_installer(),
+        pytest.raises(DatabaseError, match="confirmed selection"),
+        work_transaction(),
+    ):
         ChairSeedEvidence.objects.create(**values)
-    for role in (ServiceRole.WEB, ServiceRole.WORKER, ServiceRole.CONFIG_INSTALLER):
+    for role in (ServiceRole.WEB, ServiceRole.WORKER):
         tables, _ = runtime_grants(role)
         assert "INSERT" not in tables.get("stewardship_chair_seed_evidence", set())
+    tables, _ = runtime_grants(ServiceRole.CONFIG_INSTALLER)
+    assert tables["stewardship_chair_seed_evidence"] == {"SELECT", "INSERT"}
