@@ -4101,12 +4101,6 @@ CREATE FUNCTION public.stewardship_portal_user_mutable_v1() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
             BEGIN
-                -- An identity change is serialized with the transactions that
-                -- judge an identity's current authority under this lock: a
-                -- login-policy activation reads the confirming Administrator
-                -- while holding it, so a disable or an address refresh cannot
-                -- commit between that read and the activation.
-                PERFORM pg_advisory_xact_lock(736220,1);
                 IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."google_subject" IS DISTINCT FROM OLD."google_subject" THEN
                     RAISE EXCEPTION 'Record identity and bindings are immutable'
                         USING ERRCODE = '23514';
@@ -4864,9 +4858,8 @@ CREATE FUNCTION public.stewardship_request_checkpoint_v2() RETURNS trigger
                         -- The activation transaction refused the confirming
                         -- Administrator, who is no longer one; the installer
                         -- restores the base selection and records the refusal.
-                        -- Only an installer records it: the web role's own
-                        -- checkpoint grant must not be able to strand a
-                        -- selected candidate.
+                        -- Never from the web role: its own checkpoint grant
+                        -- must not be able to strand a selected candidate.
                         OR (NEW.state='failed' AND NEW.failure_code='actor_unauthorized'
                             AND current_user<>'pk_stewardship_web')
                         OR (NEW.state='failed' AND NEW.failure_code='invalid_candidate'

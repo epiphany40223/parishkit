@@ -84,6 +84,10 @@ CONFIGURATION_GRANTS = {
 
 CONFIGURATION_COLUMNS = {
     "stewardship_portal_session": {"SELECT": SESSION_COLUMNS},
+    # The activation-time actor recheck share-locks the confirming user's row,
+    # which PostgreSQL allows only with one UPDATE privilege; the identity
+    # trigger rejects an id-only update, so the row itself stays read-only.
+    "stewardship_portal_user": {"UPDATE": {"id"}},
 }
 
 

@@ -196,3 +196,45 @@ attribute set by the installer, beside the constructor's campaign admission.
 Post-fix validation: four database-free, eight PostgreSQL and nine browser
 cases passed locally, with the page's own suite, the parish and Ministry
 editors and the installer's own suites.
+
+## Round 6, correction check, single-source under the second exemption
+
+Reviewed `413b565d`, the complete diff from main `e01b52ba`, as a check of
+the round-5 serialization. Codex did not answer; Claude returned two Medium
+and six Low. Both Medium findings were accepted and fixed.
+
+- **Medium: the trigger's work lock could deadlock.** An identity update
+  locked its row and then waited for the work lock inside the trigger, while
+  an activation held the work lock and then read that row, and a third
+  transaction could close the cycle; PostgreSQL would abort one of them, and
+  an aborted activation is the wedge the lock was meant to prevent. The
+  identity trigger no longer takes any lock. The recheck reads the identity
+  row `FOR SHARE` again, and the configuration installer gains the one
+  privilege PostgreSQL requires for that, `UPDATE` on the row's `id` column,
+  which the trigger's immutability and version rules make unusable for any
+  actual change, the pattern the download service's policy claim already
+  uses. Lock order is now identity row then work lock in every transaction.
+  A case holds the share lock from a real installer session and proves a
+  second connection's disable waits behind it until it commits. Two schema
+  objects change rather than three, and the fingerprint was refreshed after
+  a fresh comparison.
+- **Medium: the resume rule was not gated on the request's kind.** Any
+  request found at `yaml_activated` with file and database agreeing was
+  recorded as `actor_unauthorized`, though only a login-policy request can
+  reach that state through the installer. The rule now applies to a
+  login-policy request alone; any other request in that shape raises the
+  storage invariant error, since it was put there by hand.
+
+Acted on from the six Low findings: a comment that still described the
+locked read; the guide and the ledger now say the transition is admitted
+from any role but the web, which is what the trigger checks; the web-role
+refusal case asserts the integrity error and its message; and a behavioral
+lock case replaced the assertion on the trigger's source. Left as is: the
+sign-in evaluator and the installer's recheck each build their record
+filter, because sharing one would couple the request-time path to the
+installer's module; and the performance concern about the trigger's lock is
+moot with the lock gone.
+
+Post-fix validation: four database-free, eight PostgreSQL and nine browser
+cases passed locally, with the page's own suite, the parish and Ministry
+editors, the installer's own suites and the schema baseline.

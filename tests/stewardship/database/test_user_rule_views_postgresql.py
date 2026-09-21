@@ -4,8 +4,9 @@ import re
 from html import unescape
 from uuid import uuid4
 
+import psycopg
 import pytest
-from django.db import DatabaseError, IntegrityError, connection, transaction
+from django.db import IntegrityError, connection, transaction
 from django.db.models import F
 from django.utils import timezone
 
@@ -378,9 +379,10 @@ def test_a_refused_activation_is_recovered_and_recorded_under_real_roles(
             correlation_id=uuid4(),
         )
 
-    with pytest.raises(IntegrityError), transaction.atomic():
+    refused = "Invalid configuration installer transition"
+    with pytest.raises(IntegrityError, match=refused), transaction.atomic():
         record("stale_base")
-    with web(), pytest.raises(DatabaseError), transaction.atomic():
+    with web(), pytest.raises(IntegrityError, match=refused), transaction.atomic():
         record("actor_unauthorized")
     assert _status(stranded).state == "yaml_activated"
     # A crash between restoring the base YAML and recording the refusal leaves
@@ -403,13 +405,31 @@ def test_a_refused_activation_is_recovered_and_recorded_under_real_roles(
     receipt = install(stranded)
     assert receipt.state == "failed" and receipt.failure_code == "actor_unauthorized"
     assert store.active() == base and "stranded@example.org" not in rules(store)
-    # The identity trigger takes the shared work lock, so an identity change
-    # is serialized with an activation holding it.
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT pg_get_functiondef('stewardship_portal_user_mutable_v1'::regproc)"
-        )
-        assert "pg_advisory_xact_lock(736220,1)" in cursor.fetchone()[0]
+    # The activation's share lock really holds an identity change off until
+    # it commits: a second connection's disable waits behind it, then lands.
+    settings = connection.settings_dict
+    with (
+        psycopg.connect(
+            host=settings["HOST"],
+            port=settings["PORT"],
+            user=settings["USER"],
+            password=settings["PASSWORD"],
+            dbname=settings["NAME"],
+            autocommit=False,
+        ) as other,
+        as_config_installer(),
+        transaction.atomic(),
+    ):
+        assert installer.actor_authorized(stranded, lock=True) is True
+        with other.cursor() as cursor:
+            cursor.execute("SET LOCAL lock_timeout = '300ms'")
+            with pytest.raises(psycopg.errors.LockNotAvailable):
+                cursor.execute(
+                    "UPDATE stewardship_portal_user SET disabled=true, "
+                    "version=version+1 WHERE id=%s",
+                    [admin.pk],
+                )
+    assert not PortalUser.objects.get(pk=admin.pk).disabled
 
 
 def test_a_review_signed_for_one_administrator_is_refused_for_another(

@@ -4,8 +4,8 @@ No service, route, or command exposes this implementation. Actor UUIDs are
 attribution, not authorization, with one exception: a login-policy change
 confirmed by a portal user is applied only while that user is still an
 Administrator, rechecked here under the installation lock and again inside the
-activation transaction, under the shared work lock that identity updates take
-too. Online Admin admission,
+activation transaction with the identity row share-locked. Online Admin
+admission,
 credential evidence,
 offline bootstrap/recovery interlocks, and service grants/mounts remain required
 before exposure. Versioned policy is supported internally; operational secret,
@@ -67,7 +67,7 @@ class DatabaseMaterializer:
         self.deployment_id = deployment_id
         self.admit_campaign = admit_campaign
         # A login-policy request's activation-time actor recheck, run inside
-        # the activation transaction under the shared work lock.
+        # the activation transaction with the identity row share-locked.
         self.admit_actor = None
         self._guard = None
 
@@ -360,17 +360,19 @@ class ActorUnauthorized(Exception):
     """The Administrator who confirmed a login-policy change no longer is one."""
 
 
-def actor_authorized(request):
+def actor_authorized(request, *, lock):
     """Whether the confirming portal user still holds `manage_users` under the base.
 
     Evaluated against the policy being replaced, with the same evaluator a
-    sign-in uses. Called inside the activation transaction, which holds the
-    shared work lock that every identity update also takes in its trigger, the
-    read is serialized with any disable or address refresh: none can commit
-    between this read and the activation it protects. A plain read, so the
-    installer's SELECT grant suffices. An actor that is not a portal user, such
-    as operator recovery or a system producer, is admitted by its own boundary
-    and is not judged here.
+    sign-in uses. With `lock`, inside the activation transaction, the identity
+    row is read FOR SHARE, so a disable or an address refresh cannot commit
+    between this read and the activation it protects; the installer roles hold
+    the one column-level UPDATE grant PostgreSQL requires for that share lock,
+    the same way the runtime roles lock their own rows. The lock order stays
+    the one every holder uses, work lock then runtime row then identity row,
+    and an identity writer never waits on the work lock, so no cycle forms. An
+    actor that is not a portal user, such as operator recovery or a system
+    producer, is admitted by its own boundary and is not judged here.
     """
     from .policy import Capability, Principal, allows, confirmed_seeded, resolve_roles
 
@@ -379,7 +381,7 @@ def actor_authorized(request):
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT email, hosted_domain, disabled FROM stewardship_portal_user "
-            "WHERE id=%s",
+            "WHERE id=%s" + (" FOR SHARE" if lock else ""),
             [request.actor_id],
         )
         row = cursor.fetchone()
@@ -439,15 +441,15 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
         # A login-policy change, including a Ministry assignment, confirmed by
         # a portal user is applied only while that Administrator is still one
         # under the policy being replaced. The activation transaction rechecks
-        # it with the identity row locked, on the ordinary path and on the
-        # recovery path alike, so a crash between a refused activation and the
-        # YAML restore cannot let recovery activate a refused request.
+        # it with the identity row share-locked, on the ordinary path and on
+        # the recovery path alike, so a crash between a refused activation and
+        # the YAML restore cannot let recovery activate a refused request.
         policy_change = any(
             type(item) is dict and item.get("section") == "login_rules"
             for item in request.patch
         )
         if policy_change:
-            materializer.admit_actor = lambda: actor_authorized(request)
+            materializer.admit_actor = lambda: actor_authorized(request, lock=True)
         selected = store.active()
         active_digest = materializer.active_digest()
         if active_digest is None:
@@ -463,9 +465,15 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
             return _status(request)
         if current.state == "yaml_activated":
             # File and database agree, yet this request's candidate was
-            # selected once: its activation was refused and the base restored,
-            # and only the refusal's record was lost to a crash. Record it now
-            # rather than re-entering a path the checkpoint order forbids.
+            # selected once. For a login-policy request that is one thing:
+            # its activation was refused and the base restored, and only the
+            # refusal's record was lost to a crash. Record it now rather than
+            # re-entering a path the checkpoint order forbids. Any other
+            # request in this shape was put there by hand and needs one.
+            if not policy_change:
+                raise StorageInvariantError(
+                    "A selected candidate was unselected outside the installer."
+                )
             materializer.checkpoint("failed", failure_code="actor_unauthorized")
             return _status(request)
 
@@ -473,7 +481,7 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
         intent = None
         if active_digest != request.base.digest:
             failure_code = "stale_base"
-        elif policy_change and not actor_authorized(request):
+        elif policy_change and not actor_authorized(request, lock=False):
             # A disabled identity or a rule revoked since confirmation leaves
             # the base digest unchanged, so the stale-base check alone would
             # still activate their grant. Refused here, before any file is

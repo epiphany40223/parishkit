@@ -68,11 +68,16 @@ confirmation, would otherwise leave the base digest unchanged and let the
 stale-base check alone activate their grant. The check runs twice. Under the
 installation lock before any file is written, a refusal fails the request as
 `actor_unauthorized`, a new checkpoint failure code, with nothing touched.
-Inside the activation transaction the identity is read again under the shared
-work lock that transaction already holds, which the portal-user update
-trigger now takes as well, so a disable or an address refresh cannot commit
-between that read and the activation; a plain read, so the installer's
-`SELECT` grant suffices. A change that landed between the two checks rolls
+Inside the activation transaction the identity row is read again `FOR SHARE`,
+so a disable or an address refresh waits behind the activation and cannot
+commit between that read and it. PostgreSQL allows the share lock only with
+an `UPDATE` privilege, so the installer role gains one on the portal user's
+`id` column alone, a privilege the identity trigger's immutability and
+version rules make unusable for any actual change, as the download service's
+policy claim already does. The identity trigger itself takes no lock: an
+identity change waits only when an activation holds that one row, so the
+lock order is identity row then work lock in every transaction and no cycle
+is possible. A change that landed between the two checks rolls
 the activation back, the base YAML is selected again as an exceptional abort
 does, and the request fails the same way, a transition the checkpoint trigger
 admits for this code alone and never from the web role, whose own checkpoint
@@ -90,14 +95,14 @@ request under the signed-in portal user's identity.
 
 Independent fresh predecessor and candidate databases were compared on the
 disposable PostgreSQL cluster; the predecessor, verified main `e01b52ba`,
-exactly matches its committed fingerprint. Three objects change and none is
+exactly matches its committed fingerprint. Two objects change and none is
 added or removed: the `config_checkpoint_failure_code` check constraint admits
-the new `actor_unauthorized` code; the checkpoint transition trigger function
-admits a failure with that code after `yaml_activated`, the state a request
-holds when the activation transaction refuses its actor, and only from an
-installer; and the portal-user update trigger function takes the shared work
-lock, so an identity change is serialized with an activation judging that
-identity. The candidate has
+the new `actor_unauthorized` code; and the checkpoint transition trigger
+function admits a failure with that code after `yaml_activated`, the state a
+request holds when the activation transaction refuses its actor, from any
+role but the web. Outside the schema, the configuration installer's grants
+gain `UPDATE` on the portal user's `id` column for the share lock. The
+candidate has
 210 relations, 2,360 columns, 3,273 constraints, 972 indexes, 568 functions,
 535 triggers and 28 policies. The strict fixture was updated only after this
 inspected comparison. This is a pre-production fresh-install baseline; no
@@ -169,8 +174,9 @@ route.
   role, a change applied, a crash after YAML selection recovered as a refusal
   once the actor is disabled, the transition refused for a stale base and for
   the web role, a crash between the restore and the record resumed as the
-  refusal even with the actor re-enabled, and the identity trigger's lock
-  present; a review signed for one
+  refusal even with the actor re-enabled, and a second connection's disable
+  held off by the activation's share lock until it commits; a review signed
+  for one
   Administrator refused for another; a Chairperson-seeded address widened
   through the route keeping its seeded origin beside the new manual one; and
   reach counted as the page counts it, with an authorized colleague, an
@@ -189,7 +195,8 @@ route.
 Implementation, focused validation and three
 [review/fix rounds](stewardship-user-rule-edit-reviews.md) are complete, the
 first two single-source under the second September 20, 2026 Codex exemption
-and the third dual-source, plus two dual-source correction checks of the
-activation guard, with every accepted finding fixed. Full exact-head CI, DCO
+and the third dual-source, plus three correction checks of the activation
+guard, two dual-source and the third single-source under the same exemption,
+with every accepted finding fixed. Full exact-head CI, DCO
 and protected delivery remain open. M5 and Gate 3 remain open. No deployment, release, live-provider write or
 database deletion is authorized by this increment.
