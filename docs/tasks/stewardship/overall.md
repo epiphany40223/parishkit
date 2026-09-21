@@ -809,6 +809,15 @@ ADM-07 portal users increment and the ADM-08.04 system logs increment were
 reviewed in parallel from the same base and now deliver, in that order, from
 that verified main tip. M5 and Gate 3 remain open.
 
+PR #77 passed all 24 full exact-head jobs plus DCO on its second attempt, after
+five shards exposed a test factory the setup suites could no longer patch, and
+merged as `151966fb`; its
+[protected receipt](../../guides/stewardship-portal-users.md#protected-delivery)
+records the identical retained review tree and the corrected candidate. The
+ADM-08.04 system logs increment now delivers from that verified main tip, and
+the financial export increment of RPT-08 is under review beside it. M5 and
+Gate 3 remain open.
+
 1. Finish [BG-08](background-processing.md#bg-08-export-and-graph-workers); implement [RPT-01](reports.md#rpt-01-shared-report-framework-and-campaign-selection) and finish [RPT-02](reports.md#rpt-02-population-and-calculation-library).
 2. Complete [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics), [RPT-04](reports.md#rpt-04-additional-information-workflow-report), [RPT-05](reports.md#rpt-05-family-code-and-postal-outreach-reports), [RPT-06](reports.md#rpt-06-ministry-summary-and-detail), [RPT-07](reports.md#rpt-07-multi-ministry-follow-up-packet), and the reporting slice of [RPT-08](reports.md#rpt-08-census-and-financial-reports).
 3. [ADM-07](admin-portal.md#adm-07-user-rules-and-ministry-assignments) → [ADM-08](admin-portal.md#adm-08-manual-refresh-follow-up-queues-and-logs) → [RPT-09](reports.md#rpt-09-logs-and-daily-email-parity); connect [RPT-04](reports.md#rpt-04-additional-information-workflow-report)/[RPT-06](reports.md#rpt-06-ministry-summary-and-detail) follow-up and verify [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests) parity.
