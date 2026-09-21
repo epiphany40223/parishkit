@@ -38,6 +38,7 @@ from .accounts import (
     setup_share_views,
     setup_views,
     share_views,
+    user_rule_views,
     user_views,
     withdrawal_views,
 )
@@ -429,6 +430,7 @@ admin_patterns = [
     ),
     path("configuration/parish", parish_views.parish_settings, name="parish_settings"),
     path("users", user_views.users, name="users"),
+    path("users/rules", user_rule_views.user_rules, name="user_rules"),
     path(
         "configuration/ministries", ministry_views.ministry_activity, name="ministries"
     ),

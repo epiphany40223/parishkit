@@ -1,0 +1,23 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Review login rule change" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Review login rule change" %}</h1>
+<section class="panel">
+  <h2>{% if kind == 'domain' %}{% translate "Hosted domain" %}{% else %}{% translate "Exact address" %}{% endif %}: {{ identity }}</h2>
+  {% if removed %}<p>{% translate "This rule will be removed." %} {% translate "Configured roles now:" %} {% for role in before %}{{ role }}{% if not forloop.last %}, {% endif %}{% empty %}{% translate "None (explicit deny)" %}{% endfor %}</p>
+  {% if kind == 'address' %}<p>{% translate "After removal this address is judged by its domain rule, if any. Ministry assignments for the address stay and take effect only through a domain rule that grants Ministry leader." %}</p>{% else %}<p>{% translate "After removal, accounts that presented this hosted-domain claim can sign in only through an exact-address rule." %}</p>{% endif %}
+  {% elif created %}<p>{% translate "This rule will be created with the roles:" %} {% for role in after %}{{ role }}{% if not forloop.last %}, {% endif %}{% empty %}<strong>{% translate "none: an explicit deny" %}</strong>{% endfor %}</p>
+  {% else %}<p>{% translate "Configured roles now:" %} {% for role in before %}{{ role }}{% if not forloop.last %}, {% endif %}{% empty %}{% translate "None (explicit deny)" %}{% endfor %}</p>
+  <p>{% translate "Configured roles after this change:" %} {% for role in after %}{{ role }}{% if not forloop.last %}, {% endif %}{% empty %}<strong>{% translate "none: an explicit deny" %}</strong>{% endfor %}</p>{% endif %}
+  {% if expansion %}<p class="notice"><strong>{% translate "High-impact expansion." %}</strong> {% if expansion == 'administrator' %}{% translate "This grants Administrator to an exact address." %}{% elif expansion == 'domain_rule' %}{% translate "This creates a hosted-domain rule, so every account at that domain that presents its claim can sign in." %}{% else %}{% translate "This adds Staff to a hosted-domain rule." %}{% endif %} {% translate "The change is recorded with your identity and the roles before and after." %}</p>{% endif %}
+  {% if self_affected %}<p class="notice">{% translate "This removes your own Administrator role. It takes effect on your next request, and another Administrator remains." %}</p>{% endif %}
+  <p>{% blocktranslate count counter=recorded %}{{ counter }} recorded Google account is affected by this rule.{% plural %}{{ counter }} recorded Google accounts are affected by this rule.{% endblocktranslate %} {% translate "Removed roles take effect on each person's next request after activation; a currently open session is not ended." %}</p>
+  <p>{% translate "The change is applied as a configuration request against the applied policy. This preview expires in 15 minutes." %}</p>
+</section>
+<form method="post" action="{% url 'admin:user_rules' %}">
+  {% csrf_token %}<input type="hidden" name="action" value="confirm">
+  <input type="hidden" name="preview" value="{{ preview }}">
+  <button type="submit">{% translate "Apply login rule change" %}</button>
+  <a href="{% url 'admin:users' %}">{% translate "Cancel" %}</a>
+</form>
+{% endblock %}

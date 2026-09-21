@@ -76,12 +76,17 @@ def form_action(parameters, *, preview_fields, multiple_fields=frozenset()):
     return action
 
 
-def sign_preview(*, actor, configuration, patch, salt, snapshot=None):
-    """A preview has one request key, one base and a fifteen-minute validity window."""
+def sign_preview(*, actor, configuration, patch, salt, snapshot=None, key=None):
+    """A preview has one request key, one base and a fifteen-minute validity window.
+
+    An editor whose patch must name its own request, as manual policy
+    provenance does, chooses the key first and passes it; the rest take a
+    fresh one.
+    """
     return signing.dumps(
         {
             "actor": str(actor.identity),
-            "key": str(uuid4()),
+            "key": str(key or uuid4()),
             "base": configuration.active_configuration.digest,
             "snapshot": str(snapshot) if snapshot is not None else None,
             "patch": patch,

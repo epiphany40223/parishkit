@@ -19,11 +19,13 @@ from .limiting import LimiterUnavailable
 from .policy import Capability, confirmed_seeded
 from .policy_models import PortalUser
 from .user_rows import (
+    ROLE_LABELS,
     AppliedPolicy,
     address_rows,
     domain_assignment_rows,
     domain_rows,
 )
+from .user_rules import ROLE_ORDER
 
 
 def _identities(records):
@@ -78,8 +80,8 @@ def users(request):
     Shaping and rendering happen after release, and only then does a short
     transaction recheck current access and record the view: a response that
     failed to render, or whose reader was revoked meanwhile, never leaves a
-    successful disclosure on record. Editing arrives later through configuration
-    requests, never these reads.
+    successful disclosure on record. Editing goes through previewed
+    configuration requests on its own route, never these reads.
 
     Like the Admin editors it sits beside, the page is unavailable before setup
     completes and during a restore review, when the applied configuration is not
@@ -106,7 +108,17 @@ def users(request):
             "addresses": address_rows(policy),
             "domain_assignments": domain_assignment_rows(policy),
         }
-        response = render(request, "stewardship/users.html", tables)
+        response = render(
+            request,
+            "stewardship/users.html",
+            tables
+            | {
+                # Every edit form carries the digest it was drawn from, so a
+                # change proposed against an older policy is refused as stale.
+                "base_digest": configuration.active_configuration.digest,
+                "roles": [(role, ROLE_LABELS[role]) for role in ROLE_ORDER],
+            },
+        )
         with transaction.atomic():
             current = principal(
                 request, service, read_only=True, capability=Capability.MANAGE_USERS
