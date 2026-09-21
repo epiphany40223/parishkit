@@ -206,14 +206,6 @@
     } catch (_) { current = null; }
     if (ended) return;
     conflict = {message, current};
-    queue.forEach((intent) => {
-      // The Administrator's selection belongs to the intent, decided once
-      // when it first enters the view, so a redraw never resets it.
-      if (intent.retry === undefined) {
-        const value = currentValue(intent, current);
-        intent.retry = value !== null && value !== intent.checked;
-      }
-    });
     renderConflict();
   }
   function renderConflict() {
@@ -226,12 +218,16 @@
     const list = document.createElement("ul");
     queue.forEach((intent) => {
       const item = document.createElement("li");
-      const pick = document.createElement("input");
-      pick.type = "checkbox";
-      const value = currentValue(intent, current);
       const text = document.createElement("label");
-      text.append(pick, " ", describe(intent));
+      // While the rules are unknown there is nothing to select against, so
+      // the list only shows what waits; the selection is offered once the
+      // rules are read. The Administrator's selection belongs to the
+      // intent, decided once when it first meets the rules, so a redraw
+      // never resets it.
       if (current) {
+        const pick = document.createElement("input");
+        pick.type = "checkbox";
+        const value = currentValue(intent, current);
         const now = document.createElement("span");
         if (value === null) {
           // A deleted target needs explicit resolution; retry never
@@ -241,12 +237,14 @@
         } else {
           const roles = current.rules[intent.kind][intent.identity];
           now.textContent = ` (now: ${roles.length ? roles.join(", ") : "explicit deny"})`;
+          if (intent.retry === undefined) intent.retry = value !== intent.checked;
         }
-        text.append(now);
+        pick.checked = intent.retry;
+        pick.addEventListener("change", () => { intent.retry = pick.checked; });
+        text.append(pick, " ", describe(intent), now);
+      } else {
+        text.append(describe(intent));
       }
-      if (intent.retry === undefined) intent.retry = value !== null && value !== intent.checked;
-      pick.checked = intent.retry;
-      pick.addEventListener("change", () => { intent.retry = pick.checked; });
       item.append(text);
       list.append(item);
     });

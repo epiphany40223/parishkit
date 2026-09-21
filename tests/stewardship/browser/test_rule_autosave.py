@@ -234,11 +234,20 @@ def test_discarding_a_conflict_restores_current_rules(page, component_origin):
     rules["address"][LEADER] = ["administrator", "ministry_leader", "staff"]
     leader = leader_row(page, component_origin)
     leader.get_by_label("Staff").uncheck()
-    # The rules could not be read: the queue is kept and the read offered again.
+    # The rules could not be read: the queue is kept and the read offered
+    # again, with nothing to select against yet.
+    panel = page.get_by_role("alert")
     page.get_by_role("button", name="Read the current rules again").wait_for()
-    assert page.get_by_role("alert").get_by_role("listitem").count() == 1
+    assert panel.get_by_role("listitem").count() == 1
+    assert panel.get_by_role("checkbox").count() == 0
     page.get_by_role("button", name="Read the current rules again").click()
     page.get_by_role("button", name="Discard all").wait_for()
+    # Once read, the current rules differ from the withdrawal, so it is
+    # preselected for retry beside them.
+    assert panel.get_by_text(
+        "now: administrator, ministry_leader, staff", exact=False
+    ).is_visible()
+    assert panel.get_by_role("checkbox").is_checked()
     page.get_by_role("button", name="Discard all").click()
     assert leader.get_by_label("Staff").is_checked()
     assert leader.get_by_text("Change discarded", exact=True).is_visible()

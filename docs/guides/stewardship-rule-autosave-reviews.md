@@ -87,3 +87,20 @@ corrected:
 
 The nineteen findings the validation step did not confirm were not carried
 forward.
+
+## Round 4
+
+Claude only (Codex out of quota). A correction check of the three rounds'
+corrections: fifteen raw findings, two validated, both corrected:
+
+- Medium: the round 3 correction decided each intent's retry default while
+  the rules were still unknown after a failed read, and never again, so no
+  intent was preselected once the read succeeded. The selection is now
+  offered, and its default decided, only once the rules are read.
+- Medium: the failed-read browser case discarded everything after the
+  re-read without asserting the preselection. It now asserts that nothing is
+  offered to select while the rules are unknown and that the withdrawal is
+  preselected beside the current roles once they are read.
+
+The thirteen findings the validation step did not confirm were not carried
+forward.
