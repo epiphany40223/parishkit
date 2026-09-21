@@ -10,6 +10,7 @@ from django.db import connection, transaction
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
+from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit import log_views
 from parishkit.stewardship.audit.models import (
@@ -127,7 +128,8 @@ def test_administrator_reads_both_sources_and_filters_privately(auth_service, go
         # A type its owner writes directly, outside both reviewed vocabularies.
         logins = post(browser, {"event": "admin_login"})
         assert audit_entries(logins) == 1 and levels(logins) == []
-        today = timezone.now().date()
+        # The day the entries were really stored on, not the wall clock now.
+        today = OperationalLog.objects.order_by("-created_at").first().created_at.date()
         later = post(browser, {"start": (today + timedelta(days=2)).isoformat()})
         assert b"No matching entries." in later.content
         during = post(browser, {"start": today.isoformat(), "end": today.isoformat()})
@@ -338,45 +340,61 @@ def test_a_restore_review_beginning_during_the_request_audits_nothing(
 def test_a_page_costs_a_bounded_number_of_queries(auth_service, google):
     """Five hundred more entries add no read: one per table, however many rows."""
     browser, _ = signed_in()
-    tables = (
-        "stewardship_operational_log",
-        "stewardship_audit_event",
-        "stewardship_portal_user",
-    )
+    # Entries by several distinct actors, so an actor lookup written per row
+    # would show as many reads; one set lookup shows as exactly one.
+    actors = [
+        PortalUser.objects.create(
+            google_subject=f"actor-{index}",
+            email=f"actor{index}@example.org",
+            verified_at=timezone.now(),
+        ).pk
+        for index in range(5)
+    ]
     with (
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
         CaptureQueriesContext(connection) as few,
     ):
         assert browser.get(URL).status_code == 200
     OperationalLog.objects.bulk_create(
-        OperationalLog(level="INFO", event="task_failed", schema="task", context={})
-        for _ in range(500)
+        OperationalLog(
+            level="INFO",
+            event="task_failed",
+            schema="task",
+            context={},
+            actor_id=actors[index % len(actors)],
+        )
+        for index in range(500)
     )
     with (
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
         CaptureQueriesContext(connection) as many,
     ):
         response = browser.get(URL)
-    # Count only reads the page itself makes of these tables. Total statements
-    # also include the session's throttled idle-activity update, which depends
-    # on timing, and sign-in's own reads of the portal user.
+    # Count only the reads the page itself makes: the two log tables, ordered,
+    # and the one actor lookup by identifier set. Total statements also include
+    # the session's throttled idle-activity update, which depends on timing,
+    # and sign-in's own reads of the portal user by primary key.
     reads = [
         Counter(
             table
             for query in captured
-            for table in tables
+            for table in (
+                "stewardship_operational_log",
+                "stewardship_audit_event",
+                "stewardship_portal_user",
+            )
             if query["sql"].startswith("SELECT")
             and f'FROM "{table}"' in query["sql"]
-            and ("ORDER BY" in query["sql"] or '"email"' in query["sql"])
+            and ("ORDER BY" in query["sql"] or '"id" IN (' in query["sql"])
         )
         for captured in (few, many)
     ]
     assert response.status_code == 200
-    # One bounded read of each log table, and the actor lookup never per row.
     for captured in reads:
         assert captured["stewardship_operational_log"] == 1
         assert captured["stewardship_audit_event"] == 1
-    assert reads[1]["stewardship_portal_user"] <= reads[0]["stewardship_portal_user"]
+        assert captured["stewardship_portal_user"] == 1
+    assert response.content.count(b"actor") >= 50
     assert (
         response.content.count(b"<tr>") == 51 and b"Older entries" in response.content
     )

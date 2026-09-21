@@ -109,10 +109,10 @@ class LogQuery:
         for value in (query.actor, query.correlation, query.campaign, query.before_id):
             _identifier(value)
         for value in (query.start, query.end):
-            if value and (
-                date.fromisoformat(value).isoformat() != value
-                or not EARLIEST <= date.fromisoformat(value) <= LATEST
-            ):
+            if not value:
+                continue
+            day = date.fromisoformat(value)
+            if day.isoformat() != value or not EARLIEST <= day <= LATEST:
                 raise ValueError("Invalid log date filter.")
         if query.start and query.end and query.start > query.end:
             raise ValueError("Invalid log date interval.")

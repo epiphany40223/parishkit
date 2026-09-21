@@ -138,7 +138,8 @@ are focused selections rather than a complete acceptance pass.
   and the recheck disclosing and auditing nothing. A restore review, whether
   present before the read or beginning during the request, making the page
   unavailable and auditing nothing. Five hundred more entries leaving one
-  bounded read of each log table and no per-row actor lookup.
+  bounded read of each log table and, with five distinct actors among them,
+  exactly one actor lookup by identifier set.
 - The 16-case navigation suite pins the entry to Administrators.
 - Nine browser cases on Chromium, Firefox and WebKit, 14 seconds: accessibility
   scans of six states at 320 and 1280 pixels, severity words beside their
@@ -152,9 +153,9 @@ delivery order is known.
 
 ## Checkpoint
 
-Implementation, focused validation and the first
-[review/fix round](stewardship-admin-logs-reviews.md) are complete; that round
-was single-source under the second September 20, 2026 Codex exemption, with
-every accepted finding fixed. Two more rounds, full exact-head CI, DCO and protected delivery remain open. M5 and
+Implementation, focused validation and two
+[review/fix rounds](stewardship-admin-logs-reviews.md) are complete, both
+single-source under the second September 20, 2026 Codex exemption, with every
+accepted finding fixed. One more round, full exact-head CI, DCO and protected delivery remain open. M5 and
 Gate 3 remain open. No deployment, release, live-provider write or database
 deletion is authorized by this increment.

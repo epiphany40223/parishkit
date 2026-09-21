@@ -3,7 +3,8 @@
 {% block content %}<section class="flow panel">
   <h1>{% translate "System logs unavailable" %}</h1>
   <p role="alert">{{ message }}</p>
-  {% if invalid %}<p>{% translate "Identifiers must be complete lowercase values exactly as the log shows them, a type must be exactly as the Type column shows it, and a From date cannot follow its Through date. Submitted filters are never included in this error page." %}</p>{% endif %}
+  {% if query_string %}<p>{% translate "Log filters are sent only in the page's own form, never in a web address. Open the logs from the navigation and apply filters there." %}</p>
+  {% elif invalid %}<p>{% translate "Identifiers must be complete lowercase values exactly as the log shows them, a type must be exactly as the Type column shows it, dates are UTC days from 2020 through 2999, and a From date cannot follow its Through date. Submitted filters are never included in this error page." %}</p>{% endif %}
   <p><a href="{% url 'admin:logs' %}">{% translate "Return to the newest log entries" %}</a></p>
   <p><a href="{% url 'admin:login' %}">{% translate "Sign in again" %}</a></p>
 </section>{% endblock %}

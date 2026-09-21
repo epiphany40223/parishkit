@@ -59,3 +59,29 @@ rather than performing a real demotion mid-request.
 
 Post-fix validation: four database-free, nine PostgreSQL, 16 navigation and nine
 browser cases passed locally.
+
+## Round 2, single-source under the second exemption
+
+Reviewed `d14a395a`, the complete diff from main `1070fd28`. The Claude reviewer
+completed with nine findings, one Medium and eight Low; Codex exited without
+output. Under the exemption this counts as round 2. Accepted and fixed:
+
+- **Medium: the cost case could not detect a per-row actor lookup.** Its five
+  hundred bulk entries carried no actor, so the page issued no actor read at
+  all and the assertion was satisfied trivially. The entries now name five
+  distinct actors, and the case asserts exactly one actor lookup by identifier
+  set beside one bounded read of each log table.
+- Low: the date-range case derives its day from a stored entry rather than the
+  wall clock; dates are parsed once as dates; the audit action is named
+  `SYSTEM_LOGS_VIEWED` after its stored value and the capability; a query
+  string is refused with its own explanation rather than filter guidance, since
+  the mistake is where the filters were sent; the guidance names the day
+  bounds; and the guide's checkpoint is rewrapped.
+
+Not acted on: the view repeats the delivery pages' capture, render, recheck and
+audit shape rather than sharing one helper with them. Extracting it would change
+unrelated production code in this increment; it is a candidate for the export
+increment, which adds a second logs view.
+
+Post-fix validation: four database-free, nine PostgreSQL and nine browser cases
+passed locally.

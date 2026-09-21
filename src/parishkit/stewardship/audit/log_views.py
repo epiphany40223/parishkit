@@ -1,6 +1,6 @@
 """Administrator-only combined operational and audit log screen."""
 
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
@@ -34,18 +34,23 @@ from .services import record_action
 UNAVAILABLE = (ConfigError, LimiterUnavailable, ObjectDoesNotExist)
 
 
-def _error(code, status):
+def _error(code, status, *, guidance=None):
     """A fixed, accessible message with no submitted filter and no DB chrome.
 
     An unavailable database must not be queried again by the Admin navigation
-    context processor while the error itself is rendered.
+    context processor while the error itself is rendered. Filter guidance is
+    shown only when a filter value was the problem: a denied reader or an
+    outage submitted nothing that could be corrected, and a query string is
+    refused for where it was sent, not for what it said.
     """
     response = HttpResponse(
         render_to_string(
             "stewardship/logs-error.html",
-            # Filter guidance only when a filter was the problem: a denied reader
-            # or an outage submitted nothing that could be corrected.
-            {"message": MESSAGES[code], "invalid": code is ErrorCode.INVALID},
+            {
+                "message": MESSAGES[code],
+                "invalid": code is ErrorCode.INVALID if guidance is None else guidance,
+                "query_string": guidance is False,
+            },
         ),
         status=status,
     )
@@ -76,10 +81,10 @@ def _bounded(rows, query):
     if query.correlation:
         rows = rows.filter(correlation_id=query.correlation)
     if query.start:
-        day = datetime.fromisoformat(query.start).date()
+        day = date.fromisoformat(query.start)
         rows = rows.filter(created_at__gte=datetime.combine(day, time.min, UTC))
     if query.end:
-        day = datetime.fromisoformat(query.end).date() + timedelta(days=1)
+        day = date.fromisoformat(query.end) + timedelta(days=1)
         rows = rows.filter(created_at__lt=datetime.combine(day, time.min, UTC))
     if query.cursor:
         instant, identifier = query.cursor
@@ -153,7 +158,7 @@ def logs(request):
         service = runtime()
         actor = _principal(request, service.store)
         if request.GET:
-            raise ValueError("Log filters require private POST state.")
+            return _error(ErrorCode.INVALID, 400, guidance=False)
         parameters = request.POST.copy()
         parameters.pop("csrfmiddlewaretoken", None)
         query = LogQuery.parse(parameters)
@@ -174,7 +179,7 @@ def logs(request):
             ).exists():
                 return _error(ErrorCode.UNAVAILABLE, 503)
             record_action(
-                Action.LOGS_VIEWED,
+                Action.SYSTEM_LOGS_VIEWED,
                 actor_kind=ActorKind.PORTAL_USER,
                 actor_id=current.identity,
                 # A count only: never a filter, an identifier or an address.
