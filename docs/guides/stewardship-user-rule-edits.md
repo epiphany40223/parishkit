@@ -86,9 +86,13 @@ failure is one the checkpoint trigger admits for this code alone and never
 from the web role, whose own checkpoint grant must not be able to strand a
 selected candidate. Only then is the base YAML selected again, as an
 exceptional abort does. A crash before that restore leaves the failed
-request's candidate selected over an unchanged base, and the next install of
-any request finishes the restore first, since the refused request is
-terminal and may never run again. The crash-recovery activation runs the
+request's candidate selected over an unchanged base, a state in which the
+web refuses every Admin page and no new request can be recorded; the
+refused request is terminal, so the installer's queue never selects it
+again, and instead every install of any request finishes the restore
+first, before the abort recoveries that would refuse the unrelated
+manifest, and an installer pass that finds its queue empty finishes it
+with no request in hand. The crash-recovery activation runs the
 same recheck and refuses the same way. Operator recovery and other system
 producers are not portal users and keep their own boundaries; the web can
 only ever record a request under the signed-in portal user's identity.
@@ -175,8 +179,9 @@ baseline; no upgrade path is added and no retained database was deleted.
   role, a change applied, a crash after YAML selection recovered as a refusal
   once the actor is disabled, the transition refused for a stale base and for
   the web role, a crash between the recorded refusal and the restore leaving
-  the refusal standing with the actor re-enabled and the next request's
-  install finishing the restore, a second connection's disable held off by
+  the refusal standing with the actor re-enabled, the queue empty and the
+  page refused until the installer's idle pass restores the base with no
+  request in hand, a second connection's disable held off by
   the activation's share lock until it commits, and the installer's column
   grant unusable for an update that changes nothing; a review signed for one
   Administrator refused for another; a Chairperson-seeded address widened
@@ -197,8 +202,8 @@ baseline; no upgrade path is added and no retained database was deleted.
 Implementation, focused validation and three
 [review/fix rounds](stewardship-user-rule-edit-reviews.md) are complete, the
 first two single-source under the second September 20, 2026 Codex exemption
-and the third dual-source, plus four correction checks of the activation
-guard, three dual-source and one single-source under the same exemption,
+and the third dual-source, plus five correction checks of the activation
+guard, three dual-source and two single-source under the same exemption,
 with every accepted finding fixed. Full exact-head CI, DCO and protected
 delivery remain open. M5 and Gate 3 remain open. No deployment, release,
 live-provider write or database deletion is authorized by this increment.

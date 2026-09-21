@@ -429,6 +429,9 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
     )
     with materializer.lock():
         current = _status(request)
+        # First, before the abort recoveries, which refuse a manifest naming
+        # neither this request's base nor its candidate.
+        _restore_refused(store, materializer._check)
         from .setup_installation import recover_setup_abort
 
         setup_abort = recover_setup_abort(materializer)
@@ -441,7 +444,6 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
         aborted = recover_configuration_abort(materializer)
         if aborted is not None:
             return aborted
-        _restore_refused(store, materializer)
         if current.state in {"cancelled", "failed", "applied"}:
             from parishkit.stewardship.campaigns.configuration_intents import (
                 verify_intent_receipt,
@@ -476,7 +478,7 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
             try:
                 recover_active(store, materializer)
             except ActorUnauthorized:
-                _restore_refused(store, materializer)
+                _restore_refused(store, materializer._check)
             return _status(request)
 
         failure_code = ""
@@ -575,23 +577,37 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
         try:
             apply_version(store, materializer, intent.candidate)
         except ActorUnauthorized:
-            _restore_refused(store, materializer)
+            _restore_refused(store, materializer._check)
         return _status(request)
 
 
-def _restore_refused(store, materializer):
+def restore_refused(store):
+    """Finish, with no request in hand, a refusal's restore a crash cut short.
+
+    The installer queue selects only resumable requests and a refused request
+    is terminal, so an idle installer pass runs this; otherwise the deployment
+    would stay incoherent, every Admin page refused and no new request able
+    to be recorded, until an operator intervened.
+    """
+    with installation_lock() as guard:
+        _restore_refused(store, guard.check)
+
+
+def _restore_refused(store, check):
     """Select the base YAML again after an activation refused its actor.
 
     The refusal is recorded inside the activation transaction, before the
     restore, so a crash between the two leaves a failed request's candidate
-    selected over an unchanged base. Every install finishes that restore, as
-    an exceptional abort's recovery does, because the refused request is
-    terminal and may never be run again; until then no other request can
-    proceed, since its base is not what the file names.
+    selected over an unchanged base. Every install, and every idle installer
+    pass, finishes that restore, as an exceptional abort's recovery does;
+    until then no other request can proceed, since its base is not what the
+    file names. `check` is the installation lock's connection check.
     """
-    materializer._check()
+    check()
     selected = store.active()
-    active_digest = materializer.active_digest()
+    active_digest = SystemConfiguration.objects.values_list(
+        "active_configuration__digest", flat=True
+    ).first()
     if selected is None or active_digest is None or selected.digest == active_digest:
         return
     for refused in ConfigurationChangeRequest.objects.filter(
@@ -600,7 +616,7 @@ def _restore_refused(store, materializer):
         status = _status(refused)
         if status.state == "failed" and status.failure_code == "actor_unauthorized":
             store.select(store.read_version(refused.base_id))
-            materializer._check()
+            check()
             return
 
 

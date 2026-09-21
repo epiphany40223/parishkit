@@ -116,6 +116,9 @@ def test_restricted_installer_applies_real_yaml_and_retries(
         result = service.run_request(request.request_id)
         assert result.state == "applied"
         assert service.run_request(request.request_id) == result
+        # The idle pass has nothing to restore while file and database agree.
+        service.restore_refused()
+        assert store.active().digest == result.applied_digest
         with pytest.raises(ConfigError):
             service.run_request("not-a-uuid")
         with pytest.raises(ConfigError):

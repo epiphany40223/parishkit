@@ -23,6 +23,7 @@ from parishkit.stewardship.accounts.request_models import (
 )
 from parishkit.stewardship.accounts.runtime_models import ConfigurationActivation
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.runtime_process import next_configuration_request
 from parishkit.stewardship.storage import StorageInvariantError
 
 from ..policy_factory import address, assignment, domain
@@ -362,7 +363,7 @@ def test_a_refused_activation_is_recovered_and_recorded_under_real_roles(
     # The checkpoint trigger admits that refusal from yaml_activated alone: not
     # a stale base, and not the same code written by the web role.
     set_disabled(False)
-    stranded, later = queued("stranded@example.org"), queued("later@example.org")
+    stranded = queued("stranded@example.org")
     monkeypatch.setattr(installer.DatabaseMaterializer, "activate", crashing)
     with pytest.raises(StorageInvariantError):
         install(stranded)
@@ -388,12 +389,14 @@ def test_a_refused_activation_is_recovered_and_recorded_under_real_roles(
     # The refusal is committed by the activation transaction itself, before the
     # base YAML is restored. A crash between the two leaves the refused
     # request failed with its candidate still selected; the actor authorized
-    # again by then changes nothing, since the refusal is already recorded,
-    # and the next install of any request finishes the restore first.
+    # again by then changes nothing, since the refusal is already recorded.
+    # The queue never selects the terminal request again and the web refuses
+    # every page while file and database disagree, so the installer's idle
+    # pass finishes the restore with no request in hand.
     set_disabled(True)
     restore = installer._restore_refused
 
-    def crashing_restore(store, materializer):
+    def crashing_restore(store, check):
         """Stop where a crash would, once the refusal is durable."""
         if _status(stranded).state == "failed":
             raise StorageInvariantError("simulated crash before the restore")
@@ -406,11 +409,20 @@ def test_a_refused_activation_is_recovered_and_recorded_under_real_roles(
     assert store.active().digest == stranded.candidate_digest
     monkeypatch.setattr(installer, "_restore_refused", restore)
     set_disabled(False)
-    assert install(later).state == "applied"
-    assert "later@example.org" in rules(store)
+    assert next_configuration_request() is None
+    with web():
+        assert browser.get(PAGE).status_code == 503
+    with as_config_installer():
+        admit_configuration_database()
+        installer.restore_refused(store)
+    assert store.active() == base
+    with web():
+        assert browser.get(PAGE).status_code == 200
     assert "stranded@example.org" not in rules(store)
     assert install(stranded).failure_code == "actor_unauthorized"
     assert not ConfigurationActivation.objects.filter(request=stranded).exists()
+    assert install(queued("later@example.org")).state == "applied"
+    assert "later@example.org" in rules(store)
     # The installer's column grant serves the share lock alone: the identity
     # trigger refuses even an update that changes nothing.
     with (

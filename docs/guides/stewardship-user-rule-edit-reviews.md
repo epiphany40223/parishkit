@@ -281,3 +281,43 @@ round-5 resume rule needs no case now that the rule is gone.
 Post-fix validation: four database-free, eight PostgreSQL and nine browser
 cases passed locally, with the page's own suite, the parish and Ministry
 editors, the installer's own suites and the schema baseline.
+
+## Round 8, correction check, single-source under the second exemption
+
+Reviewed `57c07c67`, the complete diff from main `e01b52ba`, as a check of
+the round-7 durable refusal. Codex did not answer; Claude, in two shards,
+returned two High, two Medium and eleven Low. All four validated findings
+were accepted and fixed.
+
+- **High: the restore was left to a request the queue would never select.**
+  A crash between the recorded refusal and the restore left the refused
+  request terminal with its candidate still selected, and the installer's
+  queue selects only resumable requests, while the web refuses every Admin
+  page and cannot record a new request while file and database disagree; so
+  unless another request happened to be queued already, the deployment
+  stayed incoherent until an operator intervened, a state the round-5
+  design, which left the request resumable, did not have. An installer pass
+  that finds its queue empty now finishes the restore with no request in
+  hand, through the service's admitted `restore_refused`, under the
+  installation lock.
+- **Medium: an abort-journaled request could not reach the restore.** The
+  restore ran after the abort recoveries, which refuse a manifest naming
+  neither that request's base nor its candidate, so a request carrying a
+  campaign abort journal was wedged in the same window. The restore now runs
+  first.
+- **Medium: the crash case proved recovery only through a request queued
+  before the crash.** The case now crashes with an empty queue, proves the
+  queue selects nothing and the Portal users page answers 503, runs the
+  requestless restore under the real installer role, and proves the page
+  answers again and a later request installs. A unit case proves the
+  installer loop runs the restore on an empty pass and only the request
+  otherwise, and the service suite proves the pass changes nothing while
+  file and database agree.
+
+The eleven Low findings repeated earlier dispositions or concerned wording
+already corrected.
+
+Post-fix validation: four database-free, eight PostgreSQL and nine browser
+cases passed locally, with the page's own suite, the parish and Ministry
+editors, the installer's own suites, the runtime process suite and the
+schema baseline.

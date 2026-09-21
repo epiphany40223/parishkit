@@ -13,7 +13,7 @@ from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.service_boundaries import admit_online_service
 
 from .authority import AuthorityStore
-from .configuration_installation import install_request
+from .configuration_installation import install_request, restore_refused
 from .configuration_schema import validate_sections
 from .credential_database import _identity, admit_grants
 from .setup_exchange_grants import SESSION_COLUMNS
@@ -141,6 +141,21 @@ class ConfigurationInstaller:
         """
         if not isinstance(request_id, UUID):
             raise ConfigError("A configuration request reference is required.")
+        self._admit()
+        return install_request(
+            self.store,
+            request_id=request_id,
+            correlation_id=uuid4(),
+            admit_campaign=admit_campaign,
+        )
+
+    def restore_refused(self):
+        """An idle pass finishes a refused request's restore a crash cut short."""
+        self._admit()
+        restore_refused(self.store)
+
+    def _admit(self):
+        """Readmit the service, its authority path and its grants on every pass."""
         if admit_online_service(self.configuration) is not ServiceRole.CONFIG_INSTALLER:
             raise ConfigError(
                 "Configuration installation requires its isolated service."
@@ -148,9 +163,3 @@ class ConfigurationInstaller:
         if self.store.root != self.configuration.paths["authority"]:
             raise ConfigError("Configuration installer authority path changed.")
         admit_configuration_database()
-        return install_request(
-            self.store,
-            request_id=request_id,
-            correlation_id=uuid4(),
-            admit_campaign=admit_campaign,
-        )
