@@ -66,3 +66,10 @@ The thirteen Low findings concerned wording and naming.
 Post-fix validation: the review, Portal users page and audit context suites
 passed locally under the restricted roles, with the review database-free
 suite and the schema baseline.
+
+## Round 3, single-source under the second exemption
+
+Reviewed `23e04130`, the round 2 result, as the closing check. Codex did not
+answer; Claude, in one pass, confirmed the snapshot-pinned confirmation and
+the address-free reason enforced present and correct, and validated no
+finding. Its twelve Low remarks concerned wording and naming.
