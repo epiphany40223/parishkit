@@ -54,7 +54,11 @@ previews and confirms exactly as the rule editor does, under the same
 session, capability, CSRF, freshness and policy guards; and the episode
 closes as `assignment_removed` when the request activates. A restore is
 refused where an Administrator's assignment to that Ministry already exists,
-since the scope is already kept.
+since the scope is already kept. A restore or removal is offered, and
+admitted, only for a seed with an open episode: the preview observes the
+applied policy and the episodes under the work lock and refuses a seed the
+source confirms, so no decision audit is ever written for an episode that
+was not opened. Keeping a role independently needs no episode.
 
 ### The reason lives in the audit
 
@@ -72,7 +76,11 @@ The open episodes are read under the page's observation lock beside the
 applied policy, the overlays and the current source, so a row never pairs one
 generation's reason with another's evidence. Suspension reasons are the
 overlay's own words; what the address is granted comes through the same
-evaluator as every other table. The web role gains SELECT on the review
+evaluator as every other table; and whether the retained Member chairs
+another active Ministry now is judged per review against the seed's own
+Ministry and the applied activity, the rule the suggestion table applies, so
+a Member still chairing the suspended Ministry never reads as chairing
+another. The web role gains SELECT on the review
 episodes, the reconciliation receipts that opened them and the retained
 evidence: record ids, reasons, times and DUIDs, never contact data.
 
@@ -95,30 +103,38 @@ path, and no retained database was deleted.
 
 ## Focused validation
 
-- Six database-free cases: keeping a role adds only a manual origin, a
-  restore replaces the seed with a manual assignment, a removal drops only
+- Twenty-four database-free cases: keeping a role adds only a manual origin,
+  a restore replaces the seed with a manual assignment, a removal drops only
   the seed, each refusing a missing seed, an unseeded role and a decision
   already in effect with every result satisfying the ordinary policy rules;
-  and the review rows stating the suspension's reason and time, what the
+  the review rows stating the suspension's reason and time, what the
   evaluator grants now, whether a manual assignment already keeps scope, and
-  ordering stably with a nameless Ministry.
-- Three PostgreSQL cases under the real web and restricted installer roles
-  with a confirmed seed the promoted source then stops showing: the row
-  listed with its reason, Member and decision forms, a restore without a
-  reason not understood, and a restore installing a manual assignment,
-  closing the review at activation, keeping the role and scope at sign-in
-  and recording the decision, Ministry and reason in the audit without an
-  address; a removal dropping the seed, closing the review and leaving the
-  seeded role reading as suspended, with a second decision refused; and
-  keeping the role independently keeping it in force after the Chairperson
-  goes while the seed stays suspended, with a second keep refused.
+  ordering stably with a nameless Ministry; and the action audit schema
+  admitting the closed decision word and the bounded reason text in both
+  directions and refusing them under another context kind.
+- Six PostgreSQL cases under the real web and restricted installer roles
+  with a confirmed seed the promoted source then stops showing: the SQL
+  context guard held to the same audit cases; the row listed with its
+  reason, Member and decision forms, a restore without a reason not
+  understood, and a restore installing a manual assignment, closing the
+  review at activation, keeping the role and scope at sign-in and recording
+  the decision, Ministry and reason in the audit without an address; a
+  removal dropping the seed, closing the review and leaving the seeded role
+  reading as suspended, with a second decision refused; a restore or removal
+  of a seed the source confirms refused with no audit written; a Member
+  returning as Chairperson of a different Ministry read as chairing another;
+  and keeping the role independently keeping it in force after the
+  Chairperson goes while the seed stays suspended, with a second keep
+  refused.
 - The Portal users page, login rule edit, suggestion and grant suites pass;
   the grant registry and build contract database-free suites pass.
 - Ruff, formatting, Markdown lint and the migration drift check pass.
 
 ## Checkpoint
 
-Implementation and focused validation are complete; review/fix rounds, full
-exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
+Implementation, focused validation and the first
+[review/fix round](stewardship-chair-review-reviews.md) are complete,
+single-source under the second September 20, 2026 Codex exemption; further
+rounds, full exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
 open. No deployment, release, live-provider write or database deletion is
 authorized by this increment.

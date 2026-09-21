@@ -20,6 +20,7 @@ from django.views.decorators.http import require_POST
 from parishkit.config import ConfigError
 from parishkit.stewardship.audit.schemas import Action, ActorKind
 from parishkit.stewardship.audit.services import record_action
+from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 
@@ -32,6 +33,7 @@ from .admin_editing import (
     sign_preview,
 )
 from .authentication import runtime
+from .chair_models import ChairAssignmentReview
 from .chair_review import (
     DECISIONS,
     ReviewRefused,
@@ -83,34 +85,65 @@ def _scope(service):
     return editable_configuration(service), None
 
 
+def _suspended(records, email, ministry_duid):
+    """Whether the seed of this address to this Ministry has an open review."""
+    seed = next(
+        (
+            record
+            for record in records
+            if record["values"]["kind"] == "assignment"
+            and record["values"]["email"] == email
+            and record["values"]["ministry_duid"] == ministry_duid
+            and record["values"]["source"] == "chair-seed"
+        ),
+        None,
+    )
+    return (
+        seed is not None
+        and ChairAssignmentReview.objects.filter(
+            assignment_record_id=seed["id"], closed_by__isnull=True
+        ).exists()
+    )
+
+
 def _preview(request, service, actor):
     """Show exactly what the decision changes, signed for one confirmation."""
     form = ReviewForm(request.POST)
     if not form.is_valid():
         return _error(request, "invalid")
-    configuration = editable_configuration(service)
     data = form.cleaned_data
-    if data["base_digest"] != configuration.active_configuration.digest:
-        raise StaleRecordError("Reload the page before deciding.")
-    records = configuration.active_configuration.canonical_document["sections"].get(
-        "login_rules", []
-    )
     key = uuid4()
     operation = str(policy_operation_id(actor.identity, key))
     try:
         email = normalized_email(data["identity"])
-        if data["decision"] == "keep_role":
-            change = keep_role_patch(records, email, operation_id=operation)
-        elif data["decision"] == "restore":
-            change = restore_manual_patch(
-                records, email, data["ministry_duid"], operation_id=operation
-            )
-        else:
-            change = remove_seed_patch(records, email, data["ministry_duid"])
     except ConfigError:
         return _error(request, "invalid")
-    except ReviewRefused as refused:
-        return _error(request, refused.code)
+    # One observation under the work lock, as the page draws its rows: the
+    # applied policy and the open review episodes cannot straddle a
+    # reconciliation, so a restore or removal is offered only for a seed the
+    # source has really suspended, as the specification places it.
+    with work_transaction():
+        configuration = editable_configuration(service)
+        if data["base_digest"] != configuration.active_configuration.digest:
+            raise StaleRecordError("Reload the page before deciding.")
+        records = configuration.active_configuration.canonical_document["sections"].get(
+            "login_rules", []
+        )
+        try:
+            if data["decision"] == "keep_role":
+                change = keep_role_patch(records, email, operation_id=operation)
+            elif data["decision"] == "restore":
+                change = restore_manual_patch(
+                    records, email, data["ministry_duid"], operation_id=operation
+                )
+            else:
+                change = remove_seed_patch(records, email, data["ministry_duid"])
+            if change.decision != "keep_role" and not _suspended(
+                records, email, change.ministry_duid
+            ):
+                raise ReviewRefused("not_suspended")
+        except ReviewRefused as refused:
+            return _error(request, refused.code)
     base = service.store.active()
     if base is None or base.digest != configuration.active_configuration.digest:
         raise StaleRecordError("The applied configuration changed.")

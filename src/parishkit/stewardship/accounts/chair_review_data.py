@@ -70,12 +70,26 @@ def open_reviews(configuration, current):
                 ],
             )
             names = dict(cursor.fetchall())
+            # Every Ministry each retained Member chairs now; "elsewhere" is
+            # judged per review against its own Ministry and the applied
+            # activity, the rule the suggestion table applies, so a Member
+            # still chairing the very Ministry under review does not read as
+            # chairing another.
             cursor.execute(
-                "SELECT DISTINCT member_duid FROM stewardship_chair_suggestion"
+                "SELECT DISTINCT member_duid, ministry_duid"
+                " FROM stewardship_chair_suggestion"
                 " WHERE snapshot_id=%s AND member_duid=ANY(%s)",
                 [current.snapshot_id, [value for value in members.values()]],
             )
-            chairs = {row[0] for row in cursor.fetchall()}
+            chairs = set(cursor.fetchall())
+        from .ministry_activity import active_ministries
+
+        active = active_ministries(
+            configuration.active_configuration.canonical_document,
+            organization_id=current.organization_id,
+            catalog_duids=frozenset(duid for _, duid in chairs),
+        )
+        chairs = {pair for pair in chairs if pair[1] in active}
     rows = []
     for review in reviews:
         assignment = assignments.get(review.assignment_record_id)
@@ -92,7 +106,10 @@ def open_reviews(configuration, current):
                 "opened_at": review.opened_by.created_at,
                 "generation": generations.get(review.opened_by.snapshot_id),
                 "latest_at": review.latest_by.created_at,
-                "elsewhere": member in chairs,
+                "elsewhere": any(
+                    pair[0] == member and pair[1] != assignment.ministry_duid
+                    for pair in chairs
+                ),
             }
         )
     return rows

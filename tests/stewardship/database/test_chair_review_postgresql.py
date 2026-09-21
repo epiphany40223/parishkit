@@ -209,6 +209,87 @@ def test_a_removed_seed_leaves_the_rule_and_closes_the_review(
         assert "no longer exists" in again.content.decode()
 
 
+def test_the_sql_context_guard_holds_the_decision_fields_to_the_same_rule():
+    """Independent SQL prevents raw inserts from evading the closed Python schema."""
+    import json
+
+    from django.db import connection
+
+    from ..test_chair_review import AUDIT_DECISION_CASES
+
+    with connection.cursor() as cursor:
+        for context, valid in AUDIT_DECISION_CASES:
+            cursor.execute(
+                "SELECT stewardship_safe_context_v1('action', %s::jsonb)",
+                [json.dumps(context)],
+            )
+            assert cursor.fetchone()[0] is valid, context
+        cursor.execute(
+            "SELECT stewardship_safe_context_v1('email', %s::jsonb)",
+            [json.dumps({"review_reason": "x"})],
+        )
+        assert cursor.fetchone()[0] is False
+
+
+@pytest.mark.usefixtures("source_singletons", "config_role")
+def test_an_active_seed_cannot_be_restored_or_removed_here(
+    tmp_path, settings, real_limiter, google
+):
+    """The decisions belong to the suspended list; a confirmed seed is refused."""
+    from parishkit.stewardship.accounts.authentication import AuthRuntime
+
+    store, _, _ = configured(tmp_path, manual_scope=False)
+    settings.STEWARDSHIP_AUTH_RUNTIME = AuthRuntime(store, real_limiter, lambda: True)
+    settings.SOCIALACCOUNT_PROVIDERS = {
+        "google": {
+            "OAUTH_PKCE_ENABLED": True,
+            "APPS": [
+                {
+                    "client_id": "synthetic-client",
+                    "secret": "synthetic-secret",
+                    "key": "",
+                }
+            ],
+        },
+    }
+    browser, login = signed_in()
+    assert login.status_code == 302
+    with web():
+        assert 'id="chair-reviews"' not in browser.get(PAGE).content.decode()
+        for name in ("restore", "remove"):
+            refused = post(
+                browser, decision(store, decision=name, ministry_duid=4, reason="x")
+            )
+            assert refused.status_code == 400
+            assert "is not suspended" in refused.content.decode()
+    assert not AuditContext.objects.filter(
+        event__event_type="chair_review_decided"
+    ).exists()
+
+
+@pytest.mark.usefixtures("source_singletons", "config_role")
+def test_a_member_chairing_another_ministry_is_said_so(
+    tmp_path, settings, real_limiter, google
+):
+    """Elsewhere means another active Ministry, never the one under review."""
+    from copy import deepcopy
+
+    store, _ = suspended(tmp_path, settings, real_limiter)
+    # The Member returns with a valid address but chairs Ushers, not Choir.
+    data = source()
+    data.ministry_types[9] = {"id": 9, "name": "Ushers"}
+    data.ministry_type_memberships[9] = deepcopy(data.ministry_type_memberships[4])
+    data.ministry_type_memberships[4]["membership"] = []
+    publish(data)
+    assert ChairAssignmentReview.objects.filter(closed_by__isnull=True).count() == 1
+    browser, login = signed_in()
+    assert login.status_code == 302
+    with web():
+        body = browser.get(PAGE).content.decode()
+    assert "a current Chairperson of another active Ministry" in review_row(body)
+    assert store.active() is not None
+
+
 @pytest.mark.usefixtures("source_singletons", "config_role")
 def test_keeping_the_role_independently_survives_the_source(
     tmp_path, settings, real_limiter, google

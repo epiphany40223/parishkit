@@ -16,10 +16,44 @@ from parishkit.stewardship.accounts.policy_schema import (
     validate_policy_change,
     validate_policy_records,
 )
+from parishkit.stewardship.audit.schemas import ContextKind, sanitize
 
 from .policy_factory import address, assignment
 
 OP = str(uuid4())
+# The decision audit's two fields: a closed word and bounded text. Shared with
+# the PostgreSQL case that holds the SQL context guard to the same rule.
+AUDIT_DECISION_CASES = (
+    ({"decision": "keep_role"}, True),
+    ({"decision": "restore", "ministry_duid": 4, "review_reason": "x"}, True),
+    ({"decision": "remove", "review_reason": "y" * 500}, True),
+    *(
+        ({"decision": value}, False)
+        for value in ("approve", "", None, 1, True, ["restore"], {"a": 1})
+    ),
+    *(
+        ({"review_reason": value}, False)
+        for value in ("", "z" * 501, None, 5, False, ["why"], {"why": 1})
+    ),
+)
+
+
+@pytest.mark.parametrize("context,valid", AUDIT_DECISION_CASES)
+def test_the_decision_audit_admits_only_a_closed_word_and_bounded_text(context, valid):
+    """No other decision word, type or length passes the action schema."""
+    if valid:
+        assert sanitize(ContextKind.ACTION, context) == context
+    else:
+        with pytest.raises(ValueError):
+            sanitize(ContextKind.ACTION, context)
+
+
+def test_the_decision_fields_belong_to_the_action_schema_alone():
+    """Another context kind refuses the fields outright."""
+    with pytest.raises(ValueError):
+        sanitize(ContextKind.EMAIL, {"review_reason": "x"})
+    with pytest.raises(ValueError):
+        sanitize(ContextKind.TASK, {"decision": "restore"})
 
 
 def applied(records, patch):
