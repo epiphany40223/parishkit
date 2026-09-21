@@ -91,16 +91,17 @@ changed, before the fingerprint was updated. Post-fix validation: five
 database-free, six PostgreSQL, 17 schema-contract and nine browser cases passed
 locally.
 
-## Round 2 attempt: not a completed round
+## Round 2, single-source under the second exemption
 
 Reviewed `f92b5f5`, the 1,737-line round-1 correction delta from `7f92831`. The
 Claude reviewer completed with 12 findings, one Medium and 11 Low. The Codex
 reviewer exited with status 1 after 258 seconds and produced no structured
-output, so this is **not** a completed dual-source round and is not counted
-toward the required three. The
-[September 20, 2026 exemption](../plans/stewardship/overall.md#automated-phase-delivery-cycle)
-ended when Codex returned and was not reused. The Claude findings were acted on
-anyway, and the round was run again on the corrected head.
+output. At the time this was recorded as not a completed round, because the
+first September 20 exemption had ended when Codex returned. Later that day the
+human confirmed Codex was out of quota again and granted the
+[second exemption](../plans/stewardship/overall.md#automated-phase-delivery-cycle),
+under which this completed Claude-only pass counts as round 2. The findings were
+acted on before that decision.
 
 - **Claude, Medium: the archived-campaign proof was untested.** Round 1's fix
   for archived campaigns could have been deleted without failing a test. A new
@@ -143,16 +144,13 @@ A fresh install again differed from main only by the one added function, now
 with two required paging arguments. Post-fix validation: five database-free,
 eight PostgreSQL and 17 schema-contract cases passed locally.
 
-## Round 2 second attempt: not a completed round
+## Round 3, single-source under the second exemption
 
 Reviewed `419a0d0`, the 2,031-line correction delta from `7f92831`. The Claude
 reviewer completed with 11 findings, one Medium and ten Low. The Codex reviewer
-again exited without structured output, so this too is **not** a completed
-round. The cause is unverified: the `codex` command is outside this session's
-shell allowlist, which was deliberately not widened or bypassed to diagnose it.
-Two dual-source rounds are therefore still owed, and whether to restore Codex or
-grant a new exemption is the human's decision. The Claude findings were acted on
-meanwhile.
+again exited without structured output; the human later confirmed it was out of
+quota. Under the second exemption this completed Claude-only pass counts as
+round 3. The findings were acted on before that decision.
 
 - **Claude, Medium: the `ValueError` to 503 mapping was untested.** The only
   HTTP 503 case raised `ReadUnavailable`, which the shared guard answers before

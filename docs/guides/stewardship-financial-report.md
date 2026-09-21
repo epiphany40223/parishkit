@@ -187,10 +187,10 @@ keeping the ten-module bound; that module stays in the complete baseline.
 
 ## Checkpoint
 
-Implementation, focused validation and the first dual-source
-[review/fix round](stewardship-financial-report-reviews.md#round-1) are
-complete. Two further attempts were single-source, because the Codex reviewer
-failed, and are not counted; their Claude findings were fixed. Two more
-dual-source rounds, full exact-head CI, DCO and protected delivery remain open. M5 and
+Implementation, focused validation and three
+[review/fix rounds](stewardship-financial-report-reviews.md#round-3-single-source-under-the-second-exemption)
+are complete: the first dual-source, the second and third single-source under
+the second September 20, 2026 exemption, with every accepted finding fixed and
+validated. Full exact-head CI, DCO and protected delivery remain open. M5 and
 Gate 3 remain open. No deployment, release, live-provider write or database
 deletion is authorized by this increment.
