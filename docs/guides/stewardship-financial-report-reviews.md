@@ -220,3 +220,10 @@ projection's denial, as the round-3 ledger already records.
 
 Post-fix validation: five database-free and eight PostgreSQL cases passed
 locally, with the observability and build contracts.
+
+Full exact-head CI on the squashed candidate `76cabd89` then failed one database
+shard: the new operational event was not admitted by the operational log's SQL
+check constraint, which the existing contract test for every operational event
+exercises and the focused local selection had not. The constraint now admits
+it, the fresh-install audit was repeated, and the fingerprint records that one
+changed constraint beside the one added function. Every other job passed.

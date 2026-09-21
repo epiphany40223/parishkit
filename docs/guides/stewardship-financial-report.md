@@ -130,13 +130,18 @@ its count and says so, and Previous returns to the real last page.
 Fresh databases were installed separately from verified main `1070fd28` and from
 the candidate on the disposable PostgreSQL 18.6 cluster and their complete
 catalogs compared object by object. The predecessor exactly matched its
-committed strict fingerprint. Nothing was removed and no existing definition
-changed. Exactly one function was added, the financial report projection.
-Tables, columns, constraints, indexes, triggers and row policies are unchanged.
-Only after inspecting that exact delta was the fingerprint updated. The
-candidate has 566 functions; every other count is unchanged. The audit was
-repeated after each review correction that touched the function, with the same
-single-function delta each time. No upgrade path was added and no retained
+committed strict fingerprint. Nothing was removed. Exactly one function was
+added, the financial report projection; tables, columns, indexes, triggers and
+row policies are unchanged. Only after inspecting that exact delta was the
+fingerprint updated, and the audit was repeated after each review correction
+that touched the function, with the same single-function delta each time. The
+fourth correction check then added one operational event,
+`report_shaping_failed`, which the operational log's `operational_event_safe`
+check constraint must admit; full CI's existing contract test for every
+operational event caught the omission before delivery, and the final audit
+shows that one constraint definition changed beside the one added function,
+nothing else. The candidate has 566 functions; every other count is unchanged.
+No upgrade path was added and no retained
 database was deleted.
 
 ## Focused validation
