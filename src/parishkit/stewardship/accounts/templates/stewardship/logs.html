@@ -2,7 +2,7 @@
 {% block title %}{% translate "System logs" %}{% endblock %}
 {% block content %}
 <h1>{% translate "System logs" %}</h1>
-<p>{% translate "Operational diagnostics and the audit trail together, newest first. Entries hold reviewed identifiers and counts only, never names, addresses, amounts or credentials. Opening this page is itself recorded, so it appears here the next time." %}</p>
+<p>{% translate "Operational diagnostics and the audit trail together, newest first. Entries hold reviewed identifiers and counts only, never names, amounts or credentials; an actor's address is looked up for display and is not part of the entry. Opening this page is itself recorded, so it appears here the next time." %}</p>
 <p>{% translate "Times are UTC, as stored; they use your browser timezone when available. Audit records have no severity level, so the level choices apply to operational entries and the source choice decides whether audit records are listed." %}</p>
 <form method="post" action="{% url 'admin:logs' %}">{% csrf_token %}
 <input type="hidden" name="applied" value="yes">

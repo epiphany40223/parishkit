@@ -27,8 +27,8 @@ DETAIL_LIMIT = 128
 # Entries cannot predate the application, and a far-future day cannot be advanced
 # to its exclusive upper bound without overflowing.
 EARLIEST, LATEST = date(2020, 1, 1), date(2999, 12, 31)
-LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
-# A word and a symbol, never color alone, distinguish the five levels.
+# A word and a symbol, never color alone, distinguish the five levels, listed
+# least severe first; the order is the form's and the one source of LEVELS.
 LEVEL_LABELS = {
     "DEBUG": ("·", _("Debug")),
     "INFO": ("i", _("Information")),
@@ -36,6 +36,7 @@ LEVEL_LABELS = {
     "ERROR": ("×", _("Error")),
     "CRITICAL": ("‼", _("Critical")),
 }
+LEVELS = tuple(LEVEL_LABELS)
 SOURCES = {
     "both": _("Operational and audit"),
     "operational": _("Operational only"),
@@ -130,6 +131,14 @@ class LogQuery:
         if not self.applied:
             return LEVELS[1:]
         return tuple(level for level in LEVELS if getattr(self, level.lower()))
+
+    @property
+    def days(self):
+        """The validated From and Through days as dates, each None when unset."""
+        return tuple(
+            date.fromisoformat(value) if value else None
+            for value in (self.start, self.end)
+        )
 
     @property
     def cursor(self):

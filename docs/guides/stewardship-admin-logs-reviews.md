@@ -85,3 +85,35 @@ increment, which adds a second logs view.
 
 Post-fix validation: four database-free, nine PostgreSQL and nine browser cases
 passed locally.
+
+## Round 3, single-source under the second exemption
+
+Reviewed `e89bbd9a`, the complete diff from main `1070fd28`. The Claude reviewer
+completed with 11 findings, one Medium and ten Low; Codex exited without
+output. Under the exemption this counts as round 3. Accepted and fixed:
+
+- **Medium: the query-string refusal was tested only by its status.** The
+  round-2 correction gave it its own explanation, but over HTTP nothing checked
+  that the explanation appears, that the filter guidance does not, or that the
+  submitted identifier is not echoed. The case now asserts all three, as the
+  refused filter values already did.
+- Low: the error helper takes an explicit `query_string` flag instead of a
+  tri-state `guidance` value; the validated days are converted once by a
+  `days` property, as the cursor already was; the levels are one ordered
+  source, `LEVELS` being derived from the labels; the page's introduction
+  says an actor's address is looked up for display and is not part of an
+  entry, rather than that entries never hold addresses; the browser fixtures
+  render the query-string refusal too, and the browser case asserts each of
+  the three error states shows only its own text; the cost case asserts each
+  of the five actors' addresses appears ten times, since "actor" also matched
+  the form; and the guide's checkpoint is rewrapped.
+
+Left as is: the PostgreSQL helper filters audit rows by the literal stored
+type `system_logs_viewed` rather than the enum member, because the positive
+case asserts one such row and would fail loudly if the stored value changed,
+which is the pin intended; and the `log-level` and `log-kind` classes carry
+no stylesheet rules, since this increment adds none and they name what the
+cell is, for the tests and for a later stylesheet alike.
+
+Post-fix validation: four database-free, nine PostgreSQL and nine browser cases
+passed locally.

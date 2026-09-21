@@ -109,8 +109,13 @@ def test_administrator_reads_both_sources_and_filters_privately(auth_service, go
         assert "task_failed" in body and "<dt>outcome</dt><dd>failed</dd>" in body
         # The signed-in Administrator is named on screen for their own login.
         assert "admin@example.org" in body
-        # Identifiers never travel in a URL.
-        assert browser.get(URL + f"?correlation={correlation}").status_code == 400
+        # Identifiers never travel in a URL. The refusal explains where filters
+        # go, offers no guidance about the value, and never echoes it.
+        refused = browser.get(URL + f"?correlation={correlation}")
+        assert refused.status_code == 400
+        assert b"never in a web address" in refused.content
+        assert b"Identifiers must be complete" not in refused.content
+        assert str(correlation).encode() not in refused.content
         assert browser.post(URL, {"source": "audit"}).status_code == 403  # No CSRF.
 
         chosen = post(browser, {"applied": "yes", "debug": "yes", "error": "yes"})
@@ -394,7 +399,13 @@ def test_a_page_costs_a_bounded_number_of_queries(auth_service, google):
         assert captured["stewardship_operational_log"] == 1
         assert captured["stewardship_audit_event"] == 1
         assert captured["stewardship_portal_user"] == 1
-    assert response.content.count(b"actor") >= 50
+    # Every row on the page shows its actor's resolved address. The entries
+    # share one instant, so which rows the page holds depends on identifiers.
+    resolved = sum(
+        response.content.count(f"actor{index}@example.org".encode())
+        for index in range(5)
+    )
+    assert resolved == 50
     assert (
         response.content.count(b"<tr>") == 51 and b"Older entries" in response.content
     )

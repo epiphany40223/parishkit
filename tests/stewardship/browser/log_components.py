@@ -96,14 +96,25 @@ def components(context, admin):
             page(LogQuery.parse({"applied": "yes"}), [], None),
         ),
     }
-    for code, status in ((ErrorCode.INVALID, 400), (ErrorCode.UNAVAILABLE, 503)):
-        result[f"/logs-error-{status}"] = (
+    # The three error states: a refused filter value, a refused query string
+    # and an outage, which is also what a denied reader sees.
+    errors = {
+        "400": (ErrorCode.INVALID, False),
+        "query": (ErrorCode.INVALID, True),
+        "503": (ErrorCode.UNAVAILABLE, False),
+    }
+    for name, (code, query_string) in errors.items():
+        result[f"/logs-error-{name}"] = (
             "text/html",
             render_to_string(
                 "stewardship/logs-error.html",
                 context
                 | {"admin_chrome": admin}
-                | {"message": MESSAGES[code], "invalid": code is ErrorCode.INVALID},
+                | {
+                    "message": MESSAGES[code],
+                    "invalid": code is ErrorCode.INVALID and not query_string,
+                    "query_string": query_string,
+                },
             ),
         )
     return result

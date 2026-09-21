@@ -1,6 +1,6 @@
 """Administrator-only combined operational and audit log screen."""
 
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, datetime, time, timedelta
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
@@ -34,7 +34,7 @@ from .services import record_action
 UNAVAILABLE = (ConfigError, LimiterUnavailable, ObjectDoesNotExist)
 
 
-def _error(code, status, *, guidance=None):
+def _error(code, status, *, query_string=False):
     """A fixed, accessible message with no submitted filter and no DB chrome.
 
     An unavailable database must not be queried again by the Admin navigation
@@ -48,8 +48,8 @@ def _error(code, status, *, guidance=None):
             "stewardship/logs-error.html",
             {
                 "message": MESSAGES[code],
-                "invalid": code is ErrorCode.INVALID if guidance is None else guidance,
-                "query_string": guidance is False,
+                "invalid": code is ErrorCode.INVALID and not query_string,
+                "query_string": query_string,
             },
         ),
         status=status,
@@ -80,12 +80,12 @@ def _bounded(rows, query):
         rows = rows.filter(actor_id=query.actor)
     if query.correlation:
         rows = rows.filter(correlation_id=query.correlation)
-    if query.start:
-        day = date.fromisoformat(query.start)
-        rows = rows.filter(created_at__gte=datetime.combine(day, time.min, UTC))
-    if query.end:
-        day = date.fromisoformat(query.end) + timedelta(days=1)
-        rows = rows.filter(created_at__lt=datetime.combine(day, time.min, UTC))
+    start, end = query.days
+    if start:
+        rows = rows.filter(created_at__gte=datetime.combine(start, time.min, UTC))
+    if end:
+        end += timedelta(days=1)
+        rows = rows.filter(created_at__lt=datetime.combine(end, time.min, UTC))
     if query.cursor:
         instant, identifier = query.cursor
         rows = rows.filter(
@@ -158,7 +158,7 @@ def logs(request):
         service = runtime()
         actor = _principal(request, service.store)
         if request.GET:
-            return _error(ErrorCode.INVALID, 400, guidance=False)
+            return _error(ErrorCode.INVALID, 400, query_string=True)
         parameters = request.POST.copy()
         parameters.pop("csrfmiddlewaretoken", None)
         query = LogQuery.parse(parameters)

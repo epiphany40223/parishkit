@@ -69,9 +69,16 @@ def test_logs_mobile_keyboard_and_accessibility(
     assert page.get_by_role("alert").count() == 1
     assert page.get_by_text("Identifiers must be complete", exact=False).count() == 1
     assert page.get_by_role("link", name="Return to the newest log entries").count()
+    assert page.get_by_text("never in a web address", exact=False).count() == 0
+    # A query string is refused for where it was sent, not for what it said.
+    page.goto(component_origin + "/logs-error-query")
+    assert page.get_by_role("alert").count() == 1
+    assert page.get_by_text("never in a web address", exact=False).count() == 1
+    assert page.get_by_text("Identifiers must be complete", exact=False).count() == 0
     # An outage or a denial submitted nothing that could be corrected.
     page.goto(component_origin + "/logs-error-503")
     assert page.get_by_text("Identifiers must be complete", exact=False).count() == 0
+    assert page.get_by_text("never in a web address", exact=False).count() == 0
 
 
 def test_log_filters_and_paging_without_scripts(browser_engine, component_origin):
