@@ -5272,12 +5272,14 @@ BEGIN
         ELSIF key='method' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('GET','HEAD','POST') THEN RETURN false; END IF;
         -- An Administrator's decision on a suspended Chairperson seed: a closed
-        -- word, and the reason entered for it, bounded text that is never an
-        -- address by construction of the page that records it.
+        -- word, and the reason entered for it, bounded text refused when it
+        -- carries an address-like token, since this context holds no
+        -- personal data.
         ELSIF key='decision' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('keep_role','restore','remove') THEN RETURN false; END IF;
         ELSIF key='review_reason' THEN
-            IF jsonb_typeof(value)<>'string' OR length(text_value) NOT BETWEEN 1 AND 500 THEN RETURN false; END IF;
+            IF jsonb_typeof(value)<>'string' OR length(text_value) NOT BETWEEN 1 AND 500
+               OR position('@' in text_value)>0 THEN RETURN false; END IF;
         ELSIF key LIKE '%\_id' ESCAPE '\' THEN
             IF jsonb_typeof(value)<>'string' OR text_value!~'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN RETURN false; END IF;
         ELSIF key LIKE '%\_fingerprint' ESCAPE '\' THEN

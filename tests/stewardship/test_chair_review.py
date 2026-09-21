@@ -33,7 +33,18 @@ AUDIT_DECISION_CASES = (
     ),
     *(
         ({"review_reason": value}, False)
-        for value in ("", "z" * 501, None, 5, False, ["why"], {"why": 1})
+        for value in (
+            "",
+            "z" * 501,
+            None,
+            5,
+            False,
+            ["why"],
+            {"why": 1},
+            # Never a person: an address-like token is refused everywhere.
+            "moved; reach them at c@example.org",
+            "@",
+        )
     ),
 )
 

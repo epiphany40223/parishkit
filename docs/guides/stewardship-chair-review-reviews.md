@@ -38,3 +38,31 @@ The thirteen Low findings concerned wording and naming.
 Post-fix validation: the review, Portal users page and audit context suites
 passed locally under the restricted roles, with the review and rows
 database-free suites and the users page browser suite on Chromium.
+
+## Round 2, single-source under the second exemption
+
+Reviewed `348a3ed2`, the round 1 result. Codex did not answer; Claude, in one
+pass, confirmed the open-episode requirement, the per-Ministry judgement and
+the audit-field cases present and correct, and validated two Medium and
+thirteen Low. Both Mediums were accepted and fixed.
+
+- **Medium: a promotion between preview and confirmation slipped through.**
+  The confirmation re-admitted on the applied digest alone, but the episodes
+  a decision rests on are written by source promotion, which changes no
+  digest, so a Chairperson returning within the preview's fifteen minutes
+  could have had the seed removed or replaced anyway, with an audit for an
+  episode already closed. The preview now pins the promoted snapshot as the
+  suggestion confirmation does, so any promotion after it refuses the
+  confirmation as stale; a case promotes between the two and proves the
+  refusal and the absent audit.
+- **Medium: the reason was called address-free without being made so.** The
+  audit context holds no personal data, yet a plain text field could carry an
+  address. The form, the Python schema and the SQL context guard now refuse
+  a reason carrying an address-like token, the comments and the guide say
+  what is enforced rather than assumed, and the shared cases cover it.
+
+The thirteen Low findings concerned wording and naming.
+
+Post-fix validation: the review, Portal users page and audit context suites
+passed locally under the restricted roles, with the review database-free
+suite and the schema baseline.

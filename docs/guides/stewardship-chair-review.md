@@ -67,8 +67,13 @@ belongs to the decision, not to the applied policy, so it is carried in the
 signed preview and recorded in the audit event written in the request's own
 durable transaction through the intake's attach hook, as
 `chair_review_decided` with the closed decision word, the Ministry and the
-reason text, bounded and never an address. The audit context schema admits
-exactly those two new fields.
+reason text. The audit context is not a container for personal data, so the
+reason is bounded and refused, by the form and by the Python and SQL context
+guards alike, when it carries an address-like token; the guards admit exactly
+those two new fields. The preview pins the promoted snapshot as well as the
+applied digest, since the episodes a decision rests on are written by source
+promotion: a promotion between review and confirmation makes the decision
+stale.
 
 ### The page decides nothing new
 
@@ -88,7 +93,8 @@ evidence: record ids, reasons, times and DUIDs, never contact data.
 
 One changed object: the audit context guard `stewardship_safe_context_v1`,
 which admits the two new action fields, the closed decision word and the
-bounded reason text, exactly as the application schema does. The audit
+bounded reason text without an address-like token, exactly as the
+application schema does. The audit
 action itself is an application vocabulary entry with no SQL constraint, and
 the three grants are runtime grants on existing tables.
 
@@ -103,7 +109,7 @@ path, and no retained database was deleted.
 
 ## Focused validation
 
-- Twenty-four database-free cases: keeping a role adds only a manual origin,
+- Twenty-six database-free cases: keeping a role adds only a manual origin,
   a restore replaces the seed with a manual assignment, a removal drops only
   the seed, each refusing a missing seed, an unseeded role and a decision
   already in effect with every result satisfying the ordinary policy rules;
@@ -116,7 +122,9 @@ path, and no retained database was deleted.
   with a confirmed seed the promoted source then stops showing: the SQL
   context guard held to the same audit cases; the row listed with its
   reason, Member and decision forms, a restore without a reason not
-  understood, and a restore installing a manual assignment, closing the
+  understood, one whose reason carries an address refused, one whose
+  preview a promotion overtakes refused as stale with no audit written, and
+  a restore installing a manual assignment, closing the
   review at activation, keeping the role and scope at sign-in and recording
   the decision, Ministry and reason in the audit without an address; a
   removal dropping the seed, closing the review and leaving the seeded role
@@ -132,9 +140,9 @@ path, and no retained database was deleted.
 
 ## Checkpoint
 
-Implementation, focused validation and the first
-[review/fix round](stewardship-chair-review-reviews.md) are complete,
-single-source under the second September 20, 2026 Codex exemption; further
-rounds, full exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
+Implementation, focused validation and two
+[review/fix rounds](stewardship-chair-review-reviews.md) are complete,
+single-source under the second September 20, 2026 Codex exemption; a third
+round, full exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
 open. No deployment, release, live-provider write or database deletion is
 authorized by this increment.

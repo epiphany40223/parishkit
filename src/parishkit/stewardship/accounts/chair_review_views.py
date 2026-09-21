@@ -21,6 +21,7 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.audit.schemas import Action, ActorKind
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 
@@ -60,6 +61,17 @@ class ReviewForm(forms.Form):
     reason = forms.CharField(required=False, max_length=500, strip=True)
     base_digest = forms.RegexField(regex=r"^[0-9a-f]{64}$")
 
+    def clean_reason(self):
+        """The reason is the Administrator's words about a decision, not a person.
+
+        The audit is not a container for personal data, so text carrying an
+        address-like token is refused here and by both audit guards alike.
+        """
+        value = self.cleaned_data.get("reason", "")
+        if "@" in value:
+            raise forms.ValidationError("A reason may not contain an address.")
+        return value
+
     def clean(self):
         """A restore or removal names its Ministry and carries a reason."""
         data = super().clean()
@@ -81,8 +93,15 @@ def _error(request, code, *, status=400):
 
 
 def _scope(service):
-    """A decision pins the applied policy; it does not depend on a refresh."""
-    return editable_configuration(service), None
+    """A decision pins the applied policy and the promoted snapshot.
+
+    The episodes a decision rests on are written by source promotion, not by
+    the applied policy, so a promotion between preview and confirmation must
+    make the decision stale exactly as a policy change does.
+    """
+    current = SourceCurrent.objects.filter(singleton=True).first()
+    snapshot = current.snapshot_id if current is not None else None
+    return editable_configuration(service), snapshot
 
 
 def _suspended(records, email, ministry_duid):
@@ -124,6 +143,8 @@ def _preview(request, service, actor):
     # source has really suspended, as the specification places it.
     with work_transaction():
         configuration = editable_configuration(service)
+        current = SourceCurrent.objects.filter(singleton=True).first()
+        snapshot = current.snapshot_id if current is not None else None
         if data["base_digest"] != configuration.active_configuration.digest:
             raise StaleRecordError("Reload the page before deciding.")
         records = configuration.active_configuration.canonical_document["sections"].get(
@@ -165,6 +186,7 @@ def _preview(request, service, actor):
                 configuration=configuration,
                 patch=change.patch,
                 salt=SALT,
+                snapshot=snapshot,
                 key=key,
                 extra={
                     "decision": change.decision,

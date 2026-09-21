@@ -133,9 +133,34 @@ def test_a_suspended_seed_is_listed_and_restored_as_an_administrator_entry(
     assert "not a current Chairperson of any active Ministry" in listed
     assert 'name="decision" value="restore"' in listed
     with web():
-        # A restore or removal without a reason is not understood.
+        # A restore or removal without a reason is not understood, and a
+        # reason carrying an address is refused before anything is signed.
         refused = post(browser, decision(store, decision="restore", ministry_duid=4))
         assert refused.status_code == 400
+        personal = post(
+            browser,
+            decision(
+                store, decision="restore", ministry_duid=4, reason="ask c@example.org"
+            ),
+        )
+        assert personal.status_code == 400
+        # A promotion between preview and confirmation makes the review stale:
+        # the episodes it rests on are the source's, not the policy's.
+        signed = token(
+            post(
+                browser,
+                decision(store, decision="restore", ministry_duid=4, reason="Stale"),
+            )
+        )
+    data = source()
+    data.members[3]["emailAddress"] = ""
+    publish(data)
+    with web():
+        stale = post(browser, {"action": "confirm", "preview": signed})
+        assert stale.status_code == 409
+    assert not AuditContext.objects.filter(
+        event__event_type="chair_review_decided"
+    ).exists()
     request = decided(
         store,
         browser,

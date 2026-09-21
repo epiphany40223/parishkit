@@ -157,8 +157,10 @@ FIELDS = {
         "ministry_duids",
         "ministry_operational",
         # An Administrator's decision on a suspended Chairperson seed and the
-        # reason entered for it: the decision is a closed word, the reason the
-        # Administrator's own text, never an address.
+        # reason entered for it: the decision is a closed word; the reason is
+        # the Administrator's own bounded text, refused when it carries an
+        # address-like token, since this context is not a container for
+        # personal data.
         "decision",
         "review_reason",
     },
@@ -219,7 +221,7 @@ def sanitize(kind, values):
             valid = type(value) is str and value in REVIEW_DECISIONS
             safe[key] = value
         elif key == "review_reason":
-            valid = type(value) is str and 0 < len(value) <= 500
+            valid = type(value) is str and 0 < len(value) <= 500 and "@" not in value
             safe[key] = value if valid else None
         elif key.endswith("_id"):
             valid = isinstance(value, UUID)
