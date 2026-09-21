@@ -42,6 +42,9 @@ def authorize(store, user_id, *, request=None):
         from .ministry_exports import scope_authorized
 
         permitted = scope_authorized(principal, request.authorization_scope)
+    elif isinstance(request, ExportRequest) and request.report == "financial":
+        # Money needs the page's own capability, not campaign reporting alone.
+        permitted = permitted and allows(principal, Capability.FINANCIAL_DETAIL)
     if not permitted or (
         request is not None
         and principal.identity != request.requester_id
@@ -209,9 +212,13 @@ def regenerate_export(store, user_id, request_id, *, request_key):
     with work_transaction():
         original = (
             ExportRequest.objects.select_related(
-                "directory_snapshot", "ministry_snapshot"
+                "directory_snapshot", "ministry_snapshot", "financial_snapshot"
             )
-            .defer("directory_snapshot__document", "ministry_snapshot__document")
+            .defer(
+                "directory_snapshot__document",
+                "ministry_snapshot__document",
+                "financial_snapshot__document",
+            )
             .get(pk=request_id)
         )
         authorize(store, user_id, request=original)
@@ -257,6 +264,18 @@ def regenerate_export(store, user_id, request_id, *, request_key):
                 browser_timezone=original.browser_timezone,
                 request_key=request_key,
                 snapshot=original.information_snapshot,
+            )
+        if original.report == "financial":
+            from .financial_exports import create_financial_export
+
+            return create_financial_export(
+                store,
+                user_id,
+                campaign_id=original.campaign_id,
+                format=original.format,
+                browser_timezone=original.browser_timezone,
+                request_key=request_key,
+                snapshot=original.financial_snapshot,
             )
         return create_export(
             store,

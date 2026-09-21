@@ -238,3 +238,67 @@ SELECT CASE WHEN NOT z.values->'modules' ? 'financial'
 INTO answer FROM selected z LEFT JOIN source x ON true;
     RETURN answer;
 END $$;
+
+-- A complete, unpaged capture of the same projection for CSV, XLSX and PDF.
+-- The insert trigger, never the caller, writes the document, so a retained
+-- export means exactly what the page meant for the same parameters: the
+-- application's giving proof travels inside them and SQL honors it only for
+-- the snapshot and configuration it selects itself.
+CREATE TABLE stewardship_financial_export_snapshot (
+    id uuid PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT statement_timestamp(),
+    actor_id uuid NOT NULL, correlation_id uuid NOT NULL,
+    campaign_id uuid NOT NULL REFERENCES stewardship_campaign(id) DEFERRABLE INITIALLY DEFERRED,
+    source_id uuid NOT NULL REFERENCES stewardship_source_snapshot(id) DEFERRABLE INITIALLY DEFERRED,
+    configuration_id uuid NOT NULL REFERENCES stewardship_configuration_version(id) DEFERRABLE INITIALLY DEFERRED,
+    parameters jsonb NOT NULL, document jsonb NOT NULL,
+    row_count integer NOT NULL CHECK(row_count>=0)
+);
+CREATE INDEX financial_export_correlation ON stewardship_financial_export_snapshot(correlation_id);
+CREATE INDEX financial_export_campaign ON stewardship_financial_export_snapshot(campaign_id);
+CREATE INDEX financial_export_source ON stewardship_financial_export_snapshot(source_id);
+CREATE INDEX financial_export_config ON stewardship_financial_export_snapshot(configuration_id);
+
+CREATE FUNCTION stewardship_financial_export_capture_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+BEGIN
+    IF TG_OP<>'INSERT' THEN
+        RAISE EXCEPTION 'Financial export snapshots are immutable' USING ERRCODE='23514';
+    END IF;
+    PERFORM pg_advisory_xact_lock(736220,1);
+    -- Administrators and Staff are exactly who hold financial detail; a
+    -- Ministry leader never captures money, whatever the application asked.
+    IF NOT stewardship_export_authorized_v1(NEW.actor_id)
+       OR NOT stewardship_export_admitted_v1(NEW.campaign_id,true)
+       OR current_user='pk_stewardship_worker'
+       OR NOT EXISTS(SELECT 1 FROM stewardship_system_configuration
+           WHERE active_configuration_id=NEW.configuration_id)
+    THEN RAISE EXCEPTION 'Financial export capture is unavailable' USING ERRCODE='23514'; END IF;
+    NEW.created_at:=statement_timestamp();
+    NEW.document:=stewardship_financial_report_v1(NEW.campaign_id,NEW.parameters,NULL,NULL);
+    IF NEW.document IS NULL OR NEW.document ?| ARRAY['disabled','unavailable'] THEN
+        RAISE EXCEPTION 'Financial export inputs are unavailable' USING ERRCODE='23514';
+    END IF;
+    NEW.source_id:=(NEW.document->'metadata'->>'source_id')::uuid;
+    NEW.row_count:=(NEW.document->>'total')::integer;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER financial_export_capture BEFORE INSERT OR UPDATE OR DELETE
+    ON stewardship_financial_export_snapshot FOR EACH ROW
+    EXECUTE FUNCTION stewardship_financial_export_capture_v1();
+
+CREATE FUNCTION stewardship_financial_export_binding_v1() RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM stewardship_export_request r
+        WHERE r.financial_snapshot_id=NEW.id AND r.requester_id=NEW.actor_id
+          AND r.campaign_id=NEW.campaign_id AND r.configuration_id=NEW.configuration_id)
+    THEN RAISE EXCEPTION 'Financial export capture requires its request' USING ERRCODE='23514'; END IF;
+    RETURN NULL;
+END $$;
+CREATE CONSTRAINT TRIGGER financial_export_binding AFTER INSERT
+    ON stewardship_financial_export_snapshot DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION stewardship_financial_export_binding_v1();
+ALTER TABLE stewardship_export_request ADD CONSTRAINT export_financial_snapshot_fk
+    FOREIGN KEY(financial_snapshot_id) REFERENCES stewardship_financial_export_snapshot(id)
+    DEFERRABLE INITIALLY DEFERRED;
+CREATE INDEX export_financial_snapshot ON stewardship_export_request(financial_snapshot_id);

@@ -232,6 +232,75 @@ class Migration(migrations.Migration):
                     },
                 ),
                 migrations.CreateModel(
+                    name="FinancialExportSnapshot",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        ("actor_id", models.UUIDField(editable=False)),
+                        ("correlation_id", models.UUIDField(editable=False)),
+                        (
+                            "campaign",
+                            models.ForeignKey(
+                                to="stewardship_campaigns.campaign",
+                                on_delete=django.db.models.deletion.PROTECT,
+                                db_index=False,
+                            ),
+                        ),
+                        (
+                            "source",
+                            models.ForeignKey(
+                                to="stewardship_source.sourcesnapshot",
+                                on_delete=django.db.models.deletion.PROTECT,
+                                db_index=False,
+                            ),
+                        ),
+                        (
+                            "configuration",
+                            models.ForeignKey(
+                                to="stewardship_accounts.appliedconfigurationversion",
+                                on_delete=django.db.models.deletion.PROTECT,
+                                db_index=False,
+                            ),
+                        ),
+                        ("parameters", models.JSONField()),
+                        ("document", models.JSONField(default=dict)),
+                        ("row_count", models.PositiveIntegerField(default=0)),
+                    ],
+                    options={
+                        "db_table": "stewardship_financial_export_snapshot",
+                        "indexes": [
+                            models.Index(
+                                fields=["correlation_id"],
+                                name="financial_export_correlation",
+                            ),
+                            models.Index(
+                                fields=["campaign"], name="financial_export_campaign"
+                            ),
+                            models.Index(
+                                fields=["source"], name="financial_export_source"
+                            ),
+                            models.Index(
+                                fields=["configuration"],
+                                name="financial_export_config",
+                            ),
+                        ],
+                    },
+                ),
+                migrations.CreateModel(
                     name="WeeklyManualRequest",
                     fields=[
                         (
@@ -1582,6 +1651,15 @@ class Migration(migrations.Migration):
                             ),
                         ),
                         (
+                            "financial_snapshot",
+                            models.ForeignKey(
+                                to="stewardship_reports.financialexportsnapshot",
+                                on_delete=django.db.models.deletion.PROTECT,
+                                null=True,
+                                db_index=False,
+                            ),
+                        ),
+                        (
                             "campaign",
                             models.ForeignKey(
                                 on_delete=django.db.models.deletion.PROTECT,
@@ -1745,6 +1823,12 @@ class Migration(migrations.Migration):
                 migrations.AddIndex(
                     model_name="exportrequest",
                     index=models.Index(
+                        fields=["financial_snapshot"], name="export_financial_snapshot"
+                    ),
+                ),
+                migrations.AddIndex(
+                    model_name="exportrequest",
+                    index=models.Index(
                         fields=["requester_id", "created_at"],
                         name="export_requester_history",
                     ),
@@ -1765,6 +1849,7 @@ class Migration(migrations.Migration):
                             information_snapshot__isnull=True,
                             ministry_snapshot__isnull=True,
                             directory_snapshot__isnull=True,
+                            financial_snapshot__isnull=True,
                         )
                         | models.Q(
                             report="additional_information",
@@ -1772,6 +1857,7 @@ class Migration(migrations.Migration):
                             information_snapshot__isnull=False,
                             ministry_snapshot__isnull=True,
                             directory_snapshot__isnull=True,
+                            financial_snapshot__isnull=True,
                             format__in=("csv", "xlsx", "pdf"),
                         )
                         | models.Q(
@@ -1780,6 +1866,7 @@ class Migration(migrations.Migration):
                             information_snapshot__isnull=True,
                             ministry_snapshot__isnull=True,
                             directory_snapshot__isnull=False,
+                            financial_snapshot__isnull=True,
                             format__in=("csv", "xlsx", "pdf"),
                         )
                         | models.Q(
@@ -1788,6 +1875,16 @@ class Migration(migrations.Migration):
                             information_snapshot__isnull=True,
                             directory_snapshot__isnull=True,
                             ministry_snapshot__isnull=False,
+                            financial_snapshot__isnull=True,
+                            format__in=("csv", "xlsx", "pdf"),
+                        )
+                        | models.Q(
+                            report="financial",
+                            fact_set__isnull=True,
+                            information_snapshot__isnull=True,
+                            directory_snapshot__isnull=True,
+                            ministry_snapshot__isnull=True,
+                            financial_snapshot__isnull=False,
                             format__in=("csv", "xlsx", "pdf"),
                         ),
                         name="export_report_known",

@@ -1,5 +1,7 @@
 """Private native Admin/Staff financial stewardship detail report."""
 
+from uuid import uuid4
+
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError
 from django.http import HttpResponse
@@ -15,9 +17,11 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import Event, emit_failure
+from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.responses import campaign_response
 
+from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .financial import (
     FREQUENCY_LABELS,
@@ -147,6 +151,13 @@ def report(request, campaign_id):
                 page_size=PAGE_SIZE,
             )
             count, total = len(result["rows"]), result["total"]
+            # The export form is offered disabled while the campaign cannot
+            # accept new work, so the page never invites a request it refuses.
+            mutable = True
+            try:
+                admit_campaign(campaign_id, mutating=True)
+            except PermissionError:
+                mutable = False
             # A stale Next click after the result shrank lands past the end;
             # Previous then returns to the real last page, not another empty one.
             last = max(1, -(-total // PAGE_SIZE))
@@ -157,6 +168,9 @@ def report(request, campaign_id):
                 "frequencies": FREQUENCY_LABELS,
                 "previous_page": min(query.page - 1, last) if query.page > 1 else None,
                 "next_page": query.page + 1 if query.page * PAGE_SIZE < total else None,
+                "mutable": mutable,
+                "request_key": uuid4(),
+                "export_timezones": sorted(timezone_names()),
             }
             return iter(
                 (

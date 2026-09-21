@@ -1,4 +1,4 @@
-{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% extends 'stewardship/base.html' %}{% load i18n static stewardship %}
 {% block title %}{% translate "Financial stewardship detail" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Financial stewardship detail" %}</h1>
@@ -34,6 +34,19 @@
 <label for="filter-sort">{% translate "Sort order" %}</label><select id="filter-sort" name="sort"><option value="name">{% translate "Family name A–Z" %}</option><option value="name_desc"{% if query.sort == 'name_desc' %} selected{% endif %}>{% translate "Family name Z–A" %}</option><option value="newest"{% if query.sort == 'newest' %} selected{% endif %}>{% translate "Latest response, newest first" %}</option><option value="oldest"{% if query.sort == 'oldest' %} selected{% endif %}>{% translate "Latest response, oldest first" %}</option><option value="pledge_desc"{% if query.sort == 'pledge_desc' %} selected{% endif %}>{% translate "Largest pledge first" %}</option><option value="pledge"{% if query.sort == 'pledge' %} selected{% endif %}>{% translate "Smallest pledge first" %}</option></select>
 <button type="submit">{% translate "Apply filters" %}</button></form>
 <p>{% translate "Matching Families:" %} {{ total|number }}. {% translate "Page" %} {{ query.page|number }}.</p>
+<section aria-labelledby="financial-export-heading">
+<h2 id="financial-export-heading">{% translate "Export complete results" %}</h2>
+<p>{{ total|number }} {% translate "matching Families, using the applied filters and sort above—not just this page. Every matching pledge and its source comparison totals are captured when you queue the export; later submissions or a source promotion do not alter that capture." %}</p>
+<p class="notice">{% translate "Sensitive parish financial information: download only to a trusted device and share only with authorized recipients." %}</p>
+<form method="post" action="{% url 'admin:financial_export' campaign_id %}">{% csrf_token %}
+{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+<input type="hidden" name="request_key" value="{{ request_key }}">
+<fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Complete-result export options" %}</legend>
+<label for="financial-format">{% translate "Export format" %}</label><select id="financial-format" name="format"><option value="csv">CSV</option><option value="xlsx">XLSX</option><option value="pdf">PDF</option></select>
+<label for="financial-export-timezone">{% translate "Export timezone" %}</label><select id="financial-export-timezone" name="browser_timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
+<p>{% translate "Your browser timezone is selected when available; without scripts, UTC is selected. You can change this selection before exporting." %}</p>
+<button type="submit">{% translate "Queue complete export" %}</button></fieldset></form></section>
+<script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Financial stewardship results' %}"><table>
 <caption>{% translate "Current live pledges by Family" %}</caption><thead><tr><th scope="col">{% translate "Family" %}</th><th scope="col">{% translate "Annual pledge" %}</th><th scope="col">{% translate "Frequency and installment" %}</th><th scope="col">{% translate "Share methods" %}</th><th scope="col">{% translate "Source pledged" %}</th><th scope="col">{% translate "Source contributed" %}</th><th scope="col">{% translate "Responses" %}</th></tr></thead><tbody>
 {% for row in rows %}<tr>
