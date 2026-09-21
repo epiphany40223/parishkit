@@ -5,19 +5,32 @@ from html import unescape
 from uuid import uuid4
 
 import pytest
+from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.db.models import F
 from django.utils import timezone
 
 from parishkit.stewardship.accounts import configuration_installation as installer
 from parishkit.stewardship.accounts.configuration_installation import install_request
+from parishkit.stewardship.accounts.configuration_requests import _status
+from parishkit.stewardship.accounts.configuration_service import (
+    admit_configuration_database,
+)
 from parishkit.stewardship.accounts.policy_models import PortalUser
-from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
+from parishkit.stewardship.accounts.request_models import (
+    ConfigurationChangeRequest,
+    ConfigurationRequestCheckpoint,
+)
 from parishkit.stewardship.accounts.runtime_models import ConfigurationActivation
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.storage import StorageInvariantError
 
 from ..policy_factory import address, assignment, domain
 from .auth_builders import auth_runtime, signed_in
 from .test_background_grants_postgresql import task_login
+from .test_configuration_service_postgresql import (
+    as_config_installer,
+    config_role,  # noqa: F401
+)
 from .test_user_views_postgresql import add_rules, row
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -280,6 +293,123 @@ def test_activation_requires_the_confirming_administrator_still_to_be_one(
     assert receipt.state == "failed" and receipt.failure_code == "actor_unauthorized"
     assert store.active() == base and "raced@example.org" not in rules(store)
     assert not ConfigurationActivation.objects.filter(request=request).exists()
+
+
+@pytest.mark.usefixtures("config_role")
+def test_a_refused_activation_is_recovered_and_recorded_under_real_roles(
+    auth_service, google, monkeypatch
+):
+    """The real installer role applies and refuses; every crash window resumes."""
+    store = auth_service.store
+    add_rules(store, address("second@example.org"))
+    browser, login = signed_in()
+    assert login.status_code == 302
+    admin = PortalUser.objects.get(email="admin@example.org")
+
+    def queued(identity):
+        """One confirmed rule change, still to be installed."""
+        with web():
+            signed = token(
+                post(
+                    browser,
+                    proposal(store, kind="address", identity=identity, roles=["staff"]),
+                )
+            )
+            response = post(browser, {"action": "confirm", "preview": signed})
+        assert response.status_code == 302
+        return ConfigurationChangeRequest.objects.get(
+            pk=response["Location"].rsplit("/", 1)[-1]
+        )
+
+    def install(request):
+        """Install as the restricted configuration installer, never the owner."""
+        with as_config_installer():
+            admit_configuration_database()
+            return install_request(store, request_id=request.pk, correlation_id=uuid4())
+
+    def set_disabled(value):
+        """Flip the confirming Administrator's identity."""
+        PortalUser.objects.filter(pk=admin.pk).update(
+            disabled=value, version=F("version") + 1
+        )
+
+    # The plain activation-time read needs only the installer's SELECT grant.
+    assert install(queued("plain@example.org")).state == "applied"
+    assert "plain@example.org" in rules(store)
+    # A crash after the candidate YAML is selected and before the activation
+    # leaves the request at yaml_activated with the candidate selected. The
+    # recovery pass runs the same actor recheck and, the actor disabled since,
+    # refuses, restores the base and records the refusal.
+    request, base = queued("crashed@example.org"), store.active()
+    original = installer.DatabaseMaterializer.activate
+
+    def crashing(self, digest):
+        """Stop where a crash would, once the YAML is selected."""
+        self.checkpoint("yaml_activated")
+        raise StorageInvariantError("simulated crash before activation")
+
+    monkeypatch.setattr(installer.DatabaseMaterializer, "activate", crashing)
+    with pytest.raises(StorageInvariantError):
+        install(request)
+    monkeypatch.setattr(installer.DatabaseMaterializer, "activate", original)
+    assert store.active().digest == request.candidate_digest
+    set_disabled(True)
+    receipt = install(request)
+    assert receipt.state == "failed" and receipt.failure_code == "actor_unauthorized"
+    assert store.active() == base and "crashed@example.org" not in rules(store)
+    assert not ConfigurationActivation.objects.filter(request=request).exists()
+    # The checkpoint trigger admits that refusal from yaml_activated alone: not
+    # a stale base, and not the same code written by the web role.
+    set_disabled(False)
+    stranded = queued("stranded@example.org")
+    monkeypatch.setattr(installer.DatabaseMaterializer, "activate", crashing)
+    with pytest.raises(StorageInvariantError):
+        install(stranded)
+    monkeypatch.setattr(installer.DatabaseMaterializer, "activate", original)
+
+    def record(code):
+        """One more checkpoint after yaml_activated, as a caller might try."""
+        ConfigurationRequestCheckpoint.objects.create(
+            request=stranded,
+            sequence=_status(stranded).sequence + 1,
+            state="failed",
+            failure_code=code,
+            actor_id=stranded.actor_id,
+            correlation_id=uuid4(),
+        )
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        record("stale_base")
+    with web(), pytest.raises(DatabaseError), transaction.atomic():
+        record("actor_unauthorized")
+    assert _status(stranded).state == "yaml_activated"
+    # A crash between restoring the base YAML and recording the refusal leaves
+    # file and database agreeing with the request still at yaml_activated. The
+    # next pass records the refusal from that state alone, even once the actor
+    # is authorized again: a refused activation is never re-entered.
+    set_disabled(True)
+    restored_only = installer._refuse_selected
+
+    def restore_without_record(store, materializer, request):
+        """Stop where a crash would, after the restore."""
+        materializer._check()
+        store.select(store.read_version(request.base_id))
+
+    monkeypatch.setattr(installer, "_refuse_selected", restore_without_record)
+    assert install(stranded).state == "yaml_activated"
+    assert store.active() == base
+    monkeypatch.setattr(installer, "_refuse_selected", restored_only)
+    set_disabled(False)
+    receipt = install(stranded)
+    assert receipt.state == "failed" and receipt.failure_code == "actor_unauthorized"
+    assert store.active() == base and "stranded@example.org" not in rules(store)
+    # The identity trigger takes the shared work lock, so an identity change
+    # is serialized with an activation holding it.
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT pg_get_functiondef('stewardship_portal_user_mutable_v1'::regproc)"
+        )
+        assert "pg_advisory_xact_lock(736220,1)" in cursor.fetchone()[0]
 
 
 def test_a_review_signed_for_one_administrator_is_refused_for_another(

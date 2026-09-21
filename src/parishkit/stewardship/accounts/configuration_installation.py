@@ -3,8 +3,9 @@
 No service, route, or command exposes this implementation. Actor UUIDs are
 attribution, not authorization, with one exception: a login-policy change
 confirmed by a portal user is applied only while that user is still an
-Administrator, rechecked here under the installation lock and again, with the
-identity row locked, inside the activation transaction. Online Admin admission,
+Administrator, rechecked here under the installation lock and again inside the
+activation transaction, under the shared work lock that identity updates take
+too. Online Admin admission,
 credential evidence,
 offline bootstrap/recovery interlocks, and service grants/mounts remain required
 before exposure. Versioned policy is supported internally; operational secret,
@@ -66,7 +67,7 @@ class DatabaseMaterializer:
         self.deployment_id = deployment_id
         self.admit_campaign = admit_campaign
         # A login-policy request's activation-time actor recheck, run inside
-        # the activation transaction with the identity row locked.
+        # the activation transaction under the shared work lock.
         self.admit_actor = None
         self._guard = None
 
@@ -359,22 +360,26 @@ class ActorUnauthorized(Exception):
     """The Administrator who confirmed a login-policy change no longer is one."""
 
 
-def actor_authorized(request, *, lock):
+def actor_authorized(request):
     """Whether the confirming portal user still holds `manage_users` under the base.
 
     Evaluated against the policy being replaced, with the same evaluator a
-    sign-in uses. With `lock`, the identity row is read FOR SHARE inside the
-    caller's transaction, so a disable or an identity refresh committed after
-    this read cannot interleave with the activation it protects. An actor that
-    is not a portal user, such as operator recovery, is admitted by its own
-    boundary and is not judged here.
+    sign-in uses. Called inside the activation transaction, which holds the
+    shared work lock that every identity update also takes in its trigger, the
+    read is serialized with any disable or address refresh: none can commit
+    between this read and the activation it protects. A plain read, so the
+    installer's SELECT grant suffices. An actor that is not a portal user, such
+    as operator recovery or a system producer, is admitted by its own boundary
+    and is not judged here.
     """
     from .policy import Capability, Principal, allows, confirmed_seeded, resolve_roles
 
+    if request.actor_id is None:
+        return True
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT email, hosted_domain, disabled FROM stewardship_portal_user "
-            "WHERE id=%s" + (" FOR SHARE" if lock else ""),
+            "WHERE id=%s",
             [request.actor_id],
         )
         row = cursor.fetchone()
@@ -442,7 +447,7 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
             for item in request.patch
         )
         if policy_change:
-            materializer.admit_actor = lambda: actor_authorized(request, lock=True)
+            materializer.admit_actor = lambda: actor_authorized(request)
         selected = store.active()
         active_digest = materializer.active_digest()
         if active_digest is None:
@@ -456,11 +461,26 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
             except ActorUnauthorized:
                 _refuse_selected(store, materializer, request)
             return _status(request)
+        if current.state == "yaml_activated":
+            # File and database agree, yet this request's candidate was
+            # selected once: its activation was refused and the base restored,
+            # and only the refusal's record was lost to a crash. Record it now
+            # rather than re-entering a path the checkpoint order forbids.
+            materializer.checkpoint("failed", failure_code="actor_unauthorized")
+            return _status(request)
 
         failure_code = ""
         intent = None
         if active_digest != request.base.digest:
             failure_code = "stale_base"
+        elif policy_change and not actor_authorized(request):
+            # A disabled identity or a rule revoked since confirmation leaves
+            # the base digest unchanged, so the stale-base check alone would
+            # still activate their grant. Refused here, before any file is
+            # written; the recheck at activation catches a change that lands
+            # between the two. Outside the candidate validation, so an error
+            # judging the actor is never recorded as a malformed candidate.
+            failure_code = "actor_unauthorized"
         else:
             # Active-base damage is deployment state, not invalid user intent.
             # Schema-environment failures likewise propagate before claiming.
@@ -512,13 +532,6 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
                 )
 
                 validate_credentials(intent.candidate.document())
-                # A disabled identity or a rule revoked since confirmation
-                # leaves the base digest unchanged, so the stale-base check
-                # alone would still activate their grant. Refused here, before
-                # any file is written; the locked recheck at activation
-                # catches a change that lands between the two.
-                if policy_change and not actor_authorized(request, lock=False):
-                    failure_code = "actor_unauthorized"
             except ConfigurationReadinessUnavailable:
                 # Retain the exact durable request for a later installer pass;
                 # unfinished normalization/replacement is not malformed intent.
@@ -563,9 +576,13 @@ def _refuse_selected(store, materializer, request):
     the base selection, as an exceptional abort does, so file and database
     agree, then fail the request as the refusal it is.
     """
+    materializer._check()
     selected = store.active()
     if selected is not None and selected.version_id != request.base_id:
         store.select(store.read_version(request.base_id))
+    materializer._check()
+    # A crash here leaves the request at yaml_activated with file and database
+    # agreeing; the next pass records the refusal from that state alone.
     materializer.checkpoint("failed", failure_code="actor_unauthorized")
 
 

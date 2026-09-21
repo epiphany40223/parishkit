@@ -152,3 +152,47 @@ rules.
 Post-fix validation: four database-free, seven PostgreSQL and nine browser
 cases passed locally, with the page's own suite, the parish and Ministry
 editors and the installer's own suites.
+
+## Round 5, correction check, dual-source
+
+Reviewed `d7b128fc`, the complete diff from main `e01b52ba`, as a check of
+the round-4 serialization. Both sources completed: Codex answered with one
+validated High and one Medium; Claude returned one High, two Medium and six
+Low. All five validated findings were accepted and fixed.
+
+- **High, both sources: the locked read needed a privilege the installer does
+  not hold.** PostgreSQL requires an `UPDATE` privilege to read `FOR SHARE`,
+  and the configuration installer and admin recovery roles hold `SELECT` on
+  portal users only, so the first confirmed rule change in production would
+  have failed inside the activation transaction after YAML selection and
+  wedged installation. The recheck is now a plain read under the shared work
+  lock the activation transaction already holds, and the portal-user update
+  trigger takes that lock too, so an identity change is serialized with an
+  activation judging that identity without any new grant. A case installs
+  through the real restricted installer role.
+- **Medium, both sources: a crash between the YAML restore and the record
+  wedged the request.** The request stayed at `yaml_activated` with file and
+  database agreeing, and a retry re-entered the apply path, whose `prepared`
+  checkpoint the trigger refuses from that state. The installer now records
+  such a request as the refusal it was from that state alone, never
+  re-entering the apply path even once the actor is authorized again, with a
+  case for the crash and the retry.
+- **Medium, Claude: the recovery claim and the transition's narrowness were
+  untested.** A case now crashes after YAML selection, disables the actor,
+  and proves recovery refuses, restores the base and records the refusal; and
+  proves the trigger refuses `stale_base` from `yaml_activated` and refuses
+  `actor_unauthorized` written by the web role.
+
+Acted on from the six Low findings: the transition is admitted only from an
+installer, never the web role; the first recheck sits outside the candidate
+validation, so an error judging the actor is never recorded as a malformed
+candidate; the restore brackets its file step with the connection check as
+the abort path does; and the task map states the rounds. Left as is: an actor
+id that is not a portal user is admitted, because fixture and system
+producers record requests under such ids and the web can only ever record a
+request under the signed-in portal user; and the activation hook stays an
+attribute set by the installer, beside the constructor's campaign admission.
+
+Post-fix validation: four database-free, eight PostgreSQL and nine browser
+cases passed locally, with the page's own suite, the parish and Ministry
+editors and the installer's own suites.

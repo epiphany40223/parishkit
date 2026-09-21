@@ -68,14 +68,21 @@ confirmation, would otherwise leave the base digest unchanged and let the
 stale-base check alone activate their grant. The check runs twice. Under the
 installation lock before any file is written, a refusal fails the request as
 `actor_unauthorized`, a new checkpoint failure code, with nothing touched.
-Inside the activation transaction the identity row is read `FOR SHARE`, so a
-disable or an identity refresh cannot commit between that read and the
-activation; a change that landed between the two checks rolls the activation
-back, the base YAML is selected again as an exceptional abort does, and the
-request fails the same way, a transition the checkpoint trigger admits for
-this code alone. The crash-recovery activation runs the same locked recheck,
-so a crash between a refused activation and the YAML restore cannot let
-recovery activate the refused request. Operator recovery and other system producers are
+Inside the activation transaction the identity is read again under the shared
+work lock that transaction already holds, which the portal-user update
+trigger now takes as well, so a disable or an address refresh cannot commit
+between that read and the activation; a plain read, so the installer's
+`SELECT` grant suffices. A change that landed between the two checks rolls
+the activation back, the base YAML is selected again as an exceptional abort
+does, and the request fails the same way, a transition the checkpoint trigger
+admits for this code alone and never from the web role, whose own checkpoint
+grant must not be able to strand a selected candidate. The crash-recovery
+activation runs the same recheck, so a crash between a refused activation and
+the YAML restore cannot let recovery activate the refused request; and a
+crash between the restore and the record leaves file and database agreeing
+with the request still at `yaml_activated`, a state the next pass records as
+the refusal it was rather than re-entering a path the checkpoint order
+forbids, even once the actor is authorized again. Operator recovery and other system producers are
 not portal users and keep their own boundaries; the web can only ever record a
 request under the signed-in portal user's identity.
 
@@ -83,11 +90,14 @@ request under the signed-in portal user's identity.
 
 Independent fresh predecessor and candidate databases were compared on the
 disposable PostgreSQL cluster; the predecessor, verified main `e01b52ba`,
-exactly matches its committed fingerprint. Two objects change and none is
+exactly matches its committed fingerprint. Three objects change and none is
 added or removed: the `config_checkpoint_failure_code` check constraint admits
-the new `actor_unauthorized` code, and the checkpoint transition trigger
-function admits a failure with that code after `yaml_activated`, the state a
-request holds when the activation transaction refuses its actor. The candidate has
+the new `actor_unauthorized` code; the checkpoint transition trigger function
+admits a failure with that code after `yaml_activated`, the state a request
+holds when the activation transaction refuses its actor, and only from an
+installer; and the portal-user update trigger function takes the shared work
+lock, so an identity change is serialized with an activation judging that
+identity. The candidate has
 210 relations, 2,360 columns, 3,273 constraints, 972 indexes, 568 functions,
 535 triggers and 28 policies. The strict fixture was updated only after this
 inspected comparison. This is a pre-production fresh-install baseline; no
@@ -139,7 +149,7 @@ route.
   removed roles' origins dropped, with each high-impact expansion classified;
   removal as one patch item; and every refusal as a closed reason code that
   never repeats the target.
-- Seven PostgreSQL cases under the real web role, installing each confirmed
+- Eight PostgreSQL cases under the real web role, installing each confirmed
   request through the real installer: a new address created with provenance
   naming the request, a domain rule widened, an address shrunk to an explicit
   deny and then removed, with the page agreeing at each step; every refusal
@@ -154,8 +164,13 @@ route.
   accepts; a confirmed grant refused at activation as `actor_unauthorized`
   once the actor's identity is disabled, as stale once another
   Administrator's change moved the base, and, when the identity is disabled
-  after the installer's first check, rolled back by the locked recheck with
-  the base YAML selected again; a review signed for one
+  after the installer's first check, rolled back by the activation recheck
+  with the base YAML selected again; under the real restricted installer
+  role, a change applied, a crash after YAML selection recovered as a refusal
+  once the actor is disabled, the transition refused for a stale base and for
+  the web role, a crash between the restore and the record resumed as the
+  refusal even with the actor re-enabled, and the identity trigger's lock
+  present; a review signed for one
   Administrator refused for another; a Chairperson-seeded address widened
   through the route keeping its seeded origin beside the new manual one; and
   reach counted as the page counts it, with an authorized colleague, an
@@ -174,7 +189,7 @@ route.
 Implementation, focused validation and three
 [review/fix rounds](stewardship-user-rule-edit-reviews.md) are complete, the
 first two single-source under the second September 20, 2026 Codex exemption
-and the third dual-source, plus a dual-source correction check of the third
-round's activation guard, with every accepted finding fixed. Full exact-head
-CI, DCO and protected delivery remain open. M5 and Gate 3 remain open. No deployment, release, live-provider write or
+and the third dual-source, plus two dual-source correction checks of the
+activation guard, with every accepted finding fixed. Full exact-head CI, DCO
+and protected delivery remain open. M5 and Gate 3 remain open. No deployment, release, live-provider write or
 database deletion is authorized by this increment.
