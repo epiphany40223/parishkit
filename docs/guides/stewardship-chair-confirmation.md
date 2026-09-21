@@ -64,9 +64,10 @@ assignment it adds.
 
 Inside the activation transaction, under the lock that source promotion also
 takes, the installer first judges every seed the request adds by the facts
-the evidence guard demands: the selected Member is a current Chairperson of
-that Ministry at that address in the promoted snapshot, and the Ministry is
-active under the candidate. A seed no longer true is refused there, recorded
+the evidence guard demands: the candidate's configured ParishSoft
+organization is the seed's, the selected Member is a current Chairperson of
+that Ministry at that address in the promoted snapshot for that organization,
+and the Ministry is active under the candidate. A seed no longer true is refused there, recorded
 as `invalid_candidate` under that lock and followed by the same restore of
 the previous configuration an actor refusal receives, so a suggestion is
 confirmable only while it is still true and a stale one can never wedge the
@@ -124,7 +125,7 @@ path, and no retained database was deleted.
   each refused by the seed rule while the ordinary rule refuses the genuine
   confirmation, the schema refusing an appended parish edit, and an applied
   seed read as ordinary provenance afterwards.
-- Five PostgreSQL cases under the real web and restricted installer roles
+- Six PostgreSQL cases under the real web and restricted installer roles
   with real promoted source: a confirmation previewed, confirmed and
   installed creating the seeded rule, grants, assignment, intent and
   retained evidence with the seed born confirmed on the page and the same
@@ -132,7 +133,8 @@ path, and no retained database was deleted.
   without its Members or with a partial answer and confirmed with both; a
   Chairperson promoted away after confirmation failing the request as an
   invalid candidate with the previous policy restored and an ordinary change
-  installing afterwards; seeded authority refused to the ordinary schema, a
+  installing afterwards; a candidate naming another organization, or none,
+  judged not confirmable; seeded authority refused to the ordinary schema, a
   foreign intent refused by SQL and evidence refused to the web role; and a
   source promoted after the preview making it stale.
 - The suggestion, Portal users page, login rule edit, Chairperson projection,
@@ -142,9 +144,9 @@ path, and no retained database was deleted.
 
 ## Checkpoint
 
-Implementation, focused validation and the first
-[review/fix round](stewardship-chair-confirmation-reviews.md) are complete,
-single-source under the second September 20, 2026 Codex exemption; further
-rounds, full exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
+Implementation, focused validation and two
+[review/fix rounds](stewardship-chair-confirmation-reviews.md) are complete,
+single-source under the second September 20, 2026 Codex exemption; a third
+round, full exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
 open. No deployment, release, live-provider write or database deletion is
 authorized by this increment.

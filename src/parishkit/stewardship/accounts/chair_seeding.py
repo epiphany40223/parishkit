@@ -88,6 +88,19 @@ def _relationships(intents, configuration_id):
     return rows
 
 
+def _configured_organization(document):
+    """The candidate's canonical ParishSoft organization, or None when absent."""
+    for row in document["sections"].get("integrations", []):
+        values = row["values"]
+        if values.get("kind") == "parishsoft" and isinstance(
+            values.get("settings"), dict
+        ):
+            raw = values["settings"].get("organization_id")
+            if type(raw) is str and raw.isdecimal() and str(int(raw)) == raw:
+                return int(raw)
+    return None
+
+
 def confirmable(request, configuration_id, document):
     """Whether every seed this request adds is still true of the current source.
 
@@ -104,6 +117,11 @@ def confirmable(request, configuration_id, document):
     intents = list(ChairSeedIntent.objects.filter(request=request))
     if not intents:
         return True
+    # The guard also holds the candidate's configured ParishSoft organization
+    # to the seed's; a candidate naming another tenant is not confirmable.
+    organization = _configured_organization(document)
+    if any(intent.organization_id != organization for intent in intents):
+        return False
     rows = _relationships(intents, configuration_id)
     for intent, assignment, current, keys in rows:
         if not keys or current.organization_id != intent.organization_id:

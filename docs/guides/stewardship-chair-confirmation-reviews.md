@@ -52,3 +52,25 @@ Post-fix validation: the confirmation, suggestion, login rule edit and
 configuration service suites passed locally under the restricted roles, with
 the confirmation and grant registry database-free suites and the users page
 browser suite on Chromium.
+
+## Round 2, single-source under the second exemption
+
+Reviewed `09105962`, the round 1 result. Codex did not answer; Claude, in one
+pass, confirmed the durable refusal, the installer grant, the per-row Member
+choice, the locked preview observation and the login-rules-only schema
+present and correct, and validated one Medium and eleven Low. The Medium was
+accepted and fixed.
+
+- **Medium: the confirmability judgement omitted one of the guard's facts.**
+  The evidence guard also holds the applied configuration's ParishSoft
+  organization to the seed's; the judgement compared the seed only with the
+  source pointer, so a candidate naming another tenant would have reached
+  the guard inside the activation and wedged the installer the way round 1
+  removed. The judgement now reads the candidate's configured organization
+  as the reconciliation owner does and refuses a mismatch or an absent
+  organization before anything is applied, with a case for both.
+
+The eleven Low findings concerned wording and naming.
+
+Post-fix validation: the confirmation suite passed locally under the
+restricted roles, with the confirmation database-free suite.

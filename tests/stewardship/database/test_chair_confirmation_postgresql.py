@@ -257,6 +257,37 @@ def test_a_source_that_lost_the_chairperson_refuses_the_activation_durably(
     )
 
 
+@pytest.mark.usefixtures("source_singletons")
+def test_a_candidate_naming_another_organization_is_not_confirmable(
+    auth_service, google
+):
+    """The guard's tenant check is judged before activation, not discovered by it."""
+    from copy import deepcopy
+
+    from parishkit.stewardship.accounts.chair_seeding import confirmable
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+
+    store = auth_service.store
+    publish(source())
+    browser, login = signed_in()
+    assert login.status_code == 302
+    request = recorded(browser, proposal(store))
+    document = deepcopy(store.active().document())
+    integration = next(
+        row["values"]
+        for row in document["sections"]["integrations"]
+        if row["values"]["kind"] == "parishsoft"
+    )
+    assert integration["settings"]["organization_id"] == "12345"
+    # The tenant is judged before the candidate's projections are consulted,
+    # which exist only once the installer has prepared it.
+    with work_transaction():
+        integration["settings"]["organization_id"] = "54321"
+        assert confirmable(request, request.candidate_version_id, document) is False
+        del integration["settings"]["organization_id"]
+        assert confirmable(request, request.candidate_version_id, document) is False
+
+
 @pytest.mark.usefixtures("source_singletons", "config_role")
 def test_seeded_authority_enters_only_through_the_confirmation_schema(
     auth_service, google
