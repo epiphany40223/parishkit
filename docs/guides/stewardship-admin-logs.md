@@ -159,3 +159,23 @@ single-source under the second September 20, 2026 Codex exemption, with every
 accepted finding fixed. Full exact-head CI, DCO and protected delivery remain
 open. M5 and Gate 3 remain open. No deployment, release, live-provider write or
 database deletion is authorized by this increment.
+
+## Protected delivery
+
+PR #78 delivered candidate `f3ba7264`, three logical commits plus the PR #77
+receipt and the fast-selection rotation, whose tree `9647359c` is identical to
+the retained commit-by-commit review history on
+`pr/stewardship-admin-logs-reviewed` and to the landed tree. Exact-head
+ready-candidate CI `35560452141` and DCO passed all 24 jobs on the first
+attempt, from 04:18:08 to 04:46:22 UTC on September 21, 2026 (28 minutes 14
+seconds), without a correction rerun. `origin/main` had no intervening commits
+since the candidate's base `151966fb`. Protected auto-merge landed as
+`30cb4635d06856be4cc410997fb0e6e6fab6c05e` at 04:46:36 UTC and was verified on
+freshly fetched `origin/main` before the financial export increment was rebased
+onto it. This used the standing delivery authority, without deployment or
+release, and supersedes the pending delivery checkpoint above. The draft-state
+run cancelled by the ready-state run at the same head is not counted as
+acceptance.
+
+The read-only system logs screen of ADM-08.04 is delivered; its export, search
+and scope filters follow with RPT-09. M5 and Gate 3 remain open.
