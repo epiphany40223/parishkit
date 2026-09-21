@@ -39,12 +39,38 @@ def serve(
     deny=False,
     drop_first=False,
     base_failures=0,
+    outage=None,
+    poll_failures=0,
+    fast=False,
 ):
-    """Mock the apply, status and base routes; record every intent sent."""
+    """Mock the apply, status and base routes; record every intent sent.
+
+    `outage` is a mutable set: while it holds "apply" every apply is dropped;
+    `poll_failures` drops that many status polls; `fast` shortens the page's
+    retry, poll and deadline timing through its test seams.
+    """
     sent = []
     polled = []
     reads = []
     rules = {"address": {LEADER: ["ministry_leader", "staff"]}, "domain": {}}
+    outage = set() if outage is None else outage
+
+    if fast:
+
+        def hasten(route, request):
+            """Serve the page with short timing so slow paths run quickly."""
+            response = route.fetch()
+            route.fulfill(
+                response=response,
+                body=response.text().replace(
+                    "data-rule-autosave ",
+                    'data-rule-autosave data-poll-ms="100" data-retry-wait-ms="50"'
+                    ' data-deadline-ms="2000" ',
+                    1,
+                ),
+            )
+
+        page.route("**/portal-users", hasten)
 
     def apply(route, request):
         """Accept one intent with a fresh id, or answer as the scenario says."""
@@ -53,7 +79,7 @@ def serve(
             {key: value[0] for key, value in body.items()}
             | {"csrf": request.headers.get("x-csrftoken")}
         )
-        if drop_first and len(sent) == 1:
+        if (drop_first and len(sent) == 1) or "apply" in outage:
             route.abort()
             return
         if deny:
@@ -80,6 +106,9 @@ def serve(
         """Answer each poll from the scripted states for that request."""
         request_id = request.url.rsplit("/", 1)[-1]
         polled.append(request_id)
+        if len(polled) <= poll_failures:
+            route.abort()
+            return
         queue = states.setdefault(request_id, ["applied"])
         state = queue.pop(0) if len(queue) > 1 else queue[0]
         failure = "stale_base" if state == "stale_base" else ""
@@ -287,7 +316,9 @@ def test_a_failed_request_pauses_and_a_stale_base_failure_opens_the_conflict(
 ):
     """Terminal failures pause; a stale base found at activation is a conflict."""
     sent, _, _ = serve(
-        page, states={"request-1": ["failed"], "request-2": ["stale_base"]}
+        page,
+        states={"request-1": ["failed"], "request-2": ["staged"] * 8 + ["stale_base"]},
+        fast=True,
     )
     leader = leader_row(page, component_origin)
     leader.get_by_label("Staff").uncheck()
@@ -296,6 +327,92 @@ def test_a_failed_request_pauses_and_a_stale_base_failure_opens_the_conflict(
     assert leader.get_by_text("Queued — not saved", exact=True).is_visible()
     assert len(sent) == 1
     page.get_by_role("button", name="Continue with the remaining changes").click()
+    # A newer click on the in-flight control while it awaits activation
+    # supersedes it when the stale base opens the conflict view.
+    leader.get_by_text("Applying", exact=False).wait_for()
+    leader.get_by_label("Administrator").uncheck()
+    panel = page.get_by_role("alert")
     page.get_by_role("button", name="Retry selected against current rules").wait_for()
     assert len(sent) == 2 and sent[1]["role"] == "administrator"
-    assert page.get_by_role("alert").get_by_role("listitem").count() == 1
+    assert panel.get_by_role("listitem").count() == 1
+    assert panel.get_by_text("withdraw Administrator", exact=False).is_visible()
+    # The withdrawal already matches the current rules, so it is not preselected.
+    assert not panel.get_by_role("checkbox").is_checked()
+
+
+def test_an_unanswered_request_is_kept_uncertain_with_its_key(page, component_origin):
+    """Exhausted retries keep the key; Try again resends that very key."""
+    outage = {"apply"}
+    sent, _, _ = serve(page, states={}, outage=outage, fast=True)
+    leader = leader_row(page, component_origin)
+    leader.get_by_label("Staff").uncheck()
+    leader.get_by_text("Not confirmed", exact=False).wait_for(timeout=15000)
+    assert page.get_by_role("button", name="Try again").is_visible()
+    assert len(sent) == 4 and len({item["request_key"] for item in sent}) == 1
+    # Nothing further is sent while the outcome is unknown.
+    leader.get_by_label("Administrator").check()
+    assert leader.get_by_text("Queued — not saved", exact=True).is_visible()
+    assert len(sent) == 4
+    outage.clear()
+    page.get_by_role("button", name="Try again").click()
+    leader.get_by_text("Applied", exact=True).nth(1).wait_for()
+    assert sent[4]["request_key"] == sent[0]["request_key"]
+    assert sent[5]["role"] == "administrator"
+
+
+def test_unreadable_outcomes_pause_and_resume_the_same_request(page, component_origin):
+    """Poll failures show reconnecting, then pause; Try again reads the same id."""
+    sent, polled, _ = serve(page, states={}, poll_failures=5, fast=True)
+    leader = leader_row(page, component_origin)
+    leader.get_by_label("Staff").uncheck()
+    page.get_by_role("button", name="Try again").wait_for(timeout=15000)
+    assert leader.get_by_text("Reconnecting", exact=False).is_visible()
+    assert len(sent) == 1 and len(polled) == 5
+    page.get_by_role("button", name="Try again").click()
+    leader.get_by_text("Applied", exact=True).wait_for()
+    assert set(polled) == {"request-1"} and len(sent) == 1
+
+
+def test_the_pause_panel_discards_or_continues(page, component_origin):
+    """Remaining changes are discarded to confirmed values, or the queue resumes."""
+    sent, _, _ = serve(
+        page, states={}, refuse=lambda intent: intent["role"] == "administrator"
+    )
+    leader = leader_row(page, component_origin)
+    leader.get_by_label("Administrator").click()
+    leader.get_by_text("Not saved: this change", exact=False).wait_for()
+    leader.get_by_label("Staff").uncheck()
+    page.get_by_role("button", name="Discard the remaining changes").click()
+    assert leader.get_by_label("Staff").is_checked()
+    assert leader.get_by_text("Change discarded", exact=True).is_visible()
+    assert page.get_by_role("alert").is_hidden()
+    # A refusal with nothing else waiting offers a plain Continue.
+    leader.get_by_label("Administrator").click()
+    page.get_by_role("button", name="Continue", exact=True).wait_for()
+    page.get_by_role("button", name="Continue", exact=True).click()
+    assert page.get_by_role("alert").is_hidden()
+    leader.get_by_label("Ministry leader").uncheck()
+    leader.get_by_text("Applied", exact=True).wait_for()
+    assert [item["role"] for item in sent] == [
+        "administrator",
+        "administrator",
+        "ministry_leader",
+    ]
+
+
+def test_reloading_from_a_failed_read_abandons_the_queue_without_warning(
+    page, component_origin
+):
+    """Discard all and reload leaves the page without the unsaved-changes dialog."""
+    sent, _, _ = serve(
+        page, states={}, stale=lambda intent, count: True, base_failures=99
+    )
+    leader = leader_row(page, component_origin)
+    leader.get_by_label("Staff").uncheck()
+    page.get_by_role("button", name="Discard all and reload page").wait_for()
+    dialogs = []
+    page.on("dialog", lambda dialog: (dialogs.append(dialog.type), dialog.dismiss()))
+    with page.expect_navigation():
+        page.get_by_role("button", name="Discard all and reload page").click()
+    assert dialogs == [] and len(sent) == 1
+    assert leader_row(page, component_origin).get_by_label("Staff").is_checked()

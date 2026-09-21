@@ -104,7 +104,11 @@ login alive or observe another Administrator's request, and polling waits
 while the tab is hidden. A used key is looked up again before a stale digest
 is refused, so an original request that activated between the two reads
 still answers. The page adds no query to its own render; the script runs
-only when a rule row exists.
+only when a rule row exists, and its retry wait, poll interval and deadline
+are read from the page as test seams the template never sets. When a stale
+digest opens the conflict view, an intent that was in flight returns to the
+queue only when no newer intent for its control already waits, so the
+Administrator's latest click stands.
 
 ## Schema
 
@@ -130,8 +134,13 @@ No schema change.
   way, a new domain, the domain-rule fences, malformed and unexpected
   fields, a wrong method, a missing CSRF token and a Staff reader
   all refused with nothing recorded.
-- Seven browser cases in every engine against the component page with the
-  routes mocked: ticks applied in order with Applied only from the receipt,
+- Eleven browser cases in every engine against the component page with the
+  routes mocked, the slow paths driven through the timing seams: an
+  unanswered request kept uncertain with its key and Try again resending
+  that key, unreadable outcomes pausing and Try again reading the same
+  request, the pause panel discarding the rest or continuing, a reload from
+  a failed read leaving without a warning, a newer click superseding a
+  conflicted in-flight intent, and the following: ticks applied in order with Applied only from the receipt,
   the digest and a rotated CSRF token adopted, a change of mind dropped
   whether against the confirmed value or the one in flight; a refusal
   restoring its tick, pausing, and surviving a queued change to another
@@ -151,7 +160,7 @@ No schema change.
 ## Checkpoint
 
 Implementation and focused validation are complete and
-[rounds 1 to 5](stewardship-rule-autosave-reviews.md) are answered; the
+[rounds 1 to 6](stewardship-rule-autosave-reviews.md) are answered; the
 correction check, full exact-head CI, DCO and protected delivery remain
 open. M5 and Gate 3 remain open. No deployment, release, live-provider write
 or database deletion is authorized by this increment.

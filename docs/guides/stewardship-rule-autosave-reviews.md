@@ -121,3 +121,22 @@ corrections: fourteen raw findings, one validated and corrected:
 
 The thirteen findings the validation step did not confirm were not carried
 forward.
+
+## Round 6
+
+Claude only (Codex out of quota). A correction check of the five rounds'
+corrections: nineteen raw findings, two validated, both corrected:
+
+- Medium: when a stale digest opened the conflict view, the intent that had
+  been in flight returned to the queue even when a newer intent for the same
+  control already waited, so the view listed two contradictory intents and
+  a retry could apply the older one. The in-flight intent now returns only
+  when no newer intent for its control waits, at intake and at activation.
+- Medium: the uncertain outcomes had no browser case, nor had the pause
+  panel's discard and continue or the reload from a failed read. The page's
+  retry wait, poll interval and deadline are now test seams the template
+  never sets, and cases drive each of those paths, plus the superseded
+  in-flight intent.
+
+The seventeen findings the validation step did not confirm were not carried
+forward.

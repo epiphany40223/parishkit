@@ -10,7 +10,13 @@
   let csrf = document.querySelector('[name="csrfmiddlewaretoken"]')?.value;
   if (!applyUrl || !requestUrl || !baseUrl || !csrf) return;
   const TERMINAL = new Set(["applied", "failed", "cancelled"]);
-  const POLL = 2000, RETRIES = 3, POLL_FAILURES = 5, DEADLINE = 15000;
+  // Timing, with the page's own values as test seams; the template sets none.
+  const timing = (name, fallback) => {
+    const value = Number(page.dataset[name]);
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+  };
+  const POLL = timing("pollMs", 2000), RETRY_WAIT = timing("retryWaitMs", 3000);
+  const DEADLINE = timing("deadlineMs", 15000), RETRIES = 3, POLL_FAILURES = 5;
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   // One base digest for every request this page sends; adopted from each
   // applied receipt, never from an acceptance or an intermediate state.
@@ -193,7 +199,12 @@
     // ones as new requests against the refreshed digest or discards them.
     // Nothing is rebased silently, and the intents stay in the queue.
     paused = true;
-    if (inflight) { queue.unshift(inflight.intent); inflight = null; }
+    if (inflight) {
+      // A newer intent already queued for the same control supersedes the
+      // one that was in flight; the Administrator's latest click stands.
+      if (!queuedFor(inflight.intent.box)) queue.unshift(inflight.intent);
+      inflight = null;
+    }
     queue.forEach((intent) => status(intent.box,
       "Not saved: the rules changed; see the notice above.", "conflict"));
     let current = null;
@@ -311,7 +322,7 @@
       return;
     }
     if (receipt.state === "failed" && receipt.failure_code === "stale_base") {
-      queue.unshift(intent);
+      if (!queuedFor(intent.box)) queue.unshift(intent);
       openConflict("The login rules changed before this change could be applied, so it was not applied.");
       return;
     }
@@ -330,7 +341,7 @@
     status(intent.box, "Applying…", "applying");
     let receipt = null;
     for (let attempt = 0; attempt <= RETRIES; attempt += 1) {
-      if (attempt) await wait(3000 * attempt);
+      if (attempt) await wait(RETRY_WAIT * attempt);
       if (ended) return;
       try {
         const response = await send(intent, key);
