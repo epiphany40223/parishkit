@@ -389,3 +389,11 @@ The seven Low findings repeated earlier dispositions or concerned wording.
 
 Post-fix validation: the installer's service suite, the page's PostgreSQL
 suite and the runtime process suite passed locally.
+
+## Round 12, correction check, single-source under the second exemption
+
+Reviewed `9d455182`, the complete diff from main `e01b52ba`, as a check of
+the round-11 scoping. Codex did not answer; Claude, in two shards, returned
+no finding above the validation cutoff: eleven Low, each repeating an
+earlier disposition or concerning wording. Nothing to fix; the branch is
+the candidate for protected delivery.

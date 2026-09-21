@@ -204,8 +204,9 @@ baseline; no upgrade path is added and no retained database was deleted.
 Implementation, focused validation and three
 [review/fix rounds](stewardship-user-rule-edit-reviews.md) are complete, the
 first two single-source under the second September 20, 2026 Codex exemption
-and the third dual-source, plus eight correction checks of the activation
-guard, three dual-source and five single-source under the same exemption,
-with every accepted finding fixed. Full exact-head CI, DCO and protected
+and the third dual-source, plus nine correction checks of the activation
+guard, three dual-source and six single-source under the same exemption,
+with every accepted finding fixed and the last check finding nothing to
+fix. Full exact-head CI, DCO and protected
 delivery remain open. M5 and Gate 3 remain open. No deployment, release,
 live-provider write or database deletion is authorized by this increment.
