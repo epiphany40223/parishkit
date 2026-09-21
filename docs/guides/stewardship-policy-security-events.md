@@ -140,9 +140,10 @@ retained database was deleted.
 ## Checkpoint
 
 Implementation, focused validation and three
-[review/fix rounds](stewardship-policy-security-event-reviews.md) are
-complete, all single-source under the second September 20, 2026 Codex
-exemption, with every accepted finding fixed; full exact-head CI, DCO and
-protected delivery remain open. M5 and Gate 3
+[review/fix rounds](stewardship-policy-security-event-reviews.md) plus a
+closing correction check are complete, all single-source under the second
+September 20, 2026 Codex exemption, with every accepted finding fixed and
+the check finding nothing to fix; full exact-head CI, DCO and protected
+delivery remain open. M5 and Gate 3
 remain open. No deployment, release, live-provider write or database
 deletion is authorized by this increment.

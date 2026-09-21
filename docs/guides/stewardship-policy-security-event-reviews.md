@@ -118,3 +118,11 @@ The eight Low findings concerned wording or repeated the validated one.
 Post-fix validation: eleven database-free, three PostgreSQL and six browser
 cases passed locally, with the schema baseline, immutable-record inventory,
 policy activation, recovery and login rule edit suites.
+
+## Round 4, correction check, single-source under the second exemption
+
+Reviewed `711c8e0b`, the complete diff from main `4f0465fa`, as a check of
+the round-3 rule. Codex did not answer; Claude returned no finding above
+the validation cutoff: six Low, each repeating an earlier disposition or
+concerning wording. Nothing to fix; the branch is the candidate for
+protected delivery.
