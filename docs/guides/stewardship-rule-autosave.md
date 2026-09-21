@@ -161,5 +161,35 @@ No schema change.
 
 Implementation, focused validation and the
 [review rounds](stewardship-rule-autosave-reviews.md) are complete; full
-exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain open. No deployment, release, live-provider write
-or database deletion is authorized by this increment.
+exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
+open. No deployment, release, live-provider write or database deletion is
+authorized by this increment.
+
+## Protected delivery
+
+PR #88 delivered candidate `4bca76c1`, three logical commits plus the PR #87
+receipt and the fast-selection rotation, whose tree `380b16d1` is identical
+to the retained commit-by-commit review history on
+`pr/stewardship-rule-autosave-reviewed` (`97d23f99`) and to the landed tree.
+The seven [review/fix rounds](stewardship-rule-autosave-reviews.md) were
+single-source under the second exemption, with every accepted finding fixed
+and the seventh, a correction check, validating nothing. The pull request
+was marked ready before the candidate was pushed, and the candidate was
+pushed once the ready-for-review run for the previous head was in progress,
+so that run was cancelled by the candidate's own. Exact-head ready-candidate
+CI `35666009779` and DCO passed all 25 checks, from 23:08:07 to 23:25:35 UTC
+on September 21, 2026 (17 minutes 28 seconds). `origin/main` had no
+intervening commits since the candidate's base `af474230`. Protected
+auto-merge landed as `44f53cb3` at 23:25:39 UTC and was verified on freshly
+fetched `origin/main`, whose second parent's tree is the candidate's, before
+the next increment started. This used the standing delivery authority,
+without deployment or release, and supersedes the checkpoint above. The
+cancelled and retained-history runs are not counted as acceptance.
+
+The login-rule autosave queue increment is delivered: with scripting, each
+role checkbox change on the Portal users page is autosaved as one logical
+intent through a client-keyed configuration request, with one queue per
+page, Applied shown only from an activation receipt, the applied digest
+adopted for the next intent, a pause on any failure and an open conflict
+view for a stale digest; without scripting the native review forms remain.
+ADM-07 stays open for the tests of .05. M5 and Gate 3 remain open.
