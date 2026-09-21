@@ -16,6 +16,7 @@ from parishkit.stewardship.accounts.request_models import (
     ConfigurationChangeRequest,
     ConfigurationRequestCheckpoint,
 )
+from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
 
 from ..policy_factory import address
@@ -56,14 +57,20 @@ def test_an_autosaved_administrator_grant_is_exactly_once(auth_service, google):
     before = ConfigurationChangeRequest.objects.count()
     with web():
         receipt = state(apply(browser, values).json())
+        # Intake wrote its audit with the checkpoint; resubmissions write none.
+        audited = AuditEvent.objects.count()
         for _ in range(2):
             assert state(apply(browser, values).json()) == receipt
+    assert AuditEvent.objects.count() == audited
     request_id = receipt["request_id"]
     checkpoints = ConfigurationRequestCheckpoint.objects.filter(
         request_id=request_id
     ).count()
     assert checkpoints == 1
     assert installed(store, request_id).state == "applied"
+    # Activation wrote its audit rows once, with exactly one security event.
+    activated = AuditEvent.objects.count()
+    assert activated > audited
     assert (
         PolicySecurityEvent.objects.filter(activation__request_id=request_id).count()
         == 1
@@ -71,6 +78,7 @@ def test_an_autosaved_administrator_grant_is_exactly_once(auth_service, google):
     with web():
         for _ in range(2):
             assert apply(browser, values).json()["state"] == "applied"
+    assert AuditEvent.objects.count() == activated
     assert (
         PolicySecurityEvent.objects.filter(activation__request_id=request_id).count()
         == 1

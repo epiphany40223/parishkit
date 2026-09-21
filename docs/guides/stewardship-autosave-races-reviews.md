@@ -26,3 +26,18 @@ corrected:
 
 The nine findings the validation step did not confirm were not carried
 forward.
+
+## Round 2
+
+Claude only (Codex out of quota). Ten raw findings, one validated and
+corrected:
+
+- Medium: the exact-once case proved the request, checkpoints and security
+  event but said nothing of the audit rows or the notification, which the
+  work package names too. It now asserts that intake's audit is written
+  once and resubmissions add no row, that activation's audit rows are
+  written once and later resubmissions add none, and the guide cites the
+  security event mail suite for exactly one mail per event.
+
+The nine findings the validation step did not confirm were not carried
+forward.

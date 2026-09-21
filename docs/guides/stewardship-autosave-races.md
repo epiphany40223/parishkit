@@ -30,9 +30,11 @@ and cites where the rest already live, so ADM-07's tasks can be checked.
   [login rule edit](stewardship-user-rule-edits.md) suites.
 - Activation-time revocation of the confirming Administrator: the login rule
   edit suite's `actor_unauthorized` cases.
-- Administrator-grant notification, its failure, retry and acknowledgement:
+- Administrator-grant notification, its failure, retry and acknowledgement,
+  and exactly one mail per security event however often the fanout runs:
   the [security event](stewardship-policy-security-events.md) and
-  [security event mail](stewardship-security-event-mail.md) suites.
+  [security event mail](stewardship-security-event-mail.md) suites, the
+  latter binding each event's cohort once.
 - Ministry row-scope updates through the suspension overlay and the manual
   assignments: the [Chairperson review](stewardship-chair-review.md) and
   [assignment editor](stewardship-assignment-editor.md) suites.
@@ -46,8 +48,10 @@ and cites where the rest already live, so ADM-07's tasks can be checked.
 
 - PostgreSQL, under the real web and restricted installer roles: an
   autosaved Administrator grant recorded once for its key however often it
-  is resent, activated with exactly one security event and no further
-  checkpoint on a later resubmission; two Administrators' intents against one
+  is resent, its intake audit written once and no audit row added by a
+  resubmission, activated with its audit rows and exactly one security
+  event written once, and no further checkpoint, audit row or event on a
+  later resubmission; two Administrators' intents against one
   base, the second failing at activation with `stale_base`, reported so by
   its status route, and its retry as a new key against the new digest
   applied; and a session revoked mid-queue denying the apply and status
@@ -66,8 +70,8 @@ No schema change.
 ## Checkpoint
 
 The tests are complete and pass locally and
-[round 1](stewardship-autosave-races-reviews.md) is answered; the remaining
-review/fix rounds, full exact-head CI, DCO and protected delivery remain
-open. With them ADM-07.01 to .05 are
+[rounds 1 and 2](stewardship-autosave-races-reviews.md) are answered; the
+remaining review/fix rounds, full exact-head CI, DCO and protected delivery
+remain open. With them ADM-07.01 to .05 are
 checked in the task map. M5 and Gate 3 remain open. No deployment, release,
 live-provider write or database deletion is authorized by this increment.
