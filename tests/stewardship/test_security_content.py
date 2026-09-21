@@ -90,6 +90,17 @@ def test_untyped_or_unknown_facts_are_refused(values):
         alert(**values)
 
 
+def test_role_words_match_the_page_labels_in_their_order():
+    """The helper's plain words are the page's translated labels, in its order."""
+    from parishkit.stewardship.accounts.user_rows import ROLE_LABELS
+    from parishkit.stewardship.jobs.security_content import ROLE_WORDS
+
+    assert [role for role, _ in ROLE_WORDS] == list(ROLE_LABELS)
+    assert [word for _, word in ROLE_WORDS] == [
+        str(label) for label in ROLE_LABELS.values()
+    ]
+
+
 def test_kinds_match_the_dashboard_wording():
     """The email names each expansion exactly as the dashboard does."""
     from parishkit.stewardship.accounts.security_events import KINDS as DASHBOARD

@@ -164,6 +164,33 @@ def test_fixed_private_helper_and_validated_pipe_roundtrip(monkeypatch):
     assert len(process.inputs) == 1
 
 
+def test_content_compiles_in_the_isolated_helper_without_django_settings():
+    """The helper runs with `-I` and no environment; the MIME must still compile."""
+    script = (
+        "import json, sys\n"
+        "from parishkit.stewardship.security_delivery import SecurityMail\n"
+        "mail = SecurityMail.from_payload(json.load(sys.stdin))\n"
+        "message = mail.message()\n"
+        "print(message['Subject'])\n"
+        "print(message.get_body(preferencelist=('plain',)).get_content())\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", script],
+        input=json.dumps(mail().payload()).encode(),
+        capture_output=True,
+        timeout=10,
+        env={},
+    )
+    assert result.returncode == 0, result.stderr.decode()[-500:]
+    output = result.stdout.decode()
+    assert output.startswith(
+        "[TESTING] SECURITY: Administrator added to an exact address\n"
+    )
+    assert "Roles before: none\nRoles after: Administrator\nBy: admin@example.org" in (
+        output
+    )
+
+
 def test_real_security_helper_rejects_invalid_credentials_without_network():
     """Exercise the installed isolated entry point with no service bootstrap."""
     request = json.dumps(

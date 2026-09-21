@@ -109,18 +109,23 @@ is added and no retained database was deleted.
 
 ## Focused validation
 
-- Ten database-free cases for the content compiler: every fact in fixed
+- Eleven database-free cases for the content compiler: every fact in fixed
   order, markup shown as text, recovery and empty roles worded, the mode
-  visible, only canonical UTC accepted, unknown or untyped facts refused, and
-  the kinds matching the dashboard's wording.
-- Fourteen database-free cases for the envelope and helper: facts round-trip
+  visible, only canonical UTC accepted, unknown or untyped facts refused,
+  the role words equal to the page's labels in their order, and the kinds
+  matching the dashboard's wording.
+- Fifteen database-free cases for the envelope and helper: facts round-trip
   and generate the MIME, invalid facts and arbitrary content refused without
   echo, the operational and security envelopes and submitters not
   interchangeable, the real pipe owner launching the security helper with a
-  fake process, and the installed helper rejecting an invalid credential
+  fake process, the MIME compiled in the isolated helper with no
+  environment, and the installed helper rejecting an invalid credential
   without network.
 - Two database-free cases for the owner record: the two owners distinct in
   every closed part, and one assembled from an open part refused.
+- The background handler registry case expects `security_prepare` bound to
+  the heartbeat pulse, and the scheduler process case expects both fanout
+  producers, the second naming the security owner.
 - PostgreSQL cases under the real scheduler, worker and mail roles: an
   expansion allocating one durable outbox per recorded recipient with the
   root event never scheduled, SQL refusing a cohort that differs from the
@@ -130,9 +135,13 @@ is added and no retained database was deleted.
   Python compiler for every kind and mode with and without a portal actor
   and the escape helper equal to Python's, the security owner binding,
   preparing, submitting and settling a recipient with the operational owner
-  unable to bind it, a failed partial preparation cancelling its committed
-  child as `preparation_failed` with two fixed ERROR logs, and a recipient
-  revoked since activation still told.
+  unable to bind it, a page with private text or a missing recipient receipt
+  refused under the worker's own grants, a failed partial preparation
+  cancelling its committed child as `preparation_failed` with two fixed
+  ERROR logs, transient and permanent provider answers settled under the
+  security admission with their SMTP reasons, an abandoned submission
+  becoming `delivery_unknown` with its task failed, and a recipient revoked
+  since activation still told.
 - The operational fanout, dispatch, routing and hold suites pass unchanged
   under the shared engine, with the background and mail grant suites, the
   immutable-record inventory and the schema baseline.
@@ -140,10 +149,10 @@ is added and no retained database was deleted.
 
 ## Checkpoint
 
-Implementation, focused validation and the first
-[review/fix round](stewardship-security-event-mail-reviews.md) are
+Implementation, focused validation and two
+[review/fix rounds](stewardship-security-event-mail-reviews.md) are
 complete, single-source under the second September 20, 2026 Codex
-exemption; further rounds, full exact-head CI, DCO and protected delivery
+exemption; a third round, full exact-head CI, DCO and protected delivery
 remain open. M5 and Gate 3
 remain open. No deployment, release, live-provider write or database
 deletion is authorized by this increment.

@@ -169,6 +169,77 @@ def test_failed_partial_fanout_cancels_children_and_leaves_a_fixed_error(
     )
 
 
+def test_provider_outcomes_settle_under_the_security_admission(routing):
+    """A transient answer waits with its SMTP reason and the fixed ERROR log."""
+    from parishkit.stewardship.audit.models import OperationalLog
+
+    store, _, _, _ = routing
+    first, second = allocated(routing)
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        execution = claim(first.outbox, store)
+        begin(first.outbox, execution, store)
+        result = finish_submission(
+            first.outbox_id,
+            execution.claim,
+            FamilyDeliveryResult(FamilyDeliveryStatus.TRANSIENT, 1),
+            SECURITY,
+        )
+        assert result.state.value == "retry_wait"
+        other = claim(second.outbox, store)
+        begin(second.outbox, other, store)
+        result = finish_submission(
+            second.outbox_id,
+            other.claim,
+            FamilyDeliveryResult(FamilyDeliveryStatus.PERMANENT, 1),
+            SECURITY,
+        )
+        assert result.state.value == "permanent_failure"
+    first.outbox.refresh_from_db()
+    second.outbox.refresh_from_db()
+    assert first.outbox.state == "retry_wait" and first.outbox.attempt == 1
+    assert first.outbox.reason.startswith("smtp_")
+    assert second.outbox.state == "permanent_failure"
+    assert second.outbox.reason.startswith("smtp_")
+    assert (
+        OperationalLog.objects.filter(level="ERROR", event="task_failed").count() == 2
+    )
+
+
+def test_abandoned_security_submission_becomes_uncertain(routing, monkeypatch):
+    """Use a real short lease and deadline; recovery cannot reopen the provider."""
+    from parishkit.stewardship.jobs.dispatch import recover_hint
+
+    from .test_taskrun_postgresql import act, expire
+
+    store, _, _, _ = routing
+    recipient = allocated(routing)[0]
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.operational_dispatch.PROVIDER_SECONDS", 1
+    )
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        execution = claim(recipient.outbox, store)
+        begin(recipient.outbox, execution, store)
+    running = act(
+        _status(TaskRun.objects.get(pk=recipient.outbox.task_id)),
+        "heartbeat",
+        lease_seconds=1,
+    )
+    expire(running)
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        assert recover_hint(
+            recipient.outbox.task_id,
+            queue=WorkQueue.MAIL,
+            worker_id=uuid4(),
+            handlers={
+                "outbox_delivery": delivery_handler(
+                    store, credential_path=Path("/unused")
+                )
+            },
+        )
+    assert OutboxMessage.objects.get(pk=recipient.outbox_id).state == "delivery_unknown"
+    assert TaskRun.objects.get(pk=recipient.outbox.task_id).state == "failed"
+
+
 def test_a_recipient_revoked_since_activation_is_still_told(routing):
     """The recipients are the Administrators who existed before the expansion."""
     store, actor, _, records = routing

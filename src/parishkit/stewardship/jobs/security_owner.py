@@ -21,6 +21,13 @@ from .security_models import SecurityCohort, SecurityRecipient
 from .security_routing import current_mail, event_alert, mail_render
 
 TASK_TYPE = "security_prepare"
+
+
+def _mail_render(**kwargs):
+    """Compile through this module's name, the seam the suites replace."""
+    return mail_render(**kwargs)
+
+
 NAMESPACE = UUID("2f5c0a6e-6d55-4c0e-9d29-3f1d8c9b4a71")
 
 
@@ -132,7 +139,7 @@ SECURITY = AlertOwner(
     source_exists=_source_exists,
     capture=_capture,
     alert=lambda cohort, mode: event_alert(cohort.event_id, SystemMode(mode)),
-    mail_render=mail_render,
+    mail_render=_mail_render,
     current_mail=lambda store, cohort, address, semantic_key: current_mail(
         store, event_id=cohort.event_id, address=address, semantic_key=semantic_key
     ),

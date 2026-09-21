@@ -133,6 +133,7 @@ def test_background_assembly_binds_exact_keys_role_and_closed_registry(
         expected = {
             "operational_collect",
             "operational_prepare",
+            "security_prepare",
             "operational_slack",
             "report_facts",
             "report_exact_export",
@@ -163,6 +164,7 @@ def test_background_assembly_binds_exact_keys_role_and_closed_registry(
         assert runtime.handlers["source_refresh"].pulse is pulse
         assert runtime.handlers["operational_collect"].pulse is pulse
         assert runtime.handlers["operational_prepare"].pulse is pulse
+        assert runtime.handlers["security_prepare"].pulse is pulse
         assert runtime.handlers["operational_slack"].pulse is pulse
         assert set(runtime.receipts) == set(configuration.secrets)
         if role is ServiceRole.WORKER:
@@ -431,6 +433,7 @@ def test_only_bootstrap_worker_can_omit_installed_source_key(
         assert set(runtime.handlers) == {
             "operational_collect",
             "operational_prepare",
+            "security_prepare",
             "operational_slack",
             "report_facts",
             "report_exact_export",

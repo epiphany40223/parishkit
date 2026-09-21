@@ -11,11 +11,18 @@ from html import escape
 from types import MappingProxyType
 from uuid import UUID
 
-from parishkit.stewardship.accounts.user_rows import role_labels
 from parishkit.stewardship.campaigns.domain import SystemMode
 
 from .operational_content import OperationalContent
 
+# Plain words in the fixed order the Portal users page uses. The private mail
+# helper compiles content with no Django settings, so the page's translated
+# labels cannot be used here; a case holds these equal to them.
+ROLE_WORDS = (
+    ("administrator", "Administrator"),
+    ("staff", "Staff"),
+    ("ministry_leader", "Ministry leader"),
+)
 KINDS = MappingProxyType(
     {
         "administrator_granted": "Administrator added to an exact address",
@@ -64,8 +71,7 @@ class SecurityAlert:
 
 def _roles(roles):
     """Word a role list in the fixed order the Portal users page uses."""
-    # The labels are lazy translations for the pages; the email is one text.
-    return ", ".join(str(label) for label in role_labels(roles)) or "none"
+    return ", ".join(word for role, word in ROLE_WORDS if role in roles) or "none"
 
 
 def render_security_alert(alert):

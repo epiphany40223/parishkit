@@ -132,6 +132,41 @@ def test_sql_binds_the_cohort_to_the_recorded_recipients(routing, monkeypatch):
     assert not OutboxMessage.objects.filter(purpose="security_event").exists()
 
 
+def test_sql_rejects_private_text_and_missing_recipient_receipt(routing, monkeypatch):
+    """Privileged role grants alone cannot allocate arbitrary security content."""
+    from dataclasses import replace
+
+    from parishkit.stewardship.jobs.outbox_models import OutboxRender
+    from parishkit.stewardship.jobs.ownership import TaskClaim
+
+    store, _, _, _ = routing
+    granted(routing)
+    (identifier,) = schedule()
+    original = security_owner.mail_render
+
+    def private_text(**kwargs):
+        """Keep every binding valid while attempting an unauthorized body."""
+        mail, render = original(**kwargs)
+        return mail, replace(render, text="private-family-information")
+
+    monkeypatch.setattr(security_owner, "mail_render", private_text)
+    with pytest.raises(IntegrityError):
+        consume(identifier, store)
+    assert not OutboxRender.objects.exists()
+    monkeypatch.setattr(security_owner, "mail_render", original)
+    monkeypatch.setattr(SecurityRecipient.objects, "create", lambda **kwargs: None)
+    # Reuse the still-owned claim for a second faulty page, not a fabricated hint.
+    row = TaskRun.objects.get(pk=identifier)
+    claim = TaskClaim(row.pk, row.fence, row.worker_id)
+    with (
+        pytest.raises(IntegrityError, match="recipient receipt"),
+        task_login(ServiceRole.WORKER, exact=True),
+        work_transaction(),
+    ):
+        prepare_page(claim, store, SECURITY)
+    assert not OutboxMessage.objects.filter(purpose="security_event").exists()
+
+
 def test_metadata_scheduler_cannot_read_addresses_or_prepare(routing):
     """The scheduler allocates opaque work from a count and sees no address."""
     from django.db import DatabaseError
