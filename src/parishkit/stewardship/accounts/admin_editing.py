@@ -29,11 +29,23 @@ from .request_models import ConfigurationChangeRequest
 from .sessions import authenticated_admin
 
 
-def principal(request, service, *, passive=False):
-    """Read current authorization; passive progress pages never renew idle time."""
-    value = authenticated_admin(request, store=service.store, activity=not passive)
-    if not allows(value, Capability.CONFIGURE):
-        raise PermissionError("Configuration requires an Administrator.")
+def principal(
+    request, service, *, passive=False, read_only=False, capability=Capability.CONFIGURE
+):
+    """Read current authorization; passive progress pages never renew idle time.
+
+    A read-only recheck after rendering renews nothing either. Pages that need
+    a different Administrator capability name it, so one admission function
+    serves every Admin page.
+    """
+    value = authenticated_admin(
+        request,
+        store=service.store,
+        activity=not passive and not read_only,
+        read_only=read_only,
+    )
+    if not allows(value, capability):
+        raise PermissionError(f"This page requires the {capability} capability.")
     return value
 
 
