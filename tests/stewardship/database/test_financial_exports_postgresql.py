@@ -275,7 +275,8 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
                 browser_timezone="UTC",
                 request_key=uuid4(),
             )
-        with pytest.raises(DatabaseError):
+        # The capture trigger's own policy refuses, not a grant or a binding.
+        with pytest.raises(DatabaseError, match="capture is unavailable"):
             FinancialExportSnapshot.objects.create(
                 campaign_id=harness.campaign.pk,
                 configuration_id=first.configuration_id,

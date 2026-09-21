@@ -62,10 +62,13 @@ Family-only refresh keeps an older giving read, carried as metadata.
 A Family's share wording can exceed a spreadsheet cell: a configuration may
 offer a hundred options and each Other text may run to two thousand
 characters, and openpyxl truncates a cell beyond 32,767 characters silently.
-Whole entries therefore continue in further rows for the same Family, marked
-as continued and carrying the Family, its DUID and the response reference and
-nothing else, so no amount is counted twice and the cells concatenate back to
-every character. Summary counts are wrapped values, one label per line, never
+Whole entries therefore continue in further rows for the same Family once a
+cell reaches half that maximum, since the spreadsheet writer doubles every
+backslash and an Other text may be nothing else. A continuation row is marked
+as continued in the wording cell and carries the Family, its DUID and the
+response reference and nothing else, so no amount is counted twice, no filter
+on another column sees a second value, and the cells concatenate back to every
+character. Summary counts are wrapped values, one label per line, never
 metadata keys, because the PDF renderer wraps a value to the width left after
 its key and a long share label would leave none.
 
@@ -132,9 +135,10 @@ database was deleted.
 
 ## Checkpoint
 
-Implementation, focused validation and one dual-source
-[review/fix round](stewardship-financial-export-reviews.md) are complete, with
-every accepted finding fixed. Two more rounds, full exact-head CI, DCO and
-protected delivery remain open. M5 and Gate 3 remain open. No deployment,
+Implementation, focused validation and two
+[review/fix rounds](stewardship-financial-export-reviews.md) are complete, the
+first dual-source and the second single-source under the second September 20,
+2026 Codex exemption, with every accepted finding fixed. One more round, full
+exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain open. No deployment,
 release, live-provider write or database deletion is authorized by this
 increment.

@@ -156,27 +156,35 @@ def test_share_wording_beyond_a_spreadsheet_cell_continues_in_later_rows():
     """A hundred options with long Other text never truncate silently in XLSX."""
     from openpyxl import load_workbook
 
+    # Other text of nothing but backslashes: the spreadsheet writer doubles
+    # each one, so the worst case for a cell is twice the raw length.
     shares = [
-        {"label": f"Option {index}", "text": f"{index}:" + "x" * 1_990}
+        {"label": f"Option {index}", "text": f"{index}:" + "\\" * 1_990}
         for index in range(17)
     ]
     built = document([row(shares=shares), row(family_duid=2)])
-    # Seventeen entries of about two thousand characters need two cells.
-    assert built.item_count == 2 and len(built.rows) == 3
-    assert [cell[1] for cell in built.rows] == ["1234567", "1234567", "2"]
-    assert built.rows[1][2] == "Continued" and built.rows[1][3] == ""
+    # Seventeen entries of about two thousand raw characters need three cells.
+    assert built.item_count == 2 and len(built.rows) == 4
+    assert [cell[1] for cell in built.rows] == ["1234567"] * 3 + ["2"]
+    # A continuation row carries the Family, the wording and the reference only.
+    assert built.rows[1][2:6] == ("", "", "", "") and built.rows[1][7:12] == ("",) * 5
     assert built.rows[1][6].startswith("(continued) Option ")
     assert built.rows[1][12] == str(UUID(int=97))
-    assert all(len(cell) <= 32_767 for cell in built.rows[1])
-    # Every character survives a workbook round trip, in order.
+    expected = "; ".join(f"{s['label']}: {s['text']}" for s in shares)
+    # Every character survives a workbook round trip, in order, and the CSV
+    # and PDF writers lay out the continuation rows too.
     output = io.BytesIO()
     render_information(built, output, format="xlsx")
     sheet = load_workbook(io.BytesIO(output.getvalue()))["Financial detail"]
-    recovered = "; ".join(
-        str(sheet.cell(index, 7).value).removeprefix("(continued) ")
-        for index in range(2, 4)
-    )
-    assert recovered == "; ".join(f"{s['label']}: {s['text']}" for s in shares)
+    cells = [str(sheet.cell(index, 7).value) for index in range(2, 5)]
+    assert all(len(cell) <= 32_767 for cell in cells)
+    recovered = "; ".join(cell.removeprefix("(continued) ") for cell in cells)
+    assert recovered.replace("\\\\", "\\") == expected
+    for format in ("csv", "pdf"):
+        output = io.BytesIO()
+        render_information(built, output, format=format)
+        assert output.getvalue()
+    assert output.getvalue().startswith(b"%PDF")
     # A long share label is a wrapped metadata value, so the PDF still renders.
     long = row(shares=[{"label": "L" * 150, "text": ""}])
     shaped = result([long])

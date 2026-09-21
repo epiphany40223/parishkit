@@ -25,8 +25,8 @@ from .financial_documents import financial_document
 REPORT = "financial"
 
 
-def _campaign(campaign_id, *, capturing):
-    """The campaign with its own configuration.
+def _campaign(campaign_id):
+    """The campaign with its own configuration, for a fresh capture only.
 
     A fresh capture needs the financial module on, as the page does; SQL would
     refuse the capture anyway, but as an outage rather than a denial.
@@ -36,9 +36,7 @@ def _campaign(campaign_id, *, capturing):
     campaign = Campaign.objects.select_related("active_configuration").get(
         pk=campaign_id
     )
-    if capturing and "financial" not in campaign.active_configuration.values.get(
-        "modules", ()
-    ):
+    if "financial" not in campaign.active_configuration.values.get("modules", ()):
         raise PermissionError("Financial stewardship is not enabled for this campaign.")
     return campaign
 
@@ -85,27 +83,23 @@ def create_financial_export(
         admit_campaign(campaign_id, mutating=True)
         return True
 
+    if snapshot is None:
+        # Re-parsed, so only the closed grammar's own values are retained.
+        filters = FinancialQuery.parse(query.form_values()).form_values()
+    elif snapshot.campaign_id != campaign_id:
+        raise ValueError("Retained financial capture belongs to another campaign.")
+    else:
+        filters = snapshot.parameters["filters"]
+
     with work_transaction():
         admit()
-        campaign = _campaign(campaign_id, capturing=snapshot is None)
-        if snapshot is None:
-            parameters = {
-                # Re-parsed, so only the closed grammar's own values are retained.
-                "filters": FinancialQuery.parse(query.form_values()).form_values(),
-                # SQL honors the proof only for the snapshot and configuration it
-                # then selects itself, so a concurrent change withholds money.
-                "proof": giving_proof(campaign),
-            }
-        elif snapshot.campaign_id != campaign_id:
-            raise ValueError("Retained financial capture belongs to another campaign.")
-        else:
-            parameters = snapshot.parameters
         previous = ExportRequest.objects.filter(
             requester_id=user_id, request_key=request_key
         ).first()
         if previous is not None:
-            # A replay is the same selection; the proof may legitimately differ
-            # when a promotion landed between two identical submissions.
+            # A replay is the same selection; the proof is not recomputed for
+            # it, since a promotion may have landed between two identical
+            # submissions and the first one's capture is the export.
             if (
                 previous.report,
                 previous.campaign_id,
@@ -116,7 +110,7 @@ def create_financial_export(
             ) != (
                 REPORT,
                 campaign_id,
-                parameters["filters"],
+                filters,
                 format,
                 browser_timezone,
                 None if snapshot is None else snapshot.pk,
@@ -126,6 +120,12 @@ def create_financial_export(
         configuration_id = SystemConfiguration.objects.get().active_configuration_id
         correlation_id = uuid4()
         if snapshot is None:
+            # SQL honors the proof only for the snapshot and configuration it
+            # then selects itself, so a concurrent change withholds money.
+            parameters = {
+                "filters": filters,
+                "proof": giving_proof(_campaign(campaign_id)),
+            }
             snapshot = FinancialExportSnapshot.objects.create(
                 campaign_id=campaign_id,
                 configuration_id=configuration_id,
@@ -137,6 +137,8 @@ def create_financial_export(
             # data. Only the header comes back: the document itself, every
             # Family's money, is read by the render owner, never here.
             snapshot.refresh_from_db(fields=["created_at", "source", "row_count"])
+        else:
+            parameters = snapshot.parameters
         identifier = uuid4()
         task = enqueue(
             task_type=TASK_TYPE,

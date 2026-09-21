@@ -32,11 +32,13 @@ UNPROVEN = (
     "Unavailable: the latest giving read is not proven complete for the "
     "comparison period. Unavailable does not mean zero."
 )
-# Below the spreadsheet cell maximum of 32,767 characters, which openpyxl would
-# otherwise truncate silently. A configuration may offer a hundred share options
-# and each Other text may run to 2,000 characters, so one Family's wording can
-# exceed a cell; it then continues in further rows for the same Family.
-CELL_LIMIT = 32_000
+# Half the spreadsheet cell maximum of 32,767 characters, which openpyxl would
+# otherwise truncate silently: the spreadsheet writer doubles every backslash
+# and an Other text may be nothing but backslashes, so the worst case is twice
+# the raw length. A configuration may offer a hundred share options and each
+# Other text may run to 2,000 characters, so one Family's wording can exceed a
+# cell; it then continues in further rows for the same Family.
+CELL_LIMIT = 16_000
 
 
 @dataclass(frozen=True, repr=False)
@@ -163,11 +165,12 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
             )
         )
         # A continuation row names the Family and the response it continues
-        # and carries nothing else, so no amount is ever counted twice.
+        # and carries nothing else, so no amount is ever counted twice and a
+        # filter on any other column never sees a second value for the Family.
         for cell in overflow:
             rows.append(
-                (row["family_name"], str(row["family_duid"]), "Continued")
-                + ("",) * 3
+                (row["family_name"], str(row["family_duid"]))
+                + ("",) * 4
                 + (f"(continued) {cell}",)
                 + ("",) * 5
                 + (row["id"],)

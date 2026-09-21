@@ -52,3 +52,30 @@ same code.
 
 Post-fix validation: seven database-free, two PostgreSQL and nine browser cases
 passed locally.
+
+## Round 2, single-source under the second exemption
+
+Reviewed `aa3475a0`, the complete diff from main `f3bdac13`. The Claude
+reviewer completed with seven findings, one Medium and six Low; Codex exited
+without output. Under the exemption this counts as round 2. Accepted and
+fixed:
+
+- **Medium: the cell limit ignored the spreadsheet's own escaping.** The
+  writer doubles every backslash, and an Other text may be nothing but
+  backslashes, so a cell packed to the raw limit could still be truncated. The
+  limit is now half the spreadsheet maximum, so the worst case fits, and the
+  round-trip case's Other text is backslashes.
+- Low: the campaign and its giving proof are loaded only for a fresh capture,
+  after the replay lookup, so a replay recomputes nothing and regeneration
+  loads nothing it does not use; the Ministry leader's SQL denial matches the
+  capture trigger's own refusal; the gated browser case checks the timezone
+  control too; the continuation rows are rendered as CSV and PDF as well; a
+  continuation row leaves the status column empty rather than writing a marker
+  a filter on that column would see.
+
+Left as is: the guide's link to PR #76's protected-delivery receipt resolves
+once this branch is rebased onto the merged PR #77, which carried that receipt;
+at the reviewed base the heading does not yet exist.
+
+Post-fix validation: seven database-free, two PostgreSQL and nine browser cases
+passed locally.
