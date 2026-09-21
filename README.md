@@ -147,7 +147,7 @@ same steps work on Linux and macOS.
 1. Get a copy of this repository onto the server:
 
    ```sh
-   git clone https://github.com/<your-org>/parishkit.git
+   git clone https://github.com/epiphany40223/parishkit.git
    cd parishkit
    ```
 
@@ -290,6 +290,9 @@ Workspace Admin steps.
    - **Google Calendar API** — for `pk-validate-gcalendar-reservations`.
    - **Google Drive API** — for `pk-create-ps-ministry-rosters`.
    - **Admin SDK API** — for `pk-sync-ps-to-ggroup` (Google Group membership).
+   - **Groups Settings API** — for `pk-sync-ps-to-ggroup` when any group sends
+     change notifications (`notify`); the tool reads each such group's posting
+     permission. Enabling the Admin SDK API does not enable this one.
    - You do **not** need the Gmail API for the current email provider. ParishKit
      sends Workspace email over SMTP with OAuth, not the Gmail API. Enable the
      Gmail API only if you later adopt a Gmail-API-based provider.
@@ -388,9 +391,14 @@ will touch:
   **Editor** or add the delegated user to the shared drive with an edit-capable
   role (**Contributor**, **Content manager**, or **Manager**). A Drive `403`
   error on upload means this user cannot edit that file.
-- **Google Groups** (for `pk-sync-ps-to-ggroup`): the delegated user needs the
-  authority to manage group membership, such as an appropriate Groups Admin or
-  delegated-admin role.
+- **Google Groups** (for `pk-sync-ps-to-ggroup`): the delegated user must hold
+  a Workspace **admin role** that can manage groups, such as the built-in
+  **Groups Admin** role or a custom role with Groups privileges. Assign it in
+  the Admin Console under **Account > Admin roles**. Being an owner or manager
+  of a group in Google Groups is not enough: the Admin SDK Directory API only
+  honors admin roles. The delegated user must also be an admin in the same
+  Workspace account that owns the groups. An HTTP `403` "Not Authorized to
+  access this resource/api" error means this user lacks that admin role.
 - **Calendars** (for `pk-validate-gcalendar-reservations`): the delegated user
   needs access to the resource calendars and permission to respond to their
   invitations.
