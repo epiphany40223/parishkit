@@ -47,9 +47,12 @@ patch updates an existing record, identical intents build identical patches.
 
 ### The request is the confirmation, keyed by the client
 
-The apply route records the request exactly as a confirmed preview would,
+The apply route validates the whole resulting policy before intake, as a
+preview does, and records the request exactly as a confirmed preview would,
 with the same admission under the work lock, the same actor recheck and the
-same digest check, but the request key is chosen by the page. A key the
+same digest check, but the request key is chosen by the page; anything else
+intake raises is answered as unavailability, never as a refusal of the
+change. A key the
 Administrator already used names its request, and the route answers with
 that request's committed state before looking at the digest or the rules:
 a lost answer is recovered after the installer has moved on, the intent is
@@ -121,9 +124,11 @@ No schema change.
   the applied digest, the role in force at sign-in with its grant bound to
   the request, a stale digest refused, the base read returning the current
   digest and roles, the answered CSRF token accepted, and another
-  Administrator unable to read the request by its real id; and the last Administrator's withdrawal, a rule the page does
-  not show either way, a new domain, the domain-rule fences, malformed and
-  unexpected fields, a wrong method, a missing CSRF token and a Staff reader
+  Administrator unable to read the request by its real id; and intake
+  refusing for a reason other than the policy answered as unavailable, the
+  last Administrator's withdrawal, a rule the page does not show either
+  way, a new domain, the domain-rule fences, malformed and unexpected
+  fields, a wrong method, a missing CSRF token and a Staff reader
   all refused with nothing recorded.
 - Seven browser cases in every engine against the component page with the
   routes mocked: ticks applied in order with Applied only from the receipt,
@@ -146,7 +151,7 @@ No schema change.
 ## Checkpoint
 
 Implementation and focused validation are complete and
-[rounds 1 to 4](stewardship-rule-autosave-reviews.md) are answered; the
+[rounds 1 to 5](stewardship-rule-autosave-reviews.md) are answered; the
 correction check, full exact-head CI, DCO and protected delivery remain
 open. M5 and Gate 3 remain open. No deployment, release, live-provider write
 or database deletion is authorized by this increment.

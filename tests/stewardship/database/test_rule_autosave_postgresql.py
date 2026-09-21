@@ -4,6 +4,8 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from parishkit.config import ConfigError
+from parishkit.stewardship.accounts import rule_autosave_views
 from parishkit.stewardship.accounts.configuration_installation import install_request
 from parishkit.stewardship.accounts.configuration_service import (
     admit_configuration_database,
@@ -135,7 +137,7 @@ def test_an_intent_is_recorded_once_and_reported_applied_with_its_digest(
 
 
 @pytest.mark.usefixtures("config_role")
-def test_refusals_are_closed_and_record_nothing(auth_service, google):
+def test_refusals_are_closed_and_record_nothing(auth_service, google, monkeypatch):
     """Policy fences, missing rules, bad fields and strangers all fail closed."""
     store = auth_service.store
     add_rules(store, domain("example.org", roles=("staff",)))
@@ -143,6 +145,18 @@ def test_refusals_are_closed_and_record_nothing(auth_service, google):
     assert login.status_code == 302
     before = ConfigurationChangeRequest.objects.count()
     with web():
+        # Intake refusing for a reason other than the policy is unavailability,
+        # never a refusal of the Administrator's change.
+        with monkeypatch.context() as patched:
+
+            def unavailable(**values):
+                """Intake that cannot record anything right now."""
+                raise ConfigError("Configuration request intake is unavailable.")
+
+            patched.setattr(rule_autosave_views, "record_request", unavailable)
+            outage = apply(browser, intent(store, identity="admin@example.org"))
+            assert outage.status_code == 503
+            assert outage.json()["errors"][0]["code"] == "unavailable"
         # The last Administrator cannot withdraw their own role.
         last = apply(
             browser,

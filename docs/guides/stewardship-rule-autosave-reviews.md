@@ -104,3 +104,20 @@ corrections: fifteen raw findings, two validated, both corrected:
 
 The thirteen findings the validation step did not confirm were not carried
 forward.
+
+## Round 5
+
+Claude only (Codex out of quota). A correction check of the four rounds'
+corrections: fourteen raw findings, one validated and corrected:
+
+- Medium: every configuration error intake raised was answered as a policy
+  refusal, so an unavailable configuration or an unknown base read as "this
+  change is not allowed", and a key bound meanwhile was recognised by the
+  exception's wording. The resulting policy is now validated before intake,
+  as a preview does, and that is the one refusal; a key a concurrent
+  resubmission bound meanwhile answers by its request, and anything else
+  intake raises reaches the closed unavailable answer, which a case now
+  asserts.
+
+The thirteen findings the validation step did not confirm were not carried
+forward.

@@ -13,7 +13,7 @@ which answers with the original request's state whatever the rules are now,
 never with a second grant.
 """
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from django import forms
 from django.db import DatabaseError, transaction
@@ -42,6 +42,7 @@ from .configuration_requests import (
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
 from .request_models import ConfigurationChangeRequest
+from .request_patch import build_candidate
 from .rule_autosave import autosave_patch
 from .sessions import authenticated_admin
 from .user_rules import ROLE_ORDER, RuleRefused
@@ -142,6 +143,16 @@ def _apply(request, service, actor):
         if refused.code == "missing":
             return _refused(ErrorCode.STALE, "intent", status=409)
         return _refused(ErrorCode.INVALID, "intent")
+    base = service.store.active()
+    if base is None or base.digest != configuration.active_configuration.digest:
+        raise StaleRecordError("The applied configuration changed.")
+    try:
+        # The whole resulting policy is validated here, as a preview does, so
+        # a change that would leave the parish without an Administrator is
+        # the one refusal intake can still raise for the policy.
+        build_candidate(base, change.patch, candidate_id=uuid4())
+    except ConfigError:
+        return _refused(ErrorCode.INVALID, "intent")
 
     def admit():
         """Recheck actor and digest under the work lock, as a confirmation does."""
@@ -172,14 +183,15 @@ def _apply(request, service, actor):
             correlation_id=current_correlation(),
             admit=admit,
         )
-    except ConfigError as error:
-        # The whole resulting policy was validated: a change that would leave
-        # the parish without an Administrator is refused, not an outage. A
-        # key bound meanwhile to another intent, which only a concurrent
-        # resubmission can produce, is refused as stale.
-        if "already bound" in str(error):
-            return _refused(ErrorCode.STALE, "request_key", status=409)
-        return _refused(ErrorCode.INVALID, "intent")
+    except ConfigError:
+        # The policy was validated above, so intake refused for another
+        # reason. A key a concurrent resubmission bound meanwhile answers by
+        # its request, as any used key does; anything else is unavailability
+        # and reaches the closed 503 answer.
+        existing = recorded()
+        if existing is None:
+            raise
+        status = request_status(request_id=existing.pk, actor_id=actor.identity)
     return _json(request, _receipt(status), status=202)
 
 
