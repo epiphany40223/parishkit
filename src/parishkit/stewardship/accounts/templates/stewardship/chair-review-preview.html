@@ -1,0 +1,19 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Review Chairperson assignment decision" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Review Chairperson assignment decision" %}</h1>
+<section class="panel">
+  <h2>{% translate "Exact address" %}: {{ identity }}</h2>
+  {% if decision == 'keep_role' %}<p>{% translate "The Ministry leader role keeps its Parish source Chairperson origin and gains an Administrator entry, so the parish source no longer suspends it. No Ministry assignment is created and no row scope is broadened." %}</p>
+  {% elif decision == 'restore' %}<p>{% blocktranslate with duid=ministry_duid %}The suspended Parish source Chairperson assignment to Ministry DUID {{ duid }} is removed and an Administrator entry assignment to the same Ministry added. The parish source never rewrites an Administrator's assignment; the review of the seed closes when the request activates.{% endblocktranslate %}</p>
+  {% else %}<p>{% blocktranslate with duid=ministry_duid %}The Parish source Chairperson assignment to Ministry DUID {{ duid }} is removed. The rule and its roles are left as they are; a Ministry leader role held only by that seed then reads as suspended until the rule is changed or another suggestion confirmed. The review of the seed closes when the request activates.{% endblocktranslate %}</p>{% endif %}
+  {% if reason %}<p>{% translate "Reason recorded in the audit:" %} {{ reason }}</p>{% endif %}
+  <p>{% translate "The change is applied as a configuration request against the applied policy. This preview expires in 15 minutes." %}</p>
+</section>
+<form method="post" action="{% url 'admin:chair_reviews' %}">
+  {% csrf_token %}<input type="hidden" name="action" value="confirm">
+  <input type="hidden" name="preview" value="{{ preview }}">
+  <button type="submit">{% translate "Apply decision" %}</button>
+  <a href="{% url 'admin:users' %}">{% translate "Cancel" %}</a>
+</form>
+{% endblock %}
