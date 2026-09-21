@@ -23,12 +23,15 @@ and warnings. An empty role set is labelled **Explicit deny**. A third table
 appears only when an assignment belongs to someone with no exact rule, who
 relies on a domain rule, and says whether it is in effect now.
 
-This slice reviews and changes nothing. Role edits, rule creation and removal,
-autosave with its queue and conflict recovery, security-event acknowledgement,
-Chairperson suggestions, the assignment editor and suspended-assignment review
-are later ADM-07 slices, so no ADM-07 task is checked here. Ministry names are
-not shown beside assignment DUIDs yet; the assignment editor needs them and will
-add them.
+This slice reviewed and changed nothing. Role edits, rule creation and removal
+followed as the
+[login rule edit increment](stewardship-user-rule-edits.md), which adds a
+reviewed change form to every rule row and below each table. Autosave with its
+queue and conflict recovery, security-event acknowledgement, Chairperson
+suggestions, the assignment editor and suspended-assignment review are later
+ADM-07 slices, so no ADM-07 task is checked here. Ministry names are not shown
+beside assignment DUIDs yet; the assignment editor needs them and will add
+them.
 
 ## Design
 
