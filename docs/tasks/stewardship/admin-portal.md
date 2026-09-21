@@ -219,9 +219,13 @@ request, and is delivered under its
 [protected receipt](../../guides/stewardship-chair-review.md#protected-delivery).
 The [manual assignment editor increment](../../guides/stewardship-assignment-editor.md)
 adds the YAML-backed manual assignments of .04 with Ministry names beside
-each assignment; the autosave queue of .01, the suggestion confirmation, provenance
-action and suspended review of .03, the assignment editor of .04 and the
-tests of .05 remain, so every task stays unchecked.
+each assignment, and is delivered under its
+[protected receipt](../../guides/stewardship-assignment-editor.md#protected-delivery).
+The [login-rule autosave queue increment](../../guides/stewardship-rule-autosave.md)
+adds the autosave of role checkbox changes of .01 through keyed configuration
+requests with the queue, applied-digest adoption, pause and conflict
+resolution the specification requires; the tests of .05 remain, so every
+task stays unchecked.
 
 ## ADM-08: Manual refresh, follow-up queues, and logs
 
