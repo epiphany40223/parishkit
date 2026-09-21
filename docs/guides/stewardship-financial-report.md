@@ -23,10 +23,12 @@ Testing responses and replaced submissions never appear: a later submission
 replaces the earlier row and keeps the Family's first-response date. No Ministry
 leader reaches the page, its data or its aggregates.
 
-The specification's CSV, XLSX and PDF exports are **not** in this increment.
-They follow as a separate PR on the shared export lifecycle, so RPT-08.04 stays
-open here. The read model already accepts a complete unpaged result and a closed
-parameter object so that a later immutable capture shares this page's meaning.
+The specification's CSV, XLSX and PDF exports were **not** in this increment.
+They followed as the separate
+[financial export increment](stewardship-financial-exports.md) on the shared
+export lifecycle. The read model already accepted a complete unpaged result and
+a closed parameter object so that the later immutable capture shares this
+page's meaning.
 
 ## Design
 
