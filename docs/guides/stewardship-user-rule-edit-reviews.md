@@ -370,3 +370,22 @@ The sixteen Low findings repeated earlier dispositions or concerned wording.
 
 Post-fix validation: the installer's service suite, the page's PostgreSQL
 suite and the runtime process suite passed locally.
+
+## Round 11, correction check, single-source under the second exemption
+
+Reviewed `9d2e2b80`, the complete diff from main `e01b52ba`, as a check of
+the round-10 case. Codex did not answer; Claude, in two shards, returned
+the same Medium twice and seven Low. It was accepted and fixed.
+
+- **Medium: the case's undo reached beyond its own patch.** The blanket
+  `monkeypatch.undo()` after the short-circuit block also reverted the
+  service-admission replacement made earlier in the case, so the assertion
+  that follows, a web-profile configuration refused by the service, passed
+  for an unrelated reason, host mount validation, rather than the role
+  guard it proves. The lock patch is now scoped to the block with
+  `monkeypatch.context()`, and the earlier patch stays in force.
+
+The seven Low findings repeated earlier dispositions or concerned wording.
+
+Post-fix validation: the installer's service suite, the page's PostgreSQL
+suite and the runtime process suite passed locally.

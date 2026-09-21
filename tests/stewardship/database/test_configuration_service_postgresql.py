@@ -125,22 +125,24 @@ def test_restricted_installer_applies_real_yaml_and_retries(
         assert store.active().digest == result.applied_digest
         admit = Mock(side_effect=StorageInvariantError("admitted"))
         lock = Mock(side_effect=StorageInvariantError("locked"))
-        monkeypatch.setattr(installer, "installation_lock", lock)
-        installer.restore_refused(store, admit=admit)
-        admit.assert_not_called()
-        lock.assert_not_called()
-        # A disagreement admits the service first, then takes the lock.
-        applied = store.active()
-        store.select(root)
-        with pytest.raises(StorageInvariantError, match="admitted"):
+        # Scoped, so the service admission patched above stays in force for
+        # the role refusal proven below.
+        with monkeypatch.context() as patched:
+            patched.setattr(installer, "installation_lock", lock)
             installer.restore_refused(store, admit=admit)
-        lock.assert_not_called()
-        admit.side_effect = None
-        with pytest.raises(StorageInvariantError, match="locked"):
-            installer.restore_refused(store, admit=admit)
-        assert admit.call_count == 2
-        store.select(applied)
-        monkeypatch.undo()
+            admit.assert_not_called()
+            lock.assert_not_called()
+            # A disagreement admits the service first, then takes the lock.
+            applied = store.active()
+            store.select(root)
+            with pytest.raises(StorageInvariantError, match="admitted"):
+                installer.restore_refused(store, admit=admit)
+            lock.assert_not_called()
+            admit.side_effect = None
+            with pytest.raises(StorageInvariantError, match="locked"):
+                installer.restore_refused(store, admit=admit)
+            assert admit.call_count == 2
+            store.select(applied)
         with pytest.raises(ConfigError):
             service.run_request("not-a-uuid")
         with pytest.raises(ConfigError):
