@@ -45,10 +45,13 @@ class ActivityForm(forms.Form):
     active = forms.ChoiceField(choices=(("yes", "Active"), ("no", "Inactive")))
 
 
-def _state(service):
-    """Resolve one coherent config and one snapshot, without mixing catalog versions."""
-    configuration = editable_configuration(service)
-    document = configuration.active_configuration.canonical_document
+def current_catalog(document, current):
+    """The promoted source usable as this configuration's Ministry catalog, or None.
+
+    One definition for every page that offers the catalog: the applied
+    ParishSoft integration must name the promoted source's organization and a
+    snapshot must be promoted, else there is no catalog to offer.
+    """
     integration = next(
         (
             row["values"]
@@ -57,13 +60,22 @@ def _state(service):
         ),
         None,
     )
-    current = SourceCurrent.objects.first()
     if (
         integration is None
         or current is None
         or current.snapshot_id is None
         or str(current.organization_id) != integration["settings"]["organization_id"]
     ):
+        return None
+    return current
+
+
+def _state(service):
+    """Resolve one coherent config and one snapshot, without mixing catalog versions."""
+    configuration = editable_configuration(service)
+    document = configuration.active_configuration.canonical_document
+    current = current_catalog(document, SourceCurrent.objects.first())
+    if current is None:
         raise ConfigError("A current Ministry catalog is required.")
     records = list(
         SnapshotMinistry.objects.filter(snapshot_id=current.snapshot_id)

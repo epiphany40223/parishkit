@@ -46,9 +46,14 @@ def _latest(identities):
 class AppliedPolicy:
     """The applied records indexed once, so no row rescans the whole policy."""
 
-    def __init__(self, records, identities, active_seeded=frozenset()):
-        """Group rules by address and domain, and identities by address."""
+    def __init__(self, records, identities, active_seeded=frozenset(), names=None):
+        """Group rules by address and domain, and identities by address.
+
+        `names` maps the promoted catalog's Ministry DUIDs to their names; an
+        assignment to a Ministry the catalog no longer knows shows no name.
+        """
         self.active_seeded = active_seeded
+        self.names = names or {}
         self.domains, self.addresses = {}, {}
         self.assignments, self.identities = {}, {}
         for record in records:
@@ -102,17 +107,26 @@ class AppliedPolicy:
         )
 
     def held(self, email):
-        """This address's assignments, and whether each is currently in force."""
+        """This address's assignments, and whether each is currently in force.
+
+        `manual` says whether the assignment is the Administrator's own entry,
+        the only kind the assignment editor removes; a seed is decided by the
+        review.
+        """
         return sorted(
             (
                 {
                     "ministry_duid": record["values"]["ministry_duid"],
+                    "ministry_name": self.names.get(
+                        record["values"]["ministry_duid"], ""
+                    ),
                     "source": ORIGIN_LABELS[record["values"]["source"]],
+                    "manual": record["values"]["source"] == "manual",
                     "active": assignment_in_force(record, self.active_seeded),
                 }
                 for record in self.assignments.get(email, [])
             ),
-            key=lambda item: item["ministry_duid"],
+            key=lambda item: (item["ministry_duid"], not item["manual"]),
         )
 
     def disabled_warning(self, email):
