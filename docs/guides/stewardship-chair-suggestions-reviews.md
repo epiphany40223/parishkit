@@ -65,3 +65,9 @@ The nine Low findings concerned wording and naming.
 Post-fix validation: the rows and Portal users page suites and the schema
 baseline passed locally, with the rows database-free suite and the users
 page browser suite on Chromium.
+
+## Round 4, correction check, single-source under the second exemption
+
+Reviewed `0d731299`, the round 3 fix. Codex did not answer; Claude, in one
+pass, confirmed every matching assignment kept with its provenance and state
+in a fixed order and validated no finding.
