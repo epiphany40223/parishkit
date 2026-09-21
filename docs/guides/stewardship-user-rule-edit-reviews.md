@@ -112,6 +112,43 @@ exact-address Administrator rules, as the schema always has, so a remaining
 Administrator with every identity disabled still counts; a portal that can
 lock itself out needs the operator recovery path, not a weaker guard.
 
-Post-fix validation: four database-free, six PostgreSQL and nine browser cases
-passed locally, with the page's own suite, the parish and Ministry editors and
-the installer's own suites.
+Post-fix validation: four database-free, seven PostgreSQL and nine browser
+cases passed locally, with the page's own suite, the parish and Ministry
+editors and the installer's own suites.
+
+## Round 4, correction check, dual-source
+
+Reviewed `a4a14260`, the complete diff from main `e01b52ba`, as a check of
+the round-3 activation guard. Both sources completed: Codex answered with one
+validated High finding; Claude returned one Medium and five Low. Both
+validated findings were accepted and fixed.
+
+- **Codex, High: the recheck was not serialized with identity changes.** The
+  installation lock serializes configuration changes, not portal-user rows,
+  so an identity disabled or refreshed after the installer's unlocked read
+  and before activation would still have had its grant applied. The recheck
+  now runs twice: before any file is written, and again inside the activation
+  transaction with the identity row read `FOR SHARE`, so no such change can
+  commit between that read and the activation; a change that lands between
+  the two checks rolls the activation back, the base YAML is selected again as
+  an exceptional abort does, and the request fails as `actor_unauthorized`,
+  which the checkpoint transition trigger now admits after `yaml_activated`,
+  the second schema change of this increment. The same locked recheck guards
+  the crash-recovery activation, so a crash between a refused activation and
+  the YAML restore cannot let recovery activate the refused request. A case
+  disables the actor once the candidate YAML is selected and proves the
+  rollback, the restored selection and that no activation exists.
+- **Claude, Medium: the guide's case count lagged again.** Seven PostgreSQL
+  cases, stated as such in the guide and the round-3 ledger line.
+
+Acted on from the five Low findings: the actor is judged by the sign-in
+evaluator over the base policy the installer already holds, so no second
+configuration load and no `ConfigError` that could be misread as a malformed
+candidate; the installer's module docstring and the configuration activation
+guide state the one exception to "actor UUIDs are attribution"; and the guide
+says the gate covers Ministry assignment changes too, since they are login
+rules.
+
+Post-fix validation: four database-free, seven PostgreSQL and nine browser
+cases passed locally, with the page's own suite, the parish and Ministry
+editors and the installer's own suites.

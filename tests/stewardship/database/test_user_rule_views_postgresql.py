@@ -8,9 +8,11 @@ import pytest
 from django.db.models import F
 from django.utils import timezone
 
+from parishkit.stewardship.accounts import configuration_installation as installer
 from parishkit.stewardship.accounts.configuration_installation import install_request
 from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
+from parishkit.stewardship.accounts.runtime_models import ConfigurationActivation
 from parishkit.stewardship.deployment import ServiceRole
 
 from ..policy_factory import address, assignment, domain
@@ -80,6 +82,8 @@ def rules(store):
     return {
         record["values"].get("email") or record["values"]["domain"]: record["values"]
         for record in store.active().document()["sections"]["login_rules"]
+        # Assignments share an address's email; only rules carry roles.
+        if record["values"]["kind"] != "assignment"
     }
 
 
@@ -178,7 +182,7 @@ def test_a_signed_review_confirmed_twice_is_one_request(auth_service, google):
 
 
 def test_activation_requires_the_confirming_administrator_still_to_be_one(
-    auth_service, google
+    auth_service, google, monkeypatch
 ):
     """A confirmed grant is not applied for an actor revoked since confirmation."""
     store = auth_service.store
@@ -241,6 +245,41 @@ def test_activation_requires_the_confirming_administrator_still_to_be_one(
     receipt = install_request(store, request_id=request.pk, correlation_id=uuid4())
     assert receipt.state == "failed" and receipt.failure_code == "stale_base"
     assert "later@example.org" not in rules(store)
+    # An identity disabled after the installer's first check but before the
+    # activation is caught by the locked recheck inside that transaction: the
+    # activation rolls back, the base YAML is selected again, and the request
+    # fails with nothing applied.
+    google[0].update(email="second@example.org", sub="second-subject")
+    second = PortalUser.objects.get(email="second@example.org")
+    with web():
+        signed = token(
+            post(
+                other,
+                proposal(
+                    store, kind="address", identity="raced@example.org", roles=["staff"]
+                ),
+            )
+        )
+        queued = post(other, {"action": "confirm", "preview": signed})
+    assert queued.status_code == 302
+    request = ConfigurationChangeRequest.objects.get(
+        pk=queued["Location"].rsplit("/", 1)[-1]
+    )
+    base = store.active()
+    original = installer.DatabaseMaterializer.activate
+
+    def racing(self, digest):
+        """Disable the confirming Administrator once the YAML is selected."""
+        PortalUser.objects.filter(pk=second.pk).update(
+            disabled=True, version=F("version") + 1
+        )
+        return original(self, digest)
+
+    monkeypatch.setattr(installer.DatabaseMaterializer, "activate", racing)
+    receipt = install_request(store, request_id=request.pk, correlation_id=uuid4())
+    assert receipt.state == "failed" and receipt.failure_code == "actor_unauthorized"
+    assert store.active() == base and "raced@example.org" not in rules(store)
+    assert not ConfigurationActivation.objects.filter(request=request).exists()
 
 
 def test_a_review_signed_for_one_administrator_is_refused_for_another(

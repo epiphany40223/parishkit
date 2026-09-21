@@ -1,7 +1,11 @@
 """Internal PostgreSQL materializer and resumable configuration/policy installer.
 
 No service, route, or command exposes this implementation. Actor UUIDs are
-attribution, not authorization. Online Admin admission, credential evidence,
+attribution, not authorization, with one exception: a login-policy change
+confirmed by a portal user is applied only while that user is still an
+Administrator, rechecked here under the installation lock and again, with the
+identity row locked, inside the activation transaction. Online Admin admission,
+credential evidence,
 offline bootstrap/recovery interlocks, and service grants/mounts remain required
 before exposure. Versioned policy is supported internally; operational secret,
 campaign and mode changes are not. Request IDs are references, never credentials.
@@ -61,6 +65,9 @@ class DatabaseMaterializer:
             raise ConfigError("An explicit deployment UUID is required.")
         self.deployment_id = deployment_id
         self.admit_campaign = admit_campaign
+        # A login-policy request's activation-time actor recheck, run inside
+        # the activation transaction with the identity row locked.
+        self.admit_actor = None
         self._guard = None
 
     @contextmanager
@@ -179,6 +186,10 @@ class DatabaseMaterializer:
                 cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [736220, 1])
             runtime = SystemConfiguration.objects.select_for_update().first()
             self._campaign_admission()
+            if self.admit_actor is not None and not self.admit_actor():
+                raise ActorUnauthorized(
+                    "The confirming Administrator is no longer one."
+                )
             if runtime is None:
                 if self.request is not None or self.testing_recipient is None:
                     raise ConfigError("Runtime configuration is not initialized.")
@@ -344,6 +355,48 @@ def install_request(store, *, request_id, correlation_id, admit_campaign=None):
     )
 
 
+class ActorUnauthorized(Exception):
+    """The Administrator who confirmed a login-policy change no longer is one."""
+
+
+def actor_authorized(request, *, lock):
+    """Whether the confirming portal user still holds `manage_users` under the base.
+
+    Evaluated against the policy being replaced, with the same evaluator a
+    sign-in uses. With `lock`, the identity row is read FOR SHARE inside the
+    caller's transaction, so a disable or an identity refresh committed after
+    this read cannot interleave with the activation it protects. An actor that
+    is not a portal user, such as operator recovery, is admitted by its own
+    boundary and is not judged here.
+    """
+    from .policy import Capability, Principal, allows, confirmed_seeded, resolve_roles
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT email, hosted_domain, disabled FROM stewardship_portal_user "
+            "WHERE id=%s" + (" FOR SHARE" if lock else ""),
+            [request.actor_id],
+        )
+        row = cursor.fetchone()
+    if row is None:
+        return True
+    email, hosted_domain, disabled = row
+    if disabled:
+        return False
+    records = [
+        record
+        for record in request.base.canonical_document["sections"].get("login_rules", [])
+        if record["values"].get("email") == email
+        or record["values"].get("domain") == email.rsplit("@", 1)[1]
+    ]
+    roles, ministries = resolve_roles(
+        email, hosted_domain, records, confirmed_seeded(request.base, email=email)
+    )
+    return allows(
+        Principal(request.actor_id, roles, ministries), Capability.MANAGE_USERS
+    )
+
+
 def _install_request(store, *, request, correlation_id, admit_campaign=None):
     """Shared checkpoint engine after its distinct online/offline authority boundary."""
     materializer = DatabaseMaterializer(
@@ -378,6 +431,18 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
             from .setup_preparation import prepare_setup_configuration
 
             return prepare_setup_configuration(materializer)
+        # A login-policy change, including a Ministry assignment, confirmed by
+        # a portal user is applied only while that Administrator is still one
+        # under the policy being replaced. The activation transaction rechecks
+        # it with the identity row locked, on the ordinary path and on the
+        # recovery path alike, so a crash between a refused activation and the
+        # YAML restore cannot let recovery activate a refused request.
+        policy_change = any(
+            type(item) is dict and item.get("section") == "login_rules"
+            for item in request.patch
+        )
+        if policy_change:
+            materializer.admit_actor = lambda: actor_authorized(request, lock=True)
         selected = store.active()
         active_digest = materializer.active_digest()
         if active_digest is None:
@@ -386,7 +451,10 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
         if yaml_digest != active_digest:
             if yaml_digest != request.candidate_digest:
                 raise ConfigError("Another configuration requires recovery first.")
-            recover_active(store, materializer)
+            try:
+                recover_active(store, materializer)
+            except ActorUnauthorized:
+                _refuse_selected(store, materializer, request)
             return _status(request)
 
         failure_code = ""
@@ -444,28 +512,13 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
                 )
 
                 validate_credentials(intent.candidate.document())
-                if any(
-                    type(item) is dict and item.get("section") == "login_rules"
-                    for item in request.patch
-                ):
-                    # A login-policy change confirmed by a portal user is
-                    # applied only while that Administrator is still one under
-                    # the policy being replaced, here under the installation
-                    # lock. A disabled identity or a rule revoked since
-                    # confirmation leaves the base digest unchanged, so the
-                    # stale-base check alone would still activate their grant.
-                    # Operator recovery and other system producers are not
-                    # portal users and are admitted by their own boundaries.
-                    from .policy import Capability, allows, current_principal
-                    from .policy_models import PortalUser
-
-                    if PortalUser.objects.filter(pk=request.actor_id).exists():
-                        try:
-                            actor = current_principal(store, request.actor_id)
-                        except PortalUser.DoesNotExist:
-                            actor = None
-                        if not allows(actor, Capability.MANAGE_USERS):
-                            failure_code = "actor_unauthorized"
+                # A disabled identity or a rule revoked since confirmation
+                # leaves the base digest unchanged, so the stale-base check
+                # alone would still activate their grant. Refused here, before
+                # any file is written; the locked recheck at activation
+                # catches a change that lands between the two.
+                if policy_change and not actor_authorized(request, lock=False):
+                    failure_code = "actor_unauthorized"
             except ConfigurationReadinessUnavailable:
                 # Retain the exact durable request for a later installer pass;
                 # unfinished normalization/replacement is not malformed intent.
@@ -496,8 +549,24 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
         if failure_code:
             materializer.checkpoint("failed", failure_code=failure_code)
             return _status(request)
-        apply_version(store, materializer, intent.candidate)
+        try:
+            apply_version(store, materializer, intent.candidate)
+        except ActorUnauthorized:
+            _refuse_selected(store, materializer, request)
         return _status(request)
+
+
+def _refuse_selected(store, materializer, request):
+    """Fail a request whose activation the locked actor recheck rolled back.
+
+    Nothing was applied, but the candidate YAML was already selected. Restore
+    the base selection, as an exceptional abort does, so file and database
+    agree, then fail the request as the refusal it is.
+    """
+    selected = store.active()
+    if selected is not None and selected.version_id != request.base_id:
+        store.select(store.read_version(request.base_id))
+    materializer.checkpoint("failed", failure_code="actor_unauthorized")
 
 
 def coherent_configuration(store):

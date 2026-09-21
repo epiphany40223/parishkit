@@ -4854,7 +4854,12 @@ CREATE FUNCTION public.stewardship_request_checkpoint_v2() RETURNS trigger
                    OR (previous.state = 'prepared'
                        AND NEW.state IN ('yaml_activated', 'failed'))
                    OR (previous.state = 'yaml_activated'
-                       AND (NEW.state = 'applied' OR (NEW.state='failed' AND NEW.failure_code='invalid_candidate'
+                       AND (NEW.state = 'applied'
+                        -- The activation transaction refused the confirming
+                        -- Administrator, who is no longer one; the installer
+                        -- restores the base selection and records the refusal.
+                        OR (NEW.state='failed' AND NEW.failure_code='actor_unauthorized')
+                        OR (NEW.state='failed' AND NEW.failure_code='invalid_candidate'
                         AND (EXISTS(SELECT 1 FROM stewardship_campaign_config_abort b
                             JOIN stewardship_campaign_config_intent i ON i.id=b.intent_id WHERE i.request_id=NEW.request_id) OR EXISTS (
     SELECT 1 FROM public.stewardship_setup_config_abort b
