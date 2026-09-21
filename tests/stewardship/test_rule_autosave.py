@@ -41,9 +41,22 @@ def test_a_role_is_granted_and_withdrawn_over_the_configured_roles():
     )
     assert granted.before == ["staff"]
     assert granted.after == ["ministry_leader", "staff"]
+    assert granted.patch[0]["operation"] == "update"
     values = granted.patch[0]["values"]
     assert values["grants"]["ministry_leader"] == {"manual": operation}
     assert values["grants"]["staff"] == clerk["values"]["grants"]["staff"]
+    # The same intent builds the same patch, so a resubmitted key binds.
+    assert (
+        autosave_patch(
+            [admin, clerk],
+            kind="address",
+            identity="clerk@example.org",
+            role="ministry_leader",
+            checked=True,
+            operation_id=operation,
+        ).patch
+        == granted.patch
+    )
     after = applied([admin, clerk], granted.patch)
     withdrawn = autosave_patch(
         after,
@@ -55,10 +68,10 @@ def test_a_role_is_granted_and_withdrawn_over_the_configured_roles():
     )
     assert withdrawn.after == ["ministry_leader"]
     assert "staff" not in withdrawn.patch[0]["values"]["grants"]
-    applied(after, withdrawn.patch)
+    later = applied(after, withdrawn.patch)
     # Withdrawing the last role leaves an explicit deny, which policy admits.
     denied = autosave_patch(
-        applied(after, withdrawn.patch),
+        later,
         kind="address",
         identity="clerk@example.org",
         role="ministry_leader",
@@ -66,32 +79,33 @@ def test_a_role_is_granted_and_withdrawn_over_the_configured_roles():
         operation_id=operation,
     )
     assert denied.after == []
-    applied(applied(after, withdrawn.patch), denied.patch)
+    applied(later, denied.patch)
 
 
-def test_new_targets_unchanged_intents_and_domain_fences_are_decided():
-    """Granting creates a rule; withdrawing from none, or no change, is refused."""
+def test_missing_targets_unchanged_intents_and_domain_fences_are_refused():
+    """Only a rule the page shows autosaves; a deleted one is never recreated."""
     admin = address("admin@example.org", ("administrator",))
+    rule = domain("parish.example", roles=("staff",))
     operation = str(uuid4())
-    created = autosave_patch(
-        [admin],
-        kind="domain",
-        identity="parish.example",
-        role="staff",
-        checked=True,
-        operation_id=operation,
-    )
-    assert created.before is None and created.after == ["staff"]
-    assert created.patch[0]["operation"] == "add"
-    with pytest.raises(RuleRefused, match="missing"):
-        autosave_patch(
-            [admin],
-            kind="domain",
-            identity="parish.example",
-            role="staff",
-            checked=False,
-            operation_id=operation,
-        )
+    for checked in (True, False):
+        with pytest.raises(RuleRefused, match="missing"):
+            autosave_patch(
+                [admin],
+                kind="domain",
+                identity="parish.example",
+                role="staff",
+                checked=checked,
+                operation_id=operation,
+            )
+        with pytest.raises(RuleRefused, match="missing"):
+            autosave_patch(
+                [admin, rule],
+                kind="address",
+                identity="new@parish.example",
+                role="staff",
+                checked=checked,
+                operation_id=operation,
+            )
     with pytest.raises(RuleRefused, match="unchanged"):
         autosave_patch(
             [admin],
@@ -101,7 +115,6 @@ def test_new_targets_unchanged_intents_and_domain_fences_are_decided():
             checked=True,
             operation_id=operation,
         )
-    rule = domain("parish.example", roles=("staff",))
     with pytest.raises(RuleRefused, match="domain_roles"):
         autosave_patch(
             [admin, rule],

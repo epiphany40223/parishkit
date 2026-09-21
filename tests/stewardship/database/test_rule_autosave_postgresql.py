@@ -68,7 +68,7 @@ def installed(store, request_id):
 def test_an_intent_is_recorded_once_and_reported_applied_with_its_digest(
     auth_service, google
 ):
-    """Same key, same intent: one request; applied only from the activation receipt."""
+    """Same key: one request, answered by its state whatever the rules are now."""
     store = auth_service.store
     add_rules(store, address("clerk@example.org", ("staff",)))
     account = user("clerk@example.org")
@@ -84,17 +84,21 @@ def test_an_intent_is_recorded_once_and_reported_applied_with_its_digest(
         assert receipt["state"] == "staged" and receipt["applied_digest"] is None
         again = apply(browser, values)
         assert again.status_code == 202 and again.json() == receipt
+        # The same key with another intent answers with the original request,
+        # never a second one.
+        rebound = apply(browser, values | {"role": "administrator"})
+        assert rebound.status_code == 202 and rebound.json() == receipt
         assert ConfigurationChangeRequest.objects.count() == before + 1
-        # The same key with another valid intent is refused, never rebound.
-        bound = apply(browser, values | {"role": "administrator"})
-        assert bound.status_code == 409, bound.content
-        assert bound.json()["errors"][0]["field_id"] == "request_key"
         pending = browser.get(REQUESTS + receipt["request_id"])
         assert pending.status_code == 200 and pending.json()["state"] == "staged"
         assert browser.get(REQUESTS + str(uuid4())).status_code == 404
     installed(store, receipt["request_id"])
     with web():
         applied = browser.get(REQUESTS + receipt["request_id"]).json()
+        # A lost answer recovered after activation reads the applied receipt,
+        # although the digest the intent named is no longer the applied one.
+        recovered = apply(browser, values)
+        assert recovered.status_code == 202 and recovered.json() == applied
     assert applied["state"] == "applied"
     assert applied["applied_digest"] == store.active().digest
     assert "ministry_leader" in current_principal(store, account.pk).roles
@@ -111,6 +115,13 @@ def test_an_intent_is_recorded_once_and_reported_applied_with_its_digest(
             "ministry_leader",
             "staff",
         ]
+    # Another Administrator cannot read this request, by its real id either.
+    add_rules(store, address("second@example.org", ("administrator",)))
+    google[0].update(email="second@example.org", sub="second-google-subject")
+    other, login = signed_in()
+    assert login.status_code == 302
+    with web():
+        assert other.get(REQUESTS + receipt["request_id"]).status_code == 404
 
 
 @pytest.mark.usefixtures("config_role")
@@ -131,11 +142,20 @@ def test_refusals_are_closed_and_record_nothing(auth_service, google):
         )
         assert last.status_code == 400
         assert last.json()["errors"][0]["field_id"] == "intent"
-        # Withdrawing from a rule that does not exist is a stale page.
-        missing = apply(
-            browser, intent(store, identity="nobody@example.org", checked="0")
+        # A rule the page does not show is a stale page, whichever way the
+        # tick went: autosave never creates a rule.
+        for checked in ("0", "1"):
+            missing = apply(
+                browser, intent(store, identity="nobody@example.org", checked=checked)
+            )
+            assert missing.status_code == 409
+            assert missing.json()["errors"][0]["field_id"] == "intent"
+        assert (
+            apply(
+                browser, intent(store, kind="domain", identity="new.example")
+            ).status_code
+            == 409
         )
-        assert missing.status_code == 409
         # A domain rule can never grant Administrator or lose its last role.
         assert (
             apply(
@@ -166,7 +186,7 @@ def test_refusals_are_closed_and_record_nothing(auth_service, google):
         assert browser.get(APPLY).status_code == 405
         assert ConfigurationChangeRequest.objects.count() == before
         assert browser.post(APPLY, intent(store)).status_code == 403
-    google[0]["email"] = "reader@example.org"
+    google[0].update(email="reader@example.org", sub="reader-google-subject")
     add_rules(store, address("reader@example.org", ("staff",)))
     before = ConfigurationChangeRequest.objects.count()
     stranger, login = signed_in()

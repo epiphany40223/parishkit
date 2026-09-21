@@ -9,7 +9,8 @@ until an activation receipt says it applied. Nothing here activates
 configuration, claims that an accepted request has applied, or repeats a
 submitted value: failures are the closed codes every enhanced client
 understands, and a lost answer is recovered by resubmitting the same key,
-which returns the original request rather than recording a second grant.
+which answers with the original request's state whatever the rules are now,
+never with a second grant.
 """
 
 from uuid import UUID
@@ -92,6 +93,16 @@ def _apply(request, service, actor):
     key = data["request_key"]
     if key.version != 4:
         return _refused(ErrorCode.INVALID, "request_key")
+    # A key this Administrator already used names its request, whatever the
+    # rules are now: the answer is that request's committed state, so a lost
+    # answer is recovered after the installer has moved on, and the intent
+    # is never rebuilt over a base it was not made against.
+    existing = ConfigurationChangeRequest.objects.filter(
+        actor_id=actor.identity, request_key=key
+    ).first()
+    if existing is not None:
+        status = request_status(request_id=existing.pk, actor_id=actor.identity)
+        return _json(_receipt(status), status=202)
     configuration = editable_configuration(service)
     if data["base_digest"] != configuration.active_configuration.digest:
         return _refused(ErrorCode.STALE, "base_digest", status=409)
@@ -125,11 +136,11 @@ def _apply(request, service, actor):
             ):
                 return False
             current = editable_configuration(service)
-            existing = ConfigurationChangeRequest.objects.filter(
+            recorded = ConfigurationChangeRequest.objects.filter(
                 actor_id=actor.identity, request_key=key
             ).exists()
             if (
-                not existing
+                not recorded
                 and current.active_configuration.digest != data["base_digest"]
             ):
                 raise StaleRecordError("The applied login rules changed.")
@@ -146,8 +157,9 @@ def _apply(request, service, actor):
         )
     except ConfigError as error:
         # The whole resulting policy was validated: a change that would leave
-        # the parish without an Administrator, or a key resubmitted with a
-        # different intent, is refused; neither is an outage.
+        # the parish without an Administrator is refused, not an outage. A
+        # key bound meanwhile to another intent, which only a concurrent
+        # resubmission can produce, is refused as stale.
         if "already bound" in str(error):
             return _refused(ErrorCode.STALE, "request_key", status=409)
         return _refused(ErrorCode.INVALID, "intent")
@@ -178,6 +190,7 @@ def rule_apply(request):
         PermissionError,
         ValueError,
         StaleRecordError,
+        LookupError,
     ) as error:
         return error_response(error)
 

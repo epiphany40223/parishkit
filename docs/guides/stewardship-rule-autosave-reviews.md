@@ -8,3 +8,40 @@ single-source exemption, recorded in
 [the overall plan](../plans/stewardship/overall.md), a completed Claude-only
 pass counts as a round through September 25, 2026, and each round records
 which sources answered.
+
+## Round 1
+
+Claude only (Codex out of quota). Thirty-two raw findings, seventeen
+validated, all corrected:
+
+- High (two): a resubmitted key was refused as stale once the installer had
+  activated the request, and an intent that created a rule rebuilt its
+  patch with a fresh record id so the same key read as another intent; the
+  documented same-key recovery was false in both cases. The apply route now
+  answers a used key with its request's committed state before looking at
+  the digest or the rules, and autosave serves existing rules only, so
+  identical intents build identical patches.
+- Medium (builder): a grant to a target another Administrator had deleted
+  would have recreated the rule on a conflict retry; a missing target is now
+  refused either way and creation stays with the reviewed add forms.
+- Medium (client, nine): exhausted retries and polling failures declared or
+  stranded requests instead of keeping them uncertain with their key;
+  polling was unbounded, uncaught and ran while the tab was hidden; a change
+  of mind queued an unchanged intent the server refuses; the live tick was
+  copied into the confirmed value; a stale base found by the installer was a
+  generic failure; the conflict view moved intents out of the guarded queue,
+  let newer edits bypass it, and left discarded ticks and defaults wrong;
+  lost access left the restricted tables on screen; and one indicator per
+  row lost a role's failure to another role's queued change. The queue is
+  now one ordered collection throughout, confirmed values are tracked apart
+  from the ticks and set only from receipts or the current rules,
+  uncertainty keeps the key and offers another look, a `stale_base` failure
+  opens the conflict view, discards return to the current rules, lost
+  access clears the page, and the indicator is per role.
+- Medium (tests, two): the browser suite lacked the conflict, lost-access,
+  same-key retry, terminal-failure and stale-base cases, and the PostgreSQL
+  suite lacked same-key recovery after activation and another
+  Administrator's real request id; all added.
+
+The fifteen findings the validation step did not confirm were not carried
+forward.
