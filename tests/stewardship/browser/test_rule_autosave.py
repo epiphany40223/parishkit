@@ -416,3 +416,68 @@ def test_reloading_from_a_failed_read_abandons_the_queue_without_warning(
         page.get_by_role("button", name="Discard all and reload page").click()
     assert dialogs == [] and len(sent) == 1
     assert leader_row(page, component_origin).get_by_label("Staff").is_checked()
+
+
+# Additional cases for tests/stewardship/browser/test_rule_autosave.py (slice 10).
+# They rely on serve()/leader_row()/LEADER/APPLIED/CURRENT from that module.
+
+
+def test_rapid_edits_across_rows_and_tables_apply_in_tick_order(page, component_origin):
+    """Intents from several rows and both tables queue in order, one at a time."""
+    sent, _, _ = serve(page, states={}, fast=True)
+    leader = leader_row(page, component_origin)
+    admin = page.get_by_role("row", name="admin@example.org", exact=False)
+    used = page.get_by_role("row", name="workspace.example Staff", exact=False).first
+    leader.get_by_label("Staff").uncheck()
+    admin.get_by_label("Staff").check()
+    used.get_by_label("Ministry leader").uncheck()
+    leader.get_by_label("Administrator").check()
+    leader.get_by_text("Applied", exact=True).nth(1).wait_for(timeout=15000)
+    admin.get_by_text("Applied", exact=True).wait_for()
+    used.get_by_text("Applied", exact=True).wait_for()
+    assert [
+        (item["kind"], item["identity"], item["role"], item["checked"]) for item in sent
+    ] == [
+        ("address", LEADER, "staff", "0"),
+        ("address", "admin@example.org", "staff", "1"),
+        ("domain", "workspace.example", "ministry_leader", "0"),
+        ("address", LEADER, "administrator", "1"),
+    ]
+    assert sent[0]["base_digest"] == "0" * 64
+    assert all(item["base_digest"] == APPLIED for item in sent[1:])
+    assert len({item["request_key"] for item in sent}) == 4
+
+
+def test_a_removed_target_cannot_be_retried_and_its_controls_are_disabled(
+    page, component_origin
+):
+    """A rule another Administrator deleted needs explicit resolution."""
+    sent, _, rules = serve(page, states={}, stale=lambda intent, count: count == 1)
+    del rules["address"][LEADER]
+    leader = leader_row(page, component_origin)
+    leader.get_by_label("Staff").uncheck()
+    panel = page.get_by_role("alert")
+    panel.get_by_text(
+        "rule no longer exists; cannot be retried", exact=False
+    ).wait_for()
+    assert panel.get_by_role("checkbox").is_disabled()
+    page.get_by_role("button", name="Retry selected against current rules").click()
+    assert len(sent) == 1
+    assert leader.get_by_label("Staff").is_disabled()
+    assert leader.get_by_text("Change discarded", exact=True).is_visible()
+
+
+def test_a_conflict_on_a_later_intent_leaves_the_applied_one_alone(
+    page, component_origin
+):
+    """The first intent applied stays Applied when the second is refused as stale."""
+    sent, _, rules = serve(page, states={}, stale=lambda intent, count: count == 2)
+    rules["address"][LEADER] = ["staff"]
+    leader = leader_row(page, component_origin)
+    leader.get_by_label("Ministry leader").uncheck()
+    leader.get_by_text("Applied", exact=True).wait_for()
+    leader.get_by_label("Administrator").check()
+    page.get_by_role("button", name="Retry selected against current rules").wait_for()
+    assert leader.get_by_text("Applied", exact=True).count() == 1
+    assert leader.get_by_text("Not saved: the rules changed", exact=False).is_visible()
+    assert len(sent) == 2 and sent[1]["base_digest"] == APPLIED
