@@ -49,6 +49,9 @@ ParishKit contains reusable Python automation for Catholic parishes.
   application upgrade/downgrade compatibility or tests until the human
   explicitly activates production-readiness work. Never infer permission to
   delete existing development databases from this policy.
+- Stewardship v1 launches October 3, 2026. Until then, follow the
+  [v1 launch scope](docs/plans/stewardship/v1-launch.md) for work selection,
+  deferred scope, the schema freeze and the reduced review process.
 - Stewardship implementation follows its
   [automated delivery cycle](docs/plans/stewardship/overall.md#automated-phase-delivery-cycle),
   including smaller coherent PRs, correction-focused review rounds, and the

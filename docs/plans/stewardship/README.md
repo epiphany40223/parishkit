@@ -4,7 +4,8 @@ These plans break the Stewardship/Census application into bounded work packages
 that another Codex can implement. Begin with the
 [overall implementation plan](overall.md); it defines ordering, integration
 milestones, and mandatory review gates. Each subsystem plan expands the work
-package IDs used there.
+package IDs used there. The [v1 launch scope](v1-launch.md) records what is
+cut or reduced for the first live campaign and governs until that launch.
 
 Coordinate delivery with the [top-level task plan](../../tasks/stewardship/overall.md).
 Track work in the [per-spec task checklists](../../tasks/stewardship/README.md)

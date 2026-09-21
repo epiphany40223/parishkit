@@ -213,6 +213,10 @@ migration state or claiming compatibility with discarded development schemas.
 Keep existing databases/volumes intact and use separately selected empty ones
 when required. See the [schema baseline guide](../../../guides/stewardship-schema.md).
 
+The [v1 launch scope](../../../plans/stewardship/v1-launch.md#production-readiness-activation-and-schema-freeze)
+records when this policy ends for the live deployment and the schema freeze
+that precedes the first live campaign.
+
 Application containers do not race to run migrations. Current startup refuses
 an unsupported schema or missing credential file and reports a sanitized,
 actionable error. These fresh-install and restart protections remain required
