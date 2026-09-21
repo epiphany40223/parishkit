@@ -881,6 +881,15 @@ records the identical landed tree, the correction and the refreshed-main
 verification. The ADM-07 Chairperson suggestion increment now starts from
 that verified main tip. M5 and Gate 3 remain open.
 
+That [Chairperson suggestions increment](../../guides/stewardship-chair-suggestions.md)
+shows the Administrator, on the Portal users page, each current Chairperson
+of an active Ministry in the promoted source with the Member's name, the
+Ministry, the contact's publication flag, the address's current rule and
+assignment and any ambiguity, through a schema-owned view over the one
+Chairperson projection the reconciliation owners use. Review/fix rounds,
+full exact-head CI/DCO and protected delivery remain pending. M5 and Gate 3
+remain open.
+
 1. Finish [BG-08](background-processing.md#bg-08-export-and-graph-workers); implement [RPT-01](reports.md#rpt-01-shared-report-framework-and-campaign-selection) and finish [RPT-02](reports.md#rpt-02-population-and-calculation-library).
 2. Complete [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics), [RPT-04](reports.md#rpt-04-additional-information-workflow-report), [RPT-05](reports.md#rpt-05-family-code-and-postal-outreach-reports), [RPT-06](reports.md#rpt-06-ministry-summary-and-detail), [RPT-07](reports.md#rpt-07-multi-ministry-follow-up-packet), and the reporting slice of [RPT-08](reports.md#rpt-08-census-and-financial-reports).
 3. [ADM-07](admin-portal.md#adm-07-user-rules-and-ministry-assignments) → [ADM-08](admin-portal.md#adm-08-manual-refresh-follow-up-queues-and-logs) → [RPT-09](reports.md#rpt-09-logs-and-daily-email-parity); connect [RPT-04](reports.md#rpt-04-additional-information-workflow-report)/[RPT-06](reports.md#rpt-06-ministry-summary-and-detail) follow-up and verify [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests) parity.
