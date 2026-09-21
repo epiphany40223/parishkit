@@ -213,7 +213,8 @@ and six Low. Both Medium findings were accepted and fixed.
   privilege PostgreSQL requires for that, `UPDATE` on the row's `id` column,
   which the trigger's immutability and version rules make unusable for any
   actual change, the pattern the download service's policy claim already
-  uses. Lock order is now identity row then work lock in every transaction.
+  uses. The activation takes the work lock, then the runtime row, then the
+  identity row, and no identity writer ever waits on the work lock.
   A case holds the share lock from a real installer session and proves a
   second connection's disable waits behind it until it commits. Two schema
   objects change rather than three, and the fingerprint was refreshed after
@@ -234,6 +235,48 @@ sign-in evaluator and the installer's recheck each build their record
 filter, because sharing one would couple the request-time path to the
 installer's module; and the performance concern about the trigger's lock is
 moot with the lock gone.
+
+Post-fix validation: four database-free, eight PostgreSQL and nine browser
+cases passed locally, with the page's own suite, the parish and Ministry
+editors, the installer's own suites and the schema baseline.
+
+## Round 7, correction check, dual-source
+
+Reviewed `35479b62`, the complete diff from main `e01b52ba`, as a check of
+the round-6 share lock. Both sources completed: Codex answered with one
+validated Medium; Claude returned one Medium and eleven Low. Both Medium
+findings were accepted and fixed.
+
+- **Medium, Codex: a refusal was not durable before the restore began.** An
+  activation that refused its actor rolled back and only then restored the
+  base and recorded the failure, so a crash after the rollback and before
+  the restore left the candidate selected at `yaml_activated`, and the next
+  pass, through recovery, judged the actor afresh: re-enabled by then, the
+  refused request applied. The activation transaction now records the
+  refusal itself, under the very lock that judged it, and only then is the
+  base restored; a crash before that restore leaves a failed request's
+  candidate selected, which the next install of any request restores first,
+  since the refused request is terminal. The round-5 rule that recorded a
+  refusal from an agreeing `yaml_activated` state is gone with the window
+  that needed it. A case crashes between the recorded refusal and the
+  restore, re-enables the actor, and proves the refusal stands and the next
+  request's install restores the base and then applies.
+- **Medium, Claude: the guide stated the lock order backwards.** It said
+  identity row then work lock; the activation takes the work lock, then the
+  runtime row, then the identity row, and the no-deadlock argument rests on
+  no identity writer ever waiting on the work lock. The guide and the
+  round-6 entry say so.
+
+Acted on from the eleven Low findings: the module docstring and two guide
+paragraphs are re-flowed; the schema audit section sits after the design
+subsections as the other increment guides place it; the installer docstring
+names the one role holding the column grant, since the offline roles
+install only requests without a portal actor; and a case proves the column
+grant unusable for an update that changes nothing under the real role. Left
+as is: a request whose actor row is missing is still admitted, because
+fixture and system producers record requests under such ids and the web can
+only ever record the signed-in portal user; the refusing side of the
+round-5 resume rule needs no case now that the rule is gone.
 
 Post-fix validation: four database-free, eight PostgreSQL and nine browser
 cases passed locally, with the page's own suite, the parish and Ministry

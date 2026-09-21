@@ -5,11 +5,10 @@ attribution, not authorization, with one exception: a login-policy change
 confirmed by a portal user is applied only while that user is still an
 Administrator, rechecked here under the installation lock and again inside the
 activation transaction with the identity row share-locked. Online Admin
-admission,
-credential evidence,
-offline bootstrap/recovery interlocks, and service grants/mounts remain required
-before exposure. Versioned policy is supported internally; operational secret,
-campaign and mode changes are not. Request IDs are references, never credentials.
+admission, credential evidence, offline bootstrap/recovery interlocks, and
+service grants/mounts remain required before exposure. Versioned policy is
+supported internally; operational secret, campaign and mode changes are not.
+Request IDs are references, never credentials.
 """
 
 import re
@@ -113,20 +112,24 @@ class DatabaseMaterializer:
         if self.request is None:
             return
         with transaction.atomic(durable=True):
-            request = ConfigurationChangeRequest.objects.select_for_update().get(
-                pk=self.request.pk
-            )
-            current = _status(request)
-            if current.state == state:
-                return
-            ConfigurationRequestCheckpoint.objects.create(
-                request=request,
-                sequence=current.sequence + 1,
-                state=state,
-                failure_code=failure_code,
-                actor_id=self.actor_id,
-                correlation_id=self.correlation_id,
-            )
+            self._record(state, failure_code)
+
+    def _record(self, state, failure_code):
+        """Append the checkpoint inside the caller's transaction, request row locked."""
+        request = ConfigurationChangeRequest.objects.select_for_update().get(
+            pk=self.request.pk
+        )
+        current = _status(request)
+        if current.state == state:
+            return
+        ConfigurationRequestCheckpoint.objects.create(
+            request=request,
+            sequence=current.sequence + 1,
+            state=state,
+            failure_code=failure_code,
+            actor_id=self.actor_id,
+            correlation_id=self.correlation_id,
+        )
 
     def _candidate(self, version):
         """No requestless successor or mismatched request can select a manifest."""
@@ -182,37 +185,47 @@ class DatabaseMaterializer:
             )
         self.checkpoint("yaml_activated")
         self._check()
+        refused = False
         with transaction.atomic(durable=True):
             with connection.cursor() as cursor:
                 cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [736220, 1])
             runtime = SystemConfiguration.objects.select_for_update().first()
             self._campaign_admission()
             if self.admit_actor is not None and not self.admit_actor():
-                raise ActorUnauthorized(
-                    "The confirming Administrator is no longer one."
-                )
-            if runtime is None:
-                if self.request is not None or self.testing_recipient is None:
-                    raise ConfigError("Runtime configuration is not initialized.")
-                runtime = SystemConfiguration.objects.create(
-                    **({"id": self.deployment_id} if self.deployment_id else {}),
-                    testing_recipient=self.testing_recipient,
-                    actor_id=self.actor_id,
-                    correlation_id=self.correlation_id,
-                )
-            activation = ConfigurationActivation.objects.create(
-                configuration_id=selected.version_id,
-                predecessor_id=runtime.active_configuration_id,
-                sequence=runtime.configuration_sequence,
-                request=self.request,
+                # The refusal is committed under the very lock that judged it,
+                # so no crash before the YAML restore can let a later pass, the
+                # actor authorized again by then, judge the request afresh.
+                self._record("failed", "actor_unauthorized")
+                refused = True
+            else:
+                self._apply(runtime, selected)
+        if refused:
+            raise ActorUnauthorized("The confirming Administrator is no longer one.")
+
+    def _apply(self, runtime, selected):
+        """Commit the pointer, request and audit effects inside the activation."""
+        if runtime is None:
+            if self.request is not None or self.testing_recipient is None:
+                raise ConfigError("Runtime configuration is not initialized.")
+            runtime = SystemConfiguration.objects.create(
+                **({"id": self.deployment_id} if self.deployment_id else {}),
+                testing_recipient=self.testing_recipient,
                 actor_id=self.actor_id,
                 correlation_id=self.correlation_id,
             )
-            from .chair_reconciliation import reconcile_configuration_chairs
+        activation = ConfigurationActivation.objects.create(
+            configuration_id=selected.version_id,
+            predecessor_id=runtime.active_configuration_id,
+            sequence=runtime.configuration_sequence,
+            request=self.request,
+            actor_id=self.actor_id,
+            correlation_id=self.correlation_id,
+        )
+        from .chair_reconciliation import reconcile_configuration_chairs
 
-            reconcile_configuration_chairs(activation)
-            # SQL inserts Applied, safe audit, and the runtime pointer in this
-            # same transaction. A failure in any effect rolls them all back.
+        reconcile_configuration_chairs(activation)
+        # SQL inserts Applied, safe audit, and the runtime pointer in this
+        # same transaction. A failure in any effect rolls them all back.
 
     def _campaign_admission(self):
         """Exceptional edits require fresh owning proof, even after YAML selection."""
@@ -366,13 +379,14 @@ def actor_authorized(request, *, lock):
     Evaluated against the policy being replaced, with the same evaluator a
     sign-in uses. With `lock`, inside the activation transaction, the identity
     row is read FOR SHARE, so a disable or an address refresh cannot commit
-    between this read and the activation it protects; the installer roles hold
-    the one column-level UPDATE grant PostgreSQL requires for that share lock,
-    the same way the runtime roles lock their own rows. The lock order stays
-    the one every holder uses, work lock then runtime row then identity row,
-    and an identity writer never waits on the work lock, so no cycle forms. An
-    actor that is not a portal user, such as operator recovery or a system
-    producer, is admitted by its own boundary and is not judged here.
+    between this read and the activation it protects; the configuration
+    installer holds the one column-level UPDATE grant PostgreSQL requires for
+    that share lock, the same way the runtime roles lock their own rows. The
+    lock order stays the one every holder uses, work lock then runtime row then
+    identity row, and an identity writer never waits on the work lock, so no
+    cycle forms. An actor that is not a portal user, such as operator recovery
+    or a system producer, is admitted by its own boundary and is not judged
+    here; offline roles install such requests alone and need no such grant.
     """
     from .policy import Capability, Principal, allows, confirmed_seeded, resolve_roles
 
@@ -427,6 +441,7 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
         aborted = recover_configuration_abort(materializer)
         if aborted is not None:
             return aborted
+        _restore_refused(store, materializer)
         if current.state in {"cancelled", "failed", "applied"}:
             from parishkit.stewardship.campaigns.configuration_intents import (
                 verify_intent_receipt,
@@ -442,8 +457,8 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
         # a portal user is applied only while that Administrator is still one
         # under the policy being replaced. The activation transaction rechecks
         # it with the identity row share-locked, on the ordinary path and on
-        # the recovery path alike, so a crash between a refused activation and
-        # the YAML restore cannot let recovery activate a refused request.
+        # the recovery path alike, and commits the refusal itself, so no crash
+        # around the YAML restore can let a later pass activate the request.
         policy_change = any(
             type(item) is dict and item.get("section") == "login_rules"
             for item in request.patch
@@ -461,20 +476,7 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
             try:
                 recover_active(store, materializer)
             except ActorUnauthorized:
-                _refuse_selected(store, materializer, request)
-            return _status(request)
-        if current.state == "yaml_activated":
-            # File and database agree, yet this request's candidate was
-            # selected once. For a login-policy request that is one thing:
-            # its activation was refused and the base restored, and only the
-            # refusal's record was lost to a crash. Record it now rather than
-            # re-entering a path the checkpoint order forbids. Any other
-            # request in this shape was put there by hand and needs one.
-            if not policy_change:
-                raise StorageInvariantError(
-                    "A selected candidate was unselected outside the installer."
-                )
-            materializer.checkpoint("failed", failure_code="actor_unauthorized")
+                _restore_refused(store, materializer)
             return _status(request)
 
         failure_code = ""
@@ -573,25 +575,33 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
         try:
             apply_version(store, materializer, intent.candidate)
         except ActorUnauthorized:
-            _refuse_selected(store, materializer, request)
+            _restore_refused(store, materializer)
         return _status(request)
 
 
-def _refuse_selected(store, materializer, request):
-    """Fail a request whose activation the locked actor recheck rolled back.
+def _restore_refused(store, materializer):
+    """Select the base YAML again after an activation refused its actor.
 
-    Nothing was applied, but the candidate YAML was already selected. Restore
-    the base selection, as an exceptional abort does, so file and database
-    agree, then fail the request as the refusal it is.
+    The refusal is recorded inside the activation transaction, before the
+    restore, so a crash between the two leaves a failed request's candidate
+    selected over an unchanged base. Every install finishes that restore, as
+    an exceptional abort's recovery does, because the refused request is
+    terminal and may never be run again; until then no other request can
+    proceed, since its base is not what the file names.
     """
     materializer._check()
     selected = store.active()
-    if selected is not None and selected.version_id != request.base_id:
-        store.select(store.read_version(request.base_id))
-    materializer._check()
-    # A crash here leaves the request at yaml_activated with file and database
-    # agreeing; the next pass records the refusal from that state alone.
-    materializer.checkpoint("failed", failure_code="actor_unauthorized")
+    active_digest = materializer.active_digest()
+    if selected is None or active_digest is None or selected.digest == active_digest:
+        return
+    for refused in ConfigurationChangeRequest.objects.filter(
+        candidate_version_id=selected.version_id, base__digest=active_digest
+    ):
+        status = _status(refused)
+        if status.state == "failed" and status.failure_code == "actor_unauthorized":
+            store.select(store.read_version(refused.base_id))
+            materializer._check()
+            return
 
 
 def coherent_configuration(store):

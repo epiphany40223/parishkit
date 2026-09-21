@@ -362,7 +362,7 @@ def test_a_refused_activation_is_recovered_and_recorded_under_real_roles(
     # The checkpoint trigger admits that refusal from yaml_activated alone: not
     # a stale base, and not the same code written by the web role.
     set_disabled(False)
-    stranded = queued("stranded@example.org")
+    stranded, later = queued("stranded@example.org"), queued("later@example.org")
     monkeypatch.setattr(installer.DatabaseMaterializer, "activate", crashing)
     with pytest.raises(StorageInvariantError):
         install(stranded)
@@ -385,26 +385,43 @@ def test_a_refused_activation_is_recovered_and_recorded_under_real_roles(
     with web(), pytest.raises(IntegrityError, match=refused), transaction.atomic():
         record("actor_unauthorized")
     assert _status(stranded).state == "yaml_activated"
-    # A crash between restoring the base YAML and recording the refusal leaves
-    # file and database agreeing with the request still at yaml_activated. The
-    # next pass records the refusal from that state alone, even once the actor
-    # is authorized again: a refused activation is never re-entered.
+    # The refusal is committed by the activation transaction itself, before the
+    # base YAML is restored. A crash between the two leaves the refused
+    # request failed with its candidate still selected; the actor authorized
+    # again by then changes nothing, since the refusal is already recorded,
+    # and the next install of any request finishes the restore first.
     set_disabled(True)
-    restored_only = installer._refuse_selected
+    restore = installer._restore_refused
 
-    def restore_without_record(store, materializer, request):
-        """Stop where a crash would, after the restore."""
-        materializer._check()
-        store.select(store.read_version(request.base_id))
+    def crashing_restore(store, materializer):
+        """Stop where a crash would, once the refusal is durable."""
+        if _status(stranded).state == "failed":
+            raise StorageInvariantError("simulated crash before the restore")
 
-    monkeypatch.setattr(installer, "_refuse_selected", restore_without_record)
-    assert install(stranded).state == "yaml_activated"
-    assert store.active() == base
-    monkeypatch.setattr(installer, "_refuse_selected", restored_only)
-    set_disabled(False)
-    receipt = install(stranded)
+    monkeypatch.setattr(installer, "_restore_refused", crashing_restore)
+    with pytest.raises(StorageInvariantError):
+        install(stranded)
+    receipt = _status(stranded)
     assert receipt.state == "failed" and receipt.failure_code == "actor_unauthorized"
-    assert store.active() == base and "stranded@example.org" not in rules(store)
+    assert store.active().digest == stranded.candidate_digest
+    monkeypatch.setattr(installer, "_restore_refused", restore)
+    set_disabled(False)
+    assert install(later).state == "applied"
+    assert "later@example.org" in rules(store)
+    assert "stranded@example.org" not in rules(store)
+    assert install(stranded).failure_code == "actor_unauthorized"
+    assert not ConfigurationActivation.objects.filter(request=stranded).exists()
+    # The installer's column grant serves the share lock alone: the identity
+    # trigger refuses even an update that changes nothing.
+    with (
+        as_config_installer(),
+        pytest.raises(IntegrityError, match="advance the record version"),
+        transaction.atomic(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(
+            "UPDATE stewardship_portal_user SET id=id WHERE id=%s", [admin.pk]
+        )
     # The activation's share lock really holds an identity change off until
     # it commits: a second connection's disable waits behind it, then lands.
     settings = connection.settings_dict

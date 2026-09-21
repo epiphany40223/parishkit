@@ -74,39 +74,24 @@ commit between that read and it. PostgreSQL allows the share lock only with
 an `UPDATE` privilege, so the installer role gains one on the portal user's
 `id` column alone, a privilege the identity trigger's immutability and
 version rules make unusable for any actual change, as the download service's
-policy claim already does. The identity trigger itself takes no lock: an
-identity change waits only when an activation holds that one row, so the
-lock order is identity row then work lock in every transaction and no cycle
-is possible. A change that landed between the two checks rolls
-the activation back, the base YAML is selected again as an exceptional abort
-does, and the request fails the same way, a transition the checkpoint trigger
-admits for this code alone and never from the web role, whose own checkpoint
-grant must not be able to strand a selected candidate. The crash-recovery
-activation runs the same recheck, so a crash between a refused activation and
-the YAML restore cannot let recovery activate the refused request; and a
-crash between the restore and the record leaves file and database agreeing
-with the request still at `yaml_activated`, a state the next pass records as
-the refusal it was rather than re-entering a path the checkpoint order
-forbids, even once the actor is authorized again. Operator recovery and other system producers are
-not portal users and keep their own boundaries; the web can only ever record a
-request under the signed-in portal user's identity.
-
-## Fresh-install schema audit
-
-Independent fresh predecessor and candidate databases were compared on the
-disposable PostgreSQL cluster; the predecessor, verified main `e01b52ba`,
-exactly matches its committed fingerprint. Two objects change and none is
-added or removed: the `config_checkpoint_failure_code` check constraint admits
-the new `actor_unauthorized` code; and the checkpoint transition trigger
-function admits a failure with that code after `yaml_activated`, the state a
-request holds when the activation transaction refuses its actor, from any
-role but the web. Outside the schema, the configuration installer's grants
-gain `UPDATE` on the portal user's `id` column for the share lock. The
-candidate has
-210 relations, 2,360 columns, 3,273 constraints, 972 indexes, 568 functions,
-535 triggers and 28 policies. The strict fixture was updated only after this
-inspected comparison. This is a pre-production fresh-install baseline; no
-upgrade path is added and no retained database was deleted.
+policy claim already does. The identity trigger itself takes no lock. The
+activation takes the work lock, then the runtime row, then the identity row,
+the order every holder of the work lock uses, and no transaction that writes
+an identity row ever waits on the work lock, so no cycle can close. A change
+that landed between the two checks is refused by the activation transaction
+itself, which records the failure under the very lock that judged it, so no
+crash can leave a refusal undecided for a later pass, the actor authorized
+again by then, to judge afresh; the transition from `yaml_activated` to that
+failure is one the checkpoint trigger admits for this code alone and never
+from the web role, whose own checkpoint grant must not be able to strand a
+selected candidate. Only then is the base YAML selected again, as an
+exceptional abort does. A crash before that restore leaves the failed
+request's candidate selected over an unchanged base, and the next install of
+any request finishes the restore first, since the refused request is
+terminal and may never run again. The crash-recovery activation runs the
+same recheck and refuses the same way. Operator recovery and other system
+producers are not portal users and keep their own boundaries; the web can
+only ever record a request under the signed-in portal user's identity.
 
 ### The same editor discipline as the other Admin pages
 
@@ -147,6 +132,22 @@ or, by the shared admission under the work transaction, at confirmation, and
 it passes the same final authorization recheck as every other response on the
 route.
 
+## Fresh-install schema audit
+
+Independent fresh predecessor and candidate databases were compared on the
+disposable PostgreSQL cluster; the predecessor, verified main `e01b52ba`,
+exactly matches its committed fingerprint. Two objects change and none is
+added or removed: the `config_checkpoint_failure_code` check constraint admits
+the new `actor_unauthorized` code; and the checkpoint transition trigger
+function admits a failure with that code after `yaml_activated`, the state a
+request holds when the activation transaction refuses its actor, from any
+role but the web. Outside the schema, the configuration installer's grants
+gain `UPDATE` on the portal user's `id` column for the share lock. The
+candidate has 210 relations, 2,360 columns, 3,273 constraints, 972 indexes,
+568 functions, 535 triggers and 28 policies. The strict fixture was updated
+only after this inspected comparison. This is a pre-production fresh-install
+baseline; no upgrade path is added and no retained database was deleted.
+
 ## Focused validation
 
 - Four database-free cases: new rules with manual provenance bound to the
@@ -173,10 +174,11 @@ route.
   with the base YAML selected again; under the real restricted installer
   role, a change applied, a crash after YAML selection recovered as a refusal
   once the actor is disabled, the transition refused for a stale base and for
-  the web role, a crash between the restore and the record resumed as the
-  refusal even with the actor re-enabled, and a second connection's disable
-  held off by the activation's share lock until it commits; a review signed
-  for one
+  the web role, a crash between the recorded refusal and the restore leaving
+  the refusal standing with the actor re-enabled and the next request's
+  install finishing the restore, a second connection's disable held off by
+  the activation's share lock until it commits, and the installer's column
+  grant unusable for an update that changes nothing; a review signed for one
   Administrator refused for another; a Chairperson-seeded address widened
   through the route keeping its seeded origin beside the new manual one; and
   reach counted as the page counts it, with an authorized colleague, an
@@ -195,8 +197,8 @@ route.
 Implementation, focused validation and three
 [review/fix rounds](stewardship-user-rule-edit-reviews.md) are complete, the
 first two single-source under the second September 20, 2026 Codex exemption
-and the third dual-source, plus three correction checks of the activation
-guard, two dual-source and the third single-source under the same exemption,
-with every accepted finding fixed. Full exact-head CI, DCO
-and protected delivery remain open. M5 and Gate 3 remain open. No deployment, release, live-provider write or
-database deletion is authorized by this increment.
+and the third dual-source, plus four correction checks of the activation
+guard, three dual-source and one single-source under the same exemption,
+with every accepted finding fixed. Full exact-head CI, DCO and protected
+delivery remain open. M5 and Gate 3 remain open. No deployment, release,
+live-provider write or database deletion is authorized by this increment.
