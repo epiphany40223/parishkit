@@ -218,6 +218,13 @@ dates and notes. Three
 are complete; full exact-head CI/DCO and protected delivery remain open. .01, .04 and the remaining scope of .02/.05 are not
 complete.
 
+The [system logs increment](../../guides/stewardship-admin-logs.md) adds the
+read-only Administrator screen of .04: both sources, five accessible levels with
+DEBUG excluded by default, and closed level, source, type, actor, correlation,
+campaign and date filters over a stable cursor. .04 stays unchecked until its
+text and JSONL export, full-text search, and entity and Ministry filtering land
+with RPT-09.
+
 ## ADM-09: Census review and ParishSoft publication UI
 
 Scope and dependencies: [ADM-09 work package](../../plans/stewardship/admin-portal.md#adm-09-census-review-and-parishsoft-publication-ui).
