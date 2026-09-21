@@ -62,4 +62,22 @@
 <td>{% if row.warnings %}<ul>{% for warning in row.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% else %}{% translate "None" %}{% endif %}</td></tr>
 {% endfor %}</tbody></table></div>
 {% endif %}
+
+<h2 id="chair-suggestions">{% translate "Chairperson suggestions from the parish source" %}</h2>
+{% if suggestions %}
+<p>{% translate "Each row is a current Chairperson of an active Ministry in the promoted parish source, with the valid address the source records. A suggestion grants nothing: the login rule and assignment shown beside it are what policy gives the address today. Confirming a suggestion as a reviewed configuration request is a later increment." %}</p>
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="chair-suggestions"><table>
+<caption>{% translate "Current Chairpersons" %}</caption><thead><tr><th scope="col">{% translate "Address" %}</th><th scope="col">{% translate "Ministry" %}</th><th scope="col">{% translate "Member" %}</th><th scope="col">{% translate "Contact publishable" %}</th><th scope="col">{% translate "Current login rule" %}</th><th scope="col">{% translate "Current assignment" %}</th><th scope="col">{% translate "Ambiguity" %}</th></tr></thead><tbody>
+{% for row in suggestions %}<tr>
+<th scope="row">{{ row.email }}</th>
+<td>{{ row.ministry_name }} ({% translate "Ministry DUID" %} {{ row.ministry_duid }})</td>
+<td>{% for member in row.candidates %}{{ member.name }} ({% translate "DUID" %} {{ member.duid }}){% if not forloop.last %}<br>{% endif %}{% endfor %}</td>
+<td>{% for member in row.candidates %}{% if member.publishable %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}{% if not forloop.last %}<br>{% endif %}{% endfor %}</td>
+<td>{% if row.rule.kind == "address" %}{% translate "Exact-address rule" %}{% elif row.rule.kind == "domain" %}{% translate "Hosted-domain rule" %}{% else %}{% translate "None" %}{% endif %}{% if row.rule.roles %}: {{ row.rule.roles|join:", " }}{% elif row.rule.kind %}: {% translate "Explicit deny" %}{% endif %}</td>
+<td>{% if row.assignment %}{{ row.assignment.source }}{% if not row.assignment.active %}; {% translate "suspended" %}{% endif %}{% else %}{% translate "None" %}{% endif %}</td>
+<td>{% if row.ambiguous %}{% blocktranslate count owners=row.owners %}{{ owners }} active Member uses this address{% plural %}{{ owners }} active Members use this address{% endblocktranslate %}{% else %}{% translate "None" %}{% endif %}</td></tr>
+{% endfor %}</tbody></table></div>
+{% else %}
+<p>{% translate "The promoted parish source records no current Chairperson of an active Ministry with a valid address." %}</p>
+{% endif %}
 {% endblock %}

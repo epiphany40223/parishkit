@@ -25,6 +25,7 @@ WEB_READ_TABLES = frozenset(
         "stewardship_provider_context",
         "stewardship_public_credential_handoff",
         "stewardship_source_current",
+        "stewardship_chair_suggestion",
         "stewardship_snapshot_ministry",
         "stewardship_source_ministry",
         "stewardship_snapshot_fund",

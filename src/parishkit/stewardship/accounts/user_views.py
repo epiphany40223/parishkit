@@ -1,6 +1,6 @@
 """Read-only Administrator review of who may sign in to the portal and why."""
 
-from django.db import DatabaseError, transaction
+from django.db import DatabaseError, connection, transaction
 from django.db.models import Max, Q
 from django.shortcuts import render
 from django.views.decorators.http import require_safe
@@ -10,12 +10,15 @@ from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 
 from .admin_editing import editable_configuration, error_response, principal
 from .authentication import runtime
+from .chair_rows import suggestion_rows
 from .limiting import LimiterUnavailable
+from .ministry_activity import active_ministries
 from .policy import Capability, confirmed_seeded
 from .policy_models import PortalUser
 from .user_rows import (
@@ -69,6 +72,47 @@ def policy_identities(records):
     return [row | {"last_login": logins.get(row["id"])} for row in rows]
 
 
+SUGGESTION_COLUMNS = (
+    "member_duid",
+    "member_name",
+    "ministry_duid",
+    "ministry_name",
+    "email",
+    "publish_email",
+    "address_members",
+)
+
+
+def chair_relationships(document):
+    """The current source's Chairperson relationships and the active Ministries.
+
+    Read from the schema-owned projection under the observation's lock, for
+    the promoted snapshot only, so a relationship is never paired with another
+    generation's names. Which of those Ministries the applied activity keeps
+    active is decided by the same rule the reconciliation owner applies. With
+    no promoted source there is nothing to suggest.
+    """
+    current = SourceCurrent.objects.filter(singleton=True).first()
+    if current is None or current.snapshot_id is None:
+        return [], frozenset()
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT {','.join(SUGGESTION_COLUMNS)} FROM stewardship_chair_suggestion"
+            " WHERE snapshot_id=%s AND organization_id=%s"
+            " ORDER BY ministry_duid,email,member_duid,roster_key",
+            [current.snapshot_id, current.organization_id],
+        )
+        relationships = [
+            dict(zip(SUGGESTION_COLUMNS, row, strict=True)) for row in cursor
+        ]
+    ministries = active_ministries(
+        document,
+        organization_id=current.organization_id,
+        catalog_duids=frozenset(item["ministry_duid"] for item in relationships),
+    )
+    return relationships, ministries
+
+
 @require_safe
 def users(request):
     """Observe under the lock, render outside it, then recheck and audit.
@@ -100,6 +144,9 @@ def users(request):
             identities = policy_identities(records)
             # The same definition of a confirmed Chairperson that sign-in uses.
             active = confirmed_seeded(configuration.active_configuration)
+            relationships, ministries = chair_relationships(
+                configuration.active_configuration.canonical_document
+            )
             # The chrome presents this verified observation, never a newer one.
             request._stewardship_display_configuration = configuration
         policy = AppliedPolicy(records, identities, active)
@@ -107,6 +154,7 @@ def users(request):
             "domains": domain_rows(policy),
             "addresses": address_rows(policy),
             "domain_assignments": domain_assignment_rows(policy),
+            "suggestions": suggestion_rows(policy, relationships, active=ministries),
         }
         response = render(
             request,
