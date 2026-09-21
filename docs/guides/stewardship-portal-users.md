@@ -156,3 +156,27 @@ second and third dual-source, with every accepted finding fixed. Full
 exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
 open. No deployment, release, live-provider write or database deletion is
 authorized by this increment.
+
+## Protected delivery
+
+PR #77 delivered candidate `0b4bf5b8`, three logical commits plus the PR #76
+receipt, the fast-selection rotation and one standalone correction, whose tree
+`c3cb4d85` is identical to the retained commit-by-commit review history on
+`pr/stewardship-portal-users-reviewed` and to the landed tree. The first ready
+candidate, `9cb81e3e`, failed five of the 24 exact-head jobs: PostgreSQL
+shards 4, 5, 7, 10 and 11 errored on every setup case that reuses the shared
+authentication-runtime factory, because the round-2 refactor passed its
+optional initial policy through unconditionally and the setup suites replace
+the initializer with a one-argument stand-in. The correction passes the
+records only when a caller supplies them. Exact-head ready-candidate CI
+`35559345942` and DCO then passed all 24 jobs, from 03:59:07 to 04:16:45 UTC
+on September 21, 2026 (17 minutes 38 seconds). `origin/main` had no
+intervening commits since the candidate's base `f3bdac13`. Protected
+auto-merge landed as `151966fb6f0fb1e88b4e4a2d2289e865392b3dea` at 04:16:49
+UTC and was verified on freshly fetched `origin/main` before the system logs
+increment was rebased onto it. This used the standing delivery authority,
+without deployment or release, and supersedes the pending delivery checkpoint
+above. The failed and cancelled runs are not counted as acceptance.
+
+The read-only portal users review of ADM-07 is delivered; the editing slices
+follow. M5 and Gate 3 remain open.
