@@ -38,7 +38,13 @@ identities may share one address and an address may change. An
 acknowledgement by an Administrator who existed at activation, one of the
 event's recipients other than the granting actor, settles the event for
 everyone. The actor's own settles it only when no other Administrator
-existed at activation, judged by the recipients less the actor's address.
+existed at activation: the actor of a portal-driven activation is always
+among the recipients, since Administrator is an exact-address role and the
+request is bound to the predecessor, so that is a recipient list of one,
+judged by its length rather than by an address that may since have changed.
+An event with no recipients at all, a deployment's root activation or one
+whose predecessor named no Administrator, had nobody to await and is
+settled by any acknowledgement.
 Any other acknowledgement, the actor's, a newer Administrator's or the
 granted account's own, clears the event for that address alone, so a grant
 one Administrator gave themselves, or gave a second account they control,
@@ -83,35 +89,40 @@ acknowledgements.
 ## Fresh-install schema audit
 
 Independent fresh predecessor and candidate databases were compared on the
-disposable PostgreSQL cluster; the predecessor, verified main `4f0465fa`,
-exactly matches its committed fingerprint. One relation is added,
-`stewardship_policy_security_ack`, with its seven columns, primary key, unique
-event-and-address constraint, deferred foreign key to the event, two
-indexes, its append-only trigger and that trigger's function; nothing is
-changed or removed. The candidate has 211 relations, 2,366 columns, 3,281
-constraints, 976 indexes, 569 functions, 536 triggers and 28 policies. The
-strict fixture was updated only after this inspected comparison. This is a
+disposable PostgreSQL cluster, once for the increment and again after the
+first review round added the acknowledgement's own-flag column; the
+predecessor, verified main `4f0465fa`, exactly matches its committed
+fingerprint. One relation is added, `stewardship_policy_security_ack`, with
+its seven columns, primary key, unique event-and-address constraint,
+deferred foreign key to the event, two indexes, its append-only trigger and
+that trigger's function; nothing is changed or removed. The candidate has
+211 relations, 2,367 columns, 3,282 constraints, 976 indexes, 569 functions,
+536 triggers and 28 policies. The strict fixture was updated only after
+each inspected comparison. This is a
 pre-production fresh-install baseline; no upgrade path is added and no
 retained database was deleted.
 
 ## Focused validation
 
-- Nine database-free cases for who still sees an event: everyone while it
+- Ten database-free cases for who still sees an event: everyone while it
   is unacknowledged, the granting actor alone after their own acknowledgement
   while another Administrator existed, everyone after another recipient's, a
   newer Administrator or the granted account alone after their own even
   beside the actor's, everyone after the actor's alone when no other
-  Administrator existed, any recipient settling a recovery event, and a
-  label for each kind the trigger records.
+  Administrator existed even under an address changed since, anyone settling
+  an event with no recipients, any recipient settling a recovery event, and
+  a label for each kind the trigger records.
 - Three PostgreSQL cases under the real web role, with rules applied through
   the real installer: an Administrator grant recorded as an event naming both
   existing Administrators, shown on the granting actor's dashboard,
-  acknowledged once with its audit and gone for the actor, the actor's second
-  Google identity at the same address recording nothing more, the granted
-  account clearing it for itself alone, the other Administrator still seeing
-  it and settling it for everyone; a domain rule created by the only
-  Administrator settled by their own word, with a later Administrator
-  inheriting nothing; and an unknown event not found, GET not served, a
+  acknowledged through the actor's second Google identity at the same
+  address as the actor's own, once with its audit, gone for both identities
+  and not settled, the granted account clearing it for itself alone, the
+  other Administrator still seeing it and settling it for everyone; a domain
+  rule created by the only Administrator settled by their own word, the root
+  activation's own event with no recipients settled by any acknowledgement,
+  and a later Administrator inheriting nothing; and an unknown event not
+  found, GET not served, a
   missing CSRF token, a query string, a configuration under restore review
   and Staff refused with nothing recorded.
 - The schema baseline, immutable-record inventory, policy activation,
@@ -125,10 +136,10 @@ retained database was deleted.
 
 ## Checkpoint
 
-Implementation, focused validation and the first
-[review/fix round](stewardship-policy-security-event-reviews.md) are
-complete, single-source under the second September 20, 2026 Codex
-exemption; further rounds, full exact-head CI, DCO and protected delivery
+Implementation, focused validation and two
+[review/fix rounds](stewardship-policy-security-event-reviews.md) are
+complete, both single-source under the second September 20, 2026 Codex
+exemption; the third round, full exact-head CI, DCO and protected delivery
 remain open. M5 and Gate 3
 remain open. No deployment, release, live-provider write or database
 deletion is authorized by this increment.

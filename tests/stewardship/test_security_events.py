@@ -55,11 +55,25 @@ def test_a_newer_administrator_clears_it_only_for_themselves():
 
 
 def test_the_only_administrator_settles_it_alone():
-    """With no other Administrator at activation, the actor's own word suffices."""
+    """With no other Administrator at activation, the actor's own word suffices.
+
+    The recipient list names the actor's address at activation; an address
+    changed since still counts, because the list is judged by its length.
+    """
     value = event([ACTOR])
-    own = [acknowledgement(ACTOR, own=True)]
-    for viewer in (ACTOR, NEWCOMER):
-        assert cleared(value, own, viewer_email=viewer)
+    for own in (
+        acknowledgement(ACTOR, own=True),
+        acknowledgement("renamed@example.org", own=True),
+    ):
+        for viewer in (ACTOR, NEWCOMER):
+            assert cleared(value, [own], viewer_email=viewer)
+
+
+def test_an_event_with_no_recipients_is_settled_by_anyone():
+    """A root activation had nobody to await, so one acknowledgement suffices."""
+    value = event([])
+    assert not cleared(value, [], viewer_email=NEWCOMER)
+    assert cleared(value, [acknowledgement(NEWCOMER)], viewer_email=OTHER)
 
 
 def test_a_recovery_event_is_settled_by_any_recipient():

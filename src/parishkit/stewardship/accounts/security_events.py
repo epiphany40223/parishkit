@@ -35,16 +35,20 @@ def cleared(event, acknowledgements, *, viewer_email):
     An acknowledgement by an Administrator who existed at activation, one of
     the event's recipients other than the granting actor, settles the event
     for everyone. The actor's own settles it only when no other Administrator
-    existed at activation. Any other acknowledgement, the actor's, a newer
+    existed at activation: the actor of a portal-driven activation is always
+    among the recipients, so that is a recipient list of one. An event with
+    no recipients at all, a deployment's root activation or one whose
+    predecessor named no Administrator, had nobody to await and is settled by
+    any acknowledgement. Any other acknowledgement, the actor's, a newer
     Administrator's or the granted account's own, clears the event for that
     address alone, so a grant cannot be waved through by its beneficiary.
     """
     recipients = set(event.recipients)
     for acknowledgement in acknowledgements:
-        if acknowledgement.email == viewer_email:
+        if acknowledgement.email == viewer_email or not recipients:
             return True
         if acknowledgement.own:
-            if recipients <= {acknowledgement.email}:
+            if len(recipients) <= 1:
                 return True
         elif acknowledgement.email in recipients:
             return True

@@ -52,4 +52,45 @@ by the fixes above, or repeated the validated findings.
 
 Post-fix validation: nine database-free, three PostgreSQL and six browser
 cases passed locally, with the schema baseline, immutable-record inventory,
+policy activation, recovery and login rule edit suites. The fresh-install
+comparison was run again for the added own-flag column and found only that
+column added; the strict fixture was updated after it.
+
+## Round 2, single-source under the second exemption
+
+Reviewed `60948b5b`, the complete diff from main `4f0465fa`. Codex did not
+answer; Claude returned four Medium and eight Low. All four were accepted
+and fixed.
+
+- **Medium: an event with no recipients could never settle.** The trigger
+  records a deployment's root activation, and any activation whose
+  predecessor named no Administrator, with an empty recipient list, and the
+  rule let neither clause fire unless the recorded actor's own identity
+  acknowledged, so every present and future Administrator would have seen
+  the first Administrator's own grant until each dismissed it. Such an event
+  had nobody to await and is now settled by any acknowledgement, with a
+  database-free case and a database case on the fixture's root event.
+- **Medium: "no other Administrator existed" was judged against a mutable
+  address.** The actor's own acknowledgement settled the event when the
+  recipients were a subset of the address it was recorded under, which is
+  the actor's address at acknowledgement time; an address changed since
+  activation would have left the event for every later Administrator to
+  dismiss. Since the actor of a portal-driven activation is always among the
+  recipients, the rule now judges the recipient list by its length, with a
+  case for a changed address.
+- **Medium: the address branch of the own decision was untested.** The
+  actor's first identity always acknowledged before the second, so the
+  second's request was refused by the unique constraint before its own
+  value mattered. The second identity now acknowledges first, and the case
+  proves the row is the actor's own, the event gone for both identities and
+  not settled for the other recipient.
+- **Medium: the guide's audit totals were stale.** They predated the
+  own-flag column; the section now reports the second comparison's totals
+  and says the fixture was updated after each comparison, and the round-1
+  entry records that comparison.
+
+The eight Low findings concerned wording or repeated the validated ones.
+
+Post-fix validation: ten database-free, three PostgreSQL and six browser
+cases passed locally, with the schema baseline, immutable-record inventory,
 policy activation, recovery and login rule edit suites.

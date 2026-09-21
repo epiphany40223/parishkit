@@ -73,12 +73,17 @@ def test_an_expansion_waits_for_another_administrator(auth_service, google):
     assert PANEL in page and "new@example.org" in page
     assert "Administrator added to an exact address" in page
     assert offered(page, event)
-    # The actor acknowledges: recorded once, audited, and gone for the actor.
-    response = acknowledge(browser, event.pk)
+    # The actor acknowledges through a second Google identity at the same
+    # address: the actor still, by address, so the row is the actor's own,
+    # recorded once and audited, and the event is gone for the actor's
+    # first identity as well but not settled.
+    again = signed_in_as(google, "admin@example.org", "admin-second-subject")
+    assert offered(home(again), event)
+    response = acknowledge(again, event.pk)
     assert response.status_code == 302 and response["Location"] == HOME
     acknowledgement = PolicySecurityAcknowledgement.objects.get(event=event)
-    assert acknowledgement.email == "admin@example.org"
-    assert acknowledgement.actor_id == admin.pk
+    assert acknowledgement.email == "admin@example.org" and acknowledgement.own
+    assert acknowledgement.actor_id != admin.pk
     assert (
         AuditEvent.objects.filter(
             event_type="security_event_acknowledged", subject_id=event.pk
@@ -97,14 +102,7 @@ def test_an_expansion_waits_for_another_administrator(auth_service, google):
         ).count()
         == 1
     )
-    acknowledgement = PolicySecurityAcknowledgement.objects.get(event=event)
-    assert acknowledgement.own
-    # The actor's second Google identity at the same address is the actor
-    # still: nothing more is recorded, and the event is not settled.
-    again = signed_in_as(google, "admin@example.org", "admin-second-subject")
     assert not offered(home(again), event)
-    assert acknowledge(again, event.pk).status_code == 302
-    assert PolicySecurityAcknowledgement.objects.filter(event=event).count() == 1
     # The granted account cannot wave its own grant through: acknowledging
     # clears it for that account alone.
     newcomer = signed_in_as(google, "new@example.org", "new-subject")
@@ -143,11 +141,19 @@ def test_the_only_administrator_settles_an_expansion_alone(auth_service, google)
     assert acknowledge(browser, event.pk).status_code == 302
     page = home(browser)
     assert not offered(page, event) and "partner.example" not in page
-    # A later Administrator inherits nothing of it to acknowledge.
+    # The deployment's root activation recorded the first Administrator's own
+    # grant with nobody to await; that event is settled by any acknowledgement.
+    root = PolicySecurityEvent.objects.get(target="admin@example.org")
+    assert root.recipients == [] and offered(page, root)
+    assert acknowledge(browser, root.pk).status_code == 302
+    assert not PolicySecurityAcknowledgement.objects.get(event=root).own
+    assert not offered(home(browser), root)
+    # A later Administrator inherits nothing of either to acknowledge.
     add_rules(store, address("later@example.org"))
     later = signed_in_as(google, "later@example.org", "later-subject")
     page = home(later)
     assert not offered(page, event) and "partner.example" not in page
+    assert not offered(page, root)
 
 
 def test_acknowledgement_needs_an_administrator_and_a_real_event(
