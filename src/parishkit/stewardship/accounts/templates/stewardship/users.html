@@ -2,25 +2,34 @@
 {% block title %}{% translate "Portal users" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Portal users" %}</h1>
-<p>{% translate "Who may sign in to this portal with Google, and why. This page shows the applied login rules; it does not change them. An exact address always replaces its domain rule for that person." %}</p>
+<p>{% translate "Who may sign in to this portal with Google, and why. This page shows the applied login rules. An Administrator changes a rule from its row: the change is shown back for review and applied as a configuration request, never directly from the row. An exact address always replaces its domain rule for that person." %}</p>
 <p>{% translate "A successful sign-in is one that was allowed and opened a session. A Google sign-in attempt that policy then refused is not counted. Times use your browser timezone when available; UTC is the fallback." %}</p>
 
 <h2 id="domain-rules">{% translate "Google Workspace hosted-domain rules" %}</h2>
 <p>{% translate "A domain rule matches only a sign-in whose Google account presents that signed hosted-domain claim. An email address that merely ends with the domain never matches, so personal or consumer accounts must be authorized by exact address. A domain rule can never grant Administrator." %}</p>
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="domain-rules"><table>
-<caption>{% translate "Hosted-domain rules" %}</caption><thead><tr><th scope="col">{% translate "Domain" %}</th><th scope="col">{% translate "Roles" %}</th><th scope="col">{% translate "Recorded Google accounts this rule authorizes" %}</th><th scope="col">{% translate "Last successful sign-in" %}</th><th scope="col">{% translate "Warnings" %}</th></tr></thead><tbody>
+<caption>{% translate "Hosted-domain rules" %}</caption><thead><tr><th scope="col">{% translate "Domain" %}</th><th scope="col">{% translate "Roles" %}</th><th scope="col">{% translate "Recorded Google accounts this rule authorizes" %}</th><th scope="col">{% translate "Last successful sign-in" %}</th><th scope="col">{% translate "Warnings" %}</th><th scope="col">{% translate "Change" %}</th></tr></thead><tbody>
 {% for row in domains %}<tr>
 <th scope="row">{{ row.domain }}</th>
 <td>{% for role in row.roles %}{{ role }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
 <td>{{ row.authorized|number }}</td>
 <td>{% if row.last_login %}<time datetime="{{ row.last_login|date:'c' }}" data-local-instant>{{ row.last_login|date:'c' }}</time>{% else %}{% translate "None on record" %}{% endif %}</td>
-<td>{% if row.warnings %}<ul>{% for warning in row.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% else %}{% translate "None" %}{% endif %}</td></tr>
-{% empty %}<tr><td colspan="5">{% translate "No hosted-domain rules." %}</td></tr>{% endfor %}</tbody></table></div>
+<td>{% if row.warnings %}<ul>{% for warning in row.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% else %}{% translate "None" %}{% endif %}</td>
+<td><form method="post" action="{% url 'admin:user_rules' %}">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="kind" value="domain"><input type="hidden" name="identity" value="{{ row.domain }}">
+<fieldset><legend>{% blocktranslate with domain=row.domain %}Roles for {{ domain }}{% endblocktranslate %}</legend>
+{% for key,label in roles %}<label><input type="checkbox" name="roles" value="{{ key }}"{% if key in row.configured %} checked{% endif %}{% if key == 'administrator' %} disabled{% endif %}> {{ label }}</label> {% endfor %}
+<button type="submit" name="operation" value="set">{% translate "Review role change" %}</button> <button type="submit" name="operation" value="remove">{% translate "Review removal" %}</button></fieldset></form></td></tr>
+{% empty %}<tr><td colspan="6">{% translate "No hosted-domain rules." %}</td></tr>{% endfor %}</tbody></table></div>
+<form method="post" action="{% url 'admin:user_rules' %}">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="kind" value="domain"><input type="hidden" name="operation" value="set">
+<fieldset><legend>{% translate "Add a hosted-domain rule" %}</legend>
+<label for="new-domain">{% translate "Hosted domain" %}</label> <input id="new-domain" name="identity" maxlength="253" required inputmode="url" autocomplete="off">
+{% for key,label in roles %}{% if key != 'administrator' %}<label><input type="checkbox" name="roles" value="{{ key }}"> {{ label }}</label> {% endif %}{% endfor %}
+<button type="submit">{% translate "Review new domain rule" %}</button></fieldset></form>
 
 <h2 id="address-rules">{% translate "Exact-address rules" %}</h2>
-<p>{% translate "Roles granted now are what current policy gives this address. Administrator includes Staff and Ministry leader. A Ministry leader role that came only from a Chairperson is suspended while the parish source no longer confirms that Chairperson. Whether a particular Google identity may sign in at all is separate: a disabled identity is refused whatever its address is granted, and a warning says so." %}</p>
+<p>{% translate "Roles granted now are what current policy gives this address. Administrator includes Staff and Ministry leader. A Ministry leader role that came only from a Chairperson is suspended while the parish source no longer confirms that Chairperson. Whether a particular Google identity may sign in at all is separate: a disabled identity is refused whatever its address is granted, and a warning says so. Ticking no role at all is an explicit deny." %}</p>
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="address-rules"><table>
-<caption>{% translate "Exact-address rules" %}</caption><thead><tr><th scope="col">{% translate "Address" %}</th><th scope="col">{% translate "Rule origin" %}</th><th scope="col">{% translate "Configured roles and each grant's origin" %}</th><th scope="col">{% translate "Roles granted now" %}</th><th scope="col">{% translate "Ministry assignments" %}</th><th scope="col">{% translate "Last successful sign-in" %}</th><th scope="col">{% translate "Warnings" %}</th></tr></thead><tbody>
+<caption>{% translate "Exact-address rules" %}</caption><thead><tr><th scope="col">{% translate "Address" %}</th><th scope="col">{% translate "Rule origin" %}</th><th scope="col">{% translate "Configured roles and each grant's origin" %}</th><th scope="col">{% translate "Roles granted now" %}</th><th scope="col">{% translate "Ministry assignments" %}</th><th scope="col">{% translate "Last successful sign-in" %}</th><th scope="col">{% translate "Warnings" %}</th><th scope="col">{% translate "Change" %}</th></tr></thead><tbody>
 {% for row in addresses %}<tr>
 <th scope="row">{{ row.email }}</th>
 <td>{{ row.origin }}</td>
@@ -28,8 +37,17 @@
 <td>{% for role in row.granted %}{{ role }}{% if not forloop.last %}, {% endif %}{% empty %}{% translate "None" %}{% endfor %}</td>
 <td>{% for item in row.assignments %}{% translate "Ministry DUID" %} {{ item.ministry_duid }} ({{ item.source }}{% if not item.active %}; {% translate "suspended" %}{% endif %}){% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "None" %}{% endfor %}</td>
 <td>{% if row.last_login %}<time datetime="{{ row.last_login|date:'c' }}" data-local-instant>{{ row.last_login|date:'c' }}</time>{% else %}{% translate "None on record" %}{% endif %}</td>
-<td>{% if row.warnings %}<ul>{% for warning in row.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% else %}{% translate "None" %}{% endif %}</td></tr>
-{% empty %}<tr><td colspan="7">{% translate "No exact-address rules." %}</td></tr>{% endfor %}</tbody></table></div>
+<td>{% if row.warnings %}<ul>{% for warning in row.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% else %}{% translate "None" %}{% endif %}</td>
+<td><form method="post" action="{% url 'admin:user_rules' %}">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="kind" value="address"><input type="hidden" name="identity" value="{{ row.email }}">
+<fieldset><legend>{% blocktranslate with email=row.email %}Roles for {{ email }}{% endblocktranslate %}</legend>
+{% for key,label in roles %}<label><input type="checkbox" name="roles" value="{{ key }}"{% if key in row.configured %} checked{% endif %}> {{ label }}</label> {% endfor %}
+<button type="submit" name="operation" value="set">{% translate "Review role change" %}</button> <button type="submit" name="operation" value="remove">{% translate "Review removal" %}</button></fieldset></form></td></tr>
+{% empty %}<tr><td colspan="8">{% translate "No exact-address rules." %}</td></tr>{% endfor %}</tbody></table></div>
+<form method="post" action="{% url 'admin:user_rules' %}">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="base_digest" value="{{ base_digest }}"><input type="hidden" name="kind" value="address"><input type="hidden" name="operation" value="set">
+<fieldset><legend>{% translate "Add an exact-address rule" %}</legend>
+<label for="new-address">{% translate "Email address" %}</label> <input id="new-address" name="identity" type="email" maxlength="254" required autocomplete="off">
+{% for key,label in roles %}<label><input type="checkbox" name="roles" value="{{ key }}"> {{ label }}</label> {% endfor %}
+<button type="submit">{% translate "Review new address rule" %}</button></fieldset></form>
 
 {% if domain_assignments %}
 <h2 id="domain-assignments">{% translate "Ministry assignments for people authorized by a domain rule" %}</h2>

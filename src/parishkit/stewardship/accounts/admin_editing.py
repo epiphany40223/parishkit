@@ -76,12 +76,17 @@ def form_action(parameters, *, preview_fields, multiple_fields=frozenset()):
     return action
 
 
-def sign_preview(*, actor, configuration, patch, salt, snapshot=None):
-    """A preview has one request key, one base and a fifteen-minute validity window."""
+def sign_preview(*, actor, configuration, patch, salt, snapshot=None, key=None):
+    """A preview has one request key, one base and a fifteen-minute validity window.
+
+    An editor whose patch must name its own request, as manual policy
+    provenance does, chooses the key first and passes it; the rest take a
+    fresh one.
+    """
     return signing.dumps(
         {
             "actor": str(actor.identity),
-            "key": str(uuid4()),
+            "key": str(key or uuid4()),
             "base": configuration.active_configuration.digest,
             "snapshot": str(snapshot) if snapshot is not None else None,
             "patch": patch,
@@ -90,8 +95,21 @@ def sign_preview(*, actor, configuration, patch, salt, snapshot=None):
     )
 
 
-def confirm(request, service, actor, *, salt, current_scope, request_schema=None):
-    """Admit one exact intent; identical retries return the original receipt."""
+def confirm(
+    request,
+    service,
+    actor,
+    *,
+    salt,
+    current_scope,
+    request_schema=None,
+    capability=Capability.CONFIGURE,
+):
+    """Admit one exact intent; identical retries return the original receipt.
+
+    The recheck under the work transaction tests the same capability the page
+    admitted with, so the two cannot diverge if the capability matrix changes.
+    """
     token = request.POST.get("preview", "")
     if len(token) > 256_000:
         raise ValueError("Invalid configuration preview.")
@@ -104,10 +122,7 @@ def confirm(request, service, actor, *, salt, current_scope, request_schema=None
         """The owning work lock persists until intake's durable transaction commits."""
         with work_transaction():
             fresh = authenticated_admin(request, store=service.store, read_only=True)
-            if (
-                not allows(fresh, Capability.CONFIGURE)
-                or fresh.identity != actor.identity
-            ):
+            if not allows(fresh, capability) or fresh.identity != actor.identity:
                 return False
             configuration, snapshot = current_scope(service)
             existing = ConfigurationChangeRequest.objects.filter(

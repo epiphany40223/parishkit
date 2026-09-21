@@ -10,6 +10,10 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.domain import PortalRole
 
 ROLES = frozenset(role.value for role in PortalRole)
+# A consumer mail domain is never a hosted domain: its accounts present no
+# hosted-domain claim, so a rule for it could only mislead. One list serves the
+# schema and every editor, so they cannot drift.
+CONSUMER_DOMAINS = frozenset({"gmail.com", "googlemail.com"})
 
 
 def invalid_policy():
@@ -71,7 +75,7 @@ def validate_policy_records(records):
             if set(values) != {"kind", "domain", "roles"}:
                 invalid_policy()
             domain = normalized_domain(values["domain"])
-            if domain != values["domain"] or domain == "gmail.com":
+            if domain != values["domain"] or domain in CONSUMER_DOMAINS:
                 invalid_policy()
             key = (kind, domain)
         elif kind == "address":
