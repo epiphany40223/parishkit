@@ -232,9 +232,14 @@ def serve_configuration_installer(configuration, lease):
     def run_once():
         """The queue selects opaque identities, never caller-specified file paths."""
         identifier = next_configuration_request()
-        if identifier is not None:
-            with installer_request(identifier):
-                installer.run_request(identifier)
+        if identifier is None:
+            # A refused login-policy request is terminal, so the queue never
+            # selects it again; its restore, if a crash cut it short, is the
+            # idle pass's work.
+            installer.restore_refused()
+            return
+        with installer_request(identifier):
+            installer.run_request(identifier)
 
     return serve_installer_loop(run_once, lease)
 

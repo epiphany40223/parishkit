@@ -5,11 +5,13 @@ from datetime import UTC, datetime
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts.user_rows import (
+    ROLE_LABELS,
     AppliedPolicy,
     address_rows,
     domain_assignment_rows,
     domain_rows,
 )
+from parishkit.stewardship.accounts.user_rules import ROLE_ORDER
 
 from ..policy_factory import address, assignment, domain
 
@@ -59,7 +61,30 @@ def components(context, admin):
                 "domains": domain_rows(policy),
                 "addresses": address_rows(policy),
                 "domain_assignments": domain_assignment_rows(policy),
+                "base_digest": "0" * 64,
+                "roles": [(role, ROLE_LABELS[role]) for role in ROLE_ORDER],
             },
+        )
+
+    def preview(**values):
+        """The review page for one proposed change, with a sample signed token."""
+        return render_to_string(
+            "stewardship/user-rule-preview.html",
+            context
+            | {"admin_chrome": admin}
+            | dict(
+                kind="address",
+                identity="new@example.org",
+                created=False,
+                removed=False,
+                before=["Staff"],
+                after=["Administrator", "Staff"],
+                expansion="administrator",
+                recorded=2,
+                self_affected=False,
+                preview="signed-sample",
+            )
+            | values,
         )
 
     return {
@@ -70,4 +95,27 @@ def components(context, admin):
         ),
         # Only the mandatory Administrator: both optional tables are empty.
         "/portal-users-minimal": ("text/html", page([address()], [])),
+        "/portal-users-preview": ("text/html", preview()),
+        "/portal-users-preview-deny": (
+            "text/html",
+            preview(after=[], expansion=None),
+        ),
+        "/portal-users-preview-remove": (
+            "text/html",
+            preview(
+                kind="domain",
+                identity="workspace.example",
+                removed=True,
+                after=None,
+                expansion=None,
+                recorded=0,
+            ),
+        ),
+        "/portal-users-refused": (
+            "text/html",
+            render_to_string(
+                "stewardship/user-rule-error.html",
+                context | {"admin_chrome": admin} | {"code": "consumer"},
+            ),
+        ),
     }

@@ -832,6 +832,22 @@ merged as `30cb4635`; its
 records the identical retained review tree. The financial export increment now
 delivers from that verified main tip. M5 and Gate 3 remain open.
 
+PR #79 passed all 24 full exact-head jobs plus DCO on its second attempt, after
+one shard exposed the immutable-guard inventory the new capture table was not
+listed in, and merged as `e01b52ba`; its
+[protected receipt](../../guides/stewardship-financial-exports.md#protected-delivery)
+records the identical retained review tree and the test-only correction.
+RPT-08.04 is delivered. The ADM-07 role-editing increment now starts from that
+verified main tip. M5 and Gate 3 remain open.
+
+That [login rule edit increment](../../guides/stewardship-user-rule-edits.md)
+now lets an Administrator set roles, create and remove login rules from the
+Portal users page through previewed configuration requests, with focused
+acceptance and three-engine browser checks. Three review/fix rounds and nine
+correction checks of its activation guard are complete, the last finding
+nothing to fix; full exact-head CI/DCO
+and protected delivery remain pending. M5 and Gate 3 remain open.
+
 1. Finish [BG-08](background-processing.md#bg-08-export-and-graph-workers); implement [RPT-01](reports.md#rpt-01-shared-report-framework-and-campaign-selection) and finish [RPT-02](reports.md#rpt-02-population-and-calculation-library).
 2. Complete [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics), [RPT-04](reports.md#rpt-04-additional-information-workflow-report), [RPT-05](reports.md#rpt-05-family-code-and-postal-outreach-reports), [RPT-06](reports.md#rpt-06-ministry-summary-and-detail), [RPT-07](reports.md#rpt-07-multi-ministry-follow-up-packet), and the reporting slice of [RPT-08](reports.md#rpt-08-census-and-financial-reports).
 3. [ADM-07](admin-portal.md#adm-07-user-rules-and-ministry-assignments) → [ADM-08](admin-portal.md#adm-08-manual-refresh-follow-up-queues-and-logs) → [RPT-09](reports.md#rpt-09-logs-and-daily-email-parity); connect [RPT-04](reports.md#rpt-04-additional-information-workflow-report)/[RPT-06](reports.md#rpt-06-ministry-summary-and-detail) follow-up and verify [BG-07](background-processing.md#bg-07-submission-confirmations-and-admin-digests) parity.

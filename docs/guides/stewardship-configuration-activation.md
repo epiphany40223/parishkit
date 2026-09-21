@@ -85,8 +85,12 @@ the database's shape restriction before any write. A pre-bootstrap digest is
 null, and request installation before initialization fails resumably.
 The complete Admin wizard and initial login-rule schema remain later work.
 
-Actor UUIDs are attribution, never authenticated Admin authority. Current role,
-session, CSRF, and admission checks are required before any browser/queue exposure.
+Actor UUIDs are attribution, never authenticated Admin authority, with one
+exception recorded by the
+[login rule edit increment](stewardship-user-rule-edits.md): a login-policy
+change confirmed by a portal user is applied only while that user is still an
+Administrator, rechecked at activation. Current role, session, CSRF, and
+admission checks are required before any browser/queue exposure.
 The supported frozen schema still cannot edit roles, campaigns, schedules, or
 secrets. Fingerprints do not attest to installed credential files or consumer
 acknowledgement. ARC-06/OPS-02 own service identities, grants, mount separation,
