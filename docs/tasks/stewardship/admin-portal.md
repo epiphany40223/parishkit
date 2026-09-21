@@ -204,8 +204,10 @@ under its
 [protected receipt](../../guides/stewardship-security-event-mail.md#protected-delivery).
 The [Chairperson suggestions increment](../../guides/stewardship-chair-suggestions.md)
 adds the read-only suggestion review of .03, each current Chairperson with the
-Member, Ministry, publication flag, current rule and assignment and any
-ambiguity; the autosave queue of .01, the suggestion confirmation, provenance
+Member, Ministry, publication flag, current rule and assignments and any
+ambiguity, and is delivered under its
+[protected receipt](../../guides/stewardship-chair-suggestions.md#protected-delivery);
+the autosave queue of .01, the suggestion confirmation, provenance
 action and suspended review of .03, the assignment editor of .04 and the
 tests of .05 remain, so every task stays unchecked.
 

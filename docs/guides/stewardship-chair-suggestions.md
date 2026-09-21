@@ -121,6 +121,37 @@ Implementation, focused validation and three
 [review/fix rounds](stewardship-chair-suggestions-reviews.md) are complete,
 single-source under the second September 20, 2026 Codex exemption, with
 every accepted finding fixed and a correction check of the third round's fix
-finding nothing; full exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
-open. No deployment, release, live-provider write or database deletion is
-authorized by this increment.
+finding nothing; full exact-head CI, DCO and protected delivery remain open.
+M5 and Gate 3 remain open. No deployment, release, live-provider write or
+database deletion is authorized by this increment.
+
+## Protected delivery
+
+PR #84 delivered candidate `05a84393`, three logical commits plus the PR #83
+receipt and the fast-selection rotation, whose tree `65dcbae2` is identical
+to the retained commit-by-commit review history on
+`pr/stewardship-chair-suggestions-reviewed` (`b7e1a5ba`) and to the landed
+tree. The three [review/fix rounds](stewardship-chair-suggestions-reviews.md)
+and the correction check were single-source under the second exemption,
+with every accepted finding fixed and the check finding nothing. The
+candidate was pushed a moment before the pull request was marked ready, so
+the run that push created skipped the shard jobs as a draft run and its
+aggregate gates failed by design; marking the request ready again created
+the ready-candidate run. Exact-head ready-candidate CI `35630184787` and DCO
+then passed all 25 checks, from 17:09:24 to 17:28:24 UTC on September 21,
+2026 (19 minutes). `origin/main` had no intervening commits since the
+candidate's base `b1f80661`. Protected auto-merge landed as
+`3fd51b5a5b456c08084cc8d9d94f1bf5acd31f62` at 17:28:30 UTC and was verified
+on freshly fetched `origin/main`, whose second parent's tree is the
+candidate's, before the next increment started. This used the standing
+delivery authority, without deployment or release, and supersedes the
+checkpoint above. The draft-mode, cancelled and retained-history runs are
+not counted as acceptance.
+
+The Chairperson suggestions increment is delivered: the Administrator sees
+each current Chairperson of an active Ministry in the promoted source with
+the Member, Ministry, publication flag, what the evaluator grants the
+address, every configured assignment and any ambiguity. ADM-07 stays open
+for the suggestion confirmation, the provenance and suspended-assignment
+review, the assignment editor and the autosave queue. M5 and Gate 3 remain
+open.
