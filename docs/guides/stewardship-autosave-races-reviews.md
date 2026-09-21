@@ -8,3 +8,21 @@ second single-source exemption, recorded in
 [the overall plan](../plans/stewardship/overall.md), a completed Claude-only
 pass counts as a round through September 25, 2026, and each round records
 which sources answered.
+
+## Round 1
+
+Claude only (Codex out of quota). Eleven raw findings, two validated, both
+corrected:
+
+- Medium: the exact-once case counted requests by primary key, which can
+  only ever be zero or one and so could not detect a second request under
+  another id. It now compares the request count before and after and counts
+  the requests for the key.
+- Medium: the rapid-edits case claimed each intent was formed against the
+  digest the previous one applied, but the mock answered every applied
+  receipt with one constant. The mock now derives each request's applied
+  digest from its id, and the case asserts the per-request chain; the other
+  cases assert the specific digest they adopt.
+
+The nine findings the validation step did not confirm were not carried
+forward.

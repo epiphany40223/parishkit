@@ -1,5 +1,6 @@
 """The autosave queue applies role ticks in order and only from applied receipts."""
 
+import hashlib
 import json
 from urllib.parse import parse_qs
 
@@ -8,8 +9,14 @@ import pytest
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
-APPLIED = "b" * 64
 CURRENT = "c" * 64
+
+
+def applied_digest(request_id):
+    """The digest a mocked request applies: its own, so adoption is provable."""
+    return hashlib.sha256(request_id.encode()).hexdigest()
+
+
 LEADER = "leader@workspace.example"
 
 
@@ -117,7 +124,10 @@ def serve(
             status=200,
             content_type="application/json",
             body=receipt(
-                request_id, state, APPLIED if state == "applied" else None, failure
+                request_id,
+                state,
+                applied_digest(request_id) if state == "applied" else None,
+                failure,
             ),
         )
 
@@ -168,9 +178,11 @@ def test_ticks_autosave_in_order_and_adopt_the_applied_digest(page, component_or
     assert sent[0]["base_digest"] == "0" * 64
     # The second intent waited for the receipt and used the digest it applied.
     assert polled[:4] == ["request-1"] * 4
-    assert sent[1]["base_digest"] == APPLIED
+    assert sent[1]["base_digest"] == applied_digest("request-1")
     assert len({item["request_key"] for item in sent}) == 2
-    assert page.locator('input[name="base_digest"]').first.input_value() == APPLIED
+    assert page.locator('input[name="base_digest"]').first.input_value() == (
+        applied_digest("request-2")
+    )
     assert leader.get_by_text("Applied", exact=True).count() == 2
     # The rotated token from the first answer was adopted everywhere.
     assert sent[0]["csrf"] == "a" * 64 and sent[1]["csrf"] == ROTATED
@@ -246,7 +258,8 @@ def test_a_conflict_shows_current_rules_and_retries_selected_intents_afresh(
         "staff",
     ]
     assert sent[0]["request_key"] != sent[1]["request_key"]
-    assert sent[1]["base_digest"] == CURRENT and sent[2]["base_digest"] == APPLIED
+    assert sent[1]["base_digest"] == CURRENT
+    assert sent[2]["base_digest"] == applied_digest("request-2")
     # The discarded withdrawal shows the current rules' value, and an untouched
     # row was reconciled with the current rules as well.
     assert not leader.get_by_label("Ministry leader").is_checked()
@@ -444,7 +457,10 @@ def test_rapid_edits_across_rows_and_tables_apply_in_tick_order(page, component_
         ("address", LEADER, "administrator", "1"),
     ]
     assert sent[0]["base_digest"] == "0" * 64
-    assert all(item["base_digest"] == APPLIED for item in sent[1:])
+    # Each later intent was formed against the digest the previous one applied.
+    assert [item["base_digest"] for item in sent[1:]] == [
+        applied_digest(f"request-{number}") for number in (1, 2, 3)
+    ]
     assert len({item["request_key"] for item in sent}) == 4
 
 
@@ -480,4 +496,4 @@ def test_a_conflict_on_a_later_intent_leaves_the_applied_one_alone(
     page.get_by_role("button", name="Retry selected against current rules").wait_for()
     assert leader.get_by_text("Applied", exact=True).count() == 1
     assert leader.get_by_text("Not saved: the rules changed", exact=False).is_visible()
-    assert len(sent) == 2 and sent[1]["base_digest"] == APPLIED
+    assert len(sent) == 2 and sent[1]["base_digest"] == applied_digest("request-1")

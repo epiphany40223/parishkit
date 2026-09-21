@@ -65,7 +65,9 @@ No schema change.
 
 ## Checkpoint
 
-The tests are complete and pass locally; review/fix rounds, full exact-head
-CI, DCO and protected delivery remain open. With them ADM-07.01 to .05 are
+The tests are complete and pass locally and
+[round 1](stewardship-autosave-races-reviews.md) is answered; the remaining
+review/fix rounds, full exact-head CI, DCO and protected delivery remain
+open. With them ADM-07.01 to .05 are
 checked in the task map. M5 and Gate 3 remain open. No deployment, release,
 live-provider write or database deletion is authorized by this increment.

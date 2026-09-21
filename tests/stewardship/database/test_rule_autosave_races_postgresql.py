@@ -53,6 +53,7 @@ def test_an_autosaved_administrator_grant_is_exactly_once(auth_service, google):
     browser, login = signed_in()
     assert login.status_code == 302
     values = intent(store, role="administrator")
+    before = ConfigurationChangeRequest.objects.count()
     with web():
         receipt = state(apply(browser, values).json())
         for _ in range(2):
@@ -74,7 +75,14 @@ def test_an_autosaved_administrator_grant_is_exactly_once(auth_service, google):
         PolicySecurityEvent.objects.filter(activation__request_id=request_id).count()
         == 1
     )
-    assert ConfigurationChangeRequest.objects.filter(pk=request_id).count() == 1
+    # One request for the key, whatever id it took, and none beside it.
+    assert ConfigurationChangeRequest.objects.count() == before + 1
+    assert (
+        ConfigurationChangeRequest.objects.filter(
+            request_key=values["request_key"]
+        ).count()
+        == 1
+    )
     # Activation appended its checkpoints once; resubmission appended none.
     later = ConfigurationRequestCheckpoint.objects.filter(request_id=request_id).count()
     assert later > checkpoints
