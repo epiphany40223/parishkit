@@ -201,9 +201,13 @@ expansions, which the activation trigger already recorded, and the
 sends each such expansion to every Administrator who existed before it
 through the durable outbox, completing .02's notification, and is delivered
 under its
-[protected receipt](../../guides/stewardship-security-event-mail.md#protected-delivery);
-the autosave queue of .01, the suggestion and assignment editors of .03 and
-.04 and the tests of .05 remain, so every task stays unchecked.
+[protected receipt](../../guides/stewardship-security-event-mail.md#protected-delivery).
+The [Chairperson suggestions increment](../../guides/stewardship-chair-suggestions.md)
+adds the read-only suggestion review of .03, each current Chairperson with the
+Member, Ministry, publication flag, current rule and assignment and any
+ambiguity; the autosave queue of .01, the suggestion confirmation, provenance
+action and suspended review of .03, the assignment editor of .04 and the
+tests of .05 remain, so every task stays unchecked.
 
 ## ADM-08: Manual refresh, follow-up queues, and logs
 
