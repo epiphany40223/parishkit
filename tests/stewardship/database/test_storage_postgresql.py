@@ -486,6 +486,10 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             "information_export_capture",
             "stewardship_information_export_capture_v1",
         ),
+        "stewardship_financial_export_snapshot": (
+            "financial_export_capture",
+            "stewardship_financial_export_capture_v1",
+        ),
         "stewardship_information_revision": (
             "stewardship_information_revision_guard",
             "stewardship_information_revision_guard_v1",
@@ -706,6 +710,7 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                 "stewardship_directory_export_snapshot",
                 "stewardship_ministry_export_snapshot",
                 "stewardship_information_export_snapshot",
+                "stewardship_financial_export_snapshot",
                 "stewardship_information_revision",
                 "stewardship_ministry_revision",
                 "stewardship_delivery_control",
