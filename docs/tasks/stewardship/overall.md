@@ -928,8 +928,13 @@ lets the Administrator assign an address to an active Ministry of the
 promoted catalog or remove an Administrator entry assignment from the Portal
 users page, each an ordinary policy request whose preview states the rule
 the assignment depends on, and names each assignment's Ministry beside its
-DUID. Review/fix rounds, full exact-head CI/DCO and protected delivery
-remain pending. M5 and Gate 3 remain open.
+DUID. Four review/fix rounds were single-source under the second Codex
+exemption, the fourth, a correction check, validating nothing. PR #87 merged
+through protected auto-merge as `af474230`; its
+[protected receipt](../../guides/stewardship-assignment-editor.md#protected-delivery)
+records the identical landed tree and the refreshed-main verification. The
+ADM-07 autosave queue increment now starts from that verified main tip. M5
+and Gate 3 remain open.
 
 1. Finish [BG-08](background-processing.md#bg-08-export-and-graph-workers); implement [RPT-01](reports.md#rpt-01-shared-report-framework-and-campaign-selection) and finish [RPT-02](reports.md#rpt-02-population-and-calculation-library).
 2. Complete [RPT-03](reports.md#rpt-03-participation-graph-and-campaign-statistics), [RPT-04](reports.md#rpt-04-additional-information-workflow-report), [RPT-05](reports.md#rpt-05-family-code-and-postal-outreach-reports), [RPT-06](reports.md#rpt-06-ministry-summary-and-detail), [RPT-07](reports.md#rpt-07-multi-ministry-follow-up-packet), and the reporting slice of [RPT-08](reports.md#rpt-08-census-and-financial-reports).

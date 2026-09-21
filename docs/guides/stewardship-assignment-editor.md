@@ -116,3 +116,31 @@ Implementation, focused validation and the
 exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
 open. No deployment, release, live-provider write or database deletion is
 authorized by this increment.
+
+## Protected delivery
+
+PR #87 delivered candidate `e849aa84`, three logical commits plus the PR #86
+receipt and the fast-selection rotation, whose tree `0209e8a7` is identical
+to the retained commit-by-commit review history on
+`pr/stewardship-assignment-editor-reviewed` (`089feb07`) and to the landed
+tree. The four [review/fix rounds](stewardship-assignment-editor-reviews.md)
+were single-source under the second exemption, with every accepted finding
+fixed and the fourth, a correction check, validating nothing. The pull
+request was marked ready before the candidate was pushed, and the candidate
+was pushed once the ready-for-review run for the previous head was in
+progress, so that run was cancelled by the candidate's own. Exact-head
+ready-candidate CI `35654725841` and DCO passed all 25 checks, from 21:03:12
+to 21:21:04 UTC on September 21, 2026 (17 minutes 52 seconds). `origin/main`
+had no intervening commits since the candidate's base `a69cb098`. Protected
+auto-merge landed as `af474230` at 21:22:01 UTC and was verified on freshly
+fetched `origin/main`, whose second parent's tree is the candidate's, before
+the next increment started. This used the standing delivery authority,
+without deployment or release, and supersedes the checkpoint above. The
+cancelled and retained-history runs are not counted as acceptance.
+
+The manual assignment editor increment is delivered: an Administrator
+assigns an address to an active Ministry of the promoted catalog, or removes
+an Administrator entry assignment whatever the catalog now says, from the
+Portal users page, each previewed with its effect as the evaluator decides
+it and applied as an ordinary policy request. ADM-07 stays open for the
+autosave queue and the tests of .05. M5 and Gate 3 remain open.
