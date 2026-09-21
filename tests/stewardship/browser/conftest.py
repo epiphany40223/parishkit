@@ -56,6 +56,7 @@ from .log_components import components as log_components
 from .ministry_components import components as ministry_components
 from .pause_components import components as pause_components
 from .report_components import components as report_components
+from .security_components import components as security_components
 from .user_components import components as user_components
 from .weekly_components import components as weekly_components
 
@@ -1042,6 +1043,7 @@ def component_origin():
     responses.update(financial_components(context, admin))
     responses.update(weekly_components(context, admin))
     responses.update(user_components(context, admin))
+    responses.update(security_components(context, admin))
     responses.update(go_live_components(context, admin))
     responses.update(pause_components(context, admin))
     for filename, kind in (
