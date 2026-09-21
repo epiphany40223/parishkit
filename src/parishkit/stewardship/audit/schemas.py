@@ -73,6 +73,7 @@ class Action(StrEnum):
     INFORMATION_UPDATED = "information_updated"
     MINISTRY_FOLLOWUP_VIEWED = "ministry_followup_viewed"
     MINISTRY_REQUEST_UPDATED = "ministry_request_updated"
+    FINANCIAL_REPORT_VIEWED = "financial_report_viewed"
     DASHBOARD_VIEWED = "dashboard_viewed"
     PRESENCE_VIEWED = "family_presence_viewed"
     SETUP_STARTED = "setup_started"

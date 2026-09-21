@@ -1,0 +1,8 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% block title %}{% translate "Financial stewardship detail unavailable" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Financial stewardship detail unavailable" %}</h1>
+{% if status == 503 %}<p role="alert">{% translate "This information is temporarily unavailable. Please retry later." %}</p>
+{% else %}<p role="alert">{% translate "Check the filters. Enter pledge amounts in whole dollars, or dollars and two-digit cents, without commas or a currency sign, such as 1234 or 1234.50. The lowest amount cannot exceed the highest, and each From date cannot follow its Through date." %}</p>{% endif %}
+<p><a href="{% url 'admin:financial_report' campaign_id %}">{% translate "Return to this campaign's financial stewardship detail" %}</a></p>
+{% endblock %}

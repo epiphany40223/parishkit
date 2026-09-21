@@ -11,6 +11,7 @@
 <p>{% translate "Track first responses and pledges. Repeat submissions do not increase participation. Testing responses are excluded." %}</p>
 <p><a href="{{ picker_url }}">{% translate "Choose a retained campaign" %}</a></p>
 <p><a href="{% url 'admin:information_queue' campaign.pk %}">{% translate "Additional-information staff queue" %}</a></p>
+{% if 'financial' in campaign.active_configuration.values.modules %}<p><a href="{% url 'admin:financial_report' campaign.pk %}">{% translate "Financial stewardship detail" %}</a></p>{% endif %}
 <p><a href="{% url 'admin:family_directory' campaign.pk %}">{% translate "Family-code directory" %}</a> · <a href="{% url 'admin:postal_directory' campaign.pk %}">{% translate "Families without deliverable email" %}</a></p>
 <form method="get" action="{% url 'admin:participation' campaign.pk %}" data-report-options>
 <label for="scope">{% translate "Chart population" %}</label>
