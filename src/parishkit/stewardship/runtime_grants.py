@@ -26,6 +26,7 @@ WEB_READ_TABLES = frozenset(
         "stewardship_public_credential_handoff",
         "stewardship_source_current",
         "stewardship_chair_suggestion",
+        "stewardship_chair_seed_intent",
         "stewardship_snapshot_ministry",
         "stewardship_source_ministry",
         "stewardship_snapshot_fund",
@@ -107,6 +108,7 @@ WEB_READ_TABLES = frozenset(
 
 WEB_INSERT_TABLES = frozenset(
     [
+        "stewardship_chair_seed_intent",
         "stewardship_setup_attempt",
         "stewardship_setup_draft_section",
         "stewardship_branding_bundle",

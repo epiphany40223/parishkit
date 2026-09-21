@@ -56,7 +56,10 @@ CONFIGURATION_GRANTS = {
     "stewardship_assignment_overlay": {"SELECT", "INSERT", "UPDATE"},
     "stewardship_current_chair": {"SELECT"},
     "stewardship_source_current": {"SELECT"},
-    "stewardship_chair_seed_evidence": {"SELECT"},
+    # A confirmation's selected Members are read, and the seed's retained
+    # identity evidence written, inside the activation transaction.
+    "stewardship_chair_seed_intent": {"SELECT"},
+    "stewardship_chair_seed_evidence": {"SELECT", "INSERT"},
     "stewardship_chair_reconciliation": {"SELECT", "INSERT"},
     "stewardship_chair_review": {"SELECT", "INSERT", "UPDATE"},
     "stewardship_campaign_configuration": {"SELECT", "INSERT"},

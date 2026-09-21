@@ -50,6 +50,7 @@ class ConfigurationChangeRequest(ImmutableRecord):
                         "source-cadence-patch-v8",
                         "operator-recovery-cadence-v8",
                         "integration-credential-cadence-v8",
+                        "chair-seed-patch-v9",
                     ]
                 ),
                 name="config_request_schema",

@@ -1,0 +1,24 @@
+{% extends 'stewardship/base.html' %}{% load i18n stewardship %}
+{% block title %}{% translate "Review Chairperson confirmation" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Review Chairperson confirmation" %}</h1>
+{% for change in changes %}
+<section class="panel">
+  <h2>{% translate "Exact address" %}: {{ change.email }}</h2>
+  {% if change.created %}<p>{% translate "An exact-address rule will be created for this address with the roles:" %} {% for role in change.after %}{{ role }}{% if not forloop.last %}, {% endif %}{% endfor %}. {% translate "It replaces the hosted-domain rule for this person; roles it inherited from that rule are recorded as Administrator entries, and Ministry leader as a Parish source Chairperson grant." %}</p>
+  {% else %}<p>{% translate "Configured roles now:" %} {% for role in change.before %}{{ role }}{% if not forloop.last %}, {% endif %}{% empty %}{% translate "None (explicit deny)" %}{% endfor %}</p>
+  <p>{% translate "Configured roles after this change:" %} {% for role in change.after %}{{ role }}{% if not forloop.last %}, {% endif %}{% endfor %}. {% translate "Existing grants keep their origins; Ministry leader gains a Parish source Chairperson origin." %}</p>{% endif %}
+  <p>{% translate "Chairperson-seeded Ministry assignments to add:" %} {% for item in change.ministries %}{% blocktranslate with duid=item.duid member=item.member %}Ministry DUID {{ duid }} for Member DUID {{ member }}{% endblocktranslate %}{% if not forloop.last %}; {% endif %}{% endfor %}.</p>
+</section>
+{% endfor %}
+<section class="panel">
+  <p>{% translate "The selected Member is retained as the seed's identity evidence when the request activates. The parish source then keeps the assignment in force while it shows that Member as a current Chairperson of that Ministry, and suspends it otherwise. No confirmation grants Administrator or Staff beyond roles the address already inherited." %}</p>
+  <p>{% translate "The change is applied as a configuration request against the applied policy and the promoted source. This preview expires in 15 minutes." %}</p>
+</section>
+<form method="post" action="{% url 'admin:chair_confirmations' %}">
+  {% csrf_token %}<input type="hidden" name="action" value="confirm">
+  <input type="hidden" name="preview" value="{{ preview }}">
+  <button type="submit">{% translate "Confirm Chairperson suggestions" %}</button>
+  <a href="{% url 'admin:users' %}">{% translate "Cancel" %}</a>
+</form>
+{% endblock %}

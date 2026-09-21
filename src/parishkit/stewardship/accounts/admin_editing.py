@@ -76,12 +76,15 @@ def form_action(parameters, *, preview_fields, multiple_fields=frozenset()):
     return action
 
 
-def sign_preview(*, actor, configuration, patch, salt, snapshot=None, key=None):
+def sign_preview(
+    *, actor, configuration, patch, salt, snapshot=None, key=None, extra=None
+):
     """A preview has one request key, one base and a fifteen-minute validity window.
 
     An editor whose patch must name its own request, as manual policy
     provenance does, chooses the key first and passes it; the rest take a
-    fresh one.
+    fresh one. An editor whose request needs companion rows signs their
+    content as `extra`, so confirmation records exactly what was reviewed.
     """
     return signing.dumps(
         {
@@ -90,6 +93,7 @@ def sign_preview(*, actor, configuration, patch, salt, snapshot=None, key=None):
             "base": configuration.active_configuration.digest,
             "snapshot": str(snapshot) if snapshot is not None else None,
             "patch": patch,
+            "extra": extra,
         },
         salt=salt,
     )
@@ -104,11 +108,14 @@ def confirm(
     current_scope,
     request_schema=None,
     capability=Capability.CONFIGURE,
+    attach=None,
 ):
     """Admit one exact intent; identical retries return the original receipt.
 
     The recheck under the work transaction tests the same capability the page
     admitted with, so the two cannot diverge if the capability matrix changes.
+    `attach(request, extra)` records an editor's companion rows from the
+    signed preview inside the request's own durable transaction.
     """
     token = request.POST.get("preview", "")
     if len(token) > 256_000:
@@ -146,6 +153,11 @@ def confirm(
         correlation_id=current_correlation(),
         admit=admit,
         request_schema=request_schema,
+        attach=(
+            None
+            if attach is None
+            else lambda created: attach(created, intent.get("extra"))
+        ),
     )
     return HttpResponseRedirect(f"/admin/configuration/requests/{receipt.request_id}")
 

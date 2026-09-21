@@ -10,6 +10,7 @@ from .accounts import (
     branding_views,
     campaign_mail_views,
     campaign_views,
+    chair_views,
     clone_views,
     code_reports,
     confirmation_views,
@@ -432,6 +433,11 @@ admin_patterns = [
     path("configuration/parish", parish_views.parish_settings, name="parish_settings"),
     path("users", user_views.users, name="users"),
     path("users/rules", user_rule_views.user_rules, name="user_rules"),
+    path(
+        "users/suggestions",
+        chair_views.chair_confirmations,
+        name="chair_confirmations",
+    ),
     path(
         "security-events/<uuid:event_id>/acknowledge",
         security_event_views.acknowledge_event,

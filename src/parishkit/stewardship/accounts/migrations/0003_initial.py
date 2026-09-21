@@ -1177,6 +1177,7 @@ class Migration(migrations.Migration):
                                     "source-cadence-patch-v8",
                                     "operator-recovery-cadence-v8",
                                     "integration-credential-cadence-v8",
+                                    "chair-seed-patch-v9",
                                 ],
                             )
                         ),
@@ -1513,6 +1514,28 @@ class Migration(migrations.Migration):
                             ("organization_id__lt", 2147483648),
                         ),
                         name="chair_seed_evidence_identity",
+                    ),
+                ),
+                migrations.AddField(
+                    model_name="chairseedintent",
+                    name="request",
+                    field=models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="seeds",
+                        to="stewardship_accounts.configurationchangerequest",
+                    ),
+                ),
+                migrations.AddConstraint(
+                    model_name="chairseedintent",
+                    constraint=models.CheckConstraint(
+                        condition=models.Q(
+                            ("actor_id__isnull", False),
+                            ("member_duid__gt", 0),
+                            ("member_duid__lt", 2147483648),
+                            ("organization_id__gt", 0),
+                            ("organization_id__lt", 2147483648),
+                        ),
+                        name="chair_seed_intent_identity",
                     ),
                 ),
                 migrations.AddConstraint(

@@ -16,6 +16,7 @@ from parishkit.config import ConfigError
 
 from . import source_cadence_schema as cadence
 from .authority import ConfigurationVersion, parse_version
+from .chair_confirmation import REQUEST_SCHEMA as CHAIR_REQUEST_SCHEMA
 from .configuration_schema import validator_for
 from .content_schema import RECOVERY_SCHEMA as CONTENT_RECOVERY_SCHEMA
 from .content_schema import REQUEST_SCHEMA as CONTENT_REQUEST_SCHEMA
@@ -433,6 +434,66 @@ def credential_request_schema(document):
     )
 
 
+def _build_chair_seed_candidate(base, patch, *, candidate_id):
+    """Admit exactly a Chairperson confirmation's effects over the newest schema.
+
+    The confirmation is the sole creator of Chairperson-seeded authority, so
+    its validator replaces the ordinary policy-change rule; every other fence
+    of the newest format holds, and the cadence setting stays optional.
+    """
+    from parishkit.stewardship.campaigns.configuration import validate_campaign_change
+
+    from .chair_confirmation import validate_seed_change
+
+    result = _build_records(
+        base,
+        patch,
+        candidate_id=candidate_id,
+        schema=cadence.SCHEMA,
+        sections={
+            "parish",
+            "integrations",
+            "login_rules",
+            "campaigns",
+            "schedules",
+            "ministries",
+            "content",
+        },
+    )
+    old, new = base.document(), result.candidate.document()
+    validate_seed_change(
+        old["sections"].get("login_rules", []),
+        new["sections"].get("login_rules", []),
+        str(candidate_operation(patch)),
+    )
+    validate_campaign_change(old, new)
+    by_id, by_identity = {}, {}
+    remember_records(old, by_id, by_identity)
+    remember_records(new, by_id, by_identity)
+    validate_content_change(old, new)
+    return result
+
+
+def candidate_operation(patch):
+    """The one operation identity a confirmation patch names, or refuse.
+
+    A confirmation binds every seeded origin and assignment to the request
+    that carries it; the request identity is not known to the builder, so the
+    patch must name exactly one, which intake and the installer then hold to
+    the request's own identity.
+    """
+    operations = {
+        item["values"].get("operation_id")
+        for item in patch
+        if type(item) is dict
+        and type(item.get("values")) is dict
+        and item["values"].get("kind") == "assignment"
+    }
+    if len(operations) != 1:
+        _invalid()
+    return operations.pop()
+
+
 BUILDERS = MappingProxyType(
     {
         "parish-integrations-patch-v1": _build_v1_candidate,
@@ -450,6 +511,7 @@ BUILDERS = MappingProxyType(
         "operator-recovery-patch-v1": _build_recovery_candidate,
         "operator-recovery-patch-v2": _build_recovery_v2_candidate,
         "operator-recovery-bootstrap-v1": _build_recovery_bootstrap_candidate,
+        CHAIR_REQUEST_SCHEMA: _build_chair_seed_candidate,
     }
 )
 

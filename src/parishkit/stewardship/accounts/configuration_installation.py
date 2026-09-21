@@ -222,7 +222,11 @@ class DatabaseMaterializer:
             correlation_id=self.correlation_id,
         )
         from .chair_reconciliation import reconcile_configuration_chairs
+        from .chair_seeding import record_seed_evidence
 
+        # A confirmed suggestion's retained identity is recorded before the
+        # reconciliation judges the new seed, so it is never born suspended.
+        record_seed_evidence(activation, self.request)
         reconcile_configuration_chairs(activation)
         # SQL inserts Applied, safe audit, and the runtime pointer in this
         # same transaction. A failure in any effect rolls them all back.
@@ -512,6 +516,9 @@ def _install_request(store, *, request, correlation_id, admit_campaign=None):
                         intent.candidate.document()["sections"].get("login_rules", []),
                         request.pk,
                     )
+                from .chair_seeding import validate_intents
+
+                validate_intents(request)
                 from .request_admission import check_historical_additions
 
                 check_historical_additions(request.base_id, request.patch)

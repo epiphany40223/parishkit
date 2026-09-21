@@ -54,6 +54,7 @@ def schema_sql():
                 "security_render",
                 "security_dispatch",
                 "chair_suggestions",
+                "chair_confirmation",
                 "activation_impact",
                 "production_confirmation",
                 "production_withdrawal",

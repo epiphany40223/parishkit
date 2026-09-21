@@ -304,6 +304,45 @@ class Migration(migrations.Migration):
                     },
                 ),
                 migrations.CreateModel(
+                    name="ChairSeedIntent",
+                    fields=[
+                        (
+                            "id",
+                            models.UUIDField(
+                                default=uuid.uuid4,
+                                editable=False,
+                                primary_key=True,
+                                serialize=False,
+                            ),
+                        ),
+                        (
+                            "created_at",
+                            parishkit.stewardship.storage.UTCDateTimeField(
+                                db_default=django.db.models.functions.datetime.Now(),
+                                editable=False,
+                            ),
+                        ),
+                        (
+                            "actor_id",
+                            models.UUIDField(blank=True, editable=False, null=True),
+                        ),
+                        (
+                            "correlation_id",
+                            models.UUIDField(
+                                db_index=True,
+                                default=parishkit.stewardship.observability.current_correlation,
+                                editable=False,
+                            ),
+                        ),
+                        ("assignment_record_id", models.UUIDField(unique=True)),
+                        ("organization_id", models.PositiveBigIntegerField()),
+                        ("member_duid", models.PositiveBigIntegerField()),
+                    ],
+                    options={
+                        "db_table": "stewardship_chair_seed_intent",
+                    },
+                ),
+                migrations.CreateModel(
                     name="ConfigurationActivation",
                     fields=[
                         (

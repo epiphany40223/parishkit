@@ -129,3 +129,35 @@ class ChairAssignmentReview(MutableRecord):
                 name="chair_review_closure",
             ),
         ]
+
+
+class ChairSeedIntent(ImmutableRecord):
+    """The Member an Administrator selected when confirming a suggestion.
+
+    One row per seeded assignment record of one confirmation request, written
+    by the web tier in the request's own transaction and read by the installer
+    to record the seed's retained identity evidence. The applied YAML never
+    names a Member; SQL binds each row to its request's own patch.
+    """
+
+    request = models.ForeignKey(
+        "ConfigurationChangeRequest", on_delete=models.PROTECT, related_name="seeds"
+    )
+    assignment_record_id = models.UUIDField(unique=True)
+    organization_id = models.PositiveBigIntegerField()
+    member_duid = models.PositiveBigIntegerField()
+
+    class Meta:
+        db_table = "stewardship_chair_seed_intent"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(
+                    organization_id__gt=0,
+                    organization_id__lt=2**31,
+                    member_duid__gt=0,
+                    member_duid__lt=2**31,
+                    actor_id__isnull=False,
+                ),
+                name="chair_seed_intent_identity",
+            ),
+        ]

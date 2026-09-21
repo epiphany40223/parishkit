@@ -145,23 +145,31 @@ def record_request(
     correlation_id,
     admit=None,
     request_schema=None,
+    attach=None,
 ):
     """Persist one validated intent; identical actor/key retries return its state.
 
     The base check is bounded to one snapshot, not an entire canonical lineage.
     Schema selection and patch validation occur under the per-key lock so a
     concurrent winner always determines the frozen retry format. No current-
-    authority or role policy is inferred from a prepared base or a key.
+    authority or role policy is inferred from a prepared base or a key. An
+    editor whose request needs companion rows, as a Chairperson confirmation
+    needs its selected Members, passes `attach`, called with the new request
+    inside this same durable transaction and never on a retry.
     """
     _identities(actor_id, request_key, correlation_id)
     _own_transaction()
+    from .chair_confirmation import REQUEST_SCHEMA as CHAIR_REQUEST_SCHEMA
     from .source_cadence_schema import CREDENTIAL_SCHEMA
 
     if request_schema is not None and request_schema not in {
         CREDENTIAL_REQUEST_SCHEMA,
         CREDENTIAL_SCHEMA,
+        CHAIR_REQUEST_SCHEMA,
     }:
         raise ConfigError("Unsupported explicit configuration request schema.")
+    if attach is not None and not callable(attach):
+        raise TypeError("Request attachment must be callable.")
     if (
         type(base_digest) is not str
         or re.fullmatch(r"[0-9a-f]{64}", base_digest) is None
@@ -207,6 +215,12 @@ def record_request(
                 intent.candidate.document()["sections"].get("login_rules", []),
                 identifier,
             )
+        if schema == CHAIR_REQUEST_SCHEMA:
+            # The patch named one operation; it must be this very request.
+            from .request_patch import candidate_operation
+
+            if candidate_operation(intent.patch()) != str(identifier):
+                raise ConfigError("Confirmation provenance must name its request.")
         if existing is not None:
             if existing.payload_fingerprint != intent.payload_fingerprint:
                 raise ConfigError("Request key is already bound to another intent.")
@@ -225,6 +239,8 @@ def record_request(
             candidate_digest=intent.candidate.digest,
         )
         # PostgreSQL inserts the initial checkpoint/audit in the same statement.
+        if attach is not None:
+            attach(request)
         return _status(request)
 
 
