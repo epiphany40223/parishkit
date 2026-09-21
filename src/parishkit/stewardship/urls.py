@@ -53,6 +53,7 @@ from .reports import (
     exact_views,
     export_ui,
     export_views,
+    financial_export_views,
     financial_views,
     information_export_views,
     information_views,
@@ -140,6 +141,11 @@ admin_patterns = [
         "reports/<uuid:campaign_id>/financial/",
         financial_views.report,
         name="financial_report",
+    ),
+    path(
+        "reports/<uuid:campaign_id>/financial/export",
+        financial_export_views.create,
+        name="financial_export",
     ),
     path(
         "reports/<uuid:campaign_id>/families/export",

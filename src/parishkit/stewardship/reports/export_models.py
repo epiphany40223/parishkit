@@ -107,6 +107,38 @@ class MinistryExportSnapshot(ImmutableRecord):
         ]
 
 
+class FinancialExportSnapshot(ImmutableRecord):
+    """Immutable complete financial result, captured by SQL with its giving proof."""
+
+    campaign = models.ForeignKey(
+        "stewardship_campaigns.Campaign", on_delete=models.PROTECT, db_index=False
+    )
+    source = models.ForeignKey(
+        "stewardship_source.SourceSnapshot", on_delete=models.PROTECT, db_index=False
+    )
+    configuration = models.ForeignKey(
+        "stewardship_accounts.AppliedConfigurationVersion",
+        on_delete=models.PROTECT,
+        db_index=False,
+    )
+    actor_id = models.UUIDField(editable=False)
+    correlation_id = models.UUIDField(editable=False)
+    parameters = models.JSONField()
+    document = models.JSONField(default=dict)
+    row_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = "stewardship_financial_export_snapshot"
+        indexes = [
+            models.Index(
+                fields=("correlation_id",), name="financial_export_correlation"
+            ),
+            models.Index(fields=("campaign",), name="financial_export_campaign"),
+            models.Index(fields=("source",), name="financial_export_source"),
+            models.Index(fields=("configuration",), name="financial_export_config"),
+        ]
+
+
 class ExportRequest(ImmutableRecord):
     """One canonical report request and its exact retained calculation generation."""
 
@@ -127,6 +159,9 @@ class ExportRequest(ImmutableRecord):
     )
     ministry_snapshot = models.ForeignKey(
         MinistryExportSnapshot, on_delete=models.PROTECT, null=True, db_index=False
+    )
+    financial_snapshot = models.ForeignKey(
+        FinancialExportSnapshot, on_delete=models.PROTECT, null=True, db_index=False
     )
     configuration = models.ForeignKey(
         "stewardship_accounts.AppliedConfigurationVersion", on_delete=models.PROTECT
@@ -150,6 +185,7 @@ class ExportRequest(ImmutableRecord):
                     information_snapshot__isnull=True,
                     ministry_snapshot__isnull=True,
                     directory_snapshot__isnull=True,
+                    financial_snapshot__isnull=True,
                 )
                 | models.Q(
                     report="additional_information",
@@ -157,6 +193,7 @@ class ExportRequest(ImmutableRecord):
                     information_snapshot__isnull=False,
                     ministry_snapshot__isnull=True,
                     directory_snapshot__isnull=True,
+                    financial_snapshot__isnull=True,
                     format__in=("csv", "xlsx", "pdf"),
                 )
                 | models.Q(
@@ -165,6 +202,7 @@ class ExportRequest(ImmutableRecord):
                     information_snapshot__isnull=True,
                     ministry_snapshot__isnull=True,
                     directory_snapshot__isnull=False,
+                    financial_snapshot__isnull=True,
                     format__in=("csv", "xlsx", "pdf"),
                 )
                 | models.Q(
@@ -173,6 +211,16 @@ class ExportRequest(ImmutableRecord):
                     information_snapshot__isnull=True,
                     directory_snapshot__isnull=True,
                     ministry_snapshot__isnull=False,
+                    financial_snapshot__isnull=True,
+                    format__in=("csv", "xlsx", "pdf"),
+                )
+                | models.Q(
+                    report="financial",
+                    fact_set__isnull=True,
+                    information_snapshot__isnull=True,
+                    directory_snapshot__isnull=True,
+                    ministry_snapshot__isnull=True,
+                    financial_snapshot__isnull=False,
                     format__in=("csv", "xlsx", "pdf"),
                 ),
                 name="export_report_known",
@@ -194,6 +242,9 @@ class ExportRequest(ImmutableRecord):
             ),
             models.Index(
                 fields=("ministry_snapshot",), name="export_ministry_snapshot"
+            ),
+            models.Index(
+                fields=("financial_snapshot",), name="export_financial_snapshot"
             ),
         ]
 

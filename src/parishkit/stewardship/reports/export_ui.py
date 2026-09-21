@@ -132,11 +132,13 @@ def detail(request, request_id):
                     "information_snapshot",
                     "directory_snapshot",
                     "ministry_snapshot",
+                    "financial_snapshot",
                 )
                 .defer(
                     "information_snapshot__document",
                     "directory_snapshot__document",
                     "ministry_snapshot__document",
+                    "financial_snapshot__document",
                 )
                 .annotate(
                     ministry_source_generation=F(
@@ -147,6 +149,9 @@ def detail(request, request_id):
                     ),
                     directory_source_generation=F(
                         "directory_snapshot__source__generation"
+                    ),
+                    financial_source_generation=F(
+                        "financial_snapshot__source__generation"
                     ),
                 )
                 .get(pk=request_id)
@@ -163,6 +168,9 @@ def detail(request, request_id):
             elif job.report == "additional_information":
                 title = "Additional-information export"
                 report_url = reverse("admin:information_queue", args=(campaign_id,))
+            elif job.report == "financial":
+                title = "Financial stewardship export"
+                report_url = reverse("admin:financial_report", args=(campaign_id,))
             elif job.report in {"family_directory", "postal_outreach"}:
                 title = (
                     "Postal-outreach export"

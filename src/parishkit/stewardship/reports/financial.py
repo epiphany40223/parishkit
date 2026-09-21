@@ -237,6 +237,21 @@ def financial_page(
         raise PermissionError("Financial stewardship is not enabled for this campaign.")
     if result.get("unavailable"):
         raise ReadUnavailable("Financial report inputs are unavailable.")
+    return shape_result(
+        result,
+        campaign_id=campaign_id,
+        parish_name=parish_name,
+        configuration=configuration,
+    )
+
+
+def shape_result(result, *, campaign_id, parish_name, configuration):
+    """Word and type one projection for display, on the page or in an export.
+
+    The page reads its projection live; an export renders the same projection
+    from its immutable capture. Both pass through here, so money, wording and
+    ordering cannot mean different things in the two places.
+    """
     current = share_labels(
         configuration, campaign_id=campaign_id, parish_name=parish_name
     )
