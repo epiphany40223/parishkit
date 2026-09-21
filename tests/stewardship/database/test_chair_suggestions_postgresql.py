@@ -162,9 +162,9 @@ def test_shared_addresses_and_existing_policy_are_shown_not_guessed(
     suggestion = suggestion_row(body, "valid@example.org")
     # The copied Member has no contact-information middle name of its own;
     # an ambiguous row offers each Member as a choice for confirmation.
-    assert "Another Example (DUID 6)</label><br>" in suggestion
-    assert "Member Middle Example (DUID 3)</label>" in suggestion
-    assert 'name="member" value="4:valid@example.org:6"' in suggestion
+    assert "Another Example (DUID 6)<br>Member Middle Example (DUID 3)" in suggestion
+    assert '<select name="member">' in suggestion
+    assert '<option value="4:valid@example.org:6">' in suggestion
     assert "2 active Members use this address" in suggestion
     # What the evaluator grants now, not the configured roles: nothing.
     assert "Exact-address rule: no role in effect (Ministry leader suspended)" in (

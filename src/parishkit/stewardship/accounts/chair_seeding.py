@@ -52,28 +52,21 @@ def validate_intents(request):
         raise ConfigError("Confirmation request lacks its Member selections.")
 
 
-def record_seed_evidence(activation, request):
-    """Bind each intent of this request to its applied assignment and roster keys.
+def _relationships(intents, configuration_id):
+    """Each intent with its candidate assignment and the current roster keys.
 
-    A request without intents, an ordinary policy change, records nothing.
-    A seeded assignment whose relationship the current source no longer shows
-    yields no roster keys; the guard then refuses the insert and the whole
-    activation rolls back: a suggestion is confirmable only while it is still
-    true, and the installer records the request as an invalid candidate.
+    Read under the activation's own lock, which source promotion also takes,
+    so the keys are exactly what the evidence guard will compare.
     """
     from parishkit.stewardship.source.snapshot_models import SourceCurrent
 
     from .policy_models import MinistryAssignment
 
-    if request is None:
-        return 0
-    intents = list(ChairSeedIntent.objects.filter(request=request))
-    if not intents:
-        return 0
     current = SourceCurrent.objects.get(singleton=True)
+    rows = []
     for intent in intents:
         assignment = MinistryAssignment.objects.get(
-            configuration_id=activation.configuration_id,
+            configuration_id=configuration_id,
             record_id=intent.assignment_record_id,
             source="chair-seed",
         )
@@ -91,6 +84,56 @@ def record_seed_evidence(activation, request):
                 ],
             )
             keys = [row[0] for row in cursor.fetchall()]
+        rows.append((intent, assignment, current, keys))
+    return rows
+
+
+def confirmable(request, configuration_id, document):
+    """Whether every seed this request adds is still true of the current source.
+
+    Judged inside the activation transaction, before anything is applied, by
+    the same facts the evidence guard demands: the selected Member is a
+    current Chairperson of that Ministry at that address in the promoted
+    snapshot for that organization, and the Ministry is active under the
+    candidate's own activity. A request that adds no seed is confirmable.
+    """
+    from .ministry_activity import active_ministries
+
+    if request is None or request.request_schema != REQUEST_SCHEMA:
+        return True
+    intents = list(ChairSeedIntent.objects.filter(request=request))
+    if not intents:
+        return True
+    rows = _relationships(intents, configuration_id)
+    for intent, assignment, current, keys in rows:
+        if not keys or current.organization_id != intent.organization_id:
+            return False
+        active = active_ministries(
+            document,
+            organization_id=intent.organization_id,
+            catalog_duids=frozenset({assignment.ministry_duid}),
+        )
+        if assignment.ministry_duid not in active:
+            return False
+    return True
+
+
+def record_seed_evidence(activation, request):
+    """Bind each intent of this request to its applied assignment and roster keys.
+
+    A request without intents, an ordinary policy change, records nothing.
+    The installer has already judged the seeds confirmable under this same
+    lock, so the evidence guard is the backstop, not the decision: a refusal
+    here is a defect, never an expected outcome.
+    """
+    if request is None:
+        return 0
+    intents = list(ChairSeedIntent.objects.filter(request=request))
+    if not intents:
+        return 0
+    for intent, assignment, current, keys in _relationships(
+        intents, activation.configuration_id
+    ):
         ChairSeedEvidence.objects.create(
             assignment_record_id=intent.assignment_record_id,
             assignment=assignment,

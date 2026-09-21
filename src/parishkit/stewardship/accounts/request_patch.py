@@ -445,20 +445,14 @@ def _build_chair_seed_candidate(base, patch, *, candidate_id):
 
     from .chair_confirmation import validate_seed_change
 
+    # Only login rules may appear in the patch: a confirmation carries no
+    # other edit, whatever the other sections' own rules would admit.
     result = _build_records(
         base,
         patch,
         candidate_id=candidate_id,
         schema=cadence.SCHEMA,
-        sections={
-            "parish",
-            "integrations",
-            "login_rules",
-            "campaigns",
-            "schedules",
-            "ministries",
-            "content",
-        },
+        sections={"login_rules"},
     )
     old, new = base.document(), result.candidate.document()
     validate_seed_change(

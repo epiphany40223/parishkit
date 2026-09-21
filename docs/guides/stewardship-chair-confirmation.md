@@ -62,25 +62,34 @@ patch adds that very seeded assignment bound to the request's identity; the
 installer refuses a confirmation request lacking an intent for any seeded
 assignment it adds.
 
-Inside the activation transaction, after the activation row has moved the
-runtime pointer and before the Chairperson reconciliation judges the new
-seed, the installer records `ChairSeedEvidence` from each intent and the
-current projection's roster keys, so a confirmed seed is born confirmed
-rather than `missing_binding`. The existing evidence guard verifies the
-current snapshot, the applied seeded assignment, the exact roster evidence
-and the Ministry's activity; a relationship the source no longer shows fails
-the activation as a whole, since a suggestion is confirmable only while it is
-still true. The web role gains the intent table and the installer the
+Inside the activation transaction, under the lock that source promotion also
+takes, the installer first judges every seed the request adds by the facts
+the evidence guard demands: the selected Member is a current Chairperson of
+that Ministry at that address in the promoted snapshot, and the Ministry is
+active under the candidate. A seed no longer true is refused there, recorded
+as `invalid_candidate` under that lock and followed by the same restore of
+the previous configuration an actor refusal receives, so a suggestion is
+confirmable only while it is still true and a stale one can never wedge the
+installer. Otherwise, after the activation row has moved the runtime pointer
+and before the Chairperson reconciliation judges the new seed, the installer
+records `ChairSeedEvidence` from each intent and the projection's roster
+keys, so a confirmed seed is born confirmed rather than `missing_binding`;
+the evidence guard remains the backstop. It share-locks the current source
+pointer, so the installer holds the same id-only update grant the actor
+recheck uses. The web role gains the intent table and the installer the
 evidence insert; nothing else may write either.
 
 ### The page decides nothing new
 
 The form's choices are the page's own suggestion rows, so a foreign selection
 is refused before anything is built. A row whose address several active
-Members use is confirmed only with an explicit Member. The preview is signed
-against the applied digest and the promoted snapshot; a policy change or a
-source promotion between review and confirmation refuses the confirmation as
-stale. Every guard of the rule editor applies: current session and
+Members use is confirmed only with an explicit Member, chosen per row so
+several such rows confirm together. The preview observes the configuration,
+the rows and the promoted snapshot as one read under the work lock, as the
+page does, and is signed against the applied digest and that snapshot; a
+policy change or a source promotion between review and confirmation refuses
+the confirmation as stale. The confirmation schema's patch may touch login
+rules only. Every guard of the rule editor applies: current session and
 capability, CSRF, the actor rechecked at intake and activation, the
 last-Administrator rule of the complete resulting policy.
 
@@ -88,36 +97,44 @@ last-Administrator rule of the complete resulting policy.
 
 One added relation, `stewardship_chair_seed_intent`, with its immutable guard
 and binding constraint trigger, registered after the suggestion view and
-re-included in the container build context; and one changed object, the
+re-included in the container build context; and two changed objects: the
 request schema check on `stewardship_config_request`, admitting
-`chair-seed-patch-v9` in the model, its migration state and the SQL baseline.
+`chair-seed-patch-v9` in the model, its migration state and the SQL baseline,
+and the checkpoint transition rule, which admits the installer's
+`invalid_candidate` refusal of a confirmation request after
+`yaml_activated`, never from the web role, exactly as it admits an actor
+refusal.
 
 An independent fresh-install audit against verified main `3fd51b5a`, with the
 same catalog inspection the previous increments used, found the predecessor
 matching its committed fingerprint, exactly one added relation with its eight
 columns, primary, unique and check constraints, foreign key and indexes, two
-added functions and two added triggers, and exactly one existing object
-changed, the request schema check; nothing removed. The candidate has 216
-relations, 2,409 columns, 3,330 constraints, 991 indexes, 585 functions, 545
-triggers and 28 policies. The strict fixture was updated only after this
+added functions and two added triggers, and exactly two existing objects
+changed, the request schema check and the checkpoint transition function;
+nothing removed. The candidate has 216 relations, 2,409 columns, 3,330
+constraints, 991 indexes, 585 functions, 545 triggers and 28 policies. The strict fixture was updated only after this
 inspected comparison. Pre-production fresh-install baseline only; no upgrade
 path, and no retained database was deleted.
 
 ## Focused validation
 
-- Fourteen database-free cases: a new rule inheriting domain roles as manual
+- Fifteen database-free cases: a new rule inheriting domain roles as manual
   grants beside the seed, an existing rule gaining only the seeded origin, an
   already seeded Ministry and an empty selection refused, ten tampered shapes
   each refused by the seed rule while the ordinary rule refuses the genuine
-  confirmation, and an applied seed read as ordinary provenance afterwards.
-- Four PostgreSQL cases under the real web and installer roles with real
-  promoted source: a confirmation previewed, confirmed and installed creating
-  the seeded rule, grants, assignment, intent and retained evidence with the
-  seed born confirmed on the page and the same Ministry refused again; an
-  ambiguous address refused without its Member and confirmed with it; seeded
-  authority refused to the ordinary schema, a foreign intent refused by SQL
-  and evidence refused to the web role; and a source promoted after the
-  preview making it stale.
+  confirmation, the schema refusing an appended parish edit, and an applied
+  seed read as ordinary provenance afterwards.
+- Five PostgreSQL cases under the real web and restricted installer roles
+  with real promoted source: a confirmation previewed, confirmed and
+  installed creating the seeded rule, grants, assignment, intent and
+  retained evidence with the seed born confirmed on the page and the same
+  Ministry refused again; a shared address chairing two Ministries refused
+  without its Members or with a partial answer and confirmed with both; a
+  Chairperson promoted away after confirmation failing the request as an
+  invalid candidate with the previous policy restored and an ordinary change
+  installing afterwards; seeded authority refused to the ordinary schema, a
+  foreign intent refused by SQL and evidence refused to the web role; and a
+  source promoted after the preview making it stale.
 - The suggestion, Portal users page, login rule edit, Chairperson projection,
   grant and storage suites and the schema baseline pass; the grant registry
   and build contract database-free suites pass with the new table and file.
@@ -125,7 +142,9 @@ path, and no retained database was deleted.
 
 ## Checkpoint
 
-Implementation and focused validation are complete; review/fix rounds, full
-exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
+Implementation, focused validation and the first
+[review/fix round](stewardship-chair-confirmation-reviews.md) are complete,
+single-source under the second September 20, 2026 Codex exemption; further
+rounds, full exact-head CI, DCO and protected delivery remain open. M5 and Gate 3 remain
 open. No deployment, release, live-provider write or database deletion is
 authorized by this increment.

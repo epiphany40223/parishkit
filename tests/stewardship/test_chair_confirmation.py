@@ -151,6 +151,42 @@ def test_the_seed_rule_admits_only_a_confirmation(tamper):
         validate_seed_change(records, after, OP)
 
 
+def test_the_confirmation_schema_carries_no_other_section():
+    """Even a valid parish edit cannot travel in a confirmation request."""
+    from parishkit.stewardship.accounts.request_patch import build_candidate
+    from parishkit.stewardship.accounts.request_patch import (
+        default_schema as ordinary_schema,
+    )
+
+    from .configuration_factory import configuration_document, configuration_version
+
+    records = [address(), domain("example.org", roles=("staff",))]
+    document = configuration_document()
+    document["sections"]["login_rules"] = records
+    base = configuration_version(document)
+    patch, _ = seed_patch(records, [("chair@example.org", 4)], operation_id=OP)
+    build_candidate(
+        base, patch, candidate_id=uuid4(), request_schema="chair-seed-patch-v9"
+    )
+    parish = next(row["id"] for row in document["sections"]["parish"])
+    widened = patch + [
+        {
+            "operation": "update",
+            "section": "parish",
+            "id": parish,
+            "values": {"name": "Renamed Parish"},
+        }
+    ]
+    with pytest.raises(ConfigError):
+        build_candidate(
+            base, widened, candidate_id=uuid4(), request_schema="chair-seed-patch-v9"
+        )
+    # And the ordinary schema the patch would otherwise take refuses the seed.
+    schema = ordinary_schema(base, patch)
+    with pytest.raises(ConfigError):
+        build_candidate(base, patch, candidate_id=uuid4(), request_schema=schema)
+
+
 def test_a_confirmed_seed_survives_an_ordinary_change_afterwards():
     """Once applied, the seeded records are ordinary retained provenance."""
     records = [address(), domain("example.org", roles=("staff",))]

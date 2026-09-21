@@ -14,6 +14,9 @@ from parishkit.stewardship.accounts.chair_models import (
 )
 from parishkit.stewardship.accounts.configuration_installation import install_request
 from parishkit.stewardship.accounts.configuration_requests import record_request
+from parishkit.stewardship.accounts.configuration_service import (
+    admit_configuration_database,
+)
 from parishkit.stewardship.accounts.policy_models import (
     AddressRule,
     AssignmentOverlay,
@@ -27,6 +30,10 @@ from ..test_source_corpus import source
 from .auth_builders import auth_runtime, signed_in
 from .test_background_grants_postgresql import task_login
 from .test_chair_suggestions_postgresql import publish, shared, suggestion_row
+from .test_configuration_service_postgresql import (
+    as_config_installer,
+    config_role,  # noqa: F401
+)
 from .test_source_families_postgresql import source_singletons  # noqa: F401
 from .test_user_views_postgresql import URL as PAGE
 
@@ -63,21 +70,33 @@ def proposal(store, **values):
     } | values
 
 
-def confirmed(store, browser, values):
-    """Preview and confirm as the web role; install as the installer owner."""
+def recorded(browser, values):
+    """Preview and confirm as the web role; the request is recorded, not applied."""
     with web():
         signed = token(post(browser, values))
         response = post(browser, {"action": "confirm", "preview": signed})
     assert response.status_code == 302, response.content
-    request = ConfigurationChangeRequest.objects.get(
+    return ConfigurationChangeRequest.objects.get(
         pk=response["Location"].rsplit("/", 1)[-1]
     )
-    receipt = install_request(store, request_id=request.pk, correlation_id=uuid4())
+
+
+def install(store, request):
+    """Install as the restricted configuration installer, never the owner."""
+    with as_config_installer():
+        admit_configuration_database()
+        return install_request(store, request_id=request.pk, correlation_id=uuid4())
+
+
+def confirmed(store, browser, values):
+    """Preview, confirm and install a confirmation, asserting it applied."""
+    request = recorded(browser, values)
+    receipt = install(store, request)
     assert receipt.state == "applied", receipt
     return request
 
 
-@pytest.mark.usefixtures("source_singletons")
+@pytest.mark.usefixtures("source_singletons", "config_role")
 def test_a_confirmation_creates_the_seeded_rule_assignment_and_evidence(
     tmp_path, settings, real_limiter, google
 ):
@@ -133,28 +152,112 @@ def test_a_confirmation_creates_the_seeded_rule_assignment_and_evidence(
     assert "already assigned to the address" in response.content.decode()
 
 
-@pytest.mark.usefixtures("source_singletons")
-def test_an_ambiguous_address_needs_its_member_chosen(auth_service, google):
-    """Two Chairpersons on one address: the Administrator names the Member."""
+def two_ministries():
+    """The shared address chairs two Ministries: two ambiguous rows at once."""
+    from copy import deepcopy
+
+    data = shared()
+    data.ministry_types[9] = {"id": 9, "name": "Ushers"}
+    data.ministry_type_memberships[9] = deepcopy(data.ministry_type_memberships[4])
+    return data
+
+
+@pytest.mark.usefixtures("source_singletons", "config_role")
+def test_an_ambiguous_address_needs_its_member_chosen_for_each_row(
+    auth_service, google
+):
+    """Two Chairpersons on one address: the Administrator names the Member per row."""
     store = auth_service.store
-    publish(shared())
+    publish(two_ministries())
     browser, login = signed_in()
     assert login.status_code == 302
+    both = ["4:valid@example.org", "9:valid@example.org"]
     with web():
-        refused = post(browser, proposal(store))
+        refused = post(browser, proposal(store, selection=both))
         assert refused.status_code == 400
         assert "Choose the Member" in refused.content.decode()
+        # One row answered, the other left at its blank choice.
+        partial = post(
+            browser,
+            proposal(store, selection=both, member=["4:valid@example.org:6", ""]),
+        )
+        assert partial.status_code == 400
         foreign = post(browser, proposal(store, member=["4:valid@example.org:99"]))
         assert foreign.status_code == 400
     request = confirmed(
-        store, browser, proposal(store, member=["4:valid@example.org:6"])
+        store,
+        browser,
+        proposal(
+            store,
+            selection=both,
+            member=["4:valid@example.org:6", "9:valid@example.org:3"],
+        ),
     )
-    intent = ChairSeedIntent.objects.get(request=request)
-    assert intent.member_duid == 6
-    assert ChairSeedEvidence.objects.get(member_duid=6).roster_keys
+    intents = {
+        intent.assignment_record_id: intent.member_duid
+        for intent in ChairSeedIntent.objects.filter(request=request)
+    }
+    seeded = {
+        row.record_id: row.ministry_duid
+        for row in MinistryAssignment.objects.filter(
+            email="valid@example.org", source="chair-seed"
+        )
+    }
+    assert {seeded[key]: duid for key, duid in intents.items()} == {4: 6, 9: 3}
+    assert ChairSeedEvidence.objects.filter(member_duid__in=(3, 6)).count() == 2
 
 
-@pytest.mark.usefixtures("source_singletons")
+@pytest.mark.usefixtures("source_singletons", "config_role")
+def test_a_source_that_lost_the_chairperson_refuses_the_activation_durably(
+    auth_service, google
+):
+    """Confirmed, then promoted away: the request fails, the previous policy holds."""
+    from parishkit.stewardship.accounts.request_models import (
+        ConfigurationRequestCheckpoint,
+    )
+
+    from .test_user_rule_views_postgresql import applied
+    from .test_user_rule_views_postgresql import proposal as rule_proposal
+
+    store = auth_service.store
+    publish(source())
+    browser, login = signed_in()
+    assert login.status_code == 302
+    request = recorded(browser, proposal(store))
+    base = store.active()
+    data = source()
+    data.members[3]["emailAddress"] = "moved@example.org"
+    publish(data)
+    receipt = install(store, request)
+    assert receipt.state == "failed"
+    assert (
+        ConfigurationRequestCheckpoint.objects.filter(request=request)
+        .latest("sequence")
+        .failure_code
+        == "invalid_candidate"
+    )
+    assert store.active() == base
+    # The refused candidate keeps its immutable projections; nothing seeded
+    # reached the active configuration, and no evidence was recorded.
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+
+    active = SystemConfiguration.objects.get().active_configuration_id
+    assert active == base.version_id
+    assert not MinistryAssignment.objects.filter(
+        source="chair-seed", configuration_id=active
+    ).exists()
+    assert not ChairSeedEvidence.objects.exists()
+    # The installer is not wedged: an ordinary rule change still installs.
+    applied(
+        store,
+        browser,
+        rule_proposal(
+            store, kind="address", identity="new@example.org", roles=["staff"]
+        ),
+    )
+
+
+@pytest.mark.usefixtures("source_singletons", "config_role")
 def test_seeded_authority_enters_only_through_the_confirmation_schema(
     auth_service, google
 ):

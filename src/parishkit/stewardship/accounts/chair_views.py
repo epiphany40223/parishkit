@@ -19,6 +19,7 @@ from django.shortcuts import render
 from django.views.decorators.http import require_POST
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
@@ -47,7 +48,12 @@ PREVIEW_FIELDS = {"selection", "member", "base_digest"}
 
 
 class ConfirmationForm(forms.Form):
-    """Selected rows as "ministry:address" and, per ambiguous row, a Member DUID."""
+    """Selected rows as "ministry:address" and, per ambiguous row, a Member DUID.
+
+    Each ambiguous row posts its own choice under the one `member` name, so
+    several ambiguous rows can be confirmed in one submission; an empty choice
+    is the row's unanswered question, not a value.
+    """
 
     selection = forms.MultipleChoiceField(choices=())
     member = forms.MultipleChoiceField(choices=(), required=False)
@@ -59,7 +65,7 @@ class ConfirmationForm(forms.Form):
         self.fields["selection"].choices = [
             (f"{row['ministry_duid']}:{row['email']}",) * 2 for row in rows
         ]
-        self.fields["member"].choices = [
+        self.fields["member"].choices = [("", "")] + [
             (f"{row['ministry_duid']}:{row['email']}:{member['duid']}",) * 2
             for row in rows
             for member in row["candidates"]
@@ -94,6 +100,8 @@ def _members(rows, data):
     """
     chosen = {}
     for value in data["member"]:
+        if not value:
+            continue
         ministry, email, duid = value.rsplit(":", 2)
         chosen[(email, int(ministry))] = int(duid)
     selected = {}
@@ -132,15 +140,20 @@ def _rows(configuration):
 
 def _preview(request, service, actor):
     """Show exactly what each confirmation creates, signed for one confirmation."""
-    configuration = editable_configuration(service)
-    records, rows = _rows(configuration)
+    # One observation under the work lock, as the page itself observes: the
+    # applied policy, the suggestion rows and the snapshot they came from
+    # cannot straddle a source promotion, so the snapshot signed into the
+    # preview is the one the rows were drawn from.
+    with work_transaction():
+        configuration = editable_configuration(service)
+        current = SourceCurrent.objects.get(singleton=True)
+        records, rows = _rows(configuration)
     form = ConfirmationForm(request.POST, rows)
     if not form.is_valid():
         return _error(request, "invalid")
     data = form.cleaned_data
     if data["base_digest"] != configuration.active_configuration.digest:
         raise StaleRecordError("Reload the suggestions before confirming them.")
-    current = SourceCurrent.objects.get(singleton=True)
     # The request key is chosen now so every seeded origin in the patch names
     # the request that will carry it; intake and the installer verify that.
     key = uuid4()

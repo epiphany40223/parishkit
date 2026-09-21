@@ -4872,6 +4872,12 @@ CREATE FUNCTION public.stewardship_request_checkpoint_v2() RETURNS trigger
                         -- must not be able to strand a selected candidate.
                         OR (NEW.state='failed' AND NEW.failure_code='actor_unauthorized'
                             AND current_user<>'pk_stewardship_web')
+                         -- A Chairperson confirmation whose seed the promoted
+                         -- source no longer shows is refused inside the
+                         -- activation the same way and restored the same way.
+                        OR (NEW.state='failed' AND NEW.failure_code='invalid_candidate'
+                            AND intent.request_schema='chair-seed-patch-v9'
+                            AND current_user<>'pk_stewardship_web')
                         OR (NEW.state='failed' AND NEW.failure_code='invalid_candidate'
                         AND (EXISTS(SELECT 1 FROM stewardship_campaign_config_abort b
                             JOIN stewardship_campaign_config_intent i ON i.id=b.intent_id WHERE i.request_id=NEW.request_id) OR EXISTS (

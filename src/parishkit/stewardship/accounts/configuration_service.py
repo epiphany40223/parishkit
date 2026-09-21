@@ -91,6 +91,9 @@ CONFIGURATION_COLUMNS = {
     # which PostgreSQL allows only with one UPDATE privilege; the identity
     # trigger rejects an id-only update, so the row itself stays read-only.
     "stewardship_portal_user": {"UPDATE": {"id"}},
+    # Recording a confirmed seed's retained evidence share-locks the current
+    # source pointer the same way; the pointer's own guards keep it read-only.
+    "stewardship_source_current": {"UPDATE": {"id"}},
 }
 
 
